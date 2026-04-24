@@ -1,0 +1,114 @@
+using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
+using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
+
+namespace SaigonWaterbus.Application.Auth.Register;
+
+public sealed record VerifyRegisterOtpCommand(int ChallengeId, string Code) : IRequest<AuthActionResultDto>;
+
+public sealed class VerifyRegisterOtpCommandValidator : AbstractValidator<VerifyRegisterOtpCommand>
+{
+    public VerifyRegisterOtpCommandValidator()
+    {
+        RuleFor(x => x.ChallengeId).GreaterThan(0);
+        RuleFor(x => x.Code).NotEmpty().Length(4, 10);
+    }
+}
+
+public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegisterOtpCommand, AuthActionResultDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly ISecretHasher _secretHasher;
+    private readonly IUserCodeGenerator _userCodeGenerator;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public VerifyRegisterOtpCommandHandler(
+        IApplicationDbContext context,
+        ISecretHasher secretHasher,
+        IUserCodeGenerator userCodeGenerator,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _secretHasher = secretHasher;
+        _userCodeGenerator = userCodeGenerator;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<AuthActionResultDto> Handle(VerifyRegisterOtpCommand request, CancellationToken cancellationToken)
+    {
+        var challenge = await _context.Set<OtpChallenge>()
+            .Include(x => x.User)
+            .SingleOrDefaultAsync(
+                x => x.Id == request.ChallengeId && x.Purpose == OtpPurpose.Register,
+                cancellationToken)
+            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge was not found.");
+
+        var now = _timeProvider.GetUtcNow();
+
+        if (challenge.ConsumedAt.HasValue)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has already been used.");
+        }
+
+        if (challenge.ExpiresAt <= now)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has expired.");
+        }
+
+        if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
+        {
+            challenge.AttemptCount += 1;
+
+            if (challenge.AttemptCount >= challenge.MaxAttempts)
+            {
+                challenge.ConsumedAt = now;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP is invalid.");
+        }
+
+        await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
+
+        challenge.AttemptCount += 1;
+        challenge.ConsumedAt = now;
+
+        var user = challenge.User;
+        user.Status = UserStatus.Active;
+        user.EmailVerifiedAt = now;
+
+        var customerRole = await _context.Set<Role>()
+            .SingleAsync(x => x.Code == Roles.CustomerCode, cancellationToken);
+
+        var hasCustomerRole = await _context.Set<UserRoleAssignment>()
+            .AnyAsync(x => x.UserId == user.Id && x.RoleId == customerRole.Id, cancellationToken);
+
+        if (!hasCustomerRole)
+        {
+            _context.Set<UserRoleAssignment>().Add(new UserRoleAssignment
+            {
+                UserId = user.Id,
+                RoleId = customerRole.Id,
+                ScopeType = customerRole.DefaultScopeType,
+                AssignedAt = now,
+                AssignedByUserId = _userContext.UserId,
+                IsActive = true
+            });
+        }
+
+        if (!UserCodes.HasPrefix(user.UserCode, UserCodes.CustomerPrefix))
+        {
+            user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, cancellationToken);
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        return new AuthActionResultDto("Xac nhan OTP thanh cong.");
+    }
+}

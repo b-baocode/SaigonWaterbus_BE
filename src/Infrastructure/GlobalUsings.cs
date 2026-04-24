@@ -1,2 +1,1 @@
-﻿global using Ardalis.GuardClauses;
-global using SaigonWaterbus.Shared;
+global using Ardalis.GuardClauses;

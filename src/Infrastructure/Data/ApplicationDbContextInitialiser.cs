@@ -2,6 +2,8 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using SaigonWaterbus.Domain.Constants;
+using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Infrastructure.Data;
 
@@ -66,6 +68,29 @@ public class ApplicationDbContextInitialiser
 
     public async Task TrySeedAsync()
     {
-        await Task.CompletedTask;
+        var existingRoleCodes = await _context.Roles
+            .Select(x => x.Code)
+            .ToListAsync();
+
+        var missingRoles = Roles.BuiltIn
+            .Where(x => !existingRoleCodes.Contains(x.Code))
+            .Select(x => new Role
+            {
+                Code = x.Code,
+                SystemName = x.SystemName,
+                DisplayName = x.DisplayName,
+                Description = x.Description,
+                DefaultScopeType = x.DefaultScopeType,
+                IsSystem = true
+            })
+            .ToList();
+
+        if (missingRoles.Count == 0)
+        {
+            return;
+        }
+
+        _context.Roles.AddRange(missingRoles);
+        await _context.SaveChangesAsync();
     }
 }
