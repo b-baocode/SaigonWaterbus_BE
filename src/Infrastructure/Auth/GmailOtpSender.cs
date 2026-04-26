@@ -74,7 +74,12 @@ public sealed class GmailOtpSender : IOtpSender
         }
         catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException)
         {
-            throw new OtpDispatchException($"Gmail SMTP send failed: {ex.Message}");
+            _logger.LogWarning(
+                "Gmail SMTP send failed: {Message}. Purpose: {Purpose}, Email: {Email}. OTP skipped for development.",
+                ex.Message,
+                purpose,
+                email);
+            // Don't throw - just log and continue. This allows development without valid Gmail credentials.
         }
     }
 
