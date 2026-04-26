@@ -8,9 +8,10 @@ public sealed record AuthUserDto(
     int Id,
     string? UserCode,
     string FullName,
-    DateOnly DateOfBirth,
-    string PhoneNumber,
+    DateOnly? DateOfBirth,
+    string? PhoneNumber,
     string Email,
+    string? Department,
     UserStatus Status,
     IReadOnlyCollection<AuthRoleDto> Roles);
 

@@ -22,20 +22,17 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
     private readonly IApplicationDbContext _context;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserCodeGenerator _userCodeGenerator;
-    private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
     public VerifyRegisterOtpCommandHandler(
         IApplicationDbContext context,
         ISecretHasher secretHasher,
         IUserCodeGenerator userCodeGenerator,
-        IUserContext userContext,
         TimeProvider timeProvider)
     {
         _context = context;
         _secretHasher = secretHasher;
         _userCodeGenerator = userCodeGenerator;
-        _userContext = userContext;
         _timeProvider = timeProvider;
     }
 
@@ -84,22 +81,7 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
 
         var customerRole = await _context.Set<Role>()
             .SingleAsync(x => x.Code == Roles.CustomerCode, cancellationToken);
-
-        var hasCustomerRole = await _context.Set<UserRoleAssignment>()
-            .AnyAsync(x => x.UserId == user.Id && x.RoleId == customerRole.Id, cancellationToken);
-
-        if (!hasCustomerRole)
-        {
-            _context.Set<UserRoleAssignment>().Add(new UserRoleAssignment
-            {
-                UserId = user.Id,
-                RoleId = customerRole.Id,
-                ScopeType = customerRole.DefaultScopeType,
-                AssignedAt = now,
-                AssignedByUserId = _userContext.UserId,
-                IsActive = true
-            });
-        }
+        user.RoleId = customerRole.Id;
 
         if (!UserCodes.HasPrefix(user.UserCode, UserCodes.CustomerPrefix))
         {

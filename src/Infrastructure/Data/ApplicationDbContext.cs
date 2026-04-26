@@ -14,8 +14,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Role> Roles => Set<Role>();
 
-    public DbSet<UserRoleAssignment> UserRoleAssignments => Set<UserRoleAssignment>();
-
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

@@ -6,7 +6,6 @@ public static class UserCodes
     public const string ManagerPrefix = "MG";
     public const string AdminPrefix = "AD";
     public const string StaffPrefix = "ST";
-    public const string OperatorPrefix = "OP";
     public const int NumberWidth = 7;
     public const int MaxNumber = 9_999_999;
 
@@ -16,7 +15,6 @@ public static class UserCodes
         Roles.ManagerCode => ManagerPrefix,
         Roles.AdminSystemCode => AdminPrefix,
         Roles.StaffCode => StaffPrefix,
-        Roles.OperatorSystemCode => OperatorPrefix,
         _ => throw new ArgumentOutOfRangeException(nameof(roleCode), roleCode, "Role code does not support user codes.")
     };
 

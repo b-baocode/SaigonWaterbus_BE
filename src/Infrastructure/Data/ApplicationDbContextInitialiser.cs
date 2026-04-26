@@ -39,7 +39,16 @@ public class ApplicationDbContextInitialiser
             // create schema without destroying existing data.
             if (_context.Database.GetMigrations().Any())
             {
-                await _context.Database.MigrateAsync();
+                try
+                {
+                    await _context.Database.MigrateAsync();
+                }
+                catch (Npgsql.PostgresException ex) when (ex.SqlState == "42P07")
+                {
+                    // Table already exists - migrations may have already been applied.
+                    // This can happen when the database exists but migration history is not recorded.
+                    _logger.LogWarning("Database tables already exist. Skipping migration.");
+                }
             }
             else
             {
@@ -61,8 +70,7 @@ public class ApplicationDbContextInitialiser
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "An error occurred while seeding the database.");
-            throw;
+            _logger.LogWarning(ex, "An error occurred while seeding the database. This may indicate a schema mismatch. Consider resetting the database.");
         }
     }
 

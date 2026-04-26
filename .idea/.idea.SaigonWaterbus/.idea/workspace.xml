@@ -18,50 +18,32 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2dedd45c-6abb-4ebb-a599-ef65bebdbc47" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.aspire/settings.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/Directory.Packages.props" beforeDir="false" afterPath="$PROJECT_DIR$/Directory.Packages.props" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/SaigonWaterbus.slnx" beforeDir="false" afterPath="$PROJECT_DIR$/SaigonWaterbus.slnx" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/AppHost/AppHost.csproj" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/AppHost/Extensions.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/AppHost/Program.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/AppHost/Properties/launchSettings.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/AppHost/appsettings.Development.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/AppHost/appsettings.json" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Application/Application.csproj" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Application.csproj" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Application/Common/Behaviours/LoggingBehaviour.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Common/Behaviours/LoggingBehaviour.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Application/Common/Interfaces/IApplicationDbContext.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Common/Interfaces/IApplicationDbContext.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.SaigonWaterbus/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.SaigonWaterbus/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Common/AuthDtos.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Common/AuthDtos.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Common/AuthSupport.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Common/AuthSupport.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Login/GoogleLoginCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Login/GoogleLoginCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Login/LoginCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Login/LoginCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Password/ChangePasswordCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Password/ChangePasswordCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Profile/GetCurrentUserProfileQuery.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Profile/GetCurrentUserProfileQuery.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Register/RegisterCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Register/RegisterCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Register/VerifyRegisterOtpCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Register/VerifyRegisterOtpCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Common/Interfaces/ITokenService.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Common/Interfaces/ITokenService.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Users/DeleteUserCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Users/DeleteUserCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Users/UpdateUserRoleCommand.cs" beforeDir="false" />
       <change beforePath="$PROJECT_DIR$/src/Domain/Constants/Roles.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Domain/Constants/Roles.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Constants/UserCodes.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Domain/Constants/UserCodes.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Entities/Role.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Domain/Entities/Role.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Entities/User.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Domain/Entities/User.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Entities/UserRoleAssignment.cs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Auth/GmailOtpSender.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Auth/GmailOtpSender.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Auth/JwtTokenService.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Auth/JwtTokenService.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/ApplicationDbContext.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/ApplicationDbContext.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/ApplicationDbContextInitialiser.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/ApplicationDbContextInitialiser.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Infrastructure/DependencyInjection.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/DependencyInjection.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Infrastructure/GlobalUsings.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/GlobalUsings.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Infrastructure.csproj" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Infrastructure.csproj" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ServiceDefaults/Extensions.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/ServiceDefaults/ServiceDefaults.csproj" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Shared/Services.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Shared/Shared.csproj" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Web/DependencyInjection.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/DependencyInjection.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Web/Infrastructure/ProblemDetailsExceptionHandler.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Infrastructure/ProblemDetailsExceptionHandler.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Web/Program.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Program.cs" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Web/Properties/launchSettings.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Properties/launchSettings.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Web/Web.csproj" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Web.csproj" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/Web/Web.http" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/Configurations/UserConfiguration.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/Configurations/UserConfiguration.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/Configurations/UserRoleAssignmentConfiguration.cs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/Endpoints/Users.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Endpoints/Users.cs" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/Web/appsettings.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/appsettings.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.FunctionalTests/Application.FunctionalTests.csproj" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.FunctionalTests/FunctionalTestSetup.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.FunctionalTests/GlobalUsings.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.FunctionalTests/Infrastructure/DatabaseResetter.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.FunctionalTests/Infrastructure/TestApp.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.FunctionalTests/Infrastructure/TestBase.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.FunctionalTests/Infrastructure/WebApiFactory.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.UnitTests/Application.UnitTests.csproj" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Application.UnitTests/Common/Exceptions/ValidationExceptionTests.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Domain.UnitTests/Domain.UnitTests.csproj" beforeDir="false" afterPath="$PROJECT_DIR$/tests/Domain.UnitTests/Domain.UnitTests.csproj" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Infrastructure.IntegrationTests/GlobalUsings.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/Infrastructure.IntegrationTests/Infrastructure.IntegrationTests.csproj" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/TestAppHost/Program.cs" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tests/TestAppHost/TestAppHost.csproj" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -72,7 +54,7 @@
     <option name="firstShow" value="false" />
   </component>
   <component name="EmbeddingIndexingInfo">
-    <option name="cachedIndexableFilesCount" value="6" />
+    <option name="cachedIndexableFilesCount" value="11" />
   </component>
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
@@ -84,6 +66,7 @@
     <commands />
     <urls />
   </component>
+  <component name="MetaFilesCheckinStateConfiguration" checkMetaFiles="false" />
   <component name="ProblemsViewState">
     <option name="selectedTabId" value="CurrentFile" />
   </component>
@@ -241,12 +224,15 @@
       <workItem from="1777019538185" duration="8265000" />
       <workItem from="1777031407351" duration="771000" />
       <workItem from="1777032185506" duration="17198000" />
+      <workItem from="1777168249570" duration="4000000" />
+      <workItem from="1777172458698" duration="4090000" />
     </task>
     <servers />
   </component>
   <component name="TypeScriptGeneratedFilesManager">
     <option name="version" value="3" />
   </component>
+  <component name="UnityCheckinConfiguration" checkUnsavedScenes="false" />
   <component name="UnityProjectConfiguration" hasMinimizedUI="false" />
   <component name="VcsManagerConfiguration">
     <option name="CLEAR_INITIAL_COMMIT_MESSAGE" value="true" />

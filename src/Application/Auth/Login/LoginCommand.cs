@@ -53,7 +53,8 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
 
         AuthSupport.EnsureUserCanLogin(user, nameof(request.Email));
 
-        if (!_secretHasher.Verify(request.Password, user.PasswordHash))
+        if (string.IsNullOrWhiteSpace(user.PasswordHash)
+            || !_secretHasher.Verify(request.Password, user.PasswordHash))
         {
             throw new UnauthorizedAccessException();
         }

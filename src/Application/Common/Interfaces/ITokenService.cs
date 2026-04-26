@@ -4,7 +4,7 @@ public interface ITokenService
 {
     AccessTokenResult GenerateAccessToken(
         int userId,
-        string phoneNumber,
+        string? phoneNumber,
         string email,
         IReadOnlyCollection<string> roleSystemNames);
 

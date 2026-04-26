@@ -73,6 +73,8 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
         var normalizedPhone = _identityNormalizer.NormalizePhone(request.Phone);
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
+        var customerRole = await _context.Set<Role>()
+            .SingleAsync(x => x.Code == Domain.Constants.Roles.CustomerCode, cancellationToken);
 
         if (await _context.Set<User>().AnyAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken))
         {
@@ -97,6 +99,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
             Email = email,
             NormalizedEmail = normalizedEmail,
             PasswordHash = _secretHasher.Hash(request.Password),
+            RoleId = customerRole.Id,
             Status = UserStatus.PendingVerification
         };
 

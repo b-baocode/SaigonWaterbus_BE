@@ -21,7 +21,7 @@ public sealed class JwtTokenService : ITokenService
 
     public AccessTokenResult GenerateAccessToken(
         int userId,
-        string phoneNumber,
+        string? phoneNumber,
         string email,
         IReadOnlyCollection<string> roleSystemNames)
     {
@@ -32,9 +32,13 @@ public sealed class JwtTokenService : ITokenService
         {
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
             new(ClaimTypes.NameIdentifier, userId.ToString()),
-            new(ClaimTypes.MobilePhone, phoneNumber),
             new(ClaimTypes.Email, email)
         };
+
+        if (!string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            claims.Add(new Claim(ClaimTypes.MobilePhone, phoneNumber));
+        }
 
         claims.AddRange(roleSystemNames
             .Distinct(StringComparer.Ordinal)

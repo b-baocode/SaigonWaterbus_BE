@@ -53,6 +53,11 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
 
         AuthSupport.EnsureUserCanLogin(user);
 
+        if (string.IsNullOrWhiteSpace(user.PasswordHash))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.CurrentPassword), "Password login is not available for this account.");
+        }
+
         if (!_secretHasher.Verify(request.CurrentPassword, user.PasswordHash))
         {
             throw AuthSupport.CreateValidationException(nameof(request.CurrentPassword), "Current password is incorrect.");

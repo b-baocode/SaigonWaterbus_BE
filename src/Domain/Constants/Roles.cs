@@ -8,13 +8,11 @@ public static class Roles
     public const string ManagerCode = "MG01";
     public const string AdminSystemCode = "AD01";
     public const string StaffCode = "ST01";
-    public const string OperatorSystemCode = "OP01";
 
     public const string CustomerSystemName = "CUSTOMER";
     public const string ManagerSystemName = "MANAGER";
     public const string AdminSystemName = "ADMIN_SYSTEM";
     public const string StaffSystemName = "STAFF";
-    public const string OperatorSystemName = "OPERATOR_SYSTEM";
 
     public static IReadOnlyCollection<RoleDefinition> BuiltIn { get; } =
     [
@@ -29,10 +27,7 @@ public static class Roles
             RoleScopeType.Global),
         new(StaffCode, StaffSystemName, "Staff",
             "Verify QR tickets, update boarding status, sell tickets at stations, and monitor trip passenger lists.",
-            RoleScopeType.Station),
-        new(OperatorSystemCode, OperatorSystemName, "Operator System",
-            "Respond to customer inquiries and complaints, and manage tourism and attraction content.",
-            RoleScopeType.Global)
+            RoleScopeType.Station)
     ];
 }
 

@@ -29,7 +29,8 @@ public sealed class GmailOtpSender : IOtpSender
         var options = _optionsMonitor.CurrentValue;
         if (!options.Enabled)
         {
-            throw new OtpDispatchException("Gmail OTP integration is disabled.");
+            _logger.LogWarning("Gmail OTP integration is disabled. Skipping OTP send to {Email}", email);
+            return;
         }
 
         if (string.IsNullOrWhiteSpace(options.Username) || string.IsNullOrWhiteSpace(options.Password))

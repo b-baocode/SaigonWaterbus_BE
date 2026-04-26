@@ -25,15 +25,14 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .HasColumnType("date");
 
         builder.Property(x => x.PhoneNumber)
-            .HasMaxLength(20)
-            .IsRequired();
+            .HasMaxLength(20);
 
         builder.Property(x => x.NormalizedPhoneNumber)
-            .HasMaxLength(20)
-            .IsRequired();
+            .HasMaxLength(20);
 
         builder.HasIndex(x => x.NormalizedPhoneNumber)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"NormalizedPhoneNumber\" IS NOT NULL");
 
         builder.Property(x => x.Email)
             .HasMaxLength(255)
@@ -47,10 +46,17 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .IsUnique();
 
         builder.Property(x => x.PasswordHash)
-            .HasMaxLength(500)
-            .IsRequired();
+            .HasMaxLength(500);
+
+        builder.Property(x => x.Department)
+            .HasMaxLength(100);
 
         builder.Property(x => x.Status)
             .HasConversion<int>();
+
+        builder.HasOne(x => x.Role)
+            .WithMany(x => x.Users)
+            .HasForeignKey(x => x.RoleId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

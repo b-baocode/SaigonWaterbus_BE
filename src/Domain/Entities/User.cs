@@ -8,17 +8,21 @@ public class User : BaseAuditableEntity
 
     public string FullName { get; set; } = null!;
 
-    public DateOnly DateOfBirth { get; set; }
+    public DateOnly? DateOfBirth { get; set; }
 
-    public string PhoneNumber { get; set; } = null!;
+    public string? PhoneNumber { get; set; }
 
-    public string NormalizedPhoneNumber { get; set; } = null!;
+    public string? NormalizedPhoneNumber { get; set; }
 
     public string Email { get; set; } = null!;
 
     public string NormalizedEmail { get; set; } = null!;
 
-    public string PasswordHash { get; set; } = null!;
+    public string? PasswordHash { get; set; }
+
+    public int RoleId { get; set; }
+
+    public string? Department { get; set; }
 
     public UserStatus Status { get; set; } = UserStatus.PendingVerification;
 
@@ -26,7 +30,7 @@ public class User : BaseAuditableEntity
 
     public DateTimeOffset? LastLoginAt { get; set; }
 
-    public ICollection<UserRoleAssignment> RoleAssignments { get; set; } = new List<UserRoleAssignment>();
+    public Role Role { get; set; } = null!;
 
     public ICollection<OtpChallenge> OtpChallenges { get; set; } = new List<OtpChallenge>();
 

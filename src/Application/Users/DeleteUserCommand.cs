@@ -18,28 +18,29 @@ public sealed class DeleteUserCommandHandler : IRequestHandler<DeleteUserCommand
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
 
     public DeleteUserCommandHandler(
         IApplicationDbContext context,
-        IUserContext userContext)
+        IUserContext userContext,
+        TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
+        _timeProvider = timeProvider;
     }
 
     public async Task<AuthActionResultDto> Handle(DeleteUserCommand request, CancellationToken cancellationToken)
     {
-        await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
-
-        if (_userContext.UserId == request.UserId)
-        {
-            throw AuthSupport.CreateValidationException(nameof(request.UserId), "Admin cannot delete the current account.");
-        }
-
+        var actor = await AuthSupport.EnsureCurrentUserCanManageUsersAsync(_context, _userContext, cancellationToken);
         var user = await _context.Set<User>()
+            .Include(x => x.Role)
             .SingleOrDefaultAsync(x => x.Id == request.UserId, cancellationToken)
             ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("User was not found.");
 
+        UserManagementSupport.EnsureCanDeleteUser(actor, user);
+
+        await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, _timeProvider.GetUtcNow(), cancellationToken);
         _context.Set<User>().Remove(user);
         await _context.SaveChangesAsync(cancellationToken);
 

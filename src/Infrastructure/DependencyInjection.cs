@@ -35,7 +35,18 @@ public static class DependencyInjection
         builder.Services.AddScoped<IIdentityNormalizer, IdentityNormalizer>();
         builder.Services.AddScoped<ISecretHasher, Pbkdf2SecretHasher>();
         builder.Services.AddScoped<IOtpCodeService, OtpCodeService>();
-        builder.Services.AddScoped<IOtpSender, GmailOtpSender>();
+        
+        // Register OTP sender based on Gmail config
+        var gmailConfig = builder.Configuration.GetSection(GmailOptions.SectionName);
+        if (gmailConfig?.GetValue<bool>("Enabled") == true)
+        {
+            builder.Services.AddScoped<IOtpSender, GmailOtpSender>();
+        }
+        else
+        {
+            builder.Services.AddScoped<IOtpSender, NoOpOtpSender>();
+        }
+        
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddScoped<ITokenService, JwtTokenService>();
         builder.Services.AddSingleton<IOtpPolicy, OtpPolicyAccessor>();

@@ -16,5 +16,5 @@ public class Role : BaseAuditableEntity
 
     public bool IsSystem { get; set; } = true;
 
-    public ICollection<UserRoleAssignment> UserAssignments { get; set; } = new List<UserRoleAssignment>();
+    public ICollection<User> Users { get; set; } = new List<User>();
 }
