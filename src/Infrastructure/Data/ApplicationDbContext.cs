@@ -10,21 +10,12 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 {
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
-    public DbSet<User> Users => Set<User>();
-
     public DbSet<Role> Roles => Set<Role>();
 
-    public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
+    public DbSet<User> Users => Set<User>();
 
-    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
-
-    public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
-
-    public async Task<IApplicationDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken)
-    {
-        var transaction = await Database.BeginTransactionAsync(cancellationToken);
-        return new ApplicationDbTransaction(transaction);
-    }
+    public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
+        Database.BeginTransactionAsync(cancellationToken);
 
     protected override void OnModelCreating(ModelBuilder builder)
     {

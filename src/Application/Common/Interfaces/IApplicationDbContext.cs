@@ -1,13 +1,16 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
+using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Common.Interfaces;
 
 public interface IApplicationDbContext
 {
-    DbSet<TEntity> Set<TEntity>()
-        where TEntity : class;
+    DbSet<Role> Roles { get; }
 
-    Task<IApplicationDbTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
+    DbSet<User> Users { get; }
+
+    Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

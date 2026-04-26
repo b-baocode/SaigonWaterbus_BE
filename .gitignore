@@ -490,3 +490,7 @@ $RECYCLE.BIN/
 *.db
 *.db-shm
 *.db-wal
+
+# JetBrains IDE
+.idea/
+*.sln.iml

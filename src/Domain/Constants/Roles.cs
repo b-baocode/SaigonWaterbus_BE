@@ -1,27 +1,11 @@
 ﻿namespace SaigonWaterbus.Domain.Constants;
 
-public static class Roles
+public abstract class Roles
 {
-    public const string CustomerCode = "CU01";
-    public const string ManagerCode = "MG01";
-    public const string AdminSystemCode = "AD01";
-    public const string StaffCode = "ST01";
+    public const string Administrator = nameof(Administrator);
+    public const string Manager = nameof(Manager);
+    public const string Staff = nameof(Staff);
+    public const string Customer = nameof(Customer);
 
-    public const string CustomerSystemName = "CUSTOMER";
-    public const string ManagerSystemName = "MANAGER";
-    public const string AdminSystemName = "ADMIN_SYSTEM";
-    public const string StaffSystemName = "STAFF";
-
-    public static IReadOnlyCollection<RoleDefinition> BuiltIn { get; } =
-    [
-        new(CustomerCode, CustomerSystemName, "Customer"),
-        new(ManagerCode, ManagerSystemName, "Manager"),
-        new(AdminSystemCode, AdminSystemName, "Admin System"),
-        new(StaffCode, StaffSystemName, "Staff")
-    ];
+    public static readonly IReadOnlyList<string> All = [Administrator, Manager, Staff, Customer];
 }
-
-public sealed record RoleDefinition(
-    string Code,
-    string SystemName,
-    string DisplayName);
