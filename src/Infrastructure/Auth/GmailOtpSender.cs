@@ -24,7 +24,7 @@ public sealed class GmailOtpSender : IOtpSender
         _logger = logger;
     }
 
-    public async Task SendAsync(string email, string code, OtpPurpose purpose, CancellationToken cancellationToken)
+    public async Task SendAsync(string email, string code, OtpPurpose purpose, string? recipientName, CancellationToken cancellationToken)
     {
         var options = _optionsMonitor.CurrentValue;
         if (!options.Enabled)
@@ -48,7 +48,7 @@ public sealed class GmailOtpSender : IOtpSender
         {
             From = new MailAddress(fromEmail, options.FromName),
             Subject = ResolveSubject(options, purpose),
-            Body = BuildBody(options, purpose, code),
+            Body = BuildBody(options, purpose, code, recipientName),
             IsBodyHtml = false
         };
         message.To.Add(email);
@@ -58,7 +58,8 @@ public sealed class GmailOtpSender : IOtpSender
             EnableSsl = true,
             DeliveryMethod = SmtpDeliveryMethod.Network,
             UseDefaultCredentials = false,
-            Credentials = new NetworkCredential(options.Username, options.Password)
+            Credentials = new NetworkCredential(options.Username, options.Password),
+            Timeout = 10000 // 10 seconds timeout
         };
 
         try
@@ -91,7 +92,7 @@ public sealed class GmailOtpSender : IOtpSender
             _ => options.LoginSubject
         };
 
-    private string BuildBody(GmailOptions options, OtpPurpose purpose, string code)
+    private string BuildBody(GmailOptions options, OtpPurpose purpose, string code, string? recipientName)
     {
         var template = purpose switch
         {
@@ -102,6 +103,7 @@ public sealed class GmailOtpSender : IOtpSender
 
         return template
             .Replace("{code}", code, StringComparison.Ordinal)
+            .Replace("{name}", recipientName ?? string.Empty, StringComparison.Ordinal)
             .Replace("{ttl_minutes}", _otpPolicy.ExpirationMinutes.ToString(), StringComparison.Ordinal);
     }
 }

@@ -73,8 +73,10 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
         var normalizedPhone = _identityNormalizer.NormalizePhone(request.Phone);
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
-        var customerRole = await _context.Set<Role>()
-            .SingleAsync(x => x.Code == Domain.Constants.Roles.CustomerCode, cancellationToken);
+        var customerRole = await AuthSupport.GetRoleByCodeAsync(
+            _context,
+            Domain.Constants.Roles.CustomerCode,
+            cancellationToken);
 
         if (await _context.Set<User>().AnyAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken))
         {
@@ -118,7 +120,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
         _context.Set<OtpChallenge>().Add(challenge);
 
         await _context.SaveChangesAsync(cancellationToken);
-        await _otpSender.SendAsync(email, otpCode, OtpPurpose.Register, cancellationToken);
+        await _otpSender.SendAsync(email, otpCode, OtpPurpose.Register, user.FullName, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return new OtpChallengeDto(

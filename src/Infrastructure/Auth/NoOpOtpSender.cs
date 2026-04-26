@@ -16,12 +16,13 @@ public sealed class NoOpOtpSender : IOtpSender
         _logger = logger;
     }
 
-    public Task SendAsync(string email, string code, OtpPurpose purpose, CancellationToken cancellationToken)
+    public Task SendAsync(string email, string code, OtpPurpose purpose, string? recipientName, CancellationToken cancellationToken)
     {
         _logger.LogInformation(
-            "OTP send skipped (NoOp). Purpose: {Purpose}, Email: {Email}, Code: {Code}",
+            "OTP send skipped (NoOp). Purpose: {Purpose}, Email: {Email}, RecipientName: {RecipientName}, Code: {Code}",
             purpose,
             email,
+            recipientName,
             code);
         return Task.CompletedTask;
     }

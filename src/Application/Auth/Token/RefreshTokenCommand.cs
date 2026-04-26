@@ -19,20 +19,17 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
     private readonly IApplicationDbContext _context;
     private readonly ISecretHasher _secretHasher;
     private readonly ITokenService _tokenService;
-    private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
     public RefreshTokenCommandHandler(
         IApplicationDbContext context,
         ISecretHasher secretHasher,
         ITokenService tokenService,
-        IUserContext userContext,
         TimeProvider timeProvider)
     {
         _context = context;
         _secretHasher = secretHasher;
         _tokenService = tokenService;
-        _userContext = userContext;
         _timeProvider = timeProvider;
     }
 
@@ -78,10 +75,7 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         {
             UserId = user.Id,
             TokenHash = _secretHasher.Hash(newRefreshSecret),
-            ExpiresAt = _tokenService.GetRefreshTokenExpiry(),
-            DeviceName = refreshToken.DeviceName,
-            IpAddress = _userContext.IpAddress ?? refreshToken.IpAddress,
-            UserAgent = _userContext.UserAgent ?? refreshToken.UserAgent
+            ExpiresAt = _tokenService.GetRefreshTokenExpiry()
         };
 
         _context.Set<RefreshToken>().Add(newRefreshToken);

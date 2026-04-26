@@ -14,15 +14,6 @@ public sealed class RefreshTokenConfiguration : IEntityTypeConfiguration<Refresh
             .HasMaxLength(500)
             .IsRequired();
 
-        builder.Property(x => x.DeviceName)
-            .HasMaxLength(100);
-
-        builder.Property(x => x.IpAddress)
-            .HasMaxLength(64);
-
-        builder.Property(x => x.UserAgent)
-            .HasMaxLength(500);
-
         builder.HasOne(x => x.User)
             .WithMany(x => x.RefreshTokens)
             .HasForeignKey(x => x.UserId)

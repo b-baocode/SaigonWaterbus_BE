@@ -79,8 +79,10 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
         user.Status = UserStatus.Active;
         user.EmailVerifiedAt = now;
 
-        var customerRole = await _context.Set<Role>()
-            .SingleAsync(x => x.Code == Roles.CustomerCode, cancellationToken);
+        var customerRole = await AuthSupport.GetRoleByCodeAsync(
+            _context,
+            Roles.CustomerCode,
+            cancellationToken);
         user.RoleId = customerRole.Id;
 
         if (!UserCodes.HasPrefix(user.UserCode, UserCodes.CustomerPrefix))

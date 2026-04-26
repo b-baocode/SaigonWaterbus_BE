@@ -10,19 +10,64 @@ public sealed class Users : IEndpointGroup
     public static void Map(RouteGroupBuilder groupBuilder)
     {
         groupBuilder.MapGet(List, "")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .WithSummary("Lay danh sach user")
+            .WithDescription(
+                "Quyen truy cap: Manager va Admin System.\n" +
+                "- Admin System: xem tat ca user.\n" +
+                "- Manager: chi xem duoc Customer va Staff.\n" +
+                "API Note:\n" +
+                "- Header: Authorization: Bearer <accessToken>.\n" +
+                "- Dung endpoint nay de lay danh sach user va doc roleId hien tai truoc khi update.");
 
         groupBuilder.MapGet(GetById, "{userId:int}")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .WithSummary("Lay chi tiet user theo ID")
+            .WithDescription(
+                "Quyen truy cap: Manager va Admin System.\n" +
+                "- Admin System: xem tat ca user.\n" +
+                "- Manager: chi xem duoc Customer va Staff.\n" +
+                "API Note:\n" +
+                "- Header: Authorization: Bearer <accessToken>.\n" +
+                "- Truyen userId tren route de lay 1 user cu the.");
 
         groupBuilder.MapPost(Create, "")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .WithSummary("Tao user moi")
+            .WithDescription(
+                "Quyen truy cap: Manager va Admin System.\n" +
+                "- Admin System: tao duoc Customer, Staff, Manager, Admin System.\n" +
+                "- Manager: chi tao duoc Staff.\n" +
+                "API Note:\n" +
+                "- Header: Authorization: Bearer <accessToken>.\n" +
+                "- Body dung roleId, khong dung role code/string.\n" +
+                "- roleId lay tu bang roles.\n" +
+                "- Department chi can cho internal role, khong can cho Customer.");
 
         groupBuilder.MapPut(Update, "{userId:int}")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .WithSummary("Cap nhat user")
+            .WithDescription(
+                "Quyen truy cap: Manager va Admin System.\n" +
+                "- Admin System: cap nhat duoc user bat ky (tru chinh minh).\n" +
+                "- Manager: chi cap nhat duoc Customer va role phai giu nguyen la Customer.\n" +
+                "API Note:\n" +
+                "- Header: Authorization: Bearer <accessToken>.\n" +
+                "- Route: userId.\n" +
+                "- Body dung roleId moi neu can doi role.\n" +
+                "- Neu doi sang role co prefix code khac, backend se cap lai userCode.");
 
         groupBuilder.MapDelete(Delete, "{userId:int}")
-            .RequireAuthorization();
+            .RequireAuthorization()
+            .WithSummary("Xoa user")
+            .WithDescription(
+                "Quyen truy cap: Manager va Admin System.\n" +
+                "- Admin System: xoa duoc user bat ky (tru chinh minh).\n" +
+                "- Manager: chi xoa duoc Customer.\n" +
+                "API Note:\n" +
+                "- Header: Authorization: Bearer <accessToken>.\n" +
+                "- Route: userId.\n" +
+                "- Nen goi GET truoc neu can xac nhan dung user.");
     }
 
     private static async Task<IResult> List(
@@ -47,7 +92,7 @@ public sealed class Users : IEndpointGroup
                 request.PhoneNumber,
                 request.Email,
                 request.Password,
-                request.Role,
+                request.RoleId,
                 request.Department,
                 request.Status),
             cancellationToken));
@@ -64,7 +109,7 @@ public sealed class Users : IEndpointGroup
                 request.DateOfBirth,
                 request.PhoneNumber,
                 request.Email,
-                request.Role,
+                request.RoleId,
                 request.Department,
                 request.Status),
             cancellationToken));
@@ -81,7 +126,7 @@ public sealed class Users : IEndpointGroup
         string? PhoneNumber,
         string Email,
         string Password,
-        string Role,
+        int RoleId,
         string? Department,
         Domain.Enums.UserStatus? Status);
 
@@ -90,7 +135,7 @@ public sealed class Users : IEndpointGroup
         DateOnly? DateOfBirth,
         string? PhoneNumber,
         string Email,
-        string Role,
+        int RoleId,
         string? Department,
         Domain.Enums.UserStatus Status);
 }

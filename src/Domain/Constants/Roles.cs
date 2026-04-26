@@ -1,6 +1,4 @@
-﻿using SaigonWaterbus.Domain.Enums;
-
-namespace SaigonWaterbus.Domain.Constants;
+﻿namespace SaigonWaterbus.Domain.Constants;
 
 public static class Roles
 {
@@ -16,24 +14,14 @@ public static class Roles
 
     public static IReadOnlyCollection<RoleDefinition> BuiltIn { get; } =
     [
-        new(CustomerCode, CustomerSystemName, "Customer",
-            "Create and manage personal account, search schedules, book tickets, pay online, receive QR tickets, review services, and manage points and booking history.",
-            RoleScopeType.Self),
-        new(ManagerCode, ManagerSystemName, "Manager",
-            "Manage staff accounts, assigned stations or fleets, monitor ticket sales, promotions, reports, dashboards, and handle operational incidents.",
-            RoleScopeType.Station),
-        new(AdminSystemCode, AdminSystemName, "Admin System",
-            "Manage user statuses, stations, boats, routes, schedules, pricing, promotions, ticket types, and system-wide dashboards.",
-            RoleScopeType.Global),
-        new(StaffCode, StaffSystemName, "Staff",
-            "Verify QR tickets, update boarding status, sell tickets at stations, and monitor trip passenger lists.",
-            RoleScopeType.Station)
+        new(CustomerCode, CustomerSystemName, "Customer"),
+        new(ManagerCode, ManagerSystemName, "Manager"),
+        new(AdminSystemCode, AdminSystemName, "Admin System"),
+        new(StaffCode, StaffSystemName, "Staff")
     ];
 }
 
 public sealed record RoleDefinition(
     string Code,
     string SystemName,
-    string DisplayName,
-    string Description,
-    RoleScopeType DefaultScopeType);
+    string DisplayName);

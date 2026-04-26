@@ -1,4 +1,5 @@
 using SaigonWaterbus.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -9,6 +10,48 @@ builder.AddInfrastructureServices();
 builder.AddWebServices();
 
 var app = builder.Build();
+
+if (args.Contains("db:reset-seed", StringComparer.OrdinalIgnoreCase))
+{
+    using var scope = app.Services.CreateScope();
+    var initialiser = scope.ServiceProvider.GetRequiredService<ApplicationDbContextInitialiser>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    await initialiser.InitialiseAsync();
+    await initialiser.ResetAndSeedSampleDataAsync();
+
+    var rolesCount = await dbContext.Roles.CountAsync();
+    var usersCount = await dbContext.Users.CountAsync();
+    var otpCount = await dbContext.OtpChallenges.CountAsync();
+    var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
+    var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
+
+    Console.WriteLine(
+        $"db:reset-seed completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}");
+
+    return;
+}
+
+if (args.Contains("db:clear", StringComparer.OrdinalIgnoreCase))
+{
+    using var scope = app.Services.CreateScope();
+    var initialiser = scope.ServiceProvider.GetRequiredService<ApplicationDbContextInitialiser>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+
+    await initialiser.InitialiseAsync();
+    await initialiser.ClearDataForRetestAsync();
+
+    var rolesCount = await dbContext.Roles.CountAsync();
+    var usersCount = await dbContext.Users.CountAsync();
+    var otpCount = await dbContext.OtpChallenges.CountAsync();
+    var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
+    var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
+
+    Console.WriteLine(
+        $"db:clear completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}");
+
+    return;
+}
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

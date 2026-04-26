@@ -10,11 +10,5 @@ public class RefreshToken : BaseAuditableEntity
 
     public DateTimeOffset? RevokedAt { get; set; }
 
-    public string? DeviceName { get; set; }
-
-    public string? IpAddress { get; set; }
-
-    public string? UserAgent { get; set; }
-
     public User User { get; set; } = null!;
 }

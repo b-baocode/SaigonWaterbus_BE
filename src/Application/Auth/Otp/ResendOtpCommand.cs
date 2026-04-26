@@ -95,7 +95,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
 
         _context.Set<OtpChallenge>().Add(newChallenge);
         await _context.SaveChangesAsync(cancellationToken);
-        await _otpSender.SendAsync(user.Email, otpCode, purpose, cancellationToken);
+        await _otpSender.SendAsync(user.Email, otpCode, purpose, user.FullName, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return new OtpChallengeDto(

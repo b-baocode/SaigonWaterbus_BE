@@ -11,7 +11,7 @@ public sealed record CreateUserCommand(
     string? PhoneNumber,
     string Email,
     string Password,
-    string Role,
+    int RoleId,
     string? Department,
     UserStatus? Status) : IRequest<AuthUserDto>;
 
@@ -39,9 +39,8 @@ public sealed class CreateUserCommandValidator : AbstractValidator<CreateUserCom
             .NotEmpty()
             .MinimumLength(8);
 
-        RuleFor(x => x.Role)
-            .NotEmpty()
-            .MaximumLength(50);
+        RuleFor(x => x.RoleId)
+            .GreaterThan(0);
 
         RuleFor(x => x.Department)
             .MaximumLength(100)
@@ -77,9 +76,9 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
     public async Task<AuthUserDto> Handle(CreateUserCommand request, CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.EnsureCurrentUserCanManageUsersAsync(_context, _userContext, cancellationToken);
-        var role = await AuthSupport.GetRoleByKeyAsync(_context, request.Role, nameof(request.Role), cancellationToken);
+        var role = await AuthSupport.GetRoleByIdAsync(_context, request.RoleId, nameof(request.RoleId), cancellationToken);
 
-        UserManagementSupport.EnsureCanCreateRole(actor, role, nameof(request.Role));
+        UserManagementSupport.EnsureCanCreateRole(actor, role, nameof(request.RoleId));
         UserManagementSupport.EnsureDepartmentMatchesRole(role, request.Department, nameof(request.Department));
 
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);

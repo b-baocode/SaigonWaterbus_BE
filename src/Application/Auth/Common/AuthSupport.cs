@@ -31,18 +31,26 @@ internal static class AuthSupport
         return role is null ? [] : [role];
     }
 
-    public static async Task<Role> GetRoleByKeyAsync(
+    public static async Task<Role> GetRoleByCodeAsync(
         IApplicationDbContext context,
-        string roleKey,
+        string roleCode,
+        CancellationToken cancellationToken)
+    {
+        var normalizedRoleCode = NormalizeRoleKey(roleCode);
+
+        return await context.Set<Role>()
+            .SingleOrDefaultAsync(x => x.Code == normalizedRoleCode, cancellationToken)
+            ?? throw new InvalidOperationException($"Role '{normalizedRoleCode}' was not found.");
+    }
+
+    public static async Task<Role> GetRoleByIdAsync(
+        IApplicationDbContext context,
+        int roleId,
         string propertyName,
         CancellationToken cancellationToken)
     {
-        var normalizedRoleKey = NormalizeRoleKey(roleKey);
-
         return await context.Set<Role>()
-            .SingleOrDefaultAsync(
-                x => x.SystemName == normalizedRoleKey || x.Code == normalizedRoleKey,
-                cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken)
             ?? throw CreateValidationException(propertyName, "Role is invalid.");
     }
 

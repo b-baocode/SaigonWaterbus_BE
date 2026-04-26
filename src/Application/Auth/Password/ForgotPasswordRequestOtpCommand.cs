@@ -91,7 +91,7 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
 
         _context.Set<OtpChallenge>().Add(challenge);
         await _context.SaveChangesAsync(cancellationToken);
-        await _otpSender.SendAsync(user.Email, otpCode, OtpPurpose.ForgotPassword, cancellationToken);
+        await _otpSender.SendAsync(user.Email, otpCode, OtpPurpose.ForgotPassword, user.FullName, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return new OtpChallengeDto(

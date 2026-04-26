@@ -8,6 +8,7 @@ public class Health : IEndpointGroup
 
     public static void Map(RouteGroupBuilder groupBuilder)
     {
-        groupBuilder.MapGet("/", () => Results.Ok(new { status = "ok" }));
+        groupBuilder.MapGet("/", () => Results.Ok(new { status = "ok" }))
+            .WithDescription("Quyen truy cap: Anonymous (khong can token).");
     }
 }

@@ -18,7 +18,37 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="2dedd45c-6abb-4ebb-a599-ef65bebdbc47" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.idea.SaigonWaterbus/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.SaigonWaterbus/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/.idea.SaigonWaterbus/.idea/dataSources/data_sources_history.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/.idea.SaigonWaterbus/.idea/dataSources/data_sources_history.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Common/AuthSupport.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Common/AuthSupport.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Login/GoogleLoginCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Login/GoogleLoginCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Login/LoginCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Login/LoginCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Otp/ResendOtpCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Otp/ResendOtpCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Password/ForgotPasswordRequestOtpCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Password/ForgotPasswordRequestOtpCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Register/RegisterCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Register/RegisterCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Register/VerifyRegisterOtpCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Register/VerifyRegisterOtpCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Auth/Token/RefreshTokenCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Auth/Token/RefreshTokenCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Common/Interfaces/IOtpSender.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Common/Interfaces/IOtpSender.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Common/Interfaces/IUserContext.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Common/Interfaces/IUserContext.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Users/CreateUserCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Users/CreateUserCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Application/Users/UpdateUserCommand.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Application/Users/UpdateUserCommand.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Constants/Roles.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Domain/Constants/Roles.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Entities/RefreshToken.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Domain/Entities/RefreshToken.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Entities/Role.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Domain/Entities/Role.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Domain/Enums/RoleScopeType.cs" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Auth/GmailOtpSender.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Auth/GmailOtpSender.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Auth/NoOpOtpSender.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Auth/NoOpOtpSender.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/ApplicationDbContextInitialiser.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/ApplicationDbContextInitialiser.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/Configurations/RefreshTokenConfiguration.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/Configurations/RefreshTokenConfiguration.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/Configurations/RoleConfiguration.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/Configurations/RoleConfiguration.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/Data/Migrations/ApplicationDbContextModelSnapshot.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Infrastructure/DependencyInjection.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Infrastructure/DependencyInjection.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/Endpoints/Auth.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Endpoints/Auth.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/Endpoints/Health.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Endpoints/Health.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/Endpoints/Users.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Endpoints/Users.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/Infrastructure/CurrentUser.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Infrastructure/CurrentUser.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/Program.cs" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/Program.cs" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/appsettings.Development.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/appsettings.Development.json" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/Web/appsettings.json" beforeDir="false" afterPath="$PROJECT_DIR$/src/Web/appsettings.json" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -67,7 +97,7 @@
     "RunOnceActivity.typescript.service.memoryLimit.init": "true",
     "cidr.known.project.marker": "true",
     "codeWithMe.voiceChat.enabledByDefault": "false",
-    "git-widget-placeholder": "main",
+    "git-widget-placeholder": "feature/auth",
     "node.js.detected.package.eslint": "true",
     "node.js.detected.package.tslint": "true",
     "node.js.selected.package.eslint": "(autodetect)",
@@ -200,7 +230,7 @@
       <workItem from="1777031407351" duration="771000" />
       <workItem from="1777032185506" duration="17198000" />
       <workItem from="1777168249570" duration="4000000" />
-      <workItem from="1777172458698" duration="4883000" />
+      <workItem from="1777172458698" duration="7379000" />
     </task>
     <servers />
   </component>

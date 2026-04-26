@@ -22,7 +22,6 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
 {
     private readonly IApplicationDbContext _context;
     private readonly ITokenService _tokenService;
-    private readonly IUserContext _userContext;
     private readonly ISecretHasher _secretHasher;
     private readonly TimeProvider _timeProvider;
     private readonly string _googleClientId;
@@ -30,14 +29,12 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
     public GoogleLoginCommandHandler(
         IApplicationDbContext context,
         ITokenService tokenService,
-        IUserContext userContext,
         ISecretHasher secretHasher,
         TimeProvider timeProvider,
         IConfiguration configuration)
     {
         _context = context;
         _tokenService = tokenService;
-        _userContext = userContext;
         _secretHasher = secretHasher;
         _timeProvider = timeProvider;
         _googleClientId = configuration["OAuth:Google:ClientId"] ?? throw new InvalidOperationException("Google ClientId not configured");
@@ -66,6 +63,20 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         }
 
         var normalizedEmail = payload.Email.Trim().ToUpperInvariant();
+        Role? customerRole = null;
+
+        async Task<Role> GetCustomerRoleAsync()
+        {
+            if (customerRole is null)
+            {
+                customerRole = await AuthSupport.GetRoleByCodeAsync(
+                    _context,
+                    Roles.CustomerCode,
+                    cancellationToken);
+            }
+
+            return customerRole;
+        }
 
         var externalLogin = await _context.Set<ExternalLogin>()
             .Include(x => x.User)
@@ -81,9 +92,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         }
         else
         {
-            var customerRole = await _context.Set<Role>()
-                .FirstOrDefaultAsync(x => x.Code == Roles.CustomerCode, cancellationToken)
-                ?? throw new InvalidOperationException("Customer role not found");
+            customerRole = await GetCustomerRoleAsync();
 
             var existingUser = await _context.Set<User>()
                 .FirstOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
@@ -128,9 +137,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         
         if (roles.Count == 0)
         {
-            var customerRole = await _context.Set<Role>()
-                .FirstOrDefaultAsync(x => x.Code == Roles.CustomerCode, cancellationToken)
-                ?? throw new InvalidOperationException("Customer role not found");
+            customerRole = await GetCustomerRoleAsync();
 
             user.RoleId = customerRole.Id;
             roles = new[] { customerRole };
@@ -149,10 +156,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         {
             UserId = user.Id,
             TokenHash = _secretHasher.Hash(refreshTokenSecret),
-            ExpiresAt = _tokenService.GetRefreshTokenExpiry(),
-            DeviceName = "google_login",
-            IpAddress = _userContext.IpAddress,
-            UserAgent = _userContext.UserAgent
+            ExpiresAt = _tokenService.GetRefreshTokenExpiry()
         };
 
         _context.Set<RefreshToken>().Add(refreshTokenEntity);

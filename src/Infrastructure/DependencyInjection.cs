@@ -21,9 +21,14 @@ public static class DependencyInjection
         builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
         builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
         builder.Services.Configure<GmailOptions>(builder.Configuration.GetSection(GmailOptions.SectionName));
+        builder.Services.Configure<BrevoOptions>(builder.Configuration.GetSection(BrevoOptions.SectionName));
 
         builder.Services.AddScoped<ISaveChangesInterceptor, AuditableEntityInterceptor>();
         builder.Services.AddScoped<ISaveChangesInterceptor, DispatchDomainEventsInterceptor>();
+        builder.Services.AddHttpClient("Brevo", client =>
+        {
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
 
         builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
         {
@@ -36,9 +41,14 @@ public static class DependencyInjection
         builder.Services.AddScoped<ISecretHasher, Pbkdf2SecretHasher>();
         builder.Services.AddScoped<IOtpCodeService, OtpCodeService>();
         
-        // Register OTP sender based on Gmail config
+        // Register OTP sender based on provider config
+        var brevoConfig = builder.Configuration.GetSection(BrevoOptions.SectionName);
         var gmailConfig = builder.Configuration.GetSection(GmailOptions.SectionName);
-        if (gmailConfig?.GetValue<bool>("Enabled") == true)
+        if (brevoConfig?.GetValue<bool>("Enabled") == true)
+        {
+            builder.Services.AddScoped<IOtpSender, BrevoOtpSender>();
+        }
+        else if (gmailConfig?.GetValue<bool>("Enabled") == true)
         {
             builder.Services.AddScoped<IOtpSender, GmailOtpSender>();
         }

@@ -23,10 +23,4 @@ public sealed class CurrentUser : IUserContext
 
     public bool IsAuthenticated =>
         _httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true;
-
-    public string? IpAddress =>
-        _httpContextAccessor.HttpContext?.Connection.RemoteIpAddress?.ToString();
-
-    public string? UserAgent =>
-        _httpContextAccessor.HttpContext?.Request.Headers.UserAgent.ToString();
 }

@@ -12,7 +12,7 @@ public sealed record UpdateUserCommand(
     DateOnly? DateOfBirth,
     string? PhoneNumber,
     string Email,
-    string Role,
+    int RoleId,
     string? Department,
     UserStatus Status) : IRequest<AuthUserDto>;
 
@@ -38,9 +38,8 @@ public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCom
             .NotEmpty()
             .EmailAddress();
 
-        RuleFor(x => x.Role)
-            .NotEmpty()
-            .MaximumLength(50);
+        RuleFor(x => x.RoleId)
+            .GreaterThan(0);
 
         RuleFor(x => x.Department)
             .MaximumLength(100)
@@ -80,8 +79,8 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
 
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
 
-        var targetRole = await AuthSupport.GetRoleByKeyAsync(_context, request.Role, nameof(request.Role), cancellationToken);
-        UserManagementSupport.EnsureCanAssignRole(actor, user, targetRole, nameof(request.Role));
+        var targetRole = await AuthSupport.GetRoleByIdAsync(_context, request.RoleId, nameof(request.RoleId), cancellationToken);
+        UserManagementSupport.EnsureCanAssignRole(actor, user, targetRole, nameof(request.RoleId));
         UserManagementSupport.EnsureDepartmentMatchesRole(targetRole, request.Department, nameof(request.Department));
 
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);

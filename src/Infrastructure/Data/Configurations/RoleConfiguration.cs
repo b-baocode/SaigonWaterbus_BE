@@ -27,12 +27,5 @@ public sealed class RoleConfiguration : IEntityTypeConfiguration<Role>
         builder.Property(x => x.DisplayName)
             .HasMaxLength(100)
             .IsRequired();
-
-        builder.Property(x => x.Description)
-            .HasMaxLength(300)
-            .IsRequired();
-
-        builder.Property(x => x.DefaultScopeType)
-            .HasConversion<int>();
     }
 }

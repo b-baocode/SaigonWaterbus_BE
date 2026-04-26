@@ -25,7 +25,6 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ISecretHasher _secretHasher;
     private readonly ITokenService _tokenService;
-    private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
     public LoginCommandHandler(
@@ -33,14 +32,12 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
         IIdentityNormalizer identityNormalizer,
         ISecretHasher secretHasher,
         ITokenService tokenService,
-        IUserContext userContext,
         TimeProvider timeProvider)
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
         _secretHasher = secretHasher;
         _tokenService = tokenService;
-        _userContext = userContext;
         _timeProvider = timeProvider;
     }
 
@@ -78,10 +75,7 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
         {
             UserId = user.Id,
             TokenHash = _secretHasher.Hash(refreshTokenSecret),
-            ExpiresAt = _tokenService.GetRefreshTokenExpiry(),
-            DeviceName = "password_login",
-            IpAddress = _userContext.IpAddress,
-            UserAgent = _userContext.UserAgent
+            ExpiresAt = _tokenService.GetRefreshTokenExpiry()
         };
 
         _context.Set<RefreshToken>().Add(refreshTokenEntity);
