@@ -54,7 +54,18 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
 
         if (challenge.ExpiresAt <= now)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has expired.");
+            if (await AuthSupport.RemovePendingRegistrationUserIfExpiredAsync(
+                    _context,
+                    challenge.UserId,
+                    now,
+                    cancellationToken))
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            throw AuthSupport.CreateValidationException(
+                nameof(request.Code),
+                "OTP has expired. Registration has been cancelled. Please register again.");
         }
 
         if (!_secretHasher.Verify(request.Code, challenge.CodeHash))

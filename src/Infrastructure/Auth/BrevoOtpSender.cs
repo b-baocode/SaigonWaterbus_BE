@@ -32,6 +32,7 @@ public sealed class BrevoOtpSender : IOtpSender
     public async Task SendAsync(string email, string code, OtpPurpose purpose, string? recipientName, CancellationToken cancellationToken)
     {
         var options = _optionsMonitor.CurrentValue;
+        var templateContent = OtpTemplateContentFactory.Create(purpose, email, recipientName);
         if (!options.Enabled)
         {
             _logger.LogWarning("Brevo OTP integration is disabled. Skipping OTP send to {Email}", email);
@@ -73,12 +74,17 @@ public sealed class BrevoOtpSender : IOtpSender
             templateId,
             @params = new Dictionary<string, object?>
             {
+                ["title"] = templateContent.Title,
+                ["message"] = templateContent.Message,
                 ["code"] = code,
                 ["otp_code"] = code,
                 ["otpCode"] = code,
-                ["name"] = recipientName,
-                ["full_name"] = recipientName,
-                ["fullName"] = recipientName,
+                ["name"] = templateContent.Username,
+                ["username"] = templateContent.Username,
+                ["user_name"] = templateContent.Username,
+                ["userName"] = templateContent.Username,
+                ["full_name"] = templateContent.Username,
+                ["fullName"] = templateContent.Username,
                 ["ttl_minutes"] = _otpPolicy.ExpirationMinutes,
                 ["ttlMinutes"] = _otpPolicy.ExpirationMinutes,
                 ["purpose"] = purpose.ToString(),
@@ -130,7 +136,9 @@ public sealed class BrevoOtpSender : IOtpSender
     }
 
     private static int ResolveTemplateId(BrevoOptions options, OtpPurpose purpose) =>
-        purpose switch
+        options.TemplateId > 0
+            ? options.TemplateId
+            : purpose switch
         {
             OtpPurpose.Register => options.RegisterTemplateId,
             OtpPurpose.ForgotPassword => options.ForgotPasswordTemplateId,

@@ -11,6 +11,8 @@ public sealed class GmailOptions
     public string Password { get; set; } = string.Empty;
     public string FromEmail { get; set; } = string.Empty;
     public string FromName { get; set; } = "Saigon Waterbus";
+    public string Subject { get; set; } = string.Empty;
+    public string Template { get; set; } = string.Empty;
     public string RegisterSubject { get; set; } = "Ma OTP dang ky Saigon Waterbus";
     public string LoginSubject { get; set; } = "Ma OTP dang nhap Saigon Waterbus";
     public string ForgotPasswordSubject { get; set; } = "Ma OTP quen mat khau Saigon Waterbus";

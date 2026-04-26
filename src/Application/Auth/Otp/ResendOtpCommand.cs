@@ -72,6 +72,22 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
             .OrderByDescending(x => x.Id)
             .FirstAsync(cancellationToken);
 
+        if (purpose == OtpPurpose.Register && latestChallenge.ExpiresAt <= now)
+        {
+            if (await AuthSupport.RemovePendingRegistrationUserIfExpiredAsync(
+                    _context,
+                    user.Id,
+                    now,
+                    cancellationToken))
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
+
+            throw AuthSupport.CreateValidationException(
+                nameof(request.ChallengeId),
+                "OTP has expired. Registration has been cancelled. Please register again.");
+        }
+
         if (latestChallenge.ConsumedAt == null && latestChallenge.ResendAvailableAt > now)
         {
             throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP was sent recently. Please wait before requesting again.");

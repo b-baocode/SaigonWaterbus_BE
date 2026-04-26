@@ -27,6 +27,7 @@ public sealed class GmailOtpSender : IOtpSender
     public async Task SendAsync(string email, string code, OtpPurpose purpose, string? recipientName, CancellationToken cancellationToken)
     {
         var options = _optionsMonitor.CurrentValue;
+        var templateContent = OtpTemplateContentFactory.Create(purpose, email, recipientName);
         if (!options.Enabled)
         {
             _logger.LogWarning("Gmail OTP integration is disabled. Skipping OTP send to {Email}", email);
@@ -47,9 +48,9 @@ public sealed class GmailOtpSender : IOtpSender
         using var message = new MailMessage
         {
             From = new MailAddress(fromEmail, options.FromName),
-            Subject = ResolveSubject(options, purpose),
-            Body = BuildBody(options, purpose, code, recipientName),
-            IsBodyHtml = false
+            Subject = ResolveSubject(options, purpose, templateContent),
+            Body = BuildBody(options, purpose, code, templateContent),
+            IsBodyHtml = IsHtmlTemplate(options, purpose)
         };
         message.To.Add(email);
 
@@ -84,26 +85,55 @@ public sealed class GmailOtpSender : IOtpSender
         }
     }
 
-    private static string ResolveSubject(GmailOptions options, OtpPurpose purpose) =>
-        purpose switch
+    private static string ResolveSubject(GmailOptions options, OtpPurpose purpose, OtpTemplateContent templateContent)
+    {
+        if (!string.IsNullOrWhiteSpace(options.Subject))
+        {
+            return options.Subject;
+        }
+
+        return purpose switch
         {
             OtpPurpose.Register => options.RegisterSubject,
             OtpPurpose.ForgotPassword => options.ForgotPasswordSubject,
             _ => options.LoginSubject
         };
+    }
 
-    private string BuildBody(GmailOptions options, OtpPurpose purpose, string code, string? recipientName)
+    private string BuildBody(GmailOptions options, OtpPurpose purpose, string code, OtpTemplateContent templateContent)
     {
-        var template = purpose switch
+        var template = ResolveTemplate(options, purpose);
+
+        return template
+            .Replace("{title}", templateContent.Title, StringComparison.Ordinal)
+            .Replace("{message}", templateContent.Message, StringComparison.Ordinal)
+            .Replace("{code}", code, StringComparison.Ordinal)
+            .Replace("{name}", templateContent.Username, StringComparison.Ordinal)
+            .Replace("{username}", templateContent.Username, StringComparison.Ordinal)
+            .Replace("{ttl_minutes}", _otpPolicy.ExpirationMinutes.ToString(), StringComparison.Ordinal);
+    }
+
+    private static string ResolveTemplate(GmailOptions options, OtpPurpose purpose)
+    {
+        if (!string.IsNullOrWhiteSpace(options.Template))
+        {
+            return options.Template;
+        }
+
+        return purpose switch
         {
             OtpPurpose.Register => options.RegisterTemplate,
             OtpPurpose.ForgotPassword => options.ForgotPasswordTemplate,
             _ => options.LoginTemplate
         };
+    }
 
-        return template
-            .Replace("{code}", code, StringComparison.Ordinal)
-            .Replace("{name}", recipientName ?? string.Empty, StringComparison.Ordinal)
-            .Replace("{ttl_minutes}", _otpPolicy.ExpirationMinutes.ToString(), StringComparison.Ordinal);
+    private static bool IsHtmlTemplate(GmailOptions options, OtpPurpose purpose)
+    {
+        var template = ResolveTemplate(options, purpose);
+
+        return template.Contains("<html", StringComparison.OrdinalIgnoreCase)
+            || template.Contains("<body", StringComparison.OrdinalIgnoreCase)
+            || template.Contains("<table", StringComparison.OrdinalIgnoreCase);
     }
 }

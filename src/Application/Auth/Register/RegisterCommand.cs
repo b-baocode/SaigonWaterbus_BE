@@ -73,6 +73,18 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
         var normalizedPhone = _identityNormalizer.NormalizePhone(request.Phone);
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
+        var now = _timeProvider.GetUtcNow();
+
+        if (await AuthSupport.RemoveExpiredPendingRegistrationUsersByIdentityAsync(
+                _context,
+                normalizedPhone,
+                normalizedEmail,
+                now,
+                cancellationToken))
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
         var customerRole = await AuthSupport.GetRoleByCodeAsync(
             _context,
             Domain.Constants.Roles.CustomerCode,
@@ -88,7 +100,6 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
             throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is already registered.");
         }
 
-        var now = _timeProvider.GetUtcNow();
         var email = request.Email.Trim();
         var otpCode = _otpCodeService.GenerateCode();
 

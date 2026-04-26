@@ -163,6 +163,59 @@ internal static class AuthSupport
         }
     }
 
+    public static async Task<bool> RemoveExpiredPendingRegistrationUsersByIdentityAsync(
+        IApplicationDbContext context,
+        string normalizedPhone,
+        string normalizedEmail,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var users = await context.Set<User>()
+            .Include(x => x.OtpChallenges)
+            .Where(x => x.Status == UserStatus.PendingVerification
+                     && (x.NormalizedPhoneNumber == normalizedPhone || x.NormalizedEmail == normalizedEmail))
+            .ToListAsync(cancellationToken);
+
+        var removedAny = false;
+
+        foreach (var user in users)
+        {
+            if (HasActiveRegisterChallenge(user, now))
+            {
+                continue;
+            }
+
+            context.Set<User>().Remove(user);
+            removedAny = true;
+        }
+
+        return removedAny;
+    }
+
+    public static async Task<bool> RemovePendingRegistrationUserIfExpiredAsync(
+        IApplicationDbContext context,
+        int userId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var user = await context.Set<User>()
+            .Include(x => x.OtpChallenges)
+            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken);
+
+        if (user is null || user.Status != UserStatus.PendingVerification)
+        {
+            return false;
+        }
+
+        if (HasActiveRegisterChallenge(user, now))
+        {
+            return false;
+        }
+
+        context.Set<User>().Remove(user);
+        return true;
+    }
+
     public static async Task EnsureCurrentUserIsAdminAsync(
         IApplicationDbContext context,
         IUserContext userContext,
@@ -220,4 +273,9 @@ internal static class AuthSupport
         secret = segments[1];
         return true;
     }
+
+    private static bool HasActiveRegisterChallenge(User user, DateTimeOffset now) =>
+        user.OtpChallenges.Any(x => x.Purpose == OtpPurpose.Register
+                                 && x.ConsumedAt == null
+                                 && x.ExpiresAt > now);
 }
