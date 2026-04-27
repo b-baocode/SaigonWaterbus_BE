@@ -48,56 +48,70 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
 
     public async Task<OtpChallengeDto> Handle(ForgotPasswordRequestOtpCommand request, CancellationToken cancellationToken)
     {
-        await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
-
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
-        var user = await _context.Set<User>()
-            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
-
-        if (user is null)
+        var challengeResult = await _context.ExecuteInTransactionAsync(async ct =>
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is not registered.");
-        }
+            var user = await _context.Set<User>()
+                .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, ct);
 
-        AuthSupport.EnsureUserCanLogin(user, nameof(request.Email));
+            if (user is null)
+            {
+                throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is not registered.");
+            }
 
-        var now = _timeProvider.GetUtcNow();
-        var existingActiveChallenge = await _context.Set<OtpChallenge>()
-            .Where(x => x.UserId == user.Id
-                     && x.Purpose == OtpPurpose.ForgotPassword
-                     && x.ConsumedAt == null
-                     && x.ExpiresAt > now)
-            .OrderByDescending(x => x.Id)
-            .FirstOrDefaultAsync(cancellationToken);
+            AuthSupport.EnsureUserCanLogin(user, nameof(request.Email));
 
-        if (existingActiveChallenge is not null && existingActiveChallenge.ResendAvailableAt > now)
-        {
-            throw AuthSupport.CreateValidationException(nameof(request.Email), "OTP was sent recently. Please wait before requesting again.");
-        }
+            var now = _timeProvider.GetUtcNow();
+            var existingActiveChallenge = await _context.Set<OtpChallenge>()
+                .Where(x => x.UserId == user.Id
+                         && x.Purpose == OtpPurpose.ForgotPassword
+                         && x.ConsumedAt == null
+                         && x.ExpiresAt > now)
+                .OrderByDescending(x => x.Id)
+                .FirstOrDefaultAsync(ct);
 
-        await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.ForgotPassword, now, cancellationToken);
+            if (existingActiveChallenge is not null && existingActiveChallenge.ResendAvailableAt > now)
+            {
+                throw AuthSupport.CreateValidationException(nameof(request.Email), "OTP was sent recently. Please wait before requesting again.");
+            }
 
-        var otpCode = _otpCodeService.GenerateCode();
-        var challenge = new OtpChallenge
-        {
-            UserId = user.Id,
-            Purpose = OtpPurpose.ForgotPassword,
-            Email = user.Email,
-            CodeHash = _secretHasher.Hash(otpCode),
-            ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
-            ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
-            MaxAttempts = _otpPolicy.MaxAttempts
-        };
+            await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.ForgotPassword, now, ct);
 
-        _context.Set<OtpChallenge>().Add(challenge);
-        await _context.SaveChangesAsync(cancellationToken);
-        await _otpSender.SendAsync(user.Email, otpCode, OtpPurpose.ForgotPassword, user.FullName, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            var otpCode = _otpCodeService.GenerateCode();
+            var challenge = new OtpChallenge
+            {
+                UserId = user.Id,
+                Purpose = OtpPurpose.ForgotPassword,
+                Email = user.Email,
+                CodeHash = _secretHasher.Hash(otpCode),
+                ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
+                ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
+                MaxAttempts = _otpPolicy.MaxAttempts
+            };
+
+            _context.Set<OtpChallenge>().Add(challenge);
+            await _context.SaveChangesAsync(ct);
+
+            return (
+                Id: challenge.Id,
+                Email: user.Email,
+                FullName: user.FullName,
+                Code: otpCode,
+                ExpiresAt: challenge.ExpiresAt,
+                ResendAvailableAt: challenge.ResendAvailableAt);
+        }, cancellationToken);
+
+        await _otpSender.SendAsync(
+            challengeResult.Email,
+            challengeResult.Code,
+            OtpPurpose.ForgotPassword,
+            challengeResult.FullName,
+            cancellationToken);
 
         return new OtpChallengeDto(
-            challenge.Id,
-            _otpCodeService.MaskEmail(user.Email),
-            challenge.ExpiresAt,
-            challenge.ResendAvailableAt);
+            challengeResult.Id,
+            _otpCodeService.MaskEmail(challengeResult.Email),
+            challengeResult.ExpiresAt,
+            challengeResult.ResendAvailableAt);
     }
 }

@@ -1,7 +1,7 @@
 ﻿using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Infrastructure.Data.Interceptors;
-using SaigonWaterbus.Infrastructure.Notifications;
 using SaigonWaterbus.Infrastructure.Options;
 using SaigonWaterbus.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -13,10 +13,13 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class DependencyInjection
 {
+    private const string DatabaseConnectionName = "SaigonWaterbusDb";
+    private const string BrevoHttpClientName = "Brevo";
+
     public static void AddInfrastructureServices(this IHostApplicationBuilder builder)
     {
-        var connectionString = builder.Configuration.GetConnectionString(Services.Database);
-        Guard.Against.Null(connectionString, message: $"Connection string '{Services.Database}' not found.");
+        var connectionString = builder.Configuration.GetConnectionString(DatabaseConnectionName);
+        Guard.Against.Null(connectionString, message: $"Connection string '{DatabaseConnectionName}' not found.");
 
         builder.Services.AddScoped<ISaveChangesInterceptor, AuditableEntityInterceptor>();
         builder.Services.AddScoped<ISaveChangesInterceptor, DispatchDomainEventsInterceptor>();
@@ -32,15 +35,44 @@ public static class DependencyInjection
 
         builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
-        builder.Services.AddScoped<IRegistrationNotificationService, GmailRegistrationNotificationService>();
+        builder.Services.AddScoped<IIdentityNormalizer, IdentityNormalizer>();
+        builder.Services.AddScoped<ISecretHasher, Pbkdf2SecretHasher>();
+        builder.Services.AddScoped<ITokenService, JwtTokenService>();
+        builder.Services.AddScoped<IOtpCodeService, OtpCodeService>();
+        builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
+        builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
+        builder.Services.AddHttpClient(BrevoHttpClientName);
+        builder.Services.AddScoped<IOtpSender>(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var brevoEnabled = configuration.GetValue<bool>($"{BrevoOptions.SectionName}:Enabled");
+            if (brevoEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<BrevoOtpSender>(provider);
+            }
+
+            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
+            if (gmailEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<GmailOtpSender>(provider);
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpOtpSender>(provider);
+        });
 
         builder.Services.AddScoped<ApplicationDbContextInitialiser>();
         builder.Services.Configure<DatabaseStartupSettings>(options =>
         {
             options.ResetOnStartup = builder.Environment.IsDevelopment() &&
                 builder.Configuration.GetValue<bool>("Database:ResetOnStartup");
+            options.SeedInternalUsers =
+                builder.Configuration.GetValue<bool?>("Database:SeedInternalUsers")
+                ?? builder.Environment.IsDevelopment();
         });
-        builder.Services.Configure<EmailSettings>(builder.Configuration.GetSection(EmailSettings.SectionName));
+        builder.Services.Configure<JwtOptions>(builder.Configuration.GetSection(JwtOptions.SectionName));
+        builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
+        builder.Services.Configure<GmailOptions>(builder.Configuration.GetSection(GmailOptions.SectionName));
+        builder.Services.Configure<BrevoOptions>(builder.Configuration.GetSection(BrevoOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
     }

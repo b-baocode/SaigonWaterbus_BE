@@ -93,31 +93,45 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
             throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP was sent recently. Please wait before requesting again.");
         }
 
-        await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
-
-        await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, purpose, now, cancellationToken);
-
-        var otpCode = _otpCodeService.GenerateCode();
-        var newChallenge = new OtpChallenge
+        var resendResult = await _context.ExecuteInTransactionAsync(async ct =>
         {
-            UserId = user.Id,
-            Purpose = purpose,
-            Email = user.Email,
-            CodeHash = _secretHasher.Hash(otpCode),
-            ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
-            ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
-            MaxAttempts = _otpPolicy.MaxAttempts
-        };
+            await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, purpose, now, ct);
 
-        _context.Set<OtpChallenge>().Add(newChallenge);
-        await _context.SaveChangesAsync(cancellationToken);
-        await _otpSender.SendAsync(user.Email, otpCode, purpose, user.FullName, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            var otpCode = _otpCodeService.GenerateCode();
+            var newChallenge = new OtpChallenge
+            {
+                UserId = user.Id,
+                Purpose = purpose,
+                Email = user.Email,
+                CodeHash = _secretHasher.Hash(otpCode),
+                ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
+                ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
+                MaxAttempts = _otpPolicy.MaxAttempts
+            };
+
+            _context.Set<OtpChallenge>().Add(newChallenge);
+            await _context.SaveChangesAsync(ct);
+
+            return (
+                Id: newChallenge.Id,
+                Email: user.Email,
+                FullName: user.FullName,
+                Code: otpCode,
+                ExpiresAt: newChallenge.ExpiresAt,
+                ResendAvailableAt: newChallenge.ResendAvailableAt);
+        }, cancellationToken);
+
+        await _otpSender.SendAsync(
+            resendResult.Email,
+            resendResult.Code,
+            purpose,
+            resendResult.FullName,
+            cancellationToken);
 
         return new OtpChallengeDto(
-            newChallenge.Id,
-            _otpCodeService.MaskEmail(user.Email),
-            newChallenge.ExpiresAt,
-            newChallenge.ResendAvailableAt);
+            resendResult.Id,
+            _otpCodeService.MaskEmail(resendResult.Email),
+            resendResult.ExpiresAt,
+            resendResult.ResendAvailableAt);
     }
 }

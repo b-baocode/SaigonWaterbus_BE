@@ -81,29 +81,28 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
             throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP is invalid.");
         }
 
-        await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
-
-        challenge.AttemptCount += 1;
-        challenge.ConsumedAt = now;
-
-        var user = challenge.User;
-        user.Status = UserStatus.Active;
-        user.EmailVerifiedAt = now;
-
-        var customerRole = await AuthSupport.GetRoleByCodeAsync(
-            _context,
-            Roles.CustomerCode,
-            cancellationToken);
-        user.RoleId = customerRole.Id;
-
-        if (!UserCodes.HasPrefix(user.UserCode, UserCodes.CustomerPrefix))
+        return await _context.ExecuteInTransactionAsync(async ct =>
         {
-            user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, cancellationToken);
-        }
+            challenge.AttemptCount += 1;
+            challenge.ConsumedAt = now;
 
-        await _context.SaveChangesAsync(cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
+            var user = challenge.User;
+            user.Status = UserStatus.Active;
+            user.EmailVerifiedAt = now;
 
-        return new AuthActionResultDto("Xac nhan OTP thanh cong.");
+            var customerRole = await AuthSupport.GetRoleByCodeAsync(
+                _context,
+                Roles.CustomerCode,
+                ct);
+            user.RoleId = customerRole.Id;
+
+            if (!UserCodes.HasPrefix(user.UserCode, UserCodes.CustomerPrefix))
+            {
+                user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, ct);
+            }
+
+            await _context.SaveChangesAsync(ct);
+            return new AuthActionResultDto("Xac nhan OTP thanh cong.");
+        }, cancellationToken);
     }
 }

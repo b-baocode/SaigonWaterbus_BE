@@ -10,7 +10,18 @@ public interface IApplicationDbContext
 
     DbSet<User> Users { get; }
 
+    DbSet<TEntity> Set<TEntity>()
+        where TEntity : class;
+
     Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken);
+
+    Task ExecuteInTransactionAsync(
+        Func<CancellationToken, Task> operation,
+        CancellationToken cancellationToken);
+
+    Task<TResult> ExecuteInTransactionAsync<TResult>(
+        Func<CancellationToken, Task<TResult>> operation,
+        CancellationToken cancellationToken);
 
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }

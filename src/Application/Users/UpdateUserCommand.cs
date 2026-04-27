@@ -31,7 +31,8 @@ public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCom
             .WithMessage("Date of birth cannot be in the future.");
 
         RuleFor(x => x.PhoneNumber)
-            .MaximumLength(20)
+            .Must(phoneNumber => phoneNumber is null || PhoneRules.IsValid(phoneNumber))
+            .WithMessage("Phone number must contain exactly 10 digits.")
             .When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber));
 
         RuleFor(x => x.Email)

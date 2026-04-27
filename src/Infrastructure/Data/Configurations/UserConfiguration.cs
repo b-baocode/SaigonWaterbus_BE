@@ -4,33 +4,55 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Infrastructure.Data.Configurations;
 
-public class UserConfiguration : IEntityTypeConfiguration<User>
+public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 {
     public void Configure(EntityTypeBuilder<User> builder)
     {
         builder.ToTable("users");
 
-        builder.Property(x => x.UserName)
-            .HasMaxLength(50)
-            .IsRequired();
+        builder.Property(x => x.UserCode)
+            .HasMaxLength(9);
 
-        builder.Property(x => x.PasswordHash)
-            .HasMaxLength(500)
-            .IsRequired();
+        builder.HasIndex(x => x.UserCode)
+            .IsUnique()
+            .HasFilter("\"UserCode\" IS NOT NULL");
 
         builder.Property(x => x.FullName)
             .HasMaxLength(150)
             .IsRequired();
 
-        builder.Property(x => x.Email)
-            .HasMaxLength(150)
-            .IsRequired();
+        builder.Property(x => x.DateOfBirth)
+            .HasColumnType("date");
 
         builder.Property(x => x.PhoneNumber)
             .HasMaxLength(20);
 
-        builder.Property(x => x.IsActive)
-            .HasDefaultValue(true)
+        builder.Property(x => x.NormalizedPhoneNumber)
+            .HasMaxLength(20);
+
+        builder.HasIndex(x => x.NormalizedPhoneNumber)
+            .IsUnique()
+            .HasFilter("\"NormalizedPhoneNumber\" IS NOT NULL");
+
+        builder.Property(x => x.Email)
+            .HasMaxLength(255)
+            .IsRequired();
+
+        builder.Property(x => x.NormalizedEmail)
+            .HasMaxLength(255)
+            .IsRequired();
+
+        builder.HasIndex(x => x.NormalizedEmail)
+            .IsUnique();
+
+        builder.Property(x => x.PasswordHash)
+            .HasMaxLength(500);
+
+        builder.Property(x => x.Department)
+            .HasMaxLength(100);
+
+        builder.Property(x => x.Status)
+            .HasConversion<int>()
             .IsRequired();
 
         builder.HasOne(x => x.Role)
@@ -38,11 +60,5 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasForeignKey(x => x.RoleId)
             .OnDelete(DeleteBehavior.Restrict)
             .IsRequired();
-
-        builder.HasIndex(x => x.UserName)
-            .IsUnique();
-
-        builder.HasIndex(x => x.Email)
-            .IsUnique();
     }
 }

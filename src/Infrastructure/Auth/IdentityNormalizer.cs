@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 
 namespace SaigonWaterbus.Infrastructure.Auth;
 
@@ -8,22 +9,12 @@ public sealed class IdentityNormalizer : IIdentityNormalizer
     {
         Guard.Against.NullOrWhiteSpace(phoneNumber);
 
-        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
-        if (string.IsNullOrWhiteSpace(digits))
+        if (!PhoneRules.TryNormalize(phoneNumber, out var normalizedPhoneNumber))
         {
-            throw new ArgumentException("Phone number is invalid.", nameof(phoneNumber));
+            throw new ArgumentException("Phone number must contain exactly 10 digits.", nameof(phoneNumber));
         }
 
-        if (digits.StartsWith("84", StringComparison.Ordinal) && digits.Length >= 11)
-        {
-            digits = $"0{digits[2..]}";
-        }
-        else if (!digits.StartsWith('0') && digits.Length == 9)
-        {
-            digits = $"0{digits}";
-        }
-
-        return digits;
+        return normalizedPhoneNumber;
     }
 
     public string NormalizeEmail(string email)

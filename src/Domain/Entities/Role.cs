@@ -1,10 +1,12 @@
 namespace SaigonWaterbus.Domain.Entities;
 
-public class Role : BaseEntity
+public class Role : BaseAuditableEntity
 {
-    public string Code { get; set; } = string.Empty;
+    public string Code { get; set; } = null!;
 
-    public string Name { get; set; } = string.Empty;
+    public string SystemName { get; set; } = null!;
+
+    public string DisplayName { get; set; } = null!;
 
     public ICollection<User> Users { get; set; } = new List<User>();
 }

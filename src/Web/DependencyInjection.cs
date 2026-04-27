@@ -31,6 +31,8 @@ public static class DependencyInjection
         builder.Services.AddProblemDetails();
         builder.Services.ConfigureHttpJsonOptions(options =>
         {
+            options.SerializerOptions.Converters.Add(new DateOnlyJsonConverter());
+            options.SerializerOptions.Converters.Add(new NullableDateOnlyJsonConverter());
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
         });
 

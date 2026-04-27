@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -26,7 +27,8 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
 
         RuleFor(x => x.Phone)
             .NotEmpty()
-            .MaximumLength(20);
+            .Must(PhoneRules.IsValid)
+            .WithMessage("Phone number must contain exactly 10 digits.");
 
         RuleFor(x => x.Email)
             .NotEmpty()
@@ -41,6 +43,14 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
 
 public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, OtpChallengeDto>
 {
+    private sealed record PendingRegistrationOtp(
+        int ChallengeId,
+        string Email,
+        string FullName,
+        string Code,
+        DateTimeOffset ExpiresAt,
+        DateTimeOffset ResendAvailableAt);
+
     private readonly IApplicationDbContext _context;
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ISecretHasher _secretHasher;
@@ -69,75 +79,130 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
     public async Task<OtpChallengeDto> Handle(RegisterCommand request, CancellationToken cancellationToken)
     {
-        await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
-
         var normalizedPhone = _identityNormalizer.NormalizePhone(request.Phone);
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
         var now = _timeProvider.GetUtcNow();
 
-        if (await AuthSupport.RemoveExpiredPendingRegistrationUsersByIdentityAsync(
-                _context,
-                normalizedPhone,
-                normalizedEmail,
-                now,
-                cancellationToken))
+        var pendingRegistration = await _context.ExecuteInTransactionAsync(async ct =>
         {
-            await _context.SaveChangesAsync(cancellationToken);
-        }
+            if (await AuthSupport.RemoveExpiredPendingRegistrationUsersByIdentityAsync(
+                    _context,
+                    normalizedPhone,
+                    normalizedEmail,
+                    now,
+                    ct))
+            {
+                await _context.SaveChangesAsync(ct);
+            }
 
-        var customerRole = await AuthSupport.GetRoleByCodeAsync(
-            _context,
-            Domain.Constants.Roles.CustomerCode,
+            var customerRole = await AuthSupport.GetRoleByCodeAsync(
+                _context,
+                Domain.Constants.Roles.CustomerCode,
+                ct);
+
+            var matchingUsers = await _context.Set<User>()
+                .Include(x => x.OtpChallenges)
+                .Where(x => x.NormalizedPhoneNumber == normalizedPhone || x.NormalizedEmail == normalizedEmail)
+                .ToListAsync(ct);
+
+            var pendingUser = matchingUsers.SingleOrDefault(x =>
+                x.Status == UserStatus.PendingVerification
+                && x.NormalizedPhoneNumber == normalizedPhone
+                && x.NormalizedEmail == normalizedEmail);
+
+            foreach (var matchingUser in matchingUsers)
+            {
+                if (pendingUser is not null && matchingUser.Id == pendingUser.Id)
+                {
+                    continue;
+                }
+
+                if (matchingUser.NormalizedPhoneNumber == normalizedPhone)
+                {
+                    throw AuthSupport.CreateValidationException(nameof(request.Phone), "Phone number is already registered.");
+                }
+
+                if (matchingUser.NormalizedEmail == normalizedEmail)
+                {
+                    throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is already registered.");
+                }
+            }
+
+            if (pendingUser is not null)
+            {
+                var latestPendingChallenge = pendingUser.OtpChallenges
+                    .Where(x => x.Purpose == OtpPurpose.Register && x.ConsumedAt == null)
+                    .OrderByDescending(x => x.Id)
+                    .FirstOrDefault();
+
+                if (latestPendingChallenge is not null && latestPendingChallenge.ResendAvailableAt > now)
+                {
+                    throw AuthSupport.CreateValidationException(nameof(request.Email), "OTP was sent recently. Please wait before requesting again.");
+                }
+            }
+
+            var email = request.Email.Trim();
+            var otpCode = _otpCodeService.GenerateCode();
+
+            var user = pendingUser ?? new User
+            {
+                Status = UserStatus.PendingVerification
+            };
+
+            user.FullName = request.FullName.Trim();
+            user.DateOfBirth = request.DateOfBirth;
+            user.PhoneNumber = request.Phone.Trim();
+            user.NormalizedPhoneNumber = normalizedPhone;
+            user.Email = email;
+            user.NormalizedEmail = normalizedEmail;
+            user.PasswordHash = _secretHasher.Hash(request.Password);
+            user.RoleId = customerRole.Id;
+            user.Status = UserStatus.PendingVerification;
+            user.EmailVerifiedAt = null;
+
+            if (pendingUser is null)
+            {
+                _context.Set<User>().Add(user);
+            }
+            else
+            {
+                await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.Register, now, ct);
+            }
+
+            var challenge = new OtpChallenge
+            {
+                User = user,
+                Purpose = OtpPurpose.Register,
+                Email = email,
+                CodeHash = _secretHasher.Hash(otpCode),
+                ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
+                ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
+                MaxAttempts = _otpPolicy.MaxAttempts
+            };
+
+            _context.Set<OtpChallenge>().Add(challenge);
+
+            await _context.SaveChangesAsync(ct);
+            return new PendingRegistrationOtp(
+                challenge.Id,
+                email,
+                user.FullName,
+                otpCode,
+                challenge.ExpiresAt,
+                challenge.ResendAvailableAt);
+        }, cancellationToken);
+
+        await _otpSender.SendAsync(
+            pendingRegistration.Email,
+            pendingRegistration.Code,
+            OtpPurpose.Register,
+            pendingRegistration.FullName,
             cancellationToken);
 
-        if (await _context.Set<User>().AnyAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken))
-        {
-            throw AuthSupport.CreateValidationException(nameof(request.Phone), "Phone number is already registered.");
-        }
-
-        if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken))
-        {
-            throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is already registered.");
-        }
-
-        var email = request.Email.Trim();
-        var otpCode = _otpCodeService.GenerateCode();
-
-        var user = new User
-        {
-            FullName = request.FullName.Trim(),
-            DateOfBirth = request.DateOfBirth,
-            PhoneNumber = request.Phone.Trim(),
-            NormalizedPhoneNumber = normalizedPhone,
-            Email = email,
-            NormalizedEmail = normalizedEmail,
-            PasswordHash = _secretHasher.Hash(request.Password),
-            RoleId = customerRole.Id,
-            Status = UserStatus.PendingVerification
-        };
-
-        var challenge = new OtpChallenge
-        {
-            User = user,
-            Purpose = OtpPurpose.Register,
-            Email = email,
-            CodeHash = _secretHasher.Hash(otpCode),
-            ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
-            ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
-            MaxAttempts = _otpPolicy.MaxAttempts
-        };
-
-        _context.Set<User>().Add(user);
-        _context.Set<OtpChallenge>().Add(challenge);
-
-        await _context.SaveChangesAsync(cancellationToken);
-        await _otpSender.SendAsync(email, otpCode, OtpPurpose.Register, user.FullName, cancellationToken);
-        await transaction.CommitAsync(cancellationToken);
-
         return new OtpChallengeDto(
-            challenge.Id,
-            _otpCodeService.MaskEmail(email),
-            challenge.ExpiresAt,
-            challenge.ResendAvailableAt);
+            pendingRegistration.ChallengeId,
+            _otpCodeService.MaskEmail(pendingRegistration.Email),
+            pendingRegistration.ExpiresAt,
+            pendingRegistration.ResendAvailableAt);
     }
 }

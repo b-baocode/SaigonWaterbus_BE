@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -28,7 +29,8 @@ public sealed class CreateUserCommandValidator : AbstractValidator<CreateUserCom
             .WithMessage("Date of birth cannot be in the future.");
 
         RuleFor(x => x.PhoneNumber)
-            .MaximumLength(20)
+            .Must(phoneNumber => phoneNumber is null || PhoneRules.IsValid(phoneNumber))
+            .WithMessage("Phone number must contain exactly 10 digits.")
             .When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber));
 
         RuleFor(x => x.Email)

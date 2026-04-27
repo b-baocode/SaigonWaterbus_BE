@@ -1,8 +1,12 @@
-﻿using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Builder;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
+using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Options;
 
 namespace SaigonWaterbus.Infrastructure.Data;
@@ -22,18 +26,47 @@ public static class InitialiserExtensions
 
 public class ApplicationDbContextInitialiser
 {
+    private static readonly SeedUser[] InternalUsers =
+    [
+        new(
+            Roles.AdminSystemCode,
+            "AD0000001",
+            "System Administrator",
+            "admin@saigonwaterbus.local",
+            "0900000001",
+            "Admin@123",
+            "System Administration"),
+        new(
+            Roles.ManagerCode,
+            "MG0000001",
+            "Operations Manager",
+            "manager@saigonwaterbus.local",
+            "0900000002",
+            "Manager@123",
+            "Operations")
+    ];
+
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;
     private readonly ApplicationDbContext _context;
     private readonly DatabaseStartupSettings _databaseStartupSettings;
+    private readonly IIdentityNormalizer _identityNormalizer;
+    private readonly ISecretHasher _secretHasher;
+    private readonly TimeProvider _timeProvider;
 
     public ApplicationDbContextInitialiser(
         ILogger<ApplicationDbContextInitialiser> logger,
         ApplicationDbContext context,
-        IOptions<DatabaseStartupSettings> databaseStartupSettings)
+        IOptions<DatabaseStartupSettings> databaseStartupSettings,
+        IIdentityNormalizer identityNormalizer,
+        ISecretHasher secretHasher,
+        TimeProvider timeProvider)
     {
         _logger = logger;
         _context = context;
         _databaseStartupSettings = databaseStartupSettings.Value;
+        _identityNormalizer = identityNormalizer;
+        _secretHasher = secretHasher;
+        _timeProvider = timeProvider;
     }
 
     public async Task InitialiseAsync()
@@ -86,6 +119,187 @@ public class ApplicationDbContextInitialiser
 
     public async Task TrySeedAsync()
     {
-        await Task.CompletedTask;
+        var roleByCode = await _context.Roles
+            .ToDictionaryAsync(x => x.Code);
+
+        foreach (var definition in Roles.BuiltIn)
+        {
+            if (!roleByCode.TryGetValue(definition.Code, out var existingRole))
+            {
+                existingRole = new Role
+                {
+                    Code = definition.Code,
+                    SystemName = definition.SystemName,
+                    DisplayName = definition.DisplayName
+                };
+
+                _context.Roles.Add(existingRole);
+                roleByCode[definition.Code] = existingRole;
+            }
+            else
+            {
+                if (!string.Equals(existingRole.SystemName, definition.SystemName, StringComparison.Ordinal))
+                {
+                    existingRole.SystemName = definition.SystemName;
+                }
+
+                if (!string.Equals(existingRole.DisplayName, definition.DisplayName, StringComparison.Ordinal))
+                {
+                    existingRole.DisplayName = definition.DisplayName;
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
+
+        if (!_databaseStartupSettings.SeedInternalUsers)
+        {
+            _logger.LogInformation("Skipping internal user seeding because Database:SeedInternalUsers is disabled.");
+            return;
+        }
+
+        foreach (var definition in InternalUsers)
+        {
+            var role = roleByCode[definition.RoleCode];
+            await SeedInternalUserAsync(definition, role);
+        }
+
+        await _context.SaveChangesAsync();
+        await SyncUserCodeSequencesAsync();
     }
+
+    public async Task ResetAndSeedSampleDataAsync()
+    {
+        if (await _context.Database.CanConnectAsync())
+        {
+            await _context.Database.EnsureDeletedAsync();
+        }
+
+        if (_context.Database.GetMigrations().Any())
+        {
+            await _context.Database.MigrateAsync();
+        }
+        else
+        {
+            await _context.Database.EnsureCreatedAsync();
+        }
+
+        await SeedAsync();
+    }
+
+    public async Task ClearDataForRetestAsync()
+    {
+        await _context.ExternalLogins.ExecuteDeleteAsync();
+        await _context.OtpChallenges.ExecuteDeleteAsync();
+        await _context.RefreshTokens.ExecuteDeleteAsync();
+        await _context.Users.ExecuteDeleteAsync();
+
+        await SeedAsync();
+    }
+
+    private async Task SeedInternalUserAsync(SeedUser definition, Role role)
+    {
+        var normalizedEmail = _identityNormalizer.NormalizeEmail(definition.Email);
+        var normalizedPhone = _identityNormalizer.NormalizePhone(definition.PhoneNumber);
+        var now = _timeProvider.GetUtcNow();
+
+        var user = await _context.Users
+            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail || x.UserCode == definition.UserCode);
+
+        if (user is null)
+        {
+            user = new User
+            {
+                UserCode = definition.UserCode,
+                FullName = definition.FullName,
+                Email = definition.Email,
+                NormalizedEmail = normalizedEmail,
+                PhoneNumber = definition.PhoneNumber,
+                NormalizedPhoneNumber = normalizedPhone,
+                PasswordHash = _secretHasher.Hash(definition.Password),
+                RoleId = role.Id,
+                Department = definition.Department,
+                Status = UserStatus.Active,
+                EmailVerifiedAt = now
+            };
+            _context.Users.Add(user);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.UserCode))
+        {
+            user.UserCode = definition.UserCode;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.FullName))
+        {
+            user.FullName = definition.FullName;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.PhoneNumber))
+        {
+            user.PhoneNumber = definition.PhoneNumber;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.NormalizedPhoneNumber))
+        {
+            user.NormalizedPhoneNumber = normalizedPhone;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.Email))
+        {
+            user.Email = definition.Email;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.NormalizedEmail))
+        {
+            user.NormalizedEmail = normalizedEmail;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.PasswordHash))
+        {
+            user.PasswordHash = _secretHasher.Hash(definition.Password);
+        }
+
+        user.RoleId = role.Id;
+
+        if (string.IsNullOrWhiteSpace(user.Department))
+        {
+            user.Department = definition.Department;
+        }
+
+        user.Status = UserStatus.Active;
+        user.EmailVerifiedAt ??= now;
+    }
+
+    private async Task SyncUserCodeSequencesAsync()
+    {
+        await _context.Database.ExecuteSqlRawAsync(
+            """
+            SELECT setval('user_code_ad_seq',
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'AD%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'AD%'), 0) > 0);
+
+            SELECT setval('user_code_mg_seq',
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'MG%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'MG%'), 0) > 0);
+
+            SELECT setval('user_code_cu_seq',
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'CU%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'CU%'), 0) > 0);
+
+            SELECT setval('user_code_st_seq',
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0) > 0);
+            """);
+    }
+
+    private sealed record SeedUser(
+        string RoleCode,
+        string UserCode,
+        string FullName,
+        string Email,
+        string PhoneNumber,
+        string Password,
+        string Department);
 }

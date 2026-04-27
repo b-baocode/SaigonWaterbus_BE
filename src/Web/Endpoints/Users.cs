@@ -5,6 +5,33 @@ namespace SaigonWaterbus.Web.Endpoints;
 
 public sealed class Users : IEndpointGroup
 {
+    private const string CreateUserExample =
+        """
+        {
+          "fullName": "Tran Thi B",
+          "dateOfBirth": "10/05/1998",
+          "phoneNumber": "0912345678",
+          "email": "thib@fpt.edu.vn",
+          "password": "P@ssword123",
+          "roleId": 3,
+          "department": "Operations",
+          "status": "Active"
+        }
+        """;
+
+    private const string UpdateUserExample =
+        """
+        {
+          "fullName": "Tran Thi B Updated",
+          "dateOfBirth": "10/05/1998",
+          "phoneNumber": "0912345678",
+          "email": "thib@fpt.edu.vn",
+          "roleId": 4,
+          "department": null,
+          "status": "Active"
+        }
+        """;
+
     public static string RoutePrefix => "/api/users";
 
     public static void Map(RouteGroupBuilder groupBuilder)
@@ -12,62 +39,55 @@ public sealed class Users : IEndpointGroup
         groupBuilder.MapGet(List, "")
             .RequireAuthorization()
             .WithSummary("Lay danh sach user")
-            .WithDescription(
-                "Quyen truy cap: Manager va Admin System.\n" +
-                "- Admin System: xem tat ca user.\n" +
-                "- Manager: chi xem duoc Customer va Staff.\n" +
-                "API Note:\n" +
-                "- Header: Authorization: Bearer <accessToken>.\n" +
-                "- Dung endpoint nay de lay danh sach user va doc roleId hien tai truoc khi update.");
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoac Admin System",
+                null,
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Manager chi xem duoc Customer va Staff.",
+                "Dung de doc roleId hien tai truoc khi update."));
 
         groupBuilder.MapGet(GetById, "{userId:int}")
             .RequireAuthorization()
             .WithSummary("Lay chi tiet user theo ID")
-            .WithDescription(
-                "Quyen truy cap: Manager va Admin System.\n" +
-                "- Admin System: xem tat ca user.\n" +
-                "- Manager: chi xem duoc Customer va Staff.\n" +
-                "API Note:\n" +
-                "- Header: Authorization: Bearer <accessToken>.\n" +
-                "- Truyen userId tren route de lay 1 user cu the.");
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoac Admin System",
+                null,
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Example route: /api/users/12.",
+                "Manager chi xem duoc Customer va Staff."));
 
         groupBuilder.MapPost(Create, "")
             .RequireAuthorization()
             .WithSummary("Tao user moi")
-            .WithDescription(
-                "Quyen truy cap: Manager va Admin System.\n" +
-                "- Admin System: tao duoc Customer, Staff, Manager, Admin System.\n" +
-                "- Manager: chi tao duoc Staff.\n" +
-                "API Note:\n" +
-                "- Header: Authorization: Bearer <accessToken>.\n" +
-                "- Body dung roleId, khong dung role code/string.\n" +
-                "- roleId lay tu bang roles.\n" +
-                "- Department chi can cho internal role, khong can cho Customer.");
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoac Admin System",
+                CreateUserExample,
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Body dung roleId, khong dung role code.",
+                "Department chi can cho internal role.",
+                "Manager chi tao duoc Staff."));
 
         groupBuilder.MapPut(Update, "{userId:int}")
             .RequireAuthorization()
             .WithSummary("Cap nhat user")
-            .WithDescription(
-                "Quyen truy cap: Manager va Admin System.\n" +
-                "- Admin System: cap nhat duoc user bat ky (tru chinh minh).\n" +
-                "- Manager: chi cap nhat duoc Customer va role phai giu nguyen la Customer.\n" +
-                "API Note:\n" +
-                "- Header: Authorization: Bearer <accessToken>.\n" +
-                "- Route: userId.\n" +
-                "- Body dung roleId moi neu can doi role.\n" +
-                "- Neu doi sang role co prefix code khac, backend se cap lai userCode.");
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoac Admin System",
+                UpdateUserExample,
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Example route: /api/users/12.",
+                "Body dung roleId moi neu can doi role.",
+                "Neu doi sang role co prefix khac, backend se cap lai userCode.",
+                "Manager chi cap nhat duoc Customer."));
 
         groupBuilder.MapDelete(Delete, "{userId:int}")
             .RequireAuthorization()
             .WithSummary("Xoa user")
-            .WithDescription(
-                "Quyen truy cap: Manager va Admin System.\n" +
-                "- Admin System: xoa duoc user bat ky (tru chinh minh).\n" +
-                "- Manager: chi xoa duoc Customer.\n" +
-                "API Note:\n" +
-                "- Header: Authorization: Bearer <accessToken>.\n" +
-                "- Route: userId.\n" +
-                "- Nen goi GET truoc neu can xac nhan dung user.");
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoac Admin System",
+                null,
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Example route: /api/users/12.",
+                "Manager chi xoa duoc Customer."));
     }
 
     private static async Task<IResult> List(
