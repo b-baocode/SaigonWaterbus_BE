@@ -5,7 +5,7 @@ public interface ITokenService
     AccessTokenResult GenerateAccessToken(
         int userId,
         string? phoneNumber,
-        string email,
+        string? email,
         IReadOnlyCollection<string> roleSystemNames);
 
     string GenerateRefreshTokenSecret();

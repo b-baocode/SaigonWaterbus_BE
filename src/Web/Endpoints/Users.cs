@@ -87,7 +87,9 @@ public sealed class Users : IEndpointGroup
                 null,
                 "Header can co Authorization: Bearer <accessToken>.",
                 "Example route: /api/users/12.",
-                "Manager chi xoa duoc Customer."));
+                "Admin System chi xoa duoc Manager va Staff.",
+                "Manager chi xoa duoc Staff.",
+                "Customer tu xoa tai khoan bang DELETE /api/auth/me."));
     }
 
     private static async Task<IResult> List(

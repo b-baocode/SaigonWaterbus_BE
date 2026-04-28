@@ -14,9 +14,9 @@ public class User : BaseAuditableEntity
 
     public string? NormalizedPhoneNumber { get; set; }
 
-    public string Email { get; set; } = null!;
+    public string? Email { get; set; }
 
-    public string NormalizedEmail { get; set; } = null!;
+    public string? NormalizedEmail { get; set; }
 
     public string? PasswordHash { get; set; }
 
@@ -27,8 +27,6 @@ public class User : BaseAuditableEntity
     public string? Department { get; set; }
 
     public UserStatus Status { get; set; } = UserStatus.PendingVerification;
-
-    public DateTimeOffset? EmailVerifiedAt { get; set; }
 
     public DateTimeOffset? LastLoginAt { get; set; }
 

@@ -15,6 +15,7 @@ public static class DependencyInjection
 {
     private const string DatabaseConnectionName = "SaigonWaterbusDb";
     private const string BrevoHttpClientName = "Brevo";
+    private const string EsmsHttpClientName = "Esms";
 
     public static void AddInfrastructureServices(this IHostApplicationBuilder builder)
     {
@@ -42,6 +43,9 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
+        builder.Services.AddHttpClient(EsmsHttpClientName);
+        builder.Services.AddScoped<EsmsSmsSender>();
+        builder.Services.AddScoped<ISmsOtpSender, EsmsOtpSender>();
         builder.Services.AddScoped<IOtpSender>(provider =>
         {
             var configuration = provider.GetRequiredService<IConfiguration>();
@@ -73,6 +77,7 @@ public static class DependencyInjection
         builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
         builder.Services.Configure<GmailOptions>(builder.Configuration.GetSection(GmailOptions.SectionName));
         builder.Services.Configure<BrevoOptions>(builder.Configuration.GetSection(BrevoOptions.SectionName));
+        builder.Services.Configure<EsmsOptions>(builder.Configuration.GetSection(EsmsOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
     }

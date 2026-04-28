@@ -57,22 +57,19 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
     private readonly ISecretHasher _secretHasher;
     private readonly IUserCodeGenerator _userCodeGenerator;
     private readonly IUserContext _userContext;
-    private readonly TimeProvider _timeProvider;
 
     public CreateUserCommandHandler(
         IApplicationDbContext context,
         IIdentityNormalizer identityNormalizer,
         ISecretHasher secretHasher,
         IUserCodeGenerator userCodeGenerator,
-        IUserContext userContext,
-        TimeProvider timeProvider)
+        IUserContext userContext)
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
         _secretHasher = secretHasher;
         _userCodeGenerator = userCodeGenerator;
         _userContext = userContext;
-        _timeProvider = timeProvider;
     }
 
     public async Task<AuthUserDto> Handle(CreateUserCommand request, CancellationToken cancellationToken)
@@ -99,7 +96,6 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
             throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Phone number is already registered.");
         }
 
-        var now = _timeProvider.GetUtcNow();
         var user = new User
         {
             FullName = request.FullName.Trim(),
@@ -111,8 +107,7 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
             PasswordHash = _secretHasher.Hash(request.Password),
             RoleId = role.Id,
             Department = request.Department?.Trim(),
-            Status = request.Status ?? UserStatus.Active,
-            EmailVerifiedAt = now
+            Status = request.Status ?? UserStatus.Active
         };
 
         user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(role.Code, cancellationToken);

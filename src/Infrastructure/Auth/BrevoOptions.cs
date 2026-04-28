@@ -21,4 +21,6 @@ public sealed class BrevoOptions
     public int LoginTemplateId { get; set; }
 
     public int ForgotPasswordTemplateId { get; set; }
+
+    public int EmailChangeTemplateId { get; set; }
 }

@@ -16,10 +16,13 @@ public sealed class GmailOptions
     public string RegisterSubject { get; set; } = "Ma OTP dang ky Saigon Waterbus";
     public string LoginSubject { get; set; } = "Ma OTP dang nhap Saigon Waterbus";
     public string ForgotPasswordSubject { get; set; } = "Ma OTP quen mat khau Saigon Waterbus";
+    public string EmailChangeSubject { get; set; } = "Ma OTP xac thuc email moi Saigon Waterbus";
     public string RegisterTemplate { get; set; } =
         "Ma OTP dang ky Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
     public string LoginTemplate { get; set; } =
         "Ma OTP dang nhap Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
     public string ForgotPasswordTemplate { get; set; } =
         "Ma OTP quen mat khau Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
+    public string EmailChangeTemplate { get; set; } =
+        "Ma OTP xac thuc email moi Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
 }

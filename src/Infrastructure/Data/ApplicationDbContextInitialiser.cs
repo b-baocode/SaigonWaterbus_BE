@@ -51,22 +51,19 @@ public class ApplicationDbContextInitialiser
     private readonly DatabaseStartupSettings _databaseStartupSettings;
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ISecretHasher _secretHasher;
-    private readonly TimeProvider _timeProvider;
 
     public ApplicationDbContextInitialiser(
         ILogger<ApplicationDbContextInitialiser> logger,
         ApplicationDbContext context,
         IOptions<DatabaseStartupSettings> databaseStartupSettings,
         IIdentityNormalizer identityNormalizer,
-        ISecretHasher secretHasher,
-        TimeProvider timeProvider)
+        ISecretHasher secretHasher)
     {
         _logger = logger;
         _context = context;
         _databaseStartupSettings = databaseStartupSettings.Value;
         _identityNormalizer = identityNormalizer;
         _secretHasher = secretHasher;
-        _timeProvider = timeProvider;
     }
 
     public async Task InitialiseAsync()
@@ -201,7 +198,6 @@ public class ApplicationDbContextInitialiser
     {
         var normalizedEmail = _identityNormalizer.NormalizeEmail(definition.Email);
         var normalizedPhone = _identityNormalizer.NormalizePhone(definition.PhoneNumber);
-        var now = _timeProvider.GetUtcNow();
 
         var user = await _context.Users
             .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail || x.UserCode == definition.UserCode);
@@ -219,8 +215,7 @@ public class ApplicationDbContextInitialiser
                 PasswordHash = _secretHasher.Hash(definition.Password),
                 RoleId = role.Id,
                 Department = definition.Department,
-                Status = UserStatus.Active,
-                EmailVerifiedAt = now
+                Status = UserStatus.Active
             };
             _context.Users.Add(user);
             return;
@@ -269,7 +264,6 @@ public class ApplicationDbContextInitialiser
         }
 
         user.Status = UserStatus.Active;
-        user.EmailVerifiedAt ??= now;
     }
 
     private async Task SyncUserCodeSequencesAsync()

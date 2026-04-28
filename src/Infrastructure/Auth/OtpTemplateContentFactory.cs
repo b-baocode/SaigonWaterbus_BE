@@ -20,6 +20,10 @@ internal static class OtpTemplateContentFactory
                 "Dat lai mat khau",
                 "Nhap ma OTP de dat lai mat khau tai khoan Saigon Waterbus.",
                 username),
+            OtpPurpose.EmailChange => new OtpTemplateContent(
+                "Xac thuc email moi",
+                "Nhap ma OTP de xac thuc email moi cho tai khoan Saigon Waterbus.",
+                username),
             _ => new OtpTemplateContent(
                 "Xac thuc dang nhap",
                 "Nhap ma OTP de tiep tuc dang nhap vao he thong Saigon Waterbus.",

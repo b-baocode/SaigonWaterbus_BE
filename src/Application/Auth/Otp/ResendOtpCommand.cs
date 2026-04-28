@@ -21,7 +21,9 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
     private readonly ISecretHasher _secretHasher;
     private readonly IOtpCodeService _otpCodeService;
     private readonly IOtpSender _otpSender;
+    private readonly ISmsOtpSender _smsOtpSender;
     private readonly IOtpPolicy _otpPolicy;
+    private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
     public ResendOtpCommandHandler(
@@ -29,14 +31,18 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
         ISecretHasher secretHasher,
         IOtpCodeService otpCodeService,
         IOtpSender otpSender,
+        ISmsOtpSender smsOtpSender,
         IOtpPolicy otpPolicy,
+        IUserContext userContext,
         TimeProvider timeProvider)
     {
         _context = context;
         _secretHasher = secretHasher;
         _otpCodeService = otpCodeService;
         _otpSender = otpSender;
+        _smsOtpSender = smsOtpSender;
         _otpPolicy = otpPolicy;
+        _userContext = userContext;
         _timeProvider = timeProvider;
     }
 
@@ -48,7 +54,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
             ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge was not found.");
 
         var purpose = challenge.Purpose;
-        if (purpose is not (OtpPurpose.Register or OtpPurpose.ForgotPassword))
+        if (purpose is not (OtpPurpose.Register or OtpPurpose.ForgotPassword or OtpPurpose.EmailChange))
         {
             throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge does not support resend.");
         }
@@ -61,6 +67,15 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
                 throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Account has already completed OTP verification.");
             }
         }
+        else if (purpose == OtpPurpose.EmailChange)
+        {
+            if (_userContext.UserId != user.Id)
+            {
+                throw new UnauthorizedAccessException();
+            }
+
+            AuthSupport.EnsureUserCanLogin(user);
+        }
         else
         {
             AuthSupport.EnsureUserCanLogin(user);
@@ -71,6 +86,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
             .Where(x => x.UserId == user.Id && x.Purpose == purpose)
             .OrderByDescending(x => x.Id)
             .FirstAsync(cancellationToken);
+        var otpChannel = AuthSupport.ResolveOtpChannelFromDestination(latestChallenge.Email);
 
         if (purpose == OtpPurpose.Register && latestChallenge.ExpiresAt <= now)
         {
@@ -102,7 +118,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
             {
                 UserId = user.Id,
                 Purpose = purpose,
-                Email = user.Email,
+                Email = latestChallenge.Email,
                 CodeHash = _secretHasher.Hash(otpCode),
                 ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
                 ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
@@ -114,23 +130,37 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
 
             return (
                 Id: newChallenge.Id,
-                Email: user.Email,
+                Destination: newChallenge.Email,
                 FullName: user.FullName,
                 Code: otpCode,
                 ExpiresAt: newChallenge.ExpiresAt,
                 ResendAvailableAt: newChallenge.ResendAvailableAt);
         }, cancellationToken);
 
-        await _otpSender.SendAsync(
-            resendResult.Email,
-            resendResult.Code,
-            purpose,
-            resendResult.FullName,
-            cancellationToken);
+        if (otpChannel == OtpChannel.Email)
+        {
+            await _otpSender.SendAsync(
+                resendResult.Destination,
+                resendResult.Code,
+                purpose,
+                resendResult.FullName,
+                cancellationToken);
+        }
+        else
+        {
+            await _smsOtpSender.SendAsync(
+                resendResult.Destination,
+                resendResult.Code,
+                purpose,
+                resendResult.FullName,
+                cancellationToken);
+        }
 
         return new OtpChallengeDto(
             resendResult.Id,
-            _otpCodeService.MaskEmail(resendResult.Email),
+            otpChannel == OtpChannel.Email
+                ? _otpCodeService.MaskEmail(resendResult.Destination)
+                : _otpCodeService.MaskPhone(resendResult.Destination),
             resendResult.ExpiresAt,
             resendResult.ResendAvailableAt);
     }

@@ -22,7 +22,7 @@ public sealed class JwtTokenService : ITokenService
     public AccessTokenResult GenerateAccessToken(
         int userId,
         string? phoneNumber,
-        string email,
+        string? email,
         IReadOnlyCollection<string> roleSystemNames)
     {
         var now = _timeProvider.GetUtcNow();
@@ -31,9 +31,13 @@ public sealed class JwtTokenService : ITokenService
         var claims = new List<Claim>
         {
             new(JwtRegisteredClaimNames.Sub, userId.ToString()),
-            new(ClaimTypes.NameIdentifier, userId.ToString()),
-            new(ClaimTypes.Email, email)
+            new(ClaimTypes.NameIdentifier, userId.ToString())
         };
+
+        if (!string.IsNullOrWhiteSpace(email))
+        {
+            claims.Add(new Claim(ClaimTypes.Email, email));
+        }
 
         if (!string.IsNullOrWhiteSpace(phoneNumber))
         {

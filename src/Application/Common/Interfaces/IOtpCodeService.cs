@@ -5,4 +5,6 @@ public interface IOtpCodeService
     string GenerateCode();
 
     string MaskEmail(string email);
+
+    string MaskPhone(string phoneNumber);
 }

@@ -1,19 +1,22 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Auth.Login;
 
-public sealed record LoginCommand(string Email, string Password) : IRequest<AuthSessionDto>;
+public sealed record LoginCommand(
+    string Phone,
+    string Password) : IRequest<AuthSessionDto>;
 
 public sealed class LoginCommandValidator : AbstractValidator<LoginCommand>
 {
     public LoginCommandValidator()
     {
-        RuleFor(x => x.Email)
+        RuleFor(x => x.Phone)
             .NotEmpty()
-            .MaximumLength(255)
-            .EmailAddress();
+            .Must(PhoneRules.IsValid)
+            .WithMessage("Phone number must contain exactly 10 digits.");
 
         RuleFor(x => x.Password).NotEmpty();
     }
@@ -43,12 +46,9 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
 
     public async Task<AuthSessionDto> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
-        var user = await _context.Set<User>()
-            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken)
-            ?? throw new UnauthorizedAccessException();
+        var user = await GetUserByPhoneAsync(request.Phone, cancellationToken);
 
-        AuthSupport.EnsureUserCanLogin(user, nameof(request.Email));
+        AuthSupport.EnsureUserCanLogin(user, nameof(request.Phone));
 
         if (string.IsNullOrWhiteSpace(user.PasswordHash)
             || !_secretHasher.Verify(request.Password, user.PasswordHash))
@@ -59,7 +59,7 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);
         if (roles.Count == 0)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Email), "Account does not have any active roles.");
+            throw AuthSupport.CreateValidationException(nameof(request.Phone), "Account does not have any active roles.");
         }
 
         user.LastLoginAt = _timeProvider.GetUtcNow();
@@ -87,5 +87,14 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
             accessToken,
             AuthSupport.FormatRefreshToken(refreshTokenEntity.Id, refreshTokenSecret),
             refreshTokenEntity.ExpiresAt);
+    }
+
+    private async Task<User> GetUserByPhoneAsync(string phone, CancellationToken cancellationToken)
+    {
+        var normalizedPhone = _identityNormalizer.NormalizePhone(phone);
+
+        return await _context.Set<User>()
+            .SingleOrDefaultAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken)
+            ?? throw new UnauthorizedAccessException();
     }
 }

@@ -37,4 +37,20 @@ public sealed class OtpCodeService : IOtpCodeService
 
         return $"{maskedLocal}@{parts[1]}";
     }
+
+    public string MaskPhone(string phoneNumber)
+    {
+        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
+        if (digits.Length < 4)
+        {
+            return "***";
+        }
+
+        if (digits.Length <= 6)
+        {
+            return $"{digits[..1]}***{digits[^1..]}";
+        }
+
+        return $"{digits[..3]}****{digits[^3..]}";
+    }
 }

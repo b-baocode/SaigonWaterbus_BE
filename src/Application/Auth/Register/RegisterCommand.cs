@@ -10,8 +10,9 @@ public sealed record RegisterCommand(
     string FullName,
     DateOnly DateOfBirth,
     string Phone,
-    string Email,
-    string Password) : IRequest<OtpChallengeDto>;
+    string Password,
+    string? Email = null,
+    string? OtpChannel = null) : IRequest<OtpChallengeDto>;
 
 public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand>
 {
@@ -31,13 +32,31 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
             .WithMessage("Phone number must contain exactly 10 digits.");
 
         RuleFor(x => x.Email)
-            .NotEmpty()
-            .EmailAddress();
+            .EmailAddress()
+            .When(x => !string.IsNullOrWhiteSpace(x.Email));
 
         RuleFor(x => x.Password)
             .NotEmpty()
             .MinimumLength(8);
 
+        RuleFor(x => x.OtpChannel)
+            .Must(x => string.IsNullOrWhiteSpace(x)
+                || string.Equals(x, "email", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x, "phone", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x, "sms", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x, "sdt", StringComparison.OrdinalIgnoreCase))
+            .WithMessage("OtpChannel must be either 'email' or 'phone'.");
+
+        RuleFor(x => x.OtpChannel)
+            .NotEmpty()
+            .When(x => !string.IsNullOrWhiteSpace(x.Email))
+            .WithMessage("OtpChannel is required when Email is provided.");
+
+        RuleFor(x => x)
+            .Must(x => !string.Equals(x.OtpChannel, "email", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrWhiteSpace(x.Email))
+            .WithMessage("Email is required when OtpChannel is 'email'.")
+            .OverridePropertyName(nameof(RegisterCommand.OtpChannel));
     }
 }
 
@@ -45,7 +64,8 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 {
     private sealed record PendingRegistrationOtp(
         int ChallengeId,
-        string Email,
+        string Destination,
+        OtpChannel Channel,
         string FullName,
         string Code,
         DateTimeOffset ExpiresAt,
@@ -56,6 +76,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
     private readonly ISecretHasher _secretHasher;
     private readonly IOtpCodeService _otpCodeService;
     private readonly IOtpSender _otpSender;
+    private readonly ISmsOtpSender _smsOtpSender;
     private readonly IOtpPolicy _otpPolicy;
     private readonly TimeProvider _timeProvider;
 
@@ -65,6 +86,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
         ISecretHasher secretHasher,
         IOtpCodeService otpCodeService,
         IOtpSender otpSender,
+        ISmsOtpSender smsOtpSender,
         IOtpPolicy otpPolicy,
         TimeProvider timeProvider)
     {
@@ -73,6 +95,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
         _secretHasher = secretHasher;
         _otpCodeService = otpCodeService;
         _otpSender = otpSender;
+        _smsOtpSender = smsOtpSender;
         _otpPolicy = otpPolicy;
         _timeProvider = timeProvider;
     }
@@ -80,7 +103,10 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
     public async Task<OtpChallengeDto> Handle(RegisterCommand request, CancellationToken cancellationToken)
     {
         var normalizedPhone = _identityNormalizer.NormalizePhone(request.Phone);
-        var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
+        var hasEmail = !string.IsNullOrWhiteSpace(request.Email);
+        var email = hasEmail ? request.Email!.Trim() : null;
+        var normalizedEmail = hasEmail ? _identityNormalizer.NormalizeEmail(email!) : null;
+        var otpChannel = ResolveRegisterOtpChannel(request.OtpChannel, hasEmail);
         var now = _timeProvider.GetUtcNow();
 
         var pendingRegistration = await _context.ExecuteInTransactionAsync(async ct =>
@@ -102,7 +128,8 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
             var matchingUsers = await _context.Set<User>()
                 .Include(x => x.OtpChallenges)
-                .Where(x => x.NormalizedPhoneNumber == normalizedPhone || x.NormalizedEmail == normalizedEmail)
+                .Where(x => x.NormalizedPhoneNumber == normalizedPhone
+                         || (normalizedEmail != null && x.NormalizedEmail == normalizedEmail))
                 .ToListAsync(ct);
 
             var pendingUser = matchingUsers.SingleOrDefault(x =>
@@ -122,7 +149,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
                     throw AuthSupport.CreateValidationException(nameof(request.Phone), "Phone number is already registered.");
                 }
 
-                if (matchingUser.NormalizedEmail == normalizedEmail)
+                if (normalizedEmail is not null && matchingUser.NormalizedEmail == normalizedEmail)
                 {
                     throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is already registered.");
                 }
@@ -137,11 +164,10 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
                 if (latestPendingChallenge is not null && latestPendingChallenge.ResendAvailableAt > now)
                 {
-                    throw AuthSupport.CreateValidationException(nameof(request.Email), "OTP was sent recently. Please wait before requesting again.");
+                    throw AuthSupport.CreateValidationException(nameof(request.Phone), "OTP was sent recently. Please wait before requesting again.");
                 }
             }
 
-            var email = request.Email.Trim();
             var otpCode = _otpCodeService.GenerateCode();
 
             var user = pendingUser ?? new User
@@ -158,7 +184,6 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
             user.PasswordHash = _secretHasher.Hash(request.Password);
             user.RoleId = customerRole.Id;
             user.Status = UserStatus.PendingVerification;
-            user.EmailVerifiedAt = null;
 
             if (pendingUser is null)
             {
@@ -169,11 +194,15 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
                 await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.Register, now, ct);
             }
 
+            var otpDestination = otpChannel == OtpChannel.Phone
+                ? normalizedPhone
+                : email!;
+
             var challenge = new OtpChallenge
             {
                 User = user,
                 Purpose = OtpPurpose.Register,
-                Email = email,
+                Email = otpDestination,
                 CodeHash = _secretHasher.Hash(otpCode),
                 ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
                 ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
@@ -185,24 +214,60 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
             await _context.SaveChangesAsync(ct);
             return new PendingRegistrationOtp(
                 challenge.Id,
-                email,
+                otpDestination,
+                otpChannel,
                 user.FullName,
                 otpCode,
                 challenge.ExpiresAt,
                 challenge.ResendAvailableAt);
         }, cancellationToken);
 
-        await _otpSender.SendAsync(
-            pendingRegistration.Email,
-            pendingRegistration.Code,
-            OtpPurpose.Register,
-            pendingRegistration.FullName,
-            cancellationToken);
+        if (pendingRegistration.Channel == OtpChannel.Email)
+        {
+            await _otpSender.SendAsync(
+                pendingRegistration.Destination,
+                pendingRegistration.Code,
+                OtpPurpose.Register,
+                pendingRegistration.FullName,
+                cancellationToken);
+        }
+        else
+        {
+            await _smsOtpSender.SendAsync(
+                pendingRegistration.Destination,
+                pendingRegistration.Code,
+                OtpPurpose.Register,
+                pendingRegistration.FullName,
+                cancellationToken);
+        }
 
         return new OtpChallengeDto(
             pendingRegistration.ChallengeId,
-            _otpCodeService.MaskEmail(pendingRegistration.Email),
+            pendingRegistration.Channel == OtpChannel.Email
+                ? _otpCodeService.MaskEmail(pendingRegistration.Destination)
+                : _otpCodeService.MaskPhone(pendingRegistration.Destination),
             pendingRegistration.ExpiresAt,
             pendingRegistration.ResendAvailableAt);
+    }
+
+    private static OtpChannel ResolveRegisterOtpChannel(string? otpChannel, bool hasEmail)
+    {
+        if (!hasEmail)
+        {
+            if (string.IsNullOrWhiteSpace(otpChannel))
+            {
+                return OtpChannel.Phone;
+            }
+
+            var resolvedChannel = AuthSupport.ResolveOtpChannel(otpChannel, OtpChannel.Phone, nameof(RegisterCommand.OtpChannel));
+            if (resolvedChannel == OtpChannel.Email)
+            {
+                throw AuthSupport.CreateValidationException(nameof(RegisterCommand.OtpChannel), "Email is required when OtpChannel is 'email'.");
+            }
+
+            return resolvedChannel;
+        }
+
+        return AuthSupport.ResolveOtpChannel(otpChannel, OtpChannel.Phone, nameof(RegisterCommand.OtpChannel));
     }
 }

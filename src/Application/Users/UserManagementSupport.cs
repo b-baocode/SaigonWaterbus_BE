@@ -93,15 +93,16 @@ internal static class UserManagementSupport
     {
         if (actor.Id == target.Id)
         {
-            throw AuthSupport.CreateValidationException(nameof(target.Id), "Current account cannot be deleted.");
+            throw AuthSupport.CreateValidationException(nameof(target.Id), "Current account must be deleted from the profile API.");
         }
 
-        if (AuthSupport.IsAdmin(actor))
+        if (AuthSupport.IsAdmin(actor)
+            && (AuthSupport.IsManager(target) || AuthSupport.IsStaff(target)))
         {
             return;
         }
 
-        if (AuthSupport.IsManager(actor) && AuthSupport.IsCustomer(target))
+        if (AuthSupport.IsManager(actor) && AuthSupport.IsStaff(target))
         {
             return;
         }

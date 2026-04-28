@@ -10,7 +10,7 @@ public sealed record AuthUserDto(
     string FullName,
     DateOnly? DateOfBirth,
     string? PhoneNumber,
-    string Email,
+    string? Email,
     string? Department,
     UserStatus Status,
     IReadOnlyCollection<AuthRoleDto> Roles);
@@ -24,6 +24,8 @@ public sealed record AuthTokensDto(
 public sealed record AuthSessionDto(AuthUserDto User, AuthTokensDto Tokens);
 
 public sealed record AuthActionResultDto(string Message);
+
+public sealed record UpdateProfileResultDto(AuthUserDto User, OtpChallengeDto? EmailVerification);
 
 public sealed record OtpChallengeDto(
     int ChallengeId,

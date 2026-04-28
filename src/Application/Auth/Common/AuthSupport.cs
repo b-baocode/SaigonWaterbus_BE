@@ -12,6 +12,26 @@ internal static class AuthSupport
     public static global::SaigonWaterbus.Application.Common.Exceptions.ValidationException CreateValidationException(string propertyName, string errorMessage) =>
         new([new ValidationFailure(propertyName, errorMessage)]);
 
+    public static OtpChannel ResolveOtpChannel(string? value, OtpChannel defaultChannel, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return defaultChannel;
+        }
+
+        return value.Trim().ToLowerInvariant() switch
+        {
+            "email" or "mail" or "e-mail" => OtpChannel.Email,
+            "phone" or "sms" or "sdt" or "so-dien-thoai" => OtpChannel.Phone,
+            _ => throw CreateValidationException(propertyName, "OtpChannel must be either 'email' or 'phone'.")
+        };
+    }
+
+    public static OtpChannel ResolveOtpChannelFromDestination(string destination) =>
+        destination.Contains('@', StringComparison.Ordinal)
+            ? OtpChannel.Email
+            : OtpChannel.Phone;
+
     public static string NormalizeRoleKey(string roleKey)
     {
         Guard.Against.NullOrWhiteSpace(roleKey);
@@ -166,14 +186,15 @@ internal static class AuthSupport
     public static async Task<bool> RemoveExpiredPendingRegistrationUsersByIdentityAsync(
         IApplicationDbContext context,
         string normalizedPhone,
-        string normalizedEmail,
+        string? normalizedEmail,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var users = await context.Set<User>()
             .Include(x => x.OtpChallenges)
             .Where(x => x.Status == UserStatus.PendingVerification
-                     && (x.NormalizedPhoneNumber == normalizedPhone || x.NormalizedEmail == normalizedEmail))
+                     && (x.NormalizedPhoneNumber == normalizedPhone
+                         || (normalizedEmail != null && x.NormalizedEmail == normalizedEmail)))
             .ToListAsync(cancellationToken);
 
         var removedAny = false;

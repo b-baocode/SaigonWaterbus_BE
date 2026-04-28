@@ -35,15 +35,14 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .HasFilter("\"NormalizedPhoneNumber\" IS NOT NULL");
 
         builder.Property(x => x.Email)
-            .HasMaxLength(255)
-            .IsRequired();
+            .HasMaxLength(255);
 
         builder.Property(x => x.NormalizedEmail)
-            .HasMaxLength(255)
-            .IsRequired();
+            .HasMaxLength(255);
 
         builder.HasIndex(x => x.NormalizedEmail)
-            .IsUnique();
+            .IsUnique()
+            .HasFilter("\"NormalizedEmail\" IS NOT NULL");
 
         builder.Property(x => x.PasswordHash)
             .HasMaxLength(500);

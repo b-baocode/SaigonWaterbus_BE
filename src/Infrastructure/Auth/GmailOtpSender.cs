@@ -96,6 +96,7 @@ public sealed class GmailOtpSender : IOtpSender
         {
             OtpPurpose.Register => options.RegisterSubject,
             OtpPurpose.ForgotPassword => options.ForgotPasswordSubject,
+            OtpPurpose.EmailChange => options.EmailChangeSubject,
             _ => options.LoginSubject
         };
     }
@@ -124,6 +125,7 @@ public sealed class GmailOtpSender : IOtpSender
         {
             OtpPurpose.Register => options.RegisterTemplate,
             OtpPurpose.ForgotPassword => options.ForgotPasswordTemplate,
+            OtpPurpose.EmailChange => options.EmailChangeTemplate,
             _ => options.LoginTemplate
         };
     }

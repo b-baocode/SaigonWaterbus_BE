@@ -109,8 +109,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
                     Email = payload.Email,
                     NormalizedEmail = normalizedEmail,
                     RoleId = customerRole.Id,
-                    Status = UserStatus.Active,
-                    EmailVerifiedAt = _timeProvider.GetUtcNow()
+                    Status = UserStatus.Active
                 };
 
                 _context.Set<User>().Add(user);
