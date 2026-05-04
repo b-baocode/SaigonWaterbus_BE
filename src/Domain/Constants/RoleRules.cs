@@ -6,7 +6,7 @@ public abstract class RoleRules
         [Roles.Manager, Roles.Staff, Roles.Customer];
 
     public static readonly IReadOnlyList<string> ManagerCreatableRoles =
-        [Roles.Staff];
+        [Roles.Customer, Roles.Staff];
 
     public static string DefaultRegistrationRoleCode => Roles.Customer;
 
@@ -19,9 +19,12 @@ public abstract class RoleRules
         };
 
     public static IReadOnlyList<string> GetAssignableRoles(string actorRoleCode) =>
-        actorRoleCode == Roles.Administrator
-            ? AdministratorCreatableRoles
-            : [];
+        actorRoleCode switch
+        {
+            Roles.Administrator => AdministratorCreatableRoles,
+            Roles.Manager => ManagerCreatableRoles,
+            _ => []
+        };
 
     public static bool CanCreateUser(string actorRoleCode, string targetRoleCode) =>
         GetCreatableRoles(actorRoleCode).Contains(targetRoleCode);

@@ -11,8 +11,15 @@ public sealed class VerifyEmailChangeOtpCommandValidator : AbstractValidator<Ver
 {
     public VerifyEmailChangeOtpCommandValidator()
     {
-        RuleFor(x => x.ChallengeId).GreaterThan(0);
-        RuleFor(x => x.Code).NotEmpty().Length(4, 10);
+        RuleFor(x => x.ChallengeId)
+            .GreaterThan(0)
+            .WithMessage("Mã xác thực không hợp lệ.");
+
+        RuleFor(x => x.Code)
+            .NotEmpty()
+            .WithMessage("Mã OTP là bắt buộc.")
+            .Length(4, 10)
+            .WithMessage("Mã OTP không hợp lệ.");
     }
 }
 
@@ -53,7 +60,7 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
                   && x.Purpose == OtpPurpose.EmailChange
                   && x.UserId == _userContext.UserId.Value,
                 cancellationToken)
-            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge was not found.");
+            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var user = challenge.User;
         AuthSupport.EnsureUserCanLogin(user);
@@ -62,14 +69,14 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
 
         if (challenge.ConsumedAt.HasValue)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has already been used.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã được sử dụng.");
         }
 
         if (challenge.ExpiresAt <= now)
         {
             challenge.ConsumedAt = now;
             await _context.SaveChangesAsync(cancellationToken);
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has expired. Please request email verification again.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã hết hạn, vui lòng yêu cầu xác thực email lại.");
         }
 
         if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
@@ -82,7 +89,7 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
             }
 
             await _context.SaveChangesAsync(cancellationToken);
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP is invalid.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP không hợp lệ.");
         }
 
         return await _context.ExecuteInTransactionAsync(async ct =>
@@ -92,7 +99,7 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
             {
                 challenge.ConsumedAt = now;
                 await _context.SaveChangesAsync(ct);
-                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Email is already registered.");
+                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Email đã được đăng ký.");
             }
 
             var otherPendingChallenges = await _context.Set<OtpChallenge>()

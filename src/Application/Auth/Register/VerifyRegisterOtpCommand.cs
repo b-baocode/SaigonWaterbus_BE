@@ -12,8 +12,15 @@ public sealed class VerifyRegisterOtpCommandValidator : AbstractValidator<Verify
 {
     public VerifyRegisterOtpCommandValidator()
     {
-        RuleFor(x => x.ChallengeId).GreaterThan(0);
-        RuleFor(x => x.Code).NotEmpty().Length(4, 10);
+        RuleFor(x => x.ChallengeId)
+            .GreaterThan(0)
+            .WithMessage("Mã xác thực không hợp lệ.");
+
+        RuleFor(x => x.Code)
+            .NotEmpty()
+            .WithMessage("Mã OTP là bắt buộc.")
+            .Length(4, 10)
+            .WithMessage("Mã OTP không hợp lệ.");
     }
 }
 
@@ -43,13 +50,13 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
             .SingleOrDefaultAsync(
                 x => x.Id == request.ChallengeId && x.Purpose == OtpPurpose.Register,
                 cancellationToken)
-            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge was not found.");
+            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var now = _timeProvider.GetUtcNow();
 
         if (challenge.ConsumedAt.HasValue)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has already been used.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã được sử dụng.");
         }
 
         if (challenge.ExpiresAt <= now)
@@ -65,7 +72,7 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
 
             throw AuthSupport.CreateValidationException(
                 nameof(request.Code),
-                "OTP has expired. Registration has been cancelled. Please register again.");
+                "OTP đã hết hạn, đăng ký đã bị hủy. Vui lòng đăng ký lại.");
         }
 
         if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
@@ -78,7 +85,7 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
             }
 
             await _context.SaveChangesAsync(cancellationToken);
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP is invalid.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP không hợp lệ.");
         }
 
         return await _context.ExecuteInTransactionAsync(async ct =>

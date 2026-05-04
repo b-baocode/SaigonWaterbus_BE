@@ -15,10 +15,13 @@ public sealed class LoginCommandValidator : AbstractValidator<LoginCommand>
     {
         RuleFor(x => x.Phone)
             .NotEmpty()
+            .WithMessage("Số điện thoại là bắt buộc.")
             .Must(PhoneRules.IsValid)
-            .WithMessage("Phone number must contain exactly 10 digits.");
+            .WithMessage(PhoneRules.InvalidInternationalPhoneMessage);
 
-        RuleFor(x => x.Password).NotEmpty();
+        RuleFor(x => x.Password)
+            .NotEmpty()
+            .WithMessage("Mật khẩu là bắt buộc.");
     }
 }
 
@@ -59,7 +62,7 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);
         if (roles.Count == 0)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Phone), "Account does not have any active roles.");
+            throw AuthSupport.CreateValidationException(nameof(request.Phone), "Tài khoản chưa có vai trò hoạt động.");
         }
 
         user.LastLoginAt = _timeProvider.GetUtcNow();

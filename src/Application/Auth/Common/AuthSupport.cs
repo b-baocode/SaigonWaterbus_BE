@@ -23,7 +23,7 @@ internal static class AuthSupport
         {
             "email" or "mail" or "e-mail" => OtpChannel.Email,
             "phone" or "sms" or "sdt" or "so-dien-thoai" => OtpChannel.Phone,
-            _ => throw CreateValidationException(propertyName, "OtpChannel must be either 'email' or 'phone'.")
+            _ => throw CreateValidationException(propertyName, "Kênh OTP phải là email hoặc phone.")
         };
     }
 
@@ -110,6 +110,8 @@ internal static class AuthSupport
                 user.PhoneNumber,
                 user.Email,
                 user.Department,
+                user.AvatarUrl,
+                user.AvatarSource,
                 user.Status,
                 roleDtos),
             new AuthTokensDto(
@@ -123,12 +125,12 @@ internal static class AuthSupport
     {
         if (user.Status == UserStatus.PendingVerification)
         {
-            throw CreateValidationException(propertyName, "Account has not completed OTP verification.");
+            throw CreateValidationException(propertyName, "Tài khoản chưa hoàn tất xác thực OTP.");
         }
 
         if (user.Status == UserStatus.Suspended)
         {
-            throw CreateValidationException(propertyName, "Account is suspended.");
+            throw CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa.");
         }
     }
 
@@ -142,6 +144,8 @@ internal static class AuthSupport
             user.PhoneNumber,
             user.Email,
             user.Department,
+            user.AvatarUrl,
+            user.AvatarSource,
             user.Status,
             [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)]);
     }
@@ -255,6 +259,8 @@ internal static class AuthSupport
         CancellationToken cancellationToken)
     {
         var currentUser = await GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
+        EnsureUserCanLogin(currentUser);
+
         if (IsAdmin(currentUser) || IsManager(currentUser))
         {
             return currentUser;

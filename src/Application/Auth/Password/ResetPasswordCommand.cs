@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -11,9 +12,21 @@ public sealed class ResetPasswordCommandValidator : AbstractValidator<ResetPassw
 {
     public ResetPasswordCommandValidator()
     {
-        RuleFor(x => x.ChallengeId).GreaterThan(0);
-        RuleFor(x => x.Code).NotEmpty().Length(4, 10);
-        RuleFor(x => x.NewPassword).NotEmpty().MinimumLength(8);
+        RuleFor(x => x.ChallengeId)
+            .GreaterThan(0)
+            .WithMessage("Mã xác thực không hợp lệ.");
+
+        RuleFor(x => x.Code)
+            .NotEmpty()
+            .WithMessage("Mã OTP là bắt buộc.")
+            .Length(4, 10)
+            .WithMessage("Mã OTP không hợp lệ.");
+
+        RuleFor(x => x.NewPassword)
+            .NotEmpty()
+            .WithMessage("Mật khẩu mới là bắt buộc.")
+            .Must(PasswordRules.IsStrong)
+            .WithMessage(PasswordRules.StrongPasswordMessage);
     }
 }
 
@@ -40,18 +53,18 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
             .SingleOrDefaultAsync(
                 x => x.Id == request.ChallengeId && x.Purpose == OtpPurpose.ForgotPassword,
                 cancellationToken)
-            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge was not found.");
+            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var now = _timeProvider.GetUtcNow();
 
         if (challenge.ConsumedAt.HasValue)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has already been used.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã được sử dụng.");
         }
 
         if (challenge.ExpiresAt <= now)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP has expired.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã hết hạn.");
         }
 
         if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
@@ -64,7 +77,7 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
             }
 
             await _context.SaveChangesAsync(cancellationToken);
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP is invalid.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP không hợp lệ.");
         }
 
         challenge.AttemptCount += 1;

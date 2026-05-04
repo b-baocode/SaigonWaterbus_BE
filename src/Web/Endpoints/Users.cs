@@ -65,7 +65,7 @@ public sealed class Users : IEndpointGroup
                 "Header can co Authorization: Bearer <accessToken>.",
                 "Body dung roleId, khong dung role code.",
                 "Department chi can cho internal role.",
-                "Manager chi tao duoc Staff."));
+                "Manager chi tao duoc Customer va Staff."));
 
         groupBuilder.MapPut(Update, "{userId:int}")
             .RequireAuthorization()
@@ -77,7 +77,7 @@ public sealed class Users : IEndpointGroup
                 "Example route: /api/users/12.",
                 "Body dung roleId moi neu can doi role.",
                 "Neu doi sang role co prefix khac, backend se cap lai userCode.",
-                "Manager chi cap nhat duoc Customer."));
+                "Manager chi cap nhat duoc Customer va Staff."));
 
         groupBuilder.MapDelete(Delete, "{userId:int}")
             .RequireAuthorization()
@@ -88,7 +88,7 @@ public sealed class Users : IEndpointGroup
                 "Header can co Authorization: Bearer <accessToken>.",
                 "Example route: /api/users/12.",
                 "Admin System chi xoa duoc Manager va Staff.",
-                "Manager chi xoa duoc Staff.",
+                "Manager chi xoa duoc Customer va Staff.",
                 "Customer tu xoa tai khoan bang DELETE /api/auth/me."));
     }
 

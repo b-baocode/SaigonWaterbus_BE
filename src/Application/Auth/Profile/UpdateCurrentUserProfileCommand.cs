@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -8,7 +9,12 @@ namespace SaigonWaterbus.Application.Auth.Profile;
 public sealed record UpdateCurrentUserProfileCommand(
     string? FullName = null,
     DateOnly? DateOfBirth = null,
-    string? Email = null) : IRequest<UpdateProfileResultDto>;
+    string? PhoneNumber = null,
+    string? Email = null,
+    string? AvatarFileName = null,
+    string? AvatarContentType = null,
+    long? AvatarLength = null,
+    Stream? AvatarContent = null) : IRequest<UpdateProfileResultDto>;
 
 public sealed class UpdateCurrentUserProfileCommandValidator : AbstractValidator<UpdateCurrentUserProfileCommand>
 {
@@ -16,16 +22,29 @@ public sealed class UpdateCurrentUserProfileCommandValidator : AbstractValidator
     {
         RuleFor(x => x.FullName)
             .NotEmpty()
+            .WithMessage("Họ và tên không được để trống.")
             .MaximumLength(150)
+            .WithMessage("Họ và tên không được vượt quá 150 ký tự.")
             .When(x => x.FullName is not null);
 
         RuleFor(x => x.DateOfBirth)
             .Must(x => !x.HasValue || x.Value <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
-            .WithMessage("Date of birth cannot be in the future.");
+            .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
+
+        RuleFor(x => x.PhoneNumber)
+            .NotEmpty()
+            .WithMessage("Số điện thoại không được để trống.")
+            .Must(PhoneRules.IsValid)
+            .WithMessage(PhoneRules.InvalidInternationalPhoneMessage)
+            .When(x => x.PhoneNumber is not null);
 
         RuleFor(x => x.Email)
             .NotEmpty()
+            .WithMessage("Email không được để trống.")
+            .MaximumLength(255)
+            .WithMessage("Email không được vượt quá 255 ký tự.")
             .EmailAddress()
+            .WithMessage("Email không đúng định dạng.")
             .When(x => x.Email is not null);
     }
 }
@@ -41,6 +60,7 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
 
     private readonly IApplicationDbContext _context;
     private readonly IIdentityNormalizer _identityNormalizer;
+    private readonly IProfileImageStorageService _profileImageStorage;
     private readonly ISecretHasher _secretHasher;
     private readonly IOtpCodeService _otpCodeService;
     private readonly IOtpSender _otpSender;
@@ -51,6 +71,7 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
     public UpdateCurrentUserProfileCommandHandler(
         IApplicationDbContext context,
         IIdentityNormalizer identityNormalizer,
+        IProfileImageStorageService profileImageStorage,
         ISecretHasher secretHasher,
         IOtpCodeService otpCodeService,
         IOtpSender otpSender,
@@ -60,6 +81,7 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
+        _profileImageStorage = profileImageStorage;
         _secretHasher = secretHasher;
         _otpCodeService = otpCodeService;
         _otpSender = otpSender;
@@ -77,9 +99,54 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
         var email = hasEmailUpdate ? request.Email!.Trim() : user.Email;
         var normalizedEmail = hasEmailUpdate ? _identityNormalizer.NormalizeEmail(email!) : user.NormalizedEmail;
         var emailChanged = hasEmailUpdate && normalizedEmail != user.NormalizedEmail;
+        var hasPhoneUpdate = request.PhoneNumber is not null;
+        var normalizedPhone = hasPhoneUpdate ? _identityNormalizer.NormalizePhone(request.PhoneNumber!) : user.NormalizedPhoneNumber;
+        var phoneChanged = hasPhoneUpdate && normalizedPhone != user.NormalizedPhoneNumber;
         var now = _timeProvider.GetUtcNow();
+        var hasAvatarUpdate = request.AvatarContent is not null;
 
         PendingEmailVerification? pendingEmailVerification = null;
+        StoredProfileImage? uploadedAvatar = null;
+
+        if (emailChanged)
+        {
+            if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, cancellationToken))
+            {
+                throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
+            }
+
+            var latestPendingChallenge = await _context.Set<OtpChallenge>()
+                .Where(x => x.UserId == user.Id
+                         && x.Purpose == OtpPurpose.EmailChange
+                         && x.ConsumedAt == null)
+                .OrderByDescending(x => x.Id)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            if (latestPendingChallenge is not null
+                && _identityNormalizer.NormalizeEmail(latestPendingChallenge.Email) == normalizedEmail
+                && latestPendingChallenge.ResendAvailableAt > now)
+            {
+                throw AuthSupport.CreateValidationException(nameof(request.Email), "OTP vừa được gửi, vui lòng chờ trước khi gửi lại.");
+            }
+        }
+
+        if (phoneChanged
+            && await _context.Set<User>().AnyAsync(x => x.NormalizedPhoneNumber == normalizedPhone && x.Id != user.Id, cancellationToken))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
+        }
+
+        if (hasAvatarUpdate)
+        {
+            EnsureValidAvatar(request);
+            uploadedAvatar = await _profileImageStorage.UploadAvatarAsync(
+                new ProfileImageUpload(
+                    user.Id,
+                    request.AvatarContent!,
+                    request.AvatarFileName!,
+                    request.AvatarContentType),
+                cancellationToken);
+        }
 
         await _context.ExecuteInTransactionAsync(async ct =>
         {
@@ -88,25 +155,6 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
 
             if (emailChanged)
             {
-                if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, ct))
-                {
-                    throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is already registered.");
-                }
-
-                var latestPendingChallenge = await _context.Set<OtpChallenge>()
-                    .Where(x => x.UserId == user.Id
-                             && x.Purpose == OtpPurpose.EmailChange
-                             && x.ConsumedAt == null)
-                    .OrderByDescending(x => x.Id)
-                    .FirstOrDefaultAsync(ct);
-
-                if (latestPendingChallenge is not null
-                    && _identityNormalizer.NormalizeEmail(latestPendingChallenge.Email) == normalizedEmail
-                    && latestPendingChallenge.ResendAvailableAt > now)
-                {
-                    throw AuthSupport.CreateValidationException(nameof(request.Email), "OTP was sent recently. Please wait before requesting again.");
-                }
-
                 await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.EmailChange, now, ct);
 
                 otpCode = _otpCodeService.GenerateCode();
@@ -137,6 +185,20 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
             if (request.DateOfBirth.HasValue)
             {
                 user.DateOfBirth = request.DateOfBirth;
+            }
+
+            if (hasPhoneUpdate)
+            {
+                user.PhoneNumber = PhoneRules.ToInternationalFormat(request.PhoneNumber!);
+                user.NormalizedPhoneNumber = normalizedPhone;
+            }
+
+            if (uploadedAvatar is not null)
+            {
+                user.AvatarUrl = uploadedAvatar.Url;
+                user.AvatarPublicId = uploadedAvatar.PublicId;
+                user.AvatarSource = AvatarSource.Upload;
+                user.AvatarUpdatedAt = now;
             }
 
             await _context.SaveChangesAsync(ct);
@@ -174,6 +236,39 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
                     pendingEmailVerification.ChallengeId,
                     _otpCodeService.MaskEmail(pendingEmailVerification.Email),
                     pendingEmailVerification.ExpiresAt,
-                    pendingEmailVerification.ResendAvailableAt));
+                    pendingEmailVerification.ResendAvailableAt)
+                {
+                    Channel = OtpChannel.Email
+                });
+    }
+
+    private void EnsureValidAvatar(UpdateCurrentUserProfileCommand request)
+    {
+        if (string.IsNullOrWhiteSpace(request.AvatarFileName))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.AvatarFileName), "Tên file ảnh đại diện là bắt buộc.");
+        }
+
+        if (!request.AvatarLength.HasValue || request.AvatarLength <= 0)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.AvatarLength), "Ảnh đại diện là bắt buộc.");
+        }
+
+        if (request.AvatarLength > _profileImageStorage.MaxAvatarBytes)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.AvatarLength),
+                $"Ảnh đại diện không được vượt quá {_profileImageStorage.MaxAvatarBytes / 1024 / 1024} MB.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.AvatarContentType)
+            || !_profileImageStorage.AllowedAvatarContentTypes.Contains(
+                request.AvatarContentType,
+                StringComparer.OrdinalIgnoreCase))
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.AvatarContentType),
+                "Ảnh đại diện chỉ hỗ trợ JPEG, PNG hoặc WebP.");
+        }
     }
 }

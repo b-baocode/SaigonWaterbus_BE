@@ -51,12 +51,12 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
         var challenge = await _context.Set<OtpChallenge>()
             .Include(x => x.User)
             .SingleOrDefaultAsync(x => x.Id == request.ChallengeId, cancellationToken)
-            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge was not found.");
+            ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var purpose = challenge.Purpose;
         if (purpose is not (OtpPurpose.Register or OtpPurpose.ForgotPassword or OtpPurpose.EmailChange))
         {
-            throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP challenge does not support resend.");
+            throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Yêu cầu OTP này không hỗ trợ gửi lại.");
         }
 
         var user = challenge.User;
@@ -64,7 +64,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
         {
             if (user.Status != UserStatus.PendingVerification)
             {
-                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Account has already completed OTP verification.");
+                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Tài khoản đã hoàn tất xác thực OTP.");
             }
         }
         else if (purpose == OtpPurpose.EmailChange)
@@ -101,12 +101,12 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
 
             throw AuthSupport.CreateValidationException(
                 nameof(request.ChallengeId),
-                "OTP has expired. Registration has been cancelled. Please register again.");
+                "OTP đã hết hạn, đăng ký đã bị hủy. Vui lòng đăng ký lại.");
         }
 
         if (latestChallenge.ConsumedAt == null && latestChallenge.ResendAvailableAt > now)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP was sent recently. Please wait before requesting again.");
+            throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "OTP vừa được gửi, vui lòng chờ trước khi gửi lại.");
         }
 
         var resendResult = await _context.ExecuteInTransactionAsync(async ct =>
@@ -162,6 +162,9 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
                 ? _otpCodeService.MaskEmail(resendResult.Destination)
                 : _otpCodeService.MaskPhone(resendResult.Destination),
             resendResult.ExpiresAt,
-            resendResult.ResendAvailableAt);
+            resendResult.ResendAvailableAt)
+        {
+            Channel = otpChannel
+        };
     }
 }

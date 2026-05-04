@@ -22,30 +22,40 @@ public sealed class CreateUserCommandValidator : AbstractValidator<CreateUserCom
     {
         RuleFor(x => x.FullName)
             .NotEmpty()
-            .MaximumLength(150);
+            .WithMessage("Họ và tên không được để trống.")
+            .MaximumLength(150)
+            .WithMessage("Họ và tên không được vượt quá 150 ký tự.");
 
         RuleFor(x => x.DateOfBirth)
             .Must(x => !x.HasValue || x.Value <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
-            .WithMessage("Date of birth cannot be in the future.");
+            .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
 
         RuleFor(x => x.PhoneNumber)
             .Must(phoneNumber => phoneNumber is null || PhoneRules.IsValid(phoneNumber))
-            .WithMessage("Phone number must contain exactly 10 digits.")
+            .WithMessage(PhoneRules.InvalidInternationalPhoneMessage)
             .When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber));
 
         RuleFor(x => x.Email)
             .NotEmpty()
-            .EmailAddress();
+            .WithMessage("Email là bắt buộc.")
+            .MaximumLength(255)
+            .WithMessage("Email không được vượt quá 255 ký tự.")
+            .EmailAddress()
+            .WithMessage("Email không đúng định dạng.");
 
         RuleFor(x => x.Password)
             .NotEmpty()
-            .MinimumLength(8);
+            .WithMessage("Mật khẩu là bắt buộc.")
+            .Must(PasswordRules.IsStrong)
+            .WithMessage(PasswordRules.StrongPasswordMessage);
 
         RuleFor(x => x.RoleId)
-            .GreaterThan(0);
+            .GreaterThan(0)
+            .WithMessage("Vai trò là bắt buộc.");
 
         RuleFor(x => x.Department)
             .MaximumLength(100)
+            .WithMessage("Phòng ban không được vượt quá 100 ký tự.")
             .When(x => !string.IsNullOrWhiteSpace(x.Department));
     }
 }
@@ -83,7 +93,7 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
         if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken))
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Email), "Email is already registered.");
+            throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
         }
 
         var normalizedPhone = string.IsNullOrWhiteSpace(request.PhoneNumber)
@@ -93,14 +103,16 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
         if (normalizedPhone is not null
             && await _context.Set<User>().AnyAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken))
         {
-            throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Phone number is already registered.");
+            throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
         }
 
         var user = new User
         {
             FullName = request.FullName.Trim(),
             DateOfBirth = request.DateOfBirth,
-            PhoneNumber = request.PhoneNumber?.Trim(),
+            PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber)
+                ? null
+                : PhoneRules.ToInternationalFormat(request.PhoneNumber),
             NormalizedPhoneNumber = normalizedPhone,
             Email = request.Email.Trim(),
             NormalizedEmail = normalizedEmail,

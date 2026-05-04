@@ -14,9 +14,26 @@ public class ValidationException : Exception
         : this()
     {
         Errors = failures
-            .GroupBy(e => e.PropertyName, e => e.ErrorMessage)
+            .GroupBy(e => ToCamelCase(e.PropertyName), e => e.ErrorMessage)
             .ToDictionary(failureGroup => failureGroup.Key, failureGroup => failureGroup.ToArray());
     }
 
     public IDictionary<string, string[]> Errors { get; }
+
+    private static string ToCamelCase(string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(propertyName) || char.IsLower(propertyName[0]))
+        {
+            return propertyName;
+        }
+
+        return string.Create(
+            propertyName.Length,
+            propertyName,
+            static (destination, source) =>
+            {
+                source.AsSpan().CopyTo(destination);
+                destination[0] = char.ToLowerInvariant(destination[0]);
+            });
+    }
 }

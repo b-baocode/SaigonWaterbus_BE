@@ -24,7 +24,7 @@ public sealed class EsmsOtpSender : ISmsOtpSender
         var brandname = string.IsNullOrWhiteSpace(options.Brandname)
             ? "Baotrixemay"
             : options.Brandname.Trim();
-        var content = BuildContent(code, purpose, brandname);
+        var content = BuildContent(code, purpose, brandname, options);
 
         EsmsSendResult result;
         try
@@ -51,13 +51,33 @@ public sealed class EsmsOtpSender : ISmsOtpSender
         }
     }
 
-    private static string BuildContent(string code, OtpPurpose purpose, string brandname)
+    private static string BuildContent(string code, OtpPurpose purpose, string brandname, EsmsOptions options)
     {
-        return purpose switch
+        var template = purpose switch
         {
-            OtpPurpose.Register => $"{code} la ma xac minh dang ky {brandname} cua ban",
-            OtpPurpose.ForgotPassword => $"{code} la ma xac minh dat lai mat khau {brandname} cua ban",
-            _ => $"{code} la ma xac minh tai khoan {brandname} cua ban"
+            OtpPurpose.Register => ResolveTemplate(options.RegisterContentTemplate, options.DefaultContent),
+            OtpPurpose.ForgotPassword => ResolveTemplate(options.ForgotPasswordContentTemplate, options.DefaultContent),
+            _ => ResolveTemplate(options.DefaultContentTemplate, options.DefaultContent)
         };
+
+        return template
+            .Replace("{code}", code, StringComparison.OrdinalIgnoreCase)
+            .Replace("{brandname}", brandname, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string ResolveTemplate(string? purposeTemplate, string defaultContent)
+    {
+        if (!string.IsNullOrWhiteSpace(purposeTemplate))
+        {
+            return purposeTemplate.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(defaultContent))
+        {
+            return defaultContent.Trim()
+                .Replace("123456", "{code}", StringComparison.Ordinal);
+        }
+
+        return "{code} la ma xac minh tai khoan {brandname} cua ban";
     }
 }

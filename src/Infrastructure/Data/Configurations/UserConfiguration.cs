@@ -50,6 +50,16 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.Department)
             .HasMaxLength(100);
 
+        builder.Property(x => x.AvatarUrl)
+            .HasMaxLength(2048);
+
+        builder.Property(x => x.AvatarPublicId)
+            .HasMaxLength(255);
+
+        builder.Property(x => x.AvatarSource)
+            .HasConversion<int>()
+            .IsRequired();
+
         builder.Property(x => x.Status)
             .HasConversion<int>()
             .IsRequired();

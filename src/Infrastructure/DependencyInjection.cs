@@ -2,6 +2,7 @@
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Infrastructure.Data.Interceptors;
+using SaigonWaterbus.Infrastructure.Media;
 using SaigonWaterbus.Infrastructure.Options;
 using SaigonWaterbus.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
@@ -42,6 +43,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOtpCodeService, OtpCodeService>();
         builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
+        builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddScoped<EsmsSmsSender>();
@@ -78,6 +80,7 @@ public static class DependencyInjection
         builder.Services.Configure<GmailOptions>(builder.Configuration.GetSection(GmailOptions.SectionName));
         builder.Services.Configure<BrevoOptions>(builder.Configuration.GetSection(BrevoOptions.SectionName));
         builder.Services.Configure<EsmsOptions>(builder.Configuration.GetSection(EsmsOptions.SectionName));
+        builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection(CloudinaryOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
     }

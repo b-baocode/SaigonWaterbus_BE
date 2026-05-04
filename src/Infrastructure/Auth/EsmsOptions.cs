@@ -24,6 +24,12 @@ public sealed class EsmsOptions
 
     public string DefaultContent { get; set; } = "123456 la ma xac minh dang ky Baotrixemay cua ban";
 
+    public string RegisterContentTemplate { get; set; } = "{code} la ma xac minh dang ky {brandname} cua ban";
+
+    public string ForgotPasswordContentTemplate { get; set; } = "{code} la ma xac minh dang ky {brandname} cua ban";
+
+    public string DefaultContentTemplate { get; set; } = "{code} la ma xac minh tai khoan {brandname} cua ban";
+
     public string? CampaignId { get; set; }
 
     public string? CallbackUrl { get; set; }

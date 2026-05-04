@@ -6,26 +6,39 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Password;
 
-public sealed record ForgotPasswordRequestOtpCommand(string? Email = null, string? Phone = null) : IRequest<OtpChallengeDto>;
+public sealed record ForgotPasswordRequestOtpCommand(string? EmailOrPhone = null) : IRequest<OtpChallengeDto>;
 
 public sealed class ForgotPasswordRequestOtpCommandValidator : AbstractValidator<ForgotPasswordRequestOtpCommand>
 {
+    private static readonly System.ComponentModel.DataAnnotations.EmailAddressAttribute EmailAddressValidator = new();
+
     public ForgotPasswordRequestOtpCommandValidator()
     {
-        RuleFor(x => x.Email)
+        RuleFor(x => x.EmailOrPhone)
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty()
+            .WithMessage("Email hoặc số điện thoại là bắt buộc.")
             .MaximumLength(255)
-            .EmailAddress()
-            .When(x => !string.IsNullOrWhiteSpace(x.Email));
-
-        RuleFor(x => x.Phone)
-            .Must(PhoneRules.IsValid)
-            .WithMessage("Phone number must contain exactly 10 digits.")
-            .When(x => !string.IsNullOrWhiteSpace(x.Phone));
-
-        RuleFor(x => x)
-            .Must(x => !string.IsNullOrWhiteSpace(x.Email) || !string.IsNullOrWhiteSpace(x.Phone))
-            .WithMessage("Email or Phone is required.");
+            .WithMessage("Email hoặc số điện thoại không được vượt quá 255 ký tự.")
+            .Must(IsValidEmailOrPhone)
+            .WithMessage("Vui lòng nhập email đúng định dạng hoặc số điện thoại hợp lệ.");
     }
+
+    private static bool IsValidEmailOrPhone(string? emailOrPhone)
+    {
+        if (string.IsNullOrWhiteSpace(emailOrPhone))
+        {
+            return false;
+        }
+
+        var trimmedEmailOrPhone = emailOrPhone.Trim();
+        return IsEmailInput(trimmedEmailOrPhone)
+            ? EmailAddressValidator.IsValid(trimmedEmailOrPhone)
+            : PhoneRules.IsValid(trimmedEmailOrPhone);
+    }
+
+    private static bool IsEmailInput(string emailOrPhone) =>
+        emailOrPhone.Contains('@', StringComparison.Ordinal);
 }
 
 public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<ForgotPasswordRequestOtpCommand, OtpChallengeDto>
@@ -34,6 +47,7 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ISecretHasher _secretHasher;
     private readonly IOtpCodeService _otpCodeService;
+    private readonly IOtpSender _otpSender;
     private readonly ISmsOtpSender _smsOtpSender;
     private readonly IOtpPolicy _otpPolicy;
     private readonly TimeProvider _timeProvider;
@@ -43,6 +57,7 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
         IIdentityNormalizer identityNormalizer,
         ISecretHasher secretHasher,
         IOtpCodeService otpCodeService,
+        IOtpSender otpSender,
         ISmsOtpSender smsOtpSender,
         IOtpPolicy otpPolicy,
         TimeProvider timeProvider)
@@ -51,6 +66,7 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
         _identityNormalizer = identityNormalizer;
         _secretHasher = secretHasher;
         _otpCodeService = otpCodeService;
+        _otpSender = otpSender;
         _smsOtpSender = smsOtpSender;
         _otpPolicy = otpPolicy;
         _timeProvider = timeProvider;
@@ -58,23 +74,20 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
 
     public async Task<OtpChallengeDto> Handle(ForgotPasswordRequestOtpCommand request, CancellationToken cancellationToken)
     {
-        var hasPhone = !string.IsNullOrWhiteSpace(request.Phone);
-        var normalizedPhone = hasPhone
-            ? _identityNormalizer.NormalizePhone(request.Phone!)
+        var emailOrPhone = request.EmailOrPhone!.Trim();
+        var otpChannel = IsEmailInput(emailOrPhone) ? OtpChannel.Email : OtpChannel.Phone;
+        var normalizedPhone = otpChannel == OtpChannel.Phone
+            ? _identityNormalizer.NormalizePhone(emailOrPhone)
             : null;
-        var normalizedEmail = !string.IsNullOrWhiteSpace(request.Email)
-            ? _identityNormalizer.NormalizeEmail(request.Email)
+        var normalizedEmail = otpChannel == OtpChannel.Email
+            ? _identityNormalizer.NormalizeEmail(emailOrPhone)
             : null;
-        var lookupProperty = hasPhone ? nameof(request.Phone) : nameof(request.Email);
+        var lookupProperty = nameof(request.EmailOrPhone);
 
         var challengeResult = await _context.ExecuteInTransactionAsync(async ct =>
         {
             var usersQuery = _context.Set<User>().AsQueryable();
-            if (normalizedPhone is not null && normalizedEmail is not null)
-            {
-                usersQuery = usersQuery.Where(x => x.NormalizedPhoneNumber == normalizedPhone && x.NormalizedEmail == normalizedEmail);
-            }
-            else if (normalizedPhone is not null)
+            if (normalizedPhone is not null)
             {
                 usersQuery = usersQuery.Where(x => x.NormalizedPhoneNumber == normalizedPhone);
             }
@@ -87,14 +100,19 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
 
             if (user is null)
             {
-                throw AuthSupport.CreateValidationException(lookupProperty, "Account is not registered.");
+                throw AuthSupport.CreateValidationException(lookupProperty, "Tài khoản chưa được đăng ký.");
             }
 
             AuthSupport.EnsureUserCanLogin(user, lookupProperty);
 
-            if (string.IsNullOrWhiteSpace(user.NormalizedPhoneNumber))
+            if (otpChannel == OtpChannel.Phone && string.IsNullOrWhiteSpace(user.NormalizedPhoneNumber))
             {
-                throw AuthSupport.CreateValidationException(nameof(request.Phone), "Phone number is not available for this account.");
+                throw AuthSupport.CreateValidationException(lookupProperty, "Tài khoản này chưa có số điện thoại.");
+            }
+
+            if (otpChannel == OtpChannel.Email && string.IsNullOrWhiteSpace(user.Email))
+            {
+                throw AuthSupport.CreateValidationException(lookupProperty, "Tài khoản này chưa có email.");
             }
 
             var now = _timeProvider.GetUtcNow();
@@ -108,18 +126,20 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
 
             if (existingActiveChallenge is not null && existingActiveChallenge.ResendAvailableAt > now)
             {
-                throw AuthSupport.CreateValidationException(lookupProperty, "OTP was sent recently. Please wait before requesting again.");
+                throw AuthSupport.CreateValidationException(lookupProperty, "OTP vừa được gửi, vui lòng chờ trước khi gửi lại.");
             }
 
             await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.ForgotPassword, now, ct);
 
             var otpCode = _otpCodeService.GenerateCode();
-            var destinationPhone = user.NormalizedPhoneNumber;
+            var destination = otpChannel == OtpChannel.Phone
+                ? user.NormalizedPhoneNumber!
+                : user.Email!.Trim();
             var challenge = new OtpChallenge
             {
                 UserId = user.Id,
                 Purpose = OtpPurpose.ForgotPassword,
-                Email = destinationPhone,
+                Email = destination,
                 CodeHash = _secretHasher.Hash(otpCode),
                 ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
                 ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
@@ -131,24 +151,45 @@ public sealed class ForgotPasswordRequestOtpCommandHandler : IRequestHandler<For
 
             return (
                 Id: challenge.Id,
-                Phone: destinationPhone,
+                Destination: destination,
+                Channel: otpChannel,
                 FullName: user.FullName,
                 Code: otpCode,
                 ExpiresAt: challenge.ExpiresAt,
                 ResendAvailableAt: challenge.ResendAvailableAt);
         }, cancellationToken);
 
-        await _smsOtpSender.SendAsync(
-            challengeResult.Phone,
-            challengeResult.Code,
-            OtpPurpose.ForgotPassword,
-            challengeResult.FullName,
-            cancellationToken);
+        if (challengeResult.Channel == OtpChannel.Phone)
+        {
+            await _smsOtpSender.SendAsync(
+                challengeResult.Destination,
+                challengeResult.Code,
+                OtpPurpose.ForgotPassword,
+                challengeResult.FullName,
+                cancellationToken);
+        }
+        else
+        {
+            await _otpSender.SendAsync(
+                challengeResult.Destination,
+                challengeResult.Code,
+                OtpPurpose.ForgotPassword,
+                challengeResult.FullName,
+                cancellationToken);
+        }
 
         return new OtpChallengeDto(
             challengeResult.Id,
-            _otpCodeService.MaskPhone(challengeResult.Phone),
+            challengeResult.Channel == OtpChannel.Phone
+                ? _otpCodeService.MaskPhone(challengeResult.Destination)
+                : _otpCodeService.MaskEmail(challengeResult.Destination),
             challengeResult.ExpiresAt,
-            challengeResult.ResendAvailableAt);
+            challengeResult.ResendAvailableAt)
+        {
+            Channel = challengeResult.Channel
+        };
     }
+
+    private static bool IsEmailInput(string emailOrPhone) =>
+        emailOrPhone.Contains('@', StringComparison.Ordinal);
 }

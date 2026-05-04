@@ -47,6 +47,13 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                 Detail = ode.Message,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.6.4"
             }),
+            ProfileImageStorageException pise => (StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Profile image upload failed",
+                Detail = pise.Message,
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.6.4"
+            }),
             _ => (-1, null)
         };
 

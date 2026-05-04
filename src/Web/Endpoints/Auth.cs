@@ -1,3 +1,7 @@
+using System.Globalization;
+using System.Text.Json;
+using Microsoft.AspNetCore.Http.Json;
+using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.Auth.Login;
 using SaigonWaterbus.Application.Auth.Otp;
 using SaigonWaterbus.Application.Auth.Password;
@@ -61,7 +65,7 @@ public class Auth : IEndpointGroup
     private const string ForgotPasswordExample =
         """
         {
-          "phone": "0901234567"
+          "emailOrPhone": "customer@example.com"
         }
         """;
 
@@ -85,7 +89,10 @@ public class Auth : IEndpointGroup
     private const string UpdateMeExample =
         """
         {
-          "fullName": "Nguyen Van A Updated"
+          "fullName": "Nguyen Van A Updated",
+          "dateOfBirth": "02/09/2003",
+          "phoneNumber": "+84901234567",
+          "email": "vana@gmail.com"
         }
         """;
 
@@ -160,9 +167,9 @@ public class Auth : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 ForgotPasswordExample,
-                "OTP quen mat khau mac dinh duoc gui qua so dien thoai.",
+                "Nhap email hoac so dien thoai vao emailOrPhone. Neu la email thi OTP gui ve email, neu la so dien thoai thi OTP gui ve SMS.",
                 "Tra ve challengeId de goi /api/auth/reset-password.",
-                "Cho phep tim tai khoan bang email hoac so dien thoai."));
+                "Phone nen gui theo dinh dang quoc te E.164, vi du +84901234567."));
 
         groupBuilder.MapPost(ResetPassword, "reset-password")
             .WithSummary("Dat lai mat khau bang OTP")
@@ -201,13 +208,19 @@ public class Auth : IEndpointGroup
 
         groupBuilder.MapPut(UpdateMe, "me")
             .RequireAuthorization()
+            .DisableAntiforgery()
+            .Accepts<UpdateCurrentUserProfileJsonRequest>("application/json")
+            .Accepts<UpdateCurrentUserProfileFormRequest>("multipart/form-data")
             .WithSummary("Cap nhat profile hien tai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateMeExample,
-                "User duoc cap nhat fullName, dateOfBirth va email.",
+                "User duoc cap nhat fullName, dateOfBirth, phoneNumber, email va anh dai dien.",
                 "Chi field nao gui len moi duoc cap nhat; field khong gui se giu du lieu cu.",
-                "Khong cho cap nhat so dien thoai tai endpoint nay.",
+                "Co the gui application/json neu khong doi anh.",
+                "Neu doi anh, gui multipart/form-data voi cac field fullName, dateOfBirth, phoneNumber, email va file.",
+                "Anh chi ho tro JPEG, PNG hoac WebP, toi da 5 MB.",
+                "PhoneNumber ho tro dang 0901234567 hoac +84901234567 va khong duoc trung.",
                 "Neu email thay doi, backend gui OTP toi email moi va chua doi email cho toi khi verify OTP."));
 
         groupBuilder.MapDelete(DeleteMe, "me")
@@ -302,11 +315,26 @@ public class Auth : IEndpointGroup
 
     public static async Task<IResult> UpdateMe(
         ISender sender,
-        UpdateCurrentUserProfileCommand command,
+        HttpRequest request,
+        IOptions<JsonOptions> jsonOptions,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
-        return Results.Ok(result);
+        var command = request.HasFormContentType
+            ? await CreateUpdateProfileCommandFromFormAsync(request, cancellationToken)
+            : await CreateUpdateProfileCommandFromJsonAsync(
+                request,
+                jsonOptions.Value.SerializerOptions,
+                cancellationToken);
+
+        try
+        {
+            var result = await sender.Send(command, cancellationToken);
+            return Results.Ok(result);
+        }
+        finally
+        {
+            command.AvatarContent?.Dispose();
+        }
     }
 
     public static async Task<IResult> DeleteMe(
@@ -352,4 +380,80 @@ public class Auth : IEndpointGroup
         var result = await sender.Send(command, cancellationToken);
         return Results.Ok(result);
     }
+
+    private static async Task<UpdateCurrentUserProfileCommand> CreateUpdateProfileCommandFromJsonAsync(
+        HttpRequest request,
+        JsonSerializerOptions jsonSerializerOptions,
+        CancellationToken cancellationToken)
+    {
+        var profileRequest = await request.ReadFromJsonAsync<UpdateCurrentUserProfileJsonRequest>(
+            jsonSerializerOptions,
+            cancellationToken: cancellationToken);
+
+        return new UpdateCurrentUserProfileCommand(
+            profileRequest?.FullName,
+            profileRequest?.DateOfBirth,
+            profileRequest?.PhoneNumber,
+            profileRequest?.Email);
+    }
+
+    private static async Task<UpdateCurrentUserProfileCommand> CreateUpdateProfileCommandFromFormAsync(
+        HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var form = await request.ReadFormAsync(cancellationToken);
+        var file = form.Files["file"]
+            ?? form.Files["File"]
+            ?? form.Files.FirstOrDefault();
+        var avatarStream = file?.OpenReadStream();
+
+        return new UpdateCurrentUserProfileCommand(
+            GetOptionalFormValue(form, "fullName"),
+            ParseOptionalDateOnly(GetOptionalFormValue(form, "dateOfBirth")),
+            GetOptionalFormValue(form, "phoneNumber"),
+            GetOptionalFormValue(form, "email"),
+            file?.FileName,
+            file?.ContentType,
+            file?.Length,
+            avatarStream);
+    }
+
+    private static string? GetOptionalFormValue(IFormCollection form, string name)
+    {
+        var value = form[name].ToString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static DateOnly? ParseOptionalDateOnly(string? value)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (DateOnly.TryParseExact(
+                value,
+                ["dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd"],
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var date))
+        {
+            return date;
+        }
+
+        throw new BadHttpRequestException("dateOfBirth phải dùng định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd.");
+    }
+
+    private sealed record UpdateCurrentUserProfileJsonRequest(
+        string? FullName = null,
+        DateOnly? DateOfBirth = null,
+        string? PhoneNumber = null,
+        string? Email = null);
+
+    private sealed record UpdateCurrentUserProfileFormRequest(
+        string? FullName = null,
+        DateOnly? DateOfBirth = null,
+        string? PhoneNumber = null,
+        string? Email = null,
+        IFormFile? File = null);
 }

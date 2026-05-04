@@ -26,6 +26,14 @@ public class User : BaseAuditableEntity
 
     public string? Department { get; set; }
 
+    public string? AvatarUrl { get; set; }
+
+    public string? AvatarPublicId { get; set; }
+
+    public AvatarSource AvatarSource { get; set; } = AvatarSource.None;
+
+    public DateTimeOffset? AvatarUpdatedAt { get; set; }
+
     public UserStatus Status { get; set; } = UserStatus.PendingVerification;
 
     public DateTimeOffset? LastLoginAt { get; set; }

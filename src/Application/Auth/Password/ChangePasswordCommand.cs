@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Auth.Password;
@@ -11,13 +12,16 @@ public sealed class ChangePasswordCommandValidator : AbstractValidator<ChangePas
     public ChangePasswordCommandValidator()
     {
         RuleFor(x => x.CurrentPassword)
-            .NotEmpty();
+            .NotEmpty()
+            .WithMessage("Mật khẩu hiện tại là bắt buộc.");
 
         RuleFor(x => x.NewPassword)
             .NotEmpty()
-            .MinimumLength(8)
+            .WithMessage("Mật khẩu mới là bắt buộc.")
+            .Must(PasswordRules.IsStrong)
+            .WithMessage(PasswordRules.StrongPasswordMessage)
             .NotEqual(x => x.CurrentPassword)
-            .WithMessage("New password must be different from current password.");
+            .WithMessage("Mật khẩu mới phải khác mật khẩu hiện tại.");
     }
 }
 
@@ -55,17 +59,17 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
 
         if (string.IsNullOrWhiteSpace(user.PasswordHash))
         {
-            throw AuthSupport.CreateValidationException(nameof(request.CurrentPassword), "Password login is not available for this account.");
+            throw AuthSupport.CreateValidationException(nameof(request.CurrentPassword), "Tài khoản này chưa hỗ trợ đăng nhập bằng mật khẩu.");
         }
 
         if (!_secretHasher.Verify(request.CurrentPassword, user.PasswordHash))
         {
-            throw AuthSupport.CreateValidationException(nameof(request.CurrentPassword), "Current password is incorrect.");
+            throw AuthSupport.CreateValidationException(nameof(request.CurrentPassword), "Mật khẩu hiện tại không đúng.");
         }
 
         if (_secretHasher.Verify(request.NewPassword, user.PasswordHash))
         {
-            throw AuthSupport.CreateValidationException(nameof(request.NewPassword), "New password must be different from current password.");
+            throw AuthSupport.CreateValidationException(nameof(request.NewPassword), "Mật khẩu mới phải khác mật khẩu hiện tại.");
         }
 
         var now = _timeProvider.GetUtcNow();

@@ -22,20 +22,26 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
 {
     private readonly IApplicationDbContext _context;
     private readonly ITokenService _tokenService;
+    private readonly IProfileImageStorageService _profileImageStorage;
     private readonly ISecretHasher _secretHasher;
+    private readonly IUserCodeGenerator _userCodeGenerator;
     private readonly TimeProvider _timeProvider;
     private readonly string _googleClientId;
 
     public GoogleLoginCommandHandler(
         IApplicationDbContext context,
         ITokenService tokenService,
+        IProfileImageStorageService profileImageStorage,
         ISecretHasher secretHasher,
+        IUserCodeGenerator userCodeGenerator,
         TimeProvider timeProvider,
         IConfiguration configuration)
     {
         _context = context;
         _tokenService = tokenService;
+        _profileImageStorage = profileImageStorage;
         _secretHasher = secretHasher;
+        _userCodeGenerator = userCodeGenerator;
         _timeProvider = timeProvider;
         _googleClientId = configuration["OAuth:Google:ClientId"] ?? throw new InvalidOperationException("Google ClientId not configured");
     }
@@ -78,6 +84,8 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
             return customerRole;
         }
 
+        var now = _timeProvider.GetUtcNow();
+
         var externalLogin = await _context.Set<ExternalLogin>()
             .Include(x => x.User)
             .FirstOrDefaultAsync(
@@ -105,6 +113,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
             {
                 user = new User
                 {
+                    UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, cancellationToken),
                     FullName = payload.Name ?? "Google User",
                     Email = payload.Email,
                     NormalizedEmail = normalizedEmail,
@@ -124,7 +133,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
                 Email = payload.Email,
                 DisplayName = payload.Name,
                 ProfilePictureUrl = payload.Picture,
-                LinkedAt = _timeProvider.GetUtcNow()
+                LinkedAt = now
             };
 
             _context.Set<ExternalLogin>().Add(newExternalLogin);
@@ -142,7 +151,28 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
             roles = new[] { customerRole };
         }
 
-        user.LastLoginAt = _timeProvider.GetUtcNow();
+        if (string.IsNullOrWhiteSpace(user.UserCode))
+        {
+            user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(roles.First().Code, cancellationToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(payload.Picture)
+            && user.AvatarSource != AvatarSource.Upload)
+        {
+            var importedAvatar = await _profileImageStorage.ImportAvatarFromUrlAsync(
+                new ProfileImageUrlImport(
+                    user.Id,
+                    payload.Picture,
+                    "google-avatar.jpg"),
+                cancellationToken);
+
+            user.AvatarUrl = importedAvatar.Url;
+            user.AvatarPublicId = importedAvatar.PublicId;
+            user.AvatarSource = AvatarSource.Google;
+            user.AvatarUpdatedAt = now;
+        }
+
+        user.LastLoginAt = now;
 
         var accessToken = _tokenService.GenerateAccessToken(
             user.Id,

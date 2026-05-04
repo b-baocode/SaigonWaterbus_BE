@@ -42,15 +42,20 @@ internal static class UserManagementSupport
     {
         if (AuthSupport.IsAdmin(actor))
         {
-            return;
+            if (CanAdminManageRole(targetRole))
+            {
+                return;
+            }
+
+            throw AuthSupport.CreateValidationException(propertyName, "Admin System role cannot be created from this API.");
         }
 
-        if (AuthSupport.IsManager(actor) && targetRole.SystemName == Roles.StaffSystemName)
+        if (AuthSupport.IsManager(actor) && CanManagerManageRole(targetRole))
         {
             return;
         }
 
-        throw AuthSupport.CreateValidationException(propertyName, "Manager can only create staff accounts.");
+        throw AuthSupport.CreateValidationException(propertyName, "Manager can only create customer or staff accounts.");
     }
 
     public static void EnsureCanViewUser(User actor, User target)
@@ -81,7 +86,8 @@ internal static class UserManagementSupport
             return;
         }
 
-        if (AuthSupport.IsManager(actor) && AuthSupport.IsCustomer(target))
+        if (AuthSupport.IsManager(actor)
+            && (AuthSupport.IsCustomer(target) || AuthSupport.IsStaff(target)))
         {
             return;
         }
@@ -102,7 +108,8 @@ internal static class UserManagementSupport
             return;
         }
 
-        if (AuthSupport.IsManager(actor) && AuthSupport.IsStaff(target))
+        if (AuthSupport.IsManager(actor)
+            && (AuthSupport.IsCustomer(target) || AuthSupport.IsStaff(target)))
         {
             return;
         }
@@ -114,19 +121,24 @@ internal static class UserManagementSupport
     {
         if (AuthSupport.IsAdmin(actor))
         {
-            return;
+            if (CanAdminManageRole(targetRole))
+            {
+                return;
+            }
+
+            throw AuthSupport.CreateValidationException(propertyName, "Admin System role cannot be assigned.");
         }
 
         if (AuthSupport.IsManager(actor))
         {
-            if (!AuthSupport.IsCustomer(target))
+            if (!AuthSupport.IsCustomer(target) && !AuthSupport.IsStaff(target))
             {
                 throw new ForbiddenAccessException();
             }
 
-            if (targetRole.SystemName != Roles.CustomerSystemName)
+            if (!CanManagerManageRole(targetRole))
             {
-                throw AuthSupport.CreateValidationException(propertyName, "Manager can only keep customer role when updating a customer account.");
+                throw AuthSupport.CreateValidationException(propertyName, "Manager can only assign customer or staff roles.");
             }
 
             return;
@@ -134,6 +146,15 @@ internal static class UserManagementSupport
 
         throw new ForbiddenAccessException();
     }
+
+    private static bool CanAdminManageRole(Role role) =>
+        role.SystemName is Roles.ManagerSystemName
+            or Roles.StaffSystemName
+            or Roles.CustomerSystemName;
+
+    private static bool CanManagerManageRole(Role role) =>
+        role.SystemName is Roles.CustomerSystemName
+            or Roles.StaffSystemName;
 
     public static async Task<User> GetVisibleUserByIdAsync(
         IApplicationDbContext context,

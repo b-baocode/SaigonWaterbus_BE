@@ -1,8 +1,13 @@
+using PhoneNumbers;
+
 namespace SaigonWaterbus.Domain.Constants;
 
 public static class PhoneRules
 {
-    public const int RequiredDigits = 10;
+    private const string DefaultRegion = "VN";
+
+    public const string InvalidInternationalPhoneMessage =
+        "Số điện thoại không hợp lệ. Vui lòng chọn đúng quốc gia và nhập số theo định dạng quốc tế, ví dụ +84901234567.";
 
     public static bool IsValid(string? phoneNumber) =>
         TryNormalize(phoneNumber, out _);
@@ -16,27 +21,46 @@ public static class PhoneRules
             return false;
         }
 
-        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
-        if (string.IsNullOrWhiteSpace(digits))
+        try
+        {
+            var phoneNumberUtil = PhoneNumberUtil.GetInstance();
+            var trimmedPhoneNumber = phoneNumber.Trim();
+            if (trimmedPhoneNumber.Any(x => !char.IsDigit(x) && x is not '+' and not ' ' and not '-' and not '.' and not '(' and not ')'))
+            {
+                return false;
+            }
+
+            if (trimmedPhoneNumber.Count(x => x == '+') > 1
+                || (trimmedPhoneNumber.Contains('+', StringComparison.Ordinal) && !trimmedPhoneNumber.StartsWith('+')))
+            {
+                return false;
+            }
+
+            var parsedPhoneNumber = phoneNumberUtil.Parse(
+                trimmedPhoneNumber,
+                trimmedPhoneNumber.StartsWith('+') ? null : DefaultRegion);
+
+            if (!phoneNumberUtil.IsValidNumber(parsedPhoneNumber))
+            {
+                return false;
+            }
+
+            normalizedPhoneNumber = phoneNumberUtil.Format(parsedPhoneNumber, PhoneNumberFormat.E164);
+            return true;
+        }
+        catch (NumberParseException)
         {
             return false;
         }
+    }
 
-        if (digits.StartsWith("84", StringComparison.Ordinal) && digits.Length == 11)
+    public static string ToInternationalFormat(string phoneNumber)
+    {
+        if (!TryNormalize(phoneNumber, out var normalizedPhoneNumber))
         {
-            digits = $"0{digits[2..]}";
-        }
-        else if (!digits.StartsWith('0') && digits.Length == 9)
-        {
-            digits = $"0{digits}";
-        }
-
-        if (digits.Length != RequiredDigits || !digits.StartsWith('0'))
-        {
-            return false;
+            throw new ArgumentException(InvalidInternationalPhoneMessage, nameof(phoneNumber));
         }
 
-        normalizedPhoneNumber = digits;
-        return true;
+        return normalizedPhoneNumber;
     }
 }

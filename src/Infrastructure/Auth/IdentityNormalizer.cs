@@ -11,7 +11,7 @@ public sealed class IdentityNormalizer : IIdentityNormalizer
 
         if (!PhoneRules.TryNormalize(phoneNumber, out var normalizedPhoneNumber))
         {
-            throw new ArgumentException("Phone number must contain exactly 10 digits.", nameof(phoneNumber));
+            throw new ArgumentException(PhoneRules.InvalidInternationalPhoneMessage, nameof(phoneNumber));
         }
 
         return normalizedPhoneNumber;

@@ -12,6 +12,8 @@ public sealed record AuthUserDto(
     string? PhoneNumber,
     string? Email,
     string? Department,
+    string? AvatarUrl,
+    AvatarSource AvatarSource,
     UserStatus Status,
     IReadOnlyCollection<AuthRoleDto> Roles);
 
@@ -31,4 +33,9 @@ public sealed record OtpChallengeDto(
     int ChallengeId,
     string MaskedEmail,
     DateTimeOffset ExpiresAt,
-    DateTimeOffset ResendAvailableAt);
+    DateTimeOffset ResendAvailableAt)
+{
+    public string MaskedDestination => MaskedEmail;
+
+    public OtpChannel? Channel { get; init; }
+}
