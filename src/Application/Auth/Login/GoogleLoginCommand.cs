@@ -76,6 +76,11 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
             throw new UnauthorizedAccessException("Google email is not verified.");
         }
 
+        if (!EmailRules.HasAllowedRegistrationDomain(payload.Email))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.IdToken), EmailRules.AllowedEmailDomainMessage);
+        }
+
         var normalizedEmail = _identityNormalizer.NormalizeEmail(payload.Email);
         var now = _timeProvider.GetUtcNow();
 

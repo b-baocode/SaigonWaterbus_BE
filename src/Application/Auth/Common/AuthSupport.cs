@@ -201,6 +201,26 @@ internal static class AuthSupport
         }
     }
 
+    public static async Task<OtpChallenge> ResolveLatestPendingOtpChallengeAsync(
+        IApplicationDbContext context,
+        OtpChallenge challenge,
+        OtpPurpose purpose,
+        CancellationToken cancellationToken)
+    {
+        if (challenge.ConsumedAt is null)
+        {
+            return challenge;
+        }
+
+        return await context.Set<OtpChallenge>()
+                   .Where(x => x.UserId == challenge.UserId
+                            && x.Purpose == purpose
+                            && x.ConsumedAt == null)
+                   .OrderByDescending(x => x.Id)
+                   .FirstOrDefaultAsync(cancellationToken)
+               ?? challenge;
+    }
+
     public static async Task<bool> RemoveExpiredPendingRegistrationUsersByIdentityAsync(
         IApplicationDbContext context,
         string normalizedPhone,

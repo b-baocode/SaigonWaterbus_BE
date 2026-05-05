@@ -41,12 +41,15 @@ public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCom
             .When(x => x.PhoneNumber is not null);
 
         RuleFor(x => x.Email)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .WithMessage("Email là bắt buộc.")
             .MaximumLength(255)
             .WithMessage("Email không được vượt quá 255 ký tự.")
             .EmailAddress()
             .WithMessage("Email không đúng định dạng.")
+            .Must(EmailRules.HasAllowedRegistrationDomain)
+            .WithMessage(EmailRules.AllowedEmailDomainMessage)
             .When(x => x.Email is not null);
 
         RuleFor(x => x.RoleId)

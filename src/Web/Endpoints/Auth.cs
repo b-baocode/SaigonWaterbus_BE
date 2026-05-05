@@ -142,6 +142,7 @@ public class Auth : IEndpointGroup
                 "Anonymous",
                 VerifyRegisterOtpExample,
                 "Dung challengeId tra ve tu /api/auth/register.",
+                "Neu da gui lai OTP, uu tien challengeId moi nhat tra ve tu /api/auth/resend-otp.",
                 "Thanh cong se kich hoat tai khoan."));
 
         groupBuilder.MapPost(ResendOtp, "resend-otp")
@@ -151,7 +152,8 @@ public class Auth : IEndpointGroup
                 ResendOtpExample,
                 "Dung cho dang ky, quen mat khau hoac xac thuc email moi.",
                 "Neu challenge la xac thuc email moi thi can Authorization Bearer token cua user hien tai.",
-                "Chi gui lai khi da qua thoi gian cho resend."));
+                "Chi gui lai khi da qua thoi gian cho resend.",
+                "Response co challengeId moi nhat de verify OTP."));
 
         groupBuilder.MapPost(Login, "login")
             .WithSummary("Dang nhap bang so dien thoai")
@@ -214,6 +216,7 @@ public class Auth : IEndpointGroup
                 "Anonymous",
                 ResetPasswordExample,
                 "Dung challengeId tra ve tu /api/auth/forgot-password.",
+                "Neu da gui lai OTP, uu tien challengeId moi nhat tra ve tu /api/auth/resend-otp.",
                 "Thanh cong se revoke refresh token dang con hieu luc."));
 
         groupBuilder.MapPost(Logout, "logout")

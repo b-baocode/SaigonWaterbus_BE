@@ -13,16 +13,16 @@ public sealed class GmailOptions
     public string FromName { get; set; } = "Saigon Waterbus";
     public string Subject { get; set; } = string.Empty;
     public string Template { get; set; } = string.Empty;
-    public string RegisterSubject { get; set; } = "Ma OTP dang ky Saigon Waterbus";
-    public string LoginSubject { get; set; } = "Ma OTP dang nhap Saigon Waterbus";
-    public string ForgotPasswordSubject { get; set; } = "Ma OTP quen mat khau Saigon Waterbus";
-    public string EmailChangeSubject { get; set; } = "Ma OTP xac thuc email moi Saigon Waterbus";
+    public string RegisterSubject { get; set; } = "Mã OTP đăng ký Saigon Waterbus";
+    public string LoginSubject { get; set; } = "Mã OTP đăng nhập Saigon Waterbus";
+    public string ForgotPasswordSubject { get; set; } = "Mã OTP quên mật khẩu Saigon Waterbus";
+    public string EmailChangeSubject { get; set; } = "Mã OTP xác thực email mới Saigon Waterbus";
     public string RegisterTemplate { get; set; } =
-        "Ma OTP dang ky Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
+        "Mã OTP đăng ký Saigon Waterbus của bạn là {code}. Hiệu lực {ttl_minutes} phút.";
     public string LoginTemplate { get; set; } =
-        "Ma OTP dang nhap Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
+        "Mã OTP đăng nhập Saigon Waterbus của bạn là {code}. Hiệu lực {ttl_minutes} phút.";
     public string ForgotPasswordTemplate { get; set; } =
-        "Ma OTP quen mat khau Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
+        "Mã OTP quên mật khẩu Saigon Waterbus của bạn là {code}. Hiệu lực {ttl_minutes} phút.";
     public string EmailChangeTemplate { get; set; } =
-        "Ma OTP xac thuc email moi Saigon Waterbus cua ban la {code}. Hieu luc {ttl_minutes} phut.";
+        "Mã OTP xác thực email mới Saigon Waterbus của bạn là {code}. Hiệu lực {ttl_minutes} phút.";
 }

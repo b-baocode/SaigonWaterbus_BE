@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Auth.Password;
+using SaigonWaterbus.Domain.Constants;
 using NUnit.Framework;
 using Shouldly;
 
@@ -31,9 +32,19 @@ public class ForgotPasswordRequestOtpCommandValidatorTests
     public void ValidateAcceptsEmail()
     {
         var result = _validator.Validate(new ForgotPasswordRequestOtpCommand(
-            EmailOrPhone: "customer@example.com"));
+            EmailOrPhone: "customer@gmail.com"));
 
         result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ValidateRejectsUnsupportedEmailDomain()
+    {
+        var result = _validator.Validate(new ForgotPasswordRequestOtpCommand(
+            EmailOrPhone: "customer@yahoo.com"));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == EmailRules.AllowedEmailDomainMessage);
     }
 
     [TestCase("+84901234567")]

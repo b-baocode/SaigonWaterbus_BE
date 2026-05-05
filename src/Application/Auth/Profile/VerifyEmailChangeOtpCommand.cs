@@ -66,6 +66,11 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
         AuthSupport.EnsureUserCanLogin(user);
 
         var now = _timeProvider.GetUtcNow();
+        challenge = await AuthSupport.ResolveLatestPendingOtpChallengeAsync(
+            _context,
+            challenge,
+            OtpPurpose.EmailChange,
+            cancellationToken);
 
         if (challenge.ConsumedAt.HasValue)
         {

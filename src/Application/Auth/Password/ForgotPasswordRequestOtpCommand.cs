@@ -21,7 +21,9 @@ public sealed class ForgotPasswordRequestOtpCommandValidator : AbstractValidator
             .MaximumLength(255)
             .WithMessage("Email hoặc số điện thoại không được vượt quá 255 ký tự.")
             .Must(IsValidEmailOrPhone)
-            .WithMessage("Vui lòng nhập email đúng định dạng hoặc số điện thoại hợp lệ.");
+            .WithMessage("Vui lòng nhập email đúng định dạng hoặc số điện thoại hợp lệ.")
+            .Must(HasAllowedEmailDomainOrPhone)
+            .WithMessage(EmailRules.AllowedEmailDomainMessage);
     }
 
     private static bool IsValidEmailOrPhone(string? emailOrPhone)
@@ -35,6 +37,18 @@ public sealed class ForgotPasswordRequestOtpCommandValidator : AbstractValidator
         return IsEmailInput(trimmedEmailOrPhone)
             ? EmailAddressValidator.IsValid(trimmedEmailOrPhone)
             : PhoneRules.IsValid(trimmedEmailOrPhone);
+    }
+
+    private static bool HasAllowedEmailDomainOrPhone(string? emailOrPhone)
+    {
+        if (string.IsNullOrWhiteSpace(emailOrPhone))
+        {
+            return false;
+        }
+
+        var trimmedEmailOrPhone = emailOrPhone.Trim();
+        return !IsEmailInput(trimmedEmailOrPhone)
+            || EmailRules.HasAllowedRegistrationDomain(trimmedEmailOrPhone);
     }
 
     private static bool IsEmailInput(string emailOrPhone) =>

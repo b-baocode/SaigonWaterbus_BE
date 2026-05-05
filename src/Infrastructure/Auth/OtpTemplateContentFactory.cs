@@ -13,20 +13,20 @@ internal static class OtpTemplateContentFactory
         return purpose switch
         {
             OtpPurpose.Register => new OtpTemplateContent(
-                "Xac nhan dang ky",
-                "Nhap ma OTP de hoan tat dang ky tai khoan Saigon Waterbus.",
+                "Xác nhận đăng ký",
+                "Nhập mã OTP để hoàn tất đăng ký tài khoản Saigon Waterbus.",
                 username),
             OtpPurpose.ForgotPassword => new OtpTemplateContent(
-                "Dat lai mat khau",
-                "Nhap ma OTP de dat lai mat khau tai khoan Saigon Waterbus.",
+                "Đặt lại mật khẩu",
+                "Nhập mã OTP để đặt lại mật khẩu tài khoản Saigon Waterbus.",
                 username),
             OtpPurpose.EmailChange => new OtpTemplateContent(
-                "Xac thuc email moi",
-                "Nhap ma OTP de xac thuc email moi cho tai khoan Saigon Waterbus.",
+                "Xác thực email mới",
+                "Nhập mã OTP để xác thực email mới cho tài khoản Saigon Waterbus.",
                 username),
             _ => new OtpTemplateContent(
-                "Xac thuc dang nhap",
-                "Nhap ma OTP de tiep tuc dang nhap vao he thong Saigon Waterbus.",
+                "Xác thực đăng nhập",
+                "Nhập mã OTP để tiếp tục đăng nhập vào hệ thống Saigon Waterbus.",
                 username)
         };
     }

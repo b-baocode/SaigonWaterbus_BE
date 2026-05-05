@@ -53,6 +53,11 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
             ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var now = _timeProvider.GetUtcNow();
+        challenge = await AuthSupport.ResolveLatestPendingOtpChallengeAsync(
+            _context,
+            challenge,
+            OtpPurpose.Register,
+            cancellationToken);
 
         if (challenge.ConsumedAt.HasValue)
         {

@@ -56,6 +56,11 @@ public sealed class ResetPasswordCommandHandler : IRequestHandler<ResetPasswordC
             ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var now = _timeProvider.GetUtcNow();
+        challenge = await AuthSupport.ResolveLatestPendingOtpChallengeAsync(
+            _context,
+            challenge,
+            OtpPurpose.ForgotPassword,
+            cancellationToken);
 
         if (challenge.ConsumedAt.HasValue)
         {

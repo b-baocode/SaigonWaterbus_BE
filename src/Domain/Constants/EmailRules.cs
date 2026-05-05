@@ -2,6 +2,9 @@ namespace SaigonWaterbus.Domain.Constants;
 
 public abstract class EmailRules
 {
+    public const string AllowedEmailDomainMessage =
+        "Email chỉ hỗ trợ @gmail.com hoặc @fpt.edu.vn.";
+
     public static readonly IReadOnlyList<string> AllowedRegistrationDomains =
         ["gmail.com", "fpt.edu.vn"];
 
