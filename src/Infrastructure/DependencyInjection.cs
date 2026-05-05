@@ -68,7 +68,6 @@ public static class DependencyInjection
         });
 
         builder.Services.AddScoped<ApplicationDbContextInitialiser>();
-        builder.Services.AddHostedService<PendingRegistrationCleanupService>();
         builder.Services.Configure<DatabaseStartupSettings>(options =>
         {
             options.ResetOnStartup = builder.Environment.IsDevelopment() &&
