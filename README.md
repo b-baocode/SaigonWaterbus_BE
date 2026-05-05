@@ -50,6 +50,12 @@ Run one command to verify restore, build, test, and fresh-database migration:
 ./scripts/verify-local.sh
 ```
 
+Verify that expired pending registrations are cleaned up from a temporary database only:
+
+```bash
+./scripts/verify-pending-cleanup.sh
+```
+
 ## Deploy Database
 
 Apply migrations and seed built-in roles to a remote database without deleting existing data:

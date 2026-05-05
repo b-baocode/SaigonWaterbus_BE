@@ -228,7 +228,6 @@ public class ApplicationDbContextInitialiser
                     FROM otp_challenges oc
                     WHERE oc."UserId" = u."Id"
                       AND oc."Purpose" = 1
-                      AND oc."ConsumedAt" IS NULL
                       AND oc."ExpiresAt" > now());
             """;
 
@@ -350,7 +349,6 @@ public class ApplicationDbContextInitialiser
             .Where(x => x.Status == UserStatus.PendingVerification
                      && x.OtpChallenges.Any(otp => otp.Purpose == OtpPurpose.Register)
                      && !x.OtpChallenges.Any(otp => otp.Purpose == OtpPurpose.Register
-                                                 && otp.ConsumedAt == null
                                                  && otp.ExpiresAt > now));
     }
 

@@ -219,7 +219,7 @@ internal static class AuthSupport
 
         foreach (var user in users)
         {
-            if (HasActiveRegisterChallenge(user, now))
+            if (HasUnexpiredRegisterChallenge(user, now))
             {
                 continue;
             }
@@ -246,7 +246,7 @@ internal static class AuthSupport
             return false;
         }
 
-        if (HasActiveRegisterChallenge(user, now))
+        if (HasUnexpiredRegisterChallenge(user, now))
         {
             return false;
         }
@@ -315,8 +315,7 @@ internal static class AuthSupport
         return true;
     }
 
-    private static bool HasActiveRegisterChallenge(User user, DateTimeOffset now) =>
+    private static bool HasUnexpiredRegisterChallenge(User user, DateTimeOffset now) =>
         user.OtpChallenges.Any(x => x.Purpose == OtpPurpose.Register
-                                 && x.ConsumedAt == null
                                  && x.ExpiresAt > now);
 }
