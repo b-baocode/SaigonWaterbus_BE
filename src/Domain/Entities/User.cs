@@ -14,6 +14,8 @@ public class User : BaseAuditableEntity
 
     public string? NormalizedPhoneNumber { get; set; }
 
+    public DateTimeOffset? PhoneVerifiedAt { get; set; }
+
     public string? Email { get; set; }
 
     public string? NormalizedEmail { get; set; }

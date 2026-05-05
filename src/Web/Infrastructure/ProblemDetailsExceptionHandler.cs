@@ -16,6 +16,17 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
     {
         var (statusCode, problemDetails) = exception switch
         {
+            AccountNotCompletedException ance => (StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Status = StatusCodes.Status403Forbidden,
+                Title = "Account not completed",
+                Detail = ance.Message,
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.5.4",
+                Extensions =
+                {
+                    ["code"] = ance.Code
+                }
+            }),
             ValidationException ve => (StatusCodes.Status400BadRequest, (ProblemDetails)new ValidationProblemDetails(ve.Errors)
             {
                 Status = StatusCodes.Status400BadRequest,

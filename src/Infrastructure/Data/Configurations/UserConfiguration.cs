@@ -30,6 +30,8 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.NormalizedPhoneNumber)
             .HasMaxLength(20);
 
+        builder.Property(x => x.PhoneVerifiedAt);
+
         builder.HasIndex(x => x.NormalizedPhoneNumber)
             .IsUnique()
             .HasFilter("\"NormalizedPhoneNumber\" IS NOT NULL");

@@ -22,13 +22,7 @@ public sealed class Users : IEndpointGroup
     private const string UpdateUserExample =
         """
         {
-          "fullName": "Tran Thi B Updated",
-          "dateOfBirth": "10/05/1998",
-          "phoneNumber": "0912345678",
-          "email": "thib@fpt.edu.vn",
-          "roleId": 4,
-          "department": null,
-          "status": "Active"
+          "phoneNumber": "0912345678"
         }
         """;
 
@@ -153,11 +147,11 @@ public sealed class Users : IEndpointGroup
         Domain.Enums.UserStatus? Status);
 
     public sealed record UpdateUserRequest(
-        string FullName,
-        DateOnly? DateOfBirth,
-        string? PhoneNumber,
-        string Email,
-        int RoleId,
-        string? Department,
-        Domain.Enums.UserStatus Status);
+        string? FullName = null,
+        DateOnly? DateOfBirth = null,
+        string? PhoneNumber = null,
+        string? Email = null,
+        int? RoleId = null,
+        string? Department = null,
+        Domain.Enums.UserStatus? Status = null);
 }

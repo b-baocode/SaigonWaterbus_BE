@@ -282,6 +282,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)");
 
+                    b.Property<DateTimeOffset?>("PhoneVerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("RoleId")
                         .HasColumnType("integer");
 

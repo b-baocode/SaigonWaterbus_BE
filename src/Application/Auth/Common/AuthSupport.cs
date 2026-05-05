@@ -84,10 +84,13 @@ internal static class AuthSupport
             throw new UnauthorizedAccessException();
         }
 
-        return await context.Set<User>()
+        var user = await context.Set<User>()
             .Include(x => x.Role)
             .SingleOrDefaultAsync(x => x.Id == userContext.UserId.Value, cancellationToken)
             ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Current user was not found.");
+
+        EnsureUserCanLogin(user);
+        return user;
     }
 
     public static AuthSessionDto CreateSessionDto(
@@ -108,6 +111,7 @@ internal static class AuthSupport
                 user.FullName,
                 user.DateOfBirth,
                 user.PhoneNumber,
+                user.PhoneVerifiedAt,
                 user.Email,
                 user.Department,
                 user.AvatarUrl,
@@ -125,12 +129,21 @@ internal static class AuthSupport
     {
         if (user.Status == UserStatus.PendingVerification)
         {
-            throw CreateValidationException(propertyName, "Tài khoản chưa hoàn tất xác thực OTP.");
+            throw new AccountNotCompletedException(
+                AccountNotCompletedException.AccountNotCompletedCode,
+                "Tài khoản chưa hoàn tất xác thực OTP.");
         }
 
         if (user.Status == UserStatus.Suspended)
         {
             throw CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa.");
+        }
+
+        if (user.PhoneVerifiedAt is null)
+        {
+            throw new AccountNotCompletedException(
+                AccountNotCompletedException.PhoneNotVerifiedCode,
+                "Tài khoản chưa xác minh số điện thoại.");
         }
     }
 
@@ -142,6 +155,7 @@ internal static class AuthSupport
             user.FullName,
             user.DateOfBirth,
             user.PhoneNumber,
+            user.PhoneVerifiedAt,
             user.Email,
             user.Department,
             user.AvatarUrl,

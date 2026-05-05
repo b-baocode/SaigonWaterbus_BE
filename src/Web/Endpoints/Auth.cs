@@ -55,6 +55,22 @@ public class Auth : IEndpointGroup
         }
         """;
 
+    private const string GoogleSendPhoneOtpExample =
+        """
+        {
+          "tempToken": "google-temp-token",
+          "phone": "0901234567"
+        }
+        """;
+
+    private const string GoogleVerifyPhoneExample =
+        """
+        {
+          "tempToken": "google-temp-token",
+          "otp": "123456"
+        }
+        """;
+
     private const string RefreshTokenExample =
         """
         {
@@ -152,7 +168,28 @@ public class Auth : IEndpointGroup
                 "Anonymous",
                 GoogleLoginExample,
                 "idToken lay tu frontend sau khi dang nhap Google.",
-                "Tra ve thong tin user, access token va refresh token."));
+                "User cu da active va co PhoneVerifiedAt se duoc cap token.",
+                "User moi hoac user Google cu chua co PhoneVerifiedAt se nhan status NEED_PHONE va tempToken.",
+                "Khong tao user moi va khong cap JWT khi chua xac minh so dien thoai."));
+
+        groupBuilder.MapPost(SendGooglePhoneOtp, "google/send-phone-otp")
+            .WithSummary("Gui OTP so dien thoai cho Google Login")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                GoogleSendPhoneOtpExample,
+                "Dung tempToken tra ve tu /api/auth/google-login.",
+                "Backend check phone chua bi user khac dung, sau do gui OTP.",
+                "Khong tao user va khong cap JWT o buoc nay."));
+
+        groupBuilder.MapPost(VerifyGooglePhone, "google/verify-phone")
+            .WithSummary("Xac minh OTP Google Login va tao user")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                GoogleVerifyPhoneExample,
+                "Dung tempToken da nhan o buoc gui OTP.",
+                "Backend su dung so dien thoai da luu trong temp session, khong can gui lai phone.",
+                "OTP dung moi tao hoac hoan tat user that trong database.",
+                "Thanh cong cap access token va refresh token."));
 
         groupBuilder.MapPost(RefreshToken, "refresh-token")
             .WithSummary("Lam moi access token")
@@ -209,8 +246,7 @@ public class Auth : IEndpointGroup
         groupBuilder.MapPut(UpdateMe, "me")
             .RequireAuthorization()
             .DisableAntiforgery()
-            .Accepts<UpdateCurrentUserProfileJsonRequest>("application/json")
-            .Accepts<UpdateCurrentUserProfileFormRequest>("multipart/form-data")
+            .Accepts<UpdateCurrentUserProfileJsonRequest>("application/json", "multipart/form-data")
             .WithSummary("Cap nhat profile hien tai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
@@ -220,7 +256,7 @@ public class Auth : IEndpointGroup
                 "Co the gui application/json neu khong doi anh.",
                 "Neu doi anh, gui multipart/form-data voi cac field fullName, dateOfBirth, phoneNumber, email va file.",
                 "Anh chi ho tro JPEG, PNG hoac WebP, toi da 5 MB.",
-                "PhoneNumber ho tro dang 0901234567 hoac +84901234567 va khong duoc trung.",
+                "Customer khong duoc tu thay doi phoneNumber; Admin hoac Manager doi so dien thoai customer qua API quan ly user.",
                 "Neu email thay doi, backend gui OTP toi email moi va chua doi email cho toi khi verify OTP."));
 
         groupBuilder.MapDelete(DeleteMe, "me")
@@ -282,6 +318,24 @@ public class Auth : IEndpointGroup
     public static async Task<IResult> GoogleLogin(
         ISender sender,
         GoogleLoginCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(command, cancellationToken);
+        return Results.Ok(result);
+    }
+
+    public static async Task<IResult> SendGooglePhoneOtp(
+        ISender sender,
+        SendGooglePhoneOtpCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(command, cancellationToken);
+        return Results.Ok(result);
+    }
+
+    public static async Task<IResult> VerifyGooglePhone(
+        ISender sender,
+        VerifyGooglePhoneCommand command,
         CancellationToken cancellationToken)
     {
         var result = await sender.Send(command, cancellationToken);

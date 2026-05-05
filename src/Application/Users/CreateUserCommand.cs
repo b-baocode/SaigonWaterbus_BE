@@ -67,19 +67,22 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
     private readonly ISecretHasher _secretHasher;
     private readonly IUserCodeGenerator _userCodeGenerator;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
 
     public CreateUserCommandHandler(
         IApplicationDbContext context,
         IIdentityNormalizer identityNormalizer,
         ISecretHasher secretHasher,
         IUserCodeGenerator userCodeGenerator,
-        IUserContext userContext)
+        IUserContext userContext,
+        TimeProvider timeProvider)
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
         _secretHasher = secretHasher;
         _userCodeGenerator = userCodeGenerator;
         _userContext = userContext;
+        _timeProvider = timeProvider;
     }
 
     public async Task<AuthUserDto> Handle(CreateUserCommand request, CancellationToken cancellationToken)
@@ -121,6 +124,11 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
             Department = request.Department?.Trim(),
             Status = request.Status ?? UserStatus.Active
         };
+
+        if (user.Status == UserStatus.Active && user.NormalizedPhoneNumber is not null)
+        {
+            user.PhoneVerifiedAt = _timeProvider.GetUtcNow();
+        }
 
         user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(role.Code, cancellationToken);
 

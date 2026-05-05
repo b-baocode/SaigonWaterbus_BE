@@ -95,6 +95,7 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
 
             var user = challenge.User;
             user.Status = UserStatus.Active;
+            user.PhoneVerifiedAt ??= now;
 
             var customerRole = await AuthSupport.GetRoleByCodeAsync(
                 _context,

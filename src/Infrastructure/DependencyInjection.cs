@@ -44,6 +44,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
+        builder.Services.AddSingleton<IGoogleLoginTempStore, InMemoryGoogleLoginTempStore>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddScoped<EsmsSmsSender>();
@@ -67,6 +68,7 @@ public static class DependencyInjection
         });
 
         builder.Services.AddScoped<ApplicationDbContextInitialiser>();
+        builder.Services.AddHostedService<PendingRegistrationCleanupService>();
         builder.Services.Configure<DatabaseStartupSettings>(options =>
         {
             options.ResetOnStartup = builder.Environment.IsDevelopment() &&

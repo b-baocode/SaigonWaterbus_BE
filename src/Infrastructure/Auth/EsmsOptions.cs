@@ -30,6 +30,12 @@ public sealed class EsmsOptions
 
     public string DefaultContentTemplate { get; set; } = "{code} la ma xac minh tai khoan {brandname} cua ban";
 
+    public string? VinaRegisterContentTemplate { get; set; }
+
+    public string? VinaForgotPasswordContentTemplate { get; set; }
+
+    public string? VinaDefaultContentTemplate { get; set; }
+
     public string? CampaignId { get; set; }
 
     public string? CallbackUrl { get; set; }

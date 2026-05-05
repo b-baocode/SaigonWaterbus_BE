@@ -7,6 +7,11 @@ namespace SaigonWaterbus.Infrastructure.Auth;
 
 public sealed class EsmsOtpSender : ISmsOtpSender
 {
+    private static readonly HashSet<string> VinaMobilePrefixes =
+    [
+        "81", "82", "83", "84", "85", "88", "91", "94"
+    ];
+
     private readonly EsmsSmsSender _smsSender;
     private readonly IOptionsMonitor<EsmsOptions> _optionsMonitor;
 
@@ -24,7 +29,7 @@ public sealed class EsmsOtpSender : ISmsOtpSender
         var brandname = string.IsNullOrWhiteSpace(options.Brandname)
             ? "Baotrixemay"
             : options.Brandname.Trim();
-        var content = BuildContent(code, purpose, brandname, options);
+        var content = BuildContent(phoneNumber, code, purpose, brandname, options);
 
         EsmsSendResult result;
         try
@@ -51,13 +56,25 @@ public sealed class EsmsOtpSender : ISmsOtpSender
         }
     }
 
-    private static string BuildContent(string code, OtpPurpose purpose, string brandname, EsmsOptions options)
+    private static string BuildContent(
+        string phoneNumber,
+        string code,
+        OtpPurpose purpose,
+        string brandname,
+        EsmsOptions options)
     {
+        var isVinaPhone = IsVinaPhoneNumber(phoneNumber);
         var template = purpose switch
         {
-            OtpPurpose.Register => ResolveTemplate(options.RegisterContentTemplate, options.DefaultContent),
-            OtpPurpose.ForgotPassword => ResolveTemplate(options.ForgotPasswordContentTemplate, options.DefaultContent),
-            _ => ResolveTemplate(options.DefaultContentTemplate, options.DefaultContent)
+            OtpPurpose.Register => isVinaPhone
+                ? ResolveTemplate(options.VinaRegisterContentTemplate, options.RegisterContentTemplate, options.DefaultContent)
+                : ResolveTemplate(options.RegisterContentTemplate, options.DefaultContent),
+            OtpPurpose.ForgotPassword => isVinaPhone
+                ? ResolveTemplate(options.VinaForgotPasswordContentTemplate, options.ForgotPasswordContentTemplate, options.DefaultContent)
+                : ResolveTemplate(options.ForgotPasswordContentTemplate, options.DefaultContent),
+            _ => isVinaPhone
+                ? ResolveTemplate(options.VinaDefaultContentTemplate, options.DefaultContentTemplate, options.DefaultContent)
+                : ResolveTemplate(options.DefaultContentTemplate, options.DefaultContent)
         };
 
         return template
@@ -65,19 +82,42 @@ public sealed class EsmsOtpSender : ISmsOtpSender
             .Replace("{brandname}", brandname, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string ResolveTemplate(string? purposeTemplate, string defaultContent)
+    private static string ResolveTemplate(params string?[] templates)
     {
-        if (!string.IsNullOrWhiteSpace(purposeTemplate))
+        foreach (var template in templates)
         {
-            return purposeTemplate.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(defaultContent))
-        {
-            return defaultContent.Trim()
-                .Replace("123456", "{code}", StringComparison.Ordinal);
+            if (!string.IsNullOrWhiteSpace(template))
+            {
+                return template.Trim()
+                    .Replace("123456", "{code}", StringComparison.Ordinal);
+            }
         }
 
         return "{code} la ma xac minh tai khoan {brandname} cua ban";
+    }
+
+    private static bool IsVinaPhoneNumber(string phoneNumber)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNumber))
+        {
+            return false;
+        }
+
+        var digits = new string(phoneNumber.Where(char.IsDigit).ToArray());
+        if (digits.StartsWith("84", StringComparison.Ordinal))
+        {
+            digits = digits[2..];
+        }
+        else if (digits.StartsWith("0", StringComparison.Ordinal))
+        {
+            digits = digits[1..];
+        }
+
+        if (digits.Length < 2)
+        {
+            return false;
+        }
+
+        return VinaMobilePrefixes.Contains(digits[..2]);
     }
 }

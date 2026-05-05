@@ -130,10 +130,11 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
             }
         }
 
-        if (phoneChanged
-            && await _context.Set<User>().AnyAsync(x => x.NormalizedPhoneNumber == normalizedPhone && x.Id != user.Id, cancellationToken))
+        if (phoneChanged)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
+            throw AuthSupport.CreateValidationException(
+                nameof(request.PhoneNumber),
+                "Khách hàng không được tự thay đổi số điện thoại. Vui lòng liên hệ Admin hoặc Manager.");
         }
 
         if (hasAvatarUpdate)

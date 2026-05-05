@@ -8,13 +8,13 @@ namespace SaigonWaterbus.Application.Users;
 
 public sealed record UpdateUserCommand(
     int UserId,
-    string FullName,
+    string? FullName,
     DateOnly? DateOfBirth,
     string? PhoneNumber,
-    string Email,
-    int RoleId,
+    string? Email,
+    int? RoleId,
     string? Department,
-    UserStatus Status) : IRequest<AuthUserDto>;
+    UserStatus? Status) : IRequest<AuthUserDto>;
 
 public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCommand>
 {
@@ -26,16 +26,19 @@ public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCom
             .NotEmpty()
             .WithMessage("Họ và tên không được để trống.")
             .MaximumLength(150)
-            .WithMessage("Họ và tên không được vượt quá 150 ký tự.");
+            .WithMessage("Họ và tên không được vượt quá 150 ký tự.")
+            .When(x => x.FullName is not null);
 
         RuleFor(x => x.DateOfBirth)
             .Must(x => !x.HasValue || x.Value <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
             .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
 
         RuleFor(x => x.PhoneNumber)
-            .Must(phoneNumber => phoneNumber is null || PhoneRules.IsValid(phoneNumber))
+            .NotEmpty()
+            .WithMessage("Số điện thoại không được để trống.")
+            .Must(PhoneRules.IsValid)
             .WithMessage(PhoneRules.InvalidInternationalPhoneMessage)
-            .When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber));
+            .When(x => x.PhoneNumber is not null);
 
         RuleFor(x => x.Email)
             .NotEmpty()
@@ -43,11 +46,13 @@ public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCom
             .MaximumLength(255)
             .WithMessage("Email không được vượt quá 255 ký tự.")
             .EmailAddress()
-            .WithMessage("Email không đúng định dạng.");
+            .WithMessage("Email không đúng định dạng.")
+            .When(x => x.Email is not null);
 
         RuleFor(x => x.RoleId)
             .GreaterThan(0)
-            .WithMessage("Vai trò là bắt buộc.");
+            .WithMessage("Vai trò là bắt buộc.")
+            .When(x => x.RoleId.HasValue);
 
         RuleFor(x => x.Department)
             .MaximumLength(100)
@@ -88,40 +93,76 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
 
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
 
-        var targetRole = await AuthSupport.GetRoleByIdAsync(_context, request.RoleId, nameof(request.RoleId), cancellationToken);
-        UserManagementSupport.EnsureCanAssignRole(actor, user, targetRole, nameof(request.RoleId));
-        UserManagementSupport.EnsureDepartmentMatchesRole(targetRole, request.Department, nameof(request.Department));
+        var targetRole = request.RoleId.HasValue
+            ? await AuthSupport.GetRoleByIdAsync(_context, request.RoleId.Value, nameof(request.RoleId), cancellationToken)
+            : user.Role;
+        var roleChanged = targetRole.Id != user.RoleId;
 
-        var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
-        if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, cancellationToken))
+        if (roleChanged)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
+            UserManagementSupport.EnsureCanAssignRole(actor, user, targetRole, nameof(request.RoleId));
         }
 
-        var normalizedPhone = string.IsNullOrWhiteSpace(request.PhoneNumber)
-            ? null
-            : _identityNormalizer.NormalizePhone(request.PhoneNumber);
-
-        if (normalizedPhone is not null
-            && await _context.Set<User>().AnyAsync(
-                x => x.NormalizedPhoneNumber == normalizedPhone && x.Id != user.Id,
-                cancellationToken))
+        var effectiveDepartment = ResolveEffectiveDepartment(request.Department, user.Department, targetRole);
+        if (roleChanged || request.Department is not null)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
+            UserManagementSupport.EnsureDepartmentMatchesRole(targetRole, effectiveDepartment, nameof(request.Department));
         }
 
-        user.FullName = request.FullName.Trim();
-        user.DateOfBirth = request.DateOfBirth;
-        user.PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber)
-            ? null
-            : PhoneRules.ToInternationalFormat(request.PhoneNumber);
-        user.NormalizedPhoneNumber = normalizedPhone;
-        user.Email = request.Email.Trim();
-        user.NormalizedEmail = normalizedEmail;
-        user.Department = request.Department?.Trim();
-        user.Status = request.Status;
+        if (request.Email is not null)
+        {
+            var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
+            if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, cancellationToken))
+            {
+                throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
+            }
 
-        if (user.RoleId != targetRole.Id)
+            user.Email = request.Email.Trim();
+            user.NormalizedEmail = normalizedEmail;
+        }
+
+        if (request.PhoneNumber is not null)
+        {
+            var normalizedPhone = _identityNormalizer.NormalizePhone(request.PhoneNumber);
+            var phoneChanged = normalizedPhone != user.NormalizedPhoneNumber;
+
+            if (await _context.Set<User>().AnyAsync(
+                    x => x.NormalizedPhoneNumber == normalizedPhone && x.Id != user.Id,
+                    cancellationToken))
+            {
+                throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
+            }
+
+            user.PhoneNumber = PhoneRules.ToInternationalFormat(request.PhoneNumber);
+            user.NormalizedPhoneNumber = normalizedPhone;
+            if (user.Status == UserStatus.Active && (phoneChanged || user.PhoneVerifiedAt is null))
+            {
+                user.PhoneVerifiedAt = _timeProvider.GetUtcNow();
+            }
+        }
+
+        if (request.FullName is not null)
+        {
+            user.FullName = request.FullName.Trim();
+        }
+
+        if (request.DateOfBirth.HasValue)
+        {
+            user.DateOfBirth = request.DateOfBirth;
+        }
+
+        if (request.Status.HasValue)
+        {
+            user.Status = request.Status.Value;
+            if (user.Status == UserStatus.Active
+                && user.NormalizedPhoneNumber is not null
+                && user.PhoneVerifiedAt is null)
+            {
+                user.PhoneVerifiedAt = _timeProvider.GetUtcNow();
+            }
+        }
+
+        if (roleChanged)
         {
             user.RoleId = targetRole.Id;
 
@@ -131,6 +172,8 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
             }
         }
 
+        user.Department = effectiveDepartment;
+
         await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, _timeProvider.GetUtcNow(), cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -139,5 +182,17 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
             .SingleAsync(x => x.Id == user.Id, cancellationToken);
 
         return AuthSupport.CreateUserDto(updatedUser);
+    }
+
+    private static string? ResolveEffectiveDepartment(string? requestedDepartment, string? currentDepartment, Role targetRole)
+    {
+        if (!AuthSupport.RequiresDepartment(targetRole))
+        {
+            return null;
+        }
+
+        return requestedDepartment is null
+            ? currentDepartment
+            : requestedDepartment.Trim();
     }
 }

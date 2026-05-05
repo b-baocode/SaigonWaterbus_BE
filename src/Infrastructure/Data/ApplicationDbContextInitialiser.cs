@@ -26,6 +26,8 @@ public static class InitialiserExtensions
 
 public class ApplicationDbContextInitialiser
 {
+    public const string PendingRegistrationCleanupCronJobName = "cleanup-expired-pending-users";
+
     private static readonly SeedUser[] InternalUsers =
     [
         new(
@@ -194,6 +196,58 @@ public class ApplicationDbContextInitialiser
         await SeedAsync();
     }
 
+    public Task<int> CountExpiredPendingRegistrationUsersAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return GetExpiredPendingRegistrationUsersQuery(now).CountAsync(cancellationToken);
+    }
+
+    public async Task<int> CleanupExpiredPendingRegistrationUsersAsync(CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return await GetExpiredPendingRegistrationUsersQuery(now).ExecuteDeleteAsync(cancellationToken);
+    }
+
+    public Task ConfigurePendingRegistrationCleanupCronAsync(
+        string cronExpression,
+        CancellationToken cancellationToken = default)
+    {
+        Guard.Against.NullOrWhiteSpace(cronExpression);
+
+        const string cleanupCommand =
+            """
+            DELETE FROM users u
+            WHERE u."Status" = 0
+              AND EXISTS (
+                    SELECT 1
+                    FROM otp_challenges oc
+                    WHERE oc."UserId" = u."Id"
+                      AND oc."Purpose" = 1)
+              AND NOT EXISTS (
+                    SELECT 1
+                    FROM otp_challenges oc
+                    WHERE oc."UserId" = u."Id"
+                      AND oc."Purpose" = 1
+                      AND oc."ConsumedAt" IS NULL
+                      AND oc."ExpiresAt" > now());
+            """;
+
+        return _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+             CREATE EXTENSION IF NOT EXISTS pg_cron;
+
+             SELECT cron.unschedule(jobid)
+             FROM cron.job
+             WHERE jobname = {PendingRegistrationCleanupCronJobName};
+
+             SELECT cron.schedule(
+                 {PendingRegistrationCleanupCronJobName},
+                 {cronExpression},
+                 {cleanupCommand});
+             """,
+            cancellationToken);
+    }
+
     private async Task SeedInternalUserAsync(SeedUser definition, Role role)
     {
         var normalizedEmail = _identityNormalizer.NormalizeEmail(definition.Email);
@@ -215,7 +269,8 @@ public class ApplicationDbContextInitialiser
                 PasswordHash = _secretHasher.Hash(definition.Password),
                 RoleId = role.Id,
                 Department = definition.Department,
-                Status = UserStatus.Active
+                Status = UserStatus.Active,
+                PhoneVerifiedAt = DateTimeOffset.UtcNow
             };
             _context.Users.Add(user);
             return;
@@ -264,6 +319,7 @@ public class ApplicationDbContextInitialiser
         }
 
         user.Status = UserStatus.Active;
+        user.PhoneVerifiedAt ??= DateTimeOffset.UtcNow;
     }
 
     private async Task SyncUserCodeSequencesAsync()
@@ -286,6 +342,16 @@ public class ApplicationDbContextInitialiser
                 GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0), 1),
                 COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0) > 0);
             """);
+    }
+
+    private IQueryable<User> GetExpiredPendingRegistrationUsersQuery(DateTimeOffset now)
+    {
+        return _context.Users
+            .Where(x => x.Status == UserStatus.PendingVerification
+                     && x.OtpChallenges.Any(otp => otp.Purpose == OtpPurpose.Register)
+                     && !x.OtpChallenges.Any(otp => otp.Purpose == OtpPurpose.Register
+                                                 && otp.ConsumedAt == null
+                                                 && otp.ExpiresAt > now));
     }
 
     private sealed record SeedUser(

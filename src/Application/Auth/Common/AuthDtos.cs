@@ -10,6 +10,7 @@ public sealed record AuthUserDto(
     string FullName,
     DateOnly? DateOfBirth,
     string? PhoneNumber,
+    DateTimeOffset? PhoneVerifiedAt,
     string? Email,
     string? Department,
     string? AvatarUrl,
@@ -25,9 +26,22 @@ public sealed record AuthTokensDto(
 
 public sealed record AuthSessionDto(AuthUserDto User, AuthTokensDto Tokens);
 
+public sealed record GoogleLoginResultDto(
+    string Status,
+    AuthUserDto? User = null,
+    AuthTokensDto? Tokens = null,
+    string? TempToken = null,
+    DateTimeOffset? TempTokenExpiresAt = null);
+
 public sealed record AuthActionResultDto(string Message);
 
 public sealed record UpdateProfileResultDto(AuthUserDto User, OtpChallengeDto? EmailVerification);
+
+public sealed record GooglePhoneOtpSentDto(
+    string Status,
+    string MaskedPhone,
+    DateTimeOffset ExpiresAt,
+    DateTimeOffset ResendAvailableAt);
 
 public sealed record OtpChallengeDto(
     int ChallengeId,
