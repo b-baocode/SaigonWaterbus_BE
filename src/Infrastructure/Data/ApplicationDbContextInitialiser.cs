@@ -327,6 +327,15 @@ public class ApplicationDbContextInitialiser
 
     private async Task SeedStaffPositionsAsync()
     {
+        var builtInCodes = StaffPositions.BuiltIn
+            .Select(x => x.Code)
+            .ToHashSet(StringComparer.Ordinal);
+
+        await _context.StaffPositions
+            .Where(x => !builtInCodes.Contains(x.Code)
+                     && !x.UserPositions.Any())
+            .ExecuteDeleteAsync();
+
         var positionByCode = await _context.StaffPositions
             .ToDictionaryAsync(x => x.Code);
 
