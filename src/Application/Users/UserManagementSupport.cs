@@ -47,7 +47,7 @@ internal static class UserManagementSupport
                 return;
             }
 
-            throw AuthSupport.CreateValidationException(propertyName, "Admin System role cannot be created from this API.");
+            throw AuthSupport.CreateValidationException(propertyName, "Admin System can only create manager accounts.");
         }
 
         if (AuthSupport.IsManager(actor) && CanManagerManageRole(targetRole))
@@ -55,7 +55,7 @@ internal static class UserManagementSupport
             return;
         }
 
-        throw AuthSupport.CreateValidationException(propertyName, "Manager can only create customer or staff accounts.");
+        throw AuthSupport.CreateValidationException(propertyName, "Manager can only create staff accounts. Customer accounts must use the registration flow.");
     }
 
     public static void EnsureCanViewUser(User actor, User target)
@@ -126,7 +126,7 @@ internal static class UserManagementSupport
                 return;
             }
 
-            throw AuthSupport.CreateValidationException(propertyName, "Admin System role cannot be assigned.");
+            throw AuthSupport.CreateValidationException(propertyName, "Admin System can only assign manager roles.");
         }
 
         if (AuthSupport.IsManager(actor))
@@ -138,7 +138,7 @@ internal static class UserManagementSupport
 
             if (!CanManagerManageRole(targetRole))
             {
-                throw AuthSupport.CreateValidationException(propertyName, "Manager can only assign customer or staff roles.");
+                throw AuthSupport.CreateValidationException(propertyName, "Manager can only assign staff roles. Customer accounts must use the registration flow.");
             }
 
             return;
@@ -148,13 +148,10 @@ internal static class UserManagementSupport
     }
 
     private static bool CanAdminManageRole(Role role) =>
-        role.SystemName is Roles.ManagerSystemName
-            or Roles.StaffSystemName
-            or Roles.CustomerSystemName;
+        role.SystemName is Roles.ManagerSystemName;
 
     private static bool CanManagerManageRole(Role role) =>
-        role.SystemName is Roles.CustomerSystemName
-            or Roles.StaffSystemName;
+        role.SystemName is Roles.StaffSystemName;
 
     public static async Task<User> GetVisibleUserByIdAsync(
         IApplicationDbContext context,

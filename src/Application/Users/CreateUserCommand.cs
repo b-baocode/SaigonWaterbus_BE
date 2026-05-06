@@ -13,8 +13,7 @@ public sealed record CreateUserCommand(
     string Email,
     string Password,
     int RoleId,
-    string? Department,
-    UserStatus? Status) : IRequest<AuthUserDto>;
+    string? Department) : IRequest<AuthUserDto>;
 
 public sealed class CreateUserCommandValidator : AbstractValidator<CreateUserCommand>
 {
@@ -125,18 +124,31 @@ public sealed class CreateUserCommandHandler : IRequestHandler<CreateUserCommand
             PasswordHash = _secretHasher.Hash(request.Password),
             RoleId = role.Id,
             Department = request.Department?.Trim(),
-            Status = request.Status ?? UserStatus.Active
+            Status = UserStatus.Active
         };
 
+        var now = _timeProvider.GetUtcNow();
         if (user.Status == UserStatus.Active && user.NormalizedPhoneNumber is not null)
         {
-            user.PhoneVerifiedAt = _timeProvider.GetUtcNow();
+            user.PhoneVerifiedAt = now;
         }
 
         user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(role.Code, cancellationToken);
 
-        _context.Set<User>().Add(user);
-        await _context.SaveChangesAsync(cancellationToken);
+        await _context.ExecuteInTransactionAsync(async ct =>
+        {
+            _context.Set<User>().Add(user);
+            await _context.SaveChangesAsync(ct);
+
+            _context.AuditLogs.Add(UserAuditSupport.CreateUserAuditLog(
+                actor.Id,
+                AuditActions.CreateUser,
+                user.Id,
+                oldValues: null,
+                newValues: UserAuditSupport.CreateUserSnapshot(user, role),
+                now));
+            await _context.SaveChangesAsync(ct);
+        }, cancellationToken);
 
         var createdUser = await _context.Set<User>()
             .Include(x => x.Role)

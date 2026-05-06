@@ -89,7 +89,7 @@ internal static class AuthSupport
             .SingleOrDefaultAsync(x => x.Id == userContext.UserId.Value, cancellationToken)
             ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Current user was not found.");
 
-        EnsureUserCanLogin(user);
+        EnsureUserCanLogin(user, requireVerifiedPhone: false);
         return user;
     }
 
@@ -125,7 +125,10 @@ internal static class AuthSupport
                 refreshTokenExpiresAt));
     }
 
-    public static void EnsureUserCanLogin(User user, string propertyName = "email")
+    public static void EnsureUserCanLogin(
+        User user,
+        string propertyName = "email",
+        bool requireVerifiedPhone = true)
     {
         if (user.Status == UserStatus.PendingVerification)
         {
@@ -139,7 +142,7 @@ internal static class AuthSupport
             throw CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa.");
         }
 
-        if (user.PhoneVerifiedAt is null)
+        if (requireVerifiedPhone && user.PhoneVerifiedAt is null)
         {
             throw new AccountNotCompletedException(
                 AccountNotCompletedException.PhoneNotVerifiedCode,
@@ -223,7 +226,7 @@ internal static class AuthSupport
 
     public static async Task<bool> RemoveExpiredPendingRegistrationUsersByIdentityAsync(
         IApplicationDbContext context,
-        string normalizedPhone,
+        string? normalizedPhone,
         string? normalizedEmail,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -231,7 +234,7 @@ internal static class AuthSupport
         var users = await context.Set<User>()
             .Include(x => x.OtpChallenges)
             .Where(x => x.Status == UserStatus.PendingVerification
-                     && (x.NormalizedPhoneNumber == normalizedPhone
+                     && ((normalizedPhone != null && x.NormalizedPhoneNumber == normalizedPhone)
                          || (normalizedEmail != null && x.NormalizedEmail == normalizedEmail)))
             .ToListAsync(cancellationToken);
 
@@ -293,7 +296,7 @@ internal static class AuthSupport
         CancellationToken cancellationToken)
     {
         var currentUser = await GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
-        EnsureUserCanLogin(currentUser);
+        EnsureUserCanLogin(currentUser, requireVerifiedPhone: false);
 
         if (IsAdmin(currentUser) || IsManager(currentUser))
         {

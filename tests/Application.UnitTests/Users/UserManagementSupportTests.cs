@@ -9,14 +9,23 @@ namespace SaigonWaterbus.Application.UnitTests.Users;
 
 public class UserManagementSupportTests
 {
-    [TestCase(Roles.CustomerSystemName)]
-    [TestCase(Roles.StaffSystemName)]
-    public void ManagerCanCreateCustomerAndStaff(string targetSystemName)
+    [Test]
+    public void ManagerCanCreateStaff()
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
-        var targetRole = Role(targetSystemName);
+        var targetRole = Role(Roles.StaffSystemName);
 
         Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+    }
+
+    [Test]
+    public void ManagerCannotCreateCustomer()
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var targetRole = Role(Roles.CustomerSystemName);
+
+        Should.Throw<ValidationException>(() =>
+            UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
     }
 
     [TestCase(Roles.ManagerSystemName)]
@@ -30,22 +39,23 @@ public class UserManagementSupportTests
             UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
     }
 
-    [TestCase(Roles.ManagerSystemName)]
-    [TestCase(Roles.StaffSystemName)]
-    [TestCase(Roles.CustomerSystemName)]
-    public void AdminCanCreateManagedRoles(string targetSystemName)
+    [Test]
+    public void AdminCanCreateManager()
     {
         var actor = UserWithRole(1, Roles.AdminSystemName);
-        var targetRole = Role(targetSystemName);
+        var targetRole = Role(Roles.ManagerSystemName);
 
         Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
     }
 
-    [Test]
-    public void AdminCannotCreateAdminSystem()
+    [TestCase(Roles.AdminSystemName)]
+    [TestCase(Roles.CustomerSystemName)]
+    [TestCase(Roles.StaffSystemName)]
+    [TestCase(Roles.CustomerSystemName)]
+    public void AdminCannotCreateNonManagerRoles(string targetSystemName)
     {
         var actor = UserWithRole(1, Roles.AdminSystemName);
-        var targetRole = Role(Roles.AdminSystemName);
+        var targetRole = Role(targetSystemName);
 
         Should.Throw<ValidationException>(() =>
             UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
@@ -75,17 +85,25 @@ public class UserManagementSupportTests
         Should.Throw<ForbiddenAccessException>(() => UserManagementSupport.EnsureCanDeleteUser(actor, target));
     }
 
-    [TestCase(Roles.CustomerSystemName)]
     [TestCase(Roles.StaffSystemName)]
-    public void ManagerCanAssignCustomerAndStaffRolesToCustomerOrStaff(string targetSystemName)
+    public void ManagerCanAssignStaffRoleToCustomerOrStaff(string targetSystemName)
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var target = UserWithRole(2, targetSystemName);
 
         Should.NotThrow(() =>
-            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.CustomerSystemName), "roleId"));
-        Should.NotThrow(() =>
             UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.StaffSystemName), "roleId"));
+    }
+
+    [TestCase(Roles.CustomerSystemName)]
+    [TestCase(Roles.StaffSystemName)]
+    public void ManagerCannotAssignCustomerRole(string targetSystemName)
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var target = UserWithRole(2, targetSystemName);
+
+        Should.Throw<ValidationException>(() =>
+            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.CustomerSystemName), "roleId"));
     }
 
     [TestCase(Roles.ManagerSystemName)]
@@ -110,20 +128,20 @@ public class UserManagementSupportTests
             UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.CustomerSystemName), "roleId"));
     }
 
-    [TestCase(Roles.ManagerSystemName)]
-    [TestCase(Roles.StaffSystemName)]
-    [TestCase(Roles.CustomerSystemName)]
-    public void AdminCanAssignManagedRoles(string targetRoleSystemName)
+    [Test]
+    public void AdminCanAssignManagerRole()
     {
         var actor = UserWithRole(1, Roles.AdminSystemName);
         var target = UserWithRole(2, Roles.StaffSystemName);
 
         Should.NotThrow(() =>
-            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(targetRoleSystemName), "roleId"));
+            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.ManagerSystemName), "roleId"));
     }
 
-    [Test]
-    public void AdminCannotAssignAdminSystemRole()
+    [TestCase(Roles.AdminSystemName)]
+    [TestCase(Roles.StaffSystemName)]
+    [TestCase(Roles.CustomerSystemName)]
+    public void AdminCannotAssignNonManagerRoles(string targetRoleSystemName)
     {
         var actor = UserWithRole(1, Roles.AdminSystemName);
         var target = UserWithRole(2, Roles.StaffSystemName);

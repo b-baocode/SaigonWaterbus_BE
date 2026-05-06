@@ -14,6 +14,12 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<StaffPosition> StaffPositions => Set<StaffPosition>();
+
+    public DbSet<UserPosition> UserPositions => Set<UserPosition>();
+
+    public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
+
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

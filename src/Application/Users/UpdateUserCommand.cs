@@ -13,8 +13,7 @@ public sealed record UpdateUserCommand(
     string? PhoneNumber,
     string? Email,
     int? RoleId,
-    string? Department,
-    UserStatus? Status) : IRequest<AuthUserDto>;
+    string? Department) : IRequest<AuthUserDto>;
 
 public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCommand>
 {
@@ -95,6 +94,7 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("User was not found.");
 
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
+        var oldValues = UserAuditSupport.CreateUserSnapshot(user);
 
         var targetRole = request.RoleId.HasValue
             ? await AuthSupport.GetRoleByIdAsync(_context, request.RoleId.Value, nameof(request.RoleId), cancellationToken)
@@ -154,17 +154,6 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
             user.DateOfBirth = request.DateOfBirth;
         }
 
-        if (request.Status.HasValue)
-        {
-            user.Status = request.Status.Value;
-            if (user.Status == UserStatus.Active
-                && user.NormalizedPhoneNumber is not null
-                && user.PhoneVerifiedAt is null)
-            {
-                user.PhoneVerifiedAt = _timeProvider.GetUtcNow();
-            }
-        }
-
         if (roleChanged)
         {
             user.RoleId = targetRole.Id;
@@ -178,6 +167,13 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
         user.Department = effectiveDepartment;
 
         await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, _timeProvider.GetUtcNow(), cancellationToken);
+        _context.AuditLogs.Add(UserAuditSupport.CreateUserAuditLog(
+            actor.Id,
+            AuditActions.UpdateUser,
+            user.Id,
+            oldValues,
+            UserAuditSupport.CreateUserSnapshot(user, targetRole),
+            _timeProvider.GetUtcNow()));
         await _context.SaveChangesAsync(cancellationToken);
 
         var updatedUser = await _context.Set<User>()

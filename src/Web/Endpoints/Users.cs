@@ -14,8 +14,14 @@ public sealed class Users : IEndpointGroup
           "email": "thib@fpt.edu.vn",
           "password": "P@ssword123",
           "roleId": 3,
-          "department": "Operations",
-          "status": "Active"
+          "department": "Operations"
+        }
+        """;
+
+    private const string UpdateStatusExample =
+        """
+        {
+          "status": "Suspended"
         }
         """;
 
@@ -28,62 +34,89 @@ public sealed class Users : IEndpointGroup
 
     public static string RoutePrefix => "/api/users";
 
+    public static string OpenApiTag => "05 Users - Management";
+
     public static void Map(RouteGroupBuilder groupBuilder)
     {
+        groupBuilder.MapGet(GetManageableRoles, "roles")
+            .RequireAuthorization()
+            .WithSummary("Lay danh sach role co the gan")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoac Admin System",
+                null,
+                "Dung API nay de biet roleId nao tuong ung role nao trong database.",
+                "Admin System thay role Manager. Manager thay role Staff."));
+
         groupBuilder.MapGet(List, "")
             .RequireAuthorization()
             .WithSummary("Lay danh sach user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Manager hoac Admin System",
                 null,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Manager chi xem duoc Customer va Staff.",
-                "Dung de doc roleId hien tai truoc khi update."));
+                "Lay danh sach user theo quyen.",
+                "Manager chi thay Customer va Staff."));
 
-        groupBuilder.MapGet(GetById, "{userId:int}")
+        groupBuilder.MapGet(GetById, "detail/{userId:int}")
             .RequireAuthorization()
             .WithSummary("Lay chi tiet user theo ID")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Manager hoac Admin System",
                 null,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Example route: /api/users/12.",
-                "Manager chi xem duoc Customer va Staff."));
+                "Lay chi tiet user theo id.",
+                "Manager chi thay Customer va Staff."));
 
-        groupBuilder.MapPost(Create, "")
+        groupBuilder.MapPost(CreateManagedUser, "managed")
             .RequireAuthorization()
-            .WithSummary("Tao user moi")
+            .WithSummary("Tao user moi tu man hinh quan ly")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Manager hoac Admin System",
                 CreateUserExample,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Body dung roleId, khong dung role code.",
-                "Department chi can cho internal role.",
-                "Manager chi tao duoc Customer va Staff."));
+                "Admin System chi tao duoc Manager.",
+                "Manager chi tao duoc Staff. Customer dung flow /api/auth/register de tu dang ky va xac thuc OTP.",
+                "Khong can truyen status khi tao user; he thong mac dinh tao user Active.",
+                "RoleId khong co dinh theo code. Goi GET /api/users/roles de xem id hien tai."));
 
-        groupBuilder.MapPut(Update, "{userId:int}")
+        groupBuilder.MapPut(Update, "update/{userId:int}")
             .RequireAuthorization()
             .WithSummary("Cap nhat user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Manager hoac Admin System",
                 UpdateUserExample,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Example route: /api/users/12.",
-                "Body dung roleId moi neu can doi role.",
-                "Neu doi sang role co prefix khac, backend se cap lai userCode.",
-                "Manager chi cap nhat duoc Customer va Staff."));
+                "Cap nhat user theo quyen.",
+                "Manager chi cap nhat Customer va Staff."));
 
-        groupBuilder.MapDelete(Delete, "{userId:int}")
+        groupBuilder.MapPatch(UpdateStatus, "status/{userId:int}")
+            .RequireAuthorization()
+            .WithSummary("Cap nhat trang thai user")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoac Admin System",
+                UpdateStatusExample,
+                "Status hop le: Active, Suspended.",
+                "Doi status se revoke refresh token dang hoat dong cua user."));
+
+        groupBuilder.MapDelete(Delete, "delete/{userId:int}")
             .RequireAuthorization()
             .WithSummary("Xoa user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Manager hoac Admin System",
                 null,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Example route: /api/users/12.",
-                "Admin System chi xoa duoc Manager va Staff.",
-                "Manager chi xoa duoc Customer va Staff.",
-                "Customer tu xoa tai khoan bang DELETE /api/auth/me."));
+                "Xoa user theo quyen.",
+                "Customer tu xoa bang DELETE /api/auth/profile."));
+
+        groupBuilder.MapGet(GetById, "{userId:int}")
+            .RequireAuthorization()
+            .WithName("GetUserByIdLegacy")
+            .ExcludeFromDescription();
+
+        groupBuilder.MapPut(Update, "{userId:int}")
+            .RequireAuthorization()
+            .WithName("UpdateUserLegacy")
+            .ExcludeFromDescription();
+
+        groupBuilder.MapDelete(Delete, "{userId:int}")
+            .RequireAuthorization()
+            .WithName("DeleteUserLegacy")
+            .ExcludeFromDescription();
     }
 
     private static async Task<IResult> List(
@@ -97,7 +130,12 @@ public sealed class Users : IEndpointGroup
         CancellationToken cancellationToken) =>
         Results.Ok(await sender.Send(new GetUserByIdQuery(userId), cancellationToken));
 
-    private static async Task<IResult> Create(
+    private static async Task<IResult> GetManageableRoles(
+        ISender sender,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(new GetManageableRolesQuery(), cancellationToken));
+
+    private static async Task<IResult> CreateManagedUser(
         ISender sender,
         CreateUserRequest request,
         CancellationToken cancellationToken) =>
@@ -109,8 +147,7 @@ public sealed class Users : IEndpointGroup
                 request.Email,
                 request.Password,
                 request.RoleId,
-                request.Department,
-                request.Status),
+                request.Department),
             cancellationToken));
 
     private static async Task<IResult> Update(
@@ -126,7 +163,17 @@ public sealed class Users : IEndpointGroup
                 request.PhoneNumber,
                 request.Email,
                 request.RoleId,
-                request.Department,
+                request.Department),
+            cancellationToken));
+
+    private static async Task<IResult> UpdateStatus(
+        ISender sender,
+        int userId,
+        UpdateUserStatusRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new UpdateUserStatusCommand(
+                userId,
                 request.Status),
             cancellationToken));
 
@@ -143,8 +190,7 @@ public sealed class Users : IEndpointGroup
         string Email,
         string Password,
         int RoleId,
-        string? Department,
-        Domain.Enums.UserStatus? Status);
+        string? Department);
 
     public sealed record UpdateUserRequest(
         string? FullName = null,
@@ -152,6 +198,8 @@ public sealed class Users : IEndpointGroup
         string? PhoneNumber = null,
         string? Email = null,
         int? RoleId = null,
-        string? Department = null,
-        Domain.Enums.UserStatus? Status = null);
+        string? Department = null);
+
+    public sealed record UpdateUserStatusRequest(
+        Domain.Enums.UserStatus Status);
 }

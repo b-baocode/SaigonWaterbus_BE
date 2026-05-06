@@ -26,7 +26,7 @@ public sealed class DeleteCurrentUserAccountCommandHandler : IRequestHandler<Del
     public async Task<AuthActionResultDto> Handle(DeleteCurrentUserAccountCommand request, CancellationToken cancellationToken)
     {
         var user = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
-        AuthSupport.EnsureUserCanLogin(user);
+        AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
 
         if (!AuthSupport.IsCustomer(user))
         {

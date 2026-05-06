@@ -20,7 +20,14 @@ public static class WebApplicationExtensions
             var groupName = type.Name;
             var routePrefix = type.GetProperty(nameof(IEndpointGroup.RoutePrefix))
                 ?.GetValue(null) as string ?? $"/api/{groupName}";
-            var group = app.MapGroup(routePrefix).WithTags(groupName);
+            var openApiTag = type.GetProperty(nameof(IEndpointGroup.OpenApiTag))
+                ?.GetValue(null) as string ?? groupName;
+            var group = app.MapGroup(routePrefix);
+            if (!string.IsNullOrWhiteSpace(openApiTag))
+            {
+                group.WithTags(openApiTag);
+            }
+
             type.GetMethod(nameof(IEndpointGroup.Map))!.Invoke(null, [group]);
         }
 

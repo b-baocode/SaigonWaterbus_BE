@@ -21,7 +21,7 @@ public static class DependencyInjection
     public static void AddInfrastructureServices(this IHostApplicationBuilder builder)
     {
         var connectionString = builder.Configuration.GetConnectionString(DatabaseConnectionName);
-        Guard.Against.Null(connectionString, message: $"Connection string '{DatabaseConnectionName}' not found.");
+        Guard.Against.NullOrWhiteSpace(connectionString, message: $"Connection string '{DatabaseConnectionName}' not found.");
 
         builder.Services.AddScoped<ISaveChangesInterceptor, AuditableEntityInterceptor>();
         builder.Services.AddScoped<ISaveChangesInterceptor, DispatchDomainEventsInterceptor>();
@@ -44,11 +44,27 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
-        builder.Services.AddSingleton<IGoogleLoginTempStore, InMemoryGoogleLoginTempStore>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddScoped<EsmsSmsSender>();
         builder.Services.AddScoped<ISmsOtpSender, EsmsOtpSender>();
+        builder.Services.AddScoped<ILoginNotificationSender>(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var brevoEnabled = configuration.GetValue<bool>($"{BrevoOptions.SectionName}:Enabled");
+            if (brevoEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<BrevoLoginNotificationSender>(provider);
+            }
+
+            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
+            if (gmailEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<GmailLoginNotificationSender>(provider);
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpLoginNotificationSender>(provider);
+        });
         builder.Services.AddScoped<IOtpSender>(provider =>
         {
             var configuration = provider.GetRequiredService<IConfiguration>();
@@ -80,6 +96,7 @@ public static class DependencyInjection
         builder.Services.Configure<OtpOptions>(builder.Configuration.GetSection(OtpOptions.SectionName));
         builder.Services.Configure<GmailOptions>(builder.Configuration.GetSection(GmailOptions.SectionName));
         builder.Services.Configure<BrevoOptions>(builder.Configuration.GetSection(BrevoOptions.SectionName));
+        builder.Services.Configure<LoginNotificationOptions>(builder.Configuration.GetSection(LoginNotificationOptions.SectionName));
         builder.Services.Configure<EsmsOptions>(builder.Configuration.GetSection(EsmsOptions.SectionName));
         builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection(CloudinaryOptions.SectionName));
 

@@ -45,4 +45,10 @@ public class User : BaseAuditableEntity
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();
 
     public ICollection<ExternalLogin> ExternalLogins { get; set; } = new List<ExternalLogin>();
+
+    public ICollection<UserPosition> UserPositions { get; set; } = new List<UserPosition>();
+
+    public ICollection<UserPosition> AssignedUserPositions { get; set; } = new List<UserPosition>();
+
+    public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
 }

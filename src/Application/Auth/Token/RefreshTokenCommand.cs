@@ -53,7 +53,7 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         }
 
         var user = refreshToken.User;
-        AuthSupport.EnsureUserCanLogin(user);
+        AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
 
         refreshToken.RevokedAt = _timeProvider.GetUtcNow();
         user.LastLoginAt = _timeProvider.GetUtcNow();

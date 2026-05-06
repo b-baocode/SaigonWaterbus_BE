@@ -26,6 +26,7 @@ public static class DependencyInjection
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IUserContext, CurrentUser>();
+        builder.Services.AddScoped<IClientInfoProvider, CurrentClientInfo>();
 
         builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
         builder.Services.AddProblemDetails();

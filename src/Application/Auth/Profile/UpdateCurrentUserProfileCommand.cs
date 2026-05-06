@@ -96,7 +96,7 @@ public sealed class UpdateCurrentUserProfileCommandHandler : IRequestHandler<Upd
     public async Task<UpdateProfileResultDto> Handle(UpdateCurrentUserProfileCommand request, CancellationToken cancellationToken)
     {
         var user = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
-        AuthSupport.EnsureUserCanLogin(user);
+        AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
 
         var hasEmailUpdate = request.Email is not null;
         var email = hasEmailUpdate ? request.Email!.Trim() : user.Email;

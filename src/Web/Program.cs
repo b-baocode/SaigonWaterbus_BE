@@ -26,9 +26,12 @@ if (args.Contains("db:migrate-seed", StringComparer.OrdinalIgnoreCase))
     var otpCount = await dbContext.OtpChallenges.CountAsync();
     var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
     var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
+    var staffPositionCount = await dbContext.StaffPositions.CountAsync();
+    var userPositionCount = await dbContext.UserPositions.CountAsync();
+    var auditLogCount = await dbContext.AuditLogs.CountAsync();
 
     Console.WriteLine(
-        $"db:migrate-seed completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}");
+        $"db:migrate-seed completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}, staff_positions={staffPositionCount}, user_positions={userPositionCount}, audit_logs={auditLogCount}");
 
     return;
 }
@@ -47,9 +50,12 @@ if (args.Contains("db:reset-seed", StringComparer.OrdinalIgnoreCase))
     var otpCount = await dbContext.OtpChallenges.CountAsync();
     var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
     var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
+    var staffPositionCount = await dbContext.StaffPositions.CountAsync();
+    var userPositionCount = await dbContext.UserPositions.CountAsync();
+    var auditLogCount = await dbContext.AuditLogs.CountAsync();
 
     Console.WriteLine(
-        $"db:reset-seed completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}");
+        $"db:reset-seed completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}, staff_positions={staffPositionCount}, user_positions={userPositionCount}, audit_logs={auditLogCount}");
 
     return;
 }
@@ -68,9 +74,12 @@ if (args.Contains("db:clear", StringComparer.OrdinalIgnoreCase))
     var otpCount = await dbContext.OtpChallenges.CountAsync();
     var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
     var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
+    var staffPositionCount = await dbContext.StaffPositions.CountAsync();
+    var userPositionCount = await dbContext.UserPositions.CountAsync();
+    var auditLogCount = await dbContext.AuditLogs.CountAsync();
 
     Console.WriteLine(
-        $"db:clear completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}");
+        $"db:clear completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}, staff_positions={staffPositionCount}, user_positions={userPositionCount}, audit_logs={auditLogCount}");
 
     return;
 }

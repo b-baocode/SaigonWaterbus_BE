@@ -151,6 +151,8 @@ public class ApplicationDbContextInitialiser
 
         await _context.SaveChangesAsync();
 
+        await SeedStaffPositionsAsync();
+
         if (!_databaseStartupSettings.SeedInternalUsers)
         {
             _logger.LogInformation("Skipping internal user seeding because Database:SeedInternalUsers is disabled.");
@@ -191,6 +193,8 @@ public class ApplicationDbContextInitialiser
         await _context.ExternalLogins.ExecuteDeleteAsync();
         await _context.OtpChallenges.ExecuteDeleteAsync();
         await _context.RefreshTokens.ExecuteDeleteAsync();
+        await _context.UserPositions.ExecuteDeleteAsync();
+        await _context.AuditLogs.ExecuteDeleteAsync();
         await _context.Users.ExecuteDeleteAsync();
 
         await SeedAsync();
@@ -319,6 +323,42 @@ public class ApplicationDbContextInitialiser
 
         user.Status = UserStatus.Active;
         user.PhoneVerifiedAt ??= DateTimeOffset.UtcNow;
+    }
+
+    private async Task SeedStaffPositionsAsync()
+    {
+        var positionByCode = await _context.StaffPositions
+            .ToDictionaryAsync(x => x.Code);
+
+        foreach (var definition in StaffPositions.BuiltIn)
+        {
+            if (!positionByCode.TryGetValue(definition.Code, out var existingPosition))
+            {
+                existingPosition = new StaffPosition
+                {
+                    Code = definition.Code,
+                    SystemName = definition.SystemName,
+                    DisplayName = definition.DisplayName
+                };
+
+                _context.StaffPositions.Add(existingPosition);
+                positionByCode[definition.Code] = existingPosition;
+            }
+            else
+            {
+                if (!string.Equals(existingPosition.SystemName, definition.SystemName, StringComparison.Ordinal))
+                {
+                    existingPosition.SystemName = definition.SystemName;
+                }
+
+                if (!string.Equals(existingPosition.DisplayName, definition.DisplayName, StringComparison.Ordinal))
+                {
+                    existingPosition.DisplayName = definition.DisplayName;
+                }
+            }
+        }
+
+        await _context.SaveChangesAsync();
     }
 
     private async Task SyncUserCodeSequencesAsync()

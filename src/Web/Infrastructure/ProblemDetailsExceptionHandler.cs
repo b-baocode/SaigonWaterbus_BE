@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Common.Exceptions;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json;
 
 namespace SaigonWaterbus.Web.Infrastructure;
 
@@ -64,6 +65,20 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                 Title = "Profile image upload failed",
                 Detail = pise.Message,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.6.4"
+            }),
+            BadHttpRequestException bhre => (StatusCodes.Status400BadRequest, new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid request body",
+                Detail = bhre.Message,
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1"
+            }),
+            JsonException je => (StatusCodes.Status400BadRequest, new ProblemDetails
+            {
+                Status = StatusCodes.Status400BadRequest,
+                Title = "Invalid JSON",
+                Detail = je.Message,
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1"
             }),
             _ => (-1, null)
         };

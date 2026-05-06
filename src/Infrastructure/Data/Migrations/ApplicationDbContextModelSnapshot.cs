@@ -22,6 +22,56 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.AuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Action")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int?>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("IpAddress")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("NewValues")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("OldValues")
+                        .HasColumnType("jsonb");
+
+                    b.Property<int?>("TargetId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("TargetTable")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("UserAgent")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId", "CreatedAt");
+
+                    b.HasIndex("TargetTable", "TargetId", "CreatedAt");
+
+                    b.ToTable("audit_logs", (string)null);
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ExternalLogin", b =>
                 {
                     b.Property<int>("Id")
@@ -213,6 +263,52 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("roles", (string)null);
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.StaffPosition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DisplayName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SystemName")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
+
+                    b.HasIndex("SystemName")
+                        .IsUnique();
+
+                    b.ToTable("staff_positions", (string)null);
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.User", b =>
                 {
                     b.Property<int>("Id")
@@ -314,6 +410,77 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("users", (string)null);
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.UserPosition", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("AssignedByUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int>("PositionId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("RevokedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("StationId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("PositionId");
+
+                    b.HasIndex("StationId")
+                        .HasFilter("\"StationId\" IS NOT NULL");
+
+                    b.HasIndex("UserId", "PositionId")
+                        .IsUnique()
+                        .HasFilter("\"IsActive\" = true AND \"StationId\" IS NULL");
+
+                    b.HasIndex("UserId", "PositionId", "StationId")
+                        .IsUnique()
+                        .HasFilter("\"IsActive\" = true AND \"StationId\" IS NOT NULL");
+
+                    b.ToTable("user_positions", (string)null);
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.AuditLog", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "ActorUser")
+                        .WithMany("AuditLogs")
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("ActorUser");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ExternalLogin", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.User", "User")
@@ -358,18 +525,55 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Role");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.UserPosition", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "AssignedByUser")
+                        .WithMany("AssignedUserPositions")
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.StaffPosition", "Position")
+                        .WithMany("UserPositions")
+                        .HasForeignKey("PositionId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "User")
+                        .WithMany("UserPositions")
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("AssignedByUser");
+
+                    b.Navigation("Position");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Role", b =>
                 {
                     b.Navigation("Users");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.StaffPosition", b =>
+                {
+                    b.Navigation("UserPositions");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.User", b =>
                 {
+                    b.Navigation("AssignedUserPositions");
+
+                    b.Navigation("AuditLogs");
+
                     b.Navigation("ExternalLogins");
 
                     b.Navigation("OtpChallenges");
 
                     b.Navigation("RefreshTokens");
+
+                    b.Navigation("UserPositions");
                 });
 #pragma warning restore 612, 618
         }

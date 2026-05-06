@@ -21,17 +21,17 @@ public sealed class GoogleLoginCommandValidator : AbstractValidator<GoogleLoginC
 public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginCommand, GoogleLoginResultDto>
 {
     private const string GoogleProvider = "google";
+    private const string GoogleDisplayProvider = "Google";
     private const string LoggedInStatus = "LOGGED_IN";
-    private const string NeedPhoneStatus = "NEED_PHONE";
-    private static readonly TimeSpan TempSessionLifetime = TimeSpan.FromMinutes(15);
 
     private readonly IApplicationDbContext _context;
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ITokenService _tokenService;
-    private readonly IGoogleLoginTempStore _tempStore;
     private readonly IProfileImageStorageService _profileImageStorage;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserCodeGenerator _userCodeGenerator;
+    private readonly ILoginNotificationSender _loginNotificationSender;
+    private readonly IClientInfoProvider _clientInfoProvider;
     private readonly TimeProvider _timeProvider;
     private readonly string _googleClientId;
 
@@ -39,20 +39,22 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         IApplicationDbContext context,
         IIdentityNormalizer identityNormalizer,
         ITokenService tokenService,
-        IGoogleLoginTempStore tempStore,
         IProfileImageStorageService profileImageStorage,
         ISecretHasher secretHasher,
         IUserCodeGenerator userCodeGenerator,
+        ILoginNotificationSender loginNotificationSender,
+        IClientInfoProvider clientInfoProvider,
         TimeProvider timeProvider,
         IConfiguration configuration)
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
         _tokenService = tokenService;
-        _tempStore = tempStore;
         _profileImageStorage = profileImageStorage;
         _secretHasher = secretHasher;
         _userCodeGenerator = userCodeGenerator;
+        _loginNotificationSender = loginNotificationSender;
+        _clientInfoProvider = clientInfoProvider;
         _timeProvider = timeProvider;
         _googleClientId = configuration["OAuth:Google:ClientId"] ?? throw new InvalidOperationException("Google ClientId not configured");
     }
@@ -93,13 +95,8 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         if (externalLogin is not null)
         {
             var linkedUser = externalLogin.User ?? throw new InvalidOperationException("User not found");
-            if (linkedUser.Status == UserStatus.Active && linkedUser.PhoneVerifiedAt is null)
-            {
-                return await CreateNeedPhoneResultAsync(payload, normalizedEmail, linkedUser.Id, now, cancellationToken);
-            }
-
-            AuthSupport.EnsureUserCanLogin(linkedUser, nameof(request.IdToken));
-            return await CreateLoggedInResultAsync(linkedUser, payload, now, cancellationToken);
+            EnsureGoogleUserCanLogin(linkedUser, nameof(request.IdToken));
+            return await CreateLoggedInResultAsync(linkedUser, payload, now, sendLoginNotification: false, cancellationToken);
         }
 
         var existingUser = await _context.Set<User>()
@@ -107,17 +104,13 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
 
         if (existingUser is not null)
         {
-            if (existingUser.Status == UserStatus.Active && existingUser.PhoneVerifiedAt is null)
-            {
-                return await CreateNeedPhoneResultAsync(payload, normalizedEmail, existingUser.Id, now, cancellationToken);
-            }
-
-            AuthSupport.EnsureUserCanLogin(existingUser, nameof(request.IdToken));
+            EnsureGoogleUserCanLogin(existingUser, nameof(request.IdToken));
             AddExternalLogin(existingUser, payload, now);
-            return await CreateLoggedInResultAsync(existingUser, payload, now, cancellationToken);
+            return await CreateLoggedInResultAsync(existingUser, payload, now, sendLoginNotification: true, cancellationToken);
         }
 
-        return await CreateNeedPhoneResultAsync(payload, normalizedEmail, null, now, cancellationToken);
+        var user = await CreateGoogleUserAsync(payload, normalizedEmail, now, cancellationToken);
+        return await CreateLoggedInResultAsync(user, payload, now, sendLoginNotification: true, cancellationToken);
     }
 
     private async Task<GoogleJsonWebSignature.Payload> ValidateGoogleTokenAsync(string idToken)
@@ -137,39 +130,39 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         }
     }
 
-    private async Task<GoogleLoginResultDto> CreateNeedPhoneResultAsync(
+    private async Task<User> CreateGoogleUserAsync(
         GoogleJsonWebSignature.Payload payload,
         string normalizedEmail,
-        int? existingUserId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var tempToken = _tokenService.GenerateRefreshTokenSecret();
-        var expiresAt = now.Add(TempSessionLifetime);
-
-        await _tempStore.SaveAsync(
-            new GoogleLoginTempSession(
-                tempToken,
-                existingUserId,
-                payload.Subject,
-                payload.Email,
-                normalizedEmail,
-                payload.Name,
-                payload.Picture,
-                now,
-                expiresAt),
+        var customerRole = await AuthSupport.GetRoleByCodeAsync(
+            _context,
+            Roles.CustomerCode,
             cancellationToken);
 
-        return new GoogleLoginResultDto(
-            NeedPhoneStatus,
-            TempToken: tempToken,
-            TempTokenExpiresAt: expiresAt);
+        var user = new User
+        {
+            UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, cancellationToken),
+            FullName = ResolveGoogleDisplayName(payload.Name),
+            Email = payload.Email,
+            NormalizedEmail = normalizedEmail,
+            RoleId = customerRole.Id,
+            Status = UserStatus.Active
+        };
+
+        _context.Set<User>().Add(user);
+        AddExternalLogin(user, payload, now);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return user;
     }
 
     private async Task<GoogleLoginResultDto> CreateLoggedInResultAsync(
         User user,
         GoogleJsonWebSignature.Payload payload,
         DateTimeOffset now,
+        bool sendLoginNotification,
         CancellationToken cancellationToken)
     {
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);
@@ -232,6 +225,18 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
             AuthSupport.FormatRefreshToken(refreshTokenEntity.Id, refreshTokenSecret),
             refreshTokenEntity.ExpiresAt);
 
+        if (sendLoginNotification)
+        {
+            await _loginNotificationSender.SendLoginSucceededAsync(
+                new LoginNotification(
+                    payload.Email,
+                    user.FullName,
+                    GoogleDisplayProvider,
+                    now,
+                    _clientInfoProvider.GetDeviceInfo()),
+                cancellationToken);
+        }
+
         return new GoogleLoginResultDto(
             LoggedInStatus,
             session.User,
@@ -243,15 +248,41 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         GoogleJsonWebSignature.Payload payload,
         DateTimeOffset linkedAt)
     {
-        _context.Set<ExternalLogin>().Add(new ExternalLogin
+        var externalLogin = new ExternalLogin
         {
-            UserId = user.Id,
             Provider = GoogleProvider,
             ProviderUserId = payload.Subject,
             Email = payload.Email,
             DisplayName = payload.Name,
             ProfilePictureUrl = payload.Picture,
             LinkedAt = linkedAt
-        });
+        };
+
+        if (user.Id > 0)
+        {
+            externalLogin.UserId = user.Id;
+        }
+        else
+        {
+            externalLogin.User = user;
+        }
+
+        _context.Set<ExternalLogin>().Add(externalLogin);
     }
+
+    private static void EnsureGoogleUserCanLogin(User user, string propertyName)
+    {
+        if (user.Status == UserStatus.Suspended)
+        {
+            throw AuthSupport.CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa.");
+        }
+
+        if (user.Status == UserStatus.PendingVerification)
+        {
+            user.Status = UserStatus.Active;
+        }
+    }
+
+    private static string ResolveGoogleDisplayName(string? name) =>
+        string.IsNullOrWhiteSpace(name) ? "Google User" : name.Trim();
 }

@@ -74,7 +74,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
                 throw new UnauthorizedAccessException();
             }
 
-            AuthSupport.EnsureUserCanLogin(user);
+            AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
         }
         else
         {

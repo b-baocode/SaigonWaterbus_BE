@@ -63,7 +63,7 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
             ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var user = challenge.User;
-        AuthSupport.EnsureUserCanLogin(user);
+        AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
 
         var now = _timeProvider.GetUtcNow();
         challenge = await AuthSupport.ResolveLatestPendingOtpChallengeAsync(
