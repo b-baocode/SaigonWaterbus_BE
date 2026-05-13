@@ -41,4 +41,15 @@ public class PhoneRulesTests
 
         result.ShouldBe("+84901234567");
     }
+
+    [TestCase("0901234567", true)]
+    [TestCase("+84901234567", true)]
+    [TestCase("+12025550123", false)]
+    [TestCase("+81312345678", false)]
+    public void IsVietnamPhoneShouldDetectVietnamCountryCode(string phoneNumber, bool expected)
+    {
+        var result = PhoneRules.IsVietnamPhone(phoneNumber);
+
+        result.ShouldBe(expected);
+    }
 }

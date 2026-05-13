@@ -9,7 +9,9 @@ public sealed class GetUserByIdQueryValidator : AbstractValidator<GetUserByIdQue
 {
     public GetUserByIdQueryValidator()
     {
-        RuleFor(x => x.UserId).GreaterThan(0);
+        RuleFor(x => x.UserId)
+            .GreaterThan(0)
+            .WithMessage("UserId không hợp lệ.");
     }
 }
 

@@ -56,7 +56,7 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
         if (string.IsNullOrWhiteSpace(user.PasswordHash)
             || !_secretHasher.Verify(request.Password, user.PasswordHash))
         {
-            throw new UnauthorizedAccessException();
+            throw AuthSupport.CreateValidationException(nameof(request.Password), "Mật khẩu không đúng.");
         }
 
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);
@@ -98,6 +98,6 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
 
         return await _context.Set<User>()
             .SingleOrDefaultAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken)
-            ?? throw new UnauthorizedAccessException();
+            ?? throw AuthSupport.CreateValidationException(nameof(LoginCommand.Phone), "Số điện thoại chưa được đăng ký.");
     }
 }

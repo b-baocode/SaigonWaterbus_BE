@@ -10,6 +10,8 @@ public class OtpChallenge : BaseAuditableEntity
 
     public string Email { get; set; } = null!;
 
+    public string? PendingPhoneNumber { get; set; }
+
     public string CodeHash { get; set; } = null!;
 
     public DateTimeOffset ExpiresAt { get; set; }

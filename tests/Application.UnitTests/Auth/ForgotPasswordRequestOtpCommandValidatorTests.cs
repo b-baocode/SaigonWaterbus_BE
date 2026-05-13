@@ -25,7 +25,7 @@ public class ForgotPasswordRequestOtpCommandValidatorTests
             EmailOrPhone: "invalid"));
 
         result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "Vui lòng nhập email đúng định dạng hoặc số điện thoại hợp lệ.");
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Vui lòng nhập email được hỗ trợ đúng định dạng hoặc số điện thoại hợp lệ.");
     }
 
     [Test]
@@ -49,7 +49,7 @@ public class ForgotPasswordRequestOtpCommandValidatorTests
 
     [TestCase("+84901234567")]
     [TestCase("+14155552671")]
-    public void ValidateAcceptsInternationalPhoneOnly(string phone)
+    public void ValidateAcceptsPhoneOtp(string phone)
     {
         var result = _validator.Validate(new ForgotPasswordRequestOtpCommand(
             EmailOrPhone: phone));

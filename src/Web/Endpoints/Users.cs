@@ -11,7 +11,7 @@ public sealed class Users : IEndpointGroup
           "fullName": "Tran Thi B",
           "dateOfBirth": "10/05/1998",
           "phoneNumber": "0912345678",
-          "email": "thib@fpt.edu.vn",
+          "email": "thib@gmail.com",
           "password": "P@ssword123",
           "roleId": 3,
           "department": "Operations"
@@ -34,7 +34,7 @@ public sealed class Users : IEndpointGroup
 
     public static string RoutePrefix => "/api/users";
 
-    public static string OpenApiTag => "05 Users - Management";
+    public static string OpenApiTag => "Users";
 
     public static void Map(RouteGroupBuilder groupBuilder)
     {

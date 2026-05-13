@@ -24,6 +24,10 @@ internal static class OtpTemplateContentFactory
                 "Xác thực email mới",
                 "Nhập mã OTP để xác thực email mới cho tài khoản Saigon Waterbus.",
                 username),
+            OtpPurpose.PhoneChange => new OtpTemplateContent(
+                "Xác thực số điện thoại",
+                "Nhập mã OTP để xác thực số điện thoại cho tài khoản Saigon Waterbus.",
+                username),
             _ => new OtpTemplateContent(
                 "Xác thực đăng nhập",
                 "Nhập mã OTP để tiếp tục đăng nhập vào hệ thống Saigon Waterbus.",

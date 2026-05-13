@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -11,7 +12,9 @@ public sealed class ResendOtpCommandValidator : AbstractValidator<ResendOtpComma
 {
     public ResendOtpCommandValidator()
     {
-        RuleFor(x => x.ChallengeId).GreaterThan(0);
+        RuleFor(x => x.ChallengeId)
+            .GreaterThan(0)
+            .WithMessage("Mã xác thực không hợp lệ.");
     }
 }
 
@@ -54,7 +57,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
             ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var purpose = challenge.Purpose;
-        if (purpose is not (OtpPurpose.Register or OtpPurpose.ForgotPassword or OtpPurpose.EmailChange))
+        if (purpose is not (OtpPurpose.Register or OtpPurpose.ForgotPassword or OtpPurpose.EmailChange or OtpPurpose.PhoneChange))
         {
             throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Yêu cầu OTP này không hỗ trợ gửi lại.");
         }
@@ -67,7 +70,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
                 throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Tài khoản đã hoàn tất xác thực OTP.");
             }
         }
-        else if (purpose == OtpPurpose.EmailChange)
+        else if (purpose is OtpPurpose.EmailChange or OtpPurpose.PhoneChange)
         {
             if (_userContext.UserId != user.Id)
             {
@@ -87,6 +90,12 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
             .OrderByDescending(x => x.Id)
             .FirstAsync(cancellationToken);
         var otpChannel = AuthSupport.ResolveOtpChannelFromDestination(latestChallenge.Email);
+        if (otpChannel == OtpChannel.Phone && !PhoneRules.IsVietnamPhone(latestChallenge.Email))
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.ChallengeId),
+                "Số điện thoại quốc tế chỉ hỗ trợ OTP qua email. Vui lòng đăng ký lại bằng email được hỗ trợ.");
+        }
 
         if (purpose == OtpPurpose.Register && latestChallenge.ExpiresAt <= now)
         {
@@ -119,6 +128,7 @@ public sealed class ResendOtpCommandHandler : IRequestHandler<ResendOtpCommand, 
                 UserId = user.Id,
                 Purpose = purpose,
                 Email = latestChallenge.Email,
+                PendingPhoneNumber = latestChallenge.PendingPhoneNumber,
                 CodeHash = _secretHasher.Hash(otpCode),
                 ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
                 ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),

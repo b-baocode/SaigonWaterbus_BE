@@ -14,13 +14,14 @@ public sealed class GoogleLoginCommandValidator : AbstractValidator<GoogleLoginC
 {
     public GoogleLoginCommandValidator()
     {
-        RuleFor(x => x.IdToken).NotEmpty();
+        RuleFor(x => x.IdToken)
+            .NotEmpty()
+            .WithMessage("Google idToken là bắt buộc.");
     }
 }
 
 public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginCommand, GoogleLoginResultDto>
 {
-    private const string GoogleProvider = "google";
     private const string GoogleDisplayProvider = "Google";
     private const string LoggedInStatus = "LOGGED_IN";
 
@@ -89,7 +90,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
         var externalLogin = await _context.Set<ExternalLogin>()
             .Include(x => x.User)
             .FirstOrDefaultAsync(
-                x => x.Provider == GoogleProvider && x.ProviderUserId == payload.Subject,
+                x => x.Provider == AuthSupport.GoogleProvider && x.ProviderUserId == payload.Subject,
                 cancellationToken);
 
         if (externalLogin is not null)
@@ -104,6 +105,17 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
 
         if (existingUser is not null)
         {
+            if (await _context.Set<ExternalLogin>().AnyAsync(
+                    x => x.UserId == existingUser.Id
+                      && x.Provider == AuthSupport.GoogleProvider
+                      && x.ProviderUserId != payload.Subject,
+                    cancellationToken))
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.IdToken),
+                    "Email này thuộc tài khoản đã liên kết Google khác. Vui lòng đăng nhập bằng Google đã liên kết hoặc số điện thoại.");
+            }
+
             EnsureGoogleUserCanLogin(existingUser, nameof(request.IdToken));
             AddExternalLogin(existingUser, payload, now);
             return await CreateLoggedInResultAsync(existingUser, payload, now, sendLoginNotification: true, cancellationToken);
@@ -250,7 +262,7 @@ public sealed class GoogleLoginCommandHandler : IRequestHandler<GoogleLoginComma
     {
         var externalLogin = new ExternalLogin
         {
-            Provider = GoogleProvider,
+            Provider = AuthSupport.GoogleProvider,
             ProviderUserId = payload.Subject,
             Email = payload.Email,
             DisplayName = payload.Name,

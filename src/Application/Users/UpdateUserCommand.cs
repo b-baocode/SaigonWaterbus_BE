@@ -19,7 +19,9 @@ public sealed class UpdateUserCommandValidator : AbstractValidator<UpdateUserCom
 {
     public UpdateUserCommandValidator()
     {
-        RuleFor(x => x.UserId).GreaterThan(0);
+        RuleFor(x => x.UserId)
+            .GreaterThan(0)
+            .WithMessage("UserId không hợp lệ.");
 
         RuleFor(x => x.FullName)
             .NotEmpty()
@@ -91,7 +93,7 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
         var user = await _context.Set<User>()
             .Include(x => x.Role)
             .SingleOrDefaultAsync(x => x.Id == request.UserId, cancellationToken)
-            ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("User was not found.");
+            ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
 
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
         var oldValues = UserAuditSupport.CreateUserSnapshot(user);
@@ -115,6 +117,16 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
         if (request.Email is not null)
         {
             var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
+            if (normalizedEmail != user.NormalizedEmail
+                && await _context.Set<ExternalLogin>().AnyAsync(
+                    x => x.UserId == user.Id && x.Provider == AuthSupport.GoogleProvider,
+                    cancellationToken))
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.Email),
+                    "Tài khoản đăng nhập Google không được đổi email.");
+            }
+
             if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, cancellationToken))
             {
                 throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
@@ -126,6 +138,15 @@ public sealed class UpdateUserCommandHandler : IRequestHandler<UpdateUserCommand
 
         if (request.PhoneNumber is not null)
         {
+            var effectiveEmail = request.Email is null ? user.Email : request.Email;
+            if (!PhoneRules.IsVietnamPhone(request.PhoneNumber)
+                && !EmailRules.HasAllowedRegistrationDomain(effectiveEmail))
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.PhoneNumber),
+                    "Số điện thoại quốc tế bắt buộc tài khoản có email được hỗ trợ.");
+            }
+
             var normalizedPhone = _identityNormalizer.NormalizePhone(request.PhoneNumber);
             var phoneChanged = normalizedPhone != user.NormalizedPhoneNumber;
 

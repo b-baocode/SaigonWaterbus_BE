@@ -66,7 +66,7 @@ public sealed class EsmsOtpSender : ISmsOtpSender
         var isVinaPhone = IsVinaPhoneNumber(phoneNumber);
         var template = purpose switch
         {
-            OtpPurpose.Register => isVinaPhone
+            OtpPurpose.Register or OtpPurpose.PhoneChange => isVinaPhone
                 ? ResolveTemplate(options.VinaRegisterContentTemplate, options.RegisterContentTemplate, options.DefaultContent)
                 : ResolveTemplate(options.RegisterContentTemplate, options.DefaultContent),
             OtpPurpose.ForgotPassword => isVinaPhone

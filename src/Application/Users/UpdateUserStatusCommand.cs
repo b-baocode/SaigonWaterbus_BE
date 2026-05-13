@@ -14,7 +14,9 @@ public sealed class UpdateUserStatusCommandValidator : AbstractValidator<UpdateU
 {
     public UpdateUserStatusCommandValidator()
     {
-        RuleFor(x => x.UserId).GreaterThan(0);
+        RuleFor(x => x.UserId)
+            .GreaterThan(0)
+            .WithMessage("UserId không hợp lệ.");
 
         RuleFor(x => x.Status)
             .IsInEnum()
@@ -46,7 +48,7 @@ public sealed class UpdateUserStatusCommandHandler : IRequestHandler<UpdateUserS
         var user = await _context.Set<User>()
             .Include(x => x.Role)
             .SingleOrDefaultAsync(x => x.Id == request.UserId, cancellationToken)
-            ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("User was not found.");
+            ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
 
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
 

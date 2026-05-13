@@ -9,6 +9,8 @@ namespace SaigonWaterbus.Application.Auth.Common;
 
 internal static class AuthSupport
 {
+    public const string GoogleProvider = "google";
+
     public static global::SaigonWaterbus.Application.Common.Exceptions.ValidationException CreateValidationException(string propertyName, string errorMessage) =>
         new([new ValidationFailure(propertyName, errorMessage)]);
 
@@ -71,7 +73,7 @@ internal static class AuthSupport
     {
         return await context.Set<Role>()
             .SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken)
-            ?? throw CreateValidationException(propertyName, "Role is invalid.");
+            ?? throw CreateValidationException(propertyName, "Vai trò không hợp lệ.");
     }
 
     public static async Task<User> GetCurrentUserWithRoleAsync(

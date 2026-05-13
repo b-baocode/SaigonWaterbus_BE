@@ -10,7 +10,9 @@ public sealed class RefreshTokenCommandValidator : AbstractValidator<RefreshToke
 {
     public RefreshTokenCommandValidator()
     {
-        RuleFor(x => x.RefreshToken).NotEmpty();
+        RuleFor(x => x.RefreshToken)
+            .NotEmpty()
+            .WithMessage("Refresh token là bắt buộc.");
     }
 }
 
@@ -61,7 +63,7 @@ public sealed class RefreshTokenCommandHandler : IRequestHandler<RefreshTokenCom
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);
         if (roles.Count == 0)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.RefreshToken), "Account does not have any active roles.");
+            throw AuthSupport.CreateValidationException(nameof(request.RefreshToken), "Tài khoản chưa có vai trò hoạt động.");
         }
 
         var accessToken = _tokenService.GenerateAccessToken(

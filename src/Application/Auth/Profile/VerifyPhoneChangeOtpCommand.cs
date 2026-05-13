@@ -1,15 +1,16 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Profile;
 
-public sealed record VerifyEmailChangeOtpCommand(int ChallengeId, string Code) : IRequest<AuthUserDto>;
+public sealed record VerifyPhoneChangeOtpCommand(int ChallengeId, string Code) : IRequest<AuthUserDto>;
 
-public sealed class VerifyEmailChangeOtpCommandValidator : AbstractValidator<VerifyEmailChangeOtpCommand>
+public sealed class VerifyPhoneChangeOtpCommandValidator : AbstractValidator<VerifyPhoneChangeOtpCommand>
 {
-    public VerifyEmailChangeOtpCommandValidator()
+    public VerifyPhoneChangeOtpCommandValidator()
     {
         RuleFor(x => x.ChallengeId)
             .GreaterThan(0)
@@ -23,29 +24,26 @@ public sealed class VerifyEmailChangeOtpCommandValidator : AbstractValidator<Ver
     }
 }
 
-public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyEmailChangeOtpCommand, AuthUserDto>
+public sealed class VerifyPhoneChangeOtpCommandHandler : IRequestHandler<VerifyPhoneChangeOtpCommand, AuthUserDto>
 {
     private readonly IApplicationDbContext _context;
-    private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
-    public VerifyEmailChangeOtpCommandHandler(
+    public VerifyPhoneChangeOtpCommandHandler(
         IApplicationDbContext context,
-        IIdentityNormalizer identityNormalizer,
         ISecretHasher secretHasher,
         IUserContext userContext,
         TimeProvider timeProvider)
     {
         _context = context;
-        _identityNormalizer = identityNormalizer;
         _secretHasher = secretHasher;
         _userContext = userContext;
         _timeProvider = timeProvider;
     }
 
-    public async Task<AuthUserDto> Handle(VerifyEmailChangeOtpCommand request, CancellationToken cancellationToken)
+    public async Task<AuthUserDto> Handle(VerifyPhoneChangeOtpCommand request, CancellationToken cancellationToken)
     {
         if (!_userContext.UserId.HasValue)
         {
@@ -57,7 +55,7 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
             .ThenInclude(x => x.Role)
             .SingleOrDefaultAsync(
                 x => x.Id == request.ChallengeId
-                  && x.Purpose == OtpPurpose.EmailChange
+                  && x.Purpose == OtpPurpose.PhoneChange
                   && x.UserId == _userContext.UserId.Value,
                 cancellationToken)
             ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
@@ -69,7 +67,7 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
         challenge = await AuthSupport.ResolveLatestPendingOtpChallengeAsync(
             _context,
             challenge,
-            OtpPurpose.EmailChange,
+            OtpPurpose.PhoneChange,
             cancellationToken);
 
         if (challenge.ConsumedAt.HasValue)
@@ -81,7 +79,7 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
         {
             challenge.ConsumedAt = now;
             await _context.SaveChangesAsync(cancellationToken);
-            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã hết hạn, vui lòng yêu cầu xác thực email lại.");
+            throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã hết hạn, vui lòng yêu cầu xác thực số điện thoại lại.");
         }
 
         if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
@@ -99,28 +97,42 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
 
         return await _context.ExecuteInTransactionAsync(async ct =>
         {
-            var normalizedEmail = _identityNormalizer.NormalizeEmail(challenge.Email);
-            if (await _context.Set<ExternalLogin>().AnyAsync(
+            if (!await _context.Set<ExternalLogin>().AnyAsync(
                     x => x.UserId == user.Id && x.Provider == AuthSupport.GoogleProvider,
                     ct))
             {
                 challenge.ConsumedAt = now;
                 await _context.SaveChangesAsync(ct);
-                throw AuthSupport.CreateValidationException(
-                    nameof(request.ChallengeId),
-                    "Tài khoản đăng nhập Google không được đổi email.");
+                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Chỉ tài khoản đăng nhập Google mới được tự cập nhật số điện thoại.");
             }
 
-            if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, ct))
+            if (user.NormalizedPhoneNumber is not null)
             {
                 challenge.ConsumedAt = now;
                 await _context.SaveChangesAsync(ct);
-                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Email đã được đăng ký.");
+                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Số điện thoại chỉ được cập nhật một lần.");
+            }
+
+            if (string.IsNullOrWhiteSpace(challenge.PendingPhoneNumber)
+                || !PhoneRules.IsValid(challenge.PendingPhoneNumber))
+            {
+                challenge.ConsumedAt = now;
+                await _context.SaveChangesAsync(ct);
+                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Số điện thoại chờ xác thực không hợp lệ.");
+            }
+
+            if (await _context.Set<User>().AnyAsync(
+                    x => x.NormalizedPhoneNumber == challenge.PendingPhoneNumber && x.Id != user.Id,
+                    ct))
+            {
+                challenge.ConsumedAt = now;
+                await _context.SaveChangesAsync(ct);
+                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Số điện thoại đã được đăng ký.");
             }
 
             var otherPendingChallenges = await _context.Set<OtpChallenge>()
                 .Where(x => x.UserId == user.Id
-                         && x.Purpose == OtpPurpose.EmailChange
+                         && x.Purpose == OtpPurpose.PhoneChange
                          && x.Id != challenge.Id
                          && x.ConsumedAt == null)
                 .ToListAsync(ct);
@@ -133,8 +145,9 @@ public sealed class VerifyEmailChangeOtpCommandHandler : IRequestHandler<VerifyE
             challenge.AttemptCount += 1;
             challenge.ConsumedAt = now;
 
-            user.Email = challenge.Email.Trim();
-            user.NormalizedEmail = normalizedEmail;
+            user.PhoneNumber = PhoneRules.ToInternationalFormat(challenge.PendingPhoneNumber);
+            user.NormalizedPhoneNumber = challenge.PendingPhoneNumber;
+            user.PhoneVerifiedAt = now;
 
             await _context.SaveChangesAsync(ct);
             return AuthSupport.CreateUserDto(user);

@@ -17,6 +17,9 @@ public sealed class OtpChallengeConfiguration : IEntityTypeConfiguration<OtpChal
             .HasMaxLength(255)
             .IsRequired();
 
+        builder.Property(x => x.PendingPhoneNumber)
+            .HasMaxLength(32);
+
         builder.Property(x => x.CodeHash)
             .HasMaxLength(500)
             .IsRequired();

@@ -11,7 +11,9 @@ public sealed class DeleteUserCommandValidator : AbstractValidator<DeleteUserCom
 {
     public DeleteUserCommandValidator()
     {
-        RuleFor(x => x.UserId).GreaterThan(0);
+        RuleFor(x => x.UserId)
+            .GreaterThan(0)
+            .WithMessage("UserId không hợp lệ.");
     }
 }
 
@@ -37,7 +39,7 @@ public sealed class DeleteUserCommandHandler : IRequestHandler<DeleteUserCommand
         var user = await _context.Set<User>()
             .Include(x => x.Role)
             .SingleOrDefaultAsync(x => x.Id == request.UserId, cancellationToken)
-            ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("User was not found.");
+            ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
 
         UserManagementSupport.EnsureCanDeleteUser(actor, user);
 

@@ -53,7 +53,7 @@ public sealed class ChangePasswordCommandHandler : IRequestHandler<ChangePasswor
 
         var user = await _context.Set<User>()
             .SingleOrDefaultAsync(x => x.Id == _userContext.UserId.Value, cancellationToken)
-            ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("User was not found.");
+            ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
 
         AuthSupport.EnsureUserCanLogin(user);
 

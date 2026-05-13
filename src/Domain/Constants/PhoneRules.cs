@@ -12,9 +12,36 @@ public static class PhoneRules
     public static bool IsValid(string? phoneNumber) =>
         TryNormalize(phoneNumber, out _);
 
+    public static bool IsVietnamPhone(string? phoneNumber) =>
+        TryParse(phoneNumber, out var parsedPhoneNumber) && parsedPhoneNumber.CountryCode == 84;
+
     public static bool TryNormalize(string? phoneNumber, out string normalizedPhoneNumber)
     {
         normalizedPhoneNumber = string.Empty;
+
+        if (!TryParse(phoneNumber, out var parsedPhoneNumber))
+        {
+            return false;
+        }
+
+        var phoneNumberUtil = PhoneNumberUtil.GetInstance();
+        normalizedPhoneNumber = phoneNumberUtil.Format(parsedPhoneNumber, PhoneNumberFormat.E164);
+        return true;
+    }
+
+    public static string ToInternationalFormat(string phoneNumber)
+    {
+        if (!TryNormalize(phoneNumber, out var normalizedPhoneNumber))
+        {
+            throw new ArgumentException(InvalidInternationalPhoneMessage, nameof(phoneNumber));
+        }
+
+        return normalizedPhoneNumber;
+    }
+
+    private static bool TryParse(string? phoneNumber, out PhoneNumber parsedPhoneNumber)
+    {
+        parsedPhoneNumber = new PhoneNumber();
 
         if (string.IsNullOrWhiteSpace(phoneNumber))
         {
@@ -36,7 +63,7 @@ public static class PhoneRules
                 return false;
             }
 
-            var parsedPhoneNumber = phoneNumberUtil.Parse(
+            parsedPhoneNumber = phoneNumberUtil.Parse(
                 trimmedPhoneNumber,
                 trimmedPhoneNumber.StartsWith('+') ? null : DefaultRegion);
 
@@ -45,22 +72,11 @@ public static class PhoneRules
                 return false;
             }
 
-            normalizedPhoneNumber = phoneNumberUtil.Format(parsedPhoneNumber, PhoneNumberFormat.E164);
             return true;
         }
         catch (NumberParseException)
         {
             return false;
         }
-    }
-
-    public static string ToInternationalFormat(string phoneNumber)
-    {
-        if (!TryNormalize(phoneNumber, out var normalizedPhoneNumber))
-        {
-            throw new ArgumentException(InvalidInternationalPhoneMessage, nameof(phoneNumber));
-        }
-
-        return normalizedPhoneNumber;
     }
 }

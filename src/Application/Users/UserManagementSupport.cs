@@ -29,12 +29,12 @@ internal static class UserManagementSupport
         var hasDepartment = !string.IsNullOrWhiteSpace(department);
         if (AuthSupport.RequiresDepartment(role) && !hasDepartment)
         {
-            throw AuthSupport.CreateValidationException(propertyName, "Department is required for internal accounts.");
+            throw AuthSupport.CreateValidationException(propertyName, "Phòng ban là bắt buộc với tài khoản nội bộ.");
         }
 
         if (!AuthSupport.RequiresDepartment(role) && hasDepartment)
         {
-            throw AuthSupport.CreateValidationException(propertyName, "Customer accounts cannot have a department.");
+            throw AuthSupport.CreateValidationException(propertyName, "Tài khoản Customer không được có phòng ban.");
         }
     }
 
@@ -47,7 +47,7 @@ internal static class UserManagementSupport
                 return;
             }
 
-            throw AuthSupport.CreateValidationException(propertyName, "Admin System can only create manager accounts.");
+            throw AuthSupport.CreateValidationException(propertyName, "Admin System chỉ được tạo tài khoản Manager.");
         }
 
         if (AuthSupport.IsManager(actor) && CanManagerManageRole(targetRole))
@@ -55,7 +55,7 @@ internal static class UserManagementSupport
             return;
         }
 
-        throw AuthSupport.CreateValidationException(propertyName, "Manager can only create staff accounts. Customer accounts must use the registration flow.");
+        throw AuthSupport.CreateValidationException(propertyName, "Manager chỉ được tạo tài khoản Staff. Customer phải dùng luồng đăng ký.");
     }
 
     public static void EnsureCanViewUser(User actor, User target)
@@ -78,7 +78,7 @@ internal static class UserManagementSupport
     {
         if (actor.Id == target.Id)
         {
-            throw AuthSupport.CreateValidationException(nameof(target.Id), "Current account cannot be updated from the management API.");
+            throw AuthSupport.CreateValidationException(nameof(target.Id), "Không thể cập nhật tài khoản hiện tại bằng API quản lý. Vui lòng dùng API profile.");
         }
 
         if (AuthSupport.IsAdmin(actor))
@@ -99,7 +99,7 @@ internal static class UserManagementSupport
     {
         if (actor.Id == target.Id)
         {
-            throw AuthSupport.CreateValidationException(nameof(target.Id), "Current account must be deleted from the profile API.");
+            throw AuthSupport.CreateValidationException(nameof(target.Id), "Không thể xóa tài khoản hiện tại bằng API quản lý. Vui lòng dùng API profile.");
         }
 
         if (AuthSupport.IsAdmin(actor)
@@ -126,7 +126,7 @@ internal static class UserManagementSupport
                 return;
             }
 
-            throw AuthSupport.CreateValidationException(propertyName, "Admin System can only assign manager roles.");
+            throw AuthSupport.CreateValidationException(propertyName, "Admin System chỉ được gán vai trò Manager.");
         }
 
         if (AuthSupport.IsManager(actor))
@@ -138,7 +138,7 @@ internal static class UserManagementSupport
 
             if (!CanManagerManageRole(targetRole))
             {
-                throw AuthSupport.CreateValidationException(propertyName, "Manager can only assign staff roles. Customer accounts must use the registration flow.");
+                throw AuthSupport.CreateValidationException(propertyName, "Manager chỉ được gán vai trò Staff. Customer phải dùng luồng đăng ký.");
             }
 
             return;
@@ -161,7 +161,7 @@ internal static class UserManagementSupport
     {
         var user = await BuildVisibleUsersQuery(context, actor)
             .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
-            ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("User was not found.");
+            ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
 
         EnsureCanViewUser(actor, user);
         return user;

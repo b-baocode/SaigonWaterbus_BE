@@ -33,7 +33,10 @@ public sealed record GoogleLoginResultDto(
 
 public sealed record AuthActionResultDto(string Message);
 
-public sealed record UpdateProfileResultDto(AuthUserDto User, OtpChallengeDto? EmailVerification);
+public sealed record UpdateProfileResultDto(
+    AuthUserDto User,
+    OtpChallengeDto? EmailVerification = null,
+    OtpChallengeDto? PhoneVerification = null);
 
 public sealed record OtpChallengeDto(
     int ChallengeId,

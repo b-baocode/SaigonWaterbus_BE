@@ -142,7 +142,7 @@ public sealed class BrevoOtpSender : IOtpSender
         {
             OtpPurpose.Register => options.RegisterTemplateId,
             OtpPurpose.ForgotPassword => options.ForgotPasswordTemplateId,
-            OtpPurpose.EmailChange => options.EmailChangeTemplateId > 0
+            OtpPurpose.EmailChange or OtpPurpose.PhoneChange => options.EmailChangeTemplateId > 0
                 ? options.EmailChangeTemplateId
                 : options.LoginTemplateId,
             _ => options.LoginTemplateId

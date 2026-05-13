@@ -74,6 +74,11 @@ artifacts/
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
 
+# Local ASP.NET Core configuration overrides. Keep deploy config in appsettings.json
+# with empty secret values and set real values in Azure App Service settings.
+src/Web/appsettings.Development.json
+src/Web/appsettings.Local.json
+
 # StyleCop
 StyleCopReport.xml
 
