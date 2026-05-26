@@ -100,7 +100,10 @@ public sealed class VerifyRegisterOtpCommandHandler : IRequestHandler<VerifyRegi
 
             var user = challenge.User;
             user.Status = UserStatus.Active;
-            user.PhoneVerifiedAt ??= now;
+            if (AuthSupport.ResolveOtpChannelFromDestination(challenge.Email) == OtpChannel.Phone)
+            {
+                user.PhoneVerifiedAt ??= now;
+            }
 
             var customerRole = await AuthSupport.GetRoleByCodeAsync(
                 _context,

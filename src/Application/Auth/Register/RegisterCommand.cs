@@ -9,8 +9,8 @@ namespace SaigonWaterbus.Application.Auth.Register;
 public sealed record RegisterCommand(
     string FullName,
     DateOnly DateOfBirth,
-    string Phone,
     string Password,
+    string? Phone = null,
     string? Email = null,
     string? OtpChannel = null) : IRequest<OtpChallengeDto>;
 
@@ -25,13 +25,18 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
             .WithMessage("Họ và tên không được vượt quá 150 ký tự.");
 
         RuleFor(x => x.DateOfBirth)
+            .Must(x => x != default)
+            .WithMessage("Ngày sinh là bắt buộc.")
             .Must(x => x <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
             .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
 
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.Phone) || !string.IsNullOrWhiteSpace(x.Email))
+            .WithMessage("Email hoặc số điện thoại là bắt buộc.")
+            .OverridePropertyName(nameof(RegisterCommand.Email));
+
         RuleFor(x => x.Phone)
-            .NotEmpty()
-            .WithMessage("Số điện thoại là bắt buộc.")
-            .Must(PhoneRules.IsValid)
+            .Must(phone => string.IsNullOrWhiteSpace(phone) || PhoneRules.IsValid(phone))
             .WithMessage(PhoneRules.InvalidInternationalPhoneMessage);
 
         RuleFor(x => x.Email)
@@ -44,11 +49,6 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
             .WithMessage(EmailRules.AllowedEmailDomainMessage)
             .When(x => !string.IsNullOrWhiteSpace(x.Email));
 
-        RuleFor(x => x.Email)
-            .NotEmpty()
-            .When(x => PhoneRules.IsValid(x.Phone) && !PhoneRules.IsVietnamPhone(x.Phone))
-            .WithMessage("Số điện thoại quốc tế bắt buộc nhập email được hỗ trợ để nhận OTP.");
-
         RuleFor(x => x.Password)
             .NotEmpty()
             .WithMessage("Mật khẩu là bắt buộc.")
@@ -58,32 +58,34 @@ public sealed class RegisterCommandValidator : AbstractValidator<RegisterCommand
         RuleFor(x => x.OtpChannel)
             .Must(x => string.IsNullOrWhiteSpace(x)
                 || string.Equals(x, "email", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "mail", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "e-mail", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(x, "phone", StringComparison.OrdinalIgnoreCase)
                 || string.Equals(x, "sms", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "sdt", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "so-dien-thoai", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(x, "sdt", StringComparison.OrdinalIgnoreCase))
             .WithMessage("Kênh OTP chỉ được là email hoặc phone.");
 
-        RuleFor(x => x.OtpChannel)
-            .Must((command, otpChannel) =>
-                !PhoneRules.IsValid(command.Phone)
-                || PhoneRules.IsVietnamPhone(command.Phone)
-                || string.IsNullOrWhiteSpace(otpChannel)
-                || IsEmailOtpChannel(otpChannel))
-            .WithMessage("Số điện thoại quốc tế chỉ hỗ trợ OTP qua email.");
+        RuleFor(x => x)
+            .Must(x => !string.Equals(x.OtpChannel, "email", StringComparison.OrdinalIgnoreCase)
+                || !string.IsNullOrWhiteSpace(x.Email))
+            .WithMessage("Email là bắt buộc khi chọn nhận OTP qua email.")
+            .OverridePropertyName(nameof(RegisterCommand.OtpChannel));
 
-        RuleFor(x => x.OtpChannel)
-            .Must((command, otpChannel) =>
-                !IsEmailOtpChannel(otpChannel)
-                || !string.IsNullOrWhiteSpace(command.Email))
-            .WithMessage("Email là bắt buộc khi chọn nhận OTP qua email.");
+        RuleFor(x => x)
+            .Must(x => !string.Equals(x.OtpChannel, "email", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(x.Phone))
+            .WithMessage("OTP qua email chỉ hỗ trợ khi không có số điện thoại.")
+            .OverridePropertyName(nameof(RegisterCommand.OtpChannel));
+
+        RuleFor(x => x)
+            .Must(x => !IsPhoneOtpChannel(x.OtpChannel)
+                || !string.IsNullOrWhiteSpace(x.Phone))
+            .WithMessage("Số điện thoại là bắt buộc khi chọn nhận OTP qua phone.")
+            .OverridePropertyName(nameof(RegisterCommand.OtpChannel));
     }
 
-    private static bool IsEmailOtpChannel(string? otpChannel) =>
-        !string.IsNullOrWhiteSpace(otpChannel)
-        && otpChannel.Trim().ToLowerInvariant() is "email" or "mail" or "e-mail";
+    private static bool IsPhoneOtpChannel(string? otpChannel) =>
+        string.Equals(otpChannel, "phone", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(otpChannel, "sms", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(otpChannel, "sdt", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, OtpChallengeDto>
@@ -128,11 +130,12 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
     public async Task<OtpChallengeDto> Handle(RegisterCommand request, CancellationToken cancellationToken)
     {
-        var normalizedPhone = _identityNormalizer.NormalizePhone(request.Phone);
-        var isVietnamPhone = PhoneRules.IsVietnamPhone(request.Phone);
-        var email = string.IsNullOrWhiteSpace(request.Email) ? null : request.Email.Trim();
-        var normalizedEmail = email is null ? null : _identityNormalizer.NormalizeEmail(email);
-        var otpChannel = ResolveRegisterOtpChannel(request.OtpChannel, email, isVietnamPhone);
+        var hasPhone = !string.IsNullOrWhiteSpace(request.Phone);
+        var normalizedPhone = hasPhone ? _identityNormalizer.NormalizePhone(request.Phone!) : null;
+        var hasEmail = !string.IsNullOrWhiteSpace(request.Email);
+        var email = hasEmail ? request.Email!.Trim() : null;
+        var normalizedEmail = hasEmail ? _identityNormalizer.NormalizeEmail(email!) : null;
+        var otpChannel = ResolveRegisterOtpChannel(request.OtpChannel, hasPhone, hasEmail);
         var now = _timeProvider.GetUtcNow();
 
         var pendingRegistration = await _context.ExecuteInTransactionAsync(async ct =>
@@ -154,14 +157,13 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
             var matchingUsers = await _context.Set<User>()
                 .Include(x => x.OtpChallenges)
-                .Where(x => x.NormalizedPhoneNumber == normalizedPhone
+                .Where(x => (normalizedPhone != null && x.NormalizedPhoneNumber == normalizedPhone)
                          || (normalizedEmail != null && x.NormalizedEmail == normalizedEmail))
                 .ToListAsync(ct);
 
             var pendingUser = matchingUsers.SingleOrDefault(x =>
                 x.Status == UserStatus.PendingVerification
-                && x.NormalizedPhoneNumber == normalizedPhone
-                && x.NormalizedEmail == normalizedEmail);
+                && RegistrationIdentityMatches(x, normalizedPhone, normalizedEmail));
 
             foreach (var matchingUser in matchingUsers)
             {
@@ -170,20 +172,14 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
                     continue;
                 }
 
-                if (matchingUser.NormalizedPhoneNumber == normalizedPhone)
+                if (normalizedPhone is not null && matchingUser.NormalizedPhoneNumber == normalizedPhone)
                 {
-                    var message = matchingUser.Status == UserStatus.PendingVerification
-                        ? "Số điện thoại đang chờ xác thực OTP. Vui lòng xác thực OTP hoặc chờ OTP hết hạn để đăng ký lại."
-                        : "Số điện thoại đã được đăng ký.";
-                    throw AuthSupport.CreateValidationException(nameof(request.Phone), message);
+                    throw AuthSupport.CreateValidationException(nameof(request.Phone), "Số điện thoại đã được đăng ký.");
                 }
 
                 if (normalizedEmail is not null && matchingUser.NormalizedEmail == normalizedEmail)
                 {
-                    var message = matchingUser.Status == UserStatus.PendingVerification
-                        ? "Email đang chờ xác thực OTP. Vui lòng xác thực OTP hoặc chờ OTP hết hạn để đăng ký lại."
-                        : "Email đã được đăng ký.";
-                    throw AuthSupport.CreateValidationException(nameof(request.Email), message);
+                    throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
                 }
             }
 
@@ -196,7 +192,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
                 if (latestPendingChallenge is not null && latestPendingChallenge.ResendAvailableAt > now)
                 {
-                    throw AuthSupport.CreateValidationException(nameof(request.Phone), "OTP vừa được gửi, vui lòng chờ trước khi gửi lại.");
+                    throw AuthSupport.CreateValidationException(GetRegisterIdentifierProperty(normalizedPhone), "OTP vừa được gửi, vui lòng chờ trước khi gửi lại.");
                 }
             }
 
@@ -209,7 +205,7 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
 
             user.FullName = request.FullName.Trim();
             user.DateOfBirth = request.DateOfBirth;
-            user.PhoneNumber = PhoneRules.ToInternationalFormat(request.Phone);
+            user.PhoneNumber = hasPhone ? PhoneRules.ToInternationalFormat(request.Phone!) : null;
             user.NormalizedPhoneNumber = normalizedPhone;
             user.Email = email;
             user.NormalizedEmail = normalizedEmail;
@@ -226,9 +222,9 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
                 await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.Register, now, ct);
             }
 
-            var otpDestination = otpChannel == OtpChannel.Email
-                ? email!
-                : normalizedPhone;
+            var otpDestination = otpChannel == OtpChannel.Phone
+                ? normalizedPhone!
+                : email!;
 
             var challenge = new OtpChallenge
             {
@@ -285,26 +281,37 @@ public sealed class RegisterCommandHandler : IRequestHandler<RegisterCommand, Ot
         };
     }
 
-    private static OtpChannel ResolveRegisterOtpChannel(string? otpChannel, string? email, bool isVietnamPhone)
+    private static OtpChannel ResolveRegisterOtpChannel(string? otpChannel, bool hasPhone, bool hasEmail)
     {
-        var hasEmail = !string.IsNullOrWhiteSpace(email);
-        if (!isVietnamPhone)
-        {
-            return OtpChannel.Email;
-        }
-
         if (string.IsNullOrWhiteSpace(otpChannel))
         {
-            return hasEmail ? OtpChannel.Email : OtpChannel.Phone;
+            return hasPhone ? OtpChannel.Phone : OtpChannel.Email;
         }
 
-        var resolvedChannel = AuthSupport.ResolveOtpChannel(otpChannel, OtpChannel.Email, nameof(RegisterCommand.OtpChannel));
+        var resolvedChannel = AuthSupport.ResolveOtpChannel(otpChannel, hasPhone ? OtpChannel.Phone : OtpChannel.Email, nameof(RegisterCommand.OtpChannel));
+
         if (resolvedChannel == OtpChannel.Email && !hasEmail)
         {
-            throw AuthSupport.CreateValidationException(nameof(RegisterCommand.OtpChannel), "Email là bắt buộc khi chọn nhận OTP qua email.");
+            throw AuthSupport.CreateValidationException(nameof(RegisterCommand.OtpChannel), "Email is required when OtpChannel is 'email'.");
+        }
+
+        if (resolvedChannel == OtpChannel.Email && hasPhone)
+        {
+            throw AuthSupport.CreateValidationException(nameof(RegisterCommand.OtpChannel), "Email OTP is only supported when phone is not provided.");
+        }
+
+        if (resolvedChannel == OtpChannel.Phone && !hasPhone)
+        {
+            throw AuthSupport.CreateValidationException(nameof(RegisterCommand.OtpChannel), "Phone is required when OtpChannel is 'phone'.");
         }
 
         return resolvedChannel;
     }
 
+    private static bool RegistrationIdentityMatches(User user, string? normalizedPhone, string? normalizedEmail) =>
+        (normalizedPhone is null ? user.NormalizedPhoneNumber is null : user.NormalizedPhoneNumber == normalizedPhone)
+        && (normalizedEmail is null ? user.NormalizedEmail is null : user.NormalizedEmail == normalizedEmail);
+
+    private static string GetRegisterIdentifierProperty(string? normalizedPhone) =>
+        normalizedPhone is null ? nameof(RegisterCommand.Email) : nameof(RegisterCommand.Phone);
 }

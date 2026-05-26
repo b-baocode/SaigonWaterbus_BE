@@ -48,12 +48,21 @@ public class ForgotPasswordRequestOtpCommandValidatorTests
     }
 
     [TestCase("+84901234567")]
-    [TestCase("+14155552671")]
-    public void ValidateAcceptsPhoneOtp(string phone)
+    [TestCase("0901234567")]
+    public void ValidateAcceptsVietnamesePhoneOnly(string phone)
     {
         var result = _validator.Validate(new ForgotPasswordRequestOtpCommand(
             EmailOrPhone: phone));
 
         result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ValidateRejectsNonVietnamesePhone()
+    {
+        var result = _validator.Validate(new ForgotPasswordRequestOtpCommand(
+            EmailOrPhone: "+14155552671"));
+
+        result.IsValid.ShouldBeFalse();
     }
 }

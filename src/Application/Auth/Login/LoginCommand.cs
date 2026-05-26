@@ -2,27 +2,50 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
+using System.ComponentModel.DataAnnotations;
 
 namespace SaigonWaterbus.Application.Auth.Login;
 
 public sealed record LoginCommand(
-    string Phone,
+    string EmailOrPhone,
     string Password) : IRequest<AuthSessionDto>;
 
 public sealed class LoginCommandValidator : AbstractValidator<LoginCommand>
 {
+    private static readonly EmailAddressAttribute EmailAddressValidator = new();
+
     public LoginCommandValidator()
     {
-        RuleFor(x => x.Phone)
-            .NotEmpty()
-            .WithMessage("Số điện thoại là bắt buộc.")
-            .Must(PhoneRules.IsValid)
-            .WithMessage(PhoneRules.InvalidInternationalPhoneMessage);
+        RuleFor(x => x)
+            .Must(x => !string.IsNullOrWhiteSpace(x.EmailOrPhone))
+            .WithMessage("Email hoặc số điện thoại là bắt buộc.")
+            .OverridePropertyName(nameof(LoginCommand.EmailOrPhone));
+
+        RuleFor(x => x)
+            .Must(x => string.IsNullOrWhiteSpace(x.EmailOrPhone) || IsValidEmailOrPhone(x.EmailOrPhone))
+            .WithMessage("Vui lòng nhập email đúng định dạng hoặc số điện thoại Việt Nam hợp lệ.")
+            .OverridePropertyName(nameof(LoginCommand.EmailOrPhone));
 
         RuleFor(x => x.Password)
             .NotEmpty()
             .WithMessage("Mật khẩu là bắt buộc.");
     }
+
+    private static bool IsValidEmailOrPhone(string? emailOrPhone)
+    {
+        if (string.IsNullOrWhiteSpace(emailOrPhone))
+        {
+            return false;
+        }
+
+        var trimmedEmailOrPhone = emailOrPhone.Trim();
+        return IsEmailInput(trimmedEmailOrPhone)
+            ? EmailAddressValidator.IsValid(trimmedEmailOrPhone)
+            : PhoneRules.IsValid(trimmedEmailOrPhone);
+    }
+
+    private static bool IsEmailInput(string emailOrPhone) =>
+        emailOrPhone.Contains('@', StringComparison.Ordinal);
 }
 
 public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSessionDto>
@@ -49,20 +72,20 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
 
     public async Task<AuthSessionDto> Handle(LoginCommand request, CancellationToken cancellationToken)
     {
-        var user = await GetUserByPhoneAsync(request.Phone, cancellationToken);
+        var user = await GetUserByEmailOrPhoneAsync(request.EmailOrPhone, cancellationToken);
 
-        AuthSupport.EnsureUserCanLogin(user, nameof(request.Phone));
+        AuthSupport.EnsureUserCanLogin(user, nameof(request.EmailOrPhone));
 
         if (string.IsNullOrWhiteSpace(user.PasswordHash)
             || !_secretHasher.Verify(request.Password, user.PasswordHash))
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Password), "Mật khẩu không đúng.");
+            throw new UnauthorizedAccessException();
         }
 
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);
         if (roles.Count == 0)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.Phone), "Tài khoản chưa có vai trò hoạt động.");
+            throw AuthSupport.CreateValidationException(nameof(request.EmailOrPhone), "Tài khoản chưa có vai trò hoạt động.");
         }
 
         user.LastLoginAt = _timeProvider.GetUtcNow();
@@ -92,12 +115,24 @@ public sealed class LoginCommandHandler : IRequestHandler<LoginCommand, AuthSess
             refreshTokenEntity.ExpiresAt);
     }
 
-    private async Task<User> GetUserByPhoneAsync(string phone, CancellationToken cancellationToken)
+    private async Task<User> GetUserByEmailOrPhoneAsync(string emailOrPhone, CancellationToken cancellationToken)
     {
-        var normalizedPhone = _identityNormalizer.NormalizePhone(phone);
+        var trimmedEmailOrPhone = emailOrPhone.Trim();
+        var query = _context.Set<User>();
 
-        return await _context.Set<User>()
+        if (IsEmailInput(trimmedEmailOrPhone))
+        {
+            var normalizedEmail = _identityNormalizer.NormalizeEmail(trimmedEmailOrPhone);
+            return await query.SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken)
+                ?? throw new UnauthorizedAccessException();
+        }
+
+        var normalizedPhone = _identityNormalizer.NormalizePhone(trimmedEmailOrPhone);
+        return await query
             .SingleOrDefaultAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken)
-            ?? throw AuthSupport.CreateValidationException(nameof(LoginCommand.Phone), "Số điện thoại chưa được đăng ký.");
+            ?? throw new UnauthorizedAccessException();
     }
+
+    private static bool IsEmailInput(string emailOrPhone) =>
+        emailOrPhone.Contains('@', StringComparison.Ordinal);
 }

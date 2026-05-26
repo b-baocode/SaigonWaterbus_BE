@@ -18,10 +18,8 @@ public class Auth : IEndpointGroup
         {
           "fullName": "Nguyen Van A",
           "dateOfBirth": "02/09/2003",
-          "phone": "+12025550123",
           "password": "P@ssword123",
-          "email": "vana@gmail.com",
-          "otpChannel": "email"
+          "email": "vana@gmail.com"
         }
         """;
 
@@ -43,7 +41,7 @@ public class Auth : IEndpointGroup
     private const string LoginExample =
         """
         {
-          "phone": "0901234567",
+          "emailOrPhone": "vana@gmail.com",
           "password": "P@ssword123"
         }
         """;
@@ -52,6 +50,22 @@ public class Auth : IEndpointGroup
         """
         {
           "idToken": "google-id-token-from-frontend"
+        }
+        """;
+
+    private const string GoogleSendPhoneOtpExample =
+        """
+        {
+          "tempToken": "google-temp-token",
+          "phone": "0901234567"
+        }
+        """;
+
+    private const string GoogleVerifyPhoneExample =
+        """
+        {
+          "tempToken": "google-temp-token",
+          "otp": "123456"
         }
         """;
 
@@ -65,7 +79,7 @@ public class Auth : IEndpointGroup
     private const string ForgotPasswordExample =
         """
         {
-          "emailOrPhone": "customer@gmail.com"
+          "emailOrPhone": "customer@example.com"
         }
         """;
 
@@ -86,7 +100,7 @@ public class Auth : IEndpointGroup
         }
         """;
 
-    private const string UpdateProfileExample =
+    private const string UpdateMeExample =
         """
         {
           "fullName": "Nguyen Van A Updated",
@@ -104,17 +118,7 @@ public class Auth : IEndpointGroup
         }
         """;
 
-    private const string VerifyPhoneChangeOtpExample =
-        """
-        {
-          "challengeId": 32,
-          "code": "123456"
-        }
-        """;
-
     public static string RoutePrefix => "/api/auth";
-
-    public static string OpenApiTag => "Auth";
 
     public static void Map(RouteGroupBuilder groupBuilder)
     {
@@ -123,15 +127,20 @@ public class Auth : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 RegisterExample,
-                "Dang ky tai khoan CUSTOMER.",
-                "Tra challengeId de xac minh OTP."));
+                "Tao user o trang thai PendingVerification.",
+                "Can co it nhat email hoac so dien thoai.",
+                "Neu chi co email thi OTP mac dinh gui ve email.",
+                "Neu chi co so dien thoai thi OTP mac dinh gui ve SMS.",
+                "Neu co ca email va so dien thoai thi OTP gui ve so dien thoai.",
+                "Tra ve challengeId de goi /api/auth/verify-register-otp."));
 
         groupBuilder.MapPost(VerifyRegisterOtp, "verify-register-otp")
             .WithSummary("Xac nhan OTP dang ky")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 VerifyRegisterOtpExample,
-                "Xac minh OTP dang ky.",
+                "Dung challengeId tra ve tu /api/auth/register.",
+                "Neu da gui lai OTP, uu tien challengeId moi nhat tra ve tu /api/auth/resend-otp.",
                 "Thanh cong se kich hoat tai khoan."));
 
         groupBuilder.MapPost(ResendOtp, "resend-otp")
@@ -139,49 +148,76 @@ public class Auth : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 ResendOtpExample,
-                "Gui lai OTP cho challenge con hieu luc.",
-                "Dung challengeId moi nhat de verify."));
+                "Dung cho dang ky, quen mat khau hoac xac thuc email moi.",
+                "Neu challenge la xac thuc email moi thi can Authorization Bearer token cua user hien tai.",
+                "Chi gui lai khi da qua thoi gian cho resend.",
+                "Response co challengeId moi nhat de verify OTP."));
 
         groupBuilder.MapPost(Login, "login")
-            .WithSummary("Dang nhap bang so dien thoai")
+            .WithSummary("Dang nhap bang email hoac so dien thoai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 LoginExample,
-                "Dang nhap bang phone va password.",
-                "Tra user, access token va refresh token."));
+                "Dang nhap bang email hoac so dien thoai va mat khau.",
+                "Frontend gui dinh danh nguoi dung vao emailOrPhone.",
+                "So dien thoai chi ho tro so Viet Nam, vi du 0901234567 hoac +84901234567.",
+                "Tai khoan phai da xac minh OTP.",
+                "Tra ve thong tin user, access token va refresh token."));
 
         groupBuilder.MapPost(GoogleLogin, "google-login")
             .WithSummary("Dang nhap bang Google")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 GoogleLoginExample,
-                "Validate Google idToken va dang nhap ngay.",
-                "Lan dau tao/link Google se gui email thong bao."));
+                "idToken lay tu frontend sau khi dang nhap Google.",
+                "User cu da active va co PhoneVerifiedAt se duoc cap token.",
+                "User moi hoac user Google cu chua co PhoneVerifiedAt se nhan status NEED_PHONE va tempToken.",
+                "Khong tao user moi va khong cap JWT khi chua xac minh so dien thoai."));
+
+        groupBuilder.MapPost(SendGooglePhoneOtp, "google/send-phone-otp")
+            .WithSummary("Gui OTP so dien thoai cho Google Login")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                GoogleSendPhoneOtpExample,
+                "Dung tempToken tra ve tu /api/auth/google-login.",
+                "Backend check phone chua bi user khac dung, sau do gui OTP.",
+                "Khong tao user va khong cap JWT o buoc nay."));
+
+        groupBuilder.MapPost(VerifyGooglePhone, "google/verify-phone")
+            .WithSummary("Xac minh OTP Google Login va tao user")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                GoogleVerifyPhoneExample,
+                "Dung tempToken da nhan o buoc gui OTP.",
+                "Backend su dung so dien thoai da luu trong temp session, khong can gui lai phone.",
+                "OTP dung moi tao hoac hoan tat user that trong database.",
+                "Thanh cong cap access token va refresh token."));
 
         groupBuilder.MapPost(RefreshToken, "refresh-token")
             .WithSummary("Lam moi access token")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 RefreshTokenExample,
-                "Doi refresh token lay token moi.",
-                "Refresh token cu se bi revoke."));
+                "Dung refreshToken tra ve tu endpoint login hoac google-login.",
+                "Refresh token cu se bi revoke sau khi doi token moi."));
 
         groupBuilder.MapPost(ForgotPassword, "forgot-password")
             .WithSummary("Yeu cau OTP quen mat khau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 ForgotPasswordExample,
-                "Gui OTP quen mat khau qua email duoc ho tro hoac so dien thoai Viet Nam.",
-                "So dien thoai quoc te se gui OTP qua email da dang ky.",
-                "Tra challengeId de reset password."));
+                "Nhap email hoac so dien thoai vao emailOrPhone. Neu la email thi OTP gui ve email, neu la so dien thoai thi OTP gui ve SMS.",
+                "Tra ve challengeId de goi /api/auth/reset-password.",
+                "So dien thoai chi ho tro so Viet Nam, vi du 0901234567 hoac +84901234567."));
 
         groupBuilder.MapPost(ResetPassword, "reset-password")
             .WithSummary("Dat lai mat khau bang OTP")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 ResetPasswordExample,
-                "Dat lai mat khau bang OTP.",
-                "Thanh cong se revoke refresh token."));
+                "Dung challengeId tra ve tu /api/auth/forgot-password.",
+                "Neu da gui lai OTP, uu tien challengeId moi nhat tra ve tu /api/auth/resend-otp.",
+                "Thanh cong se revoke refresh token dang con hieu luc."));
 
         groupBuilder.MapPost(Logout, "logout")
             .RequireAuthorization()
@@ -189,8 +225,8 @@ public class Auth : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Dang xuat user hien tai.",
-                "Revoke refresh token con hieu luc."));
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Tat ca refresh token con hieu luc cua user hien tai se bi revoke."));
 
         groupBuilder.MapPost(ChangePassword, "change-password")
             .RequireAuthorization()
@@ -198,78 +234,52 @@ public class Auth : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 ChangePasswordExample,
-                "Doi mat khau user dang login.",
-                "Mat khau moi phai khac mat khau cu."));
+                "Header can co Authorization: Bearer <accessToken>.",
+                "NewPassword phai khac CurrentPassword."));
 
-        groupBuilder.MapGet(GetProfile, "profile")
+        groupBuilder.MapGet(Me, "me")
             .RequireAuthorization()
             .WithSummary("Lay profile hien tai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Lay profile user dang login."));
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Tra ve thong tin profile va role cua user dang dang nhap."));
 
-        groupBuilder.MapPut(UpdateProfile, "profile/update")
+        groupBuilder.MapPut(UpdateMe, "me")
             .RequireAuthorization()
             .DisableAntiforgery()
             .Accepts<UpdateCurrentUserProfileJsonRequest>("application/json", "multipart/form-data")
             .WithSummary("Cap nhat profile hien tai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
-                UpdateProfileExample,
-                "Cap nhat cac field duoc gui len.",
-                "Doi email can verify OTP; Google user them so dien thoai can verify OTP.",
-                "So Viet Nam gui OTP qua SMS; so quoc te gui OTP qua email Google.",
-                "Doi avatar dung multipart/form-data."));
+                UpdateMeExample,
+                "User duoc cap nhat fullName, dateOfBirth, phoneNumber, email va anh dai dien.",
+                "Chi field nao gui len moi duoc cap nhat; field khong gui se giu du lieu cu.",
+                "Co the gui application/json neu khong doi anh.",
+                "Neu doi anh, gui multipart/form-data voi cac field fullName, dateOfBirth, phoneNumber, email va file.",
+                "Anh chi ho tro JPEG, PNG hoac WebP, toi da 5 MB.",
+                "Customer khong duoc tu thay doi phoneNumber; Admin hoac Manager doi so dien thoai customer qua API quan ly user.",
+                "Neu email thay doi, backend gui OTP toi email moi va chua doi email cho toi khi verify OTP."));
 
-        groupBuilder.MapDelete(DeleteProfile, "profile/delete")
+        groupBuilder.MapDelete(DeleteMe, "me")
             .RequireAuthorization()
             .WithSummary("Tu xoa tai khoan customer")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer",
                 null,
-                "Customer tu xoa tai khoan cua minh.",
-                "Internal account khong dung endpoint nay."));
+                "Header can co Authorization: Bearer <accessToken>.",
+                "Chi tai khoan Customer duoc tu xoa tai khoan cua chinh minh.",
+                "Manager, Staff va Admin System khong duoc dung endpoint nay."));
 
-        groupBuilder.MapPost(VerifyEmailChangeOtp, "profile/verify-email-change-otp")
+        groupBuilder.MapPost(VerifyEmailChangeOtp, "verify-email-change-otp")
             .RequireAuthorization()
             .WithSummary("Xac thuc email moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 VerifyEmailChangeOtpExample,
-                "Xac minh OTP doi email.",
+                "Dung challengeId tra ve tu PUT /api/auth/me khi thay doi email.",
                 "Thanh cong se cap nhat email moi."));
-
-        groupBuilder.MapPost(VerifyPhoneChangeOtp, "profile/verify-phone-change-otp")
-            .RequireAuthorization()
-            .WithSummary("Xac thuc so dien thoai moi")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
-                VerifyPhoneChangeOtpExample,
-                "Xac minh OTP cap nhat so dien thoai cho tai khoan Google.",
-                "Thanh cong se cap nhat so dien thoai. Moi tai khoan chi duoc tu cap nhat mot lan."));
-
-        groupBuilder.MapPut(UpdateProfile, "profile")
-            .RequireAuthorization()
-            .DisableAntiforgery()
-            .Accepts<UpdateCurrentUserProfileJsonRequest>("application/json", "multipart/form-data")
-            .WithName("UpdateProfileLegacy")
-            .ExcludeFromDescription();
-
-        groupBuilder.MapDelete(DeleteProfile, "profile")
-            .RequireAuthorization()
-            .WithName("DeleteProfileLegacy")
-            .ExcludeFromDescription();
-
-        groupBuilder.MapPost(VerifyEmailChangeOtp, "verify-email-change-otp")
-            .RequireAuthorization()
-            .WithName("VerifyEmailChangeOtpLegacy")
-            .ExcludeFromDescription();
-
-        groupBuilder.MapPost(VerifyPhoneChangeOtp, "verify-phone-change-otp")
-            .RequireAuthorization()
-            .WithName("VerifyPhoneChangeOtpLegacy")
-            .ExcludeFromDescription();
     }
 
     public static async Task<IResult> Register(
@@ -317,6 +327,24 @@ public class Auth : IEndpointGroup
         return Results.Ok(result);
     }
 
+    public static async Task<IResult> SendGooglePhoneOtp(
+        ISender sender,
+        SendGooglePhoneOtpCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(command, cancellationToken);
+        return Results.Ok(result);
+    }
+
+    public static async Task<IResult> VerifyGooglePhone(
+        ISender sender,
+        VerifyGooglePhoneCommand command,
+        CancellationToken cancellationToken)
+    {
+        var result = await sender.Send(command, cancellationToken);
+        return Results.Ok(result);
+    }
+
     public static async Task<IResult> RefreshToken(
         ISender sender,
         RefreshTokenCommand command,
@@ -334,7 +362,7 @@ public class Auth : IEndpointGroup
         return Results.NoContent();
     }
 
-    public static async Task<IResult> GetProfile(
+    public static async Task<IResult> Me(
         ISender sender,
         CancellationToken cancellationToken)
     {
@@ -342,7 +370,7 @@ public class Auth : IEndpointGroup
         return Results.Ok(result);
     }
 
-    public static async Task<IResult> UpdateProfile(
+    public static async Task<IResult> UpdateMe(
         ISender sender,
         HttpRequest request,
         IOptions<JsonOptions> jsonOptions,
@@ -366,7 +394,7 @@ public class Auth : IEndpointGroup
         }
     }
 
-    public static async Task<IResult> DeleteProfile(
+    public static async Task<IResult> DeleteMe(
         ISender sender,
         CancellationToken cancellationToken)
     {
@@ -377,15 +405,6 @@ public class Auth : IEndpointGroup
     public static async Task<IResult> VerifyEmailChangeOtp(
         ISender sender,
         VerifyEmailChangeOtpCommand command,
-        CancellationToken cancellationToken)
-    {
-        var result = await sender.Send(command, cancellationToken);
-        return Results.Ok(result);
-    }
-
-    public static async Task<IResult> VerifyPhoneChangeOtp(
-        ISender sender,
-        VerifyPhoneChangeOtpCommand command,
         CancellationToken cancellationToken)
     {
         var result = await sender.Send(command, cancellationToken);
@@ -471,7 +490,7 @@ public class Auth : IEndpointGroup
 
         if (DateOnly.TryParseExact(
                 value,
-                ["dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd"],
+                ["dd/MM/yyyy", "dd-MM-yyyy"],
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out var date))
@@ -479,7 +498,7 @@ public class Auth : IEndpointGroup
             return date;
         }
 
-        throw new BadHttpRequestException("dateOfBirth phải dùng định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd.");
+        throw new BadHttpRequestException("dateOfBirth phải dùng định dạng dd/MM/yyyy hoặc dd-MM-yyyy.");
     }
 
     private sealed record UpdateCurrentUserProfileJsonRequest(

@@ -9,12 +9,11 @@ public class RegisterCommandValidatorTests
     private readonly RegisterCommandValidator _validator = new();
 
     [Test]
-    public void ValidateAcceptsInternationalPhoneAndSupportedEmailOtp()
+    public void ValidateAcceptsEmailOnlyRegistration()
     {
         var result = _validator.Validate(new RegisterCommand(
             FullName: "Nguyen Van A",
             DateOfBirth: new DateOnly(2003, 9, 2),
-            Phone: "+12025550123",
             Password: "P@ssword123",
             Email: "customer@gmail.com"));
 
@@ -22,69 +21,68 @@ public class RegisterCommandValidatorTests
     }
 
     [Test]
-    public void ValidateAcceptsVietnamPhoneWithoutEmail()
+    public void ValidateAcceptsPhoneOnlyRegistration()
     {
         var result = _validator.Validate(new RegisterCommand(
             FullName: "Nguyen Van A",
             DateOfBirth: new DateOnly(2003, 9, 2),
-            Phone: "+84901234567",
-            Password: "P@ssword123"));
+            Password: "P@ssword123",
+            Phone: "0901234567"));
 
         result.IsValid.ShouldBeTrue();
     }
 
     [Test]
-    public void ValidateAcceptsVietnamPhoneOtpChannel()
+    public void ValidateRejectsMissingEmailAndPhone()
     {
         var result = _validator.Validate(new RegisterCommand(
             FullName: "Nguyen Van A",
             DateOfBirth: new DateOnly(2003, 9, 2),
-            Phone: "+84901234567",
-            Password: "P@ssword123",
-            Email: "customer@gmail.com",
-            OtpChannel: "phone"));
-
-        result.IsValid.ShouldBeTrue();
-    }
-
-    [Test]
-    public void ValidateRejectsInternationalPhoneWithoutSupportedEmail()
-    {
-        var result = _validator.Validate(new RegisterCommand(
-            FullName: "Nguyen Van A",
-            DateOfBirth: new DateOnly(2003, 9, 2),
-            Phone: "+12025550123",
             Password: "P@ssword123"));
 
         result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "Số điện thoại quốc tế bắt buộc nhập email được hỗ trợ để nhận OTP.");
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Email hoặc số điện thoại là bắt buộc.");
     }
 
     [Test]
-    public void ValidateRejectsInternationalPhoneOtpChannel()
+    public void ValidateRejectsMissingDateOfBirth()
+    {
+        var result = _validator.Validate(new RegisterCommand(
+            FullName: "Nguyen Van A",
+            DateOfBirth: default,
+            Password: "P@ssword123",
+            Email: "customer@gmail.com"));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Ngày sinh là bắt buộc.");
+    }
+
+    [Test]
+    public void ValidateRejectsPhoneOtpWithoutPhone()
     {
         var result = _validator.Validate(new RegisterCommand(
             FullName: "Nguyen Van A",
             DateOfBirth: new DateOnly(2003, 9, 2),
-            Phone: "+12025550123",
             Password: "P@ssword123",
             Email: "customer@gmail.com",
             OtpChannel: "phone"));
 
         result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "Số điện thoại quốc tế chỉ hỗ trợ OTP qua email.");
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Số điện thoại là bắt buộc khi chọn nhận OTP qua phone.");
     }
 
     [Test]
-    public void ValidateRequiresSupportedEmailDomain()
+    public void ValidateRejectsEmailOtpWhenPhoneIsProvided()
     {
         var result = _validator.Validate(new RegisterCommand(
             FullName: "Nguyen Van A",
             DateOfBirth: new DateOnly(2003, 9, 2),
-            Phone: "+84901234567",
             Password: "P@ssword123",
-            Email: "customer@yahoo.com"));
+            Phone: "0901234567",
+            Email: "customer@gmail.com",
+            OtpChannel: "email"));
 
         result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == "OTP qua email chỉ hỗ trợ khi không có số điện thoại.");
     }
 }

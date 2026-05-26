@@ -73,7 +73,7 @@ internal static class AuthSupport
     {
         return await context.Set<Role>()
             .SingleOrDefaultAsync(x => x.Id == roleId, cancellationToken)
-            ?? throw CreateValidationException(propertyName, "Vai trò không hợp lệ.");
+            ?? throw CreateValidationException(propertyName, "Role is invalid.");
     }
 
     public static async Task<User> GetCurrentUserWithRoleAsync(
@@ -91,7 +91,7 @@ internal static class AuthSupport
             .SingleOrDefaultAsync(x => x.Id == userContext.UserId.Value, cancellationToken)
             ?? throw new global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Current user was not found.");
 
-        EnsureUserCanLogin(user, requireVerifiedPhone: false);
+        EnsureUserCanLogin(user);
         return user;
     }
 
@@ -144,7 +144,9 @@ internal static class AuthSupport
             throw CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa.");
         }
 
-        if (requireVerifiedPhone && user.PhoneVerifiedAt is null)
+        if (requireVerifiedPhone
+            && !string.IsNullOrWhiteSpace(user.NormalizedPhoneNumber)
+            && user.PhoneVerifiedAt is null)
         {
             throw new AccountNotCompletedException(
                 AccountNotCompletedException.PhoneNotVerifiedCode,
@@ -298,7 +300,7 @@ internal static class AuthSupport
         CancellationToken cancellationToken)
     {
         var currentUser = await GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
-        EnsureUserCanLogin(currentUser, requireVerifiedPhone: false);
+        EnsureUserCanLogin(currentUser);
 
         if (IsAdmin(currentUser) || IsManager(currentUser))
         {
