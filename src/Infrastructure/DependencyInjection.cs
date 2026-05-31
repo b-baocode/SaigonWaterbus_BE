@@ -43,6 +43,9 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOtpCodeService, OtpCodeService>();
         builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
+        builder.Services.AddScoped<IBookingCodeGenerator, BookingCodeGenerator>();
+        builder.Services.AddScoped<ISeatAvailabilityService, SeatAvailabilityService>();
+        builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddSingleton<IGoogleLoginTempStore, InMemoryGoogleLoginTempStore>();
         builder.Services.AddHttpClient(BrevoHttpClientName);

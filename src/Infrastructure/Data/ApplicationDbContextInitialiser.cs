@@ -148,6 +148,7 @@ public class ApplicationDbContextInitialiser
         }
 
         await _context.SaveChangesAsync();
+        await WaterbusSeedData.SeedAsync(_context);
 
         if (!_databaseStartupSettings.SeedInternalUsers)
         {

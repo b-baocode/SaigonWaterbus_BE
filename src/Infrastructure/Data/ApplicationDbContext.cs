@@ -11,19 +11,39 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
 
     public DbSet<Role> Roles => Set<Role>();
-
     public DbSet<User> Users => Set<User>();
-
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
-
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
-
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
-
     public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);
+    public DbSet<Station> Stations => Set<Station>();
+    public DbSet<Route> Routes => Set<Route>();
+    public DbSet<RouteStop> RouteStops => Set<RouteStop>();
+    public DbSet<Landmark> Landmarks => Set<Landmark>();
+
+    // ─── Boat & Seat ─────────────────────────────────────
+    public DbSet<Boat> Boats => Set<Boat>();
+    public DbSet<Seat> Seats => Set<Seat>();
+
+    // ─── Trip ────────────────────────────────────────────
+    public DbSet<Trip> Trips => Set<Trip>();
+    public DbSet<TripStop> TripStops => Set<TripStop>();
+    public DbSet<Incident> Incidents => Set<Incident>();
+
+    // ─── Fare & Ticket ───────────────────────────────────
+    public DbSet<TicketType> TicketTypes => Set<TicketType>();
+    public DbSet<FareMatrix> FareMatrices => Set<FareMatrix>();
+
+    // ─── Promotion ───────────────────────────────────────
+    public DbSet<Promotion> Promotions => Set<Promotion>();
+
+    // ─── Booking ─────────────────────────────────────────
+    public DbSet<SeatHold> SeatHolds => Set<SeatHold>();
+    public DbSet<Booking> Bookings => Set<Booking>();
+    public DbSet<BookingItem> BookingItems => Set<BookingItem>();
 
     public Task ExecuteInTransactionAsync(
         Func<CancellationToken, Task> operation,
