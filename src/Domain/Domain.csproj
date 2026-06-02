@@ -7,7 +7,6 @@
 
   <ItemGroup>
     <PackageReference Include="libphonenumber-csharp" />
-    <PackageReference Include="MediatR.Contracts" />
   </ItemGroup>
 
 </Project>

@@ -36,16 +36,14 @@ public class ApplicationDbContextInitialiser
             "System Administrator",
             "admin@saigonwaterbus.local",
             "0900000001",
-            "Admin@123",
-            "System Administration"),
+            "Admin@123"),
         new(
             Roles.ManagerCode,
             "MG0000001",
             "Operations Manager",
             "manager@saigonwaterbus.local",
             "0900000002",
-            "Manager@123",
-            "Operations")
+            "Manager@123")
     ];
 
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;
@@ -151,8 +149,6 @@ public class ApplicationDbContextInitialiser
 
         await _context.SaveChangesAsync();
 
-        await SeedStaffPositionsAsync();
-
         if (!_databaseStartupSettings.SeedInternalUsers)
         {
             _logger.LogInformation("Skipping internal user seeding because Database:SeedInternalUsers is disabled.");
@@ -193,7 +189,6 @@ public class ApplicationDbContextInitialiser
         await _context.ExternalLogins.ExecuteDeleteAsync();
         await _context.OtpChallenges.ExecuteDeleteAsync();
         await _context.RefreshTokens.ExecuteDeleteAsync();
-        await _context.UserPositions.ExecuteDeleteAsync();
         await _context.AuditLogs.ExecuteDeleteAsync();
         await _context.Users.ExecuteDeleteAsync();
 
@@ -271,7 +266,6 @@ public class ApplicationDbContextInitialiser
                 NormalizedPhoneNumber = normalizedPhone,
                 PasswordHash = _secretHasher.Hash(definition.Password),
                 RoleId = role.Id,
-                Department = definition.Department,
                 Status = UserStatus.Active,
                 PhoneVerifiedAt = DateTimeOffset.UtcNow
             };
@@ -316,58 +310,8 @@ public class ApplicationDbContextInitialiser
 
         user.RoleId = role.Id;
 
-        if (string.IsNullOrWhiteSpace(user.Department))
-        {
-            user.Department = definition.Department;
-        }
-
         user.Status = UserStatus.Active;
         user.PhoneVerifiedAt ??= DateTimeOffset.UtcNow;
-    }
-
-    private async Task SeedStaffPositionsAsync()
-    {
-        var builtInCodes = StaffPositions.BuiltIn
-            .Select(x => x.Code)
-            .ToHashSet(StringComparer.Ordinal);
-
-        await _context.StaffPositions
-            .Where(x => !builtInCodes.Contains(x.Code)
-                     && !x.UserPositions.Any())
-            .ExecuteDeleteAsync();
-
-        var positionByCode = await _context.StaffPositions
-            .ToDictionaryAsync(x => x.Code);
-
-        foreach (var definition in StaffPositions.BuiltIn)
-        {
-            if (!positionByCode.TryGetValue(definition.Code, out var existingPosition))
-            {
-                existingPosition = new StaffPosition
-                {
-                    Code = definition.Code,
-                    SystemName = definition.SystemName,
-                    DisplayName = definition.DisplayName
-                };
-
-                _context.StaffPositions.Add(existingPosition);
-                positionByCode[definition.Code] = existingPosition;
-            }
-            else
-            {
-                if (!string.Equals(existingPosition.SystemName, definition.SystemName, StringComparison.Ordinal))
-                {
-                    existingPosition.SystemName = definition.SystemName;
-                }
-
-                if (!string.Equals(existingPosition.DisplayName, definition.DisplayName, StringComparison.Ordinal))
-                {
-                    existingPosition.DisplayName = definition.DisplayName;
-                }
-            }
-        }
-
-        await _context.SaveChangesAsync();
     }
 
     private async Task SyncUserCodeSequencesAsync()
@@ -407,6 +351,5 @@ public class ApplicationDbContextInitialiser
         string FullName,
         string Email,
         string PhoneNumber,
-        string Password,
-        string Department);
+        string Password);
 }

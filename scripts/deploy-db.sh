@@ -71,4 +71,5 @@ NORMALIZED_CONNECTION_STRING="$(normalize_connection_string "$DATABASE_URL_VALUE
 
 ConnectionStrings__SaigonWaterbusDb="$NORMALIZED_CONNECTION_STRING" \
 ASPNETCORE_ENVIRONMENT=Production \
+DOTNET_HOSTBUILDER__RELOADCONFIGONCHANGE=false \
 dotnet run --project ./src/Web --no-launch-profile -- db:migrate-seed

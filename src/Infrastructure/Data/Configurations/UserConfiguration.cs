@@ -49,9 +49,6 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.PasswordHash)
             .HasMaxLength(500);
 
-        builder.Property(x => x.Department)
-            .HasMaxLength(100);
-
         builder.Property(x => x.AvatarUrl)
             .HasMaxLength(2048);
 

@@ -115,7 +115,6 @@ internal static class AuthSupport
                 user.PhoneNumber,
                 user.PhoneVerifiedAt,
                 user.Email,
-                user.Department,
                 user.AvatarUrl,
                 user.AvatarSource,
                 user.Status,
@@ -164,7 +163,6 @@ internal static class AuthSupport
             user.PhoneNumber,
             user.PhoneVerifiedAt,
             user.Email,
-            user.Department,
             user.AvatarUrl,
             user.AvatarSource,
             user.Status,
@@ -321,9 +319,6 @@ internal static class AuthSupport
 
     public static bool IsCustomer(User user) =>
         string.Equals(user.Role.SystemName, Roles.CustomerSystemName, StringComparison.Ordinal);
-
-    public static bool RequiresDepartment(Role role) =>
-        !string.Equals(role.SystemName, Roles.CustomerSystemName, StringComparison.Ordinal);
 
     public static string FormatRefreshToken(int refreshTokenId, string secret) => $"{refreshTokenId}.{secret}";
 

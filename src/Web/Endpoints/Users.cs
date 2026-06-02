@@ -13,8 +13,7 @@ public sealed class Users : IEndpointGroup
           "phoneNumber": "0912345678",
           "email": "thib@gmail.com",
           "password": "P@ssword123",
-          "roleId": 3,
-          "department": "Operations"
+          "roleId": 3
         }
         """;
 
@@ -120,86 +119,82 @@ public sealed class Users : IEndpointGroup
     }
 
     private static async Task<IResult> List(
-        ISender sender,
+        IUserManagementService userManagementService,
         CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(new GetUsersQuery(), cancellationToken));
+        Results.Ok(await userManagementService.GetUsersAsync(cancellationToken));
 
     private static async Task<IResult> GetById(
-        ISender sender,
+        IUserManagementService userManagementService,
         int userId,
         CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(new GetUserByIdQuery(userId), cancellationToken));
+        Results.Ok(await userManagementService.GetUserByIdAsync(userId, cancellationToken));
 
     private static async Task<IResult> GetManageableRoles(
-        ISender sender,
+        IUserManagementService userManagementService,
         CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(new GetManageableRolesQuery(), cancellationToken));
+        Results.Ok(await userManagementService.GetManageableRolesAsync(cancellationToken));
 
     private static async Task<IResult> CreateManagedUser(
-        ISender sender,
-        CreateUserRequest request,
+        IUserManagementService userManagementService,
+        CreateUserApiRequest request,
         CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new CreateUserCommand(
+        Results.Ok(await userManagementService.CreateUserAsync(
+            new CreateUserRequest(
                 request.FullName,
                 request.DateOfBirth,
                 request.PhoneNumber,
                 request.Email,
                 request.Password,
-                request.RoleId,
-                request.Department),
+                request.RoleId),
             cancellationToken));
 
     private static async Task<IResult> Update(
-        ISender sender,
+        IUserManagementService userManagementService,
         int userId,
-        UpdateUserRequest request,
+        UpdateUserApiRequest request,
         CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new UpdateUserCommand(
+        Results.Ok(await userManagementService.UpdateUserAsync(
+            new UpdateUserRequest(
                 userId,
                 request.FullName,
                 request.DateOfBirth,
                 request.PhoneNumber,
                 request.Email,
-                request.RoleId,
-                request.Department),
+                request.RoleId),
             cancellationToken));
 
     private static async Task<IResult> UpdateStatus(
-        ISender sender,
+        IUserManagementService userManagementService,
         int userId,
-        UpdateUserStatusRequest request,
+        UpdateUserStatusApiRequest request,
         CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new UpdateUserStatusCommand(
+        Results.Ok(await userManagementService.UpdateUserStatusAsync(
+            new UpdateUserStatusRequest(
                 userId,
                 request.Status),
             cancellationToken));
 
     private static async Task<IResult> Delete(
-        ISender sender,
+        IUserManagementService userManagementService,
         int userId,
         CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(new DeleteUserCommand(userId), cancellationToken));
+        Results.Ok(await userManagementService.DeleteUserAsync(userId, cancellationToken));
 
-    public sealed record CreateUserRequest(
+    public sealed record CreateUserApiRequest(
         string FullName,
         DateOnly? DateOfBirth,
         string? PhoneNumber,
         string Email,
         string Password,
-        int RoleId,
-        string? Department);
+        int RoleId);
 
-    public sealed record UpdateUserRequest(
+    public sealed record UpdateUserApiRequest(
         string? FullName = null,
         DateOnly? DateOfBirth = null,
         string? PhoneNumber = null,
         string? Email = null,
-        int? RoleId = null,
-        string? Department = null);
+        int? RoleId = null);
 
-    public sealed record UpdateUserStatusRequest(
+    public sealed record UpdateUserStatusApiRequest(
         Domain.Enums.UserStatus Status);
 }

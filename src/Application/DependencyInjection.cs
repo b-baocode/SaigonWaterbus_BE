@@ -1,5 +1,14 @@
 ﻿using System.Reflection;
-using SaigonWaterbus.Application.Common.Behaviours;
+using SaigonWaterbus.Application.Auth;
+using SaigonWaterbus.Application.Auth.Login;
+using SaigonWaterbus.Application.Auth.Otp;
+using SaigonWaterbus.Application.Auth.Password;
+using SaigonWaterbus.Application.Auth.Profile;
+using SaigonWaterbus.Application.Auth.Register;
+using SaigonWaterbus.Application.Auth.Token;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Common.Validation;
+using SaigonWaterbus.Application.Users;
 using Microsoft.Extensions.Hosting;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -12,13 +21,33 @@ public static class DependencyInjection
             cfg.AddMaps(Assembly.GetExecutingAssembly()));
 
         builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
+        builder.Services.AddScoped<IRequestValidator, RequestValidator>();
 
-        builder.Services.AddMediatR(cfg => {
-            cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
-            cfg.AddOpenRequestPreProcessor(typeof(LoggingBehaviour<>));
-            cfg.AddOpenBehavior(typeof(UnhandledExceptionBehaviour<,>));
-            cfg.AddOpenBehavior(typeof(ValidationBehaviour<,>));
-            cfg.AddOpenBehavior(typeof(PerformanceBehaviour<,>));
-        });
+        builder.Services.AddScoped<IAuthService, AuthService>();
+        builder.Services.AddScoped<RegisterRequestUseCase>();
+        builder.Services.AddScoped<VerifyRegisterOtpRequestUseCase>();
+        builder.Services.AddScoped<ResendOtpRequestUseCase>();
+        builder.Services.AddScoped<LoginRequestUseCase>();
+        builder.Services.AddScoped<GoogleLoginRequestUseCase>();
+        builder.Services.AddScoped<SendGooglePhoneOtpRequestUseCase>();
+        builder.Services.AddScoped<VerifyGooglePhoneRequestUseCase>();
+        builder.Services.AddScoped<RefreshTokenRequestUseCase>();
+        builder.Services.AddScoped<LogoutRequestUseCase>();
+        builder.Services.AddScoped<GetCurrentUserProfileRequestUseCase>();
+        builder.Services.AddScoped<UpdateCurrentUserProfileRequestUseCase>();
+        builder.Services.AddScoped<DeleteCurrentUserAccountRequestUseCase>();
+        builder.Services.AddScoped<VerifyEmailChangeOtpRequestUseCase>();
+        builder.Services.AddScoped<ForgotPasswordOtpRequestUseCase>();
+        builder.Services.AddScoped<ResetPasswordRequestUseCase>();
+        builder.Services.AddScoped<ChangePasswordRequestUseCase>();
+
+        builder.Services.AddScoped<IUserManagementService, UserManagementService>();
+        builder.Services.AddScoped<GetUsersRequestUseCase>();
+        builder.Services.AddScoped<GetUserByIdRequestUseCase>();
+        builder.Services.AddScoped<GetManageableRolesRequestUseCase>();
+        builder.Services.AddScoped<CreateUserRequestUseCase>();
+        builder.Services.AddScoped<UpdateUserRequestUseCase>();
+        builder.Services.AddScoped<UpdateUserStatusRequestUseCase>();
+        builder.Services.AddScoped<DeleteUserRequestUseCase>();
     }
 }

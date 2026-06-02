@@ -37,7 +37,6 @@ internal static class UserAuditSupport
             user.Email,
             user.RoleId,
             RoleSystemName = role?.SystemName ?? user.Role?.SystemName,
-            user.Department,
             Status = user.Status.ToString(),
             user.PhoneVerifiedAt,
             user.LastLoginAt

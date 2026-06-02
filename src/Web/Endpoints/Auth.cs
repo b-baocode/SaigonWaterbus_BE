@@ -8,6 +8,7 @@ using SaigonWaterbus.Application.Auth.Password;
 using SaigonWaterbus.Application.Auth.Profile;
 using SaigonWaterbus.Application.Auth.Register;
 using SaigonWaterbus.Application.Auth.Token;
+using SaigonWaterbus.Application.Auth;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -283,95 +284,95 @@ public class Auth : IEndpointGroup
     }
 
     public static async Task<IResult> Register(
-        ISender sender,
-        RegisterCommand command,
+        IAuthService authService,
+        RegisterRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.RegisterAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> VerifyRegisterOtp(
-        ISender sender,
-        VerifyRegisterOtpCommand command,
+        IAuthService authService,
+        VerifyRegisterOtpRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.VerifyRegisterOtpAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> ResendOtp(
-        ISender sender,
-        ResendOtpCommand command,
+        IAuthService authService,
+        ResendOtpRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.ResendOtpAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> Login(
-        ISender sender,
-        LoginCommand command,
+        IAuthService authService,
+        LoginRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.LoginAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> GoogleLogin(
-        ISender sender,
-        GoogleLoginCommand command,
+        IAuthService authService,
+        GoogleLoginRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.GoogleLoginAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> SendGooglePhoneOtp(
-        ISender sender,
-        SendGooglePhoneOtpCommand command,
+        IAuthService authService,
+        SendGooglePhoneOtpRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.SendGooglePhoneOtpAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> VerifyGooglePhone(
-        ISender sender,
-        VerifyGooglePhoneCommand command,
+        IAuthService authService,
+        VerifyGooglePhoneRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.VerifyGooglePhoneAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> RefreshToken(
-        ISender sender,
-        RefreshTokenCommand command,
+        IAuthService authService,
+        RefreshTokenRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.RefreshTokenAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> Logout(
-        ISender sender,
+        IAuthService authService,
         CancellationToken cancellationToken)
     {
-        await sender.Send(new LogoutCommand(), cancellationToken);
+        await authService.LogoutAsync(cancellationToken);
         return Results.NoContent();
     }
 
     public static async Task<IResult> Me(
-        ISender sender,
+        IAuthService authService,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(new GetCurrentUserProfileQuery(), cancellationToken);
+        var result = await authService.GetCurrentUserProfileAsync(cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> UpdateMe(
-        ISender sender,
+        IAuthService authService,
         HttpRequest request,
         IOptions<JsonOptions> jsonOptions,
         CancellationToken cancellationToken)
@@ -385,7 +386,7 @@ public class Auth : IEndpointGroup
 
         try
         {
-            var result = await sender.Send(command, cancellationToken);
+            var result = await authService.UpdateCurrentUserProfileAsync(command, cancellationToken);
             return Results.Ok(result);
         }
         finally
@@ -395,50 +396,50 @@ public class Auth : IEndpointGroup
     }
 
     public static async Task<IResult> DeleteMe(
-        ISender sender,
+        IAuthService authService,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(new DeleteCurrentUserAccountCommand(), cancellationToken);
+        var result = await authService.DeleteCurrentUserAccountAsync(cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> VerifyEmailChangeOtp(
-        ISender sender,
-        VerifyEmailChangeOtpCommand command,
+        IAuthService authService,
+        VerifyEmailChangeOtpRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.VerifyEmailChangeOtpAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> ForgotPassword(
-        ISender sender,
-        ForgotPasswordRequestOtpCommand command,
+        IAuthService authService,
+        ForgotPasswordOtpRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.ForgotPasswordAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> ResetPassword(
-        ISender sender,
-        ResetPasswordCommand command,
+        IAuthService authService,
+        ResetPasswordRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.ResetPasswordAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
     public static async Task<IResult> ChangePassword(
-        ISender sender,
-        ChangePasswordCommand command,
+        IAuthService authService,
+        ChangePasswordRequest command,
         CancellationToken cancellationToken)
     {
-        var result = await sender.Send(command, cancellationToken);
+        var result = await authService.ChangePasswordAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
-    private static async Task<UpdateCurrentUserProfileCommand> CreateUpdateProfileCommandFromJsonAsync(
+    private static async Task<UpdateCurrentUserProfileRequest> CreateUpdateProfileCommandFromJsonAsync(
         HttpRequest request,
         JsonSerializerOptions jsonSerializerOptions,
         CancellationToken cancellationToken)
@@ -447,14 +448,14 @@ public class Auth : IEndpointGroup
             jsonSerializerOptions,
             cancellationToken: cancellationToken);
 
-        return new UpdateCurrentUserProfileCommand(
+        return new UpdateCurrentUserProfileRequest(
             profileRequest?.FullName,
             profileRequest?.DateOfBirth,
             profileRequest?.PhoneNumber,
             profileRequest?.Email);
     }
 
-    private static async Task<UpdateCurrentUserProfileCommand> CreateUpdateProfileCommandFromFormAsync(
+    private static async Task<UpdateCurrentUserProfileRequest> CreateUpdateProfileCommandFromFormAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
     {
@@ -464,7 +465,7 @@ public class Auth : IEndpointGroup
             ?? form.Files.FirstOrDefault();
         var avatarStream = file?.OpenReadStream();
 
-        return new UpdateCurrentUserProfileCommand(
+        return new UpdateCurrentUserProfileRequest(
             GetOptionalFormValue(form, "fullName"),
             ParseOptionalDateOnly(GetOptionalFormValue(form, "dateOfBirth")),
             GetOptionalFormValue(form, "phoneNumber"),

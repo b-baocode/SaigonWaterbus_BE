@@ -10,10 +10,6 @@ public interface IApplicationDbContext
 
     DbSet<User> Users { get; }
 
-    DbSet<StaffPosition> StaffPositions { get; }
-
-    DbSet<UserPosition> UserPositions { get; }
-
     DbSet<AuditLog> AuditLogs { get; }
 
     DbSet<TEntity> Set<TEntity>()

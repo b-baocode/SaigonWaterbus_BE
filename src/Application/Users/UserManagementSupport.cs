@@ -24,20 +24,6 @@ internal static class UserManagementSupport
             || x.Role.SystemName == Roles.StaffSystemName);
     }
 
-    public static void EnsureDepartmentMatchesRole(Role role, string? department, string propertyName)
-    {
-        var hasDepartment = !string.IsNullOrWhiteSpace(department);
-        if (AuthSupport.RequiresDepartment(role) && !hasDepartment)
-        {
-            throw AuthSupport.CreateValidationException(propertyName, "Phòng ban là bắt buộc với tài khoản nội bộ.");
-        }
-
-        if (!AuthSupport.RequiresDepartment(role) && hasDepartment)
-        {
-            throw AuthSupport.CreateValidationException(propertyName, "Tài khoản Customer không được có phòng ban.");
-        }
-    }
-
     public static void EnsureCanCreateRole(User actor, Role targetRole, string propertyName)
     {
         if (AuthSupport.IsAdmin(actor))

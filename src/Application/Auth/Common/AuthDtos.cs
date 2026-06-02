@@ -12,7 +12,6 @@ public sealed record AuthUserDto(
     string? PhoneNumber,
     DateTimeOffset? PhoneVerifiedAt,
     string? Email,
-    string? Department,
     string? AvatarUrl,
     AvatarSource AvatarSource,
     UserStatus Status,

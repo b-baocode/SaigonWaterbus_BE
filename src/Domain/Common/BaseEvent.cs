@@ -1,7 +1,5 @@
-﻿using MediatR;
+﻿namespace SaigonWaterbus.Domain.Common;
 
-namespace SaigonWaterbus.Domain.Common;
-
-public abstract class BaseEvent : INotification
+public abstract class BaseEvent
 {
 }
