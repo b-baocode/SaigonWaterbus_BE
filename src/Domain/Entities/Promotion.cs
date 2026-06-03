@@ -1,4 +1,5 @@
 using SaigonWaterbus.Domain.Common;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Domain.Entities;
 
@@ -6,7 +7,7 @@ public class Promotion : BaseGuidAuditableEntity
 {
     public string PromotionCode { get; set; } = null!;
     public string PromotionName { get; set; } = null!;
-    public string PromotionType { get; set; } = null!;
+    public PromotionType PromotionType { get; set; }
     public decimal DiscountValue { get; set; }
     public decimal? MinOrderValue { get; set; }
     public DateTimeOffset ValidFrom { get; set; }

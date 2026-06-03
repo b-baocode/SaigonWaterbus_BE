@@ -1,5 +1,4 @@
 using SaigonWaterbus.Application.Stations;
-using SaigonWaterbus.Web.Infrastructure;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -7,13 +6,73 @@ public sealed class Stations : IEndpointGroup
 {
     public static string RoutePrefix => "/api/stations";
 
+    private const string CreateExample =
+        """
+        {
+          "stationCode": "NVL",
+          "stationName": "Ben Nguyen Van Linh",
+          "address": "Q7, TP.HCM",
+          "latitude": 10.7285,
+          "longitude": 106.7006
+        }
+        """;
+
+    private const string UpdateExample =
+        """
+        {
+          "stationName": "Ben Nguyen Van Linh (cap nhat)",
+          "address": "Q7, TP.HCM",
+          "latitude": 10.7285,
+          "longitude": 106.7006,
+          "status": "Active"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
-        group.MapGet(GetStations, string.Empty).AllowAnonymous();
-        group.MapGet(GetStationById, "{id:guid}").AllowAnonymous();
-        group.MapPost(CreateStation, string.Empty).RequireAuthorization();
-        group.MapPut(UpdateStation, "{id:guid}").RequireAuthorization();
-        group.MapDelete(DeleteStation, "{id:guid}").RequireAuthorization();
+        group.MapGet(GetStations, string.Empty)
+            .AllowAnonymous()
+            .WithSummary("Danh sach tram")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Tra ve tat ca tram co status = Active.",
+                "Sap xep theo StationName."));
+
+        group.MapGet(GetStationById, "{id:guid}")
+            .AllowAnonymous()
+            .WithSummary("Chi tiet tram")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Tra ve 404 neu khong tim thay tram."));
+
+        group.MapPost(CreateStation, string.Empty)
+            .RequireAuthorization()
+            .WithSummary("Tao tram moi")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                CreateExample,
+                "StationCode phai unique (tu dong uppercase).",
+                "Status mac dinh la Active khi tao moi."));
+
+        group.MapPut(UpdateStation, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Cap nhat tram")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                UpdateExample,
+                "Status hop le: Active | Inactive.",
+                "StationCode khong doi duoc sau khi tao."));
+
+        group.MapDelete(DeleteStation, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Xoa tram")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve 204 khi xoa thanh cong.",
+                "Tra ve 404 neu khong tim thay tram."));
     }
 
     private static async Task<IResult> GetStations(ISender sender, CancellationToken ct) =>

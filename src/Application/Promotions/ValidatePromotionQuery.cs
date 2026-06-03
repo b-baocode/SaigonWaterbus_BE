@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Promotions;
 
@@ -39,7 +40,7 @@ public sealed class ValidatePromotionQueryHandler : IRequestHandler<ValidateProm
         if (promotion.MinOrderValue.HasValue && request.SubtotalAmount < promotion.MinOrderValue)
             return new PromotionValidationDto(false, 0, $"Minimum order value is {promotion.MinOrderValue:N0}.");
 
-        var discount = promotion.PromotionType == "Percent"
+        var discount = promotion.PromotionType == PromotionType.Percent
             ? request.SubtotalAmount * promotion.DiscountValue / 100
             : Math.Min(promotion.DiscountValue, request.SubtotalAmount);
 

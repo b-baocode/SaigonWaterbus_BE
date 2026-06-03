@@ -186,7 +186,7 @@ public static class WaterbusSeedData
         {
             new Promotion
             {
-                PromotionCode = "WELCOME10", PromotionName = "Chào mừng khách mới", PromotionType = "Percent",
+                PromotionCode = "WELCOME10", PromotionName = "Chào mừng khách mới", PromotionType = PromotionType.Percent,
                 DiscountValue = 10m, MinOrderValue = 15_000m,
                 ValidFrom = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.FromHours(7)).ToUniversalTime(),
                 ValidTo   = new DateTimeOffset(2026, 12, 31, 23, 59, 59, TimeSpan.FromHours(7)).ToUniversalTime(),
@@ -194,7 +194,7 @@ public static class WaterbusSeedData
             },
             new Promotion
             {
-                PromotionCode = "SUMMER2026", PromotionName = "Ưu đãi hè 2026", PromotionType = "Fixed",
+                PromotionCode = "SUMMER2026", PromotionName = "Ưu đãi hè 2026", PromotionType = PromotionType.Fixed,
                 DiscountValue = 5_000m, MinOrderValue = 20_000m,
                 ValidFrom = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.FromHours(7)).ToUniversalTime(),
                 ValidTo   = new DateTimeOffset(2026, 8, 31, 23, 59, 59, TimeSpan.FromHours(7)).ToUniversalTime(),

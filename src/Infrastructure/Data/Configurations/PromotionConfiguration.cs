@@ -16,7 +16,7 @@ public sealed class PromotionConfiguration : IEntityTypeConfiguration<Promotion>
         builder.HasIndex(x => x.PromotionCode).IsUnique();
 
         builder.Property(x => x.PromotionName).HasColumnName("promotion_name").HasMaxLength(150).IsRequired();
-        builder.Property(x => x.PromotionType).HasColumnName("promotion_type").HasMaxLength(30).IsRequired();
+        builder.Property(x => x.PromotionType).HasColumnName("promotion_type").HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(x => x.DiscountValue).HasColumnName("discount_value").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.MinOrderValue).HasColumnName("min_order_value").HasColumnType("numeric(12,2)");
         builder.Property(x => x.ValidFrom).HasColumnName("valid_from").IsRequired();

@@ -1,10 +1,12 @@
+using SaigonWaterbus.Domain.Enums;
+
 namespace SaigonWaterbus.Application.Promotions;
 
 public sealed record PromotionDto(
     Guid PromotionId,
     string PromotionCode,
     string PromotionName,
-    string PromotionType,
+    PromotionType PromotionType,
     decimal DiscountValue,
     decimal? MinOrderValue,
     DateTimeOffset ValidFrom,

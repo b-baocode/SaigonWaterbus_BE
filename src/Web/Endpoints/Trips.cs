@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Enums;
-using SaigonWaterbus.Web.Infrastructure;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -8,13 +7,78 @@ public sealed class Trips : IEndpointGroup
 {
     public static string RoutePrefix => "/api/trips";
 
+    private const string CreateTripExample =
+        """
+        {
+          "routeId": "8a5a73e6-729d-410d-83b3-0ce2fe2eaa52",
+          "boatId": "236f65ed-eb0e-4793-8524-8afdef0c7b20",
+          "operatingDate": "2026-06-10",
+          "departureTime": "2026-06-10T08:30:00+07:00"
+        }
+        """;
+
+    private const string UpdateStatusExample =
+        """
+        {
+          "tripStatus": "Boarding",
+          "statusNote": "Tau dang len khach tai Ben Bach Dang"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
-        group.MapGet(SearchTrips, "search").AllowAnonymous();
-        group.MapGet(GetTripById, "{id:guid}").AllowAnonymous();
-        group.MapGet(GetTripSeats, "{id:guid}/seats").AllowAnonymous();
-        group.MapPost(CreateTrip, string.Empty).RequireAuthorization();
-        group.MapPatch(UpdateTripStatus, "{id:guid}/status").RequireAuthorization();
+        group.MapGet(SearchTrips, "search")
+            .AllowAnonymous()
+            .WithSummary("Tim chuyen tau theo hanh trinh va ngay")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Query params: fromStationId (guid), toStationId (guid), operatingDate (yyyy-MM-dd).",
+                "Vi du: GET /api/trips/search?fromStationId=86015ba6-...&toStationId=95916ab1-...&operatingDate=2026-06-04",
+                "Chi tra ve chuyen co tripStatus=Scheduled va departureTime > now.",
+                "availableSeats = capacitySnapshot - so ghe da giu (SeatHold) - so ghe da dat (BookingItem).",
+                "minPrice = basePrice x he_so_nho_nhat cua tat ca loai ve dang active."));
+
+        group.MapGet(GetTripById, "{id:guid}")
+            .AllowAnonymous()
+            .WithSummary("Chi tiet chuyen tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Tra ve TripDetailDto kem stops[] sap xep theo stop_order.",
+                "stops[].tripStopId dung khi tao booking (fromTripStopId, toTripStopId)."));
+
+        group.MapGet(GetTripSeats, "{id:guid}/seats")
+            .AllowAnonymous()
+            .WithSummary("So do ghe chuyen tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "status cua moi ghe: Available | Held | Booked.",
+                "Ghe Held: dang duoc giu tam thoi (SeatHold chua het han).",
+                "Ghe Booked: da co BookingItem active.",
+                "Dung seats[].seatId khi tao booking."));
+
+        group.MapPost(CreateTrip, string.Empty)
+            .RequireAuthorization()
+            .WithSummary("Tao chuyen tau moi")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                CreateTripExample,
+                "Route phai Active va co it nhat 2 ben dung.",
+                "Boat phai Active.",
+                "departureTime phai lon hon thoi diem hien tai.",
+                "Tu dong tinh gio lich den/di cho tung TripStop dua vao RouteStop.standardTravelMin / standardDwellMin.",
+                "tripCode tu sinh: TR-{yyyyMMdd}-{routeCode}-{4 so ngau nhien}."));
+
+        group.MapPatch(UpdateTripStatus, "{id:guid}/status")
+            .RequireAuthorization()
+            .WithSummary("Cap nhat trang thai chuyen tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                UpdateStatusExample,
+                "tripStatus hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
+                "statusNote: ghi chu kem theo (optional)."));
     }
 
     private static async Task<IResult> SearchTrips(

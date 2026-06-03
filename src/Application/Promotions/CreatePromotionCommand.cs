@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Promotions;
@@ -8,7 +9,7 @@ namespace SaigonWaterbus.Application.Promotions;
 public sealed record CreatePromotionCommand(
     string PromotionCode,
     string PromotionName,
-    string PromotionType,
+    PromotionType PromotionType,
     decimal DiscountValue,
     decimal? MinOrderValue,
     DateTimeOffset ValidFrom,
@@ -21,8 +22,7 @@ public sealed class CreatePromotionCommandValidator : AbstractValidator<CreatePr
     {
         RuleFor(x => x.PromotionCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.PromotionName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.PromotionType).NotEmpty().Must(t => t == "Percent" || t == "Fixed")
-            .WithMessage("PromotionType must be 'Percent' or 'Fixed'.");
+        RuleFor(x => x.PromotionType).IsInEnum();
         RuleFor(x => x.DiscountValue).GreaterThan(0);
         RuleFor(x => x.ValidTo).GreaterThan(x => x.ValidFrom);
         RuleFor(x => x.UsageLimit).GreaterThan(0).When(x => x.UsageLimit.HasValue);

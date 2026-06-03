@@ -1,5 +1,4 @@
 using SaigonWaterbus.Application.TicketTypes;
-using SaigonWaterbus.Web.Infrastructure;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -7,11 +6,57 @@ public sealed class TicketTypes : IEndpointGroup
 {
     public static string RoutePrefix => "/api/ticket-types";
 
+    private const string CreateExample =
+        """
+        {
+          "ticketTypeCode": "ADULT",
+          "ticketTypeName": "Ve nguoi lon",
+          "description": "Ve gia nguoi lon, ap dung cho hanh khach tu 18 tuoi tro len",
+          "priceModifier": 1.00,
+          "pointsEarnedRate": 10
+        }
+        """;
+
+    private const string UpdateExample =
+        """
+        {
+          "ticketTypeName": "Ve nguoi lon",
+          "description": "Cap nhat mo ta",
+          "priceModifier": 1.00,
+          "pointsEarnedRate": 10,
+          "isActive": true
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
-        group.MapGet(GetTicketTypes, string.Empty).AllowAnonymous();
-        group.MapPost(CreateTicketType, string.Empty).RequireAuthorization();
-        group.MapPut(UpdateTicketType, "{id:guid}").RequireAuthorization();
+        group.MapGet(GetTicketTypes, string.Empty)
+            .AllowAnonymous()
+            .WithSummary("Danh sach loai ve")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Tra ve tat ca loai ve dang hoat dong (isActive = true).",
+                "priceModifier: he so gia (1.0 = gia goc, 0.5 = giam 50%)."));
+
+        group.MapPost(CreateTicketType, string.Empty)
+            .RequireAuthorization()
+            .WithSummary("Tao loai ve moi")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                CreateExample,
+                "TicketTypeCode phai unique (tu dong uppercase).",
+                "priceModifier > 0. Vi du: Adult=1.0, Student=0.8, Child=0.5.",
+                "pointsEarnedRate: so diem tich luy tren moi don vi gia (co the = 0)."));
+
+        group.MapPut(UpdateTicketType, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Cap nhat loai ve")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                UpdateExample,
+                "isActive = false de an loai ve, khong xoa du lieu.",
+                "TicketTypeCode khong doi duoc sau khi tao."));
     }
 
     private static async Task<IResult> GetTicketTypes(ISender sender, CancellationToken ct) =>

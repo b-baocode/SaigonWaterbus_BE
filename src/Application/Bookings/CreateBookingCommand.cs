@@ -147,7 +147,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         decimal discount = 0;
         if (promotion is not null)
         {
-            discount = promotion.PromotionType == "Percent"
+            discount = promotion.PromotionType == PromotionType.Percent
                 ? subtotal * promotion.DiscountValue / 100
                 : Math.Min(promotion.DiscountValue, subtotal);
 
