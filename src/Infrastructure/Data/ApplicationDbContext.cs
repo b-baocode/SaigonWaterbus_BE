@@ -16,6 +16,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    public DbSet<WaterbusService> WaterbusServices => Set<WaterbusService>();
+
+    public DbSet<Vessel> Vessels => Set<Vessel>();
+
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

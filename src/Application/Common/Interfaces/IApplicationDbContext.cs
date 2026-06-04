@@ -12,6 +12,10 @@ public interface IApplicationDbContext
 
     DbSet<AuditLog> AuditLogs { get; }
 
+    DbSet<WaterbusService> WaterbusServices { get; }
+
+    DbSet<Vessel> Vessels { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

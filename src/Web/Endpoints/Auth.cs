@@ -124,163 +124,163 @@ public class Auth : IEndpointGroup
     public static void Map(RouteGroupBuilder groupBuilder)
     {
         groupBuilder.MapPost(Register, "register")
-            .WithSummary("Dang ky customer")
+            .WithSummary("Đăng ký customer")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 RegisterExample,
-                "Tao user o trang thai PendingVerification.",
-                "Can co it nhat email hoac so dien thoai.",
-                "Neu chi co email thi OTP mac dinh gui ve email.",
-                "Neu chi co so dien thoai thi OTP mac dinh gui ve SMS.",
-                "Neu co ca email va so dien thoai thi OTP gui ve so dien thoai.",
-                "Tra ve challengeId de goi /api/auth/verify-register-otp."));
+                "Tạo user ở trạng thái PendingVerification.",
+                "Cần có ít nhất email hoặc số điện thoại.",
+                "Nếu chỉ có email thì OTP mặc định gửi về email.",
+                "Nếu chỉ có số điện thoại thì OTP mặc định gửi về SMS.",
+                "Nếu có cả email và số điện thoại thì OTP gửi về số điện thoại.",
+                "Trả về challengeId để gọi /api/auth/verify-register-otp."));
 
         groupBuilder.MapPost(VerifyRegisterOtp, "verify-register-otp")
-            .WithSummary("Xac nhan OTP dang ky")
+            .WithSummary("Xác nhận OTP đăng ký")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 VerifyRegisterOtpExample,
-                "Dung challengeId tra ve tu /api/auth/register.",
-                "Neu da gui lai OTP, uu tien challengeId moi nhat tra ve tu /api/auth/resend-otp.",
-                "Thanh cong se kich hoat tai khoan."));
+                "Dùng challengeId trả về từ /api/auth/register.",
+                "Nếu đã gửi lại OTP, ưu tiên challengeId mới nhất trả về từ /api/auth/resend-otp.",
+                "Thành công sẽ kích hoạt tài khoản."));
 
         groupBuilder.MapPost(ResendOtp, "resend-otp")
-            .WithSummary("Gui lai OTP")
+            .WithSummary("Gửi lại OTP")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 ResendOtpExample,
-                "Dung cho dang ky, quen mat khau hoac xac thuc email moi.",
-                "Neu challenge la xac thuc email moi thi can Authorization Bearer token cua user hien tai.",
-                "Chi gui lai khi da qua thoi gian cho resend.",
-                "Response co challengeId moi nhat de verify OTP."));
+                "Dùng cho đăng ký, quên mật khẩu hoặc xác thực email mới.",
+                "Nếu challenge là xác thực email mới thì cần Authorization Bearer token của user hiện tại.",
+                "Chỉ gửi lại khi đã qua thời gian chờ resend.",
+                "Response có challengeId mới nhất để verify OTP."));
 
         groupBuilder.MapPost(Login, "login")
-            .WithSummary("Dang nhap bang email hoac so dien thoai")
+            .WithSummary("Đăng nhập bằng email hoặc số điện thoại")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 LoginExample,
-                "Dang nhap bang email hoac so dien thoai va mat khau.",
-                "Frontend gui dinh danh nguoi dung vao emailOrPhone.",
-                "So dien thoai chi ho tro so Viet Nam, vi du 0901234567 hoac +84901234567.",
-                "Tai khoan phai da xac minh OTP.",
-                "Tra ve thong tin user, access token va refresh token."));
+                "Đăng nhập bằng email hoặc số điện thoại và mật khẩu.",
+                "Frontend gửi định danh người dùng vào emailOrPhone.",
+                "Số điện thoại chỉ hỗ trợ số Việt Nam, ví dụ 0901234567 hoặc +84901234567.",
+                "Tài khoản phải đã xác minh OTP.",
+                "Trả về thông tin user, access token và refresh token."));
 
         groupBuilder.MapPost(GoogleLogin, "google-login")
-            .WithSummary("Dang nhap bang Google")
+            .WithSummary("Đăng nhập bằng Google")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 GoogleLoginExample,
-                "idToken lay tu frontend sau khi dang nhap Google.",
-                "User cu da active va co PhoneVerifiedAt se duoc cap token.",
-                "User moi hoac user Google cu chua co PhoneVerifiedAt se nhan status NEED_PHONE va tempToken.",
-                "Khong tao user moi va khong cap JWT khi chua xac minh so dien thoai."));
+                "idToken lấy từ frontend sau khi đăng nhập Google.",
+                "User cũ đã active và có PhoneVerifiedAt sẽ được cấp token.",
+                "User mới hoặc user Google cũ chưa có PhoneVerifiedAt sẽ nhận status NEED_PHONE và tempToken.",
+                "Không tạo user mới và không cấp JWT khi chưa xác minh số điện thoại."));
 
         groupBuilder.MapPost(SendGooglePhoneOtp, "google/send-phone-otp")
-            .WithSummary("Gui OTP so dien thoai cho Google Login")
+            .WithSummary("Gửi OTP số điện thoại cho Google Login")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 GoogleSendPhoneOtpExample,
-                "Dung tempToken tra ve tu /api/auth/google-login.",
-                "Backend check phone chua bi user khac dung, sau do gui OTP.",
-                "Khong tao user va khong cap JWT o buoc nay."));
+                "Dùng tempToken trả về từ /api/auth/google-login.",
+                "Backend check phone chưa bị user khác dùng, sau đó gửi OTP.",
+                "Không tạo user và không cấp JWT ở bước này."));
 
         groupBuilder.MapPost(VerifyGooglePhone, "google/verify-phone")
-            .WithSummary("Xac minh OTP Google Login va tao user")
+            .WithSummary("Xác minh OTP Google Login và tạo user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 GoogleVerifyPhoneExample,
-                "Dung tempToken da nhan o buoc gui OTP.",
-                "Backend su dung so dien thoai da luu trong temp session, khong can gui lai phone.",
-                "OTP dung moi tao hoac hoan tat user that trong database.",
-                "Thanh cong cap access token va refresh token."));
+                "Dùng tempToken đã nhận ở bước gửi OTP.",
+                "Backend sử dụng số điện thoại đã lưu trong temp session, không cần gửi lại phone.",
+                "OTP đúng mới tạo hoặc hoàn tất user thật trong database.",
+                "Thành công cấp access token và refresh token."));
 
         groupBuilder.MapPost(RefreshToken, "refresh-token")
-            .WithSummary("Lam moi access token")
+            .WithSummary("Làm mới access token")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 RefreshTokenExample,
-                "Dung refreshToken tra ve tu endpoint login hoac google-login.",
-                "Refresh token cu se bi revoke sau khi doi token moi."));
+                "Dùng refreshToken trả về từ endpoint login hoặc google-login.",
+                "Refresh token cũ sẽ bị revoke sau khi đổi token mới."));
 
         groupBuilder.MapPost(ForgotPassword, "forgot-password")
-            .WithSummary("Yeu cau OTP quen mat khau")
+            .WithSummary("Yêu cầu OTP quên mật khẩu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 ForgotPasswordExample,
-                "Nhap email hoac so dien thoai vao emailOrPhone. Neu la email thi OTP gui ve email, neu la so dien thoai thi OTP gui ve SMS.",
-                "Tra ve challengeId de goi /api/auth/reset-password.",
-                "So dien thoai chi ho tro so Viet Nam, vi du 0901234567 hoac +84901234567."));
+                "Nhập email hoặc số điện thoại vào emailOrPhone. Nếu là email thì OTP gửi về email, nếu là số điện thoại thì OTP gửi về SMS.",
+                "Trả về challengeId để gọi /api/auth/reset-password.",
+                "Số điện thoại chỉ hỗ trợ số Việt Nam, ví dụ 0901234567 hoặc +84901234567."));
 
         groupBuilder.MapPost(ResetPassword, "reset-password")
-            .WithSummary("Dat lai mat khau bang OTP")
+            .WithSummary("Đặt lại mật khẩu bằng OTP")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 ResetPasswordExample,
-                "Dung challengeId tra ve tu /api/auth/forgot-password.",
-                "Neu da gui lai OTP, uu tien challengeId moi nhat tra ve tu /api/auth/resend-otp.",
-                "Thanh cong se revoke refresh token dang con hieu luc."));
+                "Dùng challengeId trả về từ /api/auth/forgot-password.",
+                "Nếu đã gửi lại OTP, ưu tiên challengeId mới nhất trả về từ /api/auth/resend-otp.",
+                "Thành công sẽ revoke refresh token đang còn hiệu lực."));
 
         groupBuilder.MapPost(Logout, "logout")
             .RequireAuthorization()
-            .WithSummary("Dang xuat")
+            .WithSummary("Đăng xuất")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Tat ca refresh token con hieu luc cua user hien tai se bi revoke."));
+                "Header cần có Authorization: Bearer <accessToken>.",
+                "Tất cả refresh token còn hiệu lực của user hiện tại sẽ bị revoke."));
 
         groupBuilder.MapPost(ChangePassword, "change-password")
             .RequireAuthorization()
-            .WithSummary("Doi mat khau")
+            .WithSummary("Đổi mật khẩu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 ChangePasswordExample,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "NewPassword phai khac CurrentPassword."));
+                "Header cần có Authorization: Bearer <accessToken>.",
+                "NewPassword phải khác CurrentPassword."));
 
         groupBuilder.MapGet(Me, "me")
             .RequireAuthorization()
-            .WithSummary("Lay profile hien tai")
+            .WithSummary("Lấy profile hiện tại")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Tra ve thong tin profile va role cua user dang dang nhap."));
+                "Header cần có Authorization: Bearer <accessToken>.",
+                "Trả về thông tin profile và role của user đang đăng nhập."));
 
         groupBuilder.MapPut(UpdateMe, "me")
             .RequireAuthorization()
             .DisableAntiforgery()
             .Accepts<UpdateCurrentUserProfileJsonRequest>("application/json", "multipart/form-data")
-            .WithSummary("Cap nhat profile hien tai")
+            .WithSummary("Cập nhật profile hiện tại")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateMeExample,
-                "User duoc cap nhat fullName, dateOfBirth, phoneNumber, email va anh dai dien.",
-                "Chi field nao gui len moi duoc cap nhat; field khong gui se giu du lieu cu.",
-                "Co the gui application/json neu khong doi anh.",
-                "Neu doi anh, gui multipart/form-data voi cac field fullName, dateOfBirth, phoneNumber, email va file.",
-                "Anh chi ho tro JPEG, PNG hoac WebP, toi da 5 MB.",
-                "Customer khong duoc tu thay doi phoneNumber; Admin hoac Manager doi so dien thoai customer qua API quan ly user.",
-                "Neu email thay doi, backend gui OTP toi email moi va chua doi email cho toi khi verify OTP."));
+                "User được cập nhật fullName, dateOfBirth, phoneNumber, email và ảnh đại diện.",
+                "Chỉ field nào gửi lên mới được cập nhật; field không gửi sẽ giữ dữ liệu cũ.",
+                "Có thể gửi application/json nếu không đổi ảnh.",
+                "Nếu đổi ảnh, gửi multipart/form-data với các field fullName, dateOfBirth, phoneNumber, email và file.",
+                "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
+                "Customer không được tự thay đổi phoneNumber; Admin hoặc Manager đổi số điện thoại customer qua API quản lý user.",
+                "Nếu email thay đổi, backend gửi OTP tới email mới và chưa đổi email cho tới khi verify OTP."));
 
         groupBuilder.MapDelete(DeleteMe, "me")
             .RequireAuthorization()
-            .WithSummary("Tu xoa tai khoan customer")
+            .WithSummary("Tự xóa tài khoản customer")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer",
                 null,
-                "Header can co Authorization: Bearer <accessToken>.",
-                "Chi tai khoan Customer duoc tu xoa tai khoan cua chinh minh.",
-                "Manager, Staff va Admin System khong duoc dung endpoint nay."));
+                "Header cần có Authorization: Bearer <accessToken>.",
+                "Chỉ tài khoản Customer được tự xóa tài khoản của chính mình.",
+                "Manager, Staff và Admin không được dùng endpoint này."));
 
         groupBuilder.MapPost(VerifyEmailChangeOtp, "verify-email-change-otp")
             .RequireAuthorization()
-            .WithSummary("Xac thuc email moi")
+            .WithSummary("Xác thực email mới")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 VerifyEmailChangeOtpExample,
-                "Dung challengeId tra ve tu PUT /api/auth/me khi thay doi email.",
-                "Thanh cong se cap nhat email moi."));
+                "Dùng challengeId trả về từ PUT /api/auth/me khi thay đổi email.",
+                "Thành công sẽ cập nhật email mới."));
     }
 
     public static async Task<IResult> Register(

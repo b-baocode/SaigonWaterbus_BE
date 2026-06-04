@@ -39,68 +39,68 @@ public sealed class Users : IEndpointGroup
     {
         groupBuilder.MapGet(GetManageableRoles, "roles")
             .RequireAuthorization()
-            .WithSummary("Lay danh sach role co the gan")
+            .WithSummary("Lấy danh sách role có thể gán")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Manager hoac Admin System",
+                "Manager hoặc Admin",
                 null,
-                "Dung API nay de biet roleId nao tuong ung role nao trong database.",
-                "Admin System thay role Manager. Manager thay role Staff."));
+                "Dùng API này để biết roleId nào tương ứng role nào trong database.",
+                "Admin thấy role Manager. Manager thấy role Staff."));
 
         groupBuilder.MapGet(List, "")
             .RequireAuthorization()
-            .WithSummary("Lay danh sach user")
+            .WithSummary("Lấy danh sách user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Manager hoac Admin System",
+                "Manager hoặc Admin",
                 null,
-                "Lay danh sach user theo quyen.",
-                "Manager chi thay Customer va Staff."));
+                "Lấy danh sách user theo quyền.",
+                "Manager chỉ thấy Customer và Staff."));
 
         groupBuilder.MapGet(GetById, "detail/{userId:int}")
             .RequireAuthorization()
-            .WithSummary("Lay chi tiet user theo ID")
+            .WithSummary("Lấy chi tiết user theo ID")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Manager hoac Admin System",
+                "Manager hoặc Admin",
                 null,
-                "Lay chi tiet user theo id.",
-                "Manager chi thay Customer va Staff."));
+                "Lấy chi tiết user theo id.",
+                "Manager chỉ thấy Customer và Staff."));
 
         groupBuilder.MapPost(CreateManagedUser, "managed")
             .RequireAuthorization()
-            .WithSummary("Tao user moi tu man hinh quan ly")
+            .WithSummary("Tạo user mới từ màn hình quản lý")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Manager hoac Admin System",
+                "Manager hoặc Admin",
                 CreateUserExample,
-                "Admin System chi tao duoc Manager.",
-                "Manager chi tao duoc Staff. Customer dung flow /api/auth/register de tu dang ky va xac thuc OTP.",
-                "Khong can truyen status khi tao user; he thong mac dinh tao user Active.",
-                "RoleId khong co dinh theo code. Goi GET /api/users/roles de xem id hien tai."));
+                "Admin chỉ tạo được Manager.",
+                "Manager chỉ tạo được Staff. Customer dùng flow /api/auth/register để tự đăng ký và xác thực OTP.",
+                "Không cần truyền status khi tạo user; hệ thống mặc định tạo user Active.",
+                "RoleId không cố định theo code. Gọi GET /api/users/roles để xem id hiện tại."));
 
         groupBuilder.MapPut(Update, "update/{userId:int}")
             .RequireAuthorization()
-            .WithSummary("Cap nhat user")
+            .WithSummary("Cập nhật user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Manager hoac Admin System",
+                "Manager hoặc Admin",
                 UpdateUserExample,
-                "Cap nhat user theo quyen.",
-                "Manager chi cap nhat Customer va Staff."));
+                "Cập nhật user theo quyền.",
+                "Manager chỉ cập nhật Customer và Staff."));
 
         groupBuilder.MapPatch(UpdateStatus, "status/{userId:int}")
             .RequireAuthorization()
-            .WithSummary("Cap nhat trang thai user")
+            .WithSummary("Cập nhật trạng thái user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Manager hoac Admin System",
+                "Manager hoặc Admin",
                 UpdateStatusExample,
-                "Status hop le: Active, Suspended.",
-                "Doi status se revoke refresh token dang hoat dong cua user."));
+                "Status hợp lệ: Active, Suspended.",
+                "Đổi status sẽ revoke refresh token đang hoạt động của user."));
 
         groupBuilder.MapDelete(Delete, "delete/{userId:int}")
             .RequireAuthorization()
-            .WithSummary("Xoa user")
+            .WithSummary("Xóa user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Manager hoac Admin System",
+                "Manager hoặc Admin",
                 null,
-                "Xoa user theo quyen.",
-                "Customer tu xoa bang DELETE /api/auth/profile."));
+                "Xóa user theo quyền.",
+                "Customer tự xóa bằng DELETE /api/auth/me."));
 
         groupBuilder.MapGet(GetById, "{userId:int}")
             .RequireAuthorization()

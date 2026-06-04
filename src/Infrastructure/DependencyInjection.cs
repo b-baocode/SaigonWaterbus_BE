@@ -36,6 +36,7 @@ public static class DependencyInjection
         builder.EnrichNpgsqlDbContext<ApplicationDbContext>();
 
         builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
+        builder.Services.AddSingleton<IDatabaseExceptionClassifier, NpgsqlDatabaseExceptionClassifier>();
         builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
         builder.Services.AddScoped<IIdentityNormalizer, IdentityNormalizer>();
         builder.Services.AddScoped<ISecretHasher, Pbkdf2SecretHasher>();
@@ -44,6 +45,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
+        builder.Services.AddScoped<IVesselImageStorageService, CloudinaryVesselImageStorageService>();
         builder.Services.AddSingleton<IGoogleLoginTempStore, InMemoryGoogleLoginTempStore>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
