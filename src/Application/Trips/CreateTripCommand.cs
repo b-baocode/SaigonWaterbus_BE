@@ -8,8 +8,8 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 namespace SaigonWaterbus.Application.Trips;
 
 public sealed record CreateTripCommand(
-    Guid RouteId,
-    Guid BoatId,
+    string RouteCode,
+    string BoatCode,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime) : IRequest<TripDetailDto>;
 
@@ -17,8 +17,8 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
 {
     public CreateTripCommandValidator()
     {
-        RuleFor(x => x.RouteId).NotEmpty();
-        RuleFor(x => x.BoatId).NotEmpty();
+        RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.DepartureTime).GreaterThan(DateTimeOffset.UtcNow);
     }
 }
@@ -36,18 +36,21 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
     public async Task<TripDetailDto> Handle(CreateTripCommand request, CancellationToken cancellationToken)
     {
+        var routeCode = request.RouteCode.Trim().ToUpperInvariant();
+        var boatCode = request.BoatCode.Trim().ToUpperInvariant();
+
         var route = await _context.Set<Route>()
             .Include(r => r.RouteStops.OrderBy(rs => rs.StopOrder))
                 .ThenInclude(rs => rs.Station)
-            .SingleOrDefaultAsync(r => r.Id == request.RouteId && r.Status == "Active", cancellationToken)
-            ?? throw new NotFoundException("Route not found or inactive.");
+            .SingleOrDefaultAsync(r => r.RouteCode == routeCode && r.Status == "Active", cancellationToken)
+            ?? throw new NotFoundException($"Route '{routeCode}' not found or inactive.");
 
         if (route.RouteStops.Count < 2)
-            throw new ValidationException([new ValidationFailure(nameof(request.RouteId), "Route must have at least 2 stops.")]);
+            throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route must have at least 2 stops.")]);
 
         var boat = await _context.Set<Boat>()
-            .SingleOrDefaultAsync(b => b.Id == request.BoatId && b.BoatStatus == "Active", cancellationToken)
-            ?? throw new NotFoundException("Boat not found or inactive.");
+            .SingleOrDefaultAsync(b => b.BoatCode == boatCode && b.BoatStatus == "Active", cancellationToken)
+            ?? throw new NotFoundException($"Boat '{boatCode}' not found or inactive.");
 
         // Tạo trip_code: TR-{yyyyMMdd}-{route_code}-{random}
         var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
@@ -80,8 +83,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         var trip = new Trip
         {
-            RouteId = request.RouteId,
-            BoatId = request.BoatId,
+            RouteId = route.Id,
+            BoatId = boat.Id,
             TripCode = tripCode,
             OperatingDate = request.OperatingDate,
             DepartureTime = request.DepartureTime,

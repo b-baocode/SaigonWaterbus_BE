@@ -5,9 +5,9 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 namespace SaigonWaterbus.Application.Fares;
 
 public sealed record GetFareQuery(
-    Guid RouteId,
-    Guid FromStationId,
-    Guid ToStationId) : IRequest<IReadOnlyList<FareByTicketTypeDto>>;
+    string RouteCode,
+    string FromStationCode,
+    string ToStationCode) : IRequest<IReadOnlyList<FareByTicketTypeDto>>;
 
 public sealed class GetFareQueryHandler : IRequestHandler<GetFareQuery, IReadOnlyList<FareByTicketTypeDto>>
 {
@@ -17,10 +17,25 @@ public sealed class GetFareQueryHandler : IRequestHandler<GetFareQuery, IReadOnl
 
     public async Task<IReadOnlyList<FareByTicketTypeDto>> Handle(GetFareQuery request, CancellationToken cancellationToken)
     {
+        var routeCode = request.RouteCode.Trim().ToUpperInvariant();
+        var route = await _context.Set<Route>()
+            .SingleOrDefaultAsync(r => r.RouteCode == routeCode, cancellationToken)
+            ?? throw new NotFoundException($"Route '{routeCode}' not found.");
+
+        var fromCode = request.FromStationCode.Trim().ToUpperInvariant();
+        var fromStation = await _context.Set<Station>()
+            .SingleOrDefaultAsync(s => s.StationCode == fromCode, cancellationToken)
+            ?? throw new NotFoundException($"Station '{fromCode}' not found.");
+
+        var toCode = request.ToStationCode.Trim().ToUpperInvariant();
+        var toStation = await _context.Set<Station>()
+            .SingleOrDefaultAsync(s => s.StationCode == toCode, cancellationToken)
+            ?? throw new NotFoundException($"Station '{toCode}' not found.");
+
         var basePrice = await _context.Set<FareMatrix>()
-            .Where(f => f.RouteId == request.RouteId
-                     && f.FromStationId == request.FromStationId
-                     && f.ToStationId == request.ToStationId
+            .Where(f => f.RouteId == route.Id
+                     && f.FromStationId == fromStation.Id
+                     && f.ToStationId == toStation.Id
                      && f.IsActive)
             .Select(f => (decimal?)f.BasePrice)
             .SingleOrDefaultAsync(cancellationToken)

@@ -8,7 +8,7 @@ namespace SaigonWaterbus.Application.Routes;
 
 public sealed record AddRouteStopCommand(
     Guid RouteId,
-    Guid StationId,
+    string StationCode,
     int StopOrder,
     int? StandardTravelMin,
     int? StandardDwellMin,
@@ -20,7 +20,7 @@ public sealed class AddRouteStopCommandValidator : AbstractValidator<AddRouteSto
     public AddRouteStopCommandValidator()
     {
         RuleFor(x => x.RouteId).NotEmpty();
-        RuleFor(x => x.StationId).NotEmpty();
+        RuleFor(x => x.StationCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.StopOrder).GreaterThan(0);
     }
 }
@@ -36,8 +36,10 @@ public sealed class AddRouteStopCommandHandler : IRequestHandler<AddRouteStopCom
         if (!await _context.Set<Route>().AnyAsync(r => r.Id == request.RouteId, cancellationToken))
             throw new NotFoundException("Route not found.");
 
-        if (!await _context.Set<Station>().AnyAsync(s => s.Id == request.StationId, cancellationToken))
-            throw new NotFoundException("Station not found.");
+        var stationCode = request.StationCode.Trim().ToUpperInvariant();
+        var station = await _context.Set<Station>()
+            .SingleOrDefaultAsync(s => s.StationCode == stationCode, cancellationToken)
+            ?? throw new NotFoundException($"Station '{stationCode}' not found.");
 
         var duplicate = await _context.Set<RouteStop>().AnyAsync(
             rs => rs.RouteId == request.RouteId && rs.StopOrder == request.StopOrder, cancellationToken);
@@ -47,7 +49,7 @@ public sealed class AddRouteStopCommandHandler : IRequestHandler<AddRouteStopCom
         var stop = new RouteStop
         {
             RouteId = request.RouteId,
-            StationId = request.StationId,
+            StationId = station.Id,
             StopOrder = request.StopOrder,
             StandardTravelMin = request.StandardTravelMin,
             StandardDwellMin = request.StandardDwellMin,
@@ -57,9 +59,6 @@ public sealed class AddRouteStopCommandHandler : IRequestHandler<AddRouteStopCom
 
         _context.Set<RouteStop>().Add(stop);
         await _context.SaveChangesAsync(cancellationToken);
-
-        var station = await _context.Set<Station>()
-            .SingleAsync(s => s.Id == request.StationId, cancellationToken);
 
         return new RouteStopDto(stop.Id, station.Id, station.StationCode, station.StationName,
             stop.StopOrder, stop.StandardTravelMin, stop.StandardDwellMin,

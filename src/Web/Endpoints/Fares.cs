@@ -9,9 +9,9 @@ public sealed class Fares : IEndpointGroup
     private const string CreateFareExample =
         """
         {
-          "routeId": "8a5a73e6-729d-410d-83b3-0ce2fe2eaa52",
-          "fromStationId": "86015ba6-adac-4fd3-9e5f-30eeb9b2cefe",
-          "toStationId": "95916ab1-a4b8-445b-b6fb-e2c8e609dc1c",
+          "routeCode": "R01-BD-LD",
+          "fromStationCode": "BD",
+          "toStationCode": "LD",
           "basePrice": 20000
         }
         """;
@@ -32,9 +32,9 @@ public sealed class Fares : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Query params bat buoc: routeId, fromStationId, toStationId.",
-                "Vi du: GET /api/fares?routeId=8a5a73e6-...&fromStationId=86015ba6-...&toStationId=95916ab1-...",
-                "Tra ve list gia theo tung loai ve (Adult, Student, Child, Senior).",
+                "Query params bat buoc: routeCode, fromStationCode, toStationCode.",
+                "Vi du: GET /api/fares?routeCode=R01-BD-LD&fromStationCode=BD&toStationCode=LD",
+                "Tra ve list gia theo tung loai ve (ADULT, STUDENT, ...).",
                 "finalPrice = basePrice x priceModifier.",
                 "Tra ve 404 neu chua co fare cho cap tram nay."));
 
@@ -44,8 +44,8 @@ public sealed class Fares : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Query param routeId (optional) de loc theo tuyen.",
-                "Vi du: GET /api/fares/matrix?routeId=8a5a73e6-...",
+                "Query param routeCode (optional) de loc theo tuyen.",
+                "Vi du: GET /api/fares/matrix?routeCode=R01-BD-LD",
                 "Tra ve tat ca FareMatrix entries kem ten tram."));
 
         group.MapPost(CreateFare, string.Empty)
@@ -67,22 +67,37 @@ public sealed class Fares : IEndpointGroup
                 UpdateFareExample,
                 "isActive = false de vo hieu hoa muc gia (khong xoa).",
                 "Khi isActive = false, GetFare se khong tim thay cap tram nay."));
+
+        group.MapDelete(DeleteFare, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Vo hieu hoa muc gia")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Soft delete: dat isActive = false.",
+                "Tra ve 204 khi thanh cong."));
     }
 
     private static async Task<IResult> GetFare(
         ISender sender,
-        Guid routeId, Guid fromStationId, Guid toStationId,
+        string routeCode, string fromStationCode, string toStationCode,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetFareQuery(routeId, fromStationId, toStationId), ct));
+        Results.Ok(await sender.Send(new GetFareQuery(routeCode, fromStationCode, toStationCode), ct));
 
-    private static async Task<IResult> GetFareMatrix(ISender sender, Guid? routeId, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetFareMatrixListQuery(routeId), ct));
+    private static async Task<IResult> GetFareMatrix(ISender sender, string? routeCode, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetFareMatrixListQuery(routeCode), ct));
 
     private static async Task<IResult> CreateFare(ISender sender, CreateFareCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> UpdateFare(ISender sender, Guid id, UpdateFareRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateFareCommand(id, req.BasePrice, req.IsActive), ct));
+
+    private static async Task<IResult> DeleteFare(ISender sender, Guid id, CancellationToken ct)
+    {
+        await sender.Send(new DeleteFareCommand(id), ct);
+        return Results.NoContent();
+    }
 
     public sealed record UpdateFareRequest(decimal BasePrice, bool IsActive);
 }

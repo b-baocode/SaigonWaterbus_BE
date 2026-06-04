@@ -10,8 +10,8 @@ public sealed class Trips : IEndpointGroup
     private const string CreateTripExample =
         """
         {
-          "routeId": "8a5a73e6-729d-410d-83b3-0ce2fe2eaa52",
-          "boatId": "236f65ed-eb0e-4793-8524-8afdef0c7b20",
+          "routeCode": "R01-BD-TD",
+          "boatCode": "WB-01",
           "operatingDate": "2026-06-10",
           "departureTime": "2026-06-10T08:30:00+07:00"
         }
@@ -27,6 +27,16 @@ public sealed class Trips : IEndpointGroup
 
     public static void Map(RouteGroupBuilder group)
     {
+        group.MapGet(GetTripList, string.Empty)
+            .RequireAuthorization()
+            .WithSummary("Danh sach chuyen tau (admin)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Query params (tat ca optional): operatingDate (yyyy-MM-dd), routeCode (string), status (string).",
+                "status hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
+                "Sap xep: ngay moi nhat → gio khoi hanh tang dan."));
+
         group.MapGet(SearchTrips, "search")
             .AllowAnonymous()
             .WithSummary("Tim chuyen tau theo hanh trinh va ngay")
@@ -80,6 +90,12 @@ public sealed class Trips : IEndpointGroup
                 "tripStatus hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
                 "statusNote: ghi chu kem theo (optional)."));
     }
+
+    private static async Task<IResult> GetTripList(
+        ISender sender,
+        DateOnly? operatingDate, string? routeCode, string? status,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetTripListQuery(operatingDate, routeCode, status), ct));
 
     private static async Task<IResult> SearchTrips(
         ISender sender,

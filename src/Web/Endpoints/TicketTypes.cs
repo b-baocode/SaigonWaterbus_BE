@@ -57,6 +57,15 @@ public sealed class TicketTypes : IEndpointGroup
                 UpdateExample,
                 "isActive = false de an loai ve, khong xoa du lieu.",
                 "TicketTypeCode khong doi duoc sau khi tao."));
+
+        group.MapDelete(DeleteTicketType, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Vo hieu hoa loai ve")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Soft delete: dat isActive = false, khong xoa khoi DB.",
+                "Tra ve 204 khi thanh cong."));
     }
 
     private static async Task<IResult> GetTicketTypes(ISender sender, CancellationToken ct) =>
@@ -68,6 +77,12 @@ public sealed class TicketTypes : IEndpointGroup
     private static async Task<IResult> UpdateTicketType(ISender sender, Guid id, UpdateTicketTypeRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateTicketTypeCommand(
             id, req.TicketTypeName, req.Description, req.PriceModifier, req.PointsEarnedRate, req.IsActive), ct));
+
+    private static async Task<IResult> DeleteTicketType(ISender sender, Guid id, CancellationToken ct)
+    {
+        await sender.Send(new DeleteTicketTypeCommand(id), ct);
+        return Results.NoContent();
+    }
 
     public sealed record UpdateTicketTypeRequest(
         string TicketTypeName, string? Description,

@@ -37,6 +37,23 @@ public sealed class Boats : IEndpointGroup
 
     public static void Map(RouteGroupBuilder group)
     {
+        group.MapGet(GetBoatDetail, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Chi tiet tau (kem so ghe)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve thong tin tau kem totalSeats va activeSeats."));
+
+        group.MapGet(GetBoatSeats, "{id:guid}/seats")
+            .RequireAuthorization()
+            .WithSummary("Danh sach ghe cua tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve tat ca ghe sap xep theo hang/cot.",
+                "Khac GET /api/trips/{id}/seats: endpoint nay khong tinh trang thai dat cho."));
+
         group.MapGet(GetBoats, string.Empty)
             .RequireAuthorization()
             .WithSummary("Danh sach tau")
@@ -76,6 +93,12 @@ public sealed class Boats : IEndpointGroup
                 "seatClass: Window | Standard | VIP (optional).",
                 "Khong tao ghe trung voi seat_number da ton tai trong cung tau."));
     }
+
+    private static async Task<IResult> GetBoatDetail(ISender sender, Guid id, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetBoatDetailQuery(id), ct));
+
+    private static async Task<IResult> GetBoatSeats(ISender sender, Guid id, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetBoatSeatsQuery(id), ct));
 
     private static async Task<IResult> GetBoats(ISender sender, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetBoatListQuery(), ct));

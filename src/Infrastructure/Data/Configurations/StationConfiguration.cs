@@ -20,6 +20,10 @@ public sealed class StationConfiguration : IEntityTypeConfiguration<Station>
         builder.Property(x => x.Latitude).HasColumnName("latitude").HasColumnType("numeric(9,6)");
         builder.Property(x => x.Longitude).HasColumnName("longitude").HasColumnType("numeric(9,6)");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
+        builder.Property(x => x.Location).HasColumnName("location").HasColumnType("geography(Point,4326)");
+        builder.Property(x => x.OsmId).HasColumnName("osm_id").HasMaxLength(50);
+        builder.HasIndex(x => x.Location).HasMethod("gist").HasDatabaseName("ix_stations_location");
+        builder.HasIndex(x => x.OsmId).HasDatabaseName("ix_stations_osm_id");
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property(x => x.LastModified).HasColumnName("updated_at");

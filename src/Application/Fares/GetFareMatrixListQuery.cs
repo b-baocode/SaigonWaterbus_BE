@@ -3,7 +3,7 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Fares;
 
-public sealed record GetFareMatrixListQuery(Guid? RouteId) : IRequest<IReadOnlyList<FareMatrixDto>>;
+public sealed record GetFareMatrixListQuery(string? RouteCode) : IRequest<IReadOnlyList<FareMatrixDto>>;
 
 public sealed class GetFareMatrixListQueryHandler : IRequestHandler<GetFareMatrixListQuery, IReadOnlyList<FareMatrixDto>>
 {
@@ -18,8 +18,11 @@ public sealed class GetFareMatrixListQueryHandler : IRequestHandler<GetFareMatri
             .Include(f => f.ToStation)
             .AsQueryable();
 
-        if (request.RouteId.HasValue)
-            query = query.Where(f => f.RouteId == request.RouteId.Value);
+        if (!string.IsNullOrWhiteSpace(request.RouteCode))
+        {
+            var rc = request.RouteCode.Trim().ToUpperInvariant();
+            query = query.Where(f => f.Route.RouteCode == rc);
+        }
 
         return await query
             .OrderBy(f => f.FromStation.StationName)

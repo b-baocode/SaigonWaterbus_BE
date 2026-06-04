@@ -77,6 +77,15 @@ public sealed class Promotions : IEndpointGroup
                 UpdateExample,
                 "status hop le: Active | Inactive.",
                 "PromotionCode va PromotionType khong doi duoc sau khi tao."));
+
+        group.MapDelete(DeletePromotion, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Vo hieu hoa khuyen mai")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Soft delete: dat Status = Inactive.",
+                "Tra ve 204 khi thanh cong."));
     }
 
     private static async Task<IResult> GetPromotions(ISender sender, CancellationToken ct) =>
@@ -93,6 +102,12 @@ public sealed class Promotions : IEndpointGroup
         Results.Ok(await sender.Send(new UpdatePromotionCommand(
             id, req.PromotionName, req.DiscountValue, req.MinOrderValue,
             req.ValidFrom, req.ValidTo, req.UsageLimit, req.Status), ct));
+
+    private static async Task<IResult> DeletePromotion(ISender sender, Guid id, CancellationToken ct)
+    {
+        await sender.Send(new DeletePromotionCommand(id), ct);
+        return Results.NoContent();
+    }
 
     public sealed record UpdatePromotionRequest(
         string PromotionName,

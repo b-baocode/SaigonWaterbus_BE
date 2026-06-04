@@ -7,19 +7,19 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 namespace SaigonWaterbus.Application.Fares;
 
 public sealed record CreateFareCommand(
-    Guid RouteId,
-    Guid FromStationId,
-    Guid ToStationId,
+    string RouteCode,
+    string FromStationCode,
+    string ToStationCode,
     decimal BasePrice) : IRequest<FareMatrixDto>;
 
 public sealed class CreateFareCommandValidator : AbstractValidator<CreateFareCommand>
 {
     public CreateFareCommandValidator()
     {
-        RuleFor(x => x.RouteId).NotEmpty();
-        RuleFor(x => x.FromStationId).NotEmpty();
-        RuleFor(x => x.ToStationId).NotEmpty()
-            .NotEqual(x => x.FromStationId).WithMessage("From and To stations must be different.");
+        RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.FromStationCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.ToStationCode).NotEmpty().MaximumLength(50)
+            .NotEqual(x => x.FromStationCode).WithMessage("From and To stations must be different.");
         RuleFor(x => x.BasePrice).GreaterThan(0);
     }
 }
@@ -32,31 +32,35 @@ public sealed class CreateFareCommandHandler : IRequestHandler<CreateFareCommand
 
     public async Task<FareMatrixDto> Handle(CreateFareCommand request, CancellationToken cancellationToken)
     {
-        if (!await _context.Set<Route>().AnyAsync(r => r.Id == request.RouteId, cancellationToken))
-            throw new NotFoundException("Route not found.");
+        var routeCode = request.RouteCode.Trim().ToUpperInvariant();
+        var route = await _context.Set<Route>()
+            .SingleOrDefaultAsync(r => r.RouteCode == routeCode, cancellationToken)
+            ?? throw new NotFoundException($"Route '{routeCode}' not found.");
 
+        var fromCode = request.FromStationCode.Trim().ToUpperInvariant();
         var fromStation = await _context.Set<Station>()
-            .SingleOrDefaultAsync(s => s.Id == request.FromStationId, cancellationToken)
-            ?? throw new NotFoundException("From station not found.");
+            .SingleOrDefaultAsync(s => s.StationCode == fromCode, cancellationToken)
+            ?? throw new NotFoundException($"Station '{fromCode}' not found.");
 
+        var toCode = request.ToStationCode.Trim().ToUpperInvariant();
         var toStation = await _context.Set<Station>()
-            .SingleOrDefaultAsync(s => s.Id == request.ToStationId, cancellationToken)
-            ?? throw new NotFoundException("To station not found.");
+            .SingleOrDefaultAsync(s => s.StationCode == toCode, cancellationToken)
+            ?? throw new NotFoundException($"Station '{toCode}' not found.");
 
         var exists = await _context.Set<FareMatrix>().AnyAsync(f =>
-            f.RouteId == request.RouteId &&
-            f.FromStationId == request.FromStationId &&
-            f.ToStationId == request.ToStationId &&
+            f.RouteId == route.Id &&
+            f.FromStationId == fromStation.Id &&
+            f.ToStationId == toStation.Id &&
             f.IsActive, cancellationToken);
 
         if (exists)
-            throw new ValidationException([new ValidationFailure(nameof(request.FromStationId), "An active fare already exists for this station pair on this route.")]);
+            throw new ValidationException([new ValidationFailure(nameof(request.FromStationCode), "An active fare already exists for this station pair on this route.")]);
 
         var fare = new FareMatrix
         {
-            RouteId = request.RouteId,
-            FromStationId = request.FromStationId,
-            ToStationId = request.ToStationId,
+            RouteId = route.Id,
+            FromStationId = fromStation.Id,
+            ToStationId = toStation.Id,
             BasePrice = request.BasePrice,
             IsActive = true
         };

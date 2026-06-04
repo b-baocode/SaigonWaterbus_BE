@@ -19,6 +19,8 @@ public sealed class RouteConfiguration : IEntityTypeConfiguration<Domain.Entitie
         builder.Property(x => x.BaseDistanceKm).HasColumnName("base_distance_km").HasColumnType("numeric(8,2)");
         builder.Property(x => x.EstimatedDurationMin).HasColumnName("estimated_duration_min");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired();
+        builder.Property(x => x.RouteGeometry).HasColumnName("route_geometry").HasColumnType("geography(LineString,4326)");
+        builder.Property(x => x.OsmId).HasColumnName("osm_id").HasMaxLength(50);
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property(x => x.LastModified).HasColumnName("updated_at");

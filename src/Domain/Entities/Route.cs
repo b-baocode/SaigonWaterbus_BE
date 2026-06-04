@@ -1,3 +1,4 @@
+using NetTopologySuite.Geometries;
 using SaigonWaterbus.Domain.Common;
 
 namespace SaigonWaterbus.Domain.Entities;
@@ -10,6 +11,8 @@ public class Route : BaseGuidAuditableEntity
     public decimal? BaseDistanceKm { get; set; }
     public int? EstimatedDurationMin { get; set; }
     public string Status { get; set; } = "Active";
+    public LineString? RouteGeometry { get; set; }
+    public string? OsmId { get; set; }
 
     public ICollection<RouteStop> RouteStops { get; set; } = new List<RouteStop>();
     public ICollection<Trip> Trips { get; set; } = new List<Trip>();
