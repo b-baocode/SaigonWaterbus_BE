@@ -8,6 +8,7 @@ using SaigonWaterbus.Application.Auth.Register;
 using SaigonWaterbus.Application.Auth.Token;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Common.Validation;
+using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.Users;
 using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Application.WaterbusServices;
@@ -59,6 +60,14 @@ public static class DependencyInjection
         builder.Services.AddScoped<UpdateVesselRequestUseCase>();
         builder.Services.AddScoped<UpdateVesselStatusRequestUseCase>();
         builder.Services.AddScoped<DeleteVesselRequestUseCase>();
+
+        builder.Services.AddScoped<ISeatManagementService, SeatManagementService>();
+        builder.Services.AddScoped<GetSeatsRequestUseCase>();
+        builder.Services.AddScoped<GenerateSeatsRequestUseCase>();
+        builder.Services.AddScoped<UpdateSeatRequestUseCase>();
+        builder.Services.AddScoped<UpdateSeatStatusRequestUseCase>();
+        builder.Services.AddScoped<DeleteSeatRequestUseCase>();
+        builder.Services.AddScoped<DeleteAllSeatsRequestUseCase>();
 
         builder.Services.AddScoped<IWaterbusServiceManagementService, WaterbusServiceManagementService>();
         builder.Services.AddScoped<GetWaterbusServicesRequestUseCase>();

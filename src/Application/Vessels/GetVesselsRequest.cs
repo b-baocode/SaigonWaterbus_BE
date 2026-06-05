@@ -24,6 +24,7 @@ public sealed record VesselDto(
     VesselStatus Status,
     int SeatCount,
     int NumberOfDecks,
+    bool SeatsConfigured,
     int? MaxSpeedKmh,
     int? YearBuilt,
     string? ImageUrl,

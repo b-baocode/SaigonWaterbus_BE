@@ -20,6 +20,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Vessel> Vessels => Set<Vessel>();
 
+    public DbSet<Seat> Seats => Set<Seat>();
+
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

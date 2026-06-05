@@ -16,6 +16,8 @@ public interface IApplicationDbContext
 
     DbSet<Vessel> Vessels { get; }
 
+    DbSet<Seat> Seats { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

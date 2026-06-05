@@ -73,6 +73,7 @@ internal static class VesselSupport
             vessel.Status,
             vessel.SeatCount,
             vessel.NumberOfDecks,
+            vessel.SeatsConfigured,
             vessel.MaxSpeedKmh,
             vessel.YearBuilt,
             vessel.ImageUrl,

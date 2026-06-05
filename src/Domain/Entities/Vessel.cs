@@ -20,6 +20,8 @@ public class Vessel : BaseAuditableEntity
 
     public int NumberOfDecks { get; set; }
 
+    public bool SeatsConfigured { get; set; }
+
     public int? MaxSpeedKmh { get; set; }
 
     public int? YearBuilt { get; set; }
@@ -29,4 +31,6 @@ public class Vessel : BaseAuditableEntity
     public string? ImagePublicId { get; set; }
 
     public string? Description { get; set; }
+
+    public ICollection<Seat> Seats { get; set; } = new List<Seat>();
 }
