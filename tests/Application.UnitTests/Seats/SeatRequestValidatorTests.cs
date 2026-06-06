@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Seats;
+using SaigonWaterbus.Domain.Enums;
 using NUnit.Framework;
 using Shouldly;
 
@@ -46,6 +47,50 @@ public class SeatRequestValidatorTests
             ]));
 
         result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void GenerateAcceptsLayoutWithSeatBlocksAndToilet()
+    {
+        var validator = new GenerateSeatsRequestValidator();
+
+        var result = validator.Validate(new GenerateSeatsRequest(
+            1,
+            [
+                new DeckConfigDto(
+                    1,
+                    20,
+                    8,
+                    [
+                        new SeatBlockDto(1, 1, 10, 4),
+                        new SeatBlockDto(1, 5, 10, 4)
+                    ],
+                    [
+                        new FacilityConfigDto(VesselFacilityType.Toilet, 15, 1, 1, 2)
+                    ])
+            ]));
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void GenerateRejectsToiletThatDoesNotUseExactlyTwoCells()
+    {
+        var validator = new GenerateSeatsRequestValidator();
+
+        var result = validator.Validate(new GenerateSeatsRequest(
+            1,
+            [
+                new DeckConfigDto(
+                    1,
+                    20,
+                    8,
+                    [new SeatBlockDto(1, 1, 10, 8)],
+                    [new FacilityConfigDto(VesselFacilityType.Toilet, 15, 1, 2, 2)])
+            ]));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == "WC phải chiếm đúng 2 ô, theo chiều ngang hoặc chiều dọc.");
     }
 
     [Test]

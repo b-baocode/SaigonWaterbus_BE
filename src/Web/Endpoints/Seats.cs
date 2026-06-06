@@ -8,8 +8,18 @@ public sealed class Seats : IEndpointGroup
         """
         {
           "decks": [
-            { "deckNumber": 1, "rowCount": 4, "columnCount": 8 },
-            { "deckNumber": 2, "rowCount": 3, "columnCount": 6 }
+            {
+              "deckNumber": 1,
+              "rowCount": 20,
+              "columnCount": 8,
+              "seatBlocks": [
+                { "startRow": 1, "startColumn": 1, "rowCount": 10, "columnCount": 4 },
+                { "startRow": 1, "startColumn": 5, "rowCount": 10, "columnCount": 4 }
+              ],
+              "facilities": [
+                { "type": "Toilet", "startRow": 15, "startColumn": 1, "rowSpan": 1, "columnSpan": 2 }
+              ]
+            }
           ]
         }
         """;
@@ -44,6 +54,7 @@ public sealed class Seats : IEndpointGroup
                 "Manager và Staff chỉ xem được ghế của tàu đang Active.",
                 "TotalSeats là số ghế đăng ký của tàu.",
                 "ConfiguredSeats là tổng số ghế thật đã setup trong database.",
+                "Facilities là tiện ích thật đã setup trong database, ví dụ Toilet, không tính vào số ghế.",
                 "SeatsConfigured=true khi tàu đã được setup đủ ghế."));
 
         groupBuilder.MapPost(GenerateSeats, "{vesselId:int}/seats/generate")
@@ -52,7 +63,11 @@ public sealed class Seats : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 GenerateExample,
-                "Tổng ghế (rowCount × columnCount × số tầng) phải bằng SeatCount của tàu.",
+                "Nếu không gửi seatBlocks, toàn bộ ma trận rowCount × columnCount sẽ được sinh thành ghế như cách cũ.",
+                "Nếu gửi seatBlocks, rowCount × columnCount là ma trận layout vật lý; chỉ các ô trong seatBlocks được sinh thành ghế.",
+                "Tổng ghế sinh ra từ seatBlocks phải bằng SeatCount của tàu.",
+                "Facilities dùng để setup tiện ích như Toilet, không tính vào số ghế.",
+                "Toilet phải chiếm đúng 2 ô: rowSpan=1,columnSpan=2 hoặc rowSpan=2,columnSpan=1.",
                 "Nếu tàu đã có ghế, phải xóa toàn bộ trước khi generate lại.",
                 "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."));
 

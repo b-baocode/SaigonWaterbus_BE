@@ -18,6 +18,10 @@ public interface IApplicationDbContext
 
     DbSet<Seat> Seats { get; }
 
+    DbSet<VesselDeckLayout> VesselDeckLayouts { get; }
+
+    DbSet<VesselFacility> VesselFacilities { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

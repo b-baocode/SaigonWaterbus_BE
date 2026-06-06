@@ -37,14 +37,22 @@ public sealed class DeleteAllSeatsRequestUseCase
         var seats = await _context.Seats
             .Where(x => x.VesselId == vessel.Id)
             .ToListAsync(cancellationToken);
+        var deckLayouts = await _context.VesselDeckLayouts
+            .Where(x => x.VesselId == vessel.Id)
+            .ToListAsync(cancellationToken);
+        var facilities = await _context.VesselFacilities
+            .Where(x => x.VesselId == vessel.Id)
+            .ToListAsync(cancellationToken);
 
-        if (seats.Count == 0)
-            throw AuthSupport.CreateValidationException("Seats", "Tàu chưa có ghế nào.");
+        if (seats.Count == 0 && deckLayouts.Count == 0 && facilities.Count == 0)
+            throw AuthSupport.CreateValidationException("Seats", "Tàu chưa có sơ đồ ghế nào.");
 
         _context.Seats.RemoveRange(seats);
+        _context.VesselDeckLayouts.RemoveRange(deckLayouts);
+        _context.VesselFacilities.RemoveRange(facilities);
         vessel.SeatsConfigured = false;
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new AuthActionResultDto("Xóa toàn bộ ghế thành công.");
+        return new AuthActionResultDto("Xóa toàn bộ sơ đồ ghế thành công.");
     }
 }

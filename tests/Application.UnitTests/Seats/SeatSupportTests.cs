@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NUnit.Framework;
 using Shouldly;
 
@@ -31,6 +32,56 @@ public class SeatSupportTests
         dto.ActiveSeats.ShouldBe(2);
         dto.ConfiguredSeats.ShouldBe(3);
         dto.SeatsConfigured.ShouldBeTrue();
+    }
+
+    [Test]
+    public void CreateVesselSeatsDtoReturnsLayoutAndFacilitiesWithoutChangingSeatCounts()
+    {
+        var vessel = new Vessel
+        {
+            Id = 1,
+            Code = "WB01",
+            Name = "WaterBus 01",
+            SeatCount = 80,
+            SeatsConfigured = true
+        };
+        var deckLayouts = new List<VesselDeckLayout>
+        {
+            new()
+            {
+                VesselId = 1,
+                DeckNumber = 1,
+                RowCount = 20,
+                ColumnCount = 8
+            }
+        };
+        var facilities = new List<VesselFacility>
+        {
+            new()
+            {
+                Id = 10,
+                VesselId = 1,
+                Type = VesselFacilityType.Toilet,
+                Deck = 1,
+                Row = "O",
+                Column = 1,
+                RowSpan = 1,
+                ColumnSpan = 2,
+                IsActive = true
+            }
+        };
+        var seats = Enumerable.Range(1, 80)
+            .Select(id => Seat(id, $"1-A{id}", isActive: true))
+            .ToList();
+
+        var dto = SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts, facilities);
+
+        dto.TotalSeats.ShouldBe(80);
+        dto.ConfiguredSeats.ShouldBe(80);
+        dto.ActiveSeats.ShouldBe(80);
+        dto.Decks.Single().RowCount.ShouldBe(20);
+        dto.Decks.Single().ColumnCount.ShouldBe(8);
+        dto.Facilities.Single().Type.ShouldBe(VesselFacilityType.Toilet);
     }
 
     private static Seat Seat(int id, string code, bool isActive) =>

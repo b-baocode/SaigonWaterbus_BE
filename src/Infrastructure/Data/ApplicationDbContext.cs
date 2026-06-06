@@ -22,6 +22,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Seat> Seats => Set<Seat>();
 
+    public DbSet<VesselDeckLayout> VesselDeckLayouts => Set<VesselDeckLayout>();
+
+    public DbSet<VesselFacility> VesselFacilities => Set<VesselFacility>();
+
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();

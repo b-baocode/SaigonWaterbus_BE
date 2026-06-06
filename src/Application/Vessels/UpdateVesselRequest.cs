@@ -159,11 +159,19 @@ public sealed class UpdateVesselRequestUseCase
 
         var seatCountChanged = request.SeatCount.HasValue && request.SeatCount.Value != vessel.SeatCount;
         var numberOfDecksChanged = request.NumberOfDecks.HasValue && request.NumberOfDecks.Value != vessel.NumberOfDecks;
-        if ((seatCountChanged || numberOfDecksChanged) && vessel.SeatsConfigured)
+        if (seatCountChanged || numberOfDecksChanged)
         {
-            throw AuthSupport.CreateValidationException(
-                nameof(request.SeatCount),
-                "Tàu đã setup ghế. Xóa toàn bộ ghế trước khi đổi số ghế hoặc số tầng.");
+            var hasSeatLayout = vessel.SeatsConfigured
+                || await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
+                || await _context.VesselDeckLayouts.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
+                || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
+
+            if (hasSeatLayout)
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.SeatCount),
+                    "Tàu đã setup sơ đồ ghế. Xóa toàn bộ sơ đồ ghế trước khi đổi số ghế hoặc số tầng.");
+            }
         }
 
         if (request.SeatCount.HasValue)

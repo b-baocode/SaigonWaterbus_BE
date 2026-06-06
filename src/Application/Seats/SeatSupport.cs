@@ -2,6 +2,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
@@ -9,7 +10,17 @@ public sealed record SeatDto(int Id, string Code, int Deck, string Row, int Colu
 
 public sealed record SeatRowDto(string Row, IReadOnlyCollection<SeatDto> Seats);
 
-public sealed record SeatDeckDto(int DeckNumber, IReadOnlyCollection<SeatRowDto> Rows);
+public sealed record SeatDeckDto(int DeckNumber, int? RowCount, int? ColumnCount, IReadOnlyCollection<SeatRowDto> Rows);
+
+public sealed record VesselFacilityDto(
+    int Id,
+    VesselFacilityType Type,
+    int Deck,
+    string Row,
+    int Column,
+    int RowSpan,
+    int ColumnSpan,
+    bool IsActive);
 
 public sealed record VesselSeatsDto(
     int VesselId,
@@ -19,7 +30,8 @@ public sealed record VesselSeatsDto(
     int ConfiguredSeats,
     int ActiveSeats,
     bool SeatsConfigured,
-    IReadOnlyCollection<SeatDeckDto> Decks);
+    IReadOnlyCollection<SeatDeckDto> Decks,
+    IReadOnlyCollection<VesselFacilityDto> Facilities);
 
 internal static class SeatSupport
 {
@@ -49,14 +61,34 @@ internal static class SeatSupport
     public static string SeatCode(int deck, string row, int column) =>
         $"{deck}-{row}{column}";
 
-    public static VesselSeatsDto CreateVesselSeatsDto(Vessel vessel, IList<Seat> seats)
+    public static VesselSeatsDto CreateVesselSeatsDto(
+        Vessel vessel,
+        IList<Seat> seats,
+        IList<VesselDeckLayout>? deckLayouts = null,
+        IList<VesselFacility>? facilities = null)
     {
-        var decks = seats
+        var layoutsByDeck = (deckLayouts ?? [])
+            .ToDictionary(x => x.DeckNumber);
+
+        var seatsByDeck = seats
             .GroupBy(s => s.Deck)
-            .OrderBy(g => g.Key)
-            .Select(deckGroup => new SeatDeckDto(
-                deckGroup.Key,
-                deckGroup
+            .ToDictionary(g => g.Key, g => g.ToArray());
+        var deckNumbers = layoutsByDeck.Keys
+            .Union(seatsByDeck.Keys)
+            .OrderBy(deckNumber => deckNumber);
+
+        var decks = deckNumbers
+            .Select(deckNumber =>
+            {
+                layoutsByDeck.TryGetValue(deckNumber, out var layout);
+                seatsByDeck.TryGetValue(deckNumber, out var deckSeats);
+                deckSeats ??= [];
+
+                return new SeatDeckDto(
+                    deckNumber,
+                    layout?.RowCount,
+                    layout?.ColumnCount,
+                    deckSeats
                     .GroupBy(s => s.Row)
                     .OrderBy(g => g.Key)
                     .Select(rowGroup => new SeatRowDto(
@@ -65,7 +97,15 @@ internal static class SeatSupport
                             .OrderBy(s => s.Column)
                             .Select(s => new SeatDto(s.Id, s.Code, s.Deck, s.Row, s.Column, s.IsActive))
                             .ToArray()))
-                    .ToArray()))
+                    .ToArray());
+            })
+            .ToArray();
+
+        var facilityDtos = (facilities ?? [])
+            .OrderBy(f => f.Deck)
+            .ThenBy(f => f.Row)
+            .ThenBy(f => f.Column)
+            .Select(f => new VesselFacilityDto(f.Id, f.Type, f.Deck, f.Row, f.Column, f.RowSpan, f.ColumnSpan, f.IsActive))
             .ToArray();
 
         var activeSeats = seats.Count(s => s.IsActive);
@@ -78,6 +118,7 @@ internal static class SeatSupport
             seats.Count,
             activeSeats,
             vessel.SeatsConfigured,
-            decks);
+            decks,
+            facilityDtos);
     }
 }
