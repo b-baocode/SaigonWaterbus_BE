@@ -17,7 +17,8 @@ public sealed record RouteDetailDto(
     decimal? BaseDistanceKm,
     int? EstimatedDurationMin,
     string Status,
-    IReadOnlyList<RouteStopDto> Stops);
+    IReadOnlyList<RouteStopDto> Stops,
+    IReadOnlyList<double[]>? RouteGeometry);
 
 public sealed record RouteStopDto(
     Guid RouteStopId,
