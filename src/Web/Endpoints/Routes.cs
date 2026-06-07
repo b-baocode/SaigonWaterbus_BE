@@ -12,10 +12,14 @@ public sealed class Routes : IEndpointGroup
         """
         {
           "routeCode": "R02-BD-NVL",
-          "routeName": "Tuyen 02: Bach Dang → Nguyen Van Linh",
+          "routeName": "Tuyen 02: Bach Dang den Linh Dong",
           "description": "Tuyen waterbus Q1 → Q7",
-          "baseDistanceKm": 15.5,
-          "estimatedDurationMin": 75
+          "estimatedDurationMin": 75,
+          "waypoints": [
+            { "type": "station", "stationCode": "BD" },
+            { "type": "viaWaterway", "waterwayOsmId": "way/123456" },
+            { "type": "station", "stationCode": "LD" }
+          ]
         }
         """;
 
@@ -79,8 +83,9 @@ public sealed class Routes : IEndpointGroup
                 "Bearer token",
                 CreateRouteExample,
                 "RouteCode phai unique (tu dong uppercase).",
-                "Status mac dinh la Active khi tao moi.",
-                "Them ben dung bang POST /api/routes/{id}/stops."));
+                "Request phai chua it nhat 2 waypoint type=station va bat buoc co it nhat 1 waypoint type=viaWaterway.",
+                "Waypoint dau va cuoi bat buoc la station.",
+                "He thong dung mang waterway da import truoc do de tao RouteGeometry LineString va RouteStops tu dong."));
 
         group.MapPut(UpdateRoute, "{id:guid}")
             .RequireAuthorization()
@@ -134,18 +139,16 @@ public sealed class Routes : IEndpointGroup
         group.MapPost(ImportGeoJson, "geojson-import")
             .RequireAuthorization()
             .DisableAntiforgery()
-            .WithSummary("Import tuyen va ben tu file GeoJSON (OSM)")
+            .WithSummary("Import mang song rach va ben tu file GeoJSON")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
                 "Content-Type: multipart/form-data.",
-                "Form fields: routeCode (string), routeName (string), file (.geojson file).",
-                "LineString dau tien → geometry cua tuyen (tinh BaseDistanceKm tu Haversine).",
-                "Point co amenity=ferry_terminal → ben dung.",
-                "Match theo OsmId → ten chinh xac → proximity < 100m → tao moi.",
-                "StopOrder tu dong tinh theo vi tri tren tuyen.",
-                "Neu RouteCode da ton tai: cap nhat geometry va stops. Neu chua: tao moi voi Status=Draft.",
-                "Tra ve so station/stop duoc tao/cap nhat."));
+                "Form fields: file (.geojson file).",
+                "Chi nhan LineString/MultiLineString co waterway=river|canal va Point co amenity=ferry_terminal.",
+                "Endpoint nay khong tao route.",
+                "He thong se cap nhat Station va thay moi toan bo mang WaterwaySegment de API tao route su dung ve sau.",
+                "API tao route se bat buoc user truyen them viaWaterway de chon nhanh cu the."));
     }
 
     private static async Task<IResult> GetRoutes(ISender sender, CancellationToken ct) =>
@@ -186,14 +189,11 @@ public sealed class Routes : IEndpointGroup
     private static async Task<IResult> ImportGeoJson(
         ISender sender,
         IFormFile file,
-        [Microsoft.AspNetCore.Mvc.FromForm] string routeCode,
-        [Microsoft.AspNetCore.Mvc.FromForm] string routeName,
         CancellationToken ct)
     {
         using var reader = new System.IO.StreamReader(file.OpenReadStream(), System.Text.Encoding.UTF8);
         var geoJsonContent = await reader.ReadToEndAsync(ct);
-        return Results.Ok(await sender.Send(
-            new ImportRouteGeoJsonCommand(routeCode, routeName, geoJsonContent), ct));
+        return Results.Ok(await sender.Send(new ImportRouteGeoJsonCommand(geoJsonContent), ct));
     }
 
     public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);

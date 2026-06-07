@@ -20,6 +20,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);
     public DbSet<Station> Stations => Set<Station>();
+    public DbSet<WaterwaySegment> WaterwaySegments => Set<WaterwaySegment>();
     public DbSet<Route> Routes => Set<Route>();
     public DbSet<RouteStop> RouteStops => Set<RouteStop>();
     public DbSet<Landmark> Landmarks => Set<Landmark>();

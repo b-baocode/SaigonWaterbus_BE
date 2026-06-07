@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -9,8 +10,13 @@ public sealed record CreateRouteCommand(
     string RouteCode,
     string RouteName,
     string? Description,
-    decimal? BaseDistanceKm,
-    int? EstimatedDurationMin) : IRequest<RouteDto>;
+    int? EstimatedDurationMin,
+    IReadOnlyList<CreateRouteWaypointDto> Waypoints) : IRequest<RouteDto>;
+
+public sealed record CreateRouteWaypointDto(
+    string Type,
+    string? StationCode,
+    string? WaterwayOsmId);
 
 public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteCommand>
 {
@@ -18,9 +24,34 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.RouteName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.BaseDistanceKm).GreaterThanOrEqualTo(0).When(x => x.BaseDistanceKm.HasValue);
         RuleFor(x => x.EstimatedDurationMin).GreaterThan(0).When(x => x.EstimatedDurationMin.HasValue);
+
+        RuleFor(x => x.Waypoints)
+            .NotNull()
+            .Must(HaveMinimumRequiredWaypoints)
+            .WithMessage("Waypoints must contain at least 2 station waypoints.")
+            .Must(HaveStationAtBothEnds)
+            .WithMessage("The first and last waypoint must be station waypoints.");
+
+        RuleForEach(x => x.Waypoints)
+            .SetValidator(new CreateRouteWaypointDtoValidator());
     }
+
+    private static bool HaveMinimumRequiredWaypoints(IReadOnlyList<CreateRouteWaypointDto>? waypoints) =>
+        waypoints is not null
+        && waypoints.Count(IsStationWaypoint) >= 2;
+
+    private static bool HaveStationAtBothEnds(IReadOnlyList<CreateRouteWaypointDto>? waypoints) =>
+        waypoints is not null
+        && waypoints.Count >= 2
+        && IsStationWaypoint(waypoints[0])
+        && IsStationWaypoint(waypoints[^1]);
+
+    private static bool IsStationWaypoint(CreateRouteWaypointDto waypoint) =>
+        string.Equals(waypoint.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsViaWaterwayWaypoint(CreateRouteWaypointDto waypoint) =>
+        string.Equals(waypoint.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteCommand, RouteDto>
@@ -34,22 +65,175 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
         var code = request.RouteCode.Trim().ToUpperInvariant();
 
         if (await _context.Set<Route>().AnyAsync(r => r.RouteCode == code, cancellationToken))
+        {
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route code already exists.")]);
+        }
+
+        var waterwaySegments = await _context.Set<WaterwaySegment>()
+            .AsNoTracking()
+            .OrderBy(segment => segment.OsmId)
+            .ThenBy(segment => segment.SegmentOrder)
+            .ToListAsync(cancellationToken);
+
+        if (waterwaySegments.Count == 0)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.Waypoints),
+                "No waterway network has been imported yet. Import GeoJSON map data first.")]);
+        }
+
+        var stationCodes = request.Waypoints
+            .Where(waypoint => string.Equals(waypoint.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase))
+            .Select(waypoint => waypoint.StationCode!.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToList();
+
+        var stationsByCode = await _context.Set<Station>()
+            .Where(station => stationCodes.Contains(station.StationCode))
+            .ToDictionaryAsync(station => station.StationCode, cancellationToken);
+
+        var routeStations = new List<Station>();
+        var waypointPoints = new List<Point>();
+
+        foreach (var waypoint in request.Waypoints)
+        {
+            if (string.Equals(waypoint.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase))
+            {
+                var stationCode = waypoint.StationCode!.Trim().ToUpperInvariant();
+                if (!stationsByCode.TryGetValue(stationCode, out var station))
+                {
+                    throw new ValidationException([new ValidationFailure(
+                        nameof(request.Waypoints),
+                        $"Station '{stationCode}' was not found. Import the ferry terminal first or choose another station.")]);
+                }
+
+                routeStations.Add(station);
+                waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
+                continue;
+            }
+
+            var waterwayRef = waypoint.WaterwayOsmId!.Trim();
+            var viaGeometries = waterwaySegments
+                .Where(segment => string.Equals(segment.OsmId, waterwayRef, StringComparison.OrdinalIgnoreCase))
+                .OrderBy(segment => segment.SegmentOrder)
+                .Select(segment => segment.Geometry)
+                .ToList();
+
+            if (viaGeometries.Count == 0)
+            {
+                // Fallback: match by waterway name when OSM IDs are absent
+                viaGeometries = waterwaySegments
+                    .Where(segment => string.Equals(segment.WaterwayName, waterwayRef, StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(segment => segment.SegmentOrder)
+                    .Select(segment => segment.Geometry)
+                    .ToList();
+            }
+
+            if (viaGeometries.Count == 0)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(request.Waypoints),
+                    $"Waterway '{waterwayRef}' was not found by OSM ID or name. Import the latest GeoJSON map or choose another via.")]);
+            }
+
+            waypointPoints.Add(RouteGeoJsonImportSupport.CreateRepresentativePoint(viaGeometries));
+        }
+
+        if (routeStations.Select(station => station.Id).Distinct().Count() != routeStations.Count)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.Waypoints),
+                "The selected route contains duplicate stations. Repeating the same station in one route is not supported.")]);
+        }
+
+        var routeGeometry = RouteGeoJsonImportSupport.BuildRouteGeometry(
+            waterwaySegments.Select(segment => segment.Geometry).ToList(),
+            waypointPoints);
+        var distanceKm = (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2);
 
         var route = new Route
         {
             RouteCode = code,
             RouteName = request.RouteName.Trim(),
             Description = request.Description?.Trim(),
-            BaseDistanceKm = request.BaseDistanceKm,
+            BaseDistanceKm = distanceKm,
             EstimatedDurationMin = request.EstimatedDurationMin,
-            Status = "Active"
+            Status = "Active",
+            RouteGeometry = routeGeometry
         };
 
         _context.Set<Route>().Add(route);
+
+        for (var i = 0; i < routeStations.Count; i++)
+        {
+            var stopOrder = i + 1;
+            _context.Set<RouteStop>().Add(new RouteStop
+            {
+                RouteId = route.Id,
+                StationId = routeStations[i].Id,
+                StopOrder = stopOrder,
+                IsPickupAllowed = stopOrder < routeStations.Count,
+                IsDropoffAllowed = stopOrder > 1
+            });
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
-        return new RouteDto(route.Id, route.RouteCode, route.RouteName,
-            route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status);
+        return new RouteDto(
+            route.Id,
+            route.RouteCode,
+            route.RouteName,
+            route.Description,
+            route.BaseDistanceKm,
+            route.EstimatedDurationMin,
+            route.Status);
+    }
+
+    private static Point GetStationPoint(Station station, string propertyName)
+    {
+        if (station.Location is not null)
+        {
+            return new Point(station.Location.X, station.Location.Y) { SRID = 4326 };
+        }
+
+        if (station.Latitude.HasValue && station.Longitude.HasValue)
+        {
+            return new Point((double)station.Longitude.Value, (double)station.Latitude.Value) { SRID = 4326 };
+        }
+
+        throw new ValidationException([new ValidationFailure(
+            propertyName,
+            $"Station '{station.StationCode}' does not have a valid location.")]);
+    }
+}
+
+internal static class WaypointTypes
+{
+    public const string Station = "station";
+    public const string ViaWaterway = "viaWaterway";
+}
+
+internal sealed class CreateRouteWaypointDtoValidator : AbstractValidator<CreateRouteWaypointDto>
+{
+    public CreateRouteWaypointDtoValidator()
+    {
+        RuleFor(x => x.Type)
+            .NotEmpty()
+            .Must(type =>
+                string.Equals(type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase))
+            .WithMessage("Waypoint type must be either 'station' or 'viaWaterway'.");
+
+        When(x => string.Equals(x.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase), () =>
+        {
+            RuleFor(x => x.StationCode).NotEmpty().MaximumLength(50);
+            RuleFor(x => x.WaterwayOsmId).Empty();
+        });
+
+        When(x => string.Equals(x.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase), () =>
+        {
+            RuleFor(x => x.WaterwayOsmId).NotEmpty().MaximumLength(50);
+            RuleFor(x => x.StationCode).Empty();
+        });
     }
 }
