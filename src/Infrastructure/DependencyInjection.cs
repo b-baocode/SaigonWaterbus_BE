@@ -46,7 +46,6 @@ public static class DependencyInjection
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IVesselImageStorageService, CloudinaryVesselImageStorageService>();
-        builder.Services.AddSingleton<IGoogleLoginTempStore, InMemoryGoogleLoginTempStore>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddScoped<EsmsSmsSender>();

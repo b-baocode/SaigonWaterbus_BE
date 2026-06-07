@@ -32,14 +32,13 @@ public static class DependencyInjection
         builder.Services.AddScoped<ResendOtpRequestUseCase>();
         builder.Services.AddScoped<LoginRequestUseCase>();
         builder.Services.AddScoped<GoogleLoginRequestUseCase>();
-        builder.Services.AddScoped<SendGooglePhoneOtpRequestUseCase>();
-        builder.Services.AddScoped<VerifyGooglePhoneRequestUseCase>();
         builder.Services.AddScoped<RefreshTokenRequestUseCase>();
         builder.Services.AddScoped<LogoutRequestUseCase>();
         builder.Services.AddScoped<GetCurrentUserProfileRequestUseCase>();
         builder.Services.AddScoped<UpdateCurrentUserProfileRequestUseCase>();
         builder.Services.AddScoped<DeleteCurrentUserAccountRequestUseCase>();
         builder.Services.AddScoped<VerifyEmailChangeOtpRequestUseCase>();
+        builder.Services.AddScoped<VerifyPhoneChangeOtpRequestUseCase>();
         builder.Services.AddScoped<ForgotPasswordOtpRequestUseCase>();
         builder.Services.AddScoped<ResetPasswordRequestUseCase>();
         builder.Services.AddScoped<ChangePasswordRequestUseCase>();

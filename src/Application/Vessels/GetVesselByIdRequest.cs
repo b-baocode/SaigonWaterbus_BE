@@ -41,6 +41,10 @@ public sealed class GetVesselByIdRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        return VesselSupport.CreateDto(vessel);
+        var generatedSeatCount = await _context.Seats
+            .AsNoTracking()
+            .CountAsync(s => s.VesselId == vessel.Id, cancellationToken);
+
+        return VesselSupport.CreateDto(vessel, generatedSeatCount);
     }
 }

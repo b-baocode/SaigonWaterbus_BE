@@ -24,8 +24,6 @@ public sealed record VesselFacilityDto(
 
 public sealed record VesselSeatsDto(
     int VesselId,
-    string VesselCode,
-    string VesselName,
     int TotalSeats,
     int ConfiguredSeats,
     int ActiveSeats,
@@ -112,8 +110,6 @@ internal static class SeatSupport
 
         return new VesselSeatsDto(
             vessel.Id,
-            vessel.Code,
-            vessel.Name,
             vessel.SeatCount,
             seats.Count,
             activeSeats,

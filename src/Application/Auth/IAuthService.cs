@@ -20,10 +20,6 @@ public interface IAuthService
 
     Task<GoogleLoginResultDto> GoogleLoginAsync(GoogleLoginRequest request, CancellationToken cancellationToken);
 
-    Task<GooglePhoneOtpSentDto> SendGooglePhoneOtpAsync(SendGooglePhoneOtpRequest request, CancellationToken cancellationToken);
-
-    Task<AuthSessionDto> VerifyGooglePhoneAsync(VerifyGooglePhoneRequest request, CancellationToken cancellationToken);
-
     Task<AuthSessionDto> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken);
 
     Task LogoutAsync(CancellationToken cancellationToken);
@@ -35,6 +31,8 @@ public interface IAuthService
     Task<AuthActionResultDto> DeleteCurrentUserAccountAsync(CancellationToken cancellationToken);
 
     Task<AuthUserDto> VerifyEmailChangeOtpAsync(VerifyEmailChangeOtpRequest request, CancellationToken cancellationToken);
+
+    Task<AuthUserDto> VerifyPhoneChangeOtpAsync(VerifyPhoneChangeOtpRequest request, CancellationToken cancellationToken);
 
     Task<OtpChallengeDto> ForgotPasswordAsync(ForgotPasswordOtpRequest request, CancellationToken cancellationToken);
 

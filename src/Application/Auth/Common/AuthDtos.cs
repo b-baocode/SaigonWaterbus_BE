@@ -6,7 +6,7 @@ public sealed record AuthRoleDto(string Code, string SystemName, string DisplayN
 
 public sealed record AuthUserDto(
     int Id,
-    string? UserCode,
+    string? Code,
     string FullName,
     DateOnly? DateOfBirth,
     string? PhoneNumber,
@@ -28,9 +28,7 @@ public sealed record AuthSessionDto(AuthUserDto User, AuthTokensDto Tokens);
 public sealed record GoogleLoginResultDto(
     string Status,
     AuthUserDto? User = null,
-    AuthTokensDto? Tokens = null,
-    string? TempToken = null,
-    DateTimeOffset? TempTokenExpiresAt = null);
+    AuthTokensDto? Tokens = null);
 
 public sealed record AuthActionResultDto(string Message);
 
@@ -39,14 +37,8 @@ public sealed record UpdateProfileResultDto(
     OtpChallengeDto? EmailVerification = null,
     OtpChallengeDto? PhoneVerification = null);
 
-public sealed record GooglePhoneOtpSentDto(
-    string Status,
-    string MaskedPhone,
-    DateTimeOffset ExpiresAt,
-    DateTimeOffset ResendAvailableAt);
-
 public sealed record OtpChallengeDto(
-    int ChallengeId,
+    int Id,
     string MaskedEmail,
     DateTimeOffset ExpiresAt,
     DateTimeOffset ResendAvailableAt)

@@ -54,22 +54,6 @@ public class Auth : IEndpointGroup
         }
         """;
 
-    private const string GoogleSendPhoneOtpExample =
-        """
-        {
-          "tempToken": "google-temp-token",
-          "phone": "0901234567"
-        }
-        """;
-
-    private const string GoogleVerifyPhoneExample =
-        """
-        {
-          "tempToken": "google-temp-token",
-          "otp": "123456"
-        }
-        """;
-
     private const string RefreshTokenExample =
         """
         {
@@ -119,6 +103,14 @@ public class Auth : IEndpointGroup
         }
         """;
 
+    private const string VerifyPhoneChangeOtpExample =
+        """
+        {
+          "challengeId": 32,
+          "code": "123456"
+        }
+        """;
+
     public static string RoutePrefix => "/api/auth";
 
     public static void Map(RouteGroupBuilder groupBuilder)
@@ -132,7 +124,8 @@ public class Auth : IEndpointGroup
                 "Cần có ít nhất email hoặc số điện thoại.",
                 "Nếu chỉ có email thì OTP mặc định gửi về email.",
                 "Nếu chỉ có số điện thoại thì OTP mặc định gửi về SMS.",
-                "Nếu có cả email và số điện thoại thì OTP gửi về số điện thoại.",
+                "Nếu có cả email và số điện thoại thì frontend phải cho user chọn kênh và gửi otpChannel.",
+                "Do hệ thống xác thực số điện thoại khi đăng ký, otpChannel=phone là lựa chọn an toàn khi có số điện thoại.",
                 "Trả về challengeId để gọi /api/auth/verify-register-otp."));
 
         groupBuilder.MapPost(VerifyRegisterOtp, "verify-register-otp")
@@ -165,41 +158,22 @@ public class Auth : IEndpointGroup
                 "Tài khoản phải đã xác minh OTP.",
                 "Trả về thông tin user, access token và refresh token."));
 
-        groupBuilder.MapPost(GoogleLogin, "google-login")
+        groupBuilder.MapPost(GoogleLogin, "google/login")
             .WithSummary("Đăng nhập bằng Google")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 GoogleLoginExample,
-                "idToken lấy từ frontend sau khi đăng nhập Google.",
-                "User cũ đã active và có PhoneVerifiedAt sẽ được cấp token.",
-                "User mới hoặc user Google cũ chưa có PhoneVerifiedAt sẽ nhận status NEED_PHONE và tempToken.",
-                "Không tạo user mới và không cấp JWT khi chưa xác minh số điện thoại."));
-
-        groupBuilder.MapPost(SendGooglePhoneOtp, "google/send-phone-otp")
-            .WithSummary("Gửi OTP số điện thoại cho Google Login")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
-                GoogleSendPhoneOtpExample,
-                "Dùng tempToken trả về từ /api/auth/google-login.",
-                "Backend check phone chưa bị user khác dùng, sau đó gửi OTP.",
-                "Không tạo user và không cấp JWT ở bước này."));
-
-        groupBuilder.MapPost(VerifyGooglePhone, "google/verify-phone")
-            .WithSummary("Xác minh OTP Google Login và tạo user")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
-                GoogleVerifyPhoneExample,
-                "Dùng tempToken đã nhận ở bước gửi OTP.",
-                "Backend sử dụng số điện thoại đã lưu trong temp session, không cần gửi lại phone.",
-                "OTP đúng mới tạo hoặc hoàn tất user thật trong database.",
-                "Thành công cấp access token và refresh token."));
+                "Frontend gửi idToken sau khi đăng nhập Google.",
+                "User cũ sẽ được cấp token nếu tài khoản không bị khóa.",
+                "User mới sẽ được tạo tài khoản Customer Active bằng email Google và cấp token.",
+                "Không bắt buộc số điện thoại trong luồng Google login."));
 
         groupBuilder.MapPost(RefreshToken, "refresh-token")
             .WithSummary("Làm mới access token")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 RefreshTokenExample,
-                "Dùng refreshToken trả về từ endpoint login hoặc google-login.",
+                "Dùng refreshToken trả về từ /api/auth/login hoặc /api/auth/google/login.",
                 "Refresh token cũ sẽ bị revoke sau khi đổi token mới."));
 
         groupBuilder.MapPost(ForgotPassword, "forgot-password")
@@ -260,7 +234,8 @@ public class Auth : IEndpointGroup
                 "Có thể gửi application/json nếu không đổi ảnh.",
                 "Nếu đổi ảnh, gửi multipart/form-data với các field fullName, dateOfBirth, phoneNumber, email và file.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "Customer không được tự thay đổi phoneNumber; Admin hoặc Manager đổi số điện thoại customer qua API quản lý user.",
+                "User đăng nhập Google có thể thêm phoneNumber một lần và cần verify OTP.",
+                "Customer đăng ký thường không được tự thay đổi phoneNumber; Admin hoặc Manager đổi số điện thoại customer qua API quản lý user.",
                 "Nếu email thay đổi, backend gửi OTP tới email mới và chưa đổi email cho tới khi verify OTP."));
 
         groupBuilder.MapDelete(DeleteMe, "me")
@@ -281,6 +256,15 @@ public class Auth : IEndpointGroup
                 VerifyEmailChangeOtpExample,
                 "Dùng challengeId trả về từ PUT /api/auth/me khi thay đổi email.",
                 "Thành công sẽ cập nhật email mới."));
+
+        groupBuilder.MapPost(VerifyPhoneChangeOtp, "verify-phone-change-otp")
+            .RequireAuthorization()
+            .WithSummary("Xác thực số điện thoại mới")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                VerifyPhoneChangeOtpExample,
+                "Dùng challengeId trả về từ PUT /api/auth/me khi Google user thêm số điện thoại.",
+                "Thành công sẽ cập nhật phoneNumber và PhoneVerifiedAt."));
     }
 
     public static async Task<IResult> Register(
@@ -325,24 +309,6 @@ public class Auth : IEndpointGroup
         CancellationToken cancellationToken)
     {
         var result = await authService.GoogleLoginAsync(command, cancellationToken);
-        return Results.Ok(result);
-    }
-
-    public static async Task<IResult> SendGooglePhoneOtp(
-        IAuthService authService,
-        SendGooglePhoneOtpRequest command,
-        CancellationToken cancellationToken)
-    {
-        var result = await authService.SendGooglePhoneOtpAsync(command, cancellationToken);
-        return Results.Ok(result);
-    }
-
-    public static async Task<IResult> VerifyGooglePhone(
-        IAuthService authService,
-        VerifyGooglePhoneRequest command,
-        CancellationToken cancellationToken)
-    {
-        var result = await authService.VerifyGooglePhoneAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 
@@ -409,6 +375,15 @@ public class Auth : IEndpointGroup
         CancellationToken cancellationToken)
     {
         var result = await authService.VerifyEmailChangeOtpAsync(command, cancellationToken);
+        return Results.Ok(result);
+    }
+
+    public static async Task<IResult> VerifyPhoneChangeOtp(
+        IAuthService authService,
+        VerifyPhoneChangeOtpRequest command,
+        CancellationToken cancellationToken)
+    {
+        var result = await authService.VerifyPhoneChangeOtpAsync(command, cancellationToken);
         return Results.Ok(result);
     }
 

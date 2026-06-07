@@ -54,15 +54,14 @@ internal static class VesselSupport
             ? null
             : registrationNumber.Trim().ToUpperInvariant();
 
-    public static VesselDto CreateDto(Vessel vessel)
+    public static VesselDto CreateDto(Vessel vessel, int generatedSeatCount = 0)
     {
         var service = vessel.WaterbusService;
-        var serviceDto = new VesselWaterbusServiceDto(
-            service.Id,
-            service.Code,
-            service.Name,
-            service.Description,
-            service.IsActive);
+        var serviceDto = new VesselWaterbusServiceDto(service.Id, service.Code, service.Name);
+
+        var description = !string.IsNullOrWhiteSpace(vessel.Description)
+            ? vessel.Description
+            : service.Description;
 
         return new VesselDto(
             vessel.Id,
@@ -72,15 +71,13 @@ internal static class VesselSupport
             vessel.Name,
             vessel.Status,
             vessel.SeatCount,
+            generatedSeatCount,
             vessel.NumberOfDecks,
             vessel.SeatsConfigured,
             vessel.MaxSpeedKmh,
             vessel.YearBuilt,
-            vessel.ImageUrl,
-            vessel.Description,
-            string.IsNullOrWhiteSpace(vessel.Description)
-                ? service.Description
-                : vessel.Description);
+            vessel.ImageUrl ?? string.Empty,
+            description);
     }
 
     public static void EnsureValidImage(

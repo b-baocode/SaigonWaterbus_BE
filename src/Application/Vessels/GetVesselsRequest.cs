@@ -11,9 +11,7 @@ public sealed record GetVesselsRequest(
 public sealed record VesselWaterbusServiceDto(
     int Id,
     string Code,
-    string Name,
-    string? Description,
-    bool IsActive);
+    string Name);
 
 public sealed record VesselDto(
     int Id,
@@ -23,13 +21,13 @@ public sealed record VesselDto(
     string Name,
     VesselStatus Status,
     int SeatCount,
+    int GeneratedSeatCount,
     int NumberOfDecks,
     bool SeatsConfigured,
     int? MaxSpeedKmh,
     int? YearBuilt,
-    string? ImageUrl,
-    string? Description,
-    string? DisplayDescription);
+    string ImageUrl,
+    string? Description);
 
 public sealed class GetVesselsRequestValidator : AbstractValidator<GetVesselsRequest>
 {
@@ -100,6 +98,14 @@ public sealed class GetVesselsRequestUseCase
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        return vessels.Select(VesselSupport.CreateDto).ToArray();
+        var vesselIds = vessels.Select(v => v.Id).ToList();
+        var seatCounts = await _context.Seats
+            .AsNoTracking()
+            .Where(s => vesselIds.Contains(s.VesselId))
+            .GroupBy(s => s.VesselId)
+            .Select(g => new { VesselId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.VesselId, x => x.Count, cancellationToken);
+
+        return vessels.Select(v => VesselSupport.CreateDto(v, seatCounts.GetValueOrDefault(v.Id, 0))).ToArray();
     }
 }

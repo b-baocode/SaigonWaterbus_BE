@@ -40,6 +40,14 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                 Title = "The specified resource was not found.",
                 Detail = ne.Message
             }),
+            UnauthorizedAccessException uae when uae.Message.StartsWith("Google token is invalid:", StringComparison.Ordinal) =>
+                (StatusCodes.Status401Unauthorized, new ProblemDetails
+                {
+                    Status = StatusCodes.Status401Unauthorized,
+                    Title = "Unauthorized",
+                    Detail = uae.Message,
+                    Type = "https://tools.ietf.org/html/rfc9110#section-15.5.2"
+                }),
             UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, new ProblemDetails
             {
                 Status = StatusCodes.Status401Unauthorized,

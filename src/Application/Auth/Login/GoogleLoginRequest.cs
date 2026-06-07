@@ -1,6 +1,7 @@
 using Google.Apis.Auth;
 using Microsoft.Extensions.Configuration;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -14,7 +15,13 @@ public sealed class GoogleLoginRequestValidator : AbstractValidator<GoogleLoginR
 {
     public GoogleLoginRequestValidator()
     {
-        RuleFor(x => x.IdToken).NotEmpty();
+        RuleFor(x => x).Custom((request, context) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.IdToken))
+            {
+                context.AddFailure(nameof(GoogleLoginRequest.IdToken), "IdToken là bắt buộc.");
+            }
+        });
     }
 }
 
@@ -22,13 +29,10 @@ public sealed class GoogleLoginRequestUseCase
 {
     private const string GoogleProvider = "google";
     private const string LoggedInStatus = "LOGGED_IN";
-    private const string NeedPhoneStatus = "NEED_PHONE";
-    private static readonly TimeSpan TempSessionLifetime = TimeSpan.FromMinutes(15);
 
     private readonly IApplicationDbContext _context;
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ITokenService _tokenService;
-    private readonly IGoogleLoginTempStore _tempStore;
     private readonly IProfileImageStorageService _profileImageStorage;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserCodeGenerator _userCodeGenerator;
@@ -39,7 +43,6 @@ public sealed class GoogleLoginRequestUseCase
         IApplicationDbContext context,
         IIdentityNormalizer identityNormalizer,
         ITokenService tokenService,
-        IGoogleLoginTempStore tempStore,
         IProfileImageStorageService profileImageStorage,
         ISecretHasher secretHasher,
         IUserCodeGenerator userCodeGenerator,
@@ -49,7 +52,6 @@ public sealed class GoogleLoginRequestUseCase
         _context = context;
         _identityNormalizer = identityNormalizer;
         _tokenService = tokenService;
-        _tempStore = tempStore;
         _profileImageStorage = profileImageStorage;
         _secretHasher = secretHasher;
         _userCodeGenerator = userCodeGenerator;
@@ -93,12 +95,7 @@ public sealed class GoogleLoginRequestUseCase
         if (externalLogin is not null)
         {
             var linkedUser = externalLogin.User ?? throw new InvalidOperationException("User not found");
-            if (linkedUser.Status == UserStatus.Active && linkedUser.PhoneVerifiedAt is null)
-            {
-                return await CreateNeedPhoneResultAsync(payload, normalizedEmail, linkedUser.Id, now, cancellationToken);
-            }
-
-            AuthSupport.EnsureUserCanLogin(linkedUser, nameof(request.IdToken));
+            AuthSupport.EnsureUserCanLogin(linkedUser, nameof(request.IdToken), requireVerifiedPhone: false);
             return await CreateLoggedInResultAsync(linkedUser, payload, now, cancellationToken);
         }
 
@@ -107,17 +104,26 @@ public sealed class GoogleLoginRequestUseCase
 
         if (existingUser is not null)
         {
-            if (existingUser.Status == UserStatus.Active && existingUser.PhoneVerifiedAt is null)
+            if (existingUser.Status == UserStatus.PendingVerification)
             {
-                return await CreateNeedPhoneResultAsync(payload, normalizedEmail, existingUser.Id, now, cancellationToken);
+                existingUser.Status = UserStatus.Active;
+                await AuthSupport.RetirePendingOtpChallengesAsync(
+                    _context,
+                    existingUser.Id,
+                    OtpPurpose.Register,
+                    now,
+                    cancellationToken);
+            }
+            else
+            {
+                AuthSupport.EnsureUserCanLogin(existingUser, nameof(request.IdToken), requireVerifiedPhone: false);
             }
 
-            AuthSupport.EnsureUserCanLogin(existingUser, nameof(request.IdToken));
             AddExternalLogin(existingUser, payload, now);
             return await CreateLoggedInResultAsync(existingUser, payload, now, cancellationToken);
         }
 
-        return await CreateNeedPhoneResultAsync(payload, normalizedEmail, null, now, cancellationToken);
+        return await CreateNewGoogleUserLoggedInResultAsync(payload, normalizedEmail, now, cancellationToken);
     }
 
     private async Task<GoogleJsonWebSignature.Payload> ValidateGoogleTokenAsync(string idToken)
@@ -137,33 +143,32 @@ public sealed class GoogleLoginRequestUseCase
         }
     }
 
-    private async Task<GoogleLoginResultDto> CreateNeedPhoneResultAsync(
+    private async Task<GoogleLoginResultDto> CreateNewGoogleUserLoggedInResultAsync(
         GoogleJsonWebSignature.Payload payload,
         string normalizedEmail,
-        int? existingUserId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var tempToken = _tokenService.GenerateRefreshTokenSecret();
-        var expiresAt = now.Add(TempSessionLifetime);
-
-        await _tempStore.SaveAsync(
-            new GoogleLoginTempSession(
-                tempToken,
-                existingUserId,
-                payload.Subject,
-                payload.Email,
-                normalizedEmail,
-                payload.Name,
-                payload.Picture,
-                now,
-                expiresAt),
+        var customerRole = await AuthSupport.GetRoleByCodeAsync(
+            _context,
+            Roles.CustomerCode,
             cancellationToken);
 
-        return new GoogleLoginResultDto(
-            NeedPhoneStatus,
-            TempToken: tempToken,
-            TempTokenExpiresAt: expiresAt);
+        var user = new User
+        {
+            UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, cancellationToken),
+            FullName = string.IsNullOrWhiteSpace(payload.Name) ? "Google User" : payload.Name.Trim(),
+            Email = payload.Email,
+            NormalizedEmail = normalizedEmail,
+            RoleId = customerRole.Id,
+            Status = UserStatus.Active
+        };
+
+        _context.Set<User>().Add(user);
+        AddExternalLogin(user, payload, now);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await CreateLoggedInResultAsync(user, payload, now, cancellationToken);
     }
 
     private async Task<GoogleLoginResultDto> CreateLoggedInResultAsync(
@@ -193,17 +198,24 @@ public sealed class GoogleLoginRequestUseCase
         if (!string.IsNullOrWhiteSpace(payload.Picture)
             && user.AvatarSource != AvatarSource.Upload)
         {
-            var importedAvatar = await _profileImageStorage.ImportAvatarFromUrlAsync(
-                new ProfileImageUrlImport(
-                    user.Id,
-                    payload.Picture,
-                    "google-avatar.jpg"),
-                cancellationToken);
+            try
+            {
+                var importedAvatar = await _profileImageStorage.ImportAvatarFromUrlAsync(
+                    new ProfileImageUrlImport(
+                        user.Id,
+                        payload.Picture,
+                        "google-avatar.jpg"),
+                    cancellationToken);
 
-            user.AvatarUrl = importedAvatar.Url;
-            user.AvatarPublicId = importedAvatar.PublicId;
-            user.AvatarSource = AvatarSource.Google;
-            user.AvatarUpdatedAt = now;
+                user.AvatarUrl = importedAvatar.Url;
+                user.AvatarPublicId = importedAvatar.PublicId;
+                user.AvatarSource = AvatarSource.Google;
+                user.AvatarUpdatedAt = now;
+            }
+            catch (ProfileImageStorageException)
+            {
+                // Avatar import thất bại không block login
+            }
         }
 
         user.LastLoginAt = now;
@@ -245,7 +257,7 @@ public sealed class GoogleLoginRequestUseCase
     {
         _context.Set<ExternalLogin>().Add(new ExternalLogin
         {
-            UserId = user.Id,
+            User = user,
             Provider = GoogleProvider,
             ProviderUserId = payload.Subject,
             Email = payload.Email,

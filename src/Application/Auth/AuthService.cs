@@ -17,14 +17,13 @@ public sealed class AuthService : IAuthService
     private readonly ResendOtpRequestUseCase _resendOtp;
     private readonly LoginRequestUseCase _login;
     private readonly GoogleLoginRequestUseCase _googleLogin;
-    private readonly SendGooglePhoneOtpRequestUseCase _sendGooglePhoneOtp;
-    private readonly VerifyGooglePhoneRequestUseCase _verifyGooglePhone;
     private readonly RefreshTokenRequestUseCase _refreshToken;
     private readonly LogoutRequestUseCase _logout;
     private readonly GetCurrentUserProfileRequestUseCase _getCurrentUserProfile;
     private readonly UpdateCurrentUserProfileRequestUseCase _updateCurrentUserProfile;
     private readonly DeleteCurrentUserAccountRequestUseCase _deleteCurrentUserAccount;
     private readonly VerifyEmailChangeOtpRequestUseCase _verifyEmailChangeOtp;
+    private readonly VerifyPhoneChangeOtpRequestUseCase _verifyPhoneChangeOtp;
     private readonly ForgotPasswordOtpRequestUseCase _forgotPassword;
     private readonly ResetPasswordRequestUseCase _resetPassword;
     private readonly ChangePasswordRequestUseCase _changePassword;
@@ -36,14 +35,13 @@ public sealed class AuthService : IAuthService
         ResendOtpRequestUseCase resendOtp,
         LoginRequestUseCase login,
         GoogleLoginRequestUseCase googleLogin,
-        SendGooglePhoneOtpRequestUseCase sendGooglePhoneOtp,
-        VerifyGooglePhoneRequestUseCase verifyGooglePhone,
         RefreshTokenRequestUseCase refreshToken,
         LogoutRequestUseCase logout,
         GetCurrentUserProfileRequestUseCase getCurrentUserProfile,
         UpdateCurrentUserProfileRequestUseCase updateCurrentUserProfile,
         DeleteCurrentUserAccountRequestUseCase deleteCurrentUserAccount,
         VerifyEmailChangeOtpRequestUseCase verifyEmailChangeOtp,
+        VerifyPhoneChangeOtpRequestUseCase verifyPhoneChangeOtp,
         ForgotPasswordOtpRequestUseCase forgotPassword,
         ResetPasswordRequestUseCase resetPassword,
         ChangePasswordRequestUseCase changePassword)
@@ -54,14 +52,13 @@ public sealed class AuthService : IAuthService
         _resendOtp = resendOtp;
         _login = login;
         _googleLogin = googleLogin;
-        _sendGooglePhoneOtp = sendGooglePhoneOtp;
-        _verifyGooglePhone = verifyGooglePhone;
         _refreshToken = refreshToken;
         _logout = logout;
         _getCurrentUserProfile = getCurrentUserProfile;
         _updateCurrentUserProfile = updateCurrentUserProfile;
         _deleteCurrentUserAccount = deleteCurrentUserAccount;
         _verifyEmailChangeOtp = verifyEmailChangeOtp;
+        _verifyPhoneChangeOtp = verifyPhoneChangeOtp;
         _forgotPassword = forgotPassword;
         _resetPassword = resetPassword;
         _changePassword = changePassword;
@@ -97,18 +94,6 @@ public sealed class AuthService : IAuthService
         return await _googleLogin.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<GooglePhoneOtpSentDto> SendGooglePhoneOtpAsync(SendGooglePhoneOtpRequest request, CancellationToken cancellationToken)
-    {
-        await _validator.ValidateAsync(request, cancellationToken);
-        return await _sendGooglePhoneOtp.ExecuteAsync(request, cancellationToken);
-    }
-
-    public async Task<AuthSessionDto> VerifyGooglePhoneAsync(VerifyGooglePhoneRequest request, CancellationToken cancellationToken)
-    {
-        await _validator.ValidateAsync(request, cancellationToken);
-        return await _verifyGooglePhone.ExecuteAsync(request, cancellationToken);
-    }
-
     public async Task<AuthSessionDto> RefreshTokenAsync(RefreshTokenRequest request, CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
@@ -136,6 +121,12 @@ public sealed class AuthService : IAuthService
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _verifyEmailChangeOtp.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<AuthUserDto> VerifyPhoneChangeOtpAsync(VerifyPhoneChangeOtpRequest request, CancellationToken cancellationToken)
+    {
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _verifyPhoneChangeOtp.ExecuteAsync(request, cancellationToken);
     }
 
     public async Task<OtpChallengeDto> ForgotPasswordAsync(ForgotPasswordOtpRequest request, CancellationToken cancellationToken)
