@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.OpenApi;
+using Microsoft.OpenApi.Any;
+using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.WaterbusServices;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -62,7 +65,8 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin",
                 CreateServiceExample,
                 "Code nên ngắn gọn, ví dụ PUBLIC hoặc TOURIST.",
-                "Dữ liệu được lưu trong database, không seed cứng trong code."));
+                "Dữ liệu được lưu trong database, không seed cứng trong code."))
+            .WithOpenApi(op => SetBodyExample(op, CreateServiceExample));
 
         groupBuilder.MapPut(UpdateWaterbusService, "{serviceId:int}")
             .RequireAuthorization()
@@ -71,7 +75,8 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin",
                 UpdateServiceExample,
                 "Chỉ field nào gửi lên mới được cập nhật.",
-                "Code được chuẩn hóa thành chữ in hoa."));
+                "Code được chuẩn hóa thành chữ in hoa."))
+            .WithOpenApi(op => SetBodyExample(op, UpdateServiceExample));
 
         groupBuilder.MapPatch(UpdateWaterbusServiceStatus, "status/{serviceId:int}")
             .RequireAuthorization()
@@ -80,7 +85,8 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin",
                 UpdateStatusExample,
                 "isActive=true để hiện, false để ẩn.",
-                "Dịch vụ bị ẩn vẫn hiện với Admin, nhưng không hiện với Manager và Staff."));
+                "Dịch vụ bị ẩn vẫn hiện với Admin, nhưng không hiện với Manager và Staff."))
+            .WithOpenApi(op => SetBodyExample(op, UpdateStatusExample));
 
         groupBuilder.MapDelete(DeleteWaterbusService, "{serviceId:int}")
             .RequireAuthorization()
@@ -162,4 +168,13 @@ public sealed class WaterbusServices : IEndpointGroup
 
     public sealed record UpdateWaterbusServiceStatusApiRequest(
         bool IsActive);
+
+    private static OpenApiOperation SetBodyExample(OpenApiOperation op, string exampleJson)
+    {
+        var content = op.RequestBody?.Content;
+        if (content is null) return op;
+        foreach (var ct in content.Values)
+            ct.Example = new OpenApiString(exampleJson.Trim());
+        return op;
+    }
 }

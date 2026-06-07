@@ -43,7 +43,9 @@ public sealed class DeleteSeatRequestUseCase
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy ghế.");
 
         _context.Seats.Remove(seat);
-        vessel.SeatsConfigured = false;
+        var remainingCount = await _context.Seats
+            .CountAsync(x => x.VesselId == vessel.Id && x.Id != seat.Id, cancellationToken);
+        vessel.SeatsConfigured = remainingCount == vessel.SeatCount;
         await _context.SaveChangesAsync(cancellationToken);
 
         return new AuthActionResultDto("Xóa ghế thành công.");

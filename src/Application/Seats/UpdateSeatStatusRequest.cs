@@ -41,12 +41,7 @@ public sealed class UpdateSeatStatusRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.SeatId && x.VesselId == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy ghế.");
 
-        if (request.IsActive is null)
-            throw SaigonWaterbus.Application.Auth.Common.AuthSupport.CreateValidationException(
-                nameof(request.IsActive),
-                "Trạng thái ghế là bắt buộc.");
-
-        seat.IsActive = request.IsActive.Value;
+        seat.IsActive = request.IsActive!.Value;
         await _context.SaveChangesAsync(cancellationToken);
 
         return new SeatDto(seat.Id, seat.Code, seat.Deck, seat.Row, seat.Column, seat.IsActive);

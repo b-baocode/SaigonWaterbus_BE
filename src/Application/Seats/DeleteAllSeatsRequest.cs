@@ -34,22 +34,16 @@ public sealed class DeleteAllSeatsRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        var seats = await _context.Seats
-            .Where(x => x.VesselId == vessel.Id)
-            .ToListAsync(cancellationToken);
-        var deckLayouts = await _context.VesselDeckLayouts
-            .Where(x => x.VesselId == vessel.Id)
-            .ToListAsync(cancellationToken);
-        var facilities = await _context.VesselFacilities
-            .Where(x => x.VesselId == vessel.Id)
-            .ToListAsync(cancellationToken);
+        var hasAny = await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
+            || await _context.VesselDeckLayouts.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
+            || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
 
-        if (seats.Count == 0 && deckLayouts.Count == 0 && facilities.Count == 0)
+        if (!hasAny)
             throw AuthSupport.CreateValidationException("Seats", "Tàu chưa có sơ đồ ghế nào.");
 
-        _context.Seats.RemoveRange(seats);
-        _context.VesselDeckLayouts.RemoveRange(deckLayouts);
-        _context.VesselFacilities.RemoveRange(facilities);
+        await _context.Seats.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
+        await _context.VesselDeckLayouts.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
+        await _context.VesselFacilities.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
         vessel.SeatsConfigured = false;
         await _context.SaveChangesAsync(cancellationToken);
 

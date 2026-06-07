@@ -1,3 +1,6 @@
+using Microsoft.AspNetCore.OpenApi;
+using Microsoft.OpenApi.Any;
+using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.Seats;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -69,7 +72,8 @@ public sealed class Seats : IEndpointGroup
                 "Facilities dùng để setup tiện ích như Toilet, không tính vào số ghế.",
                 "Toilet phải chiếm đúng 2 ô: rowSpan=1,columnSpan=2 hoặc rowSpan=2,columnSpan=1.",
                 "Nếu tàu đã có ghế, phải xóa toàn bộ trước khi generate lại.",
-                "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."));
+                "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."))
+            .WithOpenApi(op => SetBodyExample(op, GenerateExample));
 
         groupBuilder.MapDelete(DeleteAllSeats, "{vesselId:int}/seats")
             .RequireAuthorization()
@@ -87,7 +91,8 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 UpdateSeatExample,
                 "Chỉ cho phép đổi mã ghế (Code).",
-                "Mã ghế phải là duy nhất trong cùng một tàu."));
+                "Mã ghế phải là duy nhất trong cùng một tàu."))
+            .WithOpenApi(op => SetBodyExample(op, UpdateSeatExample));
 
         groupBuilder.MapPatch(UpdateSeatStatus, "{vesselId:int}/seats/{seatId:int}/status")
             .RequireAuthorization()
@@ -96,7 +101,8 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 UpdateStatusExample,
                 "isActive=false để vô hiệu hóa ghế (ghế hỏng, bảo trì...).",
-                "Ghế bị tắt sẽ không thể đặt vé."));
+                "Ghế bị tắt sẽ không thể đặt vé."))
+            .WithOpenApi(op => SetBodyExample(op, UpdateStatusExample));
 
         groupBuilder.MapDelete(DeleteSeat, "{vesselId:int}/seats/{seatId:int}")
             .RequireAuthorization()
@@ -161,4 +167,13 @@ public sealed class Seats : IEndpointGroup
     private sealed record UpdateSeatApiRequest(string? Code = null);
 
     private sealed record UpdateSeatStatusApiRequest(bool? IsActive);
+
+    private static OpenApiOperation SetBodyExample(OpenApiOperation op, string exampleJson)
+    {
+        var content = op.RequestBody?.Content;
+        if (content is null) return op;
+        foreach (var ct in content.Values)
+            ct.Example = new OpenApiString(exampleJson.Trim());
+        return op;
+    }
 }
