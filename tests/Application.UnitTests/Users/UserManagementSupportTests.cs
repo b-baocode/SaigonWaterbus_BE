@@ -29,8 +29,8 @@ public class UserManagementSupportTests
     }
 
     [TestCase(Roles.ManagerSystemName)]
-    [TestCase(Roles.AdminSystemName)]
-    public void ManagerCannotCreateManagerOrAdminSystem(string targetSystemName)
+    [TestCase(Roles.AdminName)]
+    public void ManagerCannotCreateManagerOrAdmin(string targetSystemName)
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var targetRole = Role(targetSystemName);
@@ -42,19 +42,19 @@ public class UserManagementSupportTests
     [Test]
     public void AdminCanCreateManager()
     {
-        var actor = UserWithRole(1, Roles.AdminSystemName);
+        var actor = UserWithRole(1, Roles.AdminName);
         var targetRole = Role(Roles.ManagerSystemName);
 
         Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
     }
 
-    [TestCase(Roles.AdminSystemName)]
+    [TestCase(Roles.AdminName)]
     [TestCase(Roles.CustomerSystemName)]
     [TestCase(Roles.StaffSystemName)]
     [TestCase(Roles.CustomerSystemName)]
     public void AdminCannotCreateNonManagerRoles(string targetSystemName)
     {
-        var actor = UserWithRole(1, Roles.AdminSystemName);
+        var actor = UserWithRole(1, Roles.AdminName);
         var targetRole = Role(targetSystemName);
 
         Should.Throw<ValidationException>(() =>
@@ -74,8 +74,8 @@ public class UserManagementSupportTests
     }
 
     [TestCase(Roles.ManagerSystemName)]
-    [TestCase(Roles.AdminSystemName)]
-    public void ManagerCannotViewUpdateOrDeleteManagerOrAdminSystem(string targetSystemName)
+    [TestCase(Roles.AdminName)]
+    public void ManagerCannotViewUpdateOrDeleteManagerOrAdmin(string targetSystemName)
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var target = UserWithRole(2, targetSystemName);
@@ -107,8 +107,8 @@ public class UserManagementSupportTests
     }
 
     [TestCase(Roles.ManagerSystemName)]
-    [TestCase(Roles.AdminSystemName)]
-    public void ManagerCannotAssignManagerOrAdminSystemRoles(string targetRoleSystemName)
+    [TestCase(Roles.AdminName)]
+    public void ManagerCannotAssignManagerOrAdminRoles(string targetRoleSystemName)
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var target = UserWithRole(2, Roles.StaffSystemName);
@@ -118,8 +118,8 @@ public class UserManagementSupportTests
     }
 
     [TestCase(Roles.ManagerSystemName)]
-    [TestCase(Roles.AdminSystemName)]
-    public void ManagerCannotAssignRoleToManagerOrAdminSystemTarget(string targetSystemName)
+    [TestCase(Roles.AdminName)]
+    public void ManagerCannotAssignRoleToManagerOrAdminTarget(string targetSystemName)
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var target = UserWithRole(2, targetSystemName);
@@ -131,23 +131,23 @@ public class UserManagementSupportTests
     [Test]
     public void AdminCanAssignManagerRole()
     {
-        var actor = UserWithRole(1, Roles.AdminSystemName);
+        var actor = UserWithRole(1, Roles.AdminName);
         var target = UserWithRole(2, Roles.StaffSystemName);
 
         Should.NotThrow(() =>
             UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.ManagerSystemName), "roleId"));
     }
 
-    [TestCase(Roles.AdminSystemName)]
+    [TestCase(Roles.AdminName)]
     [TestCase(Roles.StaffSystemName)]
     [TestCase(Roles.CustomerSystemName)]
     public void AdminCannotAssignNonManagerRoles(string targetRoleSystemName)
     {
-        var actor = UserWithRole(1, Roles.AdminSystemName);
+        var actor = UserWithRole(1, Roles.AdminName);
         var target = UserWithRole(2, Roles.StaffSystemName);
 
         Should.Throw<ValidationException>(() =>
-            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.AdminSystemName), "roleId"));
+            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.AdminName), "roleId"));
     }
 
     [Test]
@@ -171,12 +171,12 @@ public class UserManagementSupportTests
     private static Role Role(string systemName) =>
         systemName switch
         {
-            Roles.AdminSystemName => new Role
+            Roles.AdminName => new Role
             {
                 Id = 1,
-                Code = Roles.AdminSystemCode,
-                SystemName = Roles.AdminSystemName,
-                DisplayName = "Admin System"
+                Code = Roles.AdminCode,
+                SystemName = Roles.AdminName,
+                DisplayName = "Admin"
             },
             Roles.ManagerSystemName => new Role
             {

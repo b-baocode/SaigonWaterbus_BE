@@ -41,7 +41,7 @@ public class WaterbusServiceSupportTests
     [Test]
     public void ApplyVisibilityFilterAllowsAdminToSeeInactiveServicesForGetAll()
     {
-        var admin = UserWithRole(Roles.AdminSystemName);
+        var admin = UserWithRole(Roles.AdminName);
         var services = new[]
         {
             WaterbusService(1, "PUBLIC", true),
@@ -58,7 +58,7 @@ public class WaterbusServiceSupportTests
     [Test]
     public void ApplyVisibilityFilterCanHideInactiveServicesWhenAdminRequestsActiveOnly()
     {
-        var admin = UserWithRole(Roles.AdminSystemName);
+        var admin = UserWithRole(Roles.AdminName);
         var services = new[]
         {
             WaterbusService(1, "PUBLIC", true),

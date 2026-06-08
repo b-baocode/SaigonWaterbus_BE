@@ -4,15 +4,15 @@ public static class Roles
 {
     public const string CustomerCode = "CU01";
     public const string ManagerCode = "MG01";
-    public const string AdminSystemCode = "AD01";
+    public const string AdminCode = "AD01";
     public const string StaffCode = "ST01";
 
     public const string CustomerSystemName = "CUSTOMER";
     public const string ManagerSystemName = "MANAGER";
-    public const string AdminSystemName = "ADMIN_SYSTEM";
+    public const string AdminName = "ADMIN";
     public const string StaffSystemName = "STAFF";
 
-    public const string Administrator = AdminSystemCode;
+    public const string Administrator = AdminCode;
     public const string Manager = ManagerCode;
     public const string Staff = StaffCode;
     public const string Customer = CustomerCode;
@@ -21,7 +21,7 @@ public static class Roles
     [
         new(CustomerCode, CustomerSystemName, "Customer"),
         new(ManagerCode, ManagerSystemName, "Manager"),
-        new(AdminSystemCode, AdminSystemName, "Admin System"),
+        new(AdminCode, AdminName, "Admin"),
         new(StaffCode, StaffSystemName, "Staff")
     ];
 }

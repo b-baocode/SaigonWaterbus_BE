@@ -13,7 +13,7 @@ public static class UserCodes
     {
         Roles.CustomerCode => CustomerPrefix,
         Roles.ManagerCode => ManagerPrefix,
-        Roles.AdminSystemCode => AdminPrefix,
+        Roles.AdminCode => AdminPrefix,
         Roles.StaffCode => StaffPrefix,
         _ => throw new ArgumentOutOfRangeException(nameof(roleCode), roleCode, "Role code does not support user codes.")
     };

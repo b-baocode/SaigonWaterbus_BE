@@ -31,7 +31,7 @@ public class ApplicationDbContextInitialiser
     private static readonly SeedUser[] InternalUsers =
     [
         new(
-            Roles.AdminSystemCode,
+            Roles.AdminCode,
             "AD0000001",
             "System Administrator",
             "admin@saigonwaterbus.local",

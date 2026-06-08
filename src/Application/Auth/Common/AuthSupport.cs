@@ -309,7 +309,8 @@ internal static class AuthSupport
     }
 
     public static bool IsAdmin(User user) =>
-        string.Equals(user.Role.SystemName, Roles.AdminSystemName, StringComparison.Ordinal);
+        string.Equals(user.Role.Code, Roles.AdminCode, StringComparison.Ordinal)
+        || string.Equals(user.Role.SystemName, Roles.AdminName, StringComparison.Ordinal);
 
     public static bool IsManager(User user) =>
         string.Equals(user.Role.SystemName, Roles.ManagerSystemName, StringComparison.Ordinal);
