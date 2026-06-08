@@ -3,14 +3,14 @@ using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record DeleteAllSeatsRequest(int VesselId);
+public sealed record DeleteAllSeatsRequest(Guid VesselId);
 
 public sealed class DeleteAllSeatsRequestValidator : AbstractValidator<DeleteAllSeatsRequest>
 {
     public DeleteAllSeatsRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
     }
 }

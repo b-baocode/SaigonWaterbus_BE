@@ -57,7 +57,7 @@ internal static class VesselSupport
     public static VesselDto CreateDto(Vessel vessel, int generatedSeatCount = 0)
     {
         var service = vessel.WaterbusService;
-        var serviceDto = new VesselWaterbusServiceDto(service.Id, service.Code, service.Name);
+        var serviceDto = new VesselServiceDto(service.Id, service.Code, service.Name);
 
         var description = !string.IsNullOrWhiteSpace(vessel.Description)
             ? vessel.Description
@@ -65,18 +65,18 @@ internal static class VesselSupport
 
         return new VesselDto(
             vessel.Id,
-            serviceDto,
             vessel.Code,
-            vessel.RegistrationNumber,
             vessel.Name,
+            vessel.RegistrationNumber,
             vessel.Status,
+            serviceDto,
             vessel.SeatCount,
             generatedSeatCount,
-            vessel.NumberOfDecks,
             vessel.SeatsConfigured,
+            vessel.NumberOfDecks,
             vessel.MaxSpeedKmh,
             vessel.YearBuilt,
-            vessel.ImageUrl ?? string.Empty,
+            vessel.ImageUrl,
             description);
     }
 

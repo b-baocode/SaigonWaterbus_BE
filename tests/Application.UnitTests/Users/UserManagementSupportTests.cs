@@ -163,7 +163,7 @@ public class UserManagementSupportTests
     private static User UserWithRole(int id, string systemName) =>
         new()
         {
-            Id = id,
+            Id = TestGuid(id),
             FullName = $"{systemName} User",
             Role = Role(systemName)
         };
@@ -173,32 +173,35 @@ public class UserManagementSupportTests
         {
             Roles.AdminName => new Role
             {
-                Id = 1,
+                Id = TestGuid(101),
                 Code = Roles.AdminCode,
                 SystemName = Roles.AdminName,
                 DisplayName = "Admin"
             },
             Roles.ManagerSystemName => new Role
             {
-                Id = 2,
+                Id = TestGuid(102),
                 Code = Roles.ManagerCode,
                 SystemName = Roles.ManagerSystemName,
                 DisplayName = "Manager"
             },
             Roles.StaffSystemName => new Role
             {
-                Id = 3,
+                Id = TestGuid(103),
                 Code = Roles.StaffCode,
                 SystemName = Roles.StaffSystemName,
                 DisplayName = "Staff"
             },
             Roles.CustomerSystemName => new Role
             {
-                Id = 4,
+                Id = TestGuid(104),
                 Code = Roles.CustomerCode,
                 SystemName = Roles.CustomerSystemName,
                 DisplayName = "Customer"
             },
             _ => throw new ArgumentOutOfRangeException(nameof(systemName), systemName, null)
         };
+
+    private static Guid TestGuid(int id) =>
+        Guid.Parse($"00000000-0000-0000-0000-{id:000000000000}");
 }

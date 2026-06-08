@@ -5,14 +5,14 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Users;
 
-public sealed record DeleteUserRequest(int UserId);
+public sealed record DeleteUserRequest(Guid UserId);
 
 public sealed class DeleteUserRequestValidator : AbstractValidator<DeleteUserRequest>
 {
     public DeleteUserRequestValidator()
     {
         RuleFor(x => x.UserId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("UserId không hợp lệ.");
     }
 }

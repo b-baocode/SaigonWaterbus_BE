@@ -2,13 +2,13 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class AuditLog : BaseEntity
 {
-    public int? ActorUserId { get; set; }
+    public Guid? ActorUserId { get; set; }
 
     public string Action { get; set; } = null!;
 
     public string TargetTable { get; set; } = null!;
 
-    public int? TargetId { get; set; }
+    public Guid? TargetId { get; set; }
 
     public string? OldValues { get; set; }
 

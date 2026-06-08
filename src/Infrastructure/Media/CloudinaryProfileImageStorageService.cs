@@ -40,7 +40,7 @@ internal sealed class CloudinaryProfileImageStorageService : IProfileImageStorag
     }
 
     private async Task<StoredProfileImage> UploadAvatarFileAsync(
-        int userId,
+        Guid userId,
         FileDescription file,
         CancellationToken cancellationToken)
     {

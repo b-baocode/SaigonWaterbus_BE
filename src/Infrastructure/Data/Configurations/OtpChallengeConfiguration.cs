@@ -11,7 +11,8 @@ public sealed class OtpChallengeConfiguration : IEntityTypeConfiguration<OtpChal
         builder.ToTable("otp_challenges");
 
         builder.Property(x => x.Purpose)
-            .HasConversion<int>();
+            .HasConversion<string>()
+            .HasMaxLength(32);
 
         builder.Property(x => x.Email)
             .HasMaxLength(255)

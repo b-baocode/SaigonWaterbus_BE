@@ -6,6 +6,8 @@ namespace SaigonWaterbus.Application.UnitTests.WaterbusServices;
 
 public class WaterbusServiceRequestValidatorTests
 {
+    private static readonly Guid ServiceId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+
     [Test]
     public void CreateRejectsInvalidCode()
     {
@@ -39,7 +41,7 @@ public class WaterbusServiceRequestValidatorTests
     {
         var validator = new UpdateWaterbusServiceStatusRequestValidator();
 
-        var result = validator.Validate(new UpdateWaterbusServiceStatusRequest(0, false));
+        var result = validator.Validate(new UpdateWaterbusServiceStatusRequest(Guid.Empty, false));
 
         result.IsValid.ShouldBeFalse();
         result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateWaterbusServiceStatusRequest.ServiceId));
@@ -51,7 +53,7 @@ public class WaterbusServiceRequestValidatorTests
         var validator = new UpdateWaterbusServiceRequestValidator();
 
         var result = validator.Validate(new UpdateWaterbusServiceRequest(
-            1,
+            ServiceId,
             Name: " "));
 
         result.IsValid.ShouldBeFalse();

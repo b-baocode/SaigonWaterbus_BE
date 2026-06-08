@@ -3,18 +3,18 @@ using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record UpdateSeatRequest(int VesselId, int SeatId, string? Code);
+public sealed record UpdateSeatRequest(Guid VesselId, Guid SeatId, string? Code);
 
 public sealed class UpdateSeatRequestValidator : AbstractValidator<UpdateSeatRequest>
 {
     public UpdateSeatRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.SeatId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("SeatId không hợp lệ.");
 
         RuleFor(x => x.Code)

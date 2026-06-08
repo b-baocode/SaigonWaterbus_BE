@@ -3,7 +3,7 @@ using SaigonWaterbus.Application.Common.Interfaces;
 namespace SaigonWaterbus.Application.WaterbusServices;
 
 public sealed record UpdateWaterbusServiceStatusRequest(
-    int ServiceId,
+    Guid ServiceId,
     bool IsActive);
 
 public sealed class UpdateWaterbusServiceStatusRequestValidator : AbstractValidator<UpdateWaterbusServiceStatusRequest>
@@ -11,7 +11,7 @@ public sealed class UpdateWaterbusServiceStatusRequestValidator : AbstractValida
     public UpdateWaterbusServiceStatusRequestValidator()
     {
         RuleFor(x => x.ServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("ServiceId không hợp lệ.");
     }
 }

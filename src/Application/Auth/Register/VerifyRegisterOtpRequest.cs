@@ -6,14 +6,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Register;
 
-public sealed record VerifyRegisterOtpRequest(int ChallengeId, string Code);
+public sealed record VerifyRegisterOtpRequest(Guid ChallengeId, string Code);
 
 public sealed class VerifyRegisterOtpRequestValidator : AbstractValidator<VerifyRegisterOtpRequest>
 {
     public VerifyRegisterOtpRequestValidator()
     {
         RuleFor(x => x.ChallengeId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Mã xác thực không hợp lệ.");
 
         RuleFor(x => x.Code)
@@ -111,9 +111,9 @@ public sealed class VerifyRegisterOtpRequestUseCase
                 ct);
             user.RoleId = customerRole.Id;
 
-            if (!UserCodes.HasPrefix(user.UserCode, UserCodes.CustomerPrefix))
+            if (!UserCodes.HasPrefix(user.Code, UserCodes.CustomerPrefix))
             {
-                user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, ct);
+                user.Code = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, ct);
             }
 
             await _context.SaveChangesAsync(ct);

@@ -2,7 +2,7 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class Seat : BaseAuditableEntity
 {
-    public int VesselId { get; set; }
+    public Guid VesselId { get; set; }
 
     public Vessel Vessel { get; set; } = null!;
 

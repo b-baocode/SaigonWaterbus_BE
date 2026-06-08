@@ -6,7 +6,7 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record CreateVesselRequest(
-    int WaterbusServiceId,
+    Guid WaterbusServiceId,
     string Code,
     string Name,
     VesselStatus Status,
@@ -27,7 +27,7 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
     public CreateVesselRequestValidator()
     {
         RuleFor(x => x.WaterbusServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Dịch vụ WaterBus là bắt buộc.");
 
         RuleFor(x => x.Code)

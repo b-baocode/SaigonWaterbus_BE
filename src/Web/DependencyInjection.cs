@@ -59,6 +59,35 @@ public static class DependencyInjection
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtOptions.SigningKey)),
                     ClockSkew = TimeSpan.Zero
                 };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnChallenge = async context =>
+                    {
+                        context.HandleResponse();
+                        context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        context.Response.ContentType = "application/problem+json";
+
+                        await context.Response.WriteAsJsonAsync(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status401Unauthorized,
+                            Title = "Unauthorized",
+                            Type = "https://tools.ietf.org/html/rfc9110#section-15.5.2"
+                        }, context.HttpContext.RequestAborted);
+                    },
+                    OnForbidden = async context =>
+                    {
+                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                        context.Response.ContentType = "application/problem+json";
+
+                        await context.Response.WriteAsJsonAsync(new ProblemDetails
+                        {
+                            Status = StatusCodes.Status403Forbidden,
+                            Title = "Forbidden",
+                            Type = "https://tools.ietf.org/html/rfc9110#section-15.5.4"
+                        }, context.HttpContext.RequestAborted);
+                    }
+                };
             });
 
         builder.Services.AddAuthorization();

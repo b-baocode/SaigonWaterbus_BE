@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -98,7 +99,8 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
 public sealed class RegisterRequestUseCase
 {
     private sealed record PendingRegistrationOtp(
-        int ChallengeId,
+        Guid UserId,
+        Guid ChallengeId,
         string Destination,
         OtpChannel Channel,
         string FullName,
@@ -248,6 +250,7 @@ public sealed class RegisterRequestUseCase
 
             await _context.SaveChangesAsync(ct);
             return new PendingRegistrationOtp(
+                user.Id,
                 challenge.Id,
                 otpDestination,
                 otpChannel,
@@ -257,23 +260,31 @@ public sealed class RegisterRequestUseCase
                 challenge.ResendAvailableAt);
         }, cancellationToken);
 
-        if (pendingRegistration.Channel == OtpChannel.Email)
+        try
         {
-            await _otpSender.SendAsync(
-                pendingRegistration.Destination,
-                pendingRegistration.Code,
-                OtpPurpose.Register,
-                pendingRegistration.FullName,
-                cancellationToken);
+            if (pendingRegistration.Channel == OtpChannel.Email)
+            {
+                await _otpSender.SendAsync(
+                    pendingRegistration.Destination,
+                    pendingRegistration.Code,
+                    OtpPurpose.Register,
+                    pendingRegistration.FullName,
+                    cancellationToken);
+            }
+            else
+            {
+                await _smsOtpSender.SendAsync(
+                    pendingRegistration.Destination,
+                    pendingRegistration.Code,
+                    OtpPurpose.Register,
+                    pendingRegistration.FullName,
+                    cancellationToken);
+            }
         }
-        else
+        catch (OtpDispatchException)
         {
-            await _smsOtpSender.SendAsync(
-                pendingRegistration.Destination,
-                pendingRegistration.Code,
-                OtpPurpose.Register,
-                pendingRegistration.FullName,
-                cancellationToken);
+            await CleanupPendingRegistrationAfterDispatchFailureAsync(pendingRegistration, cancellationToken);
+            throw;
         }
 
         return new OtpChallengeDto(
@@ -320,6 +331,36 @@ public sealed class RegisterRequestUseCase
         }
 
         return resolvedChannel;
+    }
+
+    private async Task CleanupPendingRegistrationAfterDispatchFailureAsync(
+        PendingRegistrationOtp pendingRegistration,
+        CancellationToken cancellationToken)
+    {
+        await _context.ExecuteInTransactionAsync(async ct =>
+        {
+            var user = await _context.Set<User>()
+                .Include(x => x.OtpChallenges)
+                .SingleOrDefaultAsync(x => x.Id == pendingRegistration.UserId, ct);
+
+            if (user is null || user.Status != UserStatus.PendingVerification)
+            {
+                return;
+            }
+
+            var hasFailedChallenge = user.OtpChallenges.Any(x =>
+                x.Id == pendingRegistration.ChallengeId
+                && x.Purpose == OtpPurpose.Register
+                && x.ConsumedAt == null);
+
+            if (!hasFailedChallenge)
+            {
+                return;
+            }
+
+            _context.Set<User>().Remove(user);
+            await _context.SaveChangesAsync(ct);
+        }, cancellationToken);
     }
 
     private static bool RegistrationIdentityMatches(User user, string? normalizedPhone, string? normalizedEmail) =>

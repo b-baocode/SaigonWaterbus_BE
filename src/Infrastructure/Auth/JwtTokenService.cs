@@ -20,7 +20,7 @@ public sealed class JwtTokenService : ITokenService
     }
 
     public AccessTokenResult GenerateAccessToken(
-        int userId,
+        Guid userId,
         string? phoneNumber,
         string? email,
         IReadOnlyCollection<string> roleSystemNames)

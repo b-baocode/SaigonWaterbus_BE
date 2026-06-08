@@ -47,7 +47,7 @@ public sealed class Seats : IEndpointGroup
 
     public static void Map(RouteGroupBuilder groupBuilder)
     {
-        groupBuilder.MapGet(GetSeats, "{vesselId:int}/seats")
+        groupBuilder.MapGet(GetSeats, "{vesselId:guid}/seats")
             .RequireAuthorization()
             .WithSummary("Lấy sơ đồ ghế của tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -60,7 +60,7 @@ public sealed class Seats : IEndpointGroup
                 "Facilities là tiện ích thật đã setup trong database, ví dụ Toilet, không tính vào số ghế.",
                 "SeatsConfigured=true khi tàu đã được setup đủ ghế."));
 
-        groupBuilder.MapPost(GenerateSeats, "{vesselId:int}/seats/generate")
+        groupBuilder.MapPost(GenerateSeats, "{vesselId:guid}/seats/generate")
             .RequireAuthorization()
             .WithSummary("Tự động sinh ghế theo cấu hình")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -75,7 +75,7 @@ public sealed class Seats : IEndpointGroup
                 "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."))
             .WithOpenApi(op => SetBodyExample(op, GenerateExample));
 
-        groupBuilder.MapDelete(DeleteAllSeats, "{vesselId:int}/seats")
+        groupBuilder.MapDelete(DeleteAllSeats, "{vesselId:guid}/seats")
             .RequireAuthorization()
             .WithSummary("Xóa toàn bộ ghế của tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -84,7 +84,7 @@ public sealed class Seats : IEndpointGroup
                 "Dùng khi muốn setup lại sơ đồ ghế từ đầu.",
                 "Sau khi xóa có thể gọi lại API generate với cấu hình mới."));
 
-        groupBuilder.MapPut(UpdateSeat, "{vesselId:int}/seats/{seatId:int}")
+        groupBuilder.MapPut(UpdateSeat, "{vesselId:guid}/seats/{seatId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật thông tin ghế")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -94,7 +94,7 @@ public sealed class Seats : IEndpointGroup
                 "Mã ghế phải là duy nhất trong cùng một tàu."))
             .WithOpenApi(op => SetBodyExample(op, UpdateSeatExample));
 
-        groupBuilder.MapPatch(UpdateSeatStatus, "{vesselId:int}/seats/{seatId:int}/status")
+        groupBuilder.MapPatch(UpdateSeatStatus, "{vesselId:guid}/seats/{seatId:guid}/status")
             .RequireAuthorization()
             .WithSummary("Bật/tắt ghế")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -104,7 +104,7 @@ public sealed class Seats : IEndpointGroup
                 "Ghế bị tắt sẽ không thể đặt vé."))
             .WithOpenApi(op => SetBodyExample(op, UpdateStatusExample));
 
-        groupBuilder.MapDelete(DeleteSeat, "{vesselId:int}/seats/{seatId:int}")
+        groupBuilder.MapDelete(DeleteSeat, "{vesselId:guid}/seats/{seatId:guid}")
             .RequireAuthorization()
             .WithSummary("Xóa một ghế")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -116,13 +116,13 @@ public sealed class Seats : IEndpointGroup
 
     private static async Task<IResult> GetSeats(
         ISeatManagementService seatManagementService,
-        int vesselId,
+        Guid vesselId,
         CancellationToken cancellationToken) =>
         Results.Ok(await seatManagementService.GetSeatsAsync(vesselId, cancellationToken));
 
     private static async Task<IResult> GenerateSeats(
         ISeatManagementService seatManagementService,
-        int vesselId,
+        Guid vesselId,
         GenerateSeatsApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await seatManagementService.GenerateSeatsAsync(
@@ -131,14 +131,14 @@ public sealed class Seats : IEndpointGroup
 
     private static async Task<IResult> DeleteAllSeats(
         ISeatManagementService seatManagementService,
-        int vesselId,
+        Guid vesselId,
         CancellationToken cancellationToken) =>
         Results.Ok(await seatManagementService.DeleteAllSeatsAsync(vesselId, cancellationToken));
 
     private static async Task<IResult> UpdateSeat(
         ISeatManagementService seatManagementService,
-        int vesselId,
-        int seatId,
+        Guid vesselId,
+        Guid seatId,
         UpdateSeatApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await seatManagementService.UpdateSeatAsync(
@@ -147,8 +147,8 @@ public sealed class Seats : IEndpointGroup
 
     private static async Task<IResult> UpdateSeatStatus(
         ISeatManagementService seatManagementService,
-        int vesselId,
-        int seatId,
+        Guid vesselId,
+        Guid seatId,
         UpdateSeatStatusApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await seatManagementService.UpdateSeatStatusAsync(
@@ -157,8 +157,8 @@ public sealed class Seats : IEndpointGroup
 
     private static async Task<IResult> DeleteSeat(
         ISeatManagementService seatManagementService,
-        int vesselId,
-        int seatId,
+        Guid vesselId,
+        Guid seatId,
         CancellationToken cancellationToken) =>
         Results.Ok(await seatManagementService.DeleteSeatAsync(vesselId, seatId, cancellationToken));
 

@@ -4,7 +4,7 @@ namespace SaigonWaterbus.Application.Seats;
 
 public interface ISeatManagementService
 {
-    Task<VesselSeatsDto> GetSeatsAsync(int vesselId, CancellationToken cancellationToken);
+    Task<VesselSeatsDto> GetSeatsAsync(Guid vesselId, CancellationToken cancellationToken);
 
     Task<VesselSeatsDto> GenerateSeatsAsync(GenerateSeatsRequest request, CancellationToken cancellationToken);
 
@@ -12,7 +12,7 @@ public interface ISeatManagementService
 
     Task<SeatDto> UpdateSeatStatusAsync(UpdateSeatStatusRequest request, CancellationToken cancellationToken);
 
-    Task<AuthActionResultDto> DeleteSeatAsync(int vesselId, int seatId, CancellationToken cancellationToken);
+    Task<AuthActionResultDto> DeleteSeatAsync(Guid vesselId, Guid seatId, CancellationToken cancellationToken);
 
-    Task<AuthActionResultDto> DeleteAllSeatsAsync(int vesselId, CancellationToken cancellationToken);
+    Task<AuthActionResultDto> DeleteAllSeatsAsync(Guid vesselId, CancellationToken cancellationToken);
 }

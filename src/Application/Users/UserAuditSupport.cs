@@ -9,9 +9,9 @@ internal static class UserAuditSupport
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public static AuditLog CreateUserAuditLog(
-        int actorUserId,
+        Guid actorUserId,
         string action,
-        int targetUserId,
+        Guid targetUserId,
         object? oldValues,
         object? newValues,
         DateTimeOffset createdAt) =>
@@ -30,7 +30,7 @@ internal static class UserAuditSupport
         new
         {
             user.Id,
-            user.UserCode,
+            user.Code,
             user.FullName,
             user.DateOfBirth,
             user.PhoneNumber,

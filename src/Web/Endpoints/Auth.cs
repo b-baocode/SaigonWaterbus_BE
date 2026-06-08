@@ -27,7 +27,7 @@ public class Auth : IEndpointGroup
     private const string VerifyRegisterOtpExample =
         """
         {
-          "challengeId": 12,
+          "challengeId": "00000000-0000-0000-0000-000000000012",
           "code": "123456"
         }
         """;
@@ -35,7 +35,7 @@ public class Auth : IEndpointGroup
     private const string ResendOtpExample =
         """
         {
-          "challengeId": 12
+          "challengeId": "00000000-0000-0000-0000-000000000012"
         }
         """;
 
@@ -57,7 +57,7 @@ public class Auth : IEndpointGroup
     private const string RefreshTokenExample =
         """
         {
-          "refreshToken": "15.XYZ_REFRESH_SECRET"
+          "refreshToken": "00000000000000000000000000000015.XYZ_REFRESH_SECRET"
         }
         """;
 
@@ -71,7 +71,7 @@ public class Auth : IEndpointGroup
     private const string ResetPasswordExample =
         """
         {
-          "challengeId": 24,
+          "challengeId": "00000000-0000-0000-0000-000000000024",
           "code": "123456",
           "newPassword": "NewP@ssword123"
         }
@@ -98,7 +98,7 @@ public class Auth : IEndpointGroup
     private const string VerifyEmailChangeOtpExample =
         """
         {
-          "challengeId": 31,
+          "challengeId": "00000000-0000-0000-0000-000000000031",
           "code": "123456"
         }
         """;
@@ -106,7 +106,7 @@ public class Auth : IEndpointGroup
     private const string VerifyPhoneChangeOtpExample =
         """
         {
-          "challengeId": 32,
+          "challengeId": "00000000-0000-0000-0000-000000000032",
           "code": "123456"
         }
         """;
@@ -466,7 +466,7 @@ public class Auth : IEndpointGroup
 
         if (DateOnly.TryParseExact(
                 value,
-                ["dd/MM/yyyy", "dd-MM-yyyy"],
+                ["dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd"],
                 CultureInfo.InvariantCulture,
                 DateTimeStyles.None,
                 out var date))
@@ -474,7 +474,7 @@ public class Auth : IEndpointGroup
             return date;
         }
 
-        throw new BadHttpRequestException("dateOfBirth phải dùng định dạng dd/MM/yyyy hoặc dd-MM-yyyy.");
+        throw new BadHttpRequestException("dateOfBirth phải dùng định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd.");
     }
 
     private sealed record UpdateCurrentUserProfileJsonRequest(

@@ -156,7 +156,7 @@ public sealed class GoogleLoginRequestUseCase
 
         var user = new User
         {
-            UserCode = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, cancellationToken),
+            Code = await _userCodeGenerator.GenerateNextCodeAsync(customerRole.Code, cancellationToken),
             FullName = string.IsNullOrWhiteSpace(payload.Name) ? "Google User" : payload.Name.Trim(),
             Email = payload.Email,
             NormalizedEmail = normalizedEmail,
@@ -190,9 +190,9 @@ public sealed class GoogleLoginRequestUseCase
             roles = new[] { customerRole };
         }
 
-        if (string.IsNullOrWhiteSpace(user.UserCode))
+        if (string.IsNullOrWhiteSpace(user.Code))
         {
-            user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(roles.First().Code, cancellationToken);
+            user.Code = await _userCodeGenerator.GenerateNextCodeAsync(roles.First().Code, cancellationToken);
         }
 
         if (!string.IsNullOrWhiteSpace(payload.Picture)

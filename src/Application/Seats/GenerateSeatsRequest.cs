@@ -21,14 +21,14 @@ public sealed record DeckConfigDto(
     IReadOnlyCollection<SeatBlockDto>? SeatBlocks = null,
     IReadOnlyCollection<FacilityConfigDto>? Facilities = null);
 
-public sealed record GenerateSeatsRequest(int VesselId, IReadOnlyCollection<DeckConfigDto> Decks);
+public sealed record GenerateSeatsRequest(Guid VesselId, IReadOnlyCollection<DeckConfigDto> Decks);
 
 public sealed class GenerateSeatsRequestValidator : AbstractValidator<GenerateSeatsRequest>
 {
     public GenerateSeatsRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.Decks)

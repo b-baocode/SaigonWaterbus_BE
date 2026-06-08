@@ -11,6 +11,8 @@ public sealed class VesselFacilityConfiguration : IEntityTypeConfiguration<Vesse
         builder.ToTable("vessel_facilities");
 
         builder.Property(x => x.Type)
+            .HasConversion<string>()
+            .HasMaxLength(32)
             .IsRequired();
 
         builder.Property(x => x.Row)

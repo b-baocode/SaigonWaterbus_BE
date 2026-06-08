@@ -4,7 +4,7 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class User : BaseAuditableEntity
 {
-    public string? UserCode { get; set; }
+    public string? Code { get; set; }
 
     public string FullName { get; set; } = null!;
 
@@ -22,7 +22,7 @@ public class User : BaseAuditableEntity
 
     public string? PasswordHash { get; set; }
 
-    public int RoleId { get; set; }
+    public Guid RoleId { get; set; }
 
     public Role Role { get; set; } = null!;
 

@@ -20,6 +20,7 @@ public static class DependencyInjection
 
     public static void AddInfrastructureServices(this IHostApplicationBuilder builder)
     {
+        var environment = builder.Environment;
         var connectionString = builder.Configuration.GetConnectionString(DatabaseConnectionName);
         Guard.Against.NullOrWhiteSpace(connectionString, message: $"Connection string '{DatabaseConnectionName}' not found.");
 
@@ -82,7 +83,9 @@ public static class DependencyInjection
                 return ActivatorUtilities.CreateInstance<GmailOtpSender>(provider);
             }
 
-            return ActivatorUtilities.CreateInstance<NoOpOtpSender>(provider);
+            return environment.IsDevelopment()
+                ? ActivatorUtilities.CreateInstance<NoOpOtpSender>(provider)
+                : ActivatorUtilities.CreateInstance<DisabledOtpSender>(provider);
         });
 
         builder.Services.AddScoped<ApplicationDbContextInitialiser>();

@@ -31,7 +31,7 @@ public sealed class SeatManagementService : ISeatManagementService
         _deleteAllSeats = deleteAllSeats;
     }
 
-    public async Task<VesselSeatsDto> GetSeatsAsync(int vesselId, CancellationToken cancellationToken)
+    public async Task<VesselSeatsDto> GetSeatsAsync(Guid vesselId, CancellationToken cancellationToken)
     {
         var request = new GetSeatsRequest(vesselId);
         await _validator.ValidateAsync(request, cancellationToken);
@@ -56,14 +56,14 @@ public sealed class SeatManagementService : ISeatManagementService
         return await _updateSeatStatus.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> DeleteSeatAsync(int vesselId, int seatId, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> DeleteSeatAsync(Guid vesselId, Guid seatId, CancellationToken cancellationToken)
     {
         var request = new DeleteSeatRequest(vesselId, seatId);
         await _validator.ValidateAsync(request, cancellationToken);
         return await _deleteSeat.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> DeleteAllSeatsAsync(int vesselId, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> DeleteAllSeatsAsync(Guid vesselId, CancellationToken cancellationToken)
     {
         var request = new DeleteAllSeatsRequest(vesselId);
         await _validator.ValidateAsync(request, cancellationToken);

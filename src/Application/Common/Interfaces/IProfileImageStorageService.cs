@@ -16,13 +16,13 @@ public interface IProfileImageStorageService
 }
 
 public sealed record ProfileImageUpload(
-    int UserId,
+    Guid UserId,
     Stream Content,
     string FileName,
     string? ContentType);
 
 public sealed record ProfileImageUrlImport(
-    int UserId,
+    Guid UserId,
     string ImageUrl,
     string FileName);
 

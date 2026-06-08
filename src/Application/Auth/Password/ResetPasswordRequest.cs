@@ -6,14 +6,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Password;
 
-public sealed record ResetPasswordRequest(int ChallengeId, string Code, string NewPassword);
+public sealed record ResetPasswordRequest(Guid ChallengeId, string Code, string NewPassword);
 
 public sealed class ResetPasswordRequestValidator : AbstractValidator<ResetPasswordRequest>
 {
     public ResetPasswordRequestValidator()
     {
         RuleFor(x => x.ChallengeId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Mã xác thực không hợp lệ.");
 
         RuleFor(x => x.Code)

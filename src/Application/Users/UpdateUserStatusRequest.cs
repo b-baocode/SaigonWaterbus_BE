@@ -7,7 +7,7 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Users;
 
 public sealed record UpdateUserStatusRequest(
-    int UserId,
+    Guid UserId,
     UserStatus Status);
 
 public sealed class UpdateUserStatusRequestValidator : AbstractValidator<UpdateUserStatusRequest>
@@ -15,7 +15,7 @@ public sealed class UpdateUserStatusRequestValidator : AbstractValidator<UpdateU
     public UpdateUserStatusRequestValidator()
     {
         RuleFor(x => x.UserId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("UserId không hợp lệ.");
 
         RuleFor(x => x.Status)

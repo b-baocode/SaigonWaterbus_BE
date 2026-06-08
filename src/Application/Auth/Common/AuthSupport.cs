@@ -42,7 +42,7 @@ internal static class AuthSupport
 
     public static async Task<IReadOnlyCollection<Role>> GetActiveRolesAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         CancellationToken cancellationToken)
     {
         var role = await context.Set<User>()
@@ -67,7 +67,7 @@ internal static class AuthSupport
 
     public static async Task<Role> GetRoleByIdAsync(
         IApplicationDbContext context,
-        int roleId,
+        Guid roleId,
         string propertyName,
         CancellationToken cancellationToken)
     {
@@ -103,13 +103,13 @@ internal static class AuthSupport
         DateTimeOffset refreshTokenExpiresAt)
     {
         var roleDtos = roles
-            .Select(x => new AuthRoleDto(x.Code, x.SystemName, x.DisplayName))
+            .Select(x => new AuthRoleDto(x.Code, x.DisplayName))
             .ToArray();
 
         return new AuthSessionDto(
             new AuthUserDto(
                 user.Id,
-                user.UserCode,
+                user.Code,
                 user.FullName,
                 user.DateOfBirth,
                 user.PhoneNumber,
@@ -157,7 +157,7 @@ internal static class AuthSupport
     {
         return new AuthUserDto(
             user.Id,
-            user.UserCode,
+            user.Code,
             user.FullName,
             user.DateOfBirth,
             user.PhoneNumber,
@@ -166,12 +166,12 @@ internal static class AuthSupport
             user.AvatarUrl,
             user.AvatarSource,
             user.Status,
-            [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)]);
+            [new AuthRoleDto(user.Role.Code, user.Role.DisplayName)]);
     }
 
     public static async Task RevokeActiveRefreshTokensAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         DateTimeOffset revokedAt,
         CancellationToken cancellationToken)
     {
@@ -189,7 +189,7 @@ internal static class AuthSupport
 
     public static async Task RetirePendingOtpChallengesAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         OtpPurpose purpose,
         DateTimeOffset retiredAt,
         CancellationToken cancellationToken)
@@ -258,7 +258,7 @@ internal static class AuthSupport
 
     public static async Task<bool> RemovePendingRegistrationUserIfExpiredAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -321,21 +321,21 @@ internal static class AuthSupport
     public static bool IsCustomer(User user) =>
         string.Equals(user.Role.SystemName, Roles.CustomerSystemName, StringComparison.Ordinal);
 
-    public static string FormatRefreshToken(int refreshTokenId, string secret) => $"{refreshTokenId}.{secret}";
+    public static string FormatRefreshToken(Guid refreshTokenId, string secret) => $"{refreshTokenId:N}.{secret}";
 
-    public static bool TryParseRefreshToken(string refreshToken, out int refreshTokenId, out string secret)
+    public static bool TryParseRefreshToken(string refreshToken, out Guid refreshTokenId, out string secret)
     {
         refreshTokenId = default;
         secret = string.Empty;
 
-        var segments = refreshToken.Split('.', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length != 2 || !int.TryParse(segments[0], out refreshTokenId) || string.IsNullOrWhiteSpace(segments[1]))
+        var dotIndex = refreshToken.IndexOf('.', 32);
+        if (dotIndex <= 0 || !Guid.TryParseExact(refreshToken[..dotIndex], "N", out refreshTokenId))
         {
             return false;
         }
 
-        secret = segments[1];
-        return true;
+        secret = refreshToken[(dotIndex + 1)..];
+        return !string.IsNullOrWhiteSpace(secret);
     }
 
     private static bool HasUnexpiredRegisterChallenge(User user, DateTimeOffset now) =>

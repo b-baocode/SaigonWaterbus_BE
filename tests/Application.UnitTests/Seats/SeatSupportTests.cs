@@ -8,12 +8,14 @@ namespace SaigonWaterbus.Application.UnitTests.Seats;
 
 public class SeatSupportTests
 {
+    private static readonly Guid VesselId = TestGuid(100);
+
     [Test]
     public void CreateVesselSeatsDtoKeepsRegisteredSeatCountAsTotalSeats()
     {
         var vessel = new Vessel
         {
-            Id = 1,
+            Id = VesselId,
             Code = "WB01",
             Name = "WaterBus 01",
             SeatCount = 3,
@@ -39,7 +41,7 @@ public class SeatSupportTests
     {
         var vessel = new Vessel
         {
-            Id = 1,
+            Id = VesselId,
             Code = "WB01",
             Name = "WaterBus 01",
             SeatCount = 80,
@@ -49,7 +51,7 @@ public class SeatSupportTests
         {
             new()
             {
-                VesselId = 1,
+                VesselId = VesselId,
                 DeckNumber = 1,
                 RowCount = 20,
                 ColumnCount = 8
@@ -59,8 +61,8 @@ public class SeatSupportTests
         {
             new()
             {
-                Id = 10,
-                VesselId = 1,
+                Id = TestGuid(10),
+                VesselId = VesselId,
                 Type = VesselFacilityType.Toilet,
                 Deck = 1,
                 Row = "O",
@@ -87,12 +89,15 @@ public class SeatSupportTests
     private static Seat Seat(int id, string code, bool isActive) =>
         new()
         {
-            Id = id,
-            VesselId = 1,
+            Id = TestGuid(id),
+            VesselId = VesselId,
             Code = code,
             Deck = 1,
             Row = "A",
             Column = id,
             IsActive = isActive
         };
+
+    private static Guid TestGuid(int id) =>
+        Guid.Parse($"00000000-0000-0000-0000-{id:000000000000}");
 }

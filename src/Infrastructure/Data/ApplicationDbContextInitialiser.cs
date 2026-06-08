@@ -33,7 +33,7 @@ public class ApplicationDbContextInitialiser
         new(
             Roles.AdminCode,
             "AD0000001",
-            "System Administrator",
+            "Admin",
             "admin@saigonwaterbus.local",
             "0900000001",
             "Admin@123"),
@@ -149,19 +149,21 @@ public class ApplicationDbContextInitialiser
 
         await _context.SaveChangesAsync();
 
-        if (!_databaseStartupSettings.SeedInternalUsers)
+        if (_databaseStartupSettings.SeedInternalUsers)
+        {
+            foreach (var definition in InternalUsers)
+            {
+                var role = roleByCode[definition.RoleCode];
+                await SeedInternalUserAsync(definition, role);
+            }
+
+            await _context.SaveChangesAsync();
+        }
+        else
         {
             _logger.LogInformation("Skipping internal user seeding because Database:SeedInternalUsers is disabled.");
-            return;
         }
 
-        foreach (var definition in InternalUsers)
-        {
-            var role = roleByCode[definition.RoleCode];
-            await SeedInternalUserAsync(definition, role);
-        }
-
-        await _context.SaveChangesAsync();
         await SyncUserCodeSequencesAsync();
     }
 
@@ -216,17 +218,17 @@ public class ApplicationDbContextInitialiser
         const string cleanupCommand =
             """
             DELETE FROM users u
-            WHERE u."Status" = 0
+            WHERE u."Status" = 'PendingVerification'
               AND EXISTS (
                     SELECT 1
                     FROM otp_challenges oc
                     WHERE oc."UserId" = u."Id"
-                      AND oc."Purpose" = 1)
+                      AND oc."Purpose" = 'Register')
               AND NOT EXISTS (
                     SELECT 1
                     FROM otp_challenges oc
                     WHERE oc."UserId" = u."Id"
-                      AND oc."Purpose" = 1
+                      AND oc."Purpose" = 'Register'
                       AND oc."ExpiresAt" > now());
             """;
 
@@ -252,13 +254,13 @@ public class ApplicationDbContextInitialiser
         var normalizedPhone = _identityNormalizer.NormalizePhone(definition.PhoneNumber);
 
         var user = await _context.Users
-            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail || x.UserCode == definition.UserCode);
+            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail || x.Code == definition.Code);
 
         if (user is null)
         {
             user = new User
             {
-                UserCode = definition.UserCode,
+                Code = definition.Code,
                 FullName = definition.FullName,
                 Email = definition.Email,
                 NormalizedEmail = normalizedEmail,
@@ -273,12 +275,13 @@ public class ApplicationDbContextInitialiser
             return;
         }
 
-        if (string.IsNullOrWhiteSpace(user.UserCode))
+        if (string.IsNullOrWhiteSpace(user.Code))
         {
-            user.UserCode = definition.UserCode;
+            user.Code = definition.Code;
         }
 
-        if (string.IsNullOrWhiteSpace(user.FullName))
+        if (string.IsNullOrWhiteSpace(user.FullName)
+            || string.Equals(user.FullName, "System Administrator", StringComparison.Ordinal))
         {
             user.FullName = definition.FullName;
         }
@@ -318,21 +321,26 @@ public class ApplicationDbContextInitialiser
     {
         await _context.Database.ExecuteSqlRawAsync(
             """
+            CREATE SEQUENCE IF NOT EXISTS user_code_cu_seq AS integer START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9999999 NO CYCLE;
+            CREATE SEQUENCE IF NOT EXISTS user_code_mg_seq AS integer START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9999999 NO CYCLE;
+            CREATE SEQUENCE IF NOT EXISTS user_code_ad_seq AS integer START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9999999 NO CYCLE;
+            CREATE SEQUENCE IF NOT EXISTS user_code_st_seq AS integer START WITH 1 INCREMENT BY 1 MINVALUE 1 MAXVALUE 9999999 NO CYCLE;
+
             SELECT setval('user_code_ad_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'AD%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'AD%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'AD%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'AD%'), 0) > 0);
 
             SELECT setval('user_code_mg_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'MG%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'MG%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'MG%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'MG%'), 0) > 0);
 
             SELECT setval('user_code_cu_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'CU%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'CU%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'CU%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'CU%'), 0) > 0);
 
             SELECT setval('user_code_st_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0) > 0);
             """);
     }
 
@@ -347,7 +355,7 @@ public class ApplicationDbContextInitialiser
 
     private sealed record SeedUser(
         string RoleCode,
-        string UserCode,
+        string Code,
         string FullName,
         string Email,
         string PhoneNumber,

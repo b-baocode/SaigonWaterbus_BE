@@ -12,7 +12,7 @@ public interface IVesselImageStorageService
 }
 
 public sealed record VesselImageUpload(
-    int VesselId,
+    Guid VesselId,
     Stream Content,
     string FileName,
     string? ContentType);

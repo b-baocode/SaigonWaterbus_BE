@@ -2,10 +2,10 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Common;
 
-public sealed record AuthRoleDto(string Code, string SystemName, string DisplayName);
+public sealed record AuthRoleDto(string Code, string Name);
 
 public sealed record AuthUserDto(
-    int Id,
+    Guid Id,
     string? Code,
     string FullName,
     DateOnly? DateOfBirth,
@@ -38,7 +38,7 @@ public sealed record UpdateProfileResultDto(
     OtpChallengeDto? PhoneVerification = null);
 
 public sealed record OtpChallengeDto(
-    int Id,
+    Guid Id,
     string MaskedEmail,
     DateTimeOffset ExpiresAt,
     DateTimeOffset ResendAvailableAt)

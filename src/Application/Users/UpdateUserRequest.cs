@@ -7,19 +7,19 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Users;
 
 public sealed record UpdateUserRequest(
-    int UserId,
+    Guid UserId,
     string? FullName,
     DateOnly? DateOfBirth,
     string? PhoneNumber,
     string? Email,
-    int? RoleId);
+    Guid? RoleId);
 
 public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
 {
     public UpdateUserRequestValidator()
     {
         RuleFor(x => x.UserId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("UserId không hợp lệ.");
 
         RuleFor(x => x.FullName)
@@ -53,7 +53,7 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
             .When(x => x.Email is not null);
 
         RuleFor(x => x.RoleId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Vai trò là bắt buộc.")
             .When(x => x.RoleId.HasValue);
 
@@ -168,9 +168,9 @@ public sealed class UpdateUserRequestUseCase
         {
             user.RoleId = targetRole.Id;
 
-            if (!UserCodes.HasPrefix(user.UserCode, UserCodes.GetPrefixForRoleCode(targetRole.Code)))
+            if (!UserCodes.HasPrefix(user.Code, UserCodes.GetPrefixForRoleCode(targetRole.Code)))
             {
-                user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(targetRole.Code, cancellationToken);
+                user.Code = await _userCodeGenerator.GenerateNextCodeAsync(targetRole.Code, cancellationToken);
             }
         }
 

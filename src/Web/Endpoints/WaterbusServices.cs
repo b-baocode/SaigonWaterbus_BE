@@ -34,7 +34,7 @@ public sealed class WaterbusServices : IEndpointGroup
         }
         """;
 
-    public static string RoutePrefix => "/api/waterbus/services";
+    public static string RoutePrefix => "/api/waterbus-services";
 
     public static string OpenApiTag => "Services";
 
@@ -49,7 +49,7 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin thấy tất cả dịch vụ active và inactive.",
                 "Manager và Staff chỉ thấy dịch vụ active."));
 
-        groupBuilder.MapGet(GetWaterbusServiceById, "{serviceId:int}")
+        groupBuilder.MapGet(GetWaterbusServiceById, "{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Lấy chi tiết dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -68,7 +68,7 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Dữ liệu được lưu trong database, không seed cứng trong code."))
             .WithOpenApi(op => SetBodyExample(op, CreateServiceExample));
 
-        groupBuilder.MapPut(UpdateWaterbusService, "{serviceId:int}")
+        groupBuilder.MapPut(UpdateWaterbusService, "{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -78,7 +78,7 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Code được chuẩn hóa thành chữ in hoa."))
             .WithOpenApi(op => SetBodyExample(op, UpdateServiceExample));
 
-        groupBuilder.MapPatch(UpdateWaterbusServiceStatus, "status/{serviceId:int}")
+        groupBuilder.MapPatch(UpdateWaterbusServiceStatus, "status/{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật trạng thái hiển thị dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -88,7 +88,7 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Dịch vụ bị ẩn vẫn hiện với Admin, nhưng không hiện với Manager và Staff."))
             .WithOpenApi(op => SetBodyExample(op, UpdateStatusExample));
 
-        groupBuilder.MapDelete(DeleteWaterbusService, "{serviceId:int}")
+        groupBuilder.MapDelete(DeleteWaterbusService, "{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Xóa dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -105,7 +105,7 @@ public sealed class WaterbusServices : IEndpointGroup
 
     private static async Task<IResult> GetWaterbusServiceById(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.GetServiceByIdAsync(serviceId, cancellationToken));
 
@@ -124,7 +124,7 @@ public sealed class WaterbusServices : IEndpointGroup
 
     private static async Task<IResult> UpdateWaterbusService(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         UpdateWaterbusServiceApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.UpdateServiceAsync(
@@ -138,7 +138,7 @@ public sealed class WaterbusServices : IEndpointGroup
 
     private static async Task<IResult> UpdateWaterbusServiceStatus(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         UpdateWaterbusServiceStatusApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.UpdateServiceStatusAsync(
@@ -149,7 +149,7 @@ public sealed class WaterbusServices : IEndpointGroup
 
     private static async Task<IResult> DeleteWaterbusService(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.DeleteServiceAsync(serviceId, cancellationToken));
 

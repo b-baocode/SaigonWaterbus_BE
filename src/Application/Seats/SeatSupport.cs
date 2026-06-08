@@ -6,14 +6,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record SeatDto(int Id, string Code, int Deck, string Row, int Column, bool IsActive);
+public sealed record SeatDto(Guid Id, string Code, int Deck, string Row, int Column, bool IsActive);
 
 public sealed record SeatRowDto(string Row, IReadOnlyCollection<SeatDto> Seats);
 
 public sealed record SeatDeckDto(int DeckNumber, int? RowCount, int? ColumnCount, IReadOnlyCollection<SeatRowDto> Rows);
 
 public sealed record VesselFacilityDto(
-    int Id,
+    Guid Id,
     VesselFacilityType Type,
     int Deck,
     string Row,
@@ -23,7 +23,7 @@ public sealed record VesselFacilityDto(
     bool IsActive);
 
 public sealed record VesselSeatsDto(
-    int VesselId,
+    Guid VesselId,
     int TotalSeats,
     int ConfiguredSeats,
     int ActiveSeats,

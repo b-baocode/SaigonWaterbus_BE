@@ -6,14 +6,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Profile;
 
-public sealed record VerifyPhoneChangeOtpRequest(int ChallengeId, string Code);
+public sealed record VerifyPhoneChangeOtpRequest(Guid ChallengeId, string Code);
 
 public sealed class VerifyPhoneChangeOtpRequestValidator : AbstractValidator<VerifyPhoneChangeOtpRequest>
 {
     public VerifyPhoneChangeOtpRequestValidator()
     {
         RuleFor(x => x.ChallengeId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Mã xác thực không hợp lệ.");
 
         RuleFor(x => x.Code)

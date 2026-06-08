@@ -12,7 +12,7 @@ public sealed record CreateUserRequest(
     string? PhoneNumber,
     string Email,
     string Password,
-    int RoleId);
+    Guid RoleId);
 
 public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
 {
@@ -51,7 +51,7 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
             .WithMessage(PasswordRules.StrongPasswordMessage);
 
         RuleFor(x => x.RoleId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Vai trò là bắt buộc.");
 
     }
@@ -126,7 +126,7 @@ public sealed class CreateUserRequestUseCase
             user.PhoneVerifiedAt = now;
         }
 
-        user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(role.Code, cancellationToken);
+        user.Code = await _userCodeGenerator.GenerateNextCodeAsync(role.Code, cancellationToken);
 
         await _context.ExecuteInTransactionAsync(async ct =>
         {

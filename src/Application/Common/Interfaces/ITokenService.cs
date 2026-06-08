@@ -3,7 +3,7 @@ namespace SaigonWaterbus.Application.Common.Interfaces;
 public interface ITokenService
 {
     AccessTokenResult GenerateAccessToken(
-        int userId,
+        Guid userId,
         string? phoneNumber,
         string? email,
         IReadOnlyCollection<string> roleSystemNames);

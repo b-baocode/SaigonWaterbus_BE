@@ -8,6 +8,9 @@ namespace SaigonWaterbus.Application.UnitTests.WaterbusServices;
 
 public class WaterbusServiceSupportTests
 {
+    private static readonly Guid PublicServiceId = TestGuid(1);
+    private static readonly Guid TouristServiceId = TestGuid(2);
+
     [Test]
     public void NormalizeCodeTrimsAndUppercases()
     {
@@ -20,7 +23,7 @@ public class WaterbusServiceSupportTests
     {
         var service = new WaterbusService
         {
-            Id = 7,
+            Id = PublicServiceId,
             Code = "PUBLIC",
             Name = "WaterBus cong cong",
             Description = "Dich vu theo tuyen.",
@@ -30,7 +33,7 @@ public class WaterbusServiceSupportTests
 
         var dto = WaterbusServiceSupport.CreateDto(service);
 
-        dto.Id.ShouldBe(7);
+        dto.Id.ShouldBe(PublicServiceId);
         dto.Code.ShouldBe("PUBLIC");
         dto.Name.ShouldBe("WaterBus cong cong");
         dto.Description.ShouldBe("Dich vu theo tuyen.");
@@ -44,8 +47,8 @@ public class WaterbusServiceSupportTests
         var admin = UserWithRole(Roles.AdminName);
         var services = new[]
         {
-            WaterbusService(1, "PUBLIC", true),
-            WaterbusService(2, "TOURIST", false)
+            WaterbusService(PublicServiceId, "PUBLIC", true),
+            WaterbusService(TouristServiceId, "TOURIST", false)
         }.AsQueryable();
 
         var visible = WaterbusServiceSupport.ApplyVisibilityFilter(services, admin, includeInactive: true)
@@ -61,8 +64,8 @@ public class WaterbusServiceSupportTests
         var admin = UserWithRole(Roles.AdminName);
         var services = new[]
         {
-            WaterbusService(1, "PUBLIC", true),
-            WaterbusService(2, "TOURIST", false)
+            WaterbusService(PublicServiceId, "PUBLIC", true),
+            WaterbusService(TouristServiceId, "TOURIST", false)
         }.AsQueryable();
 
         var visible = WaterbusServiceSupport.ApplyVisibilityFilter(services, admin, includeInactive: false)
@@ -78,8 +81,8 @@ public class WaterbusServiceSupportTests
         var manager = UserWithRole(Roles.ManagerSystemName);
         var services = new[]
         {
-            WaterbusService(1, "PUBLIC", true),
-            WaterbusService(2, "TOURIST", false)
+            WaterbusService(PublicServiceId, "PUBLIC", true),
+            WaterbusService(TouristServiceId, "TOURIST", false)
         }.AsQueryable();
 
         var visible = WaterbusServiceSupport.ApplyVisibilityFilter(services, manager, includeInactive: true)
@@ -98,7 +101,7 @@ public class WaterbusServiceSupportTests
             }
         };
 
-    private static WaterbusService WaterbusService(int id, string code, bool isActive) =>
+    private static WaterbusService WaterbusService(Guid id, string code, bool isActive) =>
         new()
         {
             Id = id,
@@ -106,4 +109,7 @@ public class WaterbusServiceSupportTests
             Name = code,
             IsActive = isActive
         };
+
+    private static Guid TestGuid(int id) =>
+        Guid.Parse($"00000000-0000-0000-0000-{id:000000000000}");
 }

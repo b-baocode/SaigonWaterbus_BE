@@ -55,14 +55,14 @@ public sealed class UpdateCurrentUserProfileRequestValidator : AbstractValidator
 public sealed class UpdateCurrentUserProfileRequestUseCase
 {
     private sealed record PendingEmailVerification(
-        int ChallengeId,
+        Guid ChallengeId,
         string Email,
         string Code,
         DateTimeOffset ExpiresAt,
         DateTimeOffset ResendAvailableAt);
 
     private sealed record PendingPhoneVerification(
-        int ChallengeId,
+        Guid ChallengeId,
         string Destination,
         OtpChannel Channel,
         string Code,

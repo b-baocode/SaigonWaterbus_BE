@@ -5,7 +5,7 @@ namespace SaigonWaterbus.Application.WaterbusServices;
 public sealed record GetWaterbusServicesRequest(bool IncludeInactive = false);
 
 public sealed record WaterbusServiceDto(
-    int Id,
+    Guid Id,
     string Code,
     string Name,
     string? Description,

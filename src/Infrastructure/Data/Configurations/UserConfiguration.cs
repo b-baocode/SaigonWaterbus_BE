@@ -10,12 +10,12 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
     {
         builder.ToTable("users");
 
-        builder.Property(x => x.UserCode)
+        builder.Property(x => x.Code)
             .HasMaxLength(9);
 
-        builder.HasIndex(x => x.UserCode)
+        builder.HasIndex(x => x.Code)
             .IsUnique()
-            .HasFilter("\"UserCode\" IS NOT NULL");
+            .HasFilter("\"Code\" IS NOT NULL");
 
         builder.Property(x => x.FullName)
             .HasMaxLength(150)
@@ -56,11 +56,13 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(255);
 
         builder.Property(x => x.AvatarSource)
-            .HasConversion<int>()
+            .HasConversion<string>()
+            .HasMaxLength(32)
             .IsRequired();
 
         builder.Property(x => x.Status)
-            .HasConversion<int>()
+            .HasConversion<string>()
+            .HasMaxLength(32)
             .IsRequired();
 
         builder.HasOne(x => x.Role)

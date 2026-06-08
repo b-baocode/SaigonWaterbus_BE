@@ -7,12 +7,15 @@ namespace SaigonWaterbus.Application.UnitTests.Seats;
 
 public class SeatRequestValidatorTests
 {
+    private static readonly Guid VesselId = Guid.Parse("00000000-0000-0000-0000-000000000001");
+    private static readonly Guid SeatId = Guid.Parse("00000000-0000-0000-0000-000000000002");
+
     [Test]
     public void GenerateRejectsNullDecksWithoutThrowing()
     {
         var validator = new GenerateSeatsRequestValidator();
 
-        var result = validator.Validate(new GenerateSeatsRequest(1, null!));
+        var result = validator.Validate(new GenerateSeatsRequest(VesselId, null!));
 
         result.IsValid.ShouldBeFalse();
         result.Errors.ShouldContain(x => x.PropertyName == nameof(GenerateSeatsRequest.Decks));
@@ -24,7 +27,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            VesselId,
             [
                 new DeckConfigDto(1, 2, 10),
                 new DeckConfigDto(1, 2, 10)
@@ -40,7 +43,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            VesselId,
             [
                 new DeckConfigDto(1, 2, 10),
                 new DeckConfigDto(2, 2, 10)
@@ -55,7 +58,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            VesselId,
             [
                 new DeckConfigDto(
                     1,
@@ -79,7 +82,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            VesselId,
             [
                 new DeckConfigDto(
                     1,
@@ -98,7 +101,7 @@ public class SeatRequestValidatorTests
     {
         var validator = new UpdateSeatStatusRequestValidator();
 
-        var result = validator.Validate(new UpdateSeatStatusRequest(1, 1, null));
+        var result = validator.Validate(new UpdateSeatStatusRequest(VesselId, SeatId, null));
 
         result.IsValid.ShouldBeFalse();
         result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateSeatStatusRequest.IsActive));

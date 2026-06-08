@@ -5,8 +5,8 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record UpdateVesselRequest(
-    int VesselId,
-    int? WaterbusServiceId = null,
+    Guid VesselId,
+    Guid? WaterbusServiceId = null,
     string? Code = null,
     string? Name = null,
     int? SeatCount = null,
@@ -26,11 +26,11 @@ public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesse
     public UpdateVesselRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.WaterbusServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Dịch vụ WaterBus không hợp lệ.")
             .When(x => x.WaterbusServiceId.HasValue);
 

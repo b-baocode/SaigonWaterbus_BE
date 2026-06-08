@@ -7,10 +7,9 @@ namespace SaigonWaterbus.Application.Users;
 public sealed record GetManageableRolesRequest();
 
 public sealed record UserRoleDto(
-    int Id,
+    Guid Id,
     string Code,
-    string SystemName,
-    string DisplayName);
+    string Name);
 
 public sealed class GetManageableRolesRequestUseCase
 {
@@ -43,7 +42,7 @@ public sealed class GetManageableRolesRequestUseCase
 
         return await rolesQuery
             .OrderBy(x => x.Id)
-            .Select(x => new UserRoleDto(x.Id, x.Code, x.SystemName, x.DisplayName))
+            .Select(x => new UserRoleDto(x.Id, x.Code, x.DisplayName))
             .ToArrayAsync(cancellationToken);
     }
 }
