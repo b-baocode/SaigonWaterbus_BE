@@ -383,7 +383,7 @@ public static class WaterbusSeedData
     private static Station S(string code, string name, string? address, decimal lat, decimal lng) => new()
     {
         StationCode = code, StationName = name, Address = address,
-        Latitude = lat, Longitude = lng, Status = "Active"
+        Latitude = lat, Longitude = lng, Status = StationStatus.Active
     };
 
     private static RouteStop RS(Route route, Station station, int order,

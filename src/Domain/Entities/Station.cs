@@ -1,5 +1,6 @@
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Domain.Common;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Domain.Entities;
 
@@ -10,7 +11,7 @@ public class Station : BaseGuidAuditableEntity
     public string? Address { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
-    public string Status { get; set; } = "Active";
+    public StationStatus Status { get; set; } = StationStatus.Active;
     public Point? Location { get; set; }
     public string? OsmId { get; set; }
 

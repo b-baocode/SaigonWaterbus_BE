@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Stations;
@@ -43,7 +44,7 @@ public sealed class CreateStationCommandHandler : IRequestHandler<CreateStationC
             Address = request.Address?.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
-            Status = "Active"
+            Status = StationStatus.Active
         };
 
         _context.Set<Station>().Add(station);

@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.Stations;
@@ -10,7 +11,7 @@ public sealed record UpdateStationCommand(
     string? Address,
     decimal? Latitude,
     decimal? Longitude,
-    string Status) : IRequest<StationDto>;
+    StationStatus Status) : IRequest<StationDto>;
 
 public sealed class UpdateStationCommandValidator : AbstractValidator<UpdateStationCommand>
 {
@@ -18,7 +19,7 @@ public sealed class UpdateStationCommandValidator : AbstractValidator<UpdateStat
     {
         RuleFor(x => x.StationId).NotEmpty();
         RuleFor(x => x.StationName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.Status).NotEmpty().MaximumLength(20);
+        RuleFor(x => x.Status).IsInEnum();
     }
 }
 
@@ -35,9 +36,9 @@ public sealed class UpdateStationCommandHandler : IRequestHandler<UpdateStationC
             ?? throw new NotFoundException("Station not found.");
 
         station.StationName = request.StationName.Trim();
-        station.Address = request.Address?.Trim();
-        station.Latitude = request.Latitude;
-        station.Longitude = request.Longitude;
+        station.Address = request.Address?.Trim() ?? station.Address;
+        station.Latitude = request.Latitude ?? station.Latitude;
+        station.Longitude = request.Longitude ?? station.Longitude;
         station.Status = request.Status;
 
         await _context.SaveChangesAsync(cancellationToken);

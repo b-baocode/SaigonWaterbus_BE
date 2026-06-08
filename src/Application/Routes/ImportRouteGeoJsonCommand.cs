@@ -3,6 +3,7 @@ using System.Text;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Routes;
@@ -63,7 +64,7 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
                 {
                     StationCode = MakeStationCode(candidate.OsmId, candidate.Name, existingStations),
                     StationName = candidate.Name?.Trim() ?? "Unnamed ferry terminal",
-                    Status = "Active"
+                    Status = StationStatus.Active
                 };
 
                 _context.Set<Station>().Add(station);
@@ -125,7 +126,9 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             }
         }
 
-        if (!string.IsNullOrWhiteSpace(candidate.Name))
+        // Only fall back to name match when the candidate has no OsmId.
+        // Two features with different OsmIds are distinct stations even if they share a name.
+        if (string.IsNullOrWhiteSpace(candidate.OsmId) && !string.IsNullOrWhiteSpace(candidate.Name))
         {
             var byName = existingStations.FirstOrDefault(existing =>
                 string.Equals(existing.StationName, candidate.Name, StringComparison.OrdinalIgnoreCase));

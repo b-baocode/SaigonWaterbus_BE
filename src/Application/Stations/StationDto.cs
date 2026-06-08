@@ -13,5 +13,5 @@ public sealed record StationDto(
 {
     public static StationDto From(Station s) => new(
         s.Id, s.StationCode, s.StationName,
-        s.Address, s.Latitude, s.Longitude, s.Status);
+        s.Address, s.Latitude, s.Longitude, s.Status.ToString());
 }

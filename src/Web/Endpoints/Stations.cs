@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Stations;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -99,5 +100,5 @@ public sealed class Stations : IEndpointGroup
         string? Address,
         decimal? Latitude,
         decimal? Longitude,
-        string Status);
+        StationStatus Status);
 }
