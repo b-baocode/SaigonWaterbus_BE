@@ -86,13 +86,45 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             }
         }
 
-        var existingWaterwaySegments = await _context.Set<WaterwaySegment>().ToListAsync(cancellationToken);
-        foreach (var existingSegment in existingWaterwaySegments)
-        {
-            _context.Set<WaterwaySegment>().Remove(existingSegment);
-        }
+        await MergeWaterwaySegments(parsedGeoJson.WaterwaySegments, cancellationToken);
 
-        foreach (var candidate in parsedGeoJson.WaterwaySegments)
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new GeoJsonImportResultDto(
+            parsedGeoJson.WaterwaySegments.Count,
+            stationsCreated,
+            stationsUpdated);
+    }
+
+    private async Task MergeWaterwaySegments(
+        IReadOnlyList<GeoJsonWaterwaySegmentCandidate> incoming,
+        CancellationToken cancellationToken)
+    {
+        // Collect the two keys used for matching: OsmId and WaterwayName (for no-OsmId segments).
+        var incomingOsmIds = incoming
+            .Where(s => !string.IsNullOrWhiteSpace(s.OsmId))
+            .Select(s => s.OsmId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var incomingNameOnlyWaterways = incoming
+            .Where(s => string.IsNullOrWhiteSpace(s.OsmId) && !string.IsNullOrWhiteSpace(s.Name))
+            .Select(s => s.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Remove only segments that will be replaced by this import:
+        //   • segments whose OsmId is in the incoming set
+        //   • segments with no OsmId whose WaterwayName is covered by this import
+        // Segments from other files (different OsmId / different name) are left untouched.
+        var toRemove = await _context.Set<WaterwaySegment>()
+            .Where(seg =>
+                (seg.OsmId != null && incomingOsmIds.Contains(seg.OsmId)) ||
+                (seg.OsmId == null && seg.WaterwayName != null && incomingNameOnlyWaterways.Contains(seg.WaterwayName)))
+            .ToListAsync(cancellationToken);
+
+        foreach (var seg in toRemove)
+            _context.Set<WaterwaySegment>().Remove(seg);
+
+        foreach (var candidate in incoming)
         {
             _context.Set<WaterwaySegment>().Add(new WaterwaySegment
             {
@@ -104,13 +136,6 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
                 Geometry = candidate.Geometry
             });
         }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
-        return new GeoJsonImportResultDto(
-            parsedGeoJson.WaterwaySegments.Count,
-            stationsCreated,
-            stationsUpdated);
     }
 
     private static Station? MatchExistingStation(
@@ -121,8 +146,19 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
         {
             var byOsmId = existingStations.FirstOrDefault(existing => existing.OsmId == candidate.OsmId);
             if (byOsmId is not null)
-            {
                 return byOsmId;
+
+            // Candidate has an OsmId but no DB match yet — the existing station may have been
+            // imported from an older file that lacked @id. Upgrade it by matching on name,
+            // but only if the DB station has no OsmId (to avoid stealing a station that already
+            // belongs to a different OSM node).
+            if (!string.IsNullOrWhiteSpace(candidate.Name))
+            {
+                var byNameNoOsmId = existingStations.FirstOrDefault(existing =>
+                    string.IsNullOrWhiteSpace(existing.OsmId) &&
+                    string.Equals(existing.StationName, candidate.Name, StringComparison.OrdinalIgnoreCase));
+                if (byNameNoOsmId is not null)
+                    return byNameNoOsmId;
             }
         }
 
@@ -133,9 +169,7 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             var byName = existingStations.FirstOrDefault(existing =>
                 string.Equals(existing.StationName, candidate.Name, StringComparison.OrdinalIgnoreCase));
             if (byName is not null)
-            {
                 return byName;
-            }
         }
 
         return existingStations
