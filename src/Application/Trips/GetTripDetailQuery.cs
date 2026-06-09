@@ -16,7 +16,6 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
     {
         var trip = await _context.Set<Trip>()
             .Include(t => t.Route)
-            .Include(t => t.Boat)
             .Include(t => t.TripStops)
                 .ThenInclude(ts => ts.RouteStop)
                     .ThenInclude(rs => rs.Station)

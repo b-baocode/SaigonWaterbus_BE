@@ -96,46 +96,8 @@ public static class WaterbusSeedData
         context.Set<Landmark>().AddRange(landmarks);
         await context.SaveChangesAsync();
 
-        // ─── BOATS ───────────────────────────────────────
-        var b1 = new Boat { BoatCode = "WB-001", BoatName = "Sài Gòn Water Bus 01", Capacity = 80, BoatStatus = "Active", Description = "Tàu chở khách tuyến sông Sài Gòn, sức chứa 80 hành khách" };
-        var b2 = new Boat { BoatCode = "WB-002", BoatName = "Sài Gòn Water Bus 02", Capacity = 80, BoatStatus = "Active", Description = "Tàu chở khách tuyến sông Sài Gòn, sức chứa 80 hành khách" };
-        var b3 = new Boat { BoatCode = "WB-003", BoatName = "Sài Gòn Water Bus 03", Capacity = 60, BoatStatus = "Active", Description = "Tàu nhỏ phục vụ giờ cao điểm, sức chứa 60 hành khách" };
-
-        context.Set<Boat>().AddRange(b1, b2, b3);
-        await context.SaveChangesAsync();
-
-        // ─── SEATS ───────────────────────────────────────
-        var seats = new List<Seat>();
-
-        // WB-001 & WB-002: 10 rows (A-J) × 8 cols → 80 seats
-        // Layout: [Window|Standard|Standard|Standard] aisle [Standard|Standard|Standard|Window]
-        //          col1    col2      col3     col4           col5      col6      col7    col8
-        foreach (var boat in new[] { b1, b2 })
-        {
-            for (var row = 0; row < 10; row++)
-            {
-                var label = (char)('A' + row);
-                for (var col = 1; col <= 8; col++)
-                {
-                    var cls = col is 1 or 8 ? "Window" : "Standard";
-                    seats.Add(new Seat { Boat = boat, SeatNumber = $"{label}{col}", SeatClass = cls, SeatRow = row + 1, SeatColumn = col, IsActive = true });
-                }
-            }
-        }
-
-        // WB-003: 10 rows × 6 cols → 60 seats
-        for (var row = 0; row < 10; row++)
-        {
-            var label = (char)('A' + row);
-            for (var col = 1; col <= 6; col++)
-            {
-                var cls = col is 1 or 6 ? "Window" : "Standard";
-                seats.Add(new Seat { Boat = b3, SeatNumber = $"{label}{col}", SeatClass = cls, SeatRow = row + 1, SeatColumn = col, IsActive = true });
-            }
-        }
-
-        context.Set<Seat>().AddRange(seats);
-        await context.SaveChangesAsync();
+        // Capacity per trip type (b1/b2 = 80, b3 = 60)
+        const int b1 = 80, b2 = 80, b3 = 60;
 
         // ─── TICKET TYPES ────────────────────────────────
         var ttAdult   = TT("ADULT",   "Vé người lớn",           "Hành khách từ 12 tuổi trở lên",           1.0m, pointsRate: 10);
@@ -251,13 +213,13 @@ public static class WaterbusSeedData
         var tripsToAdd = new List<Trip>();
 
         // Create full-route forward trips
-        foreach (var (code, boat, times) in fwdFull)
+        foreach (var (code, cap, times) in fwdFull)
         {
             var trip = new Trip
             {
-                Route = rFwd, Boat = boat, TripCode = code,
+                Route = rFwd, TripCode = code,
                 OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = boat.Capacity,
+                ArrivalTime = times[^1], CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             trip.TripStops = rsF.Select((rs, i) =>
@@ -267,13 +229,13 @@ public static class WaterbusSeedData
         }
 
         // Create short-route forward trips (stops 1-5 only)
-        foreach (var (code, boat, times) in fwdShort)
+        foreach (var (code, cap, times) in fwdShort)
         {
             var trip = new Trip
             {
-                Route = rFwd, Boat = boat, TripCode = code,
+                Route = rFwd, TripCode = code,
                 OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = boat.Capacity,
+                ArrivalTime = times[^1], CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             trip.TripStops = rsF.Take(5).Select((rs, i) =>
@@ -325,13 +287,13 @@ public static class WaterbusSeedData
         };
 
         // Full backward
-        foreach (var (code, boat, times) in bwdFull)
+        foreach (var (code, cap, times) in bwdFull)
         {
             var trip = new Trip
             {
-                Route = rBwd, Boat = boat, TripCode = code,
+                Route = rBwd, TripCode = code,
                 OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = boat.Capacity,
+                ArrivalTime = times[^1], CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             trip.TripStops = rsB.Select((rs, i) =>
@@ -341,13 +303,13 @@ public static class WaterbusSeedData
         }
 
         // Short from Thao Dien (rsB[3] = stop 4 = Thao Dien in backward route)
-        foreach (var (code, boat, times) in bwdShortFromTD)
+        foreach (var (code, cap, times) in bwdShortFromTD)
         {
             var trip = new Trip
             {
-                Route = rBwd, Boat = boat, TripCode = code,
+                Route = rBwd, TripCode = code,
                 OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = boat.Capacity,
+                ArrivalTime = times[^1], CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             // Stops 4-8 (index 3-7 in rsB array)
@@ -358,13 +320,13 @@ public static class WaterbusSeedData
         }
 
         // Short from Binh An (rsB[4] = stop 5 = Binh An in backward route)
-        foreach (var (code, boat, times) in bwdShortFromBA)
+        foreach (var (code, cap, times) in bwdShortFromBA)
         {
             var trip = new Trip
             {
-                Route = rBwd, Boat = boat, TripCode = code,
+                Route = rBwd, TripCode = code,
                 OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = boat.Capacity,
+                ArrivalTime = times[^1], CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             // Stops 5-8 (index 4-7 in rsB array)

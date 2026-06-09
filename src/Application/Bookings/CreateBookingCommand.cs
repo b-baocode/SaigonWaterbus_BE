@@ -8,9 +8,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Bookings;
 
-// ─── DTOs ────────────────────────────────────────────────
 public sealed record BookingItemRequest(
-    string SeatNumber,
     string TicketTypeCode,
     string FromStationCode,
     string ToStationCode,
@@ -26,13 +24,11 @@ public sealed record CreateBookingResult(
     string BookingStatus,
     int ItemCount);
 
-// ─── Command ─────────────────────────────────────────────
 public sealed record CreateBookingCommand(
     string TripCode,
     IReadOnlyList<BookingItemRequest> Items,
     string? PromotionCode) : IRequest<CreateBookingResult>;
 
-// ─── Validator ───────────────────────────────────────────
 public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBookingCommand>
 {
     public CreateBookingCommandValidator()
@@ -43,7 +39,6 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
 
         RuleForEach(x => x.Items).ChildRules(item =>
         {
-            item.RuleFor(x => x.SeatNumber).NotEmpty().MaximumLength(20);
             item.RuleFor(x => x.TicketTypeCode).NotEmpty().MaximumLength(50);
             item.RuleFor(x => x.FromStationCode).NotEmpty().MaximumLength(50);
             item.RuleFor(x => x.ToStationCode).NotEmpty().MaximumLength(50)
@@ -54,13 +49,11 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
     }
 }
 
-// ─── Handler ─────────────────────────────────────────────
 public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand, CreateBookingResult>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly IBookingCodeGenerator _bookingCodeGenerator;
-    private readonly ISeatAvailabilityService _seatAvailability;
     private readonly IFareCalculator _fareCalculator;
     private readonly TimeProvider _timeProvider;
 
@@ -68,14 +61,12 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         IApplicationDbContext context,
         IUserContext userContext,
         IBookingCodeGenerator bookingCodeGenerator,
-        ISeatAvailabilityService seatAvailability,
         IFareCalculator fareCalculator,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
         _bookingCodeGenerator = bookingCodeGenerator;
-        _seatAvailability = seatAvailability;
         _fareCalculator = fareCalculator;
         _timeProvider = timeProvider;
     }
@@ -84,7 +75,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
     {
         var tripCode = request.TripCode.Trim().ToUpperInvariant();
 
-        // 1. Load trip kèm TripStops → RouteStop → Station (để resolve StationCode)
         var trip = await _context.Set<Trip>()
             .Include(t => t.TripStops)
                 .ThenInclude(ts => ts.RouteStop)
@@ -92,35 +82,11 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             .SingleOrDefaultAsync(t => t.TripCode == tripCode, cancellationToken)
             ?? throw new NotFoundException($"Trip '{tripCode}' not found.");
 
-        // 2. Validate trip còn bookable
         var now = _timeProvider.GetUtcNow();
         if (trip.TripStatus != TripStatus.Scheduled || trip.DepartureTime <= now)
             throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
                 "Trip is not available for booking.")]);
 
-        // 3. Resolve SeatNumber → Seat (unique trong boat)
-        var requestedSeatNumbers = request.Items
-            .Select(i => i.SeatNumber.Trim().ToUpperInvariant())
-            .ToList();
-
-        var seatsByNumber = await _context.Set<Seat>()
-            .Where(s => s.BoatId == trip.BoatId
-                     && requestedSeatNumbers.Contains(s.SeatNumber)
-                     && s.IsActive)
-            .ToDictionaryAsync(s => s.SeatNumber, cancellationToken);
-
-        var missingSeat = requestedSeatNumbers.FirstOrDefault(n => !seatsByNumber.ContainsKey(n));
-        if (missingSeat is not null)
-            throw new NotFoundException($"Seat '{missingSeat}' not found on this boat.");
-
-        // 4. Validate seat availability (dùng resolved SeatId)
-        var requestedSeatIds = seatsByNumber.Values.Select(s => s.Id).ToList();
-        var availableSeats = await _seatAvailability.GetAvailableSeatsAsync(trip.Id, requestedSeatIds, cancellationToken);
-        if (requestedSeatIds.Except(availableSeats).Any())
-            throw new ValidationException([new ValidationFailure(nameof(request.Items),
-                "One or more seats are no longer available.")]);
-
-        // 5. Resolve TicketTypeCode → TicketType
         var requestedTicketCodes = request.Items
             .Select(i => i.TicketTypeCode.Trim().ToUpperInvariant())
             .Distinct()
@@ -134,13 +100,11 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         if (missingTicket is not null)
             throw new NotFoundException($"Ticket type '{missingTicket}' not found.");
 
-        // 6. Resolve StationCode → TripStop
         var tripStopByStationCode = trip.TripStops
             .ToDictionary(
                 ts => ts.RouteStop.Station.StationCode.ToUpperInvariant(),
                 ts => ts);
 
-        // 7. Validate từng item: from/to station hợp lệ và đúng thứ tự
         var resolvedItems = new List<ResolvedItem>();
         foreach (var item in request.Items)
         {
@@ -161,13 +125,11 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
             resolvedItems.Add(new ResolvedItem(
                 item,
-                seatsByNumber[item.SeatNumber.Trim().ToUpperInvariant()],
                 ticketTypesByCode[item.TicketTypeCode.Trim().ToUpperInvariant()],
                 fromStop,
                 toStop));
         }
 
-        // 8. Validate & load promotion
         Promotion? promotion = null;
         if (!string.IsNullOrWhiteSpace(request.PromotionCode))
         {
@@ -183,7 +145,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                     "Promotion code is not applicable.")]);
         }
 
-        // 9. Tính unit_price qua FareCalculator (dùng internal GUID)
         var itemPrices = new List<(ResolvedItem Resolved, decimal UnitPrice)>();
         foreach (var resolved in resolvedItems)
         {
@@ -199,7 +160,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         var subtotal = itemPrices.Sum(x => x.UnitPrice);
 
-        // 10. Tính discount
         decimal discount = 0;
         if (promotion is not null)
         {
@@ -214,22 +174,10 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         var total = subtotal - discount;
 
-        // 11. Persist trong transaction
         var userId = _userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
         await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
-
-        var seatHolds = itemPrices.Select(x => new SeatHold
-        {
-            TripId = trip.Id,
-            SeatId = x.Resolved.Seat.Id,
-            UserId = userId,
-            HeldAt = now,
-            ExpiresAt = now.AddMinutes(10),
-            HoldStatus = SeatHoldStatus.Active
-        }).ToList();
-        _context.Set<SeatHold>().AddRange(seatHolds);
 
         var booking = new Booking
         {
@@ -248,7 +196,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             BookingId = booking.Id,
             TripId = trip.Id,
             TicketTypeId = x.Resolved.TicketType.Id,
-            SeatId = x.Resolved.Seat.Id,
             FromTripStopId = x.Resolved.FromStop.Id,
             ToTripStopId = x.Resolved.ToStop.Id,
             PassengerName = x.Resolved.Item.PassengerName.Trim(),
@@ -270,7 +217,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         catch (DbUpdateException)
         {
             throw new ValidationException([new ValidationFailure(nameof(request.Items),
-                "Booking failed due to a seat conflict. Please try again.")]);
+                "Booking failed. Please try again.")]);
         }
 
         return new CreateBookingResult(
@@ -281,7 +228,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
     private sealed record ResolvedItem(
         BookingItemRequest Item,
-        Seat Seat,
         TicketType TicketType,
         TripStop FromStop,
         TripStop ToStop);

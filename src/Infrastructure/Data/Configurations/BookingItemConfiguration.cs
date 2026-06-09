@@ -16,7 +16,6 @@ public sealed class BookingItemConfiguration : IEntityTypeConfiguration<BookingI
         builder.Property(x => x.BookingId).HasColumnName("booking_id").IsRequired();
         builder.Property(x => x.TripId).HasColumnName("trip_id").IsRequired();
         builder.Property(x => x.TicketTypeId).HasColumnName("ticket_type_id").IsRequired();
-        builder.Property(x => x.SeatId).HasColumnName("seat_id");
         builder.Property(x => x.FromTripStopId).HasColumnName("from_trip_stop_id").IsRequired();
         builder.Property(x => x.ToTripStopId).HasColumnName("to_trip_stop_id").IsRequired();
         builder.Property(x => x.PassengerName).HasColumnName("passenger_name").HasMaxLength(150).IsRequired();
@@ -24,15 +23,9 @@ public sealed class BookingItemConfiguration : IEntityTypeConfiguration<BookingI
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.ItemStatus).HasColumnName("item_status").HasConversion<string>().HasMaxLength(20).IsRequired();
 
-        // Chống double-booking: 1 seat chỉ có 1 booking_item active trên cùng trip
-        builder.HasIndex(x => new { x.TripId, x.SeatId })
-            .IsUnique()
-            .HasFilter($"seat_id IS NOT NULL AND item_status != '{nameof(BookingItemStatus.Cancelled)}'");
-
         builder.HasOne(x => x.Booking).WithMany(b => b.Items).HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.Trip).WithMany(t => t.BookingItems).HasForeignKey(x => x.TripId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.TicketType).WithMany(tt => tt.BookingItems).HasForeignKey(x => x.TicketTypeId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.Seat).WithMany(s => s.BookingItems).HasForeignKey(x => x.SeatId).OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(x => x.FromTripStop).WithMany().HasForeignKey(x => x.FromTripStopId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.ToTripStop).WithMany().HasForeignKey(x => x.ToTripStopId).OnDelete(DeleteBehavior.Restrict);

@@ -28,8 +28,6 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             .Include(b => b.Items)
                 .ThenInclude(i => i.TicketType)
             .Include(b => b.Items)
-                .ThenInclude(i => i.Seat)
-            .Include(b => b.Items)
                 .ThenInclude(i => i.Trip)
             .Include(b => b.Items)
                 .ThenInclude(i => i.FromTripStop)
@@ -51,7 +49,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             i.PassengerName,
             i.PassengerPhone,
             i.TicketType.TicketTypeName,
-            i.Seat?.SeatNumber,
+            null,
             i.FromTripStop.RouteStop.Station.StationName,
             i.ToTripStop.RouteStop.Station.StationName,
             i.FromTripStop.ScheduledDeparture,

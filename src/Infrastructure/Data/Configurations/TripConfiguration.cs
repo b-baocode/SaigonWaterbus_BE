@@ -14,7 +14,6 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         builder.Property(x => x.Id).HasColumnName("trip_id");
 
         builder.Property(x => x.RouteId).HasColumnName("route_id").IsRequired();
-        builder.Property(x => x.BoatId).HasColumnName("boat_id").IsRequired();
         builder.Property(x => x.TripCode).HasColumnName("trip_code").HasMaxLength(50).IsRequired();
         builder.HasIndex(x => x.TripCode).IsUnique();
 
@@ -26,10 +25,8 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         builder.Property(x => x.StatusNote).HasColumnName("status_note");
 
         builder.HasIndex(x => new { x.RouteId, x.OperatingDate });
-        builder.HasIndex(x => new { x.BoatId, x.OperatingDate });
 
         builder.HasOne(x => x.Route).WithMany(r => r.Trips).HasForeignKey(x => x.RouteId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.Boat).WithMany(b => b.Trips).HasForeignKey(x => x.BoatId).OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property(x => x.LastModified).HasColumnName("updated_at");

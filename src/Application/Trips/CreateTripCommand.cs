@@ -9,7 +9,7 @@ namespace SaigonWaterbus.Application.Trips;
 
 public sealed record CreateTripCommand(
     string RouteCode,
-    string BoatCode,
+    int Capacity,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime) : IRequest<TripDetailDto>;
 
@@ -18,7 +18,7 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
     public CreateTripCommandValidator()
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.Capacity).GreaterThan(0);
         RuleFor(x => x.DepartureTime).GreaterThan(DateTimeOffset.UtcNow);
     }
 }
@@ -26,18 +26,12 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
 public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand, TripDetailDto>
 {
     private readonly IApplicationDbContext _context;
-    private readonly TimeProvider _timeProvider;
 
-    public CreateTripCommandHandler(IApplicationDbContext context, TimeProvider timeProvider)
-    {
-        _context = context;
-        _timeProvider = timeProvider;
-    }
+    public CreateTripCommandHandler(IApplicationDbContext context) => _context = context;
 
     public async Task<TripDetailDto> Handle(CreateTripCommand request, CancellationToken cancellationToken)
     {
         var routeCode = request.RouteCode.Trim().ToUpperInvariant();
-        var boatCode = request.BoatCode.Trim().ToUpperInvariant();
 
         var route = await _context.Set<Route>()
             .Include(r => r.RouteStops.OrderBy(rs => rs.StopOrder))
@@ -48,14 +42,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route must have at least 2 stops.")]);
 
-        var boat = await _context.Set<Boat>()
-            .SingleOrDefaultAsync(b => b.BoatCode == boatCode && b.BoatStatus == "Active", cancellationToken)
-            ?? throw new NotFoundException($"Boat '{boatCode}' not found or inactive.");
-
-        // Tạo trip_code: TR-{yyyyMMdd}-{route_code}-{random}
         var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
 
-        // Tính thời gian các stop từ departure_time
         var tripStops = new List<TripStop>();
         var currentTime = request.DepartureTime;
 
@@ -84,12 +72,11 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         var trip = new Trip
         {
             RouteId = route.Id,
-            BoatId = boat.Id,
             TripCode = tripCode,
             OperatingDate = request.OperatingDate,
             DepartureTime = request.DepartureTime,
             ArrivalTime = arrivalTime,
-            CapacitySnapshot = boat.Capacity,
+            CapacitySnapshot = request.Capacity,
             TripStatus = TripStatus.Scheduled
         };
 
@@ -104,7 +91,6 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         return new TripDetailDto(
             trip.Id, trip.TripCode,
             route.Id, route.RouteName,
-            boat.Id, boat.BoatName,
             trip.DepartureTime, trip.ArrivalTime,
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
             tripStops.OrderBy(ts => ts.StopOrder).Select(ts =>

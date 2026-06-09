@@ -8,7 +8,6 @@ public class BookingItem : BaseGuidEntity
     public Guid BookingId { get; set; }
     public Guid TripId { get; set; }
     public Guid TicketTypeId { get; set; }
-    public Guid? SeatId { get; set; }
     public Guid FromTripStopId { get; set; }
     public Guid ToTripStopId { get; set; }
     public string PassengerName { get; set; } = null!;
@@ -19,7 +18,6 @@ public class BookingItem : BaseGuidEntity
     public Booking Booking { get; set; } = null!;
     public Trip Trip { get; set; } = null!;
     public TicketType TicketType { get; set; } = null!;
-    public Seat? Seat { get; set; }
     public TripStop FromTripStop { get; set; } = null!;
     public TripStop ToTripStop { get; set; } = null!;
 }

@@ -11,7 +11,7 @@ public sealed class Trips : IEndpointGroup
         """
         {
           "routeCode": "R01-BD-TD",
-          "boatCode": "WB-01",
+          "capacity": 50,
           "operatingDate": "2026-06-10",
           "departureTime": "2026-06-10T08:30:00+07:00"
         }
@@ -44,10 +44,8 @@ public sealed class Trips : IEndpointGroup
                 "Anonymous",
                 null,
                 "Query params: fromStationId (guid), toStationId (guid), operatingDate (yyyy-MM-dd).",
-                "Vi du: GET /api/trips/search?fromStationId=86015ba6-...&toStationId=95916ab1-...&operatingDate=2026-06-04",
                 "Chi tra ve chuyen co tripStatus=Scheduled va departureTime > now.",
-                "availableSeats = capacitySnapshot - so ghe da giu (SeatHold) - so ghe da dat (BookingItem).",
-                "minPrice = basePrice x he_so_nho_nhat cua tat ca loai ve dang active."));
+                "availableSeats = capacitySnapshot - so ve da dat (BookingItem active)."));
 
         group.MapGet(GetTripById, "{id:guid}")
             .AllowAnonymous()
@@ -55,19 +53,7 @@ public sealed class Trips : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Tra ve TripDetailDto kem stops[] sap xep theo stop_order.",
-                "stops[].tripStopId dung khi tao booking (fromTripStopId, toTripStopId)."));
-
-        group.MapGet(GetTripSeats, "{id:guid}/seats")
-            .AllowAnonymous()
-            .WithSummary("So do ghe chuyen tau")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
-                null,
-                "status cua moi ghe: Available | Held | Booked.",
-                "Ghe Held: dang duoc giu tam thoi (SeatHold chua het han).",
-                "Ghe Booked: da co BookingItem active.",
-                "Dung seats[].seatId khi tao booking."));
+                "Tra ve TripDetailDto kem stops[] sap xep theo stop_order."));
 
         group.MapPost(CreateTrip, string.Empty)
             .RequireAuthorization()
@@ -76,9 +62,8 @@ public sealed class Trips : IEndpointGroup
                 "Bearer token",
                 CreateTripExample,
                 "Route phai Active va co it nhat 2 ben dung.",
-                "Boat phai Active.",
                 "departureTime phai lon hon thoi diem hien tai.",
-                "Tu dong tinh gio lich den/di cho tung TripStop dua vao RouteStop.standardTravelMin / standardDwellMin.",
+                "capacity: so hanh khach toi da cua chuyen.",
                 "tripCode tu sinh: TR-{yyyyMMdd}-{routeCode}-{4 so ngau nhien}."));
 
         group.MapPatch(UpdateTripStatus, "{id:guid}/status")
@@ -105,9 +90,6 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
-
-    private static async Task<IResult> GetTripSeats(ISender sender, Guid id, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetTripAvailableSeatsQuery(id), ct));
 
     private static async Task<IResult> CreateTrip(ISender sender, CreateTripCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

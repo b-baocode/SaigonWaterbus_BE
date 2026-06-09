@@ -9,8 +9,6 @@ public sealed record TripAdminListItemDto(
     string TripCode,
     string RouteCode,
     string RouteName,
-    string BoatCode,
-    string BoatName,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime,
     DateTimeOffset ArrivalTime,
@@ -34,7 +32,6 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
     {
         var query = _context.Set<Trip>()
             .Include(t => t.Route)
-            .Include(t => t.Boat)
             .AsQueryable();
 
         if (request.OperatingDate.HasValue)
@@ -56,7 +53,6 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
             .Select(t => new TripAdminListItemDto(
                 t.Id, t.TripCode,
                 t.Route.RouteCode, t.Route.RouteName,
-                t.Boat.BoatCode, t.Boat.BoatName,
                 t.OperatingDate, t.DepartureTime, t.ArrivalTime,
                 t.CapacitySnapshot, t.TripStatus.ToString(), t.StatusNote))
             .ToListAsync(cancellationToken);

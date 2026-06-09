@@ -28,7 +28,6 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
     {
         var trip = await _context.Set<Trip>()
             .Include(t => t.Route)
-            .Include(t => t.Boat)
             .Include(t => t.TripStops)
                 .ThenInclude(ts => ts.RouteStop)
                     .ThenInclude(rs => rs.Station)
@@ -46,7 +45,6 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
     internal static TripDetailDto ToDetailDto(Trip trip) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
-        trip.Boat.Id, trip.Boat.BoatName,
         trip.DepartureTime, trip.ArrivalTime,
         trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
         trip.TripStops.OrderBy(ts => ts.StopOrder).Select(ts => new TripStopDto(

@@ -24,7 +24,6 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
     {
         var now = _timeProvider.GetUtcNow();
 
-        // Tìm routes có cả from_station và to_station, đúng thứ tự
         var validRouteIds = await _context.Set<RouteStop>()
             .Where(rs => rs.StationId == request.FromStationId && rs.IsPickupAllowed)
             .Join(_context.Set<RouteStop>().Where(rs => rs.StationId == request.ToStationId && rs.IsDropoffAllowed),
@@ -42,7 +41,6 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var trips = await _context.Set<Trip>()
             .Include(t => t.Route)
-            .Include(t => t.Boat)
             .Include(t => t.TripStops)
             .Where(t => routeIds.Contains(t.RouteId)
                      && t.OperatingDate == request.OperatingDate
@@ -50,16 +48,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                      && t.DepartureTime > now)
             .ToListAsync(cancellationToken);
 
-        // Tính available seats
         var tripIds = trips.Select(t => t.Id).ToList();
-
-        var heldCounts = await _context.Set<SeatHold>()
-            .Where(sh => tripIds.Contains(sh.TripId)
-                      && sh.HoldStatus == SeatHoldStatus.Active
-                      && sh.ExpiresAt > now)
-            .GroupBy(sh => sh.TripId)
-            .Select(g => new { TripId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
 
         var bookedCounts = await _context.Set<BookingItem>()
             .Where(bi => tripIds.Contains(bi.TripId) && bi.ItemStatus != BookingItemStatus.Cancelled)
@@ -67,7 +56,6 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             .Select(g => new { TripId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
 
-        // Tính min price từ FareMatrix
         var routeFromTo = validRouteIds.ToDictionary(x => x.RouteId, x => x);
 
         var farePrices = await _context.Set<FareMatrix>()
@@ -91,15 +79,14 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 ? t.TripStops.FirstOrDefault(ts => ts.RouteStopId == routeStops.ToStop.Id)
                 : null;
 
-            var held = heldCounts.GetValueOrDefault(t.Id, 0);
             var booked = bookedCounts.GetValueOrDefault(t.Id, 0);
-            var available = t.CapacitySnapshot - held - booked;
+            var available = t.CapacitySnapshot - booked;
 
             farePrices.TryGetValue(t.RouteId, out var basePrice);
             var minPrice = basePrice > 0 ? (decimal?)(basePrice * minModifier) : null;
 
             return new TripSummaryDto(
-                t.Id, t.TripCode, t.Route.RouteName, t.Boat.BoatName,
+                t.Id, t.TripCode, t.Route.RouteName,
                 t.DepartureTime, t.ArrivalTime,
                 fromTripStop?.ScheduledDeparture, toTripStop?.ScheduledArrival,
                 Math.Max(0, available), t.CapacitySnapshot,

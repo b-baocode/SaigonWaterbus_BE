@@ -25,10 +25,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<RouteStop> RouteStops => Set<RouteStop>();
     public DbSet<Landmark> Landmarks => Set<Landmark>();
 
-    // ─── Boat & Seat ─────────────────────────────────────
-    public DbSet<Boat> Boats => Set<Boat>();
-    public DbSet<Seat> Seats => Set<Seat>();
-
     // ─── Trip ────────────────────────────────────────────
     public DbSet<Trip> Trips => Set<Trip>();
     public DbSet<TripStop> TripStops => Set<TripStop>();
@@ -42,7 +38,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Promotion> Promotions => Set<Promotion>();
 
     // ─── Booking ─────────────────────────────────────────
-    public DbSet<SeatHold> SeatHolds => Set<SeatHold>();
     public DbSet<Booking> Bookings => Set<Booking>();
     public DbSet<BookingItem> BookingItems => Set<BookingItem>();
 
