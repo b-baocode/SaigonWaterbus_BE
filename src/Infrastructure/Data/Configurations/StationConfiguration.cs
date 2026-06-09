@@ -16,13 +16,20 @@ public sealed class StationConfiguration : IEntityTypeConfiguration<Station>
         builder.HasIndex(x => x.StationCode).IsUnique();
 
         builder.Property(x => x.StationName).HasColumnName("station_name").HasMaxLength(150).IsRequired();
-        builder.Property(x => x.Address).HasColumnName("address");
+        builder.Property(x => x.Address).HasColumnName("address").HasMaxLength(300);
+        builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(500);
         builder.Property(x => x.Latitude).HasColumnName("latitude").HasColumnType("numeric(9,6)");
         builder.Property(x => x.Longitude).HasColumnName("longitude").HasColumnType("numeric(9,6)");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(20).IsRequired()
             .HasConversion<string>();
         builder.Property(x => x.Location).HasColumnName("location").HasColumnType("geography(Point,4326)");
         builder.Property(x => x.OsmId).HasColumnName("osm_id").HasMaxLength(50);
+        builder.Property(x => x.ImageUrl).HasColumnName("image_url").HasMaxLength(2048);
+        builder.Property(x => x.ImagePublicId).HasColumnName("image_public_id").HasMaxLength(255);
+        builder.Property(x => x.PhoneNumber).HasColumnName("phone_number").HasMaxLength(20);
+        builder.Property(x => x.HasWaitingArea).HasColumnName("has_waiting_area");
+        builder.Property(x => x.HasParking).HasColumnName("has_parking");
+        builder.Property(x => x.HasTicketCounter).HasColumnName("has_ticket_counter");
         builder.HasIndex(x => x.Location).HasMethod("gist").HasDatabaseName("ix_stations_location");
         builder.HasIndex(x => x.OsmId).HasDatabaseName("ix_stations_osm_id");
 
