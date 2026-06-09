@@ -153,14 +153,18 @@ public class UserManagementSupportTests
     [Test]
     public void ActorCannotUpdateOrDeleteOwnAccountFromManagementApi()
     {
-        var actor = UserWithRole(1, Roles.ManagerSystemName);
-        var target = UserWithRole(1, Roles.StaffSystemName);
+        var userId = Guid.NewGuid();
+        var actor = UserWithRole(userId, Roles.ManagerSystemName);
+        var target = UserWithRole(userId, Roles.StaffSystemName);
 
         Should.Throw<ValidationException>(() => UserManagementSupport.EnsureCanUpdateUser(actor, target));
         Should.Throw<ValidationException>(() => UserManagementSupport.EnsureCanDeleteUser(actor, target));
     }
 
     private static User UserWithRole(int id, string systemName) =>
+        UserWithRole(Guid.Parse($"00000000-0000-0000-0000-{id:000000000000}"), systemName);
+
+    private static User UserWithRole(Guid id, string systemName) =>
         new()
         {
             Id = id,
@@ -173,28 +177,28 @@ public class UserManagementSupportTests
         {
             Roles.AdminName => new Role
             {
-                Id = 1,
+                Id = Guid.NewGuid(),
                 Code = Roles.AdminCode,
                 SystemName = Roles.AdminName,
                 DisplayName = "Admin"
             },
             Roles.ManagerSystemName => new Role
             {
-                Id = 2,
+                Id = Guid.NewGuid(),
                 Code = Roles.ManagerCode,
                 SystemName = Roles.ManagerSystemName,
                 DisplayName = "Manager"
             },
             Roles.StaffSystemName => new Role
             {
-                Id = 3,
+                Id = Guid.NewGuid(),
                 Code = Roles.StaffCode,
                 SystemName = Roles.StaffSystemName,
                 DisplayName = "Staff"
             },
             Roles.CustomerSystemName => new Role
             {
-                Id = 4,
+                Id = Guid.NewGuid(),
                 Code = Roles.CustomerCode,
                 SystemName = Roles.CustomerSystemName,
                 DisplayName = "Customer"

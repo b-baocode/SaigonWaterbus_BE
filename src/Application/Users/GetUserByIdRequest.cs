@@ -3,14 +3,14 @@ using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Users;
 
-public sealed record GetUserByIdRequest(int UserId);
+public sealed record GetUserByIdRequest(Guid UserId);
 
 public sealed class GetUserByIdRequestValidator : AbstractValidator<GetUserByIdRequest>
 {
     public GetUserByIdRequestValidator()
     {
         RuleFor(x => x.UserId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("UserId không hợp lệ.");
     }
 }

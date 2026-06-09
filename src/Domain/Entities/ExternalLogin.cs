@@ -2,7 +2,7 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class ExternalLogin : BaseEntity
 {
-    public int UserId { get; set; }
+    public Guid UserId { get; set; }
 
     public string Provider { get; set; } = null!; // "google", "facebook"
 

@@ -1,20 +1,21 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record DeleteSeatRequest(int VesselId, int SeatId);
+public sealed record DeleteSeatRequest(Guid VesselId, Guid SeatId);
 
 public sealed class DeleteSeatRequestValidator : AbstractValidator<DeleteSeatRequest>
 {
     public DeleteSeatRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.SeatId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("SeatId không hợp lệ.");
     }
 }
@@ -46,6 +47,10 @@ public sealed class DeleteSeatRequestUseCase
         var remainingCount = await _context.Seats
             .CountAsync(x => x.VesselId == vessel.Id && x.Id != seat.Id, cancellationToken);
         vessel.SeatsConfigured = remainingCount == vessel.SeatCount;
+        if (!vessel.SeatsConfigured)
+        {
+            vessel.Status = VesselStatus.Inactive;
+        }
         await _context.SaveChangesAsync(cancellationToken);
 
         return new AuthActionResultDto("Xóa ghế thành công.");

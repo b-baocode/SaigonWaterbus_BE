@@ -6,14 +6,23 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record SeatDto(int Id, string Code, int Deck, string Row, int Column, bool IsActive);
+public sealed record SeatTypeDto(Guid SeatTypeId, string SeatTypeCode, string SeatTypeName);
+
+public sealed record SeatDto(
+    Guid SeatId,
+    string SeatCode,
+    SeatTypeDto? SeatType,
+    int Deck,
+    string Row,
+    int Column,
+    bool IsActive);
 
 public sealed record SeatRowDto(string Row, IReadOnlyCollection<SeatDto> Seats);
 
 public sealed record SeatDeckDto(int DeckNumber, int? RowCount, int? ColumnCount, IReadOnlyCollection<SeatRowDto> Rows);
 
 public sealed record VesselFacilityDto(
-    int Id,
+    Guid Id,
     VesselFacilityType Type,
     int Deck,
     string Row,
@@ -23,7 +32,7 @@ public sealed record VesselFacilityDto(
     bool IsActive);
 
 public sealed record VesselSeatsDto(
-    int VesselId,
+    Guid VesselId,
     int TotalSeats,
     int ConfiguredSeats,
     int ActiveSeats,
@@ -59,6 +68,16 @@ internal static class SeatSupport
     public static string SeatCode(int deck, string row, int column) =>
         $"{deck}-{row}{column}";
 
+    public static SeatDto CreateSeatDto(Seat seat) =>
+        new(
+            seat.Id,
+            seat.Code,
+            seat.SeatType is null ? null : new SeatTypeDto(seat.SeatType.Id, seat.SeatType.Code, seat.SeatType.Name),
+            seat.Deck,
+            seat.Row,
+            seat.Column,
+            seat.IsActive);
+
     public static VesselSeatsDto CreateVesselSeatsDto(
         Vessel vessel,
         IList<Seat> seats,
@@ -93,7 +112,7 @@ internal static class SeatSupport
                         rowGroup.Key,
                         rowGroup
                             .OrderBy(s => s.Column)
-                            .Select(s => new SeatDto(s.Id, s.Code, s.Deck, s.Row, s.Column, s.IsActive))
+                            .Select(CreateSeatDto)
                             .ToArray()))
                     .ToArray());
             })

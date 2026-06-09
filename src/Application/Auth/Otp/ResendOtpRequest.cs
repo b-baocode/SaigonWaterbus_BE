@@ -6,14 +6,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Otp;
 
-public sealed record ResendOtpRequest(int ChallengeId);
+public sealed record ResendOtpRequest(Guid ChallengeId);
 
 public sealed class ResendOtpRequestValidator : AbstractValidator<ResendOtpRequest>
 {
     public ResendOtpRequestValidator()
     {
         RuleFor(x => x.ChallengeId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Mã xác thực không hợp lệ.");
     }
 }

@@ -4,7 +4,7 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class Vessel : BaseAuditableEntity
 {
-    public int WaterbusServiceId { get; set; }
+    public Guid WaterbusServiceId { get; set; }
 
     public WaterbusService WaterbusService { get; set; } = null!;
 
@@ -17,6 +17,8 @@ public class Vessel : BaseAuditableEntity
     public VesselStatus Status { get; set; } = VesselStatus.Active;
 
     public int SeatCount { get; set; }
+
+    public int PassengerCapacity { get; set; }
 
     public int NumberOfDecks { get; set; }
 

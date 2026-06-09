@@ -12,7 +12,7 @@ public class SeatRequestValidatorTests
     {
         var validator = new GenerateSeatsRequestValidator();
 
-        var result = validator.Validate(new GenerateSeatsRequest(1, null!));
+        var result = validator.Validate(new GenerateSeatsRequest(Guid.NewGuid(), null!));
 
         result.IsValid.ShouldBeFalse();
         result.Errors.ShouldContain(x => x.PropertyName == nameof(GenerateSeatsRequest.Decks));
@@ -24,7 +24,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            Guid.NewGuid(),
             [
                 new DeckConfigDto(1, 2, 10),
                 new DeckConfigDto(1, 2, 10)
@@ -40,7 +40,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            Guid.NewGuid(),
             [
                 new DeckConfigDto(1, 2, 10),
                 new DeckConfigDto(2, 2, 10)
@@ -55,7 +55,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            Guid.NewGuid(),
             [
                 new DeckConfigDto(
                     1,
@@ -79,7 +79,7 @@ public class SeatRequestValidatorTests
         var validator = new GenerateSeatsRequestValidator();
 
         var result = validator.Validate(new GenerateSeatsRequest(
-            1,
+            Guid.NewGuid(),
             [
                 new DeckConfigDto(
                     1,
@@ -98,7 +98,7 @@ public class SeatRequestValidatorTests
     {
         var validator = new UpdateSeatStatusRequestValidator();
 
-        var result = validator.Validate(new UpdateSeatStatusRequest(1, 1, null));
+        var result = validator.Validate(new UpdateSeatStatusRequest(Guid.NewGuid(), Guid.NewGuid(), null));
 
         result.IsValid.ShouldBeFalse();
         result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateSeatStatusRequest.IsActive));

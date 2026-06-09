@@ -1,3 +1,5 @@
+using SaigonWaterbus.Domain.Enums;
+
 namespace SaigonWaterbus.Domain.Entities;
 
 public class WaterbusService : BaseAuditableEntity
@@ -12,5 +14,9 @@ public class WaterbusService : BaseAuditableEntity
 
     public int DisplayOrder { get; set; }
 
+    public BookingMode BookingMode { get; set; } = BookingMode.SeatBased;
+
     public ICollection<Vessel> Vessels { get; set; } = new List<Vessel>();
+
+    public ICollection<SeatType> SeatTypes { get; set; } = new List<SeatType>();
 }

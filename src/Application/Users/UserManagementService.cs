@@ -37,7 +37,7 @@ public sealed class UserManagementService : IUserManagementService
     public async Task<IReadOnlyCollection<AuthUserDto>> GetUsersAsync(CancellationToken cancellationToken) =>
         await _getUsers.ExecuteAsync(new GetUsersRequest(), cancellationToken);
 
-    public async Task<AuthUserDto> GetUserByIdAsync(int userId, CancellationToken cancellationToken)
+    public async Task<AuthUserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken)
     {
         var request = new GetUserByIdRequest(userId);
         await _validator.ValidateAsync(request, cancellationToken);
@@ -65,7 +65,7 @@ public sealed class UserManagementService : IUserManagementService
         return await _updateUserStatus.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> DeleteUserAsync(int userId, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> DeleteUserAsync(Guid userId, CancellationToken cancellationToken)
     {
         var request = new DeleteUserRequest(userId);
         await _validator.ValidateAsync(request, cancellationToken);

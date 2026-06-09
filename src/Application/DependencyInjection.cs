@@ -62,6 +62,7 @@ public static class DependencyInjection
 
         builder.Services.AddScoped<ISeatManagementService, SeatManagementService>();
         builder.Services.AddScoped<GetSeatsRequestUseCase>();
+        builder.Services.AddScoped<GenerateSeatMatrixRequestUseCase>();
         builder.Services.AddScoped<GenerateSeatsRequestUseCase>();
         builder.Services.AddScoped<UpdateSeatRequestUseCase>();
         builder.Services.AddScoped<UpdateSeatStatusRequestUseCase>();

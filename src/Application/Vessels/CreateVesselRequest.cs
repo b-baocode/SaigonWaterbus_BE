@@ -6,11 +6,12 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record CreateVesselRequest(
-    int WaterbusServiceId,
+    Guid WaterbusServiceId,
     string Code,
     string Name,
     VesselStatus Status,
     int SeatCount,
+    int PassengerCapacity,
     int NumberOfDecks,
     string? RegistrationNumber = null,
     int? MaxSpeedKmh = null,
@@ -27,7 +28,7 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
     public CreateVesselRequestValidator()
     {
         RuleFor(x => x.WaterbusServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Dịch vụ WaterBus là bắt buộc.");
 
         RuleFor(x => x.Code)
@@ -53,12 +54,16 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
             .WithMessage("Trạng thái tàu không hợp lệ.");
 
         RuleFor(x => x.SeatCount)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Số ghế không được âm.");
+
+        RuleFor(x => x.PassengerCapacity)
             .GreaterThan(0)
-            .WithMessage("Số ghế phải lớn hơn 0.");
+            .WithMessage("Sức chứa hành khách phải lớn hơn 0.");
 
         RuleFor(x => x.NumberOfDecks)
-            .GreaterThan(0)
-            .WithMessage("Số tầng phải lớn hơn 0.");
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Số tầng không được âm.");
 
         RuleFor(x => x.MaxSpeedKmh)
             .GreaterThan(0)
@@ -112,6 +117,9 @@ public sealed class CreateVesselRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.WaterbusServiceId, cancellationToken)
             ?? throw AuthSupport.CreateValidationException(nameof(request.WaterbusServiceId), "Dịch vụ WaterBus không hợp lệ.");
 
+        EnsureVesselCapacityMatchesService(service.BookingMode, request.SeatCount, request.PassengerCapacity, request.NumberOfDecks);
+        EnsureInitialStatusMatchesService(service.BookingMode, request.Status);
+
         var normalizedCode = VesselSupport.NormalizeCode(request.Code);
         if (await _context.Vessels.AnyAsync(x => x.Code == normalizedCode, cancellationToken))
         {
@@ -146,6 +154,7 @@ public sealed class CreateVesselRequestUseCase
             Name = request.Name.Trim(),
             Status = request.Status,
             SeatCount = request.SeatCount,
+            PassengerCapacity = request.PassengerCapacity,
             NumberOfDecks = request.NumberOfDecks,
             MaxSpeedKmh = request.MaxSpeedKmh,
             YearBuilt = request.YearBuilt,
@@ -184,5 +193,37 @@ public sealed class CreateVesselRequestUseCase
 
         vessel.WaterbusService = service;
         return VesselSupport.CreateDto(vessel);
+    }
+
+    private static void EnsureVesselCapacityMatchesService(
+        BookingMode bookingMode,
+        int seatCount,
+        int passengerCapacity,
+        int numberOfDecks)
+    {
+        if (seatCount <= 0)
+        {
+            throw AuthSupport.CreateValidationException(nameof(CreateVesselRequest.SeatCount), "Tàu phải có số ghế lớn hơn 0 để setup sơ đồ ghế.");
+        }
+
+        if (numberOfDecks <= 0)
+        {
+            throw AuthSupport.CreateValidationException(nameof(CreateVesselRequest.NumberOfDecks), "Tàu phải có số tầng lớn hơn 0 để setup sơ đồ ghế.");
+        }
+
+        if (passengerCapacity < seatCount)
+        {
+            throw AuthSupport.CreateValidationException(nameof(CreateVesselRequest.PassengerCapacity), "Sức chứa hành khách phải lớn hơn hoặc bằng số ghế.");
+        }
+    }
+
+    private static void EnsureInitialStatusMatchesService(BookingMode bookingMode, VesselStatus status)
+    {
+        if (status == VesselStatus.Active)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(CreateVesselRequest.Status),
+                "Tàu phải tạo ở trạng thái Inactive, setup đủ ghế rồi mới chuyển Active.");
+        }
     }
 }

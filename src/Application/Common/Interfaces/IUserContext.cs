@@ -2,7 +2,7 @@ namespace SaigonWaterbus.Application.Common.Interfaces;
 
 public interface IUserContext
 {
-    int? UserId { get; }
+    Guid? UserId { get; }
 
     bool IsAuthenticated { get; }
 }

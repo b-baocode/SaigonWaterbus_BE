@@ -4,7 +4,7 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record UpdateVesselStatusRequest(
-    int VesselId,
+    Guid VesselId,
     VesselStatus Status);
 
 public sealed class UpdateVesselStatusRequestValidator : AbstractValidator<UpdateVesselStatusRequest>
@@ -12,7 +12,7 @@ public sealed class UpdateVesselStatusRequestValidator : AbstractValidator<Updat
     public UpdateVesselStatusRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.Status)
@@ -44,6 +44,11 @@ public sealed class UpdateVesselStatusRequestUseCase
             .Include(x => x.WaterbusService)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
+
+        if (request.Status == VesselStatus.Active)
+        {
+            VesselSupport.EnsureCanActivate(vessel, nameof(request.Status));
+        }
 
         vessel.Status = request.Status;
         await _context.SaveChangesAsync(cancellationToken);

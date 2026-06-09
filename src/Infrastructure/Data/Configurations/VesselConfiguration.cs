@@ -29,6 +29,12 @@ public sealed class VesselConfiguration : IEntityTypeConfiguration<Vessel>
             .IsRequired();
 
         builder.Property(x => x.Status)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
+        builder.Property(x => x.PassengerCapacity)
+            .HasDefaultValue(0)
             .IsRequired();
 
         builder.Property(x => x.ImageUrl)

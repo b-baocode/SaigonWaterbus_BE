@@ -142,7 +142,7 @@ internal static class UserManagementSupport
     public static async Task<User> GetVisibleUserByIdAsync(
         IApplicationDbContext context,
         User actor,
-        int userId,
+        Guid userId,
         CancellationToken cancellationToken)
     {
         var user = await BuildVisibleUsersQuery(context, actor)

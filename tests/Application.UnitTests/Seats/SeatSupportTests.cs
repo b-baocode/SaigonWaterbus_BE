@@ -11,9 +11,10 @@ public class SeatSupportTests
     [Test]
     public void CreateVesselSeatsDtoKeepsRegisteredSeatCountAsTotalSeats()
     {
+        var vesselId = Guid.NewGuid();
         var vessel = new Vessel
         {
-            Id = 1,
+            Id = vesselId,
             Code = "WB01",
             Name = "WaterBus 01",
             SeatCount = 3,
@@ -21,9 +22,9 @@ public class SeatSupportTests
         };
         var seats = new List<Seat>
         {
-            Seat(1, "1-A1", isActive: true),
-            Seat(2, "1-A2", isActive: false),
-            Seat(3, "1-A3", isActive: true)
+            Seat(vesselId, 1, "1-A1", isActive: true),
+            Seat(vesselId, 2, "1-A2", isActive: false),
+            Seat(vesselId, 3, "1-A3", isActive: true)
         };
 
         var dto = SeatSupport.CreateVesselSeatsDto(vessel, seats);
@@ -37,9 +38,10 @@ public class SeatSupportTests
     [Test]
     public void CreateVesselSeatsDtoReturnsLayoutAndFacilitiesWithoutChangingSeatCounts()
     {
+        var vesselId = Guid.NewGuid();
         var vessel = new Vessel
         {
-            Id = 1,
+            Id = vesselId,
             Code = "WB01",
             Name = "WaterBus 01",
             SeatCount = 80,
@@ -49,7 +51,7 @@ public class SeatSupportTests
         {
             new()
             {
-                VesselId = 1,
+                VesselId = vesselId,
                 DeckNumber = 1,
                 RowCount = 20,
                 ColumnCount = 8
@@ -59,8 +61,8 @@ public class SeatSupportTests
         {
             new()
             {
-                Id = 10,
-                VesselId = 1,
+                Id = Guid.NewGuid(),
+                VesselId = vesselId,
                 Type = VesselFacilityType.Toilet,
                 Deck = 1,
                 Row = "O",
@@ -71,7 +73,7 @@ public class SeatSupportTests
             }
         };
         var seats = Enumerable.Range(1, 80)
-            .Select(id => Seat(id, $"1-A{id}", isActive: true))
+            .Select(id => Seat(vesselId, id, $"1-A{id}", isActive: true))
             .ToList();
 
         var dto = SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts, facilities);
@@ -84,15 +86,15 @@ public class SeatSupportTests
         dto.Facilities.Single().Type.ShouldBe(VesselFacilityType.Toilet);
     }
 
-    private static Seat Seat(int id, string code, bool isActive) =>
+    private static Seat Seat(Guid vesselId, int column, string code, bool isActive) =>
         new()
         {
-            Id = id,
-            VesselId = 1,
+            Id = Guid.NewGuid(),
+            VesselId = vesselId,
             Code = code,
             Deck = 1,
             Row = "A",
-            Column = id,
+            Column = column,
             IsActive = isActive
         };
 }

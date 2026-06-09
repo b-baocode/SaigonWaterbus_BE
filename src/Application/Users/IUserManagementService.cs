@@ -6,7 +6,7 @@ public interface IUserManagementService
 {
     Task<IReadOnlyCollection<AuthUserDto>> GetUsersAsync(CancellationToken cancellationToken);
 
-    Task<AuthUserDto> GetUserByIdAsync(int userId, CancellationToken cancellationToken);
+    Task<AuthUserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken);
 
     Task<IReadOnlyCollection<UserRoleDto>> GetManageableRolesAsync(CancellationToken cancellationToken);
 
@@ -16,5 +16,5 @@ public interface IUserManagementService
 
     Task<AuthUserDto> UpdateUserStatusAsync(UpdateUserStatusRequest request, CancellationToken cancellationToken);
 
-    Task<AuthActionResultDto> DeleteUserAsync(int userId, CancellationToken cancellationToken);
+    Task<AuthActionResultDto> DeleteUserAsync(Guid userId, CancellationToken cancellationToken);
 }

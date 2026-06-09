@@ -32,6 +32,11 @@ public sealed class WaterbusServiceConfiguration : IEntityTypeConfiguration<Wate
             .HasDefaultValue(0)
             .IsRequired();
 
+        builder.Property(x => x.BookingMode)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+
         builder.HasIndex(x => x.DisplayOrder);
     }
 }

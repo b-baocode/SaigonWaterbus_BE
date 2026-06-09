@@ -98,7 +98,7 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
 public sealed class RegisterRequestUseCase
 {
     private sealed record PendingRegistrationOtp(
-        int ChallengeId,
+        Guid ChallengeId,
         string Destination,
         OtpChannel Channel,
         string FullName,

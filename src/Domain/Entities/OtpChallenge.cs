@@ -4,7 +4,7 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class OtpChallenge : BaseAuditableEntity
 {
-    public int UserId { get; set; }
+    public Guid UserId { get; set; }
 
     public OtpPurpose Purpose { get; set; }
 

@@ -43,7 +43,7 @@ internal static class VesselSupport
     {
         return CanManageVessels(actor)
             ? query
-            : query.Where(x => x.Status == VesselStatus.Active);
+            : query.Where(x => x.Status == VesselStatus.Active && x.SeatsConfigured);
     }
 
     public static string NormalizeCode(string code) =>
@@ -71,13 +71,28 @@ internal static class VesselSupport
             vessel.Name,
             vessel.Status,
             vessel.SeatCount,
+            vessel.PassengerCapacity,
             generatedSeatCount,
             vessel.NumberOfDecks,
             vessel.SeatsConfigured,
+            IsReadyForOperation(vessel),
             vessel.MaxSpeedKmh,
             vessel.YearBuilt,
             vessel.ImageUrl ?? string.Empty,
             description);
+    }
+
+    public static bool IsReadyForOperation(Vessel vessel) =>
+        vessel.Status == VesselStatus.Active && vessel.SeatsConfigured;
+
+    public static void EnsureCanActivate(Vessel vessel, string propertyName)
+    {
+        if (!vessel.SeatsConfigured)
+        {
+            throw AuthSupport.CreateValidationException(
+                propertyName,
+                "Tàu phải setup đủ ghế trước khi chuyển Active.");
+        }
     }
 
     public static void EnsureValidImage(

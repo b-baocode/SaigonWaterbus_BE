@@ -18,9 +18,10 @@ public class WaterbusServiceSupportTests
     [Test]
     public void CreateDtoMapsWaterbusService()
     {
+        var serviceId = Guid.NewGuid();
         var service = new WaterbusService
         {
-            Id = 7,
+            Id = serviceId,
             Code = "PUBLIC",
             Name = "WaterBus cong cong",
             Description = "Dich vu theo tuyen.",
@@ -30,7 +31,7 @@ public class WaterbusServiceSupportTests
 
         var dto = WaterbusServiceSupport.CreateDto(service);
 
-        dto.Id.ShouldBe(7);
+        dto.Id.ShouldBe(serviceId);
         dto.Code.ShouldBe("PUBLIC");
         dto.Name.ShouldBe("WaterBus cong cong");
         dto.Description.ShouldBe("Dich vu theo tuyen.");
@@ -44,8 +45,8 @@ public class WaterbusServiceSupportTests
         var admin = UserWithRole(Roles.AdminName);
         var services = new[]
         {
-            WaterbusService(1, "PUBLIC", true),
-            WaterbusService(2, "TOURIST", false)
+            WaterbusService(Guid.NewGuid(), "PUBLIC", true),
+            WaterbusService(Guid.NewGuid(), "TOURIST", false)
         }.AsQueryable();
 
         var visible = WaterbusServiceSupport.ApplyVisibilityFilter(services, admin, includeInactive: true)
@@ -61,8 +62,8 @@ public class WaterbusServiceSupportTests
         var admin = UserWithRole(Roles.AdminName);
         var services = new[]
         {
-            WaterbusService(1, "PUBLIC", true),
-            WaterbusService(2, "TOURIST", false)
+            WaterbusService(Guid.NewGuid(), "PUBLIC", true),
+            WaterbusService(Guid.NewGuid(), "TOURIST", false)
         }.AsQueryable();
 
         var visible = WaterbusServiceSupport.ApplyVisibilityFilter(services, admin, includeInactive: false)
@@ -78,8 +79,8 @@ public class WaterbusServiceSupportTests
         var manager = UserWithRole(Roles.ManagerSystemName);
         var services = new[]
         {
-            WaterbusService(1, "PUBLIC", true),
-            WaterbusService(2, "TOURIST", false)
+            WaterbusService(Guid.NewGuid(), "PUBLIC", true),
+            WaterbusService(Guid.NewGuid(), "TOURIST", false)
         }.AsQueryable();
 
         var visible = WaterbusServiceSupport.ApplyVisibilityFilter(services, manager, includeInactive: true)
@@ -98,7 +99,7 @@ public class WaterbusServiceSupportTests
             }
         };
 
-    private static WaterbusService WaterbusService(int id, string code, bool isActive) =>
+    private static WaterbusService WaterbusService(Guid id, string code, bool isActive) =>
         new()
         {
             Id = id,

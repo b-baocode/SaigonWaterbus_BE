@@ -2,14 +2,14 @@ using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Vessels;
 
-public sealed record GetVesselByIdRequest(int VesselId);
+public sealed record GetVesselByIdRequest(Guid VesselId);
 
 public sealed class GetVesselByIdRequestValidator : AbstractValidator<GetVesselByIdRequest>
 {
     public GetVesselByIdRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
     }
 }

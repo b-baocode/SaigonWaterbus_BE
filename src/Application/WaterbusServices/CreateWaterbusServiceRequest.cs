@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.WaterbusServices;
 
@@ -9,7 +10,8 @@ public sealed record CreateWaterbusServiceRequest(
     string Name,
     string? Description = null,
     bool IsActive = true,
-    int DisplayOrder = 0);
+    int DisplayOrder = 0,
+    BookingMode BookingMode = BookingMode.SeatBased);
 
 public sealed class CreateWaterbusServiceRequestValidator : AbstractValidator<CreateWaterbusServiceRequest>
 {
@@ -36,6 +38,10 @@ public sealed class CreateWaterbusServiceRequestValidator : AbstractValidator<Cr
         RuleFor(x => x.DisplayOrder)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Thứ tự hiển thị không hợp lệ.");
+
+        RuleFor(x => x.BookingMode)
+            .IsInEnum()
+            .WithMessage("Kiểu đặt vé không hợp lệ.");
     }
 }
 
@@ -76,7 +82,8 @@ public sealed class CreateWaterbusServiceRequestUseCase
             Name = request.Name.Trim(),
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             IsActive = request.IsActive,
-            DisplayOrder = request.DisplayOrder
+            DisplayOrder = request.DisplayOrder,
+            BookingMode = request.BookingMode
         };
 
         try

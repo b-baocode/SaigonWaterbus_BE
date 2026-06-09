@@ -2,14 +2,14 @@ using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.WaterbusServices;
 
-public sealed record GetWaterbusServiceByIdRequest(int ServiceId);
+public sealed record GetWaterbusServiceByIdRequest(Guid ServiceId);
 
 public sealed class GetWaterbusServiceByIdRequestValidator : AbstractValidator<GetWaterbusServiceByIdRequest>
 {
     public GetWaterbusServiceByIdRequestValidator()
     {
         RuleFor(x => x.ServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("ServiceId không hợp lệ.");
     }
 }

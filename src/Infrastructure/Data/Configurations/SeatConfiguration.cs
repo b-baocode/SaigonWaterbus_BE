@@ -29,5 +29,10 @@ public sealed class SeatConfiguration : IEntityTypeConfiguration<Seat>
             .HasForeignKey(x => x.VesselId)
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
+
+        builder.HasOne(x => x.SeatType)
+            .WithMany(x => x.Seats)
+            .HasForeignKey(x => x.SeatTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }

@@ -33,7 +33,7 @@ public sealed class VesselManagementService : IVesselManagementService
     }
 
     public async Task<IReadOnlyCollection<VesselDto>> GetVesselsAsync(
-        int? serviceId,
+        Guid? serviceId,
         VesselStatus? status,
         string? search,
         CancellationToken cancellationToken)
@@ -43,7 +43,7 @@ public sealed class VesselManagementService : IVesselManagementService
         return await _getVessels.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<VesselDto> GetVesselByIdAsync(int vesselId, CancellationToken cancellationToken)
+    public async Task<VesselDto> GetVesselByIdAsync(Guid vesselId, CancellationToken cancellationToken)
     {
         var request = new GetVesselByIdRequest(vesselId);
         await _validator.ValidateAsync(request, cancellationToken);
@@ -68,7 +68,7 @@ public sealed class VesselManagementService : IVesselManagementService
         return await _updateVesselStatus.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> DeleteVesselAsync(int vesselId, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> DeleteVesselAsync(Guid vesselId, CancellationToken cancellationToken)
     {
         var request = new DeleteVesselRequest(vesselId);
         await _validator.ValidateAsync(request, cancellationToken);

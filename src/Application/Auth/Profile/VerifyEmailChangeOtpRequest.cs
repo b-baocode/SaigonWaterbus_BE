@@ -5,14 +5,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Profile;
 
-public sealed record VerifyEmailChangeOtpRequest(int ChallengeId, string Code);
+public sealed record VerifyEmailChangeOtpRequest(Guid ChallengeId, string Code);
 
 public sealed class VerifyEmailChangeOtpRequestValidator : AbstractValidator<VerifyEmailChangeOtpRequest>
 {
     public VerifyEmailChangeOtpRequestValidator()
     {
         RuleFor(x => x.ChallengeId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Mã xác thực không hợp lệ.");
 
         RuleFor(x => x.Code)

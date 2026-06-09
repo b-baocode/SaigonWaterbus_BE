@@ -125,7 +125,7 @@ public sealed class Users : IEndpointGroup
 
     private static async Task<IResult> GetById(
         IUserManagementService userManagementService,
-        int userId,
+        Guid userId,
         CancellationToken cancellationToken) =>
         Results.Ok(await userManagementService.GetUserByIdAsync(userId, cancellationToken));
 
@@ -150,7 +150,7 @@ public sealed class Users : IEndpointGroup
 
     private static async Task<IResult> Update(
         IUserManagementService userManagementService,
-        int userId,
+        Guid userId,
         UpdateUserApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await userManagementService.UpdateUserAsync(
@@ -165,7 +165,7 @@ public sealed class Users : IEndpointGroup
 
     private static async Task<IResult> UpdateStatus(
         IUserManagementService userManagementService,
-        int userId,
+        Guid userId,
         UpdateUserStatusApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await userManagementService.UpdateUserStatusAsync(
@@ -176,7 +176,7 @@ public sealed class Users : IEndpointGroup
 
     private static async Task<IResult> Delete(
         IUserManagementService userManagementService,
-        int userId,
+        Guid userId,
         CancellationToken cancellationToken) =>
         Results.Ok(await userManagementService.DeleteUserAsync(userId, cancellationToken));
 
@@ -186,14 +186,14 @@ public sealed class Users : IEndpointGroup
         string? PhoneNumber,
         string Email,
         string Password,
-        int RoleId);
+        Guid RoleId);
 
     public sealed record UpdateUserApiRequest(
         string? FullName = null,
         DateOnly? DateOfBirth = null,
         string? PhoneNumber = null,
         string? Email = null,
-        int? RoleId = null);
+        Guid? RoleId = null);
 
     public sealed record UpdateUserStatusApiRequest(
         Domain.Enums.UserStatus Status);

@@ -5,11 +5,12 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record UpdateVesselRequest(
-    int VesselId,
-    int? WaterbusServiceId = null,
+    Guid VesselId,
+    Guid? WaterbusServiceId = null,
     string? Code = null,
     string? Name = null,
     int? SeatCount = null,
+    int? PassengerCapacity = null,
     int? NumberOfDecks = null,
     string? RegistrationNumber = null,
     int? MaxSpeedKmh = null,
@@ -26,11 +27,11 @@ public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesse
     public UpdateVesselRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.WaterbusServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("Dịch vụ WaterBus không hợp lệ.")
             .When(x => x.WaterbusServiceId.HasValue);
 
@@ -55,13 +56,18 @@ public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesse
             .When(x => x.Name is not null);
 
         RuleFor(x => x.SeatCount)
-            .GreaterThan(0)
-            .WithMessage("Số ghế phải lớn hơn 0.")
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Số ghế không được âm.")
             .When(x => x.SeatCount.HasValue);
 
-        RuleFor(x => x.NumberOfDecks)
+        RuleFor(x => x.PassengerCapacity)
             .GreaterThan(0)
-            .WithMessage("Số tầng phải lớn hơn 0.")
+            .WithMessage("Sức chứa hành khách phải lớn hơn 0.")
+            .When(x => x.PassengerCapacity.HasValue);
+
+        RuleFor(x => x.NumberOfDecks)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Số tầng không được âm.")
             .When(x => x.NumberOfDecks.HasValue);
 
         RuleFor(x => x.MaxSpeedKmh)
@@ -179,10 +185,17 @@ public sealed class UpdateVesselRequestUseCase
             vessel.SeatCount = request.SeatCount.Value;
         }
 
+        if (request.PassengerCapacity.HasValue)
+        {
+            vessel.PassengerCapacity = request.PassengerCapacity.Value;
+        }
+
         if (request.NumberOfDecks.HasValue)
         {
             vessel.NumberOfDecks = request.NumberOfDecks.Value;
         }
+
+        EnsureVesselCapacityMatchesService(vessel.WaterbusService.BookingMode, vessel.SeatCount, vessel.PassengerCapacity, vessel.NumberOfDecks);
 
         if (request.MaxSpeedKmh.HasValue)
         {
@@ -244,5 +257,27 @@ public sealed class UpdateVesselRequestUseCase
         }
 
         return VesselSupport.CreateDto(vessel);
+    }
+
+    private static void EnsureVesselCapacityMatchesService(
+        BookingMode bookingMode,
+        int seatCount,
+        int passengerCapacity,
+        int numberOfDecks)
+    {
+        if (seatCount <= 0)
+        {
+            throw AuthSupport.CreateValidationException(nameof(UpdateVesselRequest.SeatCount), "Tàu phải có số ghế lớn hơn 0 để setup sơ đồ ghế.");
+        }
+
+        if (numberOfDecks <= 0)
+        {
+            throw AuthSupport.CreateValidationException(nameof(UpdateVesselRequest.NumberOfDecks), "Tàu phải có số tầng lớn hơn 0 để setup sơ đồ ghế.");
+        }
+
+        if (passengerCapacity < seatCount)
+        {
+            throw AuthSupport.CreateValidationException(nameof(UpdateVesselRequest.PassengerCapacity), "Sức chứa hành khách phải lớn hơn hoặc bằng số ghế.");
+        }
     }
 }

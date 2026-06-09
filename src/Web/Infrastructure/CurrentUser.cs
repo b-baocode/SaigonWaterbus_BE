@@ -12,12 +12,12 @@ public sealed class CurrentUser : IUserContext
         _httpContextAccessor = httpContextAccessor;
     }
 
-    public int? UserId
+    public Guid? UserId
     {
         get
         {
             var value = _httpContextAccessor.HttpContext?.User.FindFirstValue(ClaimTypes.NameIdentifier);
-            return int.TryParse(value, out var userId) ? userId : null;
+            return Guid.TryParse(value, out var userId) ? userId : null;
         }
     }
 

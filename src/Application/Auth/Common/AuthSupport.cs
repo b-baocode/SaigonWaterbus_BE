@@ -42,7 +42,7 @@ internal static class AuthSupport
 
     public static async Task<IReadOnlyCollection<Role>> GetActiveRolesAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         CancellationToken cancellationToken)
     {
         var role = await context.Set<User>()
@@ -67,7 +67,7 @@ internal static class AuthSupport
 
     public static async Task<Role> GetRoleByIdAsync(
         IApplicationDbContext context,
-        int roleId,
+        Guid roleId,
         string propertyName,
         CancellationToken cancellationToken)
     {
@@ -171,7 +171,7 @@ internal static class AuthSupport
 
     public static async Task RevokeActiveRefreshTokensAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         DateTimeOffset revokedAt,
         CancellationToken cancellationToken)
     {
@@ -189,7 +189,7 @@ internal static class AuthSupport
 
     public static async Task RetirePendingOtpChallengesAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         OtpPurpose purpose,
         DateTimeOffset retiredAt,
         CancellationToken cancellationToken)
@@ -258,7 +258,7 @@ internal static class AuthSupport
 
     public static async Task<bool> RemovePendingRegistrationUserIfExpiredAsync(
         IApplicationDbContext context,
-        int userId,
+        Guid userId,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -321,15 +321,15 @@ internal static class AuthSupport
     public static bool IsCustomer(User user) =>
         string.Equals(user.Role.SystemName, Roles.CustomerSystemName, StringComparison.Ordinal);
 
-    public static string FormatRefreshToken(int refreshTokenId, string secret) => $"{refreshTokenId}.{secret}";
+    public static string FormatRefreshToken(Guid refreshTokenId, string secret) => $"{refreshTokenId}.{secret}";
 
-    public static bool TryParseRefreshToken(string refreshToken, out int refreshTokenId, out string secret)
+    public static bool TryParseRefreshToken(string refreshToken, out Guid refreshTokenId, out string secret)
     {
         refreshTokenId = default;
         secret = string.Empty;
 
         var segments = refreshToken.Split('.', 2, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (segments.Length != 2 || !int.TryParse(segments[0], out refreshTokenId) || string.IsNullOrWhiteSpace(segments[1]))
+        if (segments.Length != 2 || !Guid.TryParse(segments[0], out refreshTokenId) || string.IsNullOrWhiteSpace(segments[1]))
         {
             return false;
         }

@@ -1,16 +1,18 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.WaterbusServices;
 
 public sealed record GetWaterbusServicesRequest(bool IncludeInactive = false);
 
 public sealed record WaterbusServiceDto(
-    int Id,
+    Guid Id,
     string Code,
     string Name,
     string? Description,
     bool IsActive,
-    int DisplayOrder);
+    int DisplayOrder,
+    BookingMode BookingMode);
 
 public sealed class GetWaterbusServicesRequestUseCase
 {
@@ -47,7 +49,8 @@ public sealed class GetWaterbusServicesRequestUseCase
                 x.Name,
                 x.Description,
                 x.IsActive,
-                x.DisplayOrder))
+                x.DisplayOrder,
+                x.BookingMode))
             .ToArrayAsync(cancellationToken);
     }
 }

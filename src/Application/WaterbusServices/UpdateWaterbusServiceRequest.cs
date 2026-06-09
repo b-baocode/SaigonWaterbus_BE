@@ -1,21 +1,23 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.WaterbusServices;
 
 public sealed record UpdateWaterbusServiceRequest(
-    int ServiceId,
+    Guid ServiceId,
     string? Code = null,
     string? Name = null,
     string? Description = null,
-    int? DisplayOrder = null);
+    int? DisplayOrder = null,
+    BookingMode? BookingMode = null);
 
 public sealed class UpdateWaterbusServiceRequestValidator : AbstractValidator<UpdateWaterbusServiceRequest>
 {
     public UpdateWaterbusServiceRequestValidator()
     {
         RuleFor(x => x.ServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("ServiceId không hợp lệ.");
 
         RuleFor(x => x.Code)
@@ -40,6 +42,11 @@ public sealed class UpdateWaterbusServiceRequestValidator : AbstractValidator<Up
             .GreaterThanOrEqualTo(0)
             .WithMessage("Thứ tự hiển thị không hợp lệ.")
             .When(x => x.DisplayOrder.HasValue);
+
+        RuleFor(x => x.BookingMode)
+            .IsInEnum()
+            .WithMessage("Kiểu đặt vé không hợp lệ.")
+            .When(x => x.BookingMode.HasValue);
     }
 }
 
@@ -99,6 +106,11 @@ public sealed class UpdateWaterbusServiceRequestUseCase
         if (request.DisplayOrder.HasValue)
         {
             service.DisplayOrder = request.DisplayOrder.Value;
+        }
+
+        if (request.BookingMode.HasValue)
+        {
+            service.BookingMode = request.BookingMode.Value;
         }
 
         try

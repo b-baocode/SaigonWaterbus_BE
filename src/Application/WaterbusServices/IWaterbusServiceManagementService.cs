@@ -9,7 +9,7 @@ public interface IWaterbusServiceManagementService
         CancellationToken cancellationToken);
 
     Task<WaterbusServiceDto> GetServiceByIdAsync(
-        int serviceId,
+        Guid serviceId,
         CancellationToken cancellationToken);
 
     Task<WaterbusServiceDto> CreateServiceAsync(
@@ -25,6 +25,6 @@ public interface IWaterbusServiceManagementService
         CancellationToken cancellationToken);
 
     Task<AuthActionResultDto> DeleteServiceAsync(
-        int serviceId,
+        Guid serviceId,
         CancellationToken cancellationToken);
 }

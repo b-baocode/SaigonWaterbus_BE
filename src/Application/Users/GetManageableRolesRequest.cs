@@ -7,7 +7,7 @@ namespace SaigonWaterbus.Application.Users;
 public sealed record GetManageableRolesRequest();
 
 public sealed record UserRoleDto(
-    int Id,
+    Guid Id,
     string Code,
     string SystemName,
     string DisplayName);

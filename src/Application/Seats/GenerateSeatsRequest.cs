@@ -5,7 +5,12 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record SeatBlockDto(int StartRow, int StartColumn, int RowCount, int ColumnCount);
+public sealed record SeatBlockDto(
+    int StartRow,
+    int StartColumn,
+    int RowCount,
+    int ColumnCount,
+    string? SeatTypeCode = null);
 
 public sealed record FacilityConfigDto(
     VesselFacilityType Type,
@@ -14,21 +19,38 @@ public sealed record FacilityConfigDto(
     int RowSpan,
     int ColumnSpan);
 
+public enum SeatLayoutCellType
+{
+    Empty = 1,
+    Aisle = 2,
+    Seat = 3,
+    Toilet = 4
+}
+
+public sealed record LayoutCellConfigDto(
+    int Row,
+    int Column,
+    SeatLayoutCellType Type,
+    string? SeatTypeCode = null,
+    int RowSpan = 1,
+    int ColumnSpan = 1);
+
 public sealed record DeckConfigDto(
     int DeckNumber,
     int RowCount,
     int ColumnCount,
     IReadOnlyCollection<SeatBlockDto>? SeatBlocks = null,
-    IReadOnlyCollection<FacilityConfigDto>? Facilities = null);
+    IReadOnlyCollection<FacilityConfigDto>? Facilities = null,
+    IReadOnlyCollection<LayoutCellConfigDto>? Cells = null);
 
-public sealed record GenerateSeatsRequest(int VesselId, IReadOnlyCollection<DeckConfigDto> Decks);
+public sealed record GenerateSeatsRequest(Guid VesselId, IReadOnlyCollection<DeckConfigDto> Decks);
 
 public sealed class GenerateSeatsRequestValidator : AbstractValidator<GenerateSeatsRequest>
 {
     public GenerateSeatsRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.Decks)
@@ -53,6 +75,13 @@ public sealed class GenerateSeatsRequestValidator : AbstractValidator<GenerateSe
             deck.RuleFor(d => d.ColumnCount)
                 .InclusiveBetween(1, 50)
                 .WithMessage("Số cột phải từ 1 đến 50.");
+
+            deck.RuleFor(d => d)
+                .Must(d =>
+                    d.Cells is not { Count: > 0 }
+                    || ((d.SeatBlocks is null || d.SeatBlocks.Count == 0)
+                        && (d.Facilities is null || d.Facilities.Count == 0)))
+                .WithMessage("Khi dùng cells thì không gửi seatBlocks/facilities để tránh cấu hình bị lẫn logic.");
 
             deck.RuleForEach(d => d.SeatBlocks).ChildRules(block =>
             {
@@ -99,6 +128,46 @@ public sealed class GenerateSeatsRequestValidator : AbstractValidator<GenerateSe
                     .Must(f => f.RowSpan * f.ColumnSpan == 2)
                     .WithMessage("WC phải chiếm đúng 2 ô, theo chiều ngang hoặc chiều dọc.");
             }).When(d => d.Facilities is not null);
+
+            deck.RuleForEach(d => d.Cells).ChildRules(cell =>
+            {
+                cell.RuleFor(c => c.Row)
+                    .GreaterThan(0)
+                    .WithMessage("Hàng của ô layout phải lớn hơn 0.");
+
+                cell.RuleFor(c => c.Column)
+                    .GreaterThan(0)
+                    .WithMessage("Cột của ô layout phải lớn hơn 0.");
+
+                cell.RuleFor(c => c.Type)
+                    .IsInEnum()
+                    .WithMessage("Loại ô layout không hợp lệ.");
+
+                cell.RuleFor(c => c.RowSpan)
+                    .GreaterThan(0)
+                    .WithMessage("RowSpan của ô layout phải lớn hơn 0.");
+
+                cell.RuleFor(c => c.ColumnSpan)
+                    .GreaterThan(0)
+                    .WithMessage("ColumnSpan của ô layout phải lớn hơn 0.");
+
+                cell.RuleFor(c => c)
+                    .Must(c => c.Type != SeatLayoutCellType.Seat || (c.RowSpan == 1 && c.ColumnSpan == 1))
+                    .WithMessage("Ô Seat chỉ được chiếm đúng 1 ô.");
+
+                cell.RuleFor(c => c)
+                    .Must(c => c.Type is not (SeatLayoutCellType.Aisle or SeatLayoutCellType.Empty)
+                        || (c.RowSpan == 1 && c.ColumnSpan == 1))
+                    .WithMessage("Ô Aisle/Empty chỉ được chiếm đúng 1 ô.");
+
+                cell.RuleFor(c => c)
+                    .Must(c => c.Type != SeatLayoutCellType.Toilet || c.RowSpan * c.ColumnSpan == 2)
+                    .WithMessage("Ô Toilet phải chiếm đúng 2 ô, theo chiều ngang hoặc chiều dọc.");
+
+                cell.RuleFor(c => c)
+                    .Must(c => c.Type == SeatLayoutCellType.Seat || string.IsNullOrWhiteSpace(c.SeatTypeCode))
+                    .WithMessage("Chỉ ô Seat mới được gửi SeatTypeCode.");
+            }).When(d => d.Cells is not null);
         }).When(x => x.Decks is not null);
     }
 }
@@ -119,165 +188,64 @@ public sealed class GenerateSeatsRequestUseCase
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
         var vessel = await _context.Vessels
+            .Include(x => x.WaterbusService)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        var hasExistingSeats = await _context.Seats
-            .AnyAsync(x => x.VesselId == request.VesselId, cancellationToken);
-        var hasExistingDeckLayouts = await _context.VesselDeckLayouts
-            .AnyAsync(x => x.VesselId == request.VesselId, cancellationToken);
-        var hasExistingFacilities = await _context.VesselFacilities
-            .AnyAsync(x => x.VesselId == request.VesselId, cancellationToken);
+        var existingDeckLayouts = await _context.VesselDeckLayouts
+            .Where(x => x.VesselId == vessel.Id)
+            .ToListAsync(cancellationToken);
 
-        if (hasExistingSeats || hasExistingDeckLayouts || hasExistingFacilities)
-            throw AuthSupport.CreateValidationException("Seats", "Tàu đã có sơ đồ ghế. Xóa toàn bộ sơ đồ trước khi generate lại.");
-
-        if (request.Decks.Count != vessel.NumberOfDecks)
-            throw AuthSupport.CreateValidationException(
-                "Decks",
-                $"Số tầng cấu hình ({request.Decks.Count}) không khớp với NumberOfDecks của tàu ({vessel.NumberOfDecks}).");
-
-        var deckNumbers = request.Decks
-            .Select(d => d.DeckNumber)
-            .OrderBy(deckNumber => deckNumber)
-            .ToArray();
-        var expectedDeckNumbers = Enumerable.Range(1, vessel.NumberOfDecks).ToArray();
-        if (!deckNumbers.SequenceEqual(expectedDeckNumbers))
-            throw AuthSupport.CreateValidationException(
-                "Decks",
-                $"Số tầng cấu hình phải liên tục từ 1 đến {vessel.NumberOfDecks}.");
-
-        var seats = new List<Seat>();
-        var deckLayouts = new List<VesselDeckLayout>();
-        var facilities = new List<VesselFacility>();
-        var seatCells = new HashSet<LayoutCell>();
-        var facilityCells = new HashSet<LayoutCell>();
-
-        foreach (var deck in request.Decks.OrderBy(d => d.DeckNumber))
+        if (existingDeckLayouts.Count == 0)
         {
-            deckLayouts.Add(new VesselDeckLayout
-            {
-                VesselId = vessel.Id,
-                DeckNumber = deck.DeckNumber,
-                RowCount = deck.RowCount,
-                ColumnCount = deck.ColumnCount
-            });
-
-            foreach (var cell in CreateSeatCells(deck))
-            {
-                EnsureCellInsideDeck(cell, deck);
-
-                if (!seatCells.Add(cell))
-                    throw AuthSupport.CreateValidationException("SeatBlocks", "Các vùng ghế không được trùng ô nhau.");
-
-                var row = SeatSupport.RowLabel(cell.RowIndex - 1);
-                seats.Add(new Seat
-                {
-                    VesselId = vessel.Id,
-                    Code = SeatSupport.SeatCode(deck.DeckNumber, row, cell.Column),
-                    Deck = deck.DeckNumber,
-                    Row = row,
-                    Column = cell.Column,
-                    IsActive = true
-                });
-            }
-
-            foreach (var facility in deck.Facilities ?? [])
-            {
-                EnsureSupportedFacility(facility);
-
-                foreach (var cell in CreateFacilityCells(deck.DeckNumber, facility))
-                {
-                    EnsureCellInsideDeck(cell, deck);
-
-                    if (!facilityCells.Add(cell))
-                        throw AuthSupport.CreateValidationException("Facilities", "Các tiện ích không được trùng ô nhau.");
-
-                    if (seatCells.Contains(cell))
-                        throw AuthSupport.CreateValidationException("Facilities", "Tiện ích không được đặt đè lên ghế.");
-                }
-
-                facilities.Add(new VesselFacility
-                {
-                    VesselId = vessel.Id,
-                    Type = facility.Type,
-                    Deck = deck.DeckNumber,
-                    Row = SeatSupport.RowLabel(facility.StartRow - 1),
-                    Column = facility.StartColumn,
-                    RowSpan = facility.RowSpan,
-                    ColumnSpan = facility.ColumnSpan,
-                    IsActive = true
-                });
-            }
+            throw AuthSupport.CreateValidationException("Decks", "Tàu chưa có ma trận ghế. Gọi /seats/generate trước khi configure.");
         }
 
-        if (seats.Count != vessel.SeatCount)
-            throw AuthSupport.CreateValidationException(
-                "SeatBlocks",
-                $"Tổng số ghế setup ({seats.Count}) không khớp với SeatCount của tàu ({vessel.SeatCount}).");
+        EnsureRequestMatchesExistingMatrix(request.Decks, existingDeckLayouts);
 
-        _context.VesselDeckLayouts.AddRange(deckLayouts);
-        _context.Seats.AddRange(seats);
-        _context.VesselFacilities.AddRange(facilities);
+        var plan = await SeatLayoutPlanner.BuildAsync(
+            _context,
+            vessel,
+            request.Decks,
+            rejectExistingLayout: true,
+            cancellationToken);
+
+        _context.Seats.AddRange(plan.Seats);
+        _context.VesselFacilities.AddRange(plan.Facilities);
         vessel.SeatsConfigured = true;
+        vessel.Status = VesselStatus.Active;
         await _context.SaveChangesAsync(cancellationToken);
 
-        return SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts, facilities);
+        return SeatSupport.CreateVesselSeatsDto(
+            vessel,
+            plan.Seats.ToList(),
+            existingDeckLayouts,
+            plan.Facilities.ToList());
     }
 
-    private static IEnumerable<LayoutCell> CreateSeatCells(DeckConfigDto deck)
+    private static void EnsureRequestMatchesExistingMatrix(
+        IReadOnlyCollection<DeckConfigDto> decks,
+        IReadOnlyCollection<VesselDeckLayout> existingDeckLayouts)
     {
-        var hasSeatBlocks = deck.SeatBlocks is { Count: > 0 };
-        if (!hasSeatBlocks)
+        var existingByDeck = existingDeckLayouts.ToDictionary(x => x.DeckNumber);
+
+        foreach (var deck in decks)
         {
-            for (var row = 1; row <= deck.RowCount; row++)
+            if (!existingByDeck.TryGetValue(deck.DeckNumber, out var existing))
             {
-                for (var column = 1; column <= deck.ColumnCount; column++)
-                {
-                    yield return new LayoutCell(deck.DeckNumber, row, column);
-                }
+                throw AuthSupport.CreateValidationException("Decks", $"Tầng {deck.DeckNumber} chưa có trong ma trận đã generate.");
             }
 
-            yield break;
-        }
-
-        foreach (var block in deck.SeatBlocks!)
-        {
-            for (var row = block.StartRow; row < block.StartRow + block.RowCount; row++)
+            if (existing.RowCount != deck.RowCount || existing.ColumnCount != deck.ColumnCount)
             {
-                for (var column = block.StartColumn; column < block.StartColumn + block.ColumnCount; column++)
-                {
-                    yield return new LayoutCell(deck.DeckNumber, row, column);
-                }
+                throw AuthSupport.CreateValidationException(
+                    "Decks",
+                    $"Tầng {deck.DeckNumber} không khớp ma trận đã generate. Ma trận hiện tại là {existing.RowCount} hàng x {existing.ColumnCount} cột.");
             }
         }
-    }
-
-    private static IEnumerable<LayoutCell> CreateFacilityCells(int deckNumber, FacilityConfigDto facility)
-    {
-        for (var row = facility.StartRow; row < facility.StartRow + facility.RowSpan; row++)
-        {
-            for (var column = facility.StartColumn; column < facility.StartColumn + facility.ColumnSpan; column++)
-            {
-                yield return new LayoutCell(deckNumber, row, column);
-            }
-        }
-    }
-
-    private static void EnsureCellInsideDeck(LayoutCell cell, DeckConfigDto deck)
-    {
-        if (cell.RowIndex > deck.RowCount || cell.Column > deck.ColumnCount)
-            throw AuthSupport.CreateValidationException("Decks", "Vùng ghế hoặc tiện ích vượt ra ngoài ma trận tầng.");
-    }
-
-    private static void EnsureSupportedFacility(FacilityConfigDto facility)
-    {
-        if (facility.Type != VesselFacilityType.Toilet)
-            throw AuthSupport.CreateValidationException("Facilities", "Hiện tại chỉ hỗ trợ tiện ích Toilet.");
-
-        if (facility.RowSpan * facility.ColumnSpan != 2)
-            throw AuthSupport.CreateValidationException("Facilities", "WC phải chiếm đúng 2 ô, theo chiều ngang hoặc chiều dọc.");
     }
 }
 
 internal readonly record struct LayoutCell(int DeckNumber, int RowIndex, int Column);
+
+internal sealed record SeatCellConfig(LayoutCell Cell, SeatType SeatType);

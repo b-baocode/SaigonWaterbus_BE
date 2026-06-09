@@ -4,26 +4,28 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record GetVesselsRequest(
-    int? ServiceId = null,
+    Guid? ServiceId = null,
     VesselStatus? Status = null,
     string? Search = null);
 
 public sealed record VesselWaterbusServiceDto(
-    int Id,
+    Guid Id,
     string Code,
     string Name);
 
 public sealed record VesselDto(
-    int Id,
+    Guid Id,
     VesselWaterbusServiceDto WaterbusService,
     string Code,
     string? RegistrationNumber,
     string Name,
     VesselStatus Status,
     int SeatCount,
+    int PassengerCapacity,
     int GeneratedSeatCount,
     int NumberOfDecks,
     bool SeatsConfigured,
+    bool IsReadyForOperation,
     int? MaxSpeedKmh,
     int? YearBuilt,
     string ImageUrl,
@@ -34,7 +36,7 @@ public sealed class GetVesselsRequestValidator : AbstractValidator<GetVesselsReq
     public GetVesselsRequestValidator()
     {
         RuleFor(x => x.ServiceId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("ServiceId không hợp lệ.")
             .When(x => x.ServiceId.HasValue);
 

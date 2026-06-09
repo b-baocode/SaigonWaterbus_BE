@@ -3,18 +3,18 @@ using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record UpdateSeatRequest(int VesselId, int SeatId, string? Code);
+public sealed record UpdateSeatRequest(Guid VesselId, Guid SeatId, string? Code);
 
 public sealed class UpdateSeatRequestValidator : AbstractValidator<UpdateSeatRequest>
 {
     public UpdateSeatRequestValidator()
     {
         RuleFor(x => x.VesselId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
 
         RuleFor(x => x.SeatId)
-            .GreaterThan(0)
+            .NotEmpty()
             .WithMessage("SeatId không hợp lệ.");
 
         RuleFor(x => x.Code)
@@ -42,6 +42,7 @@ public sealed class UpdateSeatRequestUseCase
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
         var seat = await _context.Seats
+            .Include(x => x.SeatType)
             .SingleOrDefaultAsync(x => x.Id == request.SeatId && x.VesselId == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy ghế.");
 
@@ -57,6 +58,6 @@ public sealed class UpdateSeatRequestUseCase
         }
 
         await _context.SaveChangesAsync(cancellationToken);
-        return new SeatDto(seat.Id, seat.Code, seat.Deck, seat.Row, seat.Column, seat.IsActive);
+        return SeatSupport.CreateSeatDto(seat);
     }
 }

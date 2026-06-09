@@ -46,6 +46,38 @@ public class ApplicationDbContextInitialiser
             "Manager@123")
     ];
 
+    private static readonly ServiceSeed[] ServiceSeeds =
+    [
+        new(
+            "WB",
+            "Waterbus",
+            "Dịch vụ tuyến cố định trên sông, phù hợp di chuyển hằng ngày giữa các bến.",
+            BookingMode.SeatBased,
+            1),
+        new(
+            "WS",
+            "WaterSightseeing",
+            "Dịch vụ tham quan, ngắm cảnh bằng tàu theo tour hoặc khung giờ cố định.",
+            BookingMode.SeatTypeBased,
+            2),
+        new(
+            "WT",
+            "WaterTaxi",
+            "Dịch vụ taxi đường thủy theo nhu cầu, linh hoạt điểm đón và điểm trả.",
+            BookingMode.VesselRental,
+            3)
+    ];
+
+    private static readonly SeatTypeSeed[] SeatTypeSeeds =
+    [
+        new("WB", "STANDARD", "Standard", 1),
+        new("WS", "STANDARD", "Standard", 1),
+        new("WS", "VIP", "VIP", 2),
+        new("WS", "WINDOW", "Window", 3),
+        new("WS", "UPPER_DECK", "Upper Deck", 4),
+        new("WT", "STANDARD", "Standard", 1)
+    ];
+
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;
     private readonly ApplicationDbContext _context;
     private readonly DatabaseStartupSettings _databaseStartupSettings;
@@ -149,6 +181,9 @@ public class ApplicationDbContextInitialiser
 
         await _context.SaveChangesAsync();
 
+        await SeedServicesAndSeatTypesAsync();
+        await _context.SaveChangesAsync();
+
         if (!_databaseStartupSettings.SeedInternalUsers)
         {
             _logger.LogInformation("Skipping internal user seeding because Database:SeedInternalUsers is disabled.");
@@ -163,6 +198,64 @@ public class ApplicationDbContextInitialiser
 
         await _context.SaveChangesAsync();
         await SyncUserCodeSequencesAsync();
+    }
+
+    private async Task SeedServicesAndSeatTypesAsync()
+    {
+        var serviceByCode = await _context.WaterbusServices
+            .Include(x => x.SeatTypes)
+            .ToDictionaryAsync(x => x.Code);
+
+        foreach (var definition in ServiceSeeds)
+        {
+            if (!serviceByCode.TryGetValue(definition.Code, out var service))
+            {
+                service = new WaterbusService
+                {
+                    Code = definition.Code,
+                    Name = definition.Name,
+                    Description = definition.Description,
+                    BookingMode = definition.BookingMode,
+                    DisplayOrder = definition.DisplayOrder,
+                    IsActive = true
+                };
+
+                _context.WaterbusServices.Add(service);
+                serviceByCode[definition.Code] = service;
+            }
+            else
+            {
+                service.Name = definition.Name;
+                service.Description = definition.Description;
+                service.BookingMode = definition.BookingMode;
+                service.DisplayOrder = definition.DisplayOrder;
+                service.IsActive = true;
+            }
+        }
+
+        foreach (var definition in SeatTypeSeeds)
+        {
+            var service = serviceByCode[definition.ServiceCode];
+            var seatType = service.SeatTypes
+                .SingleOrDefault(x => string.Equals(x.Code, definition.Code, StringComparison.OrdinalIgnoreCase));
+
+            if (seatType is null)
+            {
+                service.SeatTypes.Add(new SeatType
+                {
+                    Code = definition.Code,
+                    Name = definition.Name,
+                    DisplayOrder = definition.DisplayOrder,
+                    IsActive = true
+                });
+            }
+            else
+            {
+                seatType.Name = definition.Name;
+                seatType.DisplayOrder = definition.DisplayOrder;
+                seatType.IsActive = true;
+            }
+        }
     }
 
     public async Task ResetAndSeedSampleDataAsync()
@@ -319,20 +412,20 @@ public class ApplicationDbContextInitialiser
         await _context.Database.ExecuteSqlRawAsync(
             """
             SELECT setval('user_code_ad_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'AD%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'AD%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'AD%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'AD%'), 0) > 0);
 
             SELECT setval('user_code_mg_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'MG%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'MG%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'MG%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'MG%'), 0) > 0);
 
             SELECT setval('user_code_cu_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'CU%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'CU%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'CU%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'CU%'), 0) > 0);
 
             SELECT setval('user_code_st_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("UserCode" FROM 3)::integer) FROM users WHERE "UserCode" LIKE 'ST%'), 0) > 0);
+                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0), 1),
+                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0) > 0);
             """);
     }
 
@@ -352,4 +445,17 @@ public class ApplicationDbContextInitialiser
         string Email,
         string PhoneNumber,
         string Password);
+
+    private sealed record ServiceSeed(
+        string Code,
+        string Name,
+        string Description,
+        BookingMode BookingMode,
+        int DisplayOrder);
+
+    private sealed record SeatTypeSeed(
+        string ServiceCode,
+        string Code,
+        string Name,
+        int DisplayOrder);
 }

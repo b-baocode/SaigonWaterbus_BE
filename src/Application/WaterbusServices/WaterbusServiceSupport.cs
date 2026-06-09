@@ -62,6 +62,7 @@ internal static class WaterbusServiceSupport
             service.Name,
             service.Description,
             service.IsActive,
-            service.DisplayOrder);
+            service.DisplayOrder,
+            service.BookingMode);
 
 }

@@ -34,7 +34,7 @@ public static class DependencyInjection
         {
             options.SerializerOptions.Converters.Add(new DateOnlyJsonConverter());
             options.SerializerOptions.Converters.Add(new NullableDateOnlyJsonConverter());
-            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
+            options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         });
 
         // Customise default API behaviour

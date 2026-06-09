@@ -7,7 +7,8 @@ public sealed class SeatManagementService : ISeatManagementService
 {
     private readonly IRequestValidator _validator;
     private readonly GetSeatsRequestUseCase _getSeats;
-    private readonly GenerateSeatsRequestUseCase _generateSeats;
+    private readonly GenerateSeatMatrixRequestUseCase _generateSeatMatrix;
+    private readonly GenerateSeatsRequestUseCase _configureSeats;
     private readonly UpdateSeatRequestUseCase _updateSeat;
     private readonly UpdateSeatStatusRequestUseCase _updateSeatStatus;
     private readonly DeleteSeatRequestUseCase _deleteSeat;
@@ -16,7 +17,8 @@ public sealed class SeatManagementService : ISeatManagementService
     public SeatManagementService(
         IRequestValidator validator,
         GetSeatsRequestUseCase getSeats,
-        GenerateSeatsRequestUseCase generateSeats,
+        GenerateSeatMatrixRequestUseCase generateSeatMatrix,
+        GenerateSeatsRequestUseCase configureSeats,
         UpdateSeatRequestUseCase updateSeat,
         UpdateSeatStatusRequestUseCase updateSeatStatus,
         DeleteSeatRequestUseCase deleteSeat,
@@ -24,24 +26,31 @@ public sealed class SeatManagementService : ISeatManagementService
     {
         _validator = validator;
         _getSeats = getSeats;
-        _generateSeats = generateSeats;
+        _generateSeatMatrix = generateSeatMatrix;
+        _configureSeats = configureSeats;
         _updateSeat = updateSeat;
         _updateSeatStatus = updateSeatStatus;
         _deleteSeat = deleteSeat;
         _deleteAllSeats = deleteAllSeats;
     }
 
-    public async Task<VesselSeatsDto> GetSeatsAsync(int vesselId, CancellationToken cancellationToken)
+    public async Task<VesselSeatsDto> GetSeatsAsync(Guid vesselId, CancellationToken cancellationToken)
     {
         var request = new GetSeatsRequest(vesselId);
         await _validator.ValidateAsync(request, cancellationToken);
         return await _getSeats.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<VesselSeatsDto> GenerateSeatsAsync(GenerateSeatsRequest request, CancellationToken cancellationToken)
+    public async Task<VesselSeatsDto> GenerateSeatMatrixAsync(GenerateSeatMatrixRequest request, CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
-        return await _generateSeats.ExecuteAsync(request, cancellationToken);
+        return await _generateSeatMatrix.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<VesselSeatsDto> ConfigureSeatsAsync(GenerateSeatsRequest request, CancellationToken cancellationToken)
+    {
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _configureSeats.ExecuteAsync(request, cancellationToken);
     }
 
     public async Task<SeatDto> UpdateSeatAsync(UpdateSeatRequest request, CancellationToken cancellationToken)
@@ -56,14 +65,14 @@ public sealed class SeatManagementService : ISeatManagementService
         return await _updateSeatStatus.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> DeleteSeatAsync(int vesselId, int seatId, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> DeleteSeatAsync(Guid vesselId, Guid seatId, CancellationToken cancellationToken)
     {
         var request = new DeleteSeatRequest(vesselId, seatId);
         await _validator.ValidateAsync(request, cancellationToken);
         return await _deleteSeat.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> DeleteAllSeatsAsync(int vesselId, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> DeleteAllSeatsAsync(Guid vesselId, CancellationToken cancellationToken)
     {
         var request = new DeleteAllSeatsRequest(vesselId);
         await _validator.ValidateAsync(request, cancellationToken);

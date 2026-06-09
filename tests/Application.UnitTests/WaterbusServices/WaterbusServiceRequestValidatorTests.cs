@@ -39,7 +39,7 @@ public class WaterbusServiceRequestValidatorTests
     {
         var validator = new UpdateWaterbusServiceStatusRequestValidator();
 
-        var result = validator.Validate(new UpdateWaterbusServiceStatusRequest(0, false));
+        var result = validator.Validate(new UpdateWaterbusServiceStatusRequest(Guid.Empty, false));
 
         result.IsValid.ShouldBeFalse();
         result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateWaterbusServiceStatusRequest.ServiceId));
@@ -51,7 +51,7 @@ public class WaterbusServiceRequestValidatorTests
         var validator = new UpdateWaterbusServiceRequestValidator();
 
         var result = validator.Validate(new UpdateWaterbusServiceRequest(
-            1,
+            Guid.NewGuid(),
             Name: " "));
 
         result.IsValid.ShouldBeFalse();

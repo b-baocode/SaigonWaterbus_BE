@@ -105,7 +105,7 @@ public sealed class WaterbusServices : IEndpointGroup
 
     private static async Task<IResult> GetWaterbusServiceById(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.GetServiceByIdAsync(serviceId, cancellationToken));
 
@@ -119,12 +119,13 @@ public sealed class WaterbusServices : IEndpointGroup
                 request.Name,
                 request.Description,
                 request.IsActive,
-                request.DisplayOrder),
+                request.DisplayOrder,
+                request.BookingMode),
             cancellationToken));
 
     private static async Task<IResult> UpdateWaterbusService(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         UpdateWaterbusServiceApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.UpdateServiceAsync(
@@ -133,12 +134,13 @@ public sealed class WaterbusServices : IEndpointGroup
                 request.Code,
                 request.Name,
                 request.Description,
-                request.DisplayOrder),
+                request.DisplayOrder,
+                request.BookingMode),
             cancellationToken));
 
     private static async Task<IResult> UpdateWaterbusServiceStatus(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         UpdateWaterbusServiceStatusApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.UpdateServiceStatusAsync(
@@ -149,7 +151,7 @@ public sealed class WaterbusServices : IEndpointGroup
 
     private static async Task<IResult> DeleteWaterbusService(
         IWaterbusServiceManagementService waterbusServiceManagementService,
-        int serviceId,
+        Guid serviceId,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.DeleteServiceAsync(serviceId, cancellationToken));
 
@@ -158,13 +160,15 @@ public sealed class WaterbusServices : IEndpointGroup
         string Name,
         string? Description = null,
         bool IsActive = true,
-        int DisplayOrder = 0);
+        int DisplayOrder = 0,
+        SaigonWaterbus.Domain.Enums.BookingMode BookingMode = SaigonWaterbus.Domain.Enums.BookingMode.SeatBased);
 
     public sealed record UpdateWaterbusServiceApiRequest(
         string? Code = null,
         string? Name = null,
         string? Description = null,
-        int? DisplayOrder = null);
+        int? DisplayOrder = null,
+        SaigonWaterbus.Domain.Enums.BookingMode? BookingMode = null);
 
     public sealed record UpdateWaterbusServiceStatusApiRequest(
         bool IsActive);

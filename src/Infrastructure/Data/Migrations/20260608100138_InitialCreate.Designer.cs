@@ -12,8 +12,8 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260606050216_AddVesselLayoutFacilities")]
-    partial class AddVesselLayoutFacilities
+    [Migration("20260608100138_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -27,19 +27,17 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.AuditLog", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Action")
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
-                    b.Property<int?>("ActorUserId")
-                        .HasColumnType("integer");
+                    b.Property<Guid?>("ActorUserId")
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -54,8 +52,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<string>("OldValues")
                         .HasColumnType("jsonb");
 
-                    b.Property<int?>("TargetId")
-                        .HasColumnType("integer");
+                    b.Property<Guid?>("TargetId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("TargetTable")
                         .IsRequired()
@@ -77,11 +75,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ExternalLogin", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<string>("DisplayName")
                         .HasMaxLength(255)
@@ -108,8 +104,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -123,11 +119,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.OtpChallenge", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<int>("AttemptCount")
                         .HasColumnType("integer");
@@ -167,14 +161,16 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<int>("Purpose")
-                        .HasColumnType("integer");
+                    b.Property<string>("Purpose")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTimeOffset>("ResendAvailableAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -185,11 +181,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.RefreshToken", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<DateTimeOffset>("Created")
                         .HasColumnType("timestamp with time zone");
@@ -214,8 +208,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -226,11 +220,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Role", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -272,11 +264,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Seat", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -309,10 +299,15 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
 
-                    b.Property<int>("VesselId")
-                        .HasColumnType("integer");
+                    b.Property<Guid?>("SeatTypeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("VesselId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("SeatTypeId");
 
                     b.HasIndex("VesselId", "Code")
                         .IsUnique();
@@ -323,20 +318,71 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("seats", (string)null);
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.SeatType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int>("DisplayOrder")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<bool>("IsActive")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<Guid>("WaterbusServiceId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WaterbusServiceId", "Code")
+                        .IsUnique();
+
+                    b.HasIndex("WaterbusServiceId", "DisplayOrder");
+
+                    b.ToTable("seat_types", (string)null);
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.User", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<string>("AvatarPublicId")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
-                    b.Property<int>("AvatarSource")
-                        .HasColumnType("integer");
+                    b.Property<string>("AvatarSource")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<DateTimeOffset?>("AvatarUpdatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -391,15 +437,18 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset?>("PhoneVerifiedAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("RoleId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uuid");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("UserCode")
                         .HasMaxLength(9)
-                        .HasColumnType("character varying(9)");
+                        .HasColumnType("character varying(9)")
+                        .HasColumnName("Code");
 
                     b.HasKey("Id");
 
@@ -415,18 +464,16 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("UserCode")
                         .IsUnique()
-                        .HasFilter("\"UserCode\" IS NOT NULL");
+                        .HasFilter("\"Code\" IS NOT NULL");
 
                     b.ToTable("users", (string)null);
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Vessel", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -468,6 +515,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<int>("NumberOfDecks")
                         .HasColumnType("integer");
 
+                    b.Property<int>("PassengerCapacity")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
                     b.Property<string>("RegistrationNumber")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
@@ -478,11 +530,13 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<bool>("SeatsConfigured")
                         .HasColumnType("boolean");
 
-                    b.Property<int>("Status")
-                        .HasColumnType("integer");
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
-                    b.Property<int>("WaterbusServiceId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("WaterbusServiceId")
+                        .HasColumnType("uuid");
 
                     b.Property<int?>("YearBuilt")
                         .HasColumnType("integer");
@@ -505,11 +559,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselDeckLayout", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<int>("ColumnCount")
                         .HasColumnType("integer");
@@ -532,8 +584,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<int>("RowCount")
                         .HasColumnType("integer");
 
-                    b.Property<int>("VesselId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("VesselId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -545,11 +597,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselFacility", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                        .HasColumnType("uuid");
 
                     b.Property<int>("Column")
                         .HasColumnType("integer");
@@ -583,11 +633,13 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<int>("RowSpan")
                         .HasColumnType("integer");
 
-                    b.Property<int>("Type")
-                        .HasColumnType("integer");
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
-                    b.Property<int>("VesselId")
-                        .HasColumnType("integer");
+                    b.Property<Guid>("VesselId")
+                        .HasColumnType("uuid");
 
                     b.HasKey("Id");
 
@@ -598,11 +650,14 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.WaterbusService", b =>
                 {
-                    b.Property<int>("Id")
+                    b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
+                        .HasColumnType("uuid");
 
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+                    b.Property<string>("BookingMode")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("Code")
                         .IsRequired()
@@ -695,13 +750,31 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Seat", b =>
                 {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.SeatType", "SeatType")
+                        .WithMany("Seats")
+                        .HasForeignKey("SeatTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "Vessel")
                         .WithMany("Seats")
                         .HasForeignKey("VesselId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.Navigation("SeatType");
+
                     b.Navigation("Vessel");
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.SeatType", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.WaterbusService", "WaterbusService")
+                        .WithMany("SeatTypes")
+                        .HasForeignKey("WaterbusServiceId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("WaterbusService");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.User", b =>
@@ -753,6 +826,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Users");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.SeatType", b =>
+                {
+                    b.Navigation("Seats");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.User", b =>
                 {
                     b.Navigation("AuditLogs");
@@ -775,6 +853,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.WaterbusService", b =>
                 {
+                    b.Navigation("SeatTypes");
+
                     b.Navigation("Vessels");
                 });
 #pragma warning restore 612, 618

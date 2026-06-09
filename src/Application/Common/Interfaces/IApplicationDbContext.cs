@@ -18,6 +18,8 @@ public interface IApplicationDbContext
 
     DbSet<Seat> Seats { get; }
 
+    DbSet<SeatType> SeatTypes { get; }
+
     DbSet<VesselDeckLayout> VesselDeckLayouts { get; }
 
     DbSet<VesselFacility> VesselFacilities { get; }
