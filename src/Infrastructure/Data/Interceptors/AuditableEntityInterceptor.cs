@@ -32,16 +32,31 @@ public class AuditableEntityInterceptor : SaveChangesInterceptor
     {
         if (context == null) return;
 
+        var utcNow = _dateTime.GetUtcNow();
+
         foreach (var entry in context.ChangeTracker.Entries<BaseAuditableEntity>())
         {
             if (entry.State is EntityState.Added or EntityState.Modified || entry.HasChangedOwnedEntities())
             {
-                var utcNow = _dateTime.GetUtcNow();
                 if (entry.State == EntityState.Added)
                 {
                     entry.Entity.CreatedBy = "system";
                     entry.Entity.Created = utcNow;
-                } 
+                }
+                entry.Entity.LastModifiedBy = "system";
+                entry.Entity.LastModified = utcNow;
+            }
+        }
+
+        foreach (var entry in context.ChangeTracker.Entries<BaseGuidAuditableEntity>())
+        {
+            if (entry.State is EntityState.Added or EntityState.Modified || entry.HasChangedOwnedEntities())
+            {
+                if (entry.State == EntityState.Added)
+                {
+                    entry.Entity.CreatedBy = "system";
+                    entry.Entity.Created = utcNow;
+                }
                 entry.Entity.LastModifiedBy = "system";
                 entry.Entity.LastModified = utcNow;
             }

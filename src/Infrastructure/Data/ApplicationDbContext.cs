@@ -34,6 +34,32 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<ExternalLogin> ExternalLogins => Set<ExternalLogin>();
 
+    public DbSet<Station> Stations => Set<Station>();
+
+    public DbSet<WaterwaySegment> WaterwaySegments => Set<WaterwaySegment>();
+
+    public DbSet<Route> Routes => Set<Route>();
+
+    public DbSet<RouteStop> RouteStops => Set<RouteStop>();
+
+    public DbSet<Landmark> Landmarks => Set<Landmark>();
+
+    public DbSet<Trip> Trips => Set<Trip>();
+
+    public DbSet<TripStop> TripStops => Set<TripStop>();
+
+    public DbSet<Incident> Incidents => Set<Incident>();
+
+    public DbSet<TicketType> TicketTypes => Set<TicketType>();
+
+    public DbSet<FareMatrix> FareMatrices => Set<FareMatrix>();
+
+    public DbSet<Promotion> Promotions => Set<Promotion>();
+
+    public DbSet<Booking> Bookings => Set<Booking>();
+
+    public DbSet<BookingItem> BookingItems => Set<BookingItem>();
+
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);
 

@@ -1,5 +1,4 @@
 using SaigonWaterbus.Application.Users;
-using SaigonWaterbus.Web.Infrastructure;
 
 namespace SaigonWaterbus.Web.Endpoints;
 

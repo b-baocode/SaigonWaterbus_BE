@@ -29,7 +29,7 @@ public static class DependencyInjection
         builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
         {
             options.AddInterceptors(sp.GetServices<ISaveChangesInterceptor>());
-            options.UseNpgsql(connectionString);
+            options.UseNpgsql(connectionString, o => o.UseNetTopologySuite());
             options.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
         });
 
@@ -44,6 +44,8 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOtpCodeService, OtpCodeService>();
         builder.Services.AddScoped<IOtpPolicy, OtpPolicyAccessor>();
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
+        builder.Services.AddScoped<IBookingCodeGenerator, BookingCodeGenerator>();
+        builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IVesselImageStorageService, CloudinaryVesselImageStorageService>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
@@ -91,6 +93,9 @@ public static class DependencyInjection
         {
             options.ResetOnStartup = builder.Environment.IsDevelopment() &&
                 builder.Configuration.GetValue<bool>("Database:ResetOnStartup");
+            options.SeedSampleData =
+                builder.Configuration.GetValue<bool?>("Database:SeedSampleData")
+                ?? false;
             options.SeedInternalUsers =
                 builder.Configuration.GetValue<bool?>("Database:SeedInternalUsers")
                 ?? builder.Environment.IsDevelopment();

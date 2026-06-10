@@ -180,6 +180,10 @@ public class ApplicationDbContextInitialiser
         }
 
         await _context.SaveChangesAsync();
+        if (_databaseStartupSettings.SeedSampleData)
+        {
+            await WaterbusSeedData.SeedAsync(_context);
+        }
 
         await SeedServicesAndSeatTypesAsync();
         await _context.SaveChangesAsync();
