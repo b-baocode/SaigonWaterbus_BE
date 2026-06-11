@@ -1,6 +1,3 @@
-using Microsoft.AspNetCore.OpenApi;
-using Microsoft.OpenApi.Any;
-using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.WaterbusServices;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -49,7 +46,7 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin thấy tất cả dịch vụ active và inactive.",
                 "Manager và Staff chỉ thấy dịch vụ active."));
 
-        groupBuilder.MapGet(GetWaterbusServiceById, "{serviceId:int}")
+        groupBuilder.MapGet(GetWaterbusServiceById, "{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Lấy chi tiết dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -65,30 +62,27 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin",
                 CreateServiceExample,
                 "Code nên ngắn gọn, ví dụ PUBLIC hoặc TOURIST.",
-                "Dữ liệu được lưu trong database, không seed cứng trong code."))
-            .WithOpenApi(op => SetBodyExample(op, CreateServiceExample));
+                "Dữ liệu được lưu trong database, không seed cứng trong code."));
 
-        groupBuilder.MapPut(UpdateWaterbusService, "{serviceId:int}")
+        groupBuilder.MapPut(UpdateWaterbusService, "{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 UpdateServiceExample,
                 "Chỉ field nào gửi lên mới được cập nhật.",
-                "Code được chuẩn hóa thành chữ in hoa."))
-            .WithOpenApi(op => SetBodyExample(op, UpdateServiceExample));
+                "Code được chuẩn hóa thành chữ in hoa."));
 
-        groupBuilder.MapPatch(UpdateWaterbusServiceStatus, "status/{serviceId:int}")
+        groupBuilder.MapPatch(UpdateWaterbusServiceStatus, "status/{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật trạng thái hiển thị dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 UpdateStatusExample,
                 "isActive=true để hiện, false để ẩn.",
-                "Dịch vụ bị ẩn vẫn hiện với Admin, nhưng không hiện với Manager và Staff."))
-            .WithOpenApi(op => SetBodyExample(op, UpdateStatusExample));
+                "Dịch vụ bị ẩn vẫn hiện với Admin, nhưng không hiện với Manager và Staff."));
 
-        groupBuilder.MapDelete(DeleteWaterbusService, "{serviceId:int}")
+        groupBuilder.MapDelete(DeleteWaterbusService, "{serviceId:guid}")
             .RequireAuthorization()
             .WithSummary("Xóa dịch vụ WaterBus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -171,14 +165,4 @@ public sealed class WaterbusServices : IEndpointGroup
         SaigonWaterbus.Domain.Enums.BookingMode? BookingMode = null);
 
     public sealed record UpdateWaterbusServiceStatusApiRequest(
-        bool IsActive);
-
-    private static OpenApiOperation SetBodyExample(OpenApiOperation op, string exampleJson)
-    {
-        var content = op.RequestBody?.Content;
-        if (content is null) return op;
-        foreach (var ct in content.Values)
-            ct.Example = new OpenApiString(exampleJson.Trim());
-        return op;
-    }
-}
+        bool IsActive);}

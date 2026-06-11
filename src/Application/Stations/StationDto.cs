@@ -12,7 +12,6 @@ public sealed record StationDto(
     decimal? Longitude,
     string Status,
     string? ImageUrl,
-    string? PhoneNumber,
     bool HasWaitingArea,
     bool HasParking,
     bool HasTicketCounter)
@@ -20,5 +19,5 @@ public sealed record StationDto(
     public static StationDto From(Station s) => new(
         s.Id, s.StationCode, s.StationName,
         s.Address, s.Description, s.Latitude, s.Longitude, s.Status.ToString(),
-        s.ImageUrl, s.PhoneNumber, s.HasWaitingArea, s.HasParking, s.HasTicketCounter);
+        s.ImageUrl, s.HasWaitingArea, s.HasParking, s.HasTicketCounter);
 }

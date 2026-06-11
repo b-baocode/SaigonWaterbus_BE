@@ -17,7 +17,6 @@ public class Station : BaseGuidAuditableEntity
     public string? OsmId { get; set; }
     public string? ImageUrl { get; set; }
     public string? ImagePublicId { get; set; }
-    public string? PhoneNumber { get; set; }
     public bool HasWaitingArea { get; set; }
     public bool HasParking { get; set; }
     public bool HasTicketCounter { get; set; }

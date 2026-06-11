@@ -6,13 +6,6 @@ internal static class OpenApiDescriptionBuilder
     {
         var lines = new List<string> { $"Quyen truy cap: {access}." };
 
-        if (!string.IsNullOrWhiteSpace(example))
-        {
-            lines.Add(string.Empty);
-            lines.Add("Example body:");
-            lines.Add(example.Trim());
-        }
-
         if (notes.Length > 0)
         {
             lines.Add(string.Empty);

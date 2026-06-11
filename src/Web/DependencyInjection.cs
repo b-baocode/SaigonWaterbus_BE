@@ -65,6 +65,19 @@ public static class DependencyInjection
 
         builder.Services.AddSwaggerGen(options =>
         {
+            options.MapType<DateOnly>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Example = new Microsoft.OpenApi.Any.OpenApiString("10/06/2026")
+            });
+
+            options.MapType<DateOnly?>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Nullable = true,
+                Example = new Microsoft.OpenApi.Any.OpenApiString("10/06/2026")
+            });
+
             options.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, new OpenApiSecurityScheme
             {
                 Name = "Authorization",

@@ -27,6 +27,7 @@ public static class InitialiserExtensions
 public class ApplicationDbContextInitialiser
 {
     public const string PendingRegistrationCleanupCronJobName = "cleanup-expired-pending-users";
+    private const string EfMigrationsProductVersion = "9.0.14";
 
     private static readonly SeedUser[] InternalUsers =
     [
@@ -148,12 +149,14 @@ public class ApplicationDbContextInitialiser
 
     public async Task TrySeedAsync()
     {
-        var roleByCode = await _context.Roles
-            .ToDictionaryAsync(x => x.Code);
+        var roles = await _context.Roles.ToListAsync();
+        var roleByCode = roles.ToDictionary(x => x.Code);
+        var roleBySystemName = roles.ToDictionary(x => x.SystemName);
 
         foreach (var definition in Roles.BuiltIn)
         {
-            if (!roleByCode.TryGetValue(definition.Code, out var existingRole))
+            if (!roleBySystemName.TryGetValue(definition.SystemName, out var existingRole)
+                && !roleByCode.TryGetValue(definition.Code, out existingRole))
             {
                 existingRole = new Role
                 {
@@ -163,10 +166,14 @@ public class ApplicationDbContextInitialiser
                 };
 
                 _context.Roles.Add(existingRole);
-                roleByCode[definition.Code] = existingRole;
             }
             else
             {
+                if (!string.Equals(existingRole.Code, definition.Code, StringComparison.Ordinal))
+                {
+                    existingRole.Code = definition.Code;
+                }
+
                 if (!string.Equals(existingRole.SystemName, definition.SystemName, StringComparison.Ordinal))
                 {
                     existingRole.SystemName = definition.SystemName;
@@ -177,6 +184,9 @@ public class ApplicationDbContextInitialiser
                     existingRole.DisplayName = definition.DisplayName;
                 }
             }
+
+            roleByCode[definition.Code] = existingRole;
+            roleBySystemName[definition.SystemName] = existingRole;
         }
 
         await _context.SaveChangesAsync();
@@ -280,6 +290,64 @@ public class ApplicationDbContextInitialiser
 
         await SeedAsync();
     }
+
+    public async Task BaselineExistingSchemaMigrationsAsync(CancellationToken cancellationToken = default)
+    {
+        await _context.Database.ExecuteSqlRawAsync(
+            """
+            CREATE TABLE IF NOT EXISTS "__EFMigrationsHistory" (
+                "MigrationId" character varying(150) NOT NULL,
+                "ProductVersion" character varying(32) NOT NULL,
+                CONSTRAINT "PK___EFMigrationsHistory" PRIMARY KEY ("MigrationId")
+            );
+            """,
+            cancellationToken);
+
+        if (await HasInitialSchemaAsync(cancellationToken))
+        {
+            await MarkMigrationAppliedAsync("20260608100138_InitialCreate", cancellationToken);
+        }
+
+        if (await HasTransitOperationsSchemaAsync(cancellationToken))
+        {
+            await MarkMigrationAppliedAsync("20260610131015_AddTransitOperationsSchema", cancellationToken);
+        }
+
+        if (await HasTableAsync("stations", cancellationToken)
+            && !await HasColumnAsync("stations", "phone_number", cancellationToken))
+        {
+            await MarkMigrationAppliedAsync("20260610153831_RemoveStationPhoneNumber", cancellationToken);
+        }
+
+        if (await HasTableAsync("custom_booking_requests", cancellationToken)
+            && await HasTableAsync("custom_booking_quotes", cancellationToken))
+        {
+            await MarkMigrationAppliedAsync("20260610163151_AddCustomBookingRequests", cancellationToken);
+        }
+    }
+
+    public async Task PrintSchemaDiagnosticsAsync(CancellationToken cancellationToken = default)
+    {
+        var columnChecks = new (string Table, string Column)[]
+        {
+            ("roles", "Id"),
+            ("roles", "Code"),
+            ("users", "Id"),
+            ("users", "RoleId"),
+            ("stations", "station_id"),
+            ("bookings", "booking_id"),
+            ("custom_booking_requests", "custom_booking_request_id")
+        };
+
+        foreach (var (table, column) in columnChecks)
+        {
+            Console.WriteLine($"{table}.{column}={await GetColumnDataTypeAsync(table, column, cancellationToken)}");
+        }
+
+        var migrations = await GetAppliedMigrationsAsync(cancellationToken);
+        Console.WriteLine("migrations=" + (migrations.Count == 0 ? "(none)" : string.Join(",", migrations)));
+    }
+
 
     public async Task ClearDataForRetestAsync()
     {
@@ -431,6 +499,185 @@ public class ApplicationDbContextInitialiser
                 GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0), 1),
                 COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0) > 0);
             """);
+    }
+
+    private async Task<bool> HasInitialSchemaAsync(CancellationToken cancellationToken) =>
+        await HasTableAsync("roles", cancellationToken)
+        && await HasTableAsync("users", cancellationToken)
+        && await HasTableAsync("waterbus_services", cancellationToken)
+        && await HasSequenceAsync("user_code_ad_seq", cancellationToken)
+        && await HasSequenceAsync("user_code_mg_seq", cancellationToken)
+        && await HasSequenceAsync("user_code_cu_seq", cancellationToken)
+        && await HasSequenceAsync("user_code_st_seq", cancellationToken);
+
+    private async Task<bool> HasTransitOperationsSchemaAsync(CancellationToken cancellationToken) =>
+        await HasTableAsync("stations", cancellationToken)
+        && await HasTableAsync("routes", cancellationToken)
+        && await HasTableAsync("trips", cancellationToken)
+        && await HasTableAsync("bookings", cancellationToken)
+        && await HasTableAsync("ticket_types", cancellationToken);
+
+    private Task<int> MarkMigrationAppliedAsync(string migrationId, CancellationToken cancellationToken) =>
+        _context.Database.ExecuteSqlInterpolatedAsync(
+            $"""
+             INSERT INTO "__EFMigrationsHistory" ("MigrationId", "ProductVersion")
+             VALUES ({migrationId}, {EfMigrationsProductVersion})
+             ON CONFLICT ("MigrationId") DO NOTHING;
+             """,
+            cancellationToken);
+
+    private async Task<bool> HasTableAsync(string tableName, CancellationToken cancellationToken)
+    {
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema = 'public'
+                  AND table_name = @tableName
+            );
+            """;
+        AddParameter(command, "tableName", tableName);
+        return await ExecuteScalarBoolAsync(command, cancellationToken);
+    }
+
+    private async Task<bool> HasColumnAsync(string tableName, string columnName, CancellationToken cancellationToken)
+    {
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.columns
+                WHERE table_schema = 'public'
+                  AND table_name = @tableName
+                  AND column_name = @columnName
+            );
+            """;
+        AddParameter(command, "tableName", tableName);
+        AddParameter(command, "columnName", columnName);
+        return await ExecuteScalarBoolAsync(command, cancellationToken);
+    }
+
+    private async Task<bool> HasSequenceAsync(string sequenceName, CancellationToken cancellationToken)
+    {
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText =
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM information_schema.sequences
+                WHERE sequence_schema = 'public'
+                  AND sequence_name = @sequenceName
+            );
+            """;
+        AddParameter(command, "sequenceName", sequenceName);
+        return await ExecuteScalarBoolAsync(command, cancellationToken);
+    }
+
+    private async Task<string> GetColumnDataTypeAsync(
+        string tableName,
+        string columnName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText =
+            """
+            SELECT data_type
+            FROM information_schema.columns
+            WHERE table_schema = 'public'
+              AND table_name = @tableName
+              AND column_name = @columnName;
+            """;
+        AddParameter(command, "tableName", tableName);
+        AddParameter(command, "columnName", columnName);
+        return Convert.ToString(await ExecuteScalarAsync(command, cancellationToken)) ?? "(missing)";
+    }
+
+    private async Task<IReadOnlyList<string>> GetAppliedMigrationsAsync(CancellationToken cancellationToken)
+    {
+        if (!await HasTableAsync("__EFMigrationsHistory", cancellationToken))
+        {
+            return [];
+        }
+
+        await using var command = _context.Database.GetDbConnection().CreateCommand();
+        command.CommandText =
+            """
+            SELECT "MigrationId"
+            FROM "__EFMigrationsHistory"
+            ORDER BY "MigrationId";
+            """;
+
+        var connection = command.Connection
+            ?? throw new InvalidOperationException("Database command has no connection.");
+        var shouldCloseConnection = connection.State != System.Data.ConnectionState.Open;
+
+        if (shouldCloseConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            var migrations = new List<string>();
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+            {
+                migrations.Add(reader.GetString(0));
+            }
+
+            return migrations;
+        }
+        finally
+        {
+            if (shouldCloseConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    private async Task<bool> ExecuteScalarBoolAsync(
+        System.Data.Common.DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        return Convert.ToBoolean(await ExecuteScalarAsync(command, cancellationToken));
+    }
+
+    private async Task<object?> ExecuteScalarAsync(
+        System.Data.Common.DbCommand command,
+        CancellationToken cancellationToken)
+    {
+        var connection = command.Connection
+            ?? throw new InvalidOperationException("Database command has no connection.");
+        var shouldCloseConnection = connection.State != System.Data.ConnectionState.Open;
+
+        if (shouldCloseConnection)
+        {
+            await connection.OpenAsync(cancellationToken);
+        }
+
+        try
+        {
+            return await command.ExecuteScalarAsync(cancellationToken);
+        }
+        finally
+        {
+            if (shouldCloseConnection)
+            {
+                await connection.CloseAsync();
+            }
+        }
+    }
+
+    private static void AddParameter(System.Data.Common.DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
     }
 
     private IQueryable<User> GetExpiredPendingRegistrationUsersQuery(DateTimeOffset now)

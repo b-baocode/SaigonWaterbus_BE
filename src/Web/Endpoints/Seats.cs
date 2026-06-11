@@ -1,6 +1,3 @@
-using Microsoft.AspNetCore.OpenApi;
-using Microsoft.OpenApi.Any;
-using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.Seats;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -84,8 +81,7 @@ public sealed class Seats : IEndpointGroup
                 "Chưa tạo ghế thật, chưa tạo WC, chưa chọn VIP/Standard.",
                 "Sau bước này frontend dùng rowCount × columnCount để hiển thị lưới cho admin click chọn từng ô.",
                 "Tàu vẫn SeatsConfigured=false và Status=Inactive.",
-                "Nếu tàu đã có ma trận hoặc sơ đồ ghế, phải xóa toàn bộ trước khi generate lại."))
-            .WithOpenApi(op => SetBodyExample(op, GenerateMatrixExample));
+                "Nếu tàu đã có ma trận hoặc sơ đồ ghế, phải xóa toàn bộ trước khi generate lại."));
 
         groupBuilder.MapPost(ConfigureSeats, "{vesselId:guid}/seats/configure")
             .RequireAuthorization()
@@ -102,8 +98,7 @@ public sealed class Seats : IEndpointGroup
                 "Toilet phải chiếm đúng 2 ô: rowSpan=1,columnSpan=2 hoặc rowSpan=2,columnSpan=1.",
                 "Nếu tàu đã có ghế/WC, phải xóa toàn bộ trước khi configure lại.",
                 "Khi setup hợp lệ, backend lưu ghế/WC vào database, đặt SeatsConfigured=true và chuyển tàu sang Active.",
-                "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."))
-            .WithOpenApi(op => SetBodyExample(op, ConfigureExample));
+                "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."));
 
         groupBuilder.MapDelete(DeleteAllSeats, "{vesselId:guid}/seats")
             .RequireAuthorization()
@@ -121,8 +116,7 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 UpdateSeatExample,
                 "Chỉ cho phép đổi mã ghế (Code).",
-                "Mã ghế phải là duy nhất trong cùng một tàu."))
-            .WithOpenApi(op => SetBodyExample(op, UpdateSeatExample));
+                "Mã ghế phải là duy nhất trong cùng một tàu."));
 
         groupBuilder.MapPatch(UpdateSeatStatus, "{vesselId:guid}/seats/{seatId:guid}/status")
             .RequireAuthorization()
@@ -131,8 +125,7 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 UpdateStatusExample,
                 "isActive=false để vô hiệu hóa ghế (ghế hỏng, bảo trì...).",
-                "Ghế bị tắt sẽ không thể đặt vé."))
-            .WithOpenApi(op => SetBodyExample(op, UpdateStatusExample));
+                "Ghế bị tắt sẽ không thể đặt vé."));
 
         groupBuilder.MapDelete(DeleteSeat, "{vesselId:guid}/seats/{seatId:guid}")
             .RequireAuthorization()
@@ -207,14 +200,4 @@ public sealed class Seats : IEndpointGroup
 
     private sealed record UpdateSeatApiRequest(string? Code = null);
 
-    private sealed record UpdateSeatStatusApiRequest(bool? IsActive);
-
-    private static OpenApiOperation SetBodyExample(OpenApiOperation op, string exampleJson)
-    {
-        var content = op.RequestBody?.Content;
-        if (content is null) return op;
-        foreach (var ct in content.Values)
-            ct.Example = new OpenApiString(exampleJson.Trim());
-        return op;
-    }
-}
+    private sealed record UpdateSeatStatusApiRequest(bool? IsActive);}

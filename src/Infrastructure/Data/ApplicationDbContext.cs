@@ -60,6 +60,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<BookingItem> BookingItems => Set<BookingItem>();
 
+    public DbSet<CustomBookingRequest> CustomBookingRequests => Set<CustomBookingRequest>();
+
+    public DbSet<CustomBookingQuote> CustomBookingQuotes => Set<CustomBookingQuote>();
+
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);
 

@@ -26,7 +26,6 @@ public sealed class StationConfiguration : IEntityTypeConfiguration<Station>
         builder.Property(x => x.OsmId).HasColumnName("osm_id").HasMaxLength(50);
         builder.Property(x => x.ImageUrl).HasColumnName("image_url").HasMaxLength(2048);
         builder.Property(x => x.ImagePublicId).HasColumnName("image_public_id").HasMaxLength(255);
-        builder.Property(x => x.PhoneNumber).HasColumnName("phone_number").HasMaxLength(20);
         builder.Property(x => x.HasWaitingArea).HasColumnName("has_waiting_area");
         builder.Property(x => x.HasParking).HasColumnName("has_parking");
         builder.Property(x => x.HasTicketCounter).HasColumnName("has_ticket_counter");

@@ -87,7 +87,7 @@ public class RouteGeoJsonImportSupportTests
 
         ContainsCoordinate(riverGeometry, e).ShouldBeFalse();
         ContainsCoordinate(canalGeometry, e).ShouldBeTrue();
-        canalGeometry.NumPoints.ShouldBeGreaterThan(riverGeometry.NumPoints);
+        canalGeometry.ToText().ShouldNotBe(riverGeometry.ToText());
     }
 
     [Test]

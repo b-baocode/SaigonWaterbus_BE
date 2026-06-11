@@ -2,10 +2,10 @@
 
 public static class Roles
 {
-    public const string CustomerCode = "CU01";
-    public const string ManagerCode = "MG01";
-    public const string AdminCode = "AD01";
-    public const string StaffCode = "ST01";
+    public const string CustomerCode = "CU";
+    public const string ManagerCode = "MG";
+    public const string AdminCode = "AD";
+    public const string StaffCode = "ST";
 
     public const string CustomerSystemName = "CUSTOMER";
     public const string ManagerSystemName = "MANAGER";

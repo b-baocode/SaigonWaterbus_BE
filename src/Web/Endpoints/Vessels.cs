@@ -1,7 +1,4 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.OpenApi;
-using Microsoft.OpenApi.Any;
-using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Domain.Enums;
 
@@ -100,8 +97,7 @@ public sealed class Vessels : IEndpointGroup
                 UpdateStatusExample,
                 "Các trạng thái hợp lệ: Active, Maintenance, Inactive, Retired.",
                 "Muốn chuyển Active thì tàu phải setup đủ ghế.",
-                "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."))
-            .WithOpenApi(op => SetBodyExample(op, UpdateStatusExample));
+                "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."));
 
         groupBuilder.MapDelete(DeleteVessel, "{vesselId:guid}")
             .RequireAuthorization()
@@ -316,14 +312,4 @@ public sealed class Vessels : IEndpointGroup
         string? Description = null,
         string? ImageUrl = null);
 
-    private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);
-
-    private static OpenApiOperation SetBodyExample(OpenApiOperation op, string exampleJson)
-    {
-        var content = op.RequestBody?.Content;
-        if (content is null) return op;
-        foreach (var ct in content.Values)
-            ct.Example = new OpenApiString(exampleJson.Trim());
-        return op;
-    }
-}
+    private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);}

@@ -1,0 +1,171 @@
+using SaigonWaterbus.Application.CustomBookingRequests;
+using SaigonWaterbus.Domain.Enums;
+using System.Globalization;
+
+namespace SaigonWaterbus.Web.Endpoints;
+
+public sealed class CustomBookingRequests : IEndpointGroup
+{
+    public static string RoutePrefix => "/api/custom-booking-requests";
+
+    public static string OpenApiTag => "CustomBookingRequests";
+
+    private const string CreateExample =
+        """
+        {
+          "useAccountContact": true,
+          "contactName": null,
+          "contactPhone": null,
+          "contactEmail": null,
+          "departureDate": "20/06/2026",
+          "preferredStartTime": "08:30:00",
+          "preferredEndTime": "11:30:00",
+          "fromLocation": "Ben Bach Dang",
+          "toLocation": "Ben Linh Dong",
+          "fromStationCode": "BD",
+          "toStationCode": "LD",
+          "itineraryNote": "Dung chup hinh 30 phut tai Thanh Da.",
+          "passengerCount": 45,
+          "specialRequests": "Trang tri sinh nhat."
+        }
+        """;
+
+    private const string QuoteExample =
+        """
+        {
+          "quotedPrice": 5000000,
+          "currency": "VND",
+          "priceNote": "Gia gom thue tau 3 gio, phi ben va nhan su van hanh. Khach can coc 50% de chot.",
+          "validUntil": "2026-06-15T23:59:59+07:00"
+        }
+        """;
+
+    public static void Map(RouteGroupBuilder group)
+    {
+        group.MapGet(GetCustomBookingRequests)
+            .RequireAuthorization()
+            .WithSummary("Danh sach yeu cau thue tau custom")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Customer chi thay yeu cau cua minh.",
+                "Admin/Manager thay tat ca yeu cau.",
+                "Query optional: status, departureDate."));
+
+        group.MapGet(GetCustomBookingRequestDetail, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Chi tiet yeu cau thue tau custom")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Customer chi xem duoc yeu cau cua minh.",
+                "Admin/Manager xem duoc tat ca thong tin va bao gia."));
+
+        group.MapPost(CreateCustomBookingRequest)
+            .RequireAuthorization()
+            .WithSummary("Khach gui yeu cau thue tau custom")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer",
+                CreateExample,
+                "useAccountContact=true thi backend lay fullName/phone/email tu tai khoan dang nhap.",
+                "useAccountContact=false thi khach gui contactName/contactPhone/contactEmail rieng.",
+                "departureDate dung dinh dang dd/MM/yyyy hoac dd-MM-yyyy.",
+                "fromStationCode/toStationCode la optional; neu gui thi phai dung stationCode co that tu GET /api/stations.",
+                "fromLocation/toLocation va fromStationCode/toStationCode duoc phep trung nhau cho tour khu hoi/thue tau vong quanh.",
+                "Backend se check user dang nhap va link user neu phone/email trung user co san.",
+                "Status ban dau la PendingReview. Chua tao booking va chua xu ly payment."));
+
+        group.MapPost(QuoteCustomBookingRequest, "{id:guid}/quote")
+            .RequireAuthorization()
+            .WithSummary("Admin/Manager bao gia yeu cau thue tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                QuoteExample,
+                "quotedPrice la tong gia thue tau.",
+                "Backend tu tinh depositAmount=50% va remainingAmount=50%.",
+                "validUntil la optional; neu gui ISO datetime co timezone, backend se luu UTC de tranh loi PostgreSQL timestamp.",
+                "Sau khi bao gia, status = Quoted."));
+
+        group.MapPost(AcceptCustomBookingQuote, "{id:guid}/accept-quote")
+            .RequireAuthorization()
+            .WithSummary("Khach chot dong y bao gia")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer",
+                null,
+                "Chi chu yeu cau moi duoc chot bao gia.",
+                "Chi chot duoc khi status=Quoted va bao gia chua het han.",
+                "Sau khi chot, status = QuoteAccepted. Payment va tao booking that se lam sau."));
+    }
+
+    private static async Task<IResult> GetCustomBookingRequests(
+        ISender sender,
+        CustomBookingRequestStatus? status,
+        string? departureDate,
+        CancellationToken ct)
+    {
+        if (!TryParseOptionalDateOnly(departureDate, out var parsedDepartureDate))
+        {
+            return Results.BadRequest(new { message = "departureDate phải có định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd." });
+        }
+
+        return Results.Ok(await sender.Send(new GetCustomBookingRequestsQuery(status, parsedDepartureDate), ct));
+    }
+
+    private static async Task<IResult> GetCustomBookingRequestDetail(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingRequestDetailQuery(id), ct));
+
+    private static async Task<IResult> CreateCustomBookingRequest(
+        ISender sender,
+        CreateCustomBookingRequestCommand command,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> QuoteCustomBookingRequest(
+        ISender sender,
+        Guid id,
+        QuoteCustomBookingRequestApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new QuoteCustomBookingRequestCommand(
+            id,
+            request.QuotedPrice,
+            request.Currency,
+            request.PriceNote,
+            request.ValidUntil), ct));
+
+    private static async Task<IResult> AcceptCustomBookingQuote(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new AcceptCustomBookingQuoteCommand(id), ct));
+
+    public sealed record QuoteCustomBookingRequestApiRequest(
+        decimal QuotedPrice,
+        string? Currency = null,
+        string? PriceNote = null,
+        DateTimeOffset? ValidUntil = null);
+
+    private static bool TryParseOptionalDateOnly(string? value, out DateOnly? date)
+    {
+        date = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (!DateOnly.TryParseExact(
+                value,
+                ["dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd"],
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var parsedDate))
+        {
+            return false;
+        }
+
+        date = parsedDate;
+        return true;
+    }
+}

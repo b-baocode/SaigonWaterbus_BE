@@ -54,7 +54,7 @@ public sealed class Users : IEndpointGroup
                 "Lấy danh sách user theo quyền.",
                 "Manager chỉ thấy Customer và Staff."));
 
-        groupBuilder.MapGet(GetById, "detail/{userId:int}")
+        groupBuilder.MapGet(GetById, "detail/{userId:guid}")
             .RequireAuthorization()
             .WithSummary("Lấy chi tiết user theo ID")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -74,7 +74,7 @@ public sealed class Users : IEndpointGroup
                 "Không cần truyền status khi tạo user; hệ thống mặc định tạo user Active.",
                 "RoleId không cố định theo code. Gọi GET /api/users/roles để xem id hiện tại."));
 
-        groupBuilder.MapPut(Update, "update/{userId:int}")
+        groupBuilder.MapPut(Update, "update/{userId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -83,7 +83,7 @@ public sealed class Users : IEndpointGroup
                 "Cập nhật user theo quyền.",
                 "Manager chỉ cập nhật Customer và Staff."));
 
-        groupBuilder.MapPatch(UpdateStatus, "status/{userId:int}")
+        groupBuilder.MapPatch(UpdateStatus, "status/{userId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật trạng thái user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -92,7 +92,7 @@ public sealed class Users : IEndpointGroup
                 "Status hợp lệ: Active, Suspended.",
                 "Đổi status sẽ revoke refresh token đang hoạt động của user."));
 
-        groupBuilder.MapDelete(Delete, "delete/{userId:int}")
+        groupBuilder.MapDelete(Delete, "delete/{userId:guid}")
             .RequireAuthorization()
             .WithSummary("Xóa user")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -101,17 +101,17 @@ public sealed class Users : IEndpointGroup
                 "Xóa user theo quyền.",
                 "Customer tự xóa bằng DELETE /api/auth/me."));
 
-        groupBuilder.MapGet(GetById, "{userId:int}")
+        groupBuilder.MapGet(GetById, "{userId:guid}")
             .RequireAuthorization()
             .WithName("GetUserByIdLegacy")
             .ExcludeFromDescription();
 
-        groupBuilder.MapPut(Update, "{userId:int}")
+        groupBuilder.MapPut(Update, "{userId:guid}")
             .RequireAuthorization()
             .WithName("UpdateUserLegacy")
             .ExcludeFromDescription();
 
-        groupBuilder.MapDelete(Delete, "{userId:int}")
+        groupBuilder.MapDelete(Delete, "{userId:guid}")
             .RequireAuthorization()
             .WithName("DeleteUserLegacy")
             .ExcludeFromDescription();

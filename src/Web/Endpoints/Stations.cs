@@ -88,7 +88,7 @@ public sealed class Stations : IEndpointGroup
     private static async Task<IResult> UpdateStation(ISender sender, Guid id, UpdateStationRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateStationCommand(
             id, req.StationName, req.Address, req.Description, req.Latitude, req.Longitude,
-            req.Status, req.PhoneNumber, req.HasWaitingArea, req.HasParking, req.HasTicketCounter), ct));
+            req.Status, req.HasWaitingArea, req.HasParking, req.HasTicketCounter), ct));
 
     private static async Task<IResult> DeleteStation(ISender sender, Guid id, CancellationToken ct)
     {
@@ -103,7 +103,6 @@ public sealed class Stations : IEndpointGroup
         decimal? Latitude,
         decimal? Longitude,
         StationStatus Status,
-        string? PhoneNumber,
         bool? HasWaitingArea,
         bool? HasParking,
         bool? HasTicketCounter);

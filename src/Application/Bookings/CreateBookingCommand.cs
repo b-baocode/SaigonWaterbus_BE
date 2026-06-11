@@ -177,8 +177,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         var userId = _userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
-        await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
-
         var booking = new Booking
         {
             UserId = userId,
@@ -211,8 +209,12 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
+            await _context.ExecuteInTransactionAsync(
+                async ct =>
+                {
+                    await _context.SaveChangesAsync(ct);
+                },
+                cancellationToken);
         }
         catch (DbUpdateException)
         {

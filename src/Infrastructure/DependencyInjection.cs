@@ -15,12 +15,14 @@ namespace Microsoft.Extensions.DependencyInjection;
 public static class DependencyInjection
 {
     private const string DatabaseConnectionName = "SaigonWaterbusDb";
+    private const string DatabaseConnectionOverrideKey = "SAIGONWATERBUS_DB_CONNECTION_STRING";
     private const string BrevoHttpClientName = "Brevo";
     private const string EsmsHttpClientName = "Esms";
 
     public static void AddInfrastructureServices(this IHostApplicationBuilder builder)
     {
-        var connectionString = builder.Configuration.GetConnectionString(DatabaseConnectionName);
+        var connectionString = builder.Configuration[DatabaseConnectionOverrideKey]
+            ?? builder.Configuration.GetConnectionString(DatabaseConnectionName);
         Guard.Against.NullOrWhiteSpace(connectionString, message: $"Connection string '{DatabaseConnectionName}' not found.");
 
         builder.Services.AddScoped<ISaveChangesInterceptor, AuditableEntityInterceptor>();

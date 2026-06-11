@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using System.ComponentModel.DataAnnotations;
+using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.Auth.Login;
 
@@ -124,13 +125,13 @@ public sealed class LoginRequestUseCase
         {
             var normalizedEmail = _identityNormalizer.NormalizeEmail(trimmedEmailOrPhone);
             return await query.SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken)
-                ?? throw new UnauthorizedAccessException();
+                ?? throw new NotFoundException("Không tìm thấy tài khoản.");
         }
 
         var normalizedPhone = _identityNormalizer.NormalizePhone(trimmedEmailOrPhone);
         return await query
             .SingleOrDefaultAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken)
-            ?? throw new UnauthorizedAccessException();
+            ?? throw new NotFoundException("Không tìm thấy tài khoản.");
     }
 
     private static bool IsEmailInput(string emailOrPhone) =>

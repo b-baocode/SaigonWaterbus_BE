@@ -35,6 +35,28 @@ if (args.Contains("db:migrate-seed", StringComparer.OrdinalIgnoreCase))
     return;
 }
 
+if (args.Contains("db:baseline-migrations", StringComparer.OrdinalIgnoreCase))
+{
+    using var scope = app.Services.CreateScope();
+    var initialiser = scope.ServiceProvider.GetRequiredService<ApplicationDbContextInitialiser>();
+
+    await initialiser.BaselineExistingSchemaMigrationsAsync();
+
+    Console.WriteLine("db:baseline-migrations completed.");
+
+    return;
+}
+
+if (args.Contains("db:schema-diagnostics", StringComparer.OrdinalIgnoreCase))
+{
+    using var scope = app.Services.CreateScope();
+    var initialiser = scope.ServiceProvider.GetRequiredService<ApplicationDbContextInitialiser>();
+
+    await initialiser.PrintSchemaDiagnosticsAsync();
+
+    return;
+}
+
 if (args.Contains("db:reset-seed", StringComparer.OrdinalIgnoreCase))
 {
     using var scope = app.Services.CreateScope();

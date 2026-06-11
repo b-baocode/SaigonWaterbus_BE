@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Enums;
+using System.Globalization;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -12,7 +13,7 @@ public sealed class Trips : IEndpointGroup
         {
           "routeCode": "R01-BD-TD",
           "capacity": 50,
-          "operatingDate": "2026-06-10",
+          "operatingDate": "10/06/2026",
           "departureTime": "2026-06-10T08:30:00+07:00"
         }
         """;
@@ -33,7 +34,7 @@ public sealed class Trips : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Query params (tat ca optional): operatingDate (yyyy-MM-dd), routeCode (string), status (string).",
+                "Query params (tat ca optional): operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeCode (string), status (string).",
                 "status hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
                 "Sap xep: ngay moi nhat → gio khoi hanh tang dan."));
 
@@ -43,7 +44,7 @@ public sealed class Trips : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Query params: fromStationId (guid), toStationId (guid), operatingDate (yyyy-MM-dd).",
+                "Query params: fromStationId (guid), toStationId (guid), operatingDate (dd/MM/yyyy hoac dd-MM-yyyy).",
                 "Chi tra ve chuyen co tripStatus=Scheduled va departureTime > now.",
                 "availableSeats = capacitySnapshot - so ve da dat (BookingItem active)."));
 
@@ -78,15 +79,29 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> GetTripList(
         ISender sender,
-        DateOnly? operatingDate, string? routeCode, string? status,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetTripListQuery(operatingDate, routeCode, status), ct));
+        string? operatingDate, string? routeCode, string? status,
+        CancellationToken ct)
+    {
+        if (!TryParseOptionalDateOnly(operatingDate, out var parsedOperatingDate))
+        {
+            return Results.BadRequest(new { message = "operatingDate phải có định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd." });
+        }
+
+        return Results.Ok(await sender.Send(new GetTripListQuery(parsedOperatingDate, routeCode, status), ct));
+    }
 
     private static async Task<IResult> SearchTrips(
         ISender sender,
-        Guid fromStationId, Guid toStationId, DateOnly operatingDate,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new SearchTripsQuery(fromStationId, toStationId, operatingDate), ct));
+        Guid fromStationId, Guid toStationId, string operatingDate,
+        CancellationToken ct)
+    {
+        if (!TryParseRequiredDateOnly(operatingDate, out var parsedOperatingDate))
+        {
+            return Results.BadRequest(new { message = "operatingDate phải có định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd." });
+        }
+
+        return Results.Ok(await sender.Send(new SearchTripsQuery(fromStationId, toStationId, parsedOperatingDate), ct));
+    }
 
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
@@ -98,4 +113,32 @@ public sealed class Trips : IEndpointGroup
         Results.Ok(await sender.Send(new UpdateTripStatusCommand(id, req.TripStatus, req.StatusNote), ct));
 
     public sealed record UpdateTripStatusRequest(TripStatus TripStatus, string? StatusNote);
+
+    private static bool TryParseOptionalDateOnly(string? value, out DateOnly? date)
+    {
+        date = null;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return true;
+        }
+
+        if (!TryParseRequiredDateOnly(value, out var parsedDate))
+        {
+            return false;
+        }
+
+        date = parsedDate;
+        return true;
+    }
+
+    private static bool TryParseRequiredDateOnly(string? value, out DateOnly date)
+    {
+        date = default;
+        return DateOnly.TryParseExact(
+            value,
+            ["dd/MM/yyyy", "dd-MM-yyyy", "yyyy-MM-dd"],
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out date);
+    }
 }
