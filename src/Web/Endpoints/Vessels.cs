@@ -37,6 +37,15 @@ public sealed class Vessels : IEndpointGroup
         }
         """;
 
+    private const string UpdateRentalPriceExample =
+        """
+        {
+          "unitPrice": 15000000,
+          "currency": "VND",
+          "note": "Gia thue tau tham khao theo ngay."
+        }
+        """;
+
     public static string RoutePrefix => "/api/vessels";
 
     public static string OpenApiTag => "Vessels";
@@ -98,6 +107,16 @@ public sealed class Vessels : IEndpointGroup
                 "Các trạng thái hợp lệ: Active, Maintenance, Inactive, Retired.",
                 "Muốn chuyển Active thì tàu phải setup đủ ghế.",
                 "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."));
+
+        groupBuilder.MapPut(UpdateVesselRentalPrice, "{vesselId:guid}/rental-price")
+            .RequireAuthorization()
+            .WithSummary("Cập nhật giá thuê tàu theo ngày")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                UpdateRentalPriceExample,
+                "Hiện chỉ hỗ trợ đơn vị thuê theo ngày.",
+                "Nếu tàu chưa có giá thì tạo mới, nếu đã có thì cập nhật.",
+                "Giá này là giá thuê tàu cơ bản để custom booking dùng làm giá tham khảo."));
 
         groupBuilder.MapDelete(DeleteVessel, "{vesselId:guid}")
             .RequireAuthorization()
@@ -169,6 +188,19 @@ public sealed class Vessels : IEndpointGroup
         CancellationToken cancellationToken) =>
         Results.Ok(await vesselManagementService.UpdateVesselStatusAsync(
             new UpdateVesselStatusRequest(vesselId, request.Status),
+            cancellationToken));
+
+    private static async Task<IResult> UpdateVesselRentalPrice(
+        IVesselManagementService vesselManagementService,
+        Guid vesselId,
+        UpdateVesselRentalPriceApiRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await vesselManagementService.UpdateVesselRentalPriceAsync(
+            new UpdateVesselRentalPriceRequest(
+                vesselId,
+                request.UnitPrice,
+                request.Currency,
+                request.Note),
             cancellationToken));
 
     private static async Task<IResult> DeleteVessel(
@@ -312,4 +344,10 @@ public sealed class Vessels : IEndpointGroup
         string? Description = null,
         string? ImageUrl = null);
 
-    private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);}
+    private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);
+
+    private sealed record UpdateVesselRentalPriceApiRequest(
+        decimal UnitPrice,
+        string? Currency = null,
+        string? Note = null);
+}

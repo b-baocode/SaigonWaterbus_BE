@@ -12,6 +12,8 @@ public sealed class UserManagementService : IUserManagementService
     private readonly CreateUserRequestUseCase _createUser;
     private readonly UpdateUserRequestUseCase _updateUser;
     private readonly UpdateUserStatusRequestUseCase _updateUserStatus;
+    private readonly GetUserStationAssignmentsRequestUseCase _getUserStationAssignments;
+    private readonly AssignUserStationsRequestUseCase _assignUserStations;
     private readonly DeleteUserRequestUseCase _deleteUser;
 
     public UserManagementService(
@@ -22,6 +24,8 @@ public sealed class UserManagementService : IUserManagementService
         CreateUserRequestUseCase createUser,
         UpdateUserRequestUseCase updateUser,
         UpdateUserStatusRequestUseCase updateUserStatus,
+        GetUserStationAssignmentsRequestUseCase getUserStationAssignments,
+        AssignUserStationsRequestUseCase assignUserStations,
         DeleteUserRequestUseCase deleteUser)
     {
         _validator = validator;
@@ -31,6 +35,8 @@ public sealed class UserManagementService : IUserManagementService
         _createUser = createUser;
         _updateUser = updateUser;
         _updateUserStatus = updateUserStatus;
+        _getUserStationAssignments = getUserStationAssignments;
+        _assignUserStations = assignUserStations;
         _deleteUser = deleteUser;
     }
 
@@ -63,6 +69,23 @@ public sealed class UserManagementService : IUserManagementService
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _updateUserStatus.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<UserStationAssignmentDto>> GetUserStationAssignmentsAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var request = new GetUserStationAssignmentsRequest(userId);
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _getUserStationAssignments.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<UserStationAssignmentDto>> AssignUserStationsAsync(
+        AssignUserStationsRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _assignUserStations.ExecuteAsync(request, cancellationToken);
     }
 
     public async Task<AuthActionResultDto> DeleteUserAsync(Guid userId, CancellationToken cancellationToken)

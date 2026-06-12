@@ -100,7 +100,7 @@ internal static class SeatLayoutPlanner
         HashSet<LayoutCell> seatCells,
         HashSet<LayoutCell> facilityCells)
     {
-        var definedCells = new HashSet<LayoutCell>();
+        var overridesByCell = new Dictionary<LayoutCell, LayoutCellConfigDto>();
 
         foreach (var cellConfig in deck.Cells!)
         {
@@ -112,60 +112,107 @@ internal static class SeatLayoutPlanner
                     cellConfig.ColumnSpan)
                 .ToArray();
 
+            EnsureCellShapeIsSupported(cellConfig, currentCells);
+
             foreach (var cell in currentCells)
             {
                 EnsureCellInsideDeck(cell, deck);
 
-                if (!definedCells.Add(cell))
+                if (overridesByCell.ContainsKey(cell))
                     throw AuthSupport.CreateValidationException("Cells", "Các ô layout không được khai báo trùng nhau.");
+
+                overridesByCell.Add(cell, cellConfig);
             }
+        }
 
-            switch (cellConfig.Type)
+        for (var row = 1; row <= deck.RowCount; row++)
+        {
+            for (var column = 1; column <= deck.ColumnCount; column++)
             {
-                case SeatLayoutCellType.Seat:
-                    if (currentCells.Length != 1)
-                        throw AuthSupport.CreateValidationException("Cells", "Ô Seat chỉ được chiếm đúng 1 ô.");
-
-                    var seatType = ResolveSeatTypeForCode(
-                        vessel.WaterbusService,
-                        cellConfig.SeatTypeCode,
-                        seatTypesByCode,
-                        defaultSeatType,
-                        nameof(cellConfig.SeatTypeCode));
+                var cell = new LayoutCell(deck.DeckNumber, row, column);
+                if (!overridesByCell.TryGetValue(cell, out var cellConfig))
+                {
                     AddSeat(
                         vessel,
                         deck,
-                        new SeatCellConfig(currentCells.Single(), seatType),
+                        new SeatCellConfig(cell, defaultSeatType),
                         seats,
                         seatCells,
                         "Cells");
-                    break;
+                    continue;
+                }
 
-                case SeatLayoutCellType.Toilet:
-                    AddFacility(
-                        vessel,
-                        deck,
-                        new FacilityConfigDto(
-                            VesselFacilityType.Toilet,
-                            cellConfig.Row,
-                            cellConfig.Column,
-                            cellConfig.RowSpan,
-                            cellConfig.ColumnSpan),
-                        facilities,
-                        seatCells,
-                        facilityCells);
-                    break;
+                switch (cellConfig.Type)
+                {
+                    case SeatLayoutCellType.Seat:
+                        var seatType = ResolveSeatTypeForCode(
+                            vessel.WaterbusService,
+                            cellConfig.SeatTypeCode,
+                            seatTypesByCode,
+                            defaultSeatType,
+                            nameof(cellConfig.SeatTypeCode));
+                        AddSeat(
+                            vessel,
+                            deck,
+                            new SeatCellConfig(cell, seatType),
+                            seats,
+                            seatCells,
+                            "Cells");
+                        break;
 
-                case SeatLayoutCellType.Aisle:
-                case SeatLayoutCellType.Empty:
-                    if (currentCells.Length != 1)
-                        throw AuthSupport.CreateValidationException("Cells", "Ô Aisle/Empty chỉ được chiếm đúng 1 ô.");
+                    case SeatLayoutCellType.Toilet:
+                        if (row != cellConfig.Row || column != cellConfig.Column)
+                        {
+                            break;
+                        }
 
-                    break;
+                        AddFacility(
+                            vessel,
+                            deck,
+                            new FacilityConfigDto(
+                                VesselFacilityType.Toilet,
+                                cellConfig.Row,
+                                cellConfig.Column,
+                                cellConfig.RowSpan,
+                                cellConfig.ColumnSpan),
+                            facilities,
+                            seatCells,
+                            facilityCells);
+                        break;
 
-                default:
-                    throw AuthSupport.CreateValidationException("Cells", "Loại ô layout không hợp lệ.");
+                    case SeatLayoutCellType.Aisle:
+                    case SeatLayoutCellType.Empty:
+                        break;
+
+                    default:
+                        throw AuthSupport.CreateValidationException("Cells", "Loại ô layout không hợp lệ.");
+                }
             }
+        }
+    }
+
+    private static void EnsureCellShapeIsSupported(LayoutCellConfigDto cellConfig, IReadOnlyCollection<LayoutCell> cells)
+    {
+        switch (cellConfig.Type)
+        {
+            case SeatLayoutCellType.Seat:
+                if (cells.Count != 1)
+                    throw AuthSupport.CreateValidationException("Cells", "Ô Seat chỉ được chiếm đúng 1 ô.");
+                break;
+
+            case SeatLayoutCellType.Toilet:
+                if (cells.Count != 2)
+                    throw AuthSupport.CreateValidationException("Cells", "Ô Toilet phải chiếm đúng 2 ô, theo chiều ngang hoặc chiều dọc.");
+                break;
+
+            case SeatLayoutCellType.Aisle:
+            case SeatLayoutCellType.Empty:
+                if (cells.Count != 1)
+                    throw AuthSupport.CreateValidationException("Cells", "Ô Aisle/Empty chỉ được chiếm đúng 1 ô.");
+                break;
+
+            default:
+                throw AuthSupport.CreateValidationException("Cells", "Loại ô layout không hợp lệ.");
         }
     }
 

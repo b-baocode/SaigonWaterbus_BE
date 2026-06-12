@@ -19,5 +19,7 @@ public interface IVesselManagementService
 
     Task<VesselDto> UpdateVesselStatusAsync(UpdateVesselStatusRequest request, CancellationToken cancellationToken);
 
+    Task<VesselDto> UpdateVesselRentalPriceAsync(UpdateVesselRentalPriceRequest request, CancellationToken cancellationToken);
+
     Task<AuthActionResultDto> DeleteVesselAsync(Guid vesselId, CancellationToken cancellationToken);
 }

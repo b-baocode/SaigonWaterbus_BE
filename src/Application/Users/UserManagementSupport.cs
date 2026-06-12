@@ -133,6 +133,38 @@ internal static class UserManagementSupport
         throw new ForbiddenAccessException();
     }
 
+    public static void EnsureCanManageStationAssignments(User actor)
+    {
+        if (AuthSupport.IsAdmin(actor))
+        {
+            return;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
+    public static void EnsureCanViewStationAssignments(User actor, User target)
+    {
+        if (AuthSupport.IsAdmin(actor) || actor.Id == target.Id)
+        {
+            return;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
+    public static void EnsureCanAssignStationsToUser(User actor, User target)
+    {
+        EnsureCanManageStationAssignments(actor);
+
+        if (AuthSupport.IsManager(target) || AuthSupport.IsStaff(target))
+        {
+            return;
+        }
+
+        throw AuthSupport.CreateValidationException(nameof(target.Id), "Chỉ được gắn bến cho tài khoản Manager hoặc Staff.");
+    }
+
     private static bool CanAdminManageRole(Role role) =>
         role.SystemName is Roles.ManagerSystemName;
 

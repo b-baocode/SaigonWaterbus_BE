@@ -14,11 +14,15 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<User> Users => Set<User>();
 
+    public DbSet<UserStationAssignment> UserStationAssignments => Set<UserStationAssignment>();
+
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
     public DbSet<WaterbusService> WaterbusServices => Set<WaterbusService>();
 
     public DbSet<Vessel> Vessels => Set<Vessel>();
+
+    public DbSet<VesselRentalPrice> VesselRentalPrices => Set<VesselRentalPrice>();
 
     public DbSet<Seat> Seats => Set<Seat>();
 
@@ -63,6 +67,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<CustomBookingRequest> CustomBookingRequests => Set<CustomBookingRequest>();
 
     public DbSet<CustomBookingQuote> CustomBookingQuotes => Set<CustomBookingQuote>();
+
+    public DbSet<CustomBookingItineraryStop> CustomBookingItineraryStops => Set<CustomBookingItineraryStop>();
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);

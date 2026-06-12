@@ -39,4 +39,6 @@ public class Vessel : BaseAuditableEntity
     public ICollection<VesselDeckLayout> DeckLayouts { get; set; } = new List<VesselDeckLayout>();
 
     public ICollection<VesselFacility> Facilities { get; set; } = new List<VesselFacility>();
+
+    public ICollection<VesselRentalPrice> RentalPrices { get; set; } = new List<VesselRentalPrice>();
 }

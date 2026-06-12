@@ -30,6 +30,17 @@ public sealed class Users : IEndpointGroup
         }
         """;
 
+    private const string AssignStationsExample =
+        """
+        {
+          "stationIds": [
+            "00000000-0000-0000-0000-000000000001",
+            "00000000-0000-0000-0000-000000000002"
+          ],
+          "primaryStationId": "00000000-0000-0000-0000-000000000001"
+        }
+        """;
+
     public static string RoutePrefix => "/api/users";
 
     public static string OpenApiTag => "Users";
@@ -91,6 +102,27 @@ public sealed class Users : IEndpointGroup
                 UpdateStatusExample,
                 "Status hợp lệ: Active, Suspended.",
                 "Đổi status sẽ revoke refresh token đang hoạt động của user."));
+
+        groupBuilder.MapGet(GetUserStationAssignments, "{userId:guid}/stations")
+            .RequireAuthorization()
+            .WithSummary("Lấy danh sách bến được gắn cho Manager/Staff")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc chính user đó",
+                null,
+                "Admin xem được station assignments của Manager/Staff.",
+                "Manager/Staff xem được danh sách bến của chính mình."));
+
+        groupBuilder.MapPut(AssignUserStations, "{userId:guid}/stations")
+            .RequireAuthorization()
+            .WithSummary("Admin gắn bến cho Manager/Staff")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                AssignStationsExample,
+                "Dùng sau khi tạo Manager hoặc Staff.",
+                "Chỉ gắn được cho tài khoản role Manager hoặc Staff.",
+                "stationIds là danh sách bến user phụ trách.",
+                "primaryStationId optional; nếu bỏ trống backend lấy station đầu tiên làm primary.",
+                "PUT sẽ thay thế danh sách station active hiện tại của user."));
 
         groupBuilder.MapDelete(Delete, "delete/{userId:guid}")
             .RequireAuthorization()
@@ -173,6 +205,21 @@ public sealed class Users : IEndpointGroup
                 request.Status),
             cancellationToken));
 
+    private static async Task<IResult> GetUserStationAssignments(
+        IUserManagementService userManagementService,
+        Guid userId,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await userManagementService.GetUserStationAssignmentsAsync(userId, cancellationToken));
+
+    private static async Task<IResult> AssignUserStations(
+        IUserManagementService userManagementService,
+        Guid userId,
+        AssignUserStationsApiRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await userManagementService.AssignUserStationsAsync(
+            new AssignUserStationsRequest(userId, request.StationIds, request.PrimaryStationId),
+            cancellationToken));
+
     private static async Task<IResult> Delete(
         IUserManagementService userManagementService,
         Guid userId,
@@ -196,4 +243,8 @@ public sealed class Users : IEndpointGroup
 
     public sealed record UpdateUserStatusApiRequest(
         Domain.Enums.UserStatus Status);
+
+    public sealed record AssignUserStationsApiRequest(
+        IReadOnlyCollection<Guid> StationIds,
+        Guid? PrimaryStationId = null);
 }

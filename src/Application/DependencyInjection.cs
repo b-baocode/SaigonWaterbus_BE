@@ -53,6 +53,8 @@ public static class DependencyInjection
         builder.Services.AddScoped<CreateUserRequestUseCase>();
         builder.Services.AddScoped<UpdateUserRequestUseCase>();
         builder.Services.AddScoped<UpdateUserStatusRequestUseCase>();
+        builder.Services.AddScoped<GetUserStationAssignmentsRequestUseCase>();
+        builder.Services.AddScoped<AssignUserStationsRequestUseCase>();
         builder.Services.AddScoped<DeleteUserRequestUseCase>();
 
         builder.Services.AddScoped<IVesselManagementService, VesselManagementService>();
@@ -61,6 +63,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<CreateVesselRequestUseCase>();
         builder.Services.AddScoped<UpdateVesselRequestUseCase>();
         builder.Services.AddScoped<UpdateVesselStatusRequestUseCase>();
+        builder.Services.AddScoped<UpdateVesselRentalPriceRequestUseCase>();
         builder.Services.AddScoped<DeleteVesselRequestUseCase>();
 
         builder.Services.AddScoped<ISeatManagementService, SeatManagementService>();

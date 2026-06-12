@@ -161,6 +161,45 @@ public class UserManagementSupportTests
         Should.Throw<ValidationException>(() => UserManagementSupport.EnsureCanDeleteUser(actor, target));
     }
 
+    [Test]
+    public void AdminCanAssignStationsToManager()
+    {
+        var actor = UserWithRole(1, Roles.AdminName);
+        var target = UserWithRole(2, Roles.ManagerSystemName);
+
+        Should.NotThrow(() => UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
+    }
+
+    [Test]
+    public void AdminCanAssignStationsToStaff()
+    {
+        var actor = UserWithRole(1, Roles.AdminName);
+        var target = UserWithRole(2, Roles.StaffSystemName);
+
+        Should.NotThrow(() => UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
+    }
+
+    [Test]
+    public void ManagerCannotAssignStations()
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var target = UserWithRole(2, Roles.ManagerSystemName);
+
+        Should.Throw<ForbiddenAccessException>(() =>
+            UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
+    }
+
+    [TestCase(Roles.CustomerSystemName)]
+    [TestCase(Roles.AdminName)]
+    public void AdminCannotAssignStationsToUnsupportedRoles(string targetSystemName)
+    {
+        var actor = UserWithRole(1, Roles.AdminName);
+        var target = UserWithRole(2, targetSystemName);
+
+        Should.Throw<ValidationException>(() =>
+            UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
+    }
+
     private static User UserWithRole(int id, string systemName) =>
         UserWithRole(Guid.Parse($"00000000-0000-0000-0000-{id:000000000000}"), systemName);
 

@@ -36,6 +36,7 @@ public sealed class GetVesselByIdRequestUseCase
                 _context.Vessels
                     .AsNoTracking()
                     .Include(x => x.WaterbusService)
+                    .Include(x => x.RentalPrices)
                     .AsQueryable(),
                 actor)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)

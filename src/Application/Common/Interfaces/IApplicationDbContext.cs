@@ -10,11 +10,15 @@ public interface IApplicationDbContext
 
     DbSet<User> Users { get; }
 
+    DbSet<UserStationAssignment> UserStationAssignments { get; }
+
     DbSet<AuditLog> AuditLogs { get; }
 
     DbSet<WaterbusService> WaterbusServices { get; }
 
     DbSet<Vessel> Vessels { get; }
+
+    DbSet<VesselRentalPrice> VesselRentalPrices { get; }
 
     DbSet<Seat> Seats { get; }
 
@@ -23,6 +27,12 @@ public interface IApplicationDbContext
     DbSet<VesselDeckLayout> VesselDeckLayouts { get; }
 
     DbSet<VesselFacility> VesselFacilities { get; }
+
+    DbSet<CustomBookingRequest> CustomBookingRequests { get; }
+
+    DbSet<CustomBookingQuote> CustomBookingQuotes { get; }
+
+    DbSet<CustomBookingItineraryStop> CustomBookingItineraryStops { get; }
 
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;

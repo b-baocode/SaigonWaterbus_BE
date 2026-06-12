@@ -45,4 +45,8 @@ public class User : BaseAuditableEntity
     public ICollection<ExternalLogin> ExternalLogins { get; set; } = new List<ExternalLogin>();
 
     public ICollection<AuditLog> AuditLogs { get; set; } = new List<AuditLog>();
+
+    public ICollection<UserStationAssignment> StationAssignments { get; set; } = new List<UserStationAssignment>();
+
+    public ICollection<UserStationAssignment> AssignedStationAssignments { get; set; } = new List<UserStationAssignment>();
 }

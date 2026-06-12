@@ -63,6 +63,12 @@ internal static class VesselSupport
             ? vessel.Description
             : service.Description;
 
+        var rentalPrice = vessel.RentalPrices
+            .Where(x => x.RentalUnit == VesselRentalUnit.Day)
+            .OrderBy(x => x.Id)
+            .Select(x => new VesselRentalPriceDto(x.RentalUnit, x.UnitPrice, x.Currency, x.Note))
+            .FirstOrDefault();
+
         return new VesselDto(
             vessel.Id,
             serviceDto,
@@ -79,7 +85,22 @@ internal static class VesselSupport
             vessel.MaxSpeedKmh,
             vessel.YearBuilt,
             vessel.ImageUrl ?? string.Empty,
-            description);
+            description,
+            rentalPrice);
+    }
+
+    public static string NormalizeCurrency(string? currency) =>
+        string.IsNullOrWhiteSpace(currency) ? "VND" : currency.Trim().ToUpperInvariant();
+
+    public static bool IsValidCurrencyCode(string? currency)
+    {
+        if (string.IsNullOrWhiteSpace(currency))
+        {
+            return true;
+        }
+
+        var normalizedCurrency = NormalizeCurrency(currency);
+        return normalizedCurrency.Length == 3 && normalizedCurrency.All(char.IsAsciiLetterUpper);
     }
 
     public static bool IsReadyForOperation(Vessel vessel) =>

@@ -1,4 +1,5 @@
 using SaigonWaterbus.Domain.Common;
+using SaigonWaterbus.Domain.Entities;
 using NUnit.Framework;
 using Shouldly;
 
@@ -6,6 +7,30 @@ namespace SaigonWaterbus.Domain.UnitTests.Common;
 
 public class BaseEntityTests
 {
+    [Test]
+    public void BaseEntityGeneratesGuidIdWhenCreated()
+    {
+        var entity = new TestEntity();
+
+        entity.Id.ShouldNotBe(Guid.Empty);
+    }
+
+    [Test]
+    public void VesselGeneratesGuidIdWhenCreated()
+    {
+        var vessel = new Vessel();
+
+        vessel.Id.ShouldNotBe(Guid.Empty);
+    }
+
+    [Test]
+    public void CustomBookingRequestGeneratesGuidIdWhenCreated()
+    {
+        var request = new CustomBookingRequest();
+
+        request.Id.ShouldNotBe(Guid.Empty);
+    }
+
     [Test]
     public void AddDomainEventAddsEventToCollection()
     {

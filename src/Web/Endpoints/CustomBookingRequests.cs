@@ -17,16 +17,21 @@ public sealed class CustomBookingRequests : IEndpointGroup
           "contactName": null,
           "contactPhone": null,
           "contactEmail": null,
+          "preferredVesselId": "00000000-0000-0000-0000-000000000000",
           "departureDate": "20/06/2026",
           "preferredStartTime": "08:30:00",
-          "preferredEndTime": "11:30:00",
-          "fromLocation": "Ben Bach Dang",
-          "toLocation": "Ben Linh Dong",
-          "fromStationCode": "BD",
-          "toStationCode": "LD",
-          "itineraryNote": "Dung chup hinh 30 phut tai Thanh Da.",
-          "passengerCount": 45,
-          "specialRequests": "Trang tri sinh nhat."
+          "fromStationId": "00000000-0000-0000-0000-000000000000",
+          "toStationId": "00000000-0000-0000-0000-000000000000",
+          "adultCount": 6,
+          "childCount": 2,
+          "itineraryStops": [
+            {
+              "stopOrder": 1,
+              "stationId": "00000000-0000-0000-0000-000000000000",
+              "stayDurationMinutes": 90,
+              "note": "Tham quan"
+            }
+          ]
         }
         """;
 
@@ -69,9 +74,15 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 CreateExample,
                 "useAccountContact=true thi backend lay fullName/phone/email tu tai khoan dang nhap.",
                 "useAccountContact=false thi khach gui contactName/contactPhone/contactEmail rieng.",
+                "preferredVesselId la tau khach chon tu GET /api/fares/vessel-rental-prices.",
                 "departureDate dung dinh dang dd/MM/yyyy hoac dd-MM-yyyy.",
-                "fromStationCode/toStationCode la optional; neu gui thi phai dung stationCode co that tu GET /api/stations.",
-                "fromLocation/toLocation va fromStationCode/toStationCode duoc phep trung nhau cho tour khu hoi/thue tau vong quanh.",
+                "preferredStartTime la gio khach bat dau len tau; khach khong can nhap gio ket thuc.",
+                "adultCount + childCount la tong so khach va khong duoc vuot qua suc chua tau.",
+                "fromStationId la ben khach bat dau, toStationId la ben khach ket thuc; hai ben duoc phep trung nhau.",
+                "Neu fromStationId va toStationId trung nhau thi phai co it nhat mot itineraryStops.",
+                "itineraryStops chi gom cac diem ghe o giua, khong can gui pickup/dropoff.",
+                "Moi itineraryStops can stationId, stopOrder va stayDurationMinutes.",
+                "Backend tam tinh thoi luong = so chang * 30 phut + tong thoi gian dung + buffer 10%.",
                 "Backend se check user dang nhap va link user neu phone/email trung user co san.",
                 "Status ban dau la PendingReview. Chua tao booking va chua xu ly payment."));
 

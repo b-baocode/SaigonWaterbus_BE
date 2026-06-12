@@ -13,6 +13,12 @@ public sealed record VesselWaterbusServiceDto(
     string Code,
     string Name);
 
+public sealed record VesselRentalPriceDto(
+    VesselRentalUnit RentalUnit,
+    decimal UnitPrice,
+    string Currency,
+    string? Note);
+
 public sealed record VesselDto(
     Guid Id,
     VesselWaterbusServiceDto WaterbusService,
@@ -29,7 +35,8 @@ public sealed record VesselDto(
     int? MaxSpeedKmh,
     int? YearBuilt,
     string ImageUrl,
-    string? Description);
+    string? Description,
+    VesselRentalPriceDto? RentalPrice);
 
 public sealed class GetVesselsRequestValidator : AbstractValidator<GetVesselsRequest>
 {
@@ -73,6 +80,7 @@ public sealed class GetVesselsRequestUseCase
             _context.Vessels
                 .AsNoTracking()
                 .Include(x => x.WaterbusService)
+                .Include(x => x.RentalPrices)
                 .AsQueryable(),
             actor);
 

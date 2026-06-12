@@ -16,5 +16,13 @@ public interface IUserManagementService
 
     Task<AuthUserDto> UpdateUserStatusAsync(UpdateUserStatusRequest request, CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<UserStationAssignmentDto>> GetUserStationAssignmentsAsync(
+        Guid userId,
+        CancellationToken cancellationToken);
+
+    Task<IReadOnlyCollection<UserStationAssignmentDto>> AssignUserStationsAsync(
+        AssignUserStationsRequest request,
+        CancellationToken cancellationToken);
+
     Task<AuthActionResultDto> DeleteUserAsync(Guid userId, CancellationToken cancellationToken);
 }

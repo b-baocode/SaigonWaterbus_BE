@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260612093828_AddVesselRentalPrices")]
+    partial class AddVesselRentalPrices
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -202,52 +205,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("booking_items", (string)null);
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingItineraryStop", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("custom_booking_itinerary_stop_id");
-
-                    b.Property<DateTimeOffset>("Created")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<Guid>("CustomBookingRequestId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("custom_booking_request_id");
-
-                    b.Property<DateTimeOffset>("LastModified")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("note");
-
-                    b.Property<Guid>("StationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("station_id");
-
-                    b.Property<int>("StayDurationMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("stay_duration_minutes");
-
-                    b.Property<int>("StopOrder")
-                        .HasColumnType("integer")
-                        .HasColumnName("stop_order");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("StationId");
-
-                    b.HasIndex("CustomBookingRequestId", "StopOrder")
-                        .IsUnique();
-
-                    b.ToTable("custom_booking_itinerary_stops", (string)null);
-                });
-
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingQuote", b =>
                 {
                     b.Property<Guid>("Id")
@@ -309,18 +266,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("custom_booking_request_id");
 
-                    b.Property<int>("AdultCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("adult_count");
-
-                    b.Property<int>("BufferMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("buffer_minutes");
-
-                    b.Property<int>("ChildCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("child_count");
-
                     b.Property<string>("ContactEmail")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)")
@@ -349,22 +294,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<DateOnly>("DepartureDate")
                         .HasColumnType("date")
                         .HasColumnName("departure_date");
-
-                    b.Property<int>("EstimatedDurationMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("estimated_duration_minutes");
-
-                    b.Property<DateOnly?>("EstimatedEndDate")
-                        .HasColumnType("date")
-                        .HasColumnName("estimated_end_date");
-
-                    b.Property<int>("EstimatedStayMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("estimated_stay_minutes");
-
-                    b.Property<int>("EstimatedTravelMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("estimated_travel_minutes");
 
                     b.Property<string>("FromLocation")
                         .IsRequired()
@@ -401,10 +330,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<TimeOnly?>("PreferredStartTime")
                         .HasColumnType("time without time zone")
                         .HasColumnName("preferred_start_time");
-
-                    b.Property<Guid?>("PreferredVesselId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("preferred_vessel_id");
 
                     b.Property<DateTimeOffset?>("QuoteAcceptedAt")
                         .HasColumnType("timestamp with time zone")
@@ -453,8 +378,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("ContactUserId");
 
                     b.HasIndex("FromStationId");
-
-                    b.HasIndex("PreferredVesselId");
 
                     b.HasIndex("QuotedByUserId");
 
@@ -1932,25 +1855,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Trip");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingItineraryStop", b =>
-                {
-                    b.HasOne("SaigonWaterbus.Domain.Entities.CustomBookingRequest", "CustomBookingRequest")
-                        .WithMany("ItineraryStops")
-                        .HasForeignKey("CustomBookingRequestId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Station", "Station")
-                        .WithMany()
-                        .HasForeignKey("StationId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.Navigation("CustomBookingRequest");
-
-                    b.Navigation("Station");
-                });
-
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingQuote", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.CustomBookingRequest", "CustomBookingRequest")
@@ -1974,11 +1878,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasForeignKey("FromStationId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "PreferredVessel")
-                        .WithMany()
-                        .HasForeignKey("PreferredVesselId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SaigonWaterbus.Domain.Entities.User", "QuotedByUser")
                         .WithMany()
                         .HasForeignKey("QuotedByUserId")
@@ -1997,8 +1896,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("ContactUser");
 
                     b.Navigation("FromStation");
-
-                    b.Navigation("PreferredVessel");
 
                     b.Navigation("QuotedByUser");
 
@@ -2263,8 +2160,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingRequest", b =>
                 {
-                    b.Navigation("ItineraryStops");
-
                     b.Navigation("Quote");
                 });
 

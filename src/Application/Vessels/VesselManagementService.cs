@@ -12,6 +12,7 @@ public sealed class VesselManagementService : IVesselManagementService
     private readonly CreateVesselRequestUseCase _createVessel;
     private readonly UpdateVesselRequestUseCase _updateVessel;
     private readonly UpdateVesselStatusRequestUseCase _updateVesselStatus;
+    private readonly UpdateVesselRentalPriceRequestUseCase _updateVesselRentalPrice;
     private readonly DeleteVesselRequestUseCase _deleteVessel;
 
     public VesselManagementService(
@@ -21,6 +22,7 @@ public sealed class VesselManagementService : IVesselManagementService
         CreateVesselRequestUseCase createVessel,
         UpdateVesselRequestUseCase updateVessel,
         UpdateVesselStatusRequestUseCase updateVesselStatus,
+        UpdateVesselRentalPriceRequestUseCase updateVesselRentalPrice,
         DeleteVesselRequestUseCase deleteVessel)
     {
         _validator = validator;
@@ -29,6 +31,7 @@ public sealed class VesselManagementService : IVesselManagementService
         _createVessel = createVessel;
         _updateVessel = updateVessel;
         _updateVesselStatus = updateVesselStatus;
+        _updateVesselRentalPrice = updateVesselRentalPrice;
         _deleteVessel = deleteVessel;
     }
 
@@ -66,6 +69,14 @@ public sealed class VesselManagementService : IVesselManagementService
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _updateVesselStatus.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<VesselDto> UpdateVesselRentalPriceAsync(
+        UpdateVesselRentalPriceRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _updateVesselRentalPrice.ExecuteAsync(request, cancellationToken);
     }
 
     public async Task<AuthActionResultDto> DeleteVesselAsync(Guid vesselId, CancellationToken cancellationToken)

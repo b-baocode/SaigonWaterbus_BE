@@ -10,11 +10,17 @@ namespace SaigonWaterbus.Application.CustomBookingRequests;
 internal static class CustomBookingRequestSupport
 {
     private static readonly TimeSpan VietnamUtcOffset = TimeSpan.FromHours(7);
+    private const int DefaultTravelMinutesPerLeg = 30;
+    private const decimal ScheduleBufferRate = 0.10m;
 
     public static IQueryable<CustomBookingRequest> IncludeDetails(IQueryable<CustomBookingRequest> query) =>
         query
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
+            .Include(x => x.PreferredVessel)
+            .ThenInclude(x => x!.WaterbusService)
+            .Include(x => x.ItineraryStops)
+            .ThenInclude(x => x.Station)
             .Include(x => x.Quote);
 
     public static async Task<User> EnsureCurrentUserCanManageCustomBookingRequestsAsync(
@@ -103,9 +109,31 @@ internal static class CustomBookingRequestSupport
         if (startTime.HasValue && endTime.HasValue && startTime.Value >= endTime.Value)
         {
             throw AuthSupport.CreateValidationException(
-                nameof(CreateCustomBookingRequestCommand.PreferredEndTime),
+                "PreferredEndTime",
                 "Giờ kết thúc mong muốn phải lớn hơn giờ bắt đầu.");
         }
+    }
+
+    public static CustomBookingTimingEstimate CalculateTimingEstimate(
+        DateOnly departureDate,
+        TimeOnly preferredStartTime,
+        int itineraryStopCount,
+        int stayMinutes)
+    {
+        var legCount = itineraryStopCount + 1;
+        var travelMinutes = legCount * DefaultTravelMinutesPerLeg;
+        var baseMinutes = travelMinutes + stayMinutes;
+        var bufferMinutes = (int)Math.Ceiling(baseMinutes * ScheduleBufferRate);
+        var totalMinutes = baseMinutes + bufferMinutes;
+        var estimatedEnd = departureDate.ToDateTime(preferredStartTime).AddMinutes(totalMinutes);
+
+        return new CustomBookingTimingEstimate(
+            travelMinutes,
+            stayMinutes,
+            bufferMinutes,
+            totalMinutes,
+            DateOnly.FromDateTime(estimatedEnd),
+            TimeOnly.FromDateTime(estimatedEnd));
     }
 
     public static void EnsureCanQuote(CustomBookingRequest request)
@@ -139,3 +167,11 @@ internal static class CustomBookingRequestSupport
         }
     }
 }
+
+public sealed record CustomBookingTimingEstimate(
+    int EstimatedTravelMinutes,
+    int EstimatedStayMinutes,
+    int BufferMinutes,
+    int EstimatedDurationMinutes,
+    DateOnly EstimatedEndDate,
+    TimeOnly EstimatedEndTime);

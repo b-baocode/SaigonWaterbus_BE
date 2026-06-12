@@ -17,9 +17,15 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ContactName).HasColumnName("contact_name").HasMaxLength(150).IsRequired();
         builder.Property(x => x.ContactPhone).HasColumnName("contact_phone").HasMaxLength(20).IsRequired();
         builder.Property(x => x.ContactEmail).HasColumnName("contact_email").HasMaxLength(255);
+        builder.Property(x => x.PreferredVesselId).HasColumnName("preferred_vessel_id");
         builder.Property(x => x.DepartureDate).HasColumnName("departure_date").IsRequired();
         builder.Property(x => x.PreferredStartTime).HasColumnName("preferred_start_time");
         builder.Property(x => x.PreferredEndTime).HasColumnName("preferred_end_time");
+        builder.Property(x => x.EstimatedEndDate).HasColumnName("estimated_end_date");
+        builder.Property(x => x.EstimatedTravelMinutes).HasColumnName("estimated_travel_minutes").IsRequired();
+        builder.Property(x => x.EstimatedStayMinutes).HasColumnName("estimated_stay_minutes").IsRequired();
+        builder.Property(x => x.BufferMinutes).HasColumnName("buffer_minutes").IsRequired();
+        builder.Property(x => x.EstimatedDurationMinutes).HasColumnName("estimated_duration_minutes").IsRequired();
         builder.Property(x => x.FromLocation).HasColumnName("from_location").HasMaxLength(200).IsRequired();
         builder.Property(x => x.ToLocation).HasColumnName("to_location").HasMaxLength(200).IsRequired();
         builder.Property(x => x.FromStationId).HasColumnName("from_station_id");
@@ -28,6 +34,8 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ToStationCode).HasColumnName("to_station_code").HasMaxLength(50);
         builder.Property(x => x.ItineraryNote).HasColumnName("itinerary_note").HasMaxLength(1000);
         builder.Property(x => x.PassengerCount).HasColumnName("passenger_count").IsRequired();
+        builder.Property(x => x.AdultCount).HasColumnName("adult_count").IsRequired();
+        builder.Property(x => x.ChildCount).HasColumnName("child_count").IsRequired();
         builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(x => x.QuotedAt).HasColumnName("quoted_at");
@@ -42,6 +50,7 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.HasIndex(x => new { x.Status, x.DepartureDate });
         builder.HasIndex(x => x.UserId);
         builder.HasIndex(x => x.ContactUserId);
+        builder.HasIndex(x => x.PreferredVesselId);
         builder.HasIndex(x => x.FromStationId);
         builder.HasIndex(x => x.ToStationId);
 
@@ -58,6 +67,11 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.HasOne(x => x.QuotedByUser)
             .WithMany()
             .HasForeignKey(x => x.QuotedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.PreferredVessel)
+            .WithMany()
+            .HasForeignKey(x => x.PreferredVesselId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.FromStation)

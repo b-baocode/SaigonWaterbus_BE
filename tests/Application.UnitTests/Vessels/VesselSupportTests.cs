@@ -36,6 +36,46 @@ public class VesselSupportTests
         VesselSupport.IsReadyForOperation(Vessel(BookingMode.VesselRental, seatsConfigured: true)).ShouldBeTrue();
     }
 
+    [Test]
+    public void CreateDtoIncludesDayRentalPriceWhenConfigured()
+    {
+        var vessel = Vessel(BookingMode.VesselRental, seatsConfigured: true);
+        vessel.RentalPrices.Add(new VesselRentalPrice
+        {
+            VesselId = vessel.Id,
+            RentalUnit = VesselRentalUnit.Day,
+            UnitPrice = 15000000m,
+            Currency = "VND",
+            Note = "Gia thue theo ngay"
+        });
+
+        var dto = VesselSupport.CreateDto(vessel);
+
+        dto.RentalPrice.ShouldNotBeNull();
+        dto.RentalPrice.RentalUnit.ShouldBe(VesselRentalUnit.Day);
+        dto.RentalPrice.UnitPrice.ShouldBe(15000000m);
+        dto.RentalPrice.Currency.ShouldBe("VND");
+    }
+
+    [TestCase(null, "VND")]
+    [TestCase("", "VND")]
+    [TestCase(" usd ", "USD")]
+    public void NormalizeCurrencyDefaultsAndUppercasesCurrency(string? currency, string expected)
+    {
+        VesselSupport.NormalizeCurrency(currency).ShouldBe(expected);
+    }
+
+    [Test]
+    public void UpdateVesselRentalPriceValidatorRejectsInvalidPrice()
+    {
+        var validator = new UpdateVesselRentalPriceRequestValidator();
+
+        var result = validator.Validate(new UpdateVesselRentalPriceRequest(Guid.NewGuid(), 0));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateVesselRentalPriceRequest.UnitPrice));
+    }
+
     private static Vessel Vessel(BookingMode bookingMode, bool seatsConfigured) =>
         new()
         {

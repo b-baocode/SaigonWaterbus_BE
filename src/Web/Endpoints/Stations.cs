@@ -38,7 +38,8 @@ public sealed class Stations : IEndpointGroup
                 "Anonymous",
                 null,
                 "Tra ve tat ca tram co status = Active.",
-                "Sap xep theo StationName."));
+                "Sap xep theo StationName.",
+                "Managers va Staff la danh sach user active dang duoc gan voi tram."));
 
         group.MapGet(GetStationById, "{id:guid}")
             .AllowAnonymous()
@@ -46,7 +47,8 @@ public sealed class Stations : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Tra ve 404 neu khong tim thay tram."));
+                "Tra ve 404 neu khong tim thay tram.",
+                "Managers va Staff la danh sach user active dang duoc gan voi tram."));
 
         group.MapPost(CreateStation, string.Empty)
             .RequireAuthorization()

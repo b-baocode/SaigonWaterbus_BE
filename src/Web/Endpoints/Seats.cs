@@ -23,15 +23,17 @@ public sealed class Seats : IEndpointGroup
           "decks": [
             {
               "deckNumber": 1,
-              "rowCount": 2,
-              "columnCount": 4,
+              "rowCount": 5,
+              "columnCount": 6,
               "cells": [
-                { "row": 1, "column": 1, "type": "Seat", "seatTypeCode": "STANDARD" },
-                { "row": 1, "column": 2, "type": "Seat", "seatTypeCode": "STANDARD" },
                 { "row": 1, "column": 3, "type": "Aisle" },
-                { "row": 1, "column": 4, "type": "Seat", "seatTypeCode": "VIP" },
-                { "row": 2, "column": 1, "type": "Seat", "seatTypeCode": "STANDARD" },
-                { "row": 2, "column": 3, "type": "Toilet", "rowSpan": 1, "columnSpan": 2 }
+                { "row": 2, "column": 3, "type": "Aisle" },
+                { "row": 3, "column": 1, "type": "Empty" },
+                { "row": 3, "column": 3, "type": "Aisle" },
+                { "row": 4, "column": 1, "type": "Toilet", "rowSpan": 1, "columnSpan": 2 },
+                { "row": 4, "column": 3, "type": "Aisle" },
+                { "row": 5, "column": 3, "type": "Aisle" },
+                { "row": 5, "column": 4, "type": "Seat", "seatTypeCode": "VIP" }
               ]
             }
           ]
@@ -90,8 +92,9 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 ConfigureExample,
                 "Dùng sau khi đã sinh ma trận bằng /seats/generate.",
-                "Mỗi ô có type=Seat/Aisle/Empty/Toilet.",
-                "Ô Seat có thể gửi seatTypeCode. Nếu bỏ trống thì mặc định STANDARD.",
+                "Ma trận mặc định là ghế STANDARD; FE chỉ cần gửi cells cho các ô muốn override.",
+                "Mỗi override cell có type=Seat/Aisle/Empty/Toilet.",
+                "Chỉ gửi type=Seat khi muốn đổi seatTypeCode cho ô đó. Nếu bỏ trống thì mặc định STANDARD.",
                 "Backend tự kiểm tra seatTypeCode theo dịch vụ: Waterbus chỉ STANDARD, WaterSightseeing có thể VIP nếu service có seat type VIP.",
                 "Aisle/Empty không lưu thành ghế; frontend dựng lại từ ma trận rowCount × columnCount và danh sách ghế/WC.",
                 "Tổng số ô Seat phải bằng SeatCount của tàu.",
