@@ -177,13 +177,6 @@ public sealed class CreateCustomBookingRequestCommandHandler
                 $"Tổng số khách ({passengerCount}) vượt quá sức chứa tàu ({vessel.PassengerCapacity}).");
         }
 
-        var stayMinutes = itineraryStops.Sum(x => x.StayDurationMinutes);
-        var timing = CustomBookingRequestSupport.CalculateTimingEstimate(
-            request.DepartureDate,
-            request.PreferredStartTime!.Value,
-            itineraryStops.Length,
-            stayMinutes);
-
         var customRequest = new CustomBookingRequest
         {
             UserId = user.Id,
@@ -194,12 +187,12 @@ public sealed class CreateCustomBookingRequestCommandHandler
             PreferredVesselId = vessel.Id,
             DepartureDate = request.DepartureDate,
             PreferredStartTime = request.PreferredStartTime,
-            PreferredEndTime = timing.EstimatedEndTime,
-            EstimatedEndDate = timing.EstimatedEndDate,
-            EstimatedTravelMinutes = timing.EstimatedTravelMinutes,
-            EstimatedStayMinutes = timing.EstimatedStayMinutes,
-            BufferMinutes = timing.BufferMinutes,
-            EstimatedDurationMinutes = timing.EstimatedDurationMinutes,
+            PreferredEndTime = null,
+            EstimatedEndDate = null,
+            EstimatedTravelMinutes = 0,
+            EstimatedStayMinutes = 0,
+            BufferMinutes = 0,
+            EstimatedDurationMinutes = 0,
             FromLocation = fromStation.StationName,
             ToLocation = toStation.StationName,
             FromStationId = fromStation.Id,
@@ -309,7 +302,9 @@ public sealed class CreateCustomBookingRequestCommandHandler
             throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingRequestCommand.PreferredVesselId), "Tàu chưa sẵn sàng để cho thuê.");
         }
 
-        if (!vessel.WaterbusService.IsActive || vessel.WaterbusService.BookingMode != BookingMode.VesselRental)
+        if (vessel.WaterbusService is null
+            || !vessel.WaterbusService.IsActive
+            || vessel.WaterbusService.BookingMode != BookingMode.VesselRental)
         {
             throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingRequestCommand.PreferredVesselId), "Tàu không thuộc dịch vụ thuê tàu custom.");
         }

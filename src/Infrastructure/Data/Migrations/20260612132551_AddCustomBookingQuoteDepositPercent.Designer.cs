@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260612132551_AddCustomBookingQuoteDepositPercent")]
+    partial class AddCustomBookingQuoteDepositPercent
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1584,7 +1587,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
-                    b.Property<Guid?>("WaterbusServiceId")
+                    b.Property<Guid>("WaterbusServiceId")
                         .HasColumnType("uuid");
 
                     b.Property<int?>("YearBuilt")
@@ -2221,7 +2224,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasOne("SaigonWaterbus.Domain.Entities.WaterbusService", "WaterbusService")
                         .WithMany("Vessels")
                         .HasForeignKey("WaterbusServiceId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
 
                     b.Navigation("WaterbusService");
                 });

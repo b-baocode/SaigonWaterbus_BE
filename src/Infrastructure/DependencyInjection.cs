@@ -71,6 +71,40 @@ public static class DependencyInjection
 
             return ActivatorUtilities.CreateInstance<NoOpLoginNotificationSender>(provider);
         });
+        builder.Services.AddScoped<ICustomBookingQuoteEmailSender>(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var brevoEnabled = configuration.GetValue<bool>($"{BrevoOptions.SectionName}:Enabled");
+            if (brevoEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<BrevoCustomBookingQuoteEmailSender>(provider);
+            }
+
+            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
+            if (gmailEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<GmailCustomBookingQuoteEmailSender>(provider);
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpCustomBookingQuoteEmailSender>(provider);
+        });
+        builder.Services.AddScoped<ICustomBookingConfirmationEmailSender>(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var brevoEnabled = configuration.GetValue<bool>($"{BrevoOptions.SectionName}:Enabled");
+            if (brevoEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<BrevoCustomBookingConfirmationEmailSender>(provider);
+            }
+
+            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
+            if (gmailEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<GmailCustomBookingConfirmationEmailSender>(provider);
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpCustomBookingConfirmationEmailSender>(provider);
+        });
         builder.Services.AddScoped<IOtpSender>(provider =>
         {
             var configuration = provider.GetRequiredService<IConfiguration>();

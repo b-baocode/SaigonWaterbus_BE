@@ -9,6 +9,7 @@ namespace SaigonWaterbus.Application.CustomBookingRequests;
 public sealed record QuoteCustomBookingRequestCommand(
     Guid Id,
     decimal QuotedPrice,
+    decimal DepositPercent,
     string? Currency,
     string? PriceNote,
     DateTimeOffset? ValidUntil) : IRequest<CustomBookingRequestDto>;
@@ -19,6 +20,11 @@ public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidato
     {
         RuleFor(x => x.Id).NotEmpty();
         RuleFor(x => x.QuotedPrice).GreaterThan(0).PrecisionScale(12, 2, false);
+        RuleFor(x => x.DepositPercent)
+            .GreaterThan(0)
+            .LessThanOrEqualTo(100)
+            .PrecisionScale(5, 2, false)
+            .WithMessage("Phần trăm đặt cọc phải lớn hơn 0 và không vượt quá 100.");
         RuleFor(x => x.Currency)
             .Must(CustomBookingRequestSupport.IsValidCurrencyCode)
             .WithMessage("Currency phải là mã ISO 4217 gồm 3 chữ cái, ví dụ VND.")
@@ -33,15 +39,18 @@ public sealed class QuoteCustomBookingRequestCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
 
     public QuoteCustomBookingRequestCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICustomBookingQuoteEmailSender quoteEmailSender)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _quoteEmailSender = quoteEmailSender;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -62,7 +71,10 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         var validUntil = CustomBookingRequestSupport.NormalizeUtc(request.ValidUntil);
         CustomBookingRequestSupport.EnsureQuoteIsValid(validUntil, now);
 
-        var depositAmount = decimal.Round(request.QuotedPrice * 0.5m, 0, MidpointRounding.AwayFromZero);
+        var depositAmount = decimal.Round(
+            request.QuotedPrice * request.DepositPercent / 100m,
+            0,
+            MidpointRounding.AwayFromZero);
         var remainingAmount = request.QuotedPrice - depositAmount;
 
         if (customRequest.Quote is null)
@@ -75,6 +87,7 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         }
 
         customRequest.Quote.QuotedPrice = request.QuotedPrice;
+        customRequest.Quote.DepositPercent = request.DepositPercent;
         customRequest.Quote.DepositAmount = depositAmount;
         customRequest.Quote.RemainingAmount = remainingAmount;
         customRequest.Quote.Currency = CustomBookingRequestSupport.NormalizeCurrency(request.Currency);
@@ -89,6 +102,8 @@ public sealed class QuoteCustomBookingRequestCommandHandler
 
         customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
             .SingleAsync(x => x.Id == customRequest.Id, cancellationToken);
+
+        await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
 
         return CustomBookingRequestDto.From(customRequest);
     }

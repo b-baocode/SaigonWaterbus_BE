@@ -6,7 +6,7 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record CreateVesselRequest(
-    Guid WaterbusServiceId,
+    Guid? WaterbusServiceId,
     string Code,
     string Name,
     VesselStatus Status,
@@ -29,7 +29,8 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
     {
         RuleFor(x => x.WaterbusServiceId)
             .NotEmpty()
-            .WithMessage("Dịch vụ WaterBus là bắt buộc.");
+            .WithMessage("Dịch vụ WaterBus không hợp lệ.")
+            .When(x => x.WaterbusServiceId.HasValue);
 
         RuleFor(x => x.Code)
             .NotEmpty()
@@ -113,12 +114,16 @@ public sealed class CreateVesselRequestUseCase
     {
         await VesselSupport.EnsureCurrentUserCanManageVesselsAsync(_context, _userContext, cancellationToken);
 
-        var service = await _context.WaterbusServices
-            .SingleOrDefaultAsync(x => x.Id == request.WaterbusServiceId, cancellationToken)
-            ?? throw AuthSupport.CreateValidationException(nameof(request.WaterbusServiceId), "Dịch vụ WaterBus không hợp lệ.");
+        WaterbusService? service = null;
+        if (request.WaterbusServiceId.HasValue)
+        {
+            service = await _context.WaterbusServices
+                .SingleOrDefaultAsync(x => x.Id == request.WaterbusServiceId.Value, cancellationToken)
+                ?? throw AuthSupport.CreateValidationException(nameof(request.WaterbusServiceId), "Dịch vụ WaterBus không hợp lệ.");
+        }
 
-        EnsureVesselCapacityMatchesService(service.BookingMode, request.SeatCount, request.PassengerCapacity, request.NumberOfDecks);
-        EnsureInitialStatusMatchesService(service.BookingMode, request.Status);
+        EnsureVesselCapacity(request.SeatCount, request.PassengerCapacity, request.NumberOfDecks);
+        EnsureInitialStatus(request.Status);
 
         var normalizedCode = VesselSupport.NormalizeCode(request.Code);
         if (await _context.Vessels.AnyAsync(x => x.Code == normalizedCode, cancellationToken))
@@ -148,7 +153,7 @@ public sealed class CreateVesselRequestUseCase
 
         var vessel = new Vessel
         {
-            WaterbusServiceId = service.Id,
+            WaterbusServiceId = service?.Id,
             Code = normalizedCode,
             RegistrationNumber = normalizedRegistrationNumber,
             Name = request.Name.Trim(),
@@ -195,8 +200,7 @@ public sealed class CreateVesselRequestUseCase
         return VesselSupport.CreateDto(vessel);
     }
 
-    private static void EnsureVesselCapacityMatchesService(
-        BookingMode bookingMode,
+    private static void EnsureVesselCapacity(
         int seatCount,
         int passengerCapacity,
         int numberOfDecks)
@@ -217,7 +221,7 @@ public sealed class CreateVesselRequestUseCase
         }
     }
 
-    private static void EnsureInitialStatusMatchesService(BookingMode bookingMode, VesselStatus status)
+    private static void EnsureInitialStatus(VesselStatus status)
     {
         if (status == VesselStatus.Active)
         {

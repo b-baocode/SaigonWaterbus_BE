@@ -43,7 +43,11 @@ internal static class VesselSupport
     {
         return CanManageVessels(actor)
             ? query
-            : query.Where(x => x.Status == VesselStatus.Active && x.SeatsConfigured);
+            : query.Where(x =>
+                x.Status == VesselStatus.Active
+                && x.SeatsConfigured
+                && x.WaterbusService != null
+                && x.WaterbusService.IsActive);
     }
 
     public static string NormalizeCode(string code) =>
@@ -57,11 +61,13 @@ internal static class VesselSupport
     public static VesselDto CreateDto(Vessel vessel, int generatedSeatCount = 0)
     {
         var service = vessel.WaterbusService;
-        var serviceDto = new VesselWaterbusServiceDto(service.Id, service.Code, service.Name);
+        var serviceDto = service is null
+            ? null
+            : new VesselWaterbusServiceDto(service.Id, service.Code, service.Name);
 
         var description = !string.IsNullOrWhiteSpace(vessel.Description)
             ? vessel.Description
-            : service.Description;
+            : service?.Description;
 
         var rentalPrice = vessel.RentalPrices
             .Where(x => x.RentalUnit == VesselRentalUnit.Day)
@@ -104,10 +110,27 @@ internal static class VesselSupport
     }
 
     public static bool IsReadyForOperation(Vessel vessel) =>
-        vessel.Status == VesselStatus.Active && vessel.SeatsConfigured;
+        vessel.Status == VesselStatus.Active
+        && vessel.SeatsConfigured
+        && vessel.WaterbusServiceId.HasValue
+        && (vessel.WaterbusService is null || vessel.WaterbusService.IsActive);
 
     public static void EnsureCanActivate(Vessel vessel, string propertyName)
     {
+        if (!vessel.WaterbusServiceId.HasValue)
+        {
+            throw AuthSupport.CreateValidationException(
+                propertyName,
+                "Tàu phải được gắn dịch vụ trước khi chuyển Active.");
+        }
+
+        if (vessel.WaterbusService is not null && !vessel.WaterbusService.IsActive)
+        {
+            throw AuthSupport.CreateValidationException(
+                propertyName,
+                "Tàu chỉ được Active khi dịch vụ đang hoạt động.");
+        }
+
         if (!vessel.SeatsConfigured)
         {
             throw AuthSupport.CreateValidationException(

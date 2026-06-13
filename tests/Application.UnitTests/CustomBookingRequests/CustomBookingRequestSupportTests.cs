@@ -1,5 +1,7 @@
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.CustomBookingRequests;
+using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NUnit.Framework;
 using Shouldly;
 
@@ -41,6 +43,30 @@ public class CustomBookingRequestSupportTests
     }
 
     [Test]
+    public void EnsureCanQuoteRejectsConfirmedRequest()
+    {
+        var request = new CustomBookingRequest { Status = CustomBookingRequestStatus.Confirmed };
+
+        var exception = Should.Throw<ValidationException>(() =>
+            CustomBookingRequestSupport.EnsureCanQuote(request));
+
+        exception.Errors.Keys.ShouldContain("status");
+    }
+
+    [Test]
+    public void EnsureCanAcceptQuoteAcceptsQuotedRequestWithValidQuote()
+    {
+        var now = new DateTimeOffset(2026, 6, 10, 8, 0, 0, TimeSpan.Zero);
+        var request = new CustomBookingRequest
+        {
+            Status = CustomBookingRequestStatus.Quoted,
+            Quote = new CustomBookingQuote { ValidUntil = now.AddDays(1) }
+        };
+
+        Should.NotThrow(() => CustomBookingRequestSupport.EnsureCanAcceptQuote(request, now));
+    }
+
+    [Test]
     public void NormalizeUtcConvertsOffsetDateTimeToUtc()
     {
         var value = new DateTimeOffset(2026, 6, 30, 23, 59, 59, TimeSpan.FromHours(7));
@@ -63,34 +89,4 @@ public class CustomBookingRequestSupportTests
         CustomBookingRequestSupport.IsValidCurrencyCode(currency).ShouldBe(expected);
     }
 
-    [Test]
-    public void CalculateTimingEstimateAddsTravelStayAndTenPercentBuffer()
-    {
-        var estimate = CustomBookingRequestSupport.CalculateTimingEstimate(
-            new DateOnly(2026, 6, 20),
-            new TimeOnly(8, 0),
-            itineraryStopCount: 1,
-            stayMinutes: 90);
-
-        estimate.EstimatedTravelMinutes.ShouldBe(60);
-        estimate.EstimatedStayMinutes.ShouldBe(90);
-        estimate.BufferMinutes.ShouldBe(15);
-        estimate.EstimatedDurationMinutes.ShouldBe(165);
-        estimate.EstimatedEndDate.ShouldBe(new DateOnly(2026, 6, 20));
-        estimate.EstimatedEndTime.ShouldBe(new TimeOnly(10, 45));
-    }
-
-    [Test]
-    public void CalculateTimingEstimateSupportsEndDateRollover()
-    {
-        var estimate = CustomBookingRequestSupport.CalculateTimingEstimate(
-            new DateOnly(2026, 6, 20),
-            new TimeOnly(23, 0),
-            itineraryStopCount: 0,
-            stayMinutes: 60);
-
-        estimate.EstimatedDurationMinutes.ShouldBe(99);
-        estimate.EstimatedEndDate.ShouldBe(new DateOnly(2026, 6, 21));
-        estimate.EstimatedEndTime.ShouldBe(new TimeOnly(0, 39));
-    }
 }

@@ -9,7 +9,6 @@ public sealed class Vessels : IEndpointGroup
     private const string CreateVesselExample =
         """
         {
-          "waterbusServiceId": "00000000-0000-0000-0000-000000000000",
           "code": "WB01",
           "name": "Tau Waterbus 01",
           "seatCount": 80,
@@ -19,6 +18,13 @@ public sealed class Vessels : IEndpointGroup
           "maxSpeedKmh": 30,
           "yearBuilt": 2020,
           "description": "Tau cong cong tuyen so 1."
+        }
+        """;
+
+    private const string AssignVesselServiceExample =
+        """
+        {
+          "waterbusServiceId": "00000000-0000-0000-0000-000000000000"
         }
         """;
 
@@ -83,6 +89,8 @@ public sealed class Vessels : IEndpointGroup
                 "Nếu có ảnh, gửi multipart/form-data với các field tương ứng và field 'image'.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
                 "Code tàu được chuẩn hóa thành chữ in hoa.",
+                "Không bắt buộc chọn dịch vụ khi tạo tàu.",
+                "Nếu chưa gắn dịch vụ, waterbusService trong response sẽ là null và tàu chưa thể Active/setup ghế để khai thác.",
                 "Không cần gửi status khi tạo tàu. Backend tự tạo Inactive, setup đủ ghế rồi mới chuyển Active.",
                 "Số đăng ký tàu phải là duy nhất nếu cung cấp."));
 
@@ -98,6 +106,16 @@ public sealed class Vessels : IEndpointGroup
                 "Có thể gửi application/json nếu không đổi ảnh.",
                 "Nếu đổi ảnh, gửi multipart/form-data với field 'image'."));
 
+        groupBuilder.MapPut(AssignVesselService, "{vesselId:guid}/service")
+            .RequireAuthorization()
+            .WithSummary("Gắn tàu với dịch vụ")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                AssignVesselServiceExample,
+                "Dùng sau khi tạo tàu hoặc khi cần đổi dịch vụ khai thác của tàu.",
+                "API này tách riêng khỏi cập nhật thông tin tàu để tránh FE/admin sửa nhầm service.",
+                "Tàu Active chỉ được gắn với dịch vụ đang hoạt động."));
+
         groupBuilder.MapPatch(UpdateVesselStatus, "status/{vesselId:guid}")
             .RequireAuthorization()
             .WithSummary("Cập nhật trạng thái tàu")
@@ -105,7 +123,7 @@ public sealed class Vessels : IEndpointGroup
                 "Admin",
                 UpdateStatusExample,
                 "Các trạng thái hợp lệ: Active, Maintenance, Inactive, Retired.",
-                "Muốn chuyển Active thì tàu phải setup đủ ghế.",
+                "Muốn chuyển Active thì tàu phải được gắn dịch vụ và setup đủ ghế.",
                 "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."));
 
         groupBuilder.MapPut(UpdateVesselRentalPrice, "{vesselId:guid}/rental-price")
@@ -181,6 +199,15 @@ public sealed class Vessels : IEndpointGroup
         }
     }
 
+    private static async Task<IResult> AssignVesselService(
+        IVesselManagementService vesselManagementService,
+        Guid vesselId,
+        AssignVesselServiceApiRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await vesselManagementService.AssignVesselServiceAsync(
+            new AssignVesselServiceRequest(vesselId, request.WaterbusServiceId),
+            cancellationToken));
+
     private static async Task<IResult> UpdateVesselStatus(
         IVesselManagementService vesselManagementService,
         Guid vesselId,
@@ -215,7 +242,7 @@ public sealed class Vessels : IEndpointGroup
     {
         var body = await request.ReadFromJsonAsync<CreateVesselJsonRequest>(cancellationToken: cancellationToken);
         return new CreateVesselRequest(
-            body?.WaterbusServiceId ?? Guid.Empty,
+            body?.WaterbusServiceId,
             body?.Code ?? string.Empty,
             body?.Name ?? string.Empty,
             VesselStatus.Inactive,
@@ -237,7 +264,7 @@ public sealed class Vessels : IEndpointGroup
         var file = form.Files["image"] ?? form.Files["Image"] ?? form.Files.FirstOrDefault();
 
         return new CreateVesselRequest(
-            ParseOptionalGuid(GetFormValue(form, "waterbusServiceId")) ?? Guid.Empty,
+            ParseOptionalGuid(GetFormValue(form, "waterbusServiceId")),
             GetFormValue(form, "code") ?? string.Empty,
             GetFormValue(form, "name") ?? string.Empty,
             VesselStatus.Inactive,
@@ -263,7 +290,6 @@ public sealed class Vessels : IEndpointGroup
         var body = await request.ReadFromJsonAsync<UpdateVesselJsonRequest>(cancellationToken: cancellationToken);
         return new UpdateVesselRequest(
             vesselId,
-            body?.WaterbusServiceId,
             body?.Code,
             body?.Name,
             body?.SeatCount,
@@ -286,7 +312,6 @@ public sealed class Vessels : IEndpointGroup
 
         return new UpdateVesselRequest(
             vesselId,
-            ParseOptionalGuid(GetFormValue(form, "waterbusServiceId")),
             GetFormValue(form, "code"),
             GetFormValue(form, "name"),
             ParseOptionalInt(GetFormValue(form, "seatCount")),
@@ -319,7 +344,7 @@ public sealed class Vessels : IEndpointGroup
         Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : null;
 
     private sealed record CreateVesselJsonRequest(
-        Guid WaterbusServiceId,
+        Guid? WaterbusServiceId,
         string Code,
         string Name,
         int SeatCount,
@@ -332,7 +357,6 @@ public sealed class Vessels : IEndpointGroup
         string? ImageUrl = null);
 
     private sealed record UpdateVesselJsonRequest(
-        Guid? WaterbusServiceId = null,
         string? Code = null,
         string? Name = null,
         int? SeatCount = null,
@@ -343,6 +367,8 @@ public sealed class Vessels : IEndpointGroup
         int? YearBuilt = null,
         string? Description = null,
         string? ImageUrl = null);
+
+    private sealed record AssignVesselServiceApiRequest(Guid WaterbusServiceId);
 
     private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);
 

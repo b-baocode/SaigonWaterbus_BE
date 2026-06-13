@@ -6,7 +6,6 @@ namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record UpdateVesselRequest(
     Guid VesselId,
-    Guid? WaterbusServiceId = null,
     string? Code = null,
     string? Name = null,
     int? SeatCount = null,
@@ -29,11 +28,6 @@ public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesse
         RuleFor(x => x.VesselId)
             .NotEmpty()
             .WithMessage("VesselId không hợp lệ.");
-
-        RuleFor(x => x.WaterbusServiceId)
-            .NotEmpty()
-            .WithMessage("Dịch vụ WaterBus không hợp lệ.")
-            .When(x => x.WaterbusServiceId.HasValue);
 
         RuleFor(x => x.Code)
             .NotEmpty()
@@ -123,16 +117,6 @@ public sealed class UpdateVesselRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        if (request.WaterbusServiceId.HasValue && request.WaterbusServiceId.Value != vessel.WaterbusServiceId)
-        {
-            var service = await _context.WaterbusServices
-                .SingleOrDefaultAsync(x => x.Id == request.WaterbusServiceId.Value, cancellationToken)
-                ?? throw AuthSupport.CreateValidationException(nameof(request.WaterbusServiceId), "Dịch vụ WaterBus không hợp lệ.");
-
-            vessel.WaterbusServiceId = service.Id;
-            vessel.WaterbusService = service;
-        }
-
         if (request.Code is not null)
         {
             var normalizedCode = VesselSupport.NormalizeCode(request.Code);
@@ -195,7 +179,7 @@ public sealed class UpdateVesselRequestUseCase
             vessel.NumberOfDecks = request.NumberOfDecks.Value;
         }
 
-        EnsureVesselCapacityMatchesService(vessel.WaterbusService.BookingMode, vessel.SeatCount, vessel.PassengerCapacity, vessel.NumberOfDecks);
+        EnsureVesselCapacity(vessel.SeatCount, vessel.PassengerCapacity, vessel.NumberOfDecks);
 
         if (request.MaxSpeedKmh.HasValue)
         {
@@ -259,8 +243,7 @@ public sealed class UpdateVesselRequestUseCase
         return VesselSupport.CreateDto(vessel);
     }
 
-    private static void EnsureVesselCapacityMatchesService(
-        BookingMode bookingMode,
+    private static void EnsureVesselCapacity(
         int seatCount,
         int passengerCapacity,
         int numberOfDecks)

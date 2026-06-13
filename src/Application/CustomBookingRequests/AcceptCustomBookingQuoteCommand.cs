@@ -15,15 +15,18 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly ICustomBookingConfirmationEmailSender _confirmationEmailSender;
 
     public AcceptCustomBookingQuoteCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICustomBookingConfirmationEmailSender confirmationEmailSender)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _confirmationEmailSender = confirmationEmailSender;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -43,10 +46,12 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
         var now = _timeProvider.GetUtcNow();
         CustomBookingRequestSupport.EnsureCanAcceptQuote(customRequest, now);
 
-        customRequest.Status = CustomBookingRequestStatus.QuoteAccepted;
+        customRequest.Status = CustomBookingRequestStatus.Confirmed;
         customRequest.QuoteAcceptedAt = now;
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        await _confirmationEmailSender.SendConfirmationAsync(customRequest, cancellationToken);
 
         return CustomBookingRequestDto.From(customRequest);
     }

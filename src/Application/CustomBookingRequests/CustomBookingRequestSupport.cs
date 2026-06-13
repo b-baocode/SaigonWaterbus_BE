@@ -10,8 +10,6 @@ namespace SaigonWaterbus.Application.CustomBookingRequests;
 internal static class CustomBookingRequestSupport
 {
     private static readonly TimeSpan VietnamUtcOffset = TimeSpan.FromHours(7);
-    private const int DefaultTravelMinutesPerLeg = 30;
-    private const decimal ScheduleBufferRate = 0.10m;
 
     public static IQueryable<CustomBookingRequest> IncludeDetails(IQueryable<CustomBookingRequest> query) =>
         query
@@ -114,31 +112,11 @@ internal static class CustomBookingRequestSupport
         }
     }
 
-    public static CustomBookingTimingEstimate CalculateTimingEstimate(
-        DateOnly departureDate,
-        TimeOnly preferredStartTime,
-        int itineraryStopCount,
-        int stayMinutes)
-    {
-        var legCount = itineraryStopCount + 1;
-        var travelMinutes = legCount * DefaultTravelMinutesPerLeg;
-        var baseMinutes = travelMinutes + stayMinutes;
-        var bufferMinutes = (int)Math.Ceiling(baseMinutes * ScheduleBufferRate);
-        var totalMinutes = baseMinutes + bufferMinutes;
-        var estimatedEnd = departureDate.ToDateTime(preferredStartTime).AddMinutes(totalMinutes);
-
-        return new CustomBookingTimingEstimate(
-            travelMinutes,
-            stayMinutes,
-            bufferMinutes,
-            totalMinutes,
-            DateOnly.FromDateTime(estimatedEnd),
-            TimeOnly.FromDateTime(estimatedEnd));
-    }
-
     public static void EnsureCanQuote(CustomBookingRequest request)
     {
-        if (request.Status is CustomBookingRequestStatus.QuoteAccepted or CustomBookingRequestStatus.Cancelled)
+        if (request.Status is CustomBookingRequestStatus.QuoteAccepted
+            or CustomBookingRequestStatus.Confirmed
+            or CustomBookingRequestStatus.Cancelled)
         {
             throw AuthSupport.CreateValidationException(nameof(request.Status), "Yêu cầu này không thể báo giá lại.");
         }
@@ -167,11 +145,3 @@ internal static class CustomBookingRequestSupport
         }
     }
 }
-
-public sealed record CustomBookingTimingEstimate(
-    int EstimatedTravelMinutes,
-    int EstimatedStayMinutes,
-    int BufferMinutes,
-    int EstimatedDurationMinutes,
-    DateOnly EstimatedEndDate,
-    TimeOnly EstimatedEndTime);

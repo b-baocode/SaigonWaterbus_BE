@@ -17,6 +17,8 @@ public interface IVesselManagementService
 
     Task<VesselDto> UpdateVesselAsync(UpdateVesselRequest request, CancellationToken cancellationToken);
 
+    Task<VesselDto> AssignVesselServiceAsync(AssignVesselServiceRequest request, CancellationToken cancellationToken);
+
     Task<VesselDto> UpdateVesselStatusAsync(UpdateVesselStatusRequest request, CancellationToken cancellationToken);
 
     Task<VesselDto> UpdateVesselRentalPriceAsync(UpdateVesselRentalPriceRequest request, CancellationToken cancellationToken);

@@ -10,6 +10,34 @@ namespace SaigonWaterbus.Application.UnitTests.Vessels;
 public class VesselSupportTests
 {
     [Test]
+    public void CreateVesselRequestValidatorAcceptsMissingServiceId()
+    {
+        var validator = new CreateVesselRequestValidator();
+
+        var result = validator.Validate(new CreateVesselRequest(
+            null,
+            "WB01",
+            "Waterbus 01",
+            VesselStatus.Inactive,
+            80,
+            80,
+            1));
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void AssignVesselServiceRequestValidatorRejectsEmptyServiceId()
+    {
+        var validator = new AssignVesselServiceRequestValidator();
+
+        var result = validator.Validate(new AssignVesselServiceRequest(Guid.NewGuid(), Guid.Empty));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.PropertyName == nameof(AssignVesselServiceRequest.WaterbusServiceId));
+    }
+
+    [Test]
     public void EnsureCanActivateRejectsSeatBasedVesselWithoutSeatSetup()
     {
         var vessel = Vessel(BookingMode.SeatBased, seatsConfigured: false);
@@ -34,6 +62,38 @@ public class VesselSupportTests
         VesselSupport.IsReadyForOperation(Vessel(BookingMode.SeatBased, seatsConfigured: false)).ShouldBeFalse();
         VesselSupport.IsReadyForOperation(Vessel(BookingMode.SeatBased, seatsConfigured: true)).ShouldBeTrue();
         VesselSupport.IsReadyForOperation(Vessel(BookingMode.VesselRental, seatsConfigured: true)).ShouldBeTrue();
+    }
+
+    [Test]
+    public void IsReadyForOperationRejectsVesselWithoutAssignedService()
+    {
+        var vessel = Vessel(BookingMode.SeatBased, seatsConfigured: true);
+        vessel.WaterbusServiceId = null;
+        vessel.WaterbusService = null;
+
+        VesselSupport.IsReadyForOperation(vessel).ShouldBeFalse();
+    }
+
+    [Test]
+    public void IsReadyForOperationRejectsVesselWithInactiveService()
+    {
+        var vessel = Vessel(BookingMode.SeatBased, seatsConfigured: true);
+        vessel.WaterbusService!.IsActive = false;
+
+        VesselSupport.IsReadyForOperation(vessel).ShouldBeFalse();
+    }
+
+    [Test]
+    public void EnsureCanActivateRejectsVesselWithoutAssignedService()
+    {
+        var vessel = Vessel(BookingMode.SeatBased, seatsConfigured: true);
+        vessel.WaterbusServiceId = null;
+        vessel.WaterbusService = null;
+
+        var exception = Should.Throw<ValidationException>(() =>
+            VesselSupport.EnsureCanActivate(vessel, "Status"));
+
+        exception.Errors.Keys.ShouldContain("status");
     }
 
     [Test]
@@ -76,20 +136,26 @@ public class VesselSupportTests
         result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateVesselRentalPriceRequest.UnitPrice));
     }
 
-    private static Vessel Vessel(BookingMode bookingMode, bool seatsConfigured) =>
-        new()
+    private static Vessel Vessel(BookingMode bookingMode, bool seatsConfigured)
+    {
+        var service = new WaterbusService
+        {
+            Id = Guid.NewGuid(),
+            Code = bookingMode == BookingMode.VesselRental ? "WT" : "WB",
+            Name = bookingMode == BookingMode.VesselRental ? "WaterTaxi" : "Waterbus",
+            BookingMode = bookingMode,
+            IsActive = true
+        };
+
+        return new Vessel
         {
             Id = Guid.NewGuid(),
             Code = "WB01",
             Name = "Waterbus 01",
             Status = VesselStatus.Active,
             SeatsConfigured = seatsConfigured,
-            WaterbusService = new WaterbusService
-            {
-                Id = Guid.NewGuid(),
-                Code = bookingMode == BookingMode.VesselRental ? "WT" : "WB",
-                Name = bookingMode == BookingMode.VesselRental ? "WaterTaxi" : "Waterbus",
-                BookingMode = bookingMode
-            }
+            WaterbusServiceId = service.Id,
+            WaterbusService = service
         };
+    }
 }

@@ -13,6 +13,7 @@ public sealed class CustomBookingQuoteConfiguration : IEntityTypeConfiguration<C
         builder.Property(x => x.Id).HasColumnName("custom_booking_quote_id");
         builder.Property(x => x.CustomBookingRequestId).HasColumnName("custom_booking_request_id").IsRequired();
         builder.Property(x => x.QuotedPrice).HasColumnName("quoted_price").HasColumnType("numeric(12,2)").IsRequired();
+        builder.Property(x => x.DepositPercent).HasColumnName("deposit_percent").HasColumnType("numeric(5,2)").IsRequired();
         builder.Property(x => x.DepositAmount).HasColumnName("deposit_amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.RemainingAmount).HasColumnName("remaining_amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();

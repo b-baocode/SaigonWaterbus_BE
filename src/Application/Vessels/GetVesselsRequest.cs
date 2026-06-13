@@ -21,7 +21,7 @@ public sealed record VesselRentalPriceDto(
 
 public sealed record VesselDto(
     Guid Id,
-    VesselWaterbusServiceDto WaterbusService,
+    VesselWaterbusServiceDto? WaterbusService,
     string Code,
     string? RegistrationNumber,
     string Name,

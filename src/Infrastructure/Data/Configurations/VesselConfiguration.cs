@@ -53,7 +53,7 @@ public sealed class VesselConfiguration : IEntityTypeConfiguration<Vessel>
         builder.HasOne(x => x.WaterbusService)
             .WithMany(x => x.Vessels)
             .HasForeignKey(x => x.WaterbusServiceId)
-            .OnDelete(DeleteBehavior.Restrict)
-            .IsRequired();
+            .OnDelete(DeleteBehavior.SetNull)
+            .IsRequired(false);
     }
 }

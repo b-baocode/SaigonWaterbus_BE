@@ -43,6 +43,7 @@ public sealed class GetVesselRentalFaresQueryHandler
             .Where(x =>
                 x.Status == VesselStatus.Active
                 && x.SeatsConfigured
+                && x.WaterbusService != null
                 && x.WaterbusService.IsActive
                 && x.WaterbusService.BookingMode == BookingMode.VesselRental
                 && x.RentalPrices.Any(p => p.RentalUnit == VesselRentalUnit.Day))
@@ -59,8 +60,9 @@ public sealed class GetVesselRentalFaresQueryHandler
             query = query.Where(x =>
                 x.Code.Contains(keyword)
                 || x.Name.ToUpper().Contains(keyword)
-                || x.WaterbusService.Code.Contains(keyword)
-                || x.WaterbusService.Name.ToUpper().Contains(keyword));
+                || (x.WaterbusService != null
+                    && (x.WaterbusService.Code.Contains(keyword)
+                        || x.WaterbusService.Name.ToUpper().Contains(keyword))));
         }
 
         var vessels = await query
@@ -74,7 +76,7 @@ public sealed class GetVesselRentalFaresQueryHandler
                 var rentalPrice = v.RentalPrices.Single(p => p.RentalUnit == VesselRentalUnit.Day);
                 var description = !string.IsNullOrWhiteSpace(v.Description)
                     ? v.Description
-                    : v.WaterbusService.Description;
+                    : v.WaterbusService?.Description;
 
                 return new VesselRentalFareDto(
                     v.Id,

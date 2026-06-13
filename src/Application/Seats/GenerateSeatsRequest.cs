@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -213,6 +214,7 @@ public sealed class GenerateSeatsRequestUseCase
         _context.Seats.AddRange(plan.Seats);
         _context.VesselFacilities.AddRange(plan.Facilities);
         vessel.SeatsConfigured = true;
+        VesselSupport.EnsureCanActivate(vessel, nameof(vessel.Status));
         vessel.Status = VesselStatus.Active;
         await _context.SaveChangesAsync(cancellationToken);
 

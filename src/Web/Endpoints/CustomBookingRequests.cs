@@ -39,6 +39,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
         """
         {
           "quotedPrice": 5000000,
+          "depositPercent": 50,
           "currency": "VND",
           "priceNote": "Gia gom thue tau 3 gio, phi ben va nhan su van hanh. Khach can coc 50% de chot.",
           "validUntil": "2026-06-15T23:59:59+07:00"
@@ -56,6 +57,16 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer chi thay yeu cau cua minh.",
                 "Admin/Manager thay tat ca yeu cau.",
                 "Query optional: status, departureDate."));
+
+        group.MapGet(GetCustomBookingStatuses, "statuses")
+            .RequireAuthorization()
+            .WithSummary("Danh sach trang thai yeu cau thue tau custom")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Dung cho Admin/Manager/Customer hien thi filter va label trang thai.",
+                "Moi response custom booking deu co field status.",
+                "Admin/Manager co the loc danh sach bang query ?status=PendingReview, ?status=Quoted, ..."));
 
         group.MapGet(GetCustomBookingRequestDetail, "{id:guid}")
             .RequireAuthorization()
@@ -82,7 +93,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Neu fromStationId va toStationId trung nhau thi phai co it nhat mot itineraryStops.",
                 "itineraryStops chi gom cac diem ghe o giua, khong can gui pickup/dropoff.",
                 "Moi itineraryStops can stationId, stopOrder va stayDurationMinutes.",
-                "Backend tam tinh thoi luong = so chang * 30 phut + tong thoi gian dung + buffer 10%.",
+                "Backend chua tu tinh gio ket thuc vi thoi gian di chuyen phai dua tren route/travel-time that.",
                 "Backend se check user dang nhap va link user neu phone/email trung user co san.",
                 "Status ban dau la PendingReview. Chua tao booking va chua xu ly payment."));
 
@@ -92,8 +103,10 @@ public sealed class CustomBookingRequests : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoac Manager",
                 QuoteExample,
-                "quotedPrice la tong gia thue tau.",
-                "Backend tu tinh depositAmount=50% va remainingAmount=50%.",
+                "quotedPrice la tong gia thue tau admin bao cho khach.",
+                "depositPercent la phan tram dat coc admin yeu cau.",
+                "Backend tu tinh depositAmount = quotedPrice * depositPercent / 100.",
+                "Backend tu tinh remainingAmount = quotedPrice - depositAmount.",
                 "validUntil la optional; neu gui ISO datetime co timezone, backend se luu UTC de tranh loi PostgreSQL timestamp.",
                 "Sau khi bao gia, status = Quoted."));
 
@@ -105,7 +118,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 null,
                 "Chi chu yeu cau moi duoc chot bao gia.",
                 "Chi chot duoc khi status=Quoted va bao gia chua het han.",
-                "Sau khi chot, status = QuoteAccepted. Payment va tao booking that se lam sau."));
+                "Tam thoi chua co payment: sau khi khach dong y, status = Confirmed va xem nhu chot thanh cong.",
+                "Sau nay khi co payment, diem nay se chuyen sang tao payment truoc; payment thanh cong moi Confirmed."));
     }
 
     private static async Task<IResult> GetCustomBookingRequests(
@@ -128,6 +142,41 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCustomBookingRequestDetailQuery(id), ct));
 
+    private static IResult GetCustomBookingStatuses() =>
+        Results.Ok(new[]
+        {
+            new CustomBookingStatusApiResponse(
+                CustomBookingRequestStatus.PendingReview,
+                "Chờ admin xem xét",
+                "Khách vừa gửi yêu cầu. Admin/Manager cần kiểm tra thông tin chuyến và báo giá.",
+                ["GET /api/custom-booking-requests/{id}", "POST /api/custom-booking-requests/{id}/quote"]),
+            new CustomBookingStatusApiResponse(
+                CustomBookingRequestStatus.Quoted,
+                "Đã báo giá",
+                "Admin/Manager đã gửi báo giá. Khách xem lại thông tin và quyết định chốt.",
+                ["POST /api/custom-booking-requests/{id}/accept-quote"]),
+            new CustomBookingStatusApiResponse(
+                CustomBookingRequestStatus.QuoteAccepted,
+                "Khách đã đồng ý báo giá",
+                "Trạng thái cũ để tương thích dữ liệu trước đây. Luồng mới sẽ dùng Confirmed.",
+                []),
+            new CustomBookingStatusApiResponse(
+                CustomBookingRequestStatus.Confirmed,
+                "Đã chốt thành công",
+                "Khách đã đồng ý báo giá. Tạm thời chưa có payment nên yêu cầu được xem là chốt thành công.",
+                []),
+            new CustomBookingStatusApiResponse(
+                CustomBookingRequestStatus.QuoteRejected,
+                "Khách từ chối báo giá",
+                "Khách không đồng ý báo giá.",
+                []),
+            new CustomBookingStatusApiResponse(
+                CustomBookingRequestStatus.Cancelled,
+                "Đã hủy",
+                "Yêu cầu đã bị hủy.",
+                [])
+        });
+
     private static async Task<IResult> CreateCustomBookingRequest(
         ISender sender,
         CreateCustomBookingRequestCommand command,
@@ -142,6 +191,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
         Results.Ok(await sender.Send(new QuoteCustomBookingRequestCommand(
             id,
             request.QuotedPrice,
+            request.DepositPercent,
             request.Currency,
             request.PriceNote,
             request.ValidUntil), ct));
@@ -154,9 +204,16 @@ public sealed class CustomBookingRequests : IEndpointGroup
 
     public sealed record QuoteCustomBookingRequestApiRequest(
         decimal QuotedPrice,
+        decimal DepositPercent,
         string? Currency = null,
         string? PriceNote = null,
         DateTimeOffset? ValidUntil = null);
+
+    public sealed record CustomBookingStatusApiResponse(
+        CustomBookingRequestStatus Status,
+        string Label,
+        string Description,
+        IReadOnlyCollection<string> NextActions);
 
     private static bool TryParseOptionalDateOnly(string? value, out DateOnly? date)
     {

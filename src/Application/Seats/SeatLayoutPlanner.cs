@@ -18,10 +18,18 @@ internal static class SeatLayoutPlanner
         bool rejectExistingLayout,
         CancellationToken cancellationToken)
     {
+        if (!vessel.WaterbusServiceId.HasValue || vessel.WaterbusService is null)
+        {
+            throw AuthSupport.CreateValidationException(
+                "WaterbusServiceId",
+                "Tàu phải được gắn dịch vụ trước khi setup ghế.");
+        }
+
+        var service = vessel.WaterbusService;
         var seatTypes = await context.SeatTypes
-            .Where(x => x.WaterbusServiceId == vessel.WaterbusServiceId && x.IsActive)
+            .Where(x => x.WaterbusServiceId == vessel.WaterbusServiceId.Value && x.IsActive)
             .ToListAsync(cancellationToken);
-        var defaultSeatType = ResolveDefaultSeatType(vessel.WaterbusService, seatTypes);
+        var defaultSeatType = ResolveDefaultSeatType(service, seatTypes);
         var seatTypesByCode = seatTypes.ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
 
         if (rejectExistingLayout)
@@ -61,6 +69,7 @@ internal static class SeatLayoutPlanner
             {
                 AddCellsLayout(
                     vessel,
+                    service,
                     deck,
                     seatTypesByCode,
                     defaultSeatType,
@@ -71,7 +80,7 @@ internal static class SeatLayoutPlanner
                 continue;
             }
 
-            foreach (var seatCell in CreateSeatCells(deck, vessel.WaterbusService, seatTypesByCode, defaultSeatType))
+            foreach (var seatCell in CreateSeatCells(deck, service, seatTypesByCode, defaultSeatType))
             {
                 AddSeat(vessel, deck, seatCell, seats, seatCells, "SeatBlocks");
             }
@@ -92,6 +101,7 @@ internal static class SeatLayoutPlanner
 
     private static void AddCellsLayout(
         Vessel vessel,
+        WaterbusService service,
         DeckConfigDto deck,
         IReadOnlyDictionary<string, SeatType> seatTypesByCode,
         SeatType defaultSeatType,
@@ -146,7 +156,7 @@ internal static class SeatLayoutPlanner
                 {
                     case SeatLayoutCellType.Seat:
                         var seatType = ResolveSeatTypeForCode(
-                            vessel.WaterbusService,
+                            service,
                             cellConfig.SeatTypeCode,
                             seatTypesByCode,
                             defaultSeatType,
