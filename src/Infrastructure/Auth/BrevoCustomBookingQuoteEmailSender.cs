@@ -48,30 +48,30 @@ public sealed class BrevoCustomBookingQuoteEmailSender : ICustomBookingQuoteEmai
             return;
         }
 
-        var payload = new
-        {
-            sender = new
-            {
-                email = options.SenderEmail,
-                name = options.SenderName
-            },
-            to = new[]
-            {
-                new { email = request.ContactEmail, name = request.ContactName }
-            },
-            subject = CustomBookingQuoteEmailContentFactory.Subject(request),
-            htmlContent = CustomBookingQuoteEmailContentFactory.Html(request),
-            textContent = CustomBookingQuoteEmailContentFactory.PlainText(request)
-        };
-
-        var client = _httpClientFactory.CreateClient(HttpClientName);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
-        httpRequest.Headers.TryAddWithoutValidation("api-key", options.ApiKey);
-        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        httpRequest.Content = JsonContent.Create(payload);
-
         try
         {
+            var payload = new
+            {
+                sender = new
+                {
+                    email = options.SenderEmail,
+                    name = options.SenderName
+                },
+                to = new[]
+                {
+                    new { email = request.ContactEmail, name = request.ContactName }
+                },
+                subject = CustomBookingQuoteEmailContentFactory.Subject(request),
+                htmlContent = CustomBookingQuoteEmailContentFactory.Html(request),
+                textContent = CustomBookingQuoteEmailContentFactory.PlainText(request)
+            };
+
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
+            httpRequest.Headers.TryAddWithoutValidation("api-key", options.ApiKey);
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            httpRequest.Content = JsonContent.Create(payload);
+
             using var response = await client.SendAsync(httpRequest, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -94,7 +94,7 @@ public sealed class BrevoCustomBookingQuoteEmailSender : ICustomBookingQuoteEmai
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Brevo custom booking quote email failed. RequestId: {RequestId}, Email: {Email}", request.Id, request.ContactEmail);
         }

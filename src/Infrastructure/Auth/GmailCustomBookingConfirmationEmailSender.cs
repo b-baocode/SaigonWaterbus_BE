@@ -41,33 +41,33 @@ public sealed class GmailCustomBookingConfirmationEmailSender : ICustomBookingCo
             return;
         }
 
-        var fromEmail = string.IsNullOrWhiteSpace(options.FromEmail) ? options.Username : options.FromEmail;
-        if (string.IsNullOrWhiteSpace(fromEmail))
-        {
-            _logger.LogWarning("Gmail FromEmail is not configured. Skipping custom booking confirmation email for {RequestId}.", request.Id);
-            return;
-        }
-
-        using var message = new MailMessage
-        {
-            From = new MailAddress(fromEmail, options.FromName),
-            Subject = CustomBookingConfirmationEmailContentFactory.Subject(request),
-            Body = CustomBookingConfirmationEmailContentFactory.PlainText(request),
-            IsBodyHtml = false
-        };
-        message.To.Add(request.ContactEmail);
-
-        using var client = new SmtpClient(options.Host, options.Port)
-        {
-            EnableSsl = true,
-            DeliveryMethod = SmtpDeliveryMethod.Network,
-            UseDefaultCredentials = false,
-            Credentials = new NetworkCredential(options.Username, options.Password),
-            Timeout = 10000
-        };
-
         try
         {
+            var fromEmail = string.IsNullOrWhiteSpace(options.FromEmail) ? options.Username : options.FromEmail;
+            if (string.IsNullOrWhiteSpace(fromEmail))
+            {
+                _logger.LogWarning("Gmail FromEmail is not configured. Skipping custom booking confirmation email for {RequestId}.", request.Id);
+                return;
+            }
+
+            using var message = new MailMessage
+            {
+                From = new MailAddress(fromEmail, options.FromName),
+                Subject = CustomBookingConfirmationEmailContentFactory.Subject(request),
+                Body = CustomBookingConfirmationEmailContentFactory.PlainText(request),
+                IsBodyHtml = false
+            };
+            message.To.Add(request.ContactEmail);
+
+            using var client = new SmtpClient(options.Host, options.Port)
+            {
+                EnableSsl = true,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential(options.Username, options.Password),
+                Timeout = 10000
+            };
+
             cancellationToken.ThrowIfCancellationRequested();
             await client.SendMailAsync(message);
             cancellationToken.ThrowIfCancellationRequested();
@@ -76,7 +76,11 @@ public sealed class GmailCustomBookingConfirmationEmailSender : ICustomBookingCo
                 request.Id,
                 request.ContactEmail);
         }
-        catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,

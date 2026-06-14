@@ -41,39 +41,43 @@ public sealed class GmailCustomBookingQuoteEmailSender : ICustomBookingQuoteEmai
             return;
         }
 
-        var fromEmail = string.IsNullOrWhiteSpace(options.FromEmail) ? options.Username : options.FromEmail;
-        if (string.IsNullOrWhiteSpace(fromEmail))
-        {
-            _logger.LogWarning("Gmail FromEmail is not configured. Skipping custom booking quote email for {RequestId}.", request.Id);
-            return;
-        }
-
-        using var message = new MailMessage
-        {
-            From = new MailAddress(fromEmail, options.FromName),
-            Subject = CustomBookingQuoteEmailContentFactory.Subject(request),
-            Body = CustomBookingQuoteEmailContentFactory.PlainText(request),
-            IsBodyHtml = false
-        };
-        message.To.Add(request.ContactEmail);
-
-        using var client = new SmtpClient(options.Host, options.Port)
-        {
-            EnableSsl = true,
-            DeliveryMethod = SmtpDeliveryMethod.Network,
-            UseDefaultCredentials = false,
-            Credentials = new NetworkCredential(options.Username, options.Password),
-            Timeout = 10000
-        };
-
         try
         {
+            var fromEmail = string.IsNullOrWhiteSpace(options.FromEmail) ? options.Username : options.FromEmail;
+            if (string.IsNullOrWhiteSpace(fromEmail))
+            {
+                _logger.LogWarning("Gmail FromEmail is not configured. Skipping custom booking quote email for {RequestId}.", request.Id);
+                return;
+            }
+
+            using var message = new MailMessage
+            {
+                From = new MailAddress(fromEmail, options.FromName),
+                Subject = CustomBookingQuoteEmailContentFactory.Subject(request),
+                Body = CustomBookingQuoteEmailContentFactory.PlainText(request),
+                IsBodyHtml = false
+            };
+            message.To.Add(request.ContactEmail);
+
+            using var client = new SmtpClient(options.Host, options.Port)
+            {
+                EnableSsl = true,
+                DeliveryMethod = SmtpDeliveryMethod.Network,
+                UseDefaultCredentials = false,
+                Credentials = new NetworkCredential(options.Username, options.Password),
+                Timeout = 10000
+            };
+
             cancellationToken.ThrowIfCancellationRequested();
             await client.SendMailAsync(message);
             cancellationToken.ThrowIfCancellationRequested();
             _logger.LogInformation("Custom booking quote email sent by Gmail. RequestId: {RequestId}, Email: {Email}", request.Id, request.ContactEmail);
         }
-        catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
         {
             _logger.LogWarning(ex, "Gmail custom booking quote email failed. RequestId: {RequestId}, Email: {Email}", request.Id, request.ContactEmail);
         }

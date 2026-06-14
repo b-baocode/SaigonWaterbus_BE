@@ -46,32 +46,30 @@ public sealed class BrevoCustomBookingConfirmationEmailSender : ICustomBookingCo
         {
             _logger.LogWarning("Brevo is not fully configured. Skipping custom booking confirmation email for {RequestId}.", request.Id);
             return;
-        }
-
-        var payload = new
+        } try
         {
-            sender = new
+            var payload = new
             {
-                email = options.SenderEmail,
-                name = options.SenderName
-            },
-            to = new[]
-            {
-                new { email = request.ContactEmail, name = request.ContactName }
-            },
-            subject = CustomBookingConfirmationEmailContentFactory.Subject(request),
-            htmlContent = CustomBookingConfirmationEmailContentFactory.Html(request),
-            textContent = CustomBookingConfirmationEmailContentFactory.PlainText(request)
-        };
+                sender = new
+                {
+                    email = options.SenderEmail,
+                    name = options.SenderName
+                },
+                to = new[]
+                {
+                    new { email = request.ContactEmail, name = request.ContactName }
+                },
+                subject = CustomBookingConfirmationEmailContentFactory.Subject(request),
+                htmlContent = CustomBookingConfirmationEmailContentFactory.Html(request),
+                textContent = CustomBookingConfirmationEmailContentFactory.PlainText(request)
+            };
 
-        var client = _httpClientFactory.CreateClient(HttpClientName);
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
-        httpRequest.Headers.TryAddWithoutValidation("api-key", options.ApiKey);
-        httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-        httpRequest.Content = JsonContent.Create(payload);
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
+            httpRequest.Headers.TryAddWithoutValidation("api-key", options.ApiKey);
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            httpRequest.Content = JsonContent.Create(payload);
 
-        try
-        {
             using var response = await client.SendAsync(httpRequest, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
@@ -94,7 +92,7 @@ public sealed class BrevoCustomBookingConfirmationEmailSender : ICustomBookingCo
         {
             throw;
         }
-        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        catch (Exception ex)
         {
             _logger.LogWarning(
                 ex,
