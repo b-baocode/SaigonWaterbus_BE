@@ -41,7 +41,6 @@ public sealed class UpdateVesselStatusRequestUseCase
         await VesselSupport.EnsureCurrentUserCanManageVesselsAsync(_context, _userContext, cancellationToken);
 
         var vessel = await _context.Vessels
-            .Include(x => x.WaterbusService)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 

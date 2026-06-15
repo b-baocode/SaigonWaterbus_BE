@@ -6,7 +6,6 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record CreateVesselRequest(
-    Guid? WaterbusServiceId,
     string Code,
     string Name,
     VesselStatus Status,
@@ -21,17 +20,13 @@ public sealed record CreateVesselRequest(
     string? ImageFileName = null,
     string? ImageContentType = null,
     long? ImageLength = null,
-    Stream? ImageContent = null);
+    Stream? ImageContent = null,
+    SeatSetupType SeatSetupType = SeatSetupType.FullStandard);
 
 public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesselRequest>
 {
     public CreateVesselRequestValidator()
     {
-        RuleFor(x => x.WaterbusServiceId)
-            .NotEmpty()
-            .WithMessage("Dịch vụ WaterBus không hợp lệ.")
-            .When(x => x.WaterbusServiceId.HasValue);
-
         RuleFor(x => x.Code)
             .NotEmpty()
             .WithMessage("Mã tàu không được để trống.")
@@ -65,6 +60,10 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
         RuleFor(x => x.NumberOfDecks)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Số tầng không được âm.");
+
+        RuleFor(x => x.SeatSetupType)
+            .IsInEnum()
+            .WithMessage("Kiểu ghế của tàu không hợp lệ.");
 
         RuleFor(x => x.MaxSpeedKmh)
             .GreaterThan(0)
@@ -114,14 +113,6 @@ public sealed class CreateVesselRequestUseCase
     {
         await VesselSupport.EnsureCurrentUserCanManageVesselsAsync(_context, _userContext, cancellationToken);
 
-        WaterbusService? service = null;
-        if (request.WaterbusServiceId.HasValue)
-        {
-            service = await _context.WaterbusServices
-                .SingleOrDefaultAsync(x => x.Id == request.WaterbusServiceId.Value, cancellationToken)
-                ?? throw AuthSupport.CreateValidationException(nameof(request.WaterbusServiceId), "Dịch vụ WaterBus không hợp lệ.");
-        }
-
         EnsureVesselCapacity(request.SeatCount, request.PassengerCapacity, request.NumberOfDecks);
         EnsureInitialStatus(request.Status);
 
@@ -153,7 +144,6 @@ public sealed class CreateVesselRequestUseCase
 
         var vessel = new Vessel
         {
-            WaterbusServiceId = service?.Id,
             Code = normalizedCode,
             RegistrationNumber = normalizedRegistrationNumber,
             Name = request.Name.Trim(),
@@ -161,6 +151,7 @@ public sealed class CreateVesselRequestUseCase
             SeatCount = request.SeatCount,
             PassengerCapacity = request.PassengerCapacity,
             NumberOfDecks = request.NumberOfDecks,
+            SeatSetupType = request.SeatSetupType,
             MaxSpeedKmh = request.MaxSpeedKmh,
             YearBuilt = request.YearBuilt,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim()
@@ -196,7 +187,6 @@ public sealed class CreateVesselRequestUseCase
             throw AuthSupport.CreateValidationException(nameof(request.Code), "Mã tàu hoặc số đăng ký tàu đã tồn tại.");
         }
 
-        vessel.WaterbusService = service;
         return VesselSupport.CreateDto(vessel);
     }
 

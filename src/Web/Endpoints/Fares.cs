@@ -48,6 +48,16 @@ public sealed class Fares : IEndpointGroup
                 "finalPrice = basePrice x priceModifier.",
                 "Tra ve 404 neu chua co fare cho cap tram nay."));
 
+        group.MapGet(GetFareByServiceSeatType, "service-seat")
+            .AllowAnonymous()
+            .WithSummary("Tra giá theo dịch vụ và hạng ghế")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Query params: routeCode, fromStationCode, toStationCode, serviceId, seatTypeCode.",
+                "finalPrice = basePrice x ticketTypeModifier x seatTypeModifier.",
+                "Trả về 404 nếu dịch vụ không hỗ trợ loại ghế hoặc cấu hình giá đang inactive."));
+
         group.MapGet(GetFareMatrix, "matrix")
             .RequireAuthorization()
             .WithSummary("Danh sach bang gia (admin)")
@@ -65,8 +75,8 @@ public sealed class Fares : IEndpointGroup
                 "Anonymous",
                 null,
                 "Dung cho custom booking de hien danh sach tau co gia thue theo ngay.",
-                "Chi tra ve tau Active, da setup ghe, thuoc dich vu co bookingMode = VesselRental.",
-                "Co the loc theo serviceId va search.",
+                "Chi tra ve tau Active, da setup ghe va co gia thue theo ngay.",
+                "Co the loc theo search.",
                 "Gia nay la gia co ban/tham khao, admin van co the bao gia custom booking chinh thuc sau."));
 
         group.MapPost(CreateFare, string.Empty)
@@ -115,15 +125,29 @@ public sealed class Fares : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetFareQuery(routeCode, fromStationCode, toStationCode), ct));
 
+    private static async Task<IResult> GetFareByServiceSeatType(
+        ISender sender,
+        string routeCode,
+        string fromStationCode,
+        string toStationCode,
+        Guid serviceId,
+        string seatTypeCode,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetFareByServiceSeatTypeQuery(
+            routeCode,
+            fromStationCode,
+            toStationCode,
+            serviceId,
+            seatTypeCode), ct));
+
     private static async Task<IResult> GetFareMatrix(ISender sender, string? routeCode, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetFareMatrixListQuery(routeCode), ct));
 
     private static async Task<IResult> GetVesselRentalFares(
         ISender sender,
-        Guid? serviceId,
         string? search,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetVesselRentalFaresQuery(serviceId, search), ct));
+        Results.Ok(await sender.Send(new GetVesselRentalFaresQuery(search), ct));
 
     private static async Task<IResult> CreateFare(ISender sender, CreateFareCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

@@ -46,6 +46,34 @@ public class WaterbusServiceRequestValidatorTests
     }
 
     [Test]
+    public void GetSeatTypesRejectsInvalidServiceId()
+    {
+        var validator = new GetWaterbusServiceSeatTypesRequestValidator();
+
+        var result = validator.Validate(new GetWaterbusServiceSeatTypesRequest(Guid.Empty));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x =>
+            x.PropertyName == nameof(GetWaterbusServiceSeatTypesRequest.ServiceId));
+    }
+
+    [Test]
+    public void UpdateSeatPriceRejectsInvalidModifier()
+    {
+        var validator = new UpdateWaterbusServiceSeatPriceRequestValidator();
+
+        var result = validator.Validate(new UpdateWaterbusServiceSeatPriceRequest(
+            Guid.NewGuid(),
+            "VIP",
+            0,
+            true));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x =>
+            x.PropertyName == nameof(UpdateWaterbusServiceSeatPriceRequest.PriceModifier));
+    }
+
+    [Test]
     public void UpdateRejectsEmptyNameWhenNameIsProvided()
     {
         var validator = new UpdateWaterbusServiceRequestValidator();

@@ -8,7 +8,7 @@ namespace SaigonWaterbus.Application.UnitTests.Routes;
 public class RouteGeoJsonImportSupportTests
 {
     [Test]
-    public void ParseOnlyIncludesWaterwaySegmentsAndFerryTerminalPoints()
+    public void ParseIncludesLineSegmentsAndFerryTerminalPoints()
     {
         const string geoJson =
             """
@@ -41,8 +41,10 @@ public class RouteGeoJsonImportSupportTests
 
         var parsed = RouteGeoJsonImportSupport.Parse(geoJson);
 
-        parsed.WaterwaySegments.Count.ShouldBe(1);
+        parsed.WaterwaySegments.Count.ShouldBe(2);
         parsed.WaterwaySegments[0].OsmId.ShouldBe("way/1");
+        parsed.WaterwaySegments[0].WaterwayType.ShouldBe("river");
+        parsed.WaterwaySegments[1].WaterwayType.ShouldBe("custom");
         parsed.StationCandidates.Count.ShouldBe(1);
         parsed.StationCandidates[0].Name.ShouldBe("Ben A");
     }
@@ -103,6 +105,17 @@ public class RouteGeoJsonImportSupportTests
                 [new Point(106.0000, 10.0000) { SRID = 4326 }]));
 
         ex.Errors.Single().Value.Single().ShouldContain("Can it nhat 2 waypoint");
+    }
+
+    [Test]
+    public void ParseRejectsGeoJsonWithoutFeatures()
+    {
+        const string geoJson = """{ "type": "FeatureCollection" }""";
+
+        var ex = Should.Throw<SaigonWaterbus.Application.Common.Exceptions.ValidationException>(() =>
+            RouteGeoJsonImportSupport.Parse(geoJson));
+
+        ex.Errors.Single().Value.Single().ShouldContain("features");
     }
 
     private static bool ContainsCoordinate(LineString lineString, Coordinate expected) =>

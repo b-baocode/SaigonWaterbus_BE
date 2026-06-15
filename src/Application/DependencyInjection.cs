@@ -62,7 +62,6 @@ public static class DependencyInjection
         builder.Services.AddScoped<GetVesselByIdRequestUseCase>();
         builder.Services.AddScoped<CreateVesselRequestUseCase>();
         builder.Services.AddScoped<UpdateVesselRequestUseCase>();
-        builder.Services.AddScoped<AssignVesselServiceRequestUseCase>();
         builder.Services.AddScoped<UpdateVesselStatusRequestUseCase>();
         builder.Services.AddScoped<UpdateVesselRentalPriceRequestUseCase>();
         builder.Services.AddScoped<DeleteVesselRequestUseCase>();
@@ -79,6 +78,8 @@ public static class DependencyInjection
         builder.Services.AddScoped<IWaterbusServiceManagementService, WaterbusServiceManagementService>();
         builder.Services.AddScoped<GetWaterbusServicesRequestUseCase>();
         builder.Services.AddScoped<GetWaterbusServiceByIdRequestUseCase>();
+        builder.Services.AddScoped<GetWaterbusServiceSeatTypesRequestUseCase>();
+        builder.Services.AddScoped<UpdateWaterbusServiceSeatPriceRequestUseCase>();
         builder.Services.AddScoped<CreateWaterbusServiceRequestUseCase>();
         builder.Services.AddScoped<UpdateWaterbusServiceRequestUseCase>();
         builder.Services.AddScoped<UpdateWaterbusServiceStatusRequestUseCase>();

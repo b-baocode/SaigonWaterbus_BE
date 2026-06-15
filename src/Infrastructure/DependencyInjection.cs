@@ -80,12 +80,6 @@ public static class DependencyInjection
                 return ActivatorUtilities.CreateInstance<BrevoCustomBookingQuoteEmailSender>(provider);
             }
 
-            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
-            if (gmailEnabled)
-            {
-                return ActivatorUtilities.CreateInstance<GmailCustomBookingQuoteEmailSender>(provider);
-            }
-
             return ActivatorUtilities.CreateInstance<NoOpCustomBookingQuoteEmailSender>(provider);
         });
         builder.Services.AddScoped<ICustomBookingConfirmationEmailSender>(provider =>
@@ -95,12 +89,6 @@ public static class DependencyInjection
             if (brevoEnabled)
             {
                 return ActivatorUtilities.CreateInstance<BrevoCustomBookingConfirmationEmailSender>(provider);
-            }
-
-            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
-            if (gmailEnabled)
-            {
-                return ActivatorUtilities.CreateInstance<GmailCustomBookingConfirmationEmailSender>(provider);
             }
 
             return ActivatorUtilities.CreateInstance<NoOpCustomBookingConfirmationEmailSender>(provider);

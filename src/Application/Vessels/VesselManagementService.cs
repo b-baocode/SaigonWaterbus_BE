@@ -11,7 +11,6 @@ public sealed class VesselManagementService : IVesselManagementService
     private readonly GetVesselByIdRequestUseCase _getVesselById;
     private readonly CreateVesselRequestUseCase _createVessel;
     private readonly UpdateVesselRequestUseCase _updateVessel;
-    private readonly AssignVesselServiceRequestUseCase _assignVesselService;
     private readonly UpdateVesselStatusRequestUseCase _updateVesselStatus;
     private readonly UpdateVesselRentalPriceRequestUseCase _updateVesselRentalPrice;
     private readonly DeleteVesselRequestUseCase _deleteVessel;
@@ -22,7 +21,6 @@ public sealed class VesselManagementService : IVesselManagementService
         GetVesselByIdRequestUseCase getVesselById,
         CreateVesselRequestUseCase createVessel,
         UpdateVesselRequestUseCase updateVessel,
-        AssignVesselServiceRequestUseCase assignVesselService,
         UpdateVesselStatusRequestUseCase updateVesselStatus,
         UpdateVesselRentalPriceRequestUseCase updateVesselRentalPrice,
         DeleteVesselRequestUseCase deleteVessel)
@@ -32,19 +30,17 @@ public sealed class VesselManagementService : IVesselManagementService
         _getVesselById = getVesselById;
         _createVessel = createVessel;
         _updateVessel = updateVessel;
-        _assignVesselService = assignVesselService;
         _updateVesselStatus = updateVesselStatus;
         _updateVesselRentalPrice = updateVesselRentalPrice;
         _deleteVessel = deleteVessel;
     }
 
     public async Task<IReadOnlyCollection<VesselDto>> GetVesselsAsync(
-        Guid? serviceId,
         VesselStatus? status,
         string? search,
         CancellationToken cancellationToken)
     {
-        var request = new GetVesselsRequest(serviceId, status, search);
+        var request = new GetVesselsRequest(status, search);
         await _validator.ValidateAsync(request, cancellationToken);
         return await _getVessels.ExecuteAsync(request, cancellationToken);
     }
@@ -66,14 +62,6 @@ public sealed class VesselManagementService : IVesselManagementService
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _updateVessel.ExecuteAsync(request, cancellationToken);
-    }
-
-    public async Task<VesselDto> AssignVesselServiceAsync(
-        AssignVesselServiceRequest request,
-        CancellationToken cancellationToken)
-    {
-        await _validator.ValidateAsync(request, cancellationToken);
-        return await _assignVesselService.ExecuteAsync(request, cancellationToken);
     }
 
     public async Task<VesselDto> UpdateVesselStatusAsync(UpdateVesselStatusRequest request, CancellationToken cancellationToken)

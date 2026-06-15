@@ -4,14 +4,8 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Vessels;
 
 public sealed record GetVesselsRequest(
-    Guid? ServiceId = null,
     VesselStatus? Status = null,
     string? Search = null);
-
-public sealed record VesselWaterbusServiceDto(
-    Guid Id,
-    string Code,
-    string Name);
 
 public sealed record VesselRentalPriceDto(
     VesselRentalUnit RentalUnit,
@@ -21,7 +15,6 @@ public sealed record VesselRentalPriceDto(
 
 public sealed record VesselDto(
     Guid Id,
-    VesselWaterbusServiceDto? WaterbusService,
     string Code,
     string? RegistrationNumber,
     string Name,
@@ -36,17 +29,13 @@ public sealed record VesselDto(
     int? YearBuilt,
     string ImageUrl,
     string? Description,
-    VesselRentalPriceDto? RentalPrice);
+    VesselRentalPriceDto? RentalPrice,
+    SeatSetupType SeatSetupType);
 
 public sealed class GetVesselsRequestValidator : AbstractValidator<GetVesselsRequest>
 {
     public GetVesselsRequestValidator()
     {
-        RuleFor(x => x.ServiceId)
-            .NotEmpty()
-            .WithMessage("ServiceId không hợp lệ.")
-            .When(x => x.ServiceId.HasValue);
-
         RuleFor(x => x.Status)
             .IsInEnum()
             .WithMessage("Trạng thái tàu không hợp lệ.")
@@ -79,15 +68,9 @@ public sealed class GetVesselsRequestUseCase
         var query = VesselSupport.ApplyVisibilityFilter(
             _context.Vessels
                 .AsNoTracking()
-                .Include(x => x.WaterbusService)
                 .Include(x => x.RentalPrices)
                 .AsQueryable(),
             actor);
-
-        if (request.ServiceId.HasValue)
-        {
-            query = query.Where(x => x.WaterbusServiceId == request.ServiceId.Value);
-        }
 
         if (request.Status.HasValue)
         {

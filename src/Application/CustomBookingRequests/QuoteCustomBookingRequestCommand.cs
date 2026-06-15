@@ -11,7 +11,6 @@ public sealed record QuoteCustomBookingRequestCommand(
     decimal QuotedPrice,
     decimal DepositPercent,
     string? Currency,
-    string? PriceNote,
     DateTimeOffset? ValidUntil) : IRequest<CustomBookingRequestDto>;
 
 public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidator<QuoteCustomBookingRequestCommand>
@@ -29,7 +28,6 @@ public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidato
             .Must(CustomBookingRequestSupport.IsValidCurrencyCode)
             .WithMessage("Currency phải là mã ISO 4217 gồm 3 chữ cái, ví dụ VND.")
             .When(x => x.Currency is not null);
-        RuleFor(x => x.PriceNote).MaximumLength(1000).When(x => x.PriceNote is not null);
     }
 }
 
@@ -70,6 +68,11 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         var now = _timeProvider.GetUtcNow();
         var validUntil = CustomBookingRequestSupport.NormalizeUtc(request.ValidUntil);
         CustomBookingRequestSupport.EnsureQuoteIsValid(validUntil, now);
+        var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
+            _context,
+            customRequest,
+            cancellationToken);
+        CustomBookingRequestSupport.ApplyRouteEstimate(customRequest, routeSegments);
 
         var depositAmount = decimal.Round(
             request.QuotedPrice * request.DepositPercent / 100m,
@@ -91,7 +94,7 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         customRequest.Quote.DepositAmount = depositAmount;
         customRequest.Quote.RemainingAmount = remainingAmount;
         customRequest.Quote.Currency = CustomBookingRequestSupport.NormalizeCurrency(request.Currency);
-        customRequest.Quote.PriceNote = string.IsNullOrWhiteSpace(request.PriceNote) ? null : request.PriceNote.Trim();
+        customRequest.Quote.PriceNote = null;
         customRequest.Quote.ValidUntil = validUntil;
         customRequest.Status = CustomBookingRequestStatus.Quoted;
         customRequest.QuotedAt = now;
@@ -105,6 +108,6 @@ public sealed class QuoteCustomBookingRequestCommandHandler
 
         await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
 
-        return CustomBookingRequestDto.From(customRequest);
+        return CustomBookingRequestDto.From(customRequest, routeSegments);
     }
 }

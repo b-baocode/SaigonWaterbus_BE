@@ -19,7 +19,8 @@ public sealed record UpdateVesselRequest(
     string? ImageFileName = null,
     string? ImageContentType = null,
     long? ImageLength = null,
-    Stream? ImageContent = null);
+    Stream? ImageContent = null,
+    SeatSetupType? SeatSetupType = null);
 
 public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesselRequest>
 {
@@ -63,6 +64,11 @@ public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesse
             .GreaterThanOrEqualTo(0)
             .WithMessage("Số tầng không được âm.")
             .When(x => x.NumberOfDecks.HasValue);
+
+        RuleFor(x => x.SeatSetupType)
+            .IsInEnum()
+            .WithMessage("Kiểu ghế của tàu không hợp lệ.")
+            .When(x => x.SeatSetupType.HasValue);
 
         RuleFor(x => x.MaxSpeedKmh)
             .GreaterThan(0)
@@ -113,7 +119,6 @@ public sealed class UpdateVesselRequestUseCase
         await VesselSupport.EnsureCurrentUserCanManageVesselsAsync(_context, _userContext, cancellationToken);
 
         var vessel = await _context.Vessels
-            .Include(x => x.WaterbusService)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
@@ -149,7 +154,9 @@ public sealed class UpdateVesselRequestUseCase
 
         var seatCountChanged = request.SeatCount.HasValue && request.SeatCount.Value != vessel.SeatCount;
         var numberOfDecksChanged = request.NumberOfDecks.HasValue && request.NumberOfDecks.Value != vessel.NumberOfDecks;
-        if (seatCountChanged || numberOfDecksChanged)
+        var seatSetupTypeChanged = request.SeatSetupType.HasValue
+            && request.SeatSetupType.Value != vessel.SeatSetupType;
+        if (seatCountChanged || numberOfDecksChanged || seatSetupTypeChanged)
         {
             var hasSeatLayout = vessel.SeatsConfigured
                 || await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
@@ -160,7 +167,7 @@ public sealed class UpdateVesselRequestUseCase
             {
                 throw AuthSupport.CreateValidationException(
                     nameof(request.SeatCount),
-                    "Tàu đã setup sơ đồ ghế. Xóa toàn bộ sơ đồ ghế trước khi đổi số ghế hoặc số tầng.");
+                    "Tàu đã setup sơ đồ ghế. Xóa toàn bộ sơ đồ ghế trước khi đổi số ghế, số tầng hoặc kiểu ghế.");
             }
         }
 
@@ -177,6 +184,11 @@ public sealed class UpdateVesselRequestUseCase
         if (request.NumberOfDecks.HasValue)
         {
             vessel.NumberOfDecks = request.NumberOfDecks.Value;
+        }
+
+        if (request.SeatSetupType.HasValue)
+        {
+            vessel.SeatSetupType = request.SeatSetupType.Value;
         }
 
         EnsureVesselCapacity(vessel.SeatCount, vessel.PassengerCapacity, vessel.NumberOfDecks);

@@ -31,6 +31,11 @@ public sealed class GetCustomBookingRequestDetailQueryHandler
         var customRequest = await query.SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy yêu cầu thuê tàu.");
 
-        return CustomBookingRequestDto.From(customRequest);
+        var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
+            _context,
+            customRequest,
+            cancellationToken);
+
+        return CustomBookingRequestDto.From(customRequest, routeSegments);
     }
 }

@@ -2,6 +2,8 @@ using Azure.Identity;
 using System.Text;
 using System.Text.Json.Serialization;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
+using SaigonWaterbus.Web.Infrastructure;
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -65,6 +67,30 @@ public static class DependencyInjection
 
         builder.Services.AddSwaggerGen(options =>
         {
+            options.SchemaFilter<StringEnumSchemaFilter>();
+
+            options.MapType<SeatSetupType>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Enum =
+                [
+                    new Microsoft.OpenApi.Any.OpenApiString(nameof(SeatSetupType.FullStandard)),
+                    new Microsoft.OpenApi.Any.OpenApiString(nameof(SeatSetupType.StandardAndVip))
+                ],
+                Example = new Microsoft.OpenApi.Any.OpenApiString(nameof(SeatSetupType.FullStandard))
+            });
+
+            options.MapType<SeatSetupType?>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Nullable = true,
+                Enum =
+                [
+                    new Microsoft.OpenApi.Any.OpenApiString(nameof(SeatSetupType.FullStandard)),
+                    new Microsoft.OpenApi.Any.OpenApiString(nameof(SeatSetupType.StandardAndVip))
+                ]
+            });
+
             options.MapType<DateOnly>(() => new OpenApiSchema
             {
                 Type = "string",

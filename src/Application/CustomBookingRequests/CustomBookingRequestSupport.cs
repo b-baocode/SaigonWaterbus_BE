@@ -16,7 +16,6 @@ internal static class CustomBookingRequestSupport
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.PreferredVessel)
-            .ThenInclude(x => x!.WaterbusService)
             .Include(x => x.ItineraryStops)
             .ThenInclude(x => x.Station)
             .Include(x => x.Quote);
@@ -52,7 +51,55 @@ internal static class CustomBookingRequestSupport
         throw new ForbiddenAccessException();
     }
 
+    public static async Task<IReadOnlyList<RouteSegment>> GetMatchingRouteSegmentsAsync(
+        IApplicationDbContext context,
+        CustomBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var stationIds = GetRouteStationIds(request).Distinct().ToArray();
+        if (stationIds.Length < 2)
+        {
+            return Array.Empty<RouteSegment>();
+        }
+
+        return await context.Set<RouteSegment>()
+            .Where(x => stationIds.Contains(x.FromStationId) && stationIds.Contains(x.ToStationId))
+            .OrderBy(x => x.SegmentOrder)
+            .ToListAsync(cancellationToken);
+    }
+
+    public static void ApplyRouteEstimate(
+        CustomBookingRequest request,
+        IReadOnlyCollection<RouteSegment>? routeSegments = null)
+    {
+        var routeEstimate = CustomBookingRouteEstimator.Estimate(request, routeSegments);
+        request.PreferredEndTime = routeEstimate.EstimatedEndTime;
+        request.EstimatedEndDate = routeEstimate.EstimatedEndDate;
+        request.EstimatedTravelMinutes = routeEstimate.EstimatedTravelMinutes;
+        request.EstimatedStayMinutes = routeEstimate.EstimatedStayMinutes;
+        request.BufferMinutes = routeEstimate.BufferMinutes;
+        request.EstimatedDurationMinutes = routeEstimate.EstimatedDurationMinutes;
+    }
+
     public static string NormalizeStationCode(string stationCode) => stationCode.Trim().ToUpperInvariant();
+
+    private static IEnumerable<Guid> GetRouteStationIds(CustomBookingRequest request)
+    {
+        if (request.FromStationId.HasValue)
+        {
+            yield return request.FromStationId.Value;
+        }
+
+        foreach (var stop in request.ItineraryStops)
+        {
+            yield return stop.StationId;
+        }
+
+        if (request.ToStationId.HasValue)
+        {
+            yield return request.ToStationId.Value;
+        }
+    }
 
     public static string NormalizeCurrency(string? currency) =>
         string.IsNullOrWhiteSpace(currency) ? "VND" : currency.Trim().ToUpperInvariant();

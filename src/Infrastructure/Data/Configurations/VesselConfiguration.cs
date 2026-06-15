@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Infrastructure.Data.Configurations;
 
@@ -37,6 +38,12 @@ public sealed class VesselConfiguration : IEntityTypeConfiguration<Vessel>
             .HasDefaultValue(0)
             .IsRequired();
 
+        builder.Property(x => x.SeatSetupType)
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .HasDefaultValue(SeatSetupType.FullStandard)
+            .IsRequired();
+
         builder.Property(x => x.ImageUrl)
             .HasMaxLength(2048);
 
@@ -46,14 +53,6 @@ public sealed class VesselConfiguration : IEntityTypeConfiguration<Vessel>
         builder.Property(x => x.Description)
             .HasMaxLength(500);
 
-        builder.HasIndex(x => x.WaterbusServiceId);
-
         builder.HasIndex(x => x.Status);
-
-        builder.HasOne(x => x.WaterbusService)
-            .WithMany(x => x.Vessels)
-            .HasForeignKey(x => x.WaterbusServiceId)
-            .OnDelete(DeleteBehavior.SetNull)
-            .IsRequired(false);
     }
 }

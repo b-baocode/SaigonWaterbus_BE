@@ -26,15 +26,9 @@ public sealed class SeatTypeConfiguration : IEntityTypeConfiguration<SeatType>
             .HasDefaultValue(0)
             .IsRequired();
 
-        builder.HasIndex(x => new { x.WaterbusServiceId, x.Code })
+        builder.HasIndex(x => x.Code)
             .IsUnique();
 
-        builder.HasIndex(x => new { x.WaterbusServiceId, x.DisplayOrder });
-
-        builder.HasOne(x => x.WaterbusService)
-            .WithMany(x => x.SeatTypes)
-            .HasForeignKey(x => x.WaterbusServiceId)
-            .OnDelete(DeleteBehavior.Cascade)
-            .IsRequired();
+        builder.HasIndex(x => x.DisplayOrder);
     }
 }

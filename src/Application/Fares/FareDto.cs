@@ -19,6 +19,18 @@ public sealed record FareByTicketTypeDto(
     decimal PriceModifier,
     decimal FinalPrice);
 
+public sealed record FareByServiceSeatTypeDto(
+    Guid TicketTypeId,
+    string TicketTypeName,
+    Guid ServiceId,
+    string ServiceCode,
+    Guid SeatTypeId,
+    string SeatTypeCode,
+    decimal BasePrice,
+    decimal TicketTypeModifier,
+    decimal SeatTypeModifier,
+    decimal FinalPrice);
+
 public sealed record VesselRentalFareDto(
     Guid VesselId,
     string VesselCode,

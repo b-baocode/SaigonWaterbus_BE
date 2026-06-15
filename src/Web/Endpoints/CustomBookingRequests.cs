@@ -41,7 +41,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
           "quotedPrice": 5000000,
           "depositPercent": 50,
           "currency": "VND",
-          "priceNote": "Gia gom thue tau 3 gio, phi ben va nhan su van hanh. Khach can coc 50% de chot.",
           "validUntil": "2026-06-15T23:59:59+07:00"
         }
         """;
@@ -93,7 +92,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Neu fromStationId va toStationId trung nhau thi phai co it nhat mot itineraryStops.",
                 "itineraryStops chi gom cac diem ghe o giua, khong can gui pickup/dropoff.",
                 "Moi itineraryStops can stationId, stopOrder va stayDurationMinutes.",
-                "Backend chua tu tinh gio ket thuc vi thoi gian di chuyen phai dua tren route/travel-time that.",
+                "Backend tu tinh routeEstimate, gio ket thuc du kien, tong km va thoi gian dua tren route_segments; neu thieu segment thi fallback theo toa do ben.",
                 "Backend se check user dang nhap va link user neu phone/email trung user co san.",
                 "Status ban dau la PendingReview. Chua tao booking va chua xu ly payment."));
 
@@ -193,7 +192,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
             request.QuotedPrice,
             request.DepositPercent,
             request.Currency,
-            request.PriceNote,
             request.ValidUntil), ct));
 
     private static async Task<IResult> AcceptCustomBookingQuote(
@@ -206,7 +204,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
         decimal QuotedPrice,
         decimal DepositPercent,
         string? Currency = null,
-        string? PriceNote = null,
         DateTimeOffset? ValidUntil = null);
 
     public sealed record CustomBookingStatusApiResponse(

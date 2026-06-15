@@ -177,6 +177,34 @@ public sealed class CreateCustomBookingRequestCommandHandler
                 $"Tổng số khách ({passengerCount}) vượt quá sức chứa tàu ({vessel.PassengerCapacity}).");
         }
 
+        var itineraryStopEntities = itineraryStops
+            .Select(stop => new CustomBookingItineraryStop
+            {
+                StopOrder = stop.StopOrder,
+                StationId = stop.StationId,
+                Station = itineraryStations[stop.StationId],
+                StayDurationMinutes = stop.StayDurationMinutes,
+                Note = string.IsNullOrWhiteSpace(stop.Note) ? null : stop.Note.Trim()
+            })
+            .ToList();
+        var routeStationIds = new[] { fromStation.Id }
+            .Concat(itineraryStopEntities.Select(x => x.StationId))
+            .Append(toStation.Id)
+            .Distinct()
+            .ToArray();
+        var routeSegments = await _context.Set<RouteSegment>()
+            .Where(x => routeStationIds.Contains(x.FromStationId) && routeStationIds.Contains(x.ToStationId))
+            .OrderBy(x => x.SegmentOrder)
+            .ToArrayAsync(cancellationToken);
+        var routeEstimate = CustomBookingRouteEstimator.Estimate(
+            fromStation,
+            itineraryStopEntities,
+            toStation,
+            request.DepartureDate,
+            request.PreferredStartTime,
+            vessel,
+            routeSegments);
+
         var customRequest = new CustomBookingRequest
         {
             UserId = user.Id,
@@ -187,12 +215,12 @@ public sealed class CreateCustomBookingRequestCommandHandler
             PreferredVesselId = vessel.Id,
             DepartureDate = request.DepartureDate,
             PreferredStartTime = request.PreferredStartTime,
-            PreferredEndTime = null,
-            EstimatedEndDate = null,
-            EstimatedTravelMinutes = 0,
-            EstimatedStayMinutes = 0,
-            BufferMinutes = 0,
-            EstimatedDurationMinutes = 0,
+            PreferredEndTime = routeEstimate.EstimatedEndTime,
+            EstimatedEndDate = routeEstimate.EstimatedEndDate,
+            EstimatedTravelMinutes = routeEstimate.EstimatedTravelMinutes,
+            EstimatedStayMinutes = routeEstimate.EstimatedStayMinutes,
+            BufferMinutes = routeEstimate.BufferMinutes,
+            EstimatedDurationMinutes = routeEstimate.EstimatedDurationMinutes,
             FromLocation = fromStation.StationName,
             ToLocation = toStation.StationName,
             FromStationId = fromStation.Id,
@@ -205,16 +233,7 @@ public sealed class CreateCustomBookingRequestCommandHandler
             ChildCount = request.ChildCount,
             SpecialRequests = null,
             Status = CustomBookingRequestStatus.PendingReview,
-            ItineraryStops = itineraryStops
-                .Select(stop => new CustomBookingItineraryStop
-                {
-                    StopOrder = stop.StopOrder,
-                    StationId = stop.StationId,
-                    Station = itineraryStations[stop.StationId],
-                    StayDurationMinutes = stop.StayDurationMinutes,
-                    Note = string.IsNullOrWhiteSpace(stop.Note) ? null : stop.Note.Trim()
-                })
-                .ToList()
+            ItineraryStops = itineraryStopEntities
         };
 
         _context.Set<CustomBookingRequest>().Add(customRequest);
@@ -223,7 +242,7 @@ public sealed class CreateCustomBookingRequestCommandHandler
         customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
             .SingleAsync(x => x.Id == customRequest.Id, cancellationToken);
 
-        return CustomBookingRequestDto.From(customRequest);
+        return CustomBookingRequestDto.From(customRequest, routeSegments);
     }
 
     private static string ResolveContactName(CreateCustomBookingRequestCommand request, User user)
@@ -288,7 +307,6 @@ public sealed class CreateCustomBookingRequestCommandHandler
         CancellationToken cancellationToken)
     {
         var vessel = await _context.Set<Vessel>()
-            .Include(x => x.WaterbusService)
             .Include(x => x.RentalPrices)
             .SingleOrDefaultAsync(x => x.Id == vesselId, cancellationToken);
 
@@ -300,13 +318,6 @@ public sealed class CreateCustomBookingRequestCommandHandler
         if (vessel.Status != VesselStatus.Active || !vessel.SeatsConfigured)
         {
             throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingRequestCommand.PreferredVesselId), "Tàu chưa sẵn sàng để cho thuê.");
-        }
-
-        if (vessel.WaterbusService is null
-            || !vessel.WaterbusService.IsActive
-            || vessel.WaterbusService.BookingMode != BookingMode.VesselRental)
-        {
-            throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingRequestCommand.PreferredVesselId), "Tàu không thuộc dịch vụ thuê tàu custom.");
         }
 
         if (!vessel.RentalPrices.Any(x => x.RentalUnit == VesselRentalUnit.Day))

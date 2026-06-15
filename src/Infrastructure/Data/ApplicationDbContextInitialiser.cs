@@ -71,12 +71,17 @@ public class ApplicationDbContextInitialiser
 
     private static readonly SeatTypeSeed[] SeatTypeSeeds =
     [
-        new("WB", "STANDARD", "Standard", 1),
-        new("WS", "STANDARD", "Standard", 1),
-        new("WS", "VIP", "VIP", 2),
-        new("WS", "WINDOW", "Window", 3),
-        new("WS", "UPPER_DECK", "Upper Deck", 4),
-        new("WT", "STANDARD", "Standard", 1)
+        new("STANDARD", "Standard", 1),
+        new("VIP", "VIP", 2)
+    ];
+
+    private static readonly ServiceSeatTypePriceSeed[] ServiceSeatTypePriceSeeds =
+    [
+        new("WB", "STANDARD", 1m),
+        new("WS", "STANDARD", 1m),
+        new("WS", "VIP", 1.5m),
+        new("WT", "STANDARD", 1m),
+        new("WT", "VIP", 1m)
     ];
 
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;
@@ -217,7 +222,8 @@ public class ApplicationDbContextInitialiser
     private async Task SeedServicesAndSeatTypesAsync()
     {
         var serviceByCode = await _context.WaterbusServices
-            .Include(x => x.SeatTypes)
+            .Include(x => x.SeatTypePrices)
+                .ThenInclude(x => x.SeatType)
             .ToDictionaryAsync(x => x.Code);
 
         foreach (var definition in ServiceSeeds)
@@ -247,27 +253,52 @@ public class ApplicationDbContextInitialiser
             }
         }
 
+        var seatTypeByCode = await _context.SeatTypes
+            .ToDictionaryAsync(x => x.Code);
+
         foreach (var definition in SeatTypeSeeds)
         {
-            var service = serviceByCode[definition.ServiceCode];
-            var seatType = service.SeatTypes
-                .SingleOrDefault(x => string.Equals(x.Code, definition.Code, StringComparison.OrdinalIgnoreCase));
-
-            if (seatType is null)
+            if (!seatTypeByCode.TryGetValue(definition.Code, out var seatType))
             {
-                service.SeatTypes.Add(new SeatType
+                seatType = new SeatType
                 {
                     Code = definition.Code,
                     Name = definition.Name,
                     DisplayOrder = definition.DisplayOrder,
                     IsActive = true
-                });
+                };
+                _context.SeatTypes.Add(seatType);
+                seatTypeByCode[definition.Code] = seatType;
             }
             else
             {
                 seatType.Name = definition.Name;
                 seatType.DisplayOrder = definition.DisplayOrder;
                 seatType.IsActive = true;
+            }
+        }
+
+        foreach (var definition in ServiceSeatTypePriceSeeds)
+        {
+            var service = serviceByCode[definition.ServiceCode];
+            var seatType = seatTypeByCode[definition.SeatTypeCode];
+            var price = service.SeatTypePrices
+                .SingleOrDefault(x => x.SeatTypeId == seatType.Id);
+
+            if (price is null)
+            {
+                service.SeatTypePrices.Add(new ServiceSeatTypePrice
+                {
+                    SeatTypeId = seatType.Id,
+                    SeatType = seatType,
+                    PriceModifier = definition.PriceModifier,
+                    IsActive = true
+                });
+            }
+            else
+            {
+                price.PriceModifier = definition.PriceModifier;
+                price.IsActive = true;
             }
         }
     }
@@ -705,8 +736,12 @@ public class ApplicationDbContextInitialiser
         int DisplayOrder);
 
     private sealed record SeatTypeSeed(
-        string ServiceCode,
         string Code,
         string Name,
         int DisplayOrder);
+
+    private sealed record ServiceSeatTypePriceSeed(
+        string ServiceCode,
+        string SeatTypeCode,
+        decimal PriceModifier);
 }

@@ -28,6 +28,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<SeatType> SeatTypes => Set<SeatType>();
 
+    public DbSet<ServiceSeatTypePrice> ServiceSeatTypePrices => Set<ServiceSeatTypePrice>();
+
     public DbSet<VesselDeckLayout> VesselDeckLayouts => Set<VesselDeckLayout>();
 
     public DbSet<VesselFacility> VesselFacilities => Set<VesselFacility>();
@@ -45,6 +47,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Route> Routes => Set<Route>();
 
     public DbSet<RouteStop> RouteStops => Set<RouteStop>();
+
+    public DbSet<RouteSegment> RouteSegments => Set<RouteSegment>();
 
     public DbSet<Landmark> Landmarks => Set<Landmark>();
 

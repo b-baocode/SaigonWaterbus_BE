@@ -6,7 +6,6 @@ namespace SaigonWaterbus.Application.Vessels;
 public interface IVesselManagementService
 {
     Task<IReadOnlyCollection<VesselDto>> GetVesselsAsync(
-        Guid? serviceId,
         VesselStatus? status,
         string? search,
         CancellationToken cancellationToken);
@@ -16,8 +15,6 @@ public interface IVesselManagementService
     Task<VesselDto> CreateVesselAsync(CreateVesselRequest request, CancellationToken cancellationToken);
 
     Task<VesselDto> UpdateVesselAsync(UpdateVesselRequest request, CancellationToken cancellationToken);
-
-    Task<VesselDto> AssignVesselServiceAsync(AssignVesselServiceRequest request, CancellationToken cancellationToken);
 
     Task<VesselDto> UpdateVesselStatusAsync(UpdateVesselStatusRequest request, CancellationToken cancellationToken);
 

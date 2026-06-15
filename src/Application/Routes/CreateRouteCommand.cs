@@ -69,17 +69,21 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route code already exists.")]);
         }
 
-        var waterwaySegments = await _context.Set<WaterwaySegment>()
-            .AsNoTracking()
-            .OrderBy(segment => segment.OsmId)
-            .ThenBy(segment => segment.SegmentOrder)
-            .ToListAsync(cancellationToken);
+        var hasViaWaterway = request.Waypoints.Any(waypoint =>
+            string.Equals(waypoint.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase));
+        var waterwaySegments = hasViaWaterway
+            ? await _context.Set<WaterwaySegment>()
+                .AsNoTracking()
+                .OrderBy(segment => segment.OsmId)
+                .ThenBy(segment => segment.SegmentOrder)
+                .ToListAsync(cancellationToken)
+            : [];
 
-        if (waterwaySegments.Count == 0)
+        if (hasViaWaterway && waterwaySegments.Count == 0)
         {
             throw new ValidationException([new ValidationFailure(
                 nameof(request.Waypoints),
-                "No waterway network has been imported yet. Import GeoJSON map data first.")]);
+                "No waterway network has been imported yet. Import GeoJSON map data first or create the route with station waypoints only.")]);
         }
 
         var stationCodes = request.Waypoints
@@ -108,7 +112,11 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
                 }
 
                 routeStations.Add(station);
-                waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
+                if (hasViaWaterway)
+                {
+                    waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
+                }
+
                 continue;
             }
 
@@ -146,10 +154,14 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
                 "The selected route contains duplicate stations. Repeating the same station in one route is not supported.")]);
         }
 
-        var routeGeometry = RouteGeoJsonImportSupport.BuildRouteGeometry(
-            waterwaySegments.Select(segment => segment.Geometry).ToList(),
-            waypointPoints);
-        var distanceKm = (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2);
+        var routeGeometry = hasViaWaterway
+            ? RouteGeoJsonImportSupport.BuildRouteGeometry(
+                waterwaySegments.Select(segment => segment.Geometry).ToList(),
+                waypointPoints)
+            : null;
+        var distanceKm = routeGeometry is null
+            ? (decimal?)null
+            : (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2);
 
         var route = new Route
         {

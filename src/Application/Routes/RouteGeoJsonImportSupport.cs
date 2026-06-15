@@ -22,6 +22,10 @@ internal sealed record GeoJsonWaterwaySegmentCandidate(
     string? OsmId,
     string? Name,
     string WaterwayType,
+    string? RouteCode,
+    string? FromStationCode,
+    string? ToStationCode,
+    int? EstimatedTravelMinutes,
     int SegmentOrder,
     LineString Geometry);
 
@@ -44,35 +48,75 @@ internal static class RouteGeoJsonImportSupport
         try
         {
             using var doc = JsonDocument.Parse(geoJson);
+            if (!doc.RootElement.TryGetProperty("features", out var features)
+                || features.ValueKind != JsonValueKind.Array)
+            {
+                throw CreateValidationException(
+                    "GeoJsonContent",
+                    "GeoJSON phai la FeatureCollection va co mang features.");
+            }
+
             var featureIndex = 0;
 
-            foreach (var feature in doc.RootElement.GetProperty("features").EnumerateArray())
+            foreach (var feature in features.EnumerateArray())
             {
-                var geom = feature.GetProperty("geometry");
-                var type = geom.GetProperty("type").GetString();
+                if (!feature.TryGetProperty("geometry", out var geom)
+                    || geom.ValueKind != JsonValueKind.Object
+                    || !geom.TryGetProperty("type", out var typeElement)
+                    || typeElement.ValueKind != JsonValueKind.String)
+                {
+                    featureIndex++;
+                    continue;
+                }
+
+                var type = typeElement.GetString();
                 var osmId = GetPropString(feature, "@id");
                 var name = GetPropString(feature, "name");
                 var amenity = GetPropString(feature, "amenity");
                 var publicTransport = GetPropString(feature, "public_transport");
                 var waterway = GetPropString(feature, "waterway");
+                var route = GetPropString(feature, "route");
+                var routeCode = GetPropString(feature, "waterbus_route") ?? GetPropString(feature, "route_code");
+                var fromStationCode = GetPropString(feature, "from_station_code");
+                var toStationCode = GetPropString(feature, "to_station_code");
+                var estimatedTravelMinutes = GetPropInt(feature, "estimated_travel_minutes")
+                    ?? GetPropInt(feature, "travel_minutes");
 
-                if (IsWaterwayFeature(type, waterway))
+                if (IsLineFeature(type))
                 {
                     var segmentOrder = 0;
+                    var segmentOsmId = osmId;
+                    if (string.IsNullOrWhiteSpace(segmentOsmId) && string.IsNullOrWhiteSpace(name))
+                    {
+                        segmentOsmId = $"custom-feature/{featureIndex}";
+                    }
+
                     foreach (var line in ParseWaterwayGeometries(geom))
                     {
                         waterwaySegments.Add(new GeoJsonWaterwaySegmentCandidate(
                             featureIndex,
-                            osmId,
+                            segmentOsmId,
                             name,
-                            waterway!,
+                            NormalizeWaterwayType(waterway ?? route),
+                            routeCode,
+                            fromStationCode,
+                            toStationCode,
+                            estimatedTravelMinutes,
                             segmentOrder++,
                             line));
                     }
                 }
                 else if (type == "Point" && string.Equals(amenity, "ferry_terminal", StringComparison.OrdinalIgnoreCase))
                 {
-                    var coordinates = geom.GetProperty("coordinates");
+                    if (!geom.TryGetProperty("coordinates", out var coordinates)
+                        || coordinates.ValueKind != JsonValueKind.Array
+                        || coordinates.GetArrayLength() < 2)
+                    {
+                        throw CreateValidationException(
+                            "GeoJsonContent",
+                            $"Feature #{featureIndex} co Point ferry_terminal nhung thieu toa do [longitude, latitude].");
+                    }
+
                     stationCandidates.Add(new GeoJsonStationCandidate(
                         featureIndex,
                         osmId,
@@ -88,6 +132,18 @@ internal static class RouteGeoJsonImportSupport
         catch (JsonException ex)
         {
             throw CreateValidationException("GeoJsonContent", $"Invalid GeoJSON: {ex.Message}");
+        }
+        catch (InvalidOperationException ex)
+        {
+            throw CreateValidationException("GeoJsonContent", $"Invalid GeoJSON structure: {ex.Message}");
+        }
+        catch (KeyNotFoundException ex)
+        {
+            throw CreateValidationException("GeoJsonContent", $"Invalid GeoJSON structure: {ex.Message}");
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            throw CreateValidationException("GeoJsonContent", $"Invalid GeoJSON coordinates: {ex.Message}");
         }
 
         return new ParsedNavigationMapGeoJson(waterwaySegments, stationCandidates);
@@ -169,10 +225,23 @@ internal static class RouteGeoJsonImportSupport
         return new LineString(normalized) { SRID = 4326 };
     }
 
-    private static bool IsWaterwayFeature(string? geometryType, string? waterway) =>
-        (geometryType == "LineString" || geometryType == "MultiLineString")
-        && (string.Equals(waterway, "river", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(waterway, "canal", StringComparison.OrdinalIgnoreCase));
+    private static bool IsLineFeature(string? geometryType) =>
+        geometryType == "LineString" || geometryType == "MultiLineString";
+
+    private static string NormalizeWaterwayType(string? waterway)
+    {
+        if (string.Equals(waterway, "river", StringComparison.OrdinalIgnoreCase))
+        {
+            return "river";
+        }
+
+        if (string.Equals(waterway, "canal", StringComparison.OrdinalIgnoreCase))
+        {
+            return "canal";
+        }
+
+        return "custom";
+    }
 
     private static IEnumerable<LineString> ParseWaterwayGeometries(JsonElement geometry)
     {
@@ -220,6 +289,32 @@ internal static class RouteGeoJsonImportSupport
         }
 
         return value.ValueKind == JsonValueKind.String ? value.GetString() : null;
+    }
+
+    private static int? GetPropInt(JsonElement feature, string key)
+    {
+        if (!feature.TryGetProperty("properties", out var props))
+        {
+            return null;
+        }
+
+        if (!props.TryGetProperty(key, out var value))
+        {
+            return null;
+        }
+
+        if (value.ValueKind == JsonValueKind.Number && value.TryGetInt32(out var number))
+        {
+            return number;
+        }
+
+        if (value.ValueKind == JsonValueKind.String
+            && int.TryParse(value.GetString(), out var stringNumber))
+        {
+            return stringNumber;
+        }
+
+        return null;
     }
 
     private static void AppendCoordinates(List<Coordinate> destination, IReadOnlyList<Coordinate> coordinates)

@@ -4,10 +4,6 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class Vessel : BaseAuditableEntity
 {
-    public Guid? WaterbusServiceId { get; set; }
-
-    public WaterbusService? WaterbusService { get; set; }
-
     public string Code { get; set; } = null!;
 
     public string? RegistrationNumber { get; set; }
@@ -21,6 +17,8 @@ public class Vessel : BaseAuditableEntity
     public int PassengerCapacity { get; set; }
 
     public int NumberOfDecks { get; set; }
+
+    public SeatSetupType SeatSetupType { get; set; } = SeatSetupType.FullStandard;
 
     public bool SeatsConfigured { get; set; }
 

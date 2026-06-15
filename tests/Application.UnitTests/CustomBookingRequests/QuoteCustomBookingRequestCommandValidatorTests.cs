@@ -37,6 +37,5 @@ public class QuoteCustomBookingRequestCommandValidatorTests
             QuotedPrice: 15000000m,
             DepositPercent: depositPercent,
             Currency: "VND",
-            PriceNote: "Gia bao gom thue tau va phi van hanh.",
             ValidUntil: DateTimeOffset.UtcNow.AddDays(1));
 }

@@ -24,6 +24,8 @@ public interface IApplicationDbContext
 
     DbSet<SeatType> SeatTypes { get; }
 
+    DbSet<ServiceSeatTypePrice> ServiceSeatTypePrices { get; }
+
     DbSet<VesselDeckLayout> VesselDeckLayouts { get; }
 
     DbSet<VesselFacility> VesselFacilities { get; }
@@ -33,6 +35,8 @@ public interface IApplicationDbContext
     DbSet<CustomBookingQuote> CustomBookingQuotes { get; }
 
     DbSet<CustomBookingItineraryStop> CustomBookingItineraryStops { get; }
+
+    DbSet<RouteSegment> RouteSegments { get; }
 
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;

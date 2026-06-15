@@ -12,4 +12,17 @@ public interface IFareCalculator
         Guid toStationId,
         Guid ticketTypeId,
         CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Tính giá có hạng ghế:
+    /// FareMatrix.BasePrice × TicketType.PriceModifier × ServiceSeatTypePrice.PriceModifier.
+    /// </summary>
+    Task<decimal> CalculateAsync(
+        Guid routeId,
+        Guid fromStationId,
+        Guid toStationId,
+        Guid ticketTypeId,
+        Guid waterbusServiceId,
+        Guid seatTypeId,
+        CancellationToken cancellationToken);
 }

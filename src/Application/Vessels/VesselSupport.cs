@@ -45,9 +45,7 @@ internal static class VesselSupport
             ? query
             : query.Where(x =>
                 x.Status == VesselStatus.Active
-                && x.SeatsConfigured
-                && x.WaterbusService != null
-                && x.WaterbusService.IsActive);
+                && x.SeatsConfigured);
     }
 
     public static string NormalizeCode(string code) =>
@@ -60,15 +58,6 @@ internal static class VesselSupport
 
     public static VesselDto CreateDto(Vessel vessel, int generatedSeatCount = 0)
     {
-        var service = vessel.WaterbusService;
-        var serviceDto = service is null
-            ? null
-            : new VesselWaterbusServiceDto(service.Id, service.Code, service.Name);
-
-        var description = !string.IsNullOrWhiteSpace(vessel.Description)
-            ? vessel.Description
-            : service?.Description;
-
         var rentalPrice = vessel.RentalPrices
             .Where(x => x.RentalUnit == VesselRentalUnit.Day)
             .OrderBy(x => x.Id)
@@ -77,7 +66,6 @@ internal static class VesselSupport
 
         return new VesselDto(
             vessel.Id,
-            serviceDto,
             vessel.Code,
             vessel.RegistrationNumber,
             vessel.Name,
@@ -91,8 +79,35 @@ internal static class VesselSupport
             vessel.MaxSpeedKmh,
             vessel.YearBuilt,
             vessel.ImageUrl ?? string.Empty,
-            description,
-            rentalPrice);
+            vessel.Description,
+            rentalPrice,
+            vessel.SeatSetupType);
+    }
+
+    public static IReadOnlyCollection<string> RequiredSeatTypeCodes(SeatSetupType seatSetupType) =>
+        seatSetupType == SeatSetupType.StandardAndVip
+            ? ["STANDARD", "VIP"]
+            : ["STANDARD"];
+
+    public static void EnsureServiceSupportsSeatSetup(
+        WaterbusService service,
+        SeatSetupType seatSetupType,
+        string propertyName)
+    {
+        var supportedCodes = service.SeatTypePrices
+            .Where(x => x.IsActive && x.SeatType.IsActive)
+            .Select(x => x.SeatType.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var missingCodes = RequiredSeatTypeCodes(seatSetupType)
+            .Where(code => !supportedCodes.Contains(code))
+            .ToArray();
+
+        if (missingCodes.Length > 0)
+        {
+            throw AuthSupport.CreateValidationException(
+                propertyName,
+                $"Dịch vụ {service.Code} chưa cấu hình giá cho loại ghế: {string.Join(", ", missingCodes)}.");
+        }
     }
 
     public static string NormalizeCurrency(string? currency) =>
@@ -111,26 +126,10 @@ internal static class VesselSupport
 
     public static bool IsReadyForOperation(Vessel vessel) =>
         vessel.Status == VesselStatus.Active
-        && vessel.SeatsConfigured
-        && vessel.WaterbusServiceId.HasValue
-        && (vessel.WaterbusService is null || vessel.WaterbusService.IsActive);
+        && vessel.SeatsConfigured;
 
     public static void EnsureCanActivate(Vessel vessel, string propertyName)
     {
-        if (!vessel.WaterbusServiceId.HasValue)
-        {
-            throw AuthSupport.CreateValidationException(
-                propertyName,
-                "Tàu phải được gắn dịch vụ trước khi chuyển Active.");
-        }
-
-        if (vessel.WaterbusService is not null && !vessel.WaterbusService.IsActive)
-        {
-            throw AuthSupport.CreateValidationException(
-                propertyName,
-                "Tàu chỉ được Active khi dịch vụ đang hoạt động.");
-        }
-
         if (!vessel.SeatsConfigured)
         {
             throw AuthSupport.CreateValidationException(

@@ -56,6 +56,20 @@ public sealed class Routes : IEndpointGroup
         }
         """;
 
+    private const string SegmentExample =
+        """
+        {
+          "fromStationCode": "BD",
+          "toStationCode": "BS",
+          "segmentOrder": 1,
+          "distanceKm": 1.25,
+          "geometry": [
+            { "longitude": 106.7061, "latitude": 10.7731 },
+            { "longitude": 106.7132, "latitude": 10.7810 }
+          ]
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetRoutes, string.Empty)
@@ -83,9 +97,10 @@ public sealed class Routes : IEndpointGroup
                 "Bearer token",
                 CreateRouteExample,
                 "RouteCode phai unique (tu dong uppercase).",
-                "Request phai chua it nhat 2 waypoint type=station va bat buoc co it nhat 1 waypoint type=viaWaterway.",
+                "Request phai chua it nhat 2 waypoint type=station.",
                 "Waypoint dau va cuoi bat buoc la station.",
-                "He thong dung mang waterway da import truoc do de tao RouteGeometry LineString va RouteStops tu dong."));
+                "Neu co waypoint type=viaWaterway thi he thong dung mang waterway da import truoc do de tao RouteGeometry LineString.",
+                "Neu ban ve duong san, co the tao route chi bang station waypoints roi nhap duong that o /segments."));
 
         group.MapPut(UpdateRoute, "{id:guid}")
             .RequireAuthorization()
@@ -126,6 +141,34 @@ public sealed class Routes : IEndpointGroup
                 "Tra ve 204 khi xoa thanh cong.",
                 "Tra ve 404 neu khong tim thay tuyen hoac stop."));
 
+        group.MapPost(AddRouteSegment, "{id:guid}/segments")
+            .RequireAuthorization()
+            .WithSummary("Them doan chay giua 2 ben trong tuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                SegmentExample,
+                "Dung de khai bao khoang cach va thoi gian chay that cho custom booking.",
+                "fromStationCode va toStationCode phai nam trong stops cua route.",
+                "geometry la danh sach diem [longitude, latitude] cua doan duong thuy, co the bo trong neu chua ve xong."));
+
+        group.MapPut(UpdateRouteSegment, "{id:guid}/segments/{segmentId:guid}")
+            .RequireAuthorization()
+            .WithSummary("Cap nhat doan chay giua 2 ben trong tuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                SegmentExample,
+                "Dung de cap nhat khoang cach, thoi gian chay, thu tu va geometry cua doan.",
+                "Neu truyen geometry thi phai co it nhat 2 diem."));
+
+        group.MapDelete(RemoveRouteSegment, "{id:guid}/segments/{segmentId:guid}")
+            .RequireAuthorization()
+            .WithSummary("Xoa doan chay khoi tuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve 204 khi xoa thanh cong.",
+                "Tra ve 404 neu khong tim thay route segment."));
+
         group.MapDelete(DeleteRoute, "{id:guid}")
             .RequireAuthorization()
             .WithSummary("Xoa tuyen")
@@ -145,10 +188,11 @@ public sealed class Routes : IEndpointGroup
                 null,
                 "Content-Type: multipart/form-data.",
                 "Form fields: file (.geojson file).",
-                "Chi nhan LineString/MultiLineString co waterway=river|canal va Point co amenity=ferry_terminal.",
-                "Endpoint nay khong tao route.",
+                "Nhan LineString/MultiLineString de import duong song/duong nen; neu co waterway=river|canal thi giu loai do, neu khong thi luu waterway_type=custom.",
+                "Point co amenity=ferry_terminal se duoc dung de tao/cap nhat station neu file co chua.",
+                "Neu line co from_station_code, to_station_code va waterbus_route/route_code thi he thong se tao/cap nhat route, route stops va route segments tu dong.",
                 "He thong se cap nhat Station va thay moi toan bo mang WaterwaySegment de API tao route su dung ve sau.",
-                "API tao route se bat buoc user truyen them viaWaterway de chon nhanh cu the."));
+                "API tao route co the dung viaWaterway neu muon tao route geometry tu mang duong nen da import."));
     }
 
     private static async Task<IResult> GetRoutes(ISender sender, CancellationToken ct) =>
@@ -180,6 +224,22 @@ public sealed class Routes : IEndpointGroup
         return Results.NoContent();
     }
 
+    private static async Task<IResult> AddRouteSegment(ISender sender, Guid id, RouteSegmentRequest req, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new AddRouteSegmentCommand(
+            id, req.FromStationCode, req.ToStationCode, req.SegmentOrder,
+            req.DistanceKm, req.EstimatedTravelMinutes, req.Geometry), ct));
+
+    private static async Task<IResult> UpdateRouteSegment(ISender sender, Guid id, Guid segmentId, RouteSegmentRequest req, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateRouteSegmentCommand(
+            id, segmentId, req.FromStationCode, req.ToStationCode, req.SegmentOrder,
+            req.DistanceKm, req.EstimatedTravelMinutes, req.Geometry), ct));
+
+    private static async Task<IResult> RemoveRouteSegment(ISender sender, Guid id, Guid segmentId, CancellationToken ct)
+    {
+        await sender.Send(new RemoveRouteSegmentCommand(id, segmentId), ct);
+        return Results.NoContent();
+    }
+
     private static async Task<IResult> DeleteRoute(ISender sender, Guid id, CancellationToken ct)
     {
         await sender.Send(new DeleteRouteCommand(id), ct);
@@ -199,4 +259,11 @@ public sealed class Routes : IEndpointGroup
     public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
     public sealed record AddRouteStopRequest(string StationCode, int StopOrder, int? StandardTravelMin, int? StandardDwellMin, bool IsPickupAllowed, bool IsDropoffAllowed);
     public sealed record UpdateRouteStopRequest(int? StandardTravelMin, int? StandardDwellMin, bool IsPickupAllowed, bool IsDropoffAllowed);
+    public sealed record RouteSegmentRequest(
+        string FromStationCode,
+        string ToStationCode,
+        int SegmentOrder,
+        decimal DistanceKm,
+        int? EstimatedTravelMinutes = null,
+        IReadOnlyList<RouteSegmentCoordinateDto>? Geometry = null);
 }

@@ -16,7 +16,5 @@ public class WaterbusService : BaseAuditableEntity
 
     public BookingMode BookingMode { get; set; } = BookingMode.SeatBased;
 
-    public ICollection<Vessel> Vessels { get; set; } = new List<Vessel>();
-
-    public ICollection<SeatType> SeatTypes { get; set; } = new List<SeatType>();
+    public ICollection<ServiceSeatTypePrice> SeatTypePrices { get; set; } = new List<ServiceSeatTypePrice>();
 }

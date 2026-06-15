@@ -1,6 +1,7 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -12,15 +13,18 @@ public sealed class BrevoCustomBookingQuoteEmailSender : ICustomBookingQuoteEmai
 {
     private const string HttpClientName = "Brevo";
     private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IApplicationDbContext _context;
     private readonly IOptionsMonitor<BrevoOptions> _optionsMonitor;
     private readonly ILogger<BrevoCustomBookingQuoteEmailSender> _logger;
 
     public BrevoCustomBookingQuoteEmailSender(
         IHttpClientFactory httpClientFactory,
+        IApplicationDbContext context,
         IOptionsMonitor<BrevoOptions> optionsMonitor,
         ILogger<BrevoCustomBookingQuoteEmailSender> logger)
     {
         _httpClientFactory = httpClientFactory;
+        _context = context;
         _optionsMonitor = optionsMonitor;
         _logger = logger;
     }
@@ -48,22 +52,23 @@ public sealed class BrevoCustomBookingQuoteEmailSender : ICustomBookingQuoteEmai
             return;
         }
 
+        if (options.CustomBookingQuoteTemplateId <= 0)
+        {
+            _logger.LogWarning(
+                "Brevo CustomBookingQuoteTemplateId is not configured. Skipping custom booking quote email for {RequestId}.",
+                request.Id);
+            return;
+        }
+
         try
         {
+            var routeSegments = await LoadRouteSegmentsAsync(request, cancellationToken);
             var payload = new
             {
-                sender = new
-                {
-                    email = options.SenderEmail,
-                    name = options.SenderName
-                },
-                to = new[]
-                {
-                    new { email = request.ContactEmail, name = request.ContactName }
-                },
-                subject = CustomBookingQuoteEmailContentFactory.Subject(request),
-                htmlContent = CustomBookingQuoteEmailContentFactory.Html(request),
-                textContent = CustomBookingQuoteEmailContentFactory.PlainText(request)
+                sender = new { email = options.SenderEmail, name = options.SenderName },
+                to = new[] { new { email = request.ContactEmail, name = request.ContactName } },
+                templateId = options.CustomBookingQuoteTemplateId,
+                @params = CustomBookingEmailParamsFactory.CreateQuoteParams(request, routeSegments)
             };
 
             var client = _httpClientFactory.CreateClient(HttpClientName);
@@ -85,9 +90,10 @@ public sealed class BrevoCustomBookingQuoteEmailSender : ICustomBookingQuoteEmai
             }
 
             _logger.LogInformation(
-                "Custom booking quote email sent by Brevo. RequestId: {RequestId}, Email: {Email}, MessageId: {MessageId}",
+                "Custom booking quote email sent by Brevo. RequestId: {RequestId}, Email: {Email}, TemplateId: {TemplateId}, MessageId: {MessageId}",
                 request.Id,
                 request.ContactEmail,
+                options.CustomBookingQuoteTemplateId,
                 TryGetMessageId(body) ?? "(n/a)");
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -97,6 +103,40 @@ public sealed class BrevoCustomBookingQuoteEmailSender : ICustomBookingQuoteEmai
         catch (Exception ex)
         {
             _logger.LogWarning(ex, "Brevo custom booking quote email failed. RequestId: {RequestId}, Email: {Email}", request.Id, request.ContactEmail);
+        }
+    }
+
+    private async Task<IReadOnlyList<RouteSegment>> LoadRouteSegmentsAsync(
+        CustomBookingRequest request,
+        CancellationToken cancellationToken)
+    {
+        var stationIds = GetStationIds(request).Distinct().ToArray();
+        if (stationIds.Length < 2)
+        {
+            return Array.Empty<RouteSegment>();
+        }
+
+        return await _context.Set<RouteSegment>()
+            .Where(x => stationIds.Contains(x.FromStationId) && stationIds.Contains(x.ToStationId))
+            .OrderBy(x => x.SegmentOrder)
+            .ToArrayAsync(cancellationToken);
+    }
+
+    private static IEnumerable<Guid> GetStationIds(CustomBookingRequest request)
+    {
+        if (request.FromStationId.HasValue)
+        {
+            yield return request.FromStationId.Value;
+        }
+
+        foreach (var stop in request.ItineraryStops)
+        {
+            yield return stop.StationId;
+        }
+
+        if (request.ToStationId.HasValue)
+        {
+            yield return request.ToStationId.Value;
         }
     }
 

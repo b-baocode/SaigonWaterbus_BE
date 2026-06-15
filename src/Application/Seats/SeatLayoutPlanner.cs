@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -18,19 +19,28 @@ internal static class SeatLayoutPlanner
         bool rejectExistingLayout,
         CancellationToken cancellationToken)
     {
-        if (!vessel.WaterbusServiceId.HasValue || vessel.WaterbusService is null)
+        var seatTypes = await context.SeatTypes
+            .ToListAsync(cancellationToken);
+        var defaultSeatType = EnsureSeatType(
+            context,
+            seatTypes,
+            "STANDARD",
+            "Standard",
+            1);
+
+        if (vessel.SeatSetupType == SeatSetupType.StandardAndVip)
         {
-            throw AuthSupport.CreateValidationException(
-                "WaterbusServiceId",
-                "Tàu phải được gắn dịch vụ trước khi setup ghế.");
+            EnsureSeatType(
+                context,
+                seatTypes,
+                "VIP",
+                "VIP",
+                2);
         }
 
-        var service = vessel.WaterbusService;
-        var seatTypes = await context.SeatTypes
-            .Where(x => x.WaterbusServiceId == vessel.WaterbusServiceId.Value && x.IsActive)
-            .ToListAsync(cancellationToken);
-        var defaultSeatType = ResolveDefaultSeatType(service, seatTypes);
-        var seatTypesByCode = seatTypes.ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
+        var seatTypesByCode = seatTypes
+            .Where(x => x.IsActive && IsAllowedSeatType(vessel.SeatSetupType, x.Code))
+            .ToDictionary(x => x.Code, StringComparer.OrdinalIgnoreCase);
 
         if (rejectExistingLayout)
         {
@@ -62,6 +72,7 @@ internal static class SeatLayoutPlanner
         var facilities = new List<VesselFacility>();
         var seatCells = new HashSet<LayoutCell>();
         var facilityCells = new HashSet<LayoutCell>();
+        var useExplicitCellsLayout = ShouldUseExplicitCellsLayout(vessel, decks);
 
         foreach (var deck in decks.OrderBy(d => d.DeckNumber))
         {
@@ -69,18 +80,19 @@ internal static class SeatLayoutPlanner
             {
                 AddCellsLayout(
                     vessel,
-                    service,
+                    vessel.SeatSetupType,
                     deck,
                     seatTypesByCode,
                     defaultSeatType,
                     seats,
                     facilities,
                     seatCells,
-                    facilityCells);
+                    facilityCells,
+                    useExplicitCellsLayout);
                 continue;
             }
 
-            foreach (var seatCell in CreateSeatCells(deck, service, seatTypesByCode, defaultSeatType))
+            foreach (var seatCell in CreateSeatCells(deck, vessel.SeatSetupType, seatTypesByCode, defaultSeatType))
             {
                 AddSeat(vessel, deck, seatCell, seats, seatCells, "SeatBlocks");
             }
@@ -101,14 +113,15 @@ internal static class SeatLayoutPlanner
 
     private static void AddCellsLayout(
         Vessel vessel,
-        WaterbusService service,
+        SeatSetupType seatSetupType,
         DeckConfigDto deck,
         IReadOnlyDictionary<string, SeatType> seatTypesByCode,
         SeatType defaultSeatType,
         List<Seat> seats,
         List<VesselFacility> facilities,
         HashSet<LayoutCell> seatCells,
-        HashSet<LayoutCell> facilityCells)
+        HashSet<LayoutCell> facilityCells,
+        bool explicitCellsLayout)
     {
         var overridesByCell = new Dictionary<LayoutCell, LayoutCellConfigDto>();
 
@@ -142,6 +155,11 @@ internal static class SeatLayoutPlanner
                 var cell = new LayoutCell(deck.DeckNumber, row, column);
                 if (!overridesByCell.TryGetValue(cell, out var cellConfig))
                 {
+                    if (explicitCellsLayout)
+                    {
+                        continue;
+                    }
+
                     AddSeat(
                         vessel,
                         deck,
@@ -156,7 +174,7 @@ internal static class SeatLayoutPlanner
                 {
                     case SeatLayoutCellType.Seat:
                         var seatType = ResolveSeatTypeForCode(
-                            service,
+                            seatSetupType,
                             cellConfig.SeatTypeCode,
                             seatTypesByCode,
                             defaultSeatType,
@@ -199,6 +217,31 @@ internal static class SeatLayoutPlanner
                 }
             }
         }
+    }
+
+    private static bool ShouldUseExplicitCellsLayout(Vessel vessel, IReadOnlyCollection<DeckConfigDto> decks)
+    {
+        if (!decks.Any(deck => deck.Cells is { Count: > 0 }))
+        {
+            return false;
+        }
+
+        var explicitSeatCount = decks.Sum(deck =>
+            deck.Cells is { Count: > 0 }
+                ? deck.Cells.Count(cell => cell.Type == SeatLayoutCellType.Seat)
+                : CountImplicitSeats(deck));
+
+        return explicitSeatCount == vessel.SeatCount;
+    }
+
+    private static int CountImplicitSeats(DeckConfigDto deck)
+    {
+        if (deck.SeatBlocks is { Count: > 0 })
+        {
+            return deck.SeatBlocks.Sum(block => block.RowCount * block.ColumnCount);
+        }
+
+        return deck.RowCount * deck.ColumnCount;
     }
 
     private static void EnsureCellShapeIsSupported(LayoutCellConfigDto cellConfig, IReadOnlyCollection<LayoutCell> cells)
@@ -290,7 +333,7 @@ internal static class SeatLayoutPlanner
 
     private static IEnumerable<SeatCellConfig> CreateSeatCells(
         DeckConfigDto deck,
-        WaterbusService service,
+        SeatSetupType seatSetupType,
         IReadOnlyDictionary<string, SeatType> seatTypesByCode,
         SeatType defaultSeatType)
     {
@@ -310,7 +353,7 @@ internal static class SeatLayoutPlanner
 
         foreach (var block in deck.SeatBlocks!)
         {
-            var seatType = ResolveSeatTypeForBlock(service, block, seatTypesByCode, defaultSeatType);
+            var seatType = ResolveSeatTypeForBlock(seatSetupType, block, seatTypesByCode, defaultSeatType);
             for (var row = block.StartRow; row < block.StartRow + block.RowCount; row++)
             {
                 for (var column = block.StartColumn; column < block.StartColumn + block.ColumnCount; column++)
@@ -321,27 +364,42 @@ internal static class SeatLayoutPlanner
         }
     }
 
-    private static SeatType ResolveDefaultSeatType(WaterbusService service, IReadOnlyCollection<SeatType> seatTypes)
+    internal static SeatType EnsureSeatType(
+        IApplicationDbContext? context,
+        ICollection<SeatType> seatTypes,
+        string code,
+        string name,
+        int displayOrder)
     {
-        var standard = seatTypes.FirstOrDefault(x => string.Equals(x.Code, "STANDARD", StringComparison.OrdinalIgnoreCase));
-        if (standard is not null)
+        var seatType = seatTypes.FirstOrDefault(x =>
+            string.Equals(x.Code, code, StringComparison.OrdinalIgnoreCase));
+        if (seatType is not null)
         {
-            return standard;
+            seatType.IsActive = true;
+            return seatType;
         }
 
-        throw AuthSupport.CreateValidationException(
-            "SeatTypes",
-            $"Dịch vụ {service.Code} cần loại ghế STANDARD trước khi generate seats.");
+        seatType = new SeatType
+        {
+            Code = code,
+            Name = name,
+            DisplayOrder = displayOrder,
+            IsActive = true
+        };
+        seatTypes.Add(seatType);
+        context?.SeatTypes.Add(seatType);
+
+        return seatType;
     }
 
     private static SeatType ResolveSeatTypeForBlock(
-        WaterbusService service,
+        SeatSetupType seatSetupType,
         SeatBlockDto block,
         IReadOnlyDictionary<string, SeatType> seatTypesByCode,
         SeatType defaultSeatType)
     {
         return ResolveSeatTypeForCode(
-            service,
+            seatSetupType,
             block.SeatTypeCode,
             seatTypesByCode,
             defaultSeatType,
@@ -349,7 +407,7 @@ internal static class SeatLayoutPlanner
     }
 
     private static SeatType ResolveSeatTypeForCode(
-        WaterbusService service,
+        SeatSetupType seatSetupType,
         string? seatTypeCode,
         IReadOnlyDictionary<string, SeatType> seatTypesByCode,
         SeatType defaultSeatType,
@@ -361,10 +419,12 @@ internal static class SeatLayoutPlanner
         }
 
         var normalizedCode = seatTypeCode.Trim().ToUpperInvariant();
-        if (service.BookingMode is BookingMode.SeatBased
-            && !string.Equals(normalizedCode, "STANDARD", StringComparison.OrdinalIgnoreCase))
+        if (!IsAllowedSeatType(seatSetupType, normalizedCode))
         {
-            throw AuthSupport.CreateValidationException(errorField, "Waterbus chỉ hỗ trợ loại ghế STANDARD.");
+            var message = seatSetupType == SeatSetupType.StandardAndVip
+                ? "Kiểu ghế StandardAndVip chỉ hỗ trợ STANDARD và VIP."
+                : "Kiểu ghế FullStandard chỉ hỗ trợ STANDARD.";
+            throw AuthSupport.CreateValidationException(errorField, message);
         }
 
         if (seatTypesByCode.TryGetValue(normalizedCode, out var seatType))
@@ -374,8 +434,13 @@ internal static class SeatLayoutPlanner
 
         throw AuthSupport.CreateValidationException(
             errorField,
-            $"Loại ghế '{seatTypeCode}' không thuộc dịch vụ {service.Code}.");
+            $"Loại ghế '{seatTypeCode}' không hợp lệ với kiểu ghế {seatSetupType}.");
     }
+
+    internal static bool IsAllowedSeatType(SeatSetupType seatSetupType, string code) =>
+        string.Equals(code, "STANDARD", StringComparison.OrdinalIgnoreCase)
+        || (seatSetupType == SeatSetupType.StandardAndVip
+            && string.Equals(code, "VIP", StringComparison.OrdinalIgnoreCase));
 
     private static IEnumerable<LayoutCell> CreateFacilityCells(int deckNumber, FacilityConfigDto facility)
     {

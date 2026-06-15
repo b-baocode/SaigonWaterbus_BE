@@ -45,14 +45,29 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
 
         var now = _timeProvider.GetUtcNow();
         CustomBookingRequestSupport.EnsureCanAcceptQuote(customRequest, now);
+        var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
+            _context,
+            customRequest,
+            cancellationToken);
+        CustomBookingRequestSupport.ApplyRouteEstimate(customRequest, routeSegments);
 
         customRequest.Status = CustomBookingRequestStatus.Confirmed;
         customRequest.QuoteAcceptedAt = now;
+        customRequest.ContactName = actor.FullName.Trim();
+        if (!string.IsNullOrWhiteSpace(actor.PhoneNumber))
+        {
+            customRequest.ContactPhone = actor.PhoneNumber.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(actor.Email))
+        {
+            customRequest.ContactEmail = actor.Email.Trim();
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 
         await _confirmationEmailSender.SendConfirmationAsync(customRequest, cancellationToken);
 
-        return CustomBookingRequestDto.From(customRequest);
+        return CustomBookingRequestDto.From(customRequest, routeSegments);
     }
 }

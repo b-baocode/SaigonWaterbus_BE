@@ -40,9 +40,20 @@ public sealed class GetCustomBookingRequestsQueryHandler
             query = query.Where(x => x.DepartureDate == request.DepartureDate.Value);
         }
 
-        return await query
+        var requests = await query
             .OrderByDescending(x => x.Created)
-            .Select(x => CustomBookingRequestDto.From(x))
             .ToListAsync(cancellationToken);
+
+        var result = new List<CustomBookingRequestDto>(requests.Count);
+        foreach (var customRequest in requests)
+        {
+            var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
+                _context,
+                customRequest,
+                cancellationToken);
+            result.Add(CustomBookingRequestDto.From(customRequest, routeSegments));
+        }
+
+        return result;
     }
 }
