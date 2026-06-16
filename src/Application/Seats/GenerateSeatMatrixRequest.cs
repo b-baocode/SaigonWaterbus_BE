@@ -91,7 +91,8 @@ public sealed class GenerateSeatMatrixRequestUseCase
     {
         var hasExistingLayout = await _context.Seats.AnyAsync(x => x.VesselId == vesselId, cancellationToken)
             || await _context.VesselDeckLayouts.AnyAsync(x => x.VesselId == vesselId, cancellationToken)
-            || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vesselId, cancellationToken);
+            || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vesselId, cancellationToken)
+            || await _context.VesselLayoutCells.AnyAsync(x => x.VesselId == vesselId, cancellationToken);
 
         if (hasExistingLayout)
             throw AuthSupport.CreateValidationException("Seats", "Tàu đã có ma trận hoặc sơ đồ ghế. Xóa toàn bộ trước khi generate lại.");

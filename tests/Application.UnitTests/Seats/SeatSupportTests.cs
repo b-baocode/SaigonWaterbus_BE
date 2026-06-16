@@ -84,6 +84,9 @@ public class SeatSupportTests
         dto.Decks.Single().RowCount.ShouldBe(20);
         dto.Decks.Single().ColumnCount.ShouldBe(8);
         dto.Facilities.Single().Type.ShouldBe(VesselFacilityType.Toilet);
+        dto.Decks.Single().Cells.Count.ShouldBe(160);
+        dto.Decks.Single().Cells.Count(x => x.Type == SeatLayoutCellType.Toilet).ShouldBe(2);
+        dto.Decks.Single().Cells.ShouldContain(x => x.Row == 15 && x.Column == 1 && x.Facility != null);
     }
 
     private static Seat Seat(Guid vesselId, int column, string code, bool isActive) =>

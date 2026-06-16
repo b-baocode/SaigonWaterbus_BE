@@ -36,6 +36,15 @@ internal static class SeatFlowTestData
             "Manager");
     }
 
+    public static async Task<TestUserContext> SeedStaffAsync(ApplicationDbContext context)
+    {
+        return await SeedUserAsync(
+            context,
+            Roles.StaffCode,
+            Roles.StaffSystemName,
+            "Staff");
+    }
+
     private static async Task<TestUserContext> SeedUserAsync(
         ApplicationDbContext context,
         string roleCode,
@@ -107,7 +116,6 @@ internal static class SeatFlowTestData
             Name = "Validation vessel",
             Status = status,
             SeatCount = 4,
-            PassengerCapacity = 4,
             NumberOfDecks = 1,
             SeatSetupType = setupType,
             SeatsConfigured = seatsConfigured

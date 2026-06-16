@@ -30,11 +30,17 @@ public interface IApplicationDbContext
 
     DbSet<VesselFacility> VesselFacilities { get; }
 
+    DbSet<VesselLayoutCell> VesselLayoutCells { get; }
+
     DbSet<CustomBookingRequest> CustomBookingRequests { get; }
 
     DbSet<CustomBookingQuote> CustomBookingQuotes { get; }
 
     DbSet<CustomBookingItineraryStop> CustomBookingItineraryStops { get; }
+
+    DbSet<CustomBookingStaffAssignment> CustomBookingStaffAssignments { get; }
+
+    DbSet<CustomBookingOperationService> CustomBookingOperationServices { get; }
 
     DbSet<RouteSegment> RouteSegments { get; }
 

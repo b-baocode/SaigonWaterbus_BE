@@ -68,17 +68,6 @@ public sealed class Fares : IEndpointGroup
                 "Vi du: GET /api/fares/matrix?routeCode=R01-BD-LD",
                 "Tra ve tat ca FareMatrix entries kem ten tram."));
 
-        group.MapGet(GetVesselRentalFares, "vessel-rental-prices")
-            .AllowAnonymous()
-            .WithSummary("Danh sach gia thue tau")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
-                null,
-                "Dung cho custom booking de hien danh sach tau co gia thue theo ngay.",
-                "Chi tra ve tau Active, da setup ghe va co gia thue theo ngay.",
-                "Co the loc theo search.",
-                "Gia nay la gia co ban/tham khao, admin van co the bao gia custom booking chinh thuc sau."));
-
         group.MapPost(CreateFare, string.Empty)
             .RequireAuthorization()
             .WithSummary("Tao muc gia cho cap tram")
@@ -142,12 +131,6 @@ public sealed class Fares : IEndpointGroup
 
     private static async Task<IResult> GetFareMatrix(ISender sender, string? routeCode, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetFareMatrixListQuery(routeCode), ct));
-
-    private static async Task<IResult> GetVesselRentalFares(
-        ISender sender,
-        string? search,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetVesselRentalFaresQuery(search), ct));
 
     private static async Task<IResult> CreateFare(ISender sender, CreateFareCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

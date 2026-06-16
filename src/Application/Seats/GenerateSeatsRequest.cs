@@ -212,6 +212,7 @@ public sealed class GenerateSeatsRequestUseCase
 
         _context.Seats.AddRange(plan.Seats);
         _context.VesselFacilities.AddRange(plan.Facilities);
+        _context.VesselLayoutCells.AddRange(plan.LayoutCells);
         vessel.SeatsConfigured = true;
         VesselSupport.EnsureCanActivate(vessel, nameof(vessel.Status));
         vessel.Status = VesselStatus.Active;
@@ -221,7 +222,8 @@ public sealed class GenerateSeatsRequestUseCase
             vessel,
             plan.Seats.ToList(),
             existingDeckLayouts,
-            plan.Facilities.ToList());
+            plan.Facilities.ToList(),
+            plan.LayoutCells.ToList());
     }
 
     private static void EnsureRequestMatchesExistingMatrix(

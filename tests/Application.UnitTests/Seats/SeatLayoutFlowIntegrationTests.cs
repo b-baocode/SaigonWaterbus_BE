@@ -102,7 +102,6 @@ public class SeatLayoutFlowIntegrationTests
         var standard = SeatFlowTestData.SeatType("STANDARD");
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
         vessel.SeatCount = 80;
-        vessel.PassengerCapacity = 80;
         context.AddRange(standard, vessel);
         await context.SaveChangesAsync();
 

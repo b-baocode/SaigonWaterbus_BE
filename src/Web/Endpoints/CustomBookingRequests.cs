@@ -1,6 +1,6 @@
+using System.Globalization;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Domain.Enums;
-using System.Globalization;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -17,13 +17,16 @@ public sealed class CustomBookingRequests : IEndpointGroup
           "contactName": null,
           "contactPhone": null,
           "contactEmail": null,
-          "preferredVesselId": "00000000-0000-0000-0000-000000000000",
+          "serviceId": null,
+          "requestedNumberOfDecks": 2,
+          "requestedSeatSetupType": "StandardAndVip",
           "departureDate": "20/06/2026",
           "preferredStartTime": "08:30:00",
           "fromStationId": "00000000-0000-0000-0000-000000000000",
           "toStationId": "00000000-0000-0000-0000-000000000000",
           "adultCount": 6,
           "childCount": 2,
+          "specialRequests": "Cần hỗ trợ trang trí sinh nhật",
           "itineraryStops": [
             {
               "stopOrder": 1,
@@ -41,7 +44,64 @@ public sealed class CustomBookingRequests : IEndpointGroup
           "quotedPrice": 5000000,
           "depositPercent": 50,
           "currency": "VND",
-          "validUntil": "2026-06-15T23:59:59+07:00"
+          "priceNote": "Đã gồm chi phí thuê tàu, chưa gồm dịch vụ phát sinh."
+        }
+        """;
+
+    private const string UpdateExample =
+        """
+        {
+          "serviceId": null,
+          "requestedNumberOfDecks": 2,
+          "requestedSeatSetupType": "StandardAndVip",
+          "departureDate": "20/06/2026",
+          "preferredStartTime": "08:30:00",
+          "fromStationId": "00000000-0000-0000-0000-000000000000",
+          "toStationId": "00000000-0000-0000-0000-000000000000",
+          "adultCount": 6,
+          "childCount": 2,
+          "specialRequests": "Cần hỗ trợ trang trí sinh nhật",
+          "itineraryStops": []
+        }
+        """;
+
+    private const string AssignVesselExample =
+        """
+        {
+          "vesselId": "00000000-0000-0000-0000-000000000000"
+        }
+        """;
+
+    private const string CancelExample =
+        """
+        {
+          "reason": "Khách thay đổi kế hoạch."
+        }
+        """;
+
+    private const string AssignManagerExample =
+        """
+        {
+          "managerUserId": "00000000-0000-0000-0000-000000000000"
+        }
+        """;
+
+    private const string OperationPlanExample =
+        """
+        {
+          "staffAssignments": [
+            {
+              "staffUserId": "00000000-0000-0000-0000-000000000000",
+              "dutyNote": "Hỗ trợ đón khách và kiểm tra danh sách."
+            }
+          ],
+          "services": [
+            {
+              "serviceName": "Trang trí sinh nhật",
+              "quantity": 1,
+              "note": "Thực hiện theo nội dung đã bao gồm trong báo giá."
+            }
+          ]
         }
         """;
 
@@ -49,76 +109,171 @@ public sealed class CustomBookingRequests : IEndpointGroup
     {
         group.MapGet(GetCustomBookingRequests)
             .RequireAuthorization()
-            .WithSummary("Danh sach yeu cau thue tau custom")
+            .WithSummary("Danh sách yêu cầu thuê tàu custom")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Customer chi thay yeu cau cua minh.",
-                "Admin/Manager thay tat ca yeu cau.",
+                "Customer chỉ thấy yêu cầu của mình.",
+                "Admin thấy tất cả yêu cầu.",
+                "Manager chỉ thấy yêu cầu được Admin giao; Staff chỉ thấy yêu cầu được Manager phân công.",
                 "Query optional: status, departureDate."));
 
         group.MapGet(GetCustomBookingStatuses, "statuses")
             .RequireAuthorization()
-            .WithSummary("Danh sach trang thai yeu cau thue tau custom")
+            .WithSummary("Danh sách trạng thái custom booking")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Dung cho Admin/Manager/Customer hien thi filter va label trang thai.",
-                "Moi response custom booking deu co field status.",
-                "Admin/Manager co the loc danh sach bang query ?status=PendingReview, ?status=Quoted, ..."));
+                "State machine chỉ gồm PendingReview, Quoted, Confirmed, Cancelled.",
+                "Response có label, mô tả và nextActions cho frontend."));
+
+        group.MapGet(GetCustomBookingRentalServices, "rental-services")
+            .RequireAuthorization()
+            .WithSummary("Danh sách dịch vụ thuê tàu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer/Admin/Manager/Staff",
+                null,
+                "Trả về các service đang active có BookingMode=VesselRental.",
+                "Dùng để lấy serviceId cho custom booking; nếu không gửi serviceId khi tạo request thì backend dùng WT mặc định."));
+
+        group.MapGet(GetCustomBookingPricingOptions, "pricing-options")
+            .RequireAuthorization()
+            .WithSummary("Giá thuê tàu tham khảo")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer/Admin/Manager",
+                null,
+                "Query bắt buộc: requestedNumberOfDecks, requestedSeatSetupType, passengerCount.",
+                "Chỉ tính từ tàu Active, đã setup ghế, đúng cấu hình, đủ sức chứa và có giá thuê theo ngày.",
+                "Không trả vesselId cho khách và không phải báo giá cuối cùng."));
 
         group.MapGet(GetCustomBookingRequestDetail, "{id:guid}")
             .RequireAuthorization()
-            .WithSummary("Chi tiet yeu cau thue tau custom")
+            .WithSummary("Chi tiết yêu cầu thuê tàu custom")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Customer chi xem duoc yeu cau cua minh.",
-                "Admin/Manager xem duoc tat ca thong tin va bao gia."));
+                "Customer chỉ xem được yêu cầu của mình.",
+                "Admin xem mọi yêu cầu; Manager/Staff chỉ xem yêu cầu được phân công."));
 
         group.MapPost(CreateCustomBookingRequest)
             .RequireAuthorization()
-            .WithSummary("Khach gui yeu cau thue tau custom")
+            .WithSummary("Khách gửi yêu cầu thuê tàu custom")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer",
                 CreateExample,
-                "useAccountContact=true thi backend lay fullName/phone/email tu tai khoan dang nhap.",
-                "useAccountContact=false thi khach gui contactName/contactPhone/contactEmail rieng.",
-                "preferredVesselId la tau khach chon tu GET /api/fares/vessel-rental-prices.",
-                "departureDate dung dinh dang dd/MM/yyyy hoac dd-MM-yyyy.",
-                "preferredStartTime la gio khach bat dau len tau; khach khong can nhap gio ket thuc.",
-                "adultCount + childCount la tong so khach va khong duoc vuot qua suc chua tau.",
-                "fromStationId la ben khach bat dau, toStationId la ben khach ket thuc; hai ben duoc phep trung nhau.",
-                "Neu fromStationId va toStationId trung nhau thi phai co it nhat mot itineraryStops.",
-                "itineraryStops chi gom cac diem ghe o giua, khong can gui pickup/dropoff.",
-                "Moi itineraryStops can stationId, stopOrder va stayDurationMinutes.",
-                "Backend tu tinh routeEstimate, gio ket thuc du kien, tong km va thoi gian dua tren route_segments; neu thieu segment thi fallback theo toa do ben.",
-                "Backend se check user dang nhap va link user neu phone/email trung user co san.",
-                "Status ban dau la PendingReview. Chua tao booking va chua xu ly payment."));
+                "serviceId optional; nếu không gửi, backend tự chọn dịch vụ thuê tàu mặc định WT.",
+                "Nếu gửi serviceId thì service phải Active và có BookingMode=VesselRental.",
+                "Khách không chọn tàu cụ thể, chỉ chọn số tầng và kiểu ghế.",
+                "requestedSeatSetupType nhận FullStandard hoặc StandardAndVip.",
+                "Booking luôn phải có email nhận thông tin vé và email phải thuộc @gmail.com hoặc @fpt.edu.vn.",
+                "useAccountContact=true ưu tiên email trong profile; nếu profile chưa có email thì phải gửi contactEmail.",
+                "Email nhập trong booking chỉ lưu cho yêu cầu này, không cập nhật profile.",
+                "useAccountContact=false phải gửi contactName, contactPhone và contactEmail.",
+                "Ngày và giờ khởi hành phải ở tương lai.",
+                "Tổng khách tối đa 500; sức chứa tàu được kiểm tra khi Admin gán tàu.",
+                "Hai điểm liên tiếp trong lịch trình không được trùng nhau.",
+                "Backend tự tính khoảng cách, thời lượng và giờ kết thúc dự kiến.",
+                "Status ban đầu là PendingReview."));
+
+        group.MapPut(UpdateCustomBookingRequest, "{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Khách sửa yêu cầu thuê tàu custom")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer là chủ yêu cầu",
+                UpdateExample,
+                "Chỉ sửa được khi status=PendingReview và Admin chưa gán tàu.",
+                "serviceId optional; nếu gửi thì service phải Active và có BookingMode=VesselRental.",
+                "API cập nhật toàn bộ lịch trình, số khách, tiêu chí tàu và yêu cầu đặc biệt.",
+                "Thông tin liên hệ không bị thay đổi."));
+
+        group.MapGet(GetCustomBookingVesselCandidates, "{id:guid}/vessel-candidates")
+            .RequireAuthorization()
+            .WithSummary("Admin xem tàu phù hợp")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Chỉ dùng khi status=PendingReview.",
+                "Backend lọc đúng số tầng, kiểu ghế, sức chứa, trạng thái setup và giá thuê.",
+                "estimatedBasePrice là giá ngày nhân số ngày ước tính từ thời lượng chuyến."));
+
+        group.MapPut(AssignCustomBookingVessel, "{id:guid}/assigned-vessel")
+            .RequireAuthorization()
+            .WithSummary("Admin gán tàu cho yêu cầu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                AssignVesselExample,
+                "Chỉ gán hoặc đổi tàu khi status=PendingReview.",
+                "Backend kiểm tra lại trạng thái tàu, sơ đồ ghế, số tầng, kiểu ghế, sức chứa và giá thuê.",
+                "Chưa kiểm tra trùng lịch tàu vì module phân lịch hiện chưa liên kết vessel với trip."));
 
         group.MapPost(QuoteCustomBookingRequest, "{id:guid}/quote")
             .RequireAuthorization()
-            .WithSummary("Admin/Manager bao gia yeu cau thue tau")
+            .WithSummary("Admin báo giá yêu cầu thuê tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoac Manager",
+                "Admin",
                 QuoteExample,
-                "quotedPrice la tong gia thue tau admin bao cho khach.",
-                "depositPercent la phan tram dat coc admin yeu cau.",
-                "Backend tu tinh depositAmount = quotedPrice * depositPercent / 100.",
-                "Backend tu tinh remainingAmount = quotedPrice - depositAmount.",
-                "validUntil la optional; neu gui ISO datetime co timezone, backend se luu UTC de tranh loi PostgreSQL timestamp.",
-                "Sau khi bao gia, status = Quoted."));
+                "Phải gán tàu phù hợp trước khi báo giá.",
+                "Backend tự tính tiền cọc và số tiền còn lại.",
+                "Backend tự đặt validUntil là 24 giờ sau lúc báo giá hoặc giờ khởi hành, lấy thời điểm đến trước.",
+                "Có thể cập nhật lại báo giá khi status=Quoted.",
+                "Sau khi báo giá, status=Quoted."));
 
         group.MapPost(AcceptCustomBookingQuote, "{id:guid}/accept-quote")
             .RequireAuthorization()
-            .WithSummary("Khach chot dong y bao gia")
+            .WithSummary("Khách chấp nhận báo giá")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Customer",
+                "Customer là chủ yêu cầu",
                 null,
-                "Chi chu yeu cau moi duoc chot bao gia.",
-                "Chi chot duoc khi status=Quoted va bao gia chua het han.",
-                "Tam thoi chua co payment: sau khi khach dong y, status = Confirmed va xem nhu chot thanh cong.",
-                "Sau nay khi co payment, diem nay se chuyen sang tao payment truoc; payment thanh cong moi Confirmed."));
+                "Chỉ chấp nhận khi status=Quoted, báo giá chưa hết hạn và tàu vẫn hợp lệ.",
+                "Sau khi chấp nhận, status=Confirmed.",
+                "Hiện chưa tạo payment hoặc lịch chạy; đó là bước nghiệp vụ tiếp theo."));
+
+        group.MapPost(CancelCustomBookingRequest, "{id:guid}/cancel")
+            .RequireAuthorization()
+            .WithSummary("Khách hoặc Admin hủy yêu cầu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer là chủ yêu cầu, Admin hoặc Manager",
+                CancelExample,
+                "Chỉ hủy được khi status=PendingReview hoặc Quoted.",
+                "Khách từ chối báo giá cũng dùng endpoint này và ghi lý do.",
+                "Backend lưu người hủy, thời điểm hủy và lý do."));
+
+        group.MapGet(GetCustomBookingManagerCandidates, "{id:guid}/manager-candidates")
+            .RequireAuthorization()
+            .WithSummary("Admin xem Manager phù hợp")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Chỉ dùng sau khi khách đã xác nhận báo giá.",
+                "Chỉ trả Manager Active đang được gắn với bến khởi hành."));
+
+        group.MapPut(AssignCustomBookingManager, "{id:guid}/assigned-manager")
+            .RequireAuthorization()
+            .WithSummary("Admin giao booking cho Manager")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                AssignManagerExample,
+                "Chỉ giao booking có status=Confirmed.",
+                "Manager phải Active và phụ trách bến khởi hành.",
+                "Nếu đổi Manager, kế hoạch Staff và dịch vụ vận hành cũ sẽ bị xóa."));
+
+        group.MapGet(GetCustomBookingStaffCandidates, "{id:guid}/staff-candidates")
+            .RequireAuthorization()
+            .WithSummary("Manager xem Staff có thể phân công")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager được giao booking",
+                null,
+                "Chỉ trả Staff Active đang được gắn với bến khởi hành."));
+
+        group.MapPut(UpdateCustomBookingOperationPlan, "{id:guid}/operation-plan")
+            .RequireAuthorization()
+            .WithSummary("Manager phân Staff và dịch vụ vận hành")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager được giao booking",
+                OperationPlanExample,
+                "PUT thay thế toàn bộ danh sách Staff và dịch vụ vận hành hiện tại.",
+                "Dịch vụ ở đây chỉ là kế hoạch thực hiện, không làm thay đổi giá đã xác nhận.",
+                "Dịch vụ phát sinh có tính tiền phải chuyển Admin báo giá lại."));
     }
 
     private static async Task<IResult> GetCustomBookingRequests(
@@ -129,7 +284,10 @@ public sealed class CustomBookingRequests : IEndpointGroup
     {
         if (!TryParseOptionalDateOnly(departureDate, out var parsedDepartureDate))
         {
-            return Results.BadRequest(new { message = "departureDate phải có định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd." });
+            return Results.BadRequest(new
+            {
+                message = "departureDate phải có định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd."
+            });
         }
 
         return Results.Ok(await sender.Send(new GetCustomBookingRequestsQuery(status, parsedDepartureDate), ct));
@@ -141,46 +299,101 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCustomBookingRequestDetailQuery(id), ct));
 
+    private static async Task<IResult> GetCustomBookingPricingOptions(
+        ISender sender,
+        int requestedNumberOfDecks,
+        SeatSetupType requestedSeatSetupType,
+        int passengerCount,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingPricingOptionsQuery(
+            requestedNumberOfDecks,
+            requestedSeatSetupType,
+            passengerCount), ct));
+
     private static IResult GetCustomBookingStatuses() =>
         Results.Ok(new[]
         {
             new CustomBookingStatusApiResponse(
                 CustomBookingRequestStatus.PendingReview,
-                "Chờ admin xem xét",
-                "Khách vừa gửi yêu cầu. Admin/Manager cần kiểm tra thông tin chuyến và báo giá.",
-                ["GET /api/custom-booking-requests/{id}", "POST /api/custom-booking-requests/{id}/quote"]),
+                "Chờ Admin xử lý",
+                "Khách có thể chỉnh sửa hoặc hủy. Admin chọn tàu phù hợp rồi mới báo giá.",
+                [
+                    "PUT /api/custom-booking-requests/{id}",
+                    "GET /api/custom-booking-requests/{id}/vessel-candidates",
+                    "PUT /api/custom-booking-requests/{id}/assigned-vessel",
+                    "POST /api/custom-booking-requests/{id}/quote",
+                    "POST /api/custom-booking-requests/{id}/cancel"
+                ]),
             new CustomBookingStatusApiResponse(
                 CustomBookingRequestStatus.Quoted,
                 "Đã báo giá",
-                "Admin/Manager đã gửi báo giá. Khách xem lại thông tin và quyết định chốt.",
-                ["POST /api/custom-booking-requests/{id}/accept-quote"]),
-            new CustomBookingStatusApiResponse(
-                CustomBookingRequestStatus.QuoteAccepted,
-                "Khách đã đồng ý báo giá",
-                "Trạng thái cũ để tương thích dữ liệu trước đây. Luồng mới sẽ dùng Confirmed.",
-                []),
+                "Admin đã gán tàu và báo giá. Khách có thể chấp nhận hoặc hủy/từ chối.",
+                [
+                    "POST /api/custom-booking-requests/{id}/accept-quote",
+                    "POST /api/custom-booking-requests/{id}/cancel"
+                ]),
             new CustomBookingStatusApiResponse(
                 CustomBookingRequestStatus.Confirmed,
-                "Đã chốt thành công",
-                "Khách đã đồng ý báo giá. Tạm thời chưa có payment nên yêu cầu được xem là chốt thành công.",
-                []),
-            new CustomBookingStatusApiResponse(
-                CustomBookingRequestStatus.QuoteRejected,
-                "Khách từ chối báo giá",
-                "Khách không đồng ý báo giá.",
-                []),
+                "Đã xác nhận",
+                "Khách đã đồng ý báo giá. Admin giao Manager bến khởi hành; Manager phân Staff và dịch vụ vận hành.",
+                [
+                    "GET /api/custom-booking-requests/{id}/manager-candidates",
+                    "PUT /api/custom-booking-requests/{id}/assigned-manager",
+                    "GET /api/custom-booking-requests/{id}/staff-candidates",
+                    "PUT /api/custom-booking-requests/{id}/operation-plan"
+                ]),
             new CustomBookingStatusApiResponse(
                 CustomBookingRequestStatus.Cancelled,
                 "Đã hủy",
-                "Yêu cầu đã bị hủy.",
+                "Khách hoặc Admin đã hủy. Xem statusReason để biết lý do.",
                 [])
         });
+
+    private static async Task<IResult> GetCustomBookingRentalServices(
+        ISender sender,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingRentalServicesQuery(), ct));
 
     private static async Task<IResult> CreateCustomBookingRequest(
         ISender sender,
         CreateCustomBookingRequestCommand command,
+        CancellationToken ct)
+    {
+        var result = await sender.Send(command, ct);
+        return Results.Created($"{RoutePrefix}/{result.Id}", result);
+    }
+
+    private static async Task<IResult> UpdateCustomBookingRequest(
+        ISender sender,
+        Guid id,
+        UpdateCustomBookingRequestApiRequest request,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(command, ct));
+        Results.Ok(await sender.Send(new UpdateCustomBookingRequestCommand(
+            id,
+            request.ServiceId,
+            request.RequestedNumberOfDecks,
+            request.RequestedSeatSetupType,
+            request.DepartureDate,
+            request.PreferredStartTime,
+            request.FromStationId,
+            request.ToStationId,
+            request.AdultCount,
+            request.ChildCount,
+            request.SpecialRequests,
+            request.ItineraryStops), ct));
+
+    private static async Task<IResult> GetCustomBookingVesselCandidates(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingVesselCandidatesQuery(id), ct));
+
+    private static async Task<IResult> AssignCustomBookingVessel(
+        ISender sender,
+        Guid id,
+        AssignCustomBookingVesselApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new AssignCustomBookingVesselCommand(id, request.VesselId), ct));
 
     private static async Task<IResult> QuoteCustomBookingRequest(
         ISender sender,
@@ -192,7 +405,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
             request.QuotedPrice,
             request.DepositPercent,
             request.Currency,
-            request.ValidUntil), ct));
+            request.PriceNote), ct));
 
     private static async Task<IResult> AcceptCustomBookingQuote(
         ISender sender,
@@ -200,11 +413,70 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new AcceptCustomBookingQuoteCommand(id), ct));
 
+    private static async Task<IResult> CancelCustomBookingRequest(
+        ISender sender,
+        Guid id,
+        CancelCustomBookingRequestApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CancelCustomBookingRequestCommand(id, request.Reason), ct));
+
+    private static async Task<IResult> GetCustomBookingManagerCandidates(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingManagerCandidatesQuery(id), ct));
+
+    private static async Task<IResult> AssignCustomBookingManager(
+        ISender sender,
+        Guid id,
+        AssignCustomBookingManagerApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new AssignCustomBookingManagerCommand(id, request.ManagerUserId), ct));
+
+    private static async Task<IResult> GetCustomBookingStaffCandidates(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingStaffCandidatesQuery(id), ct));
+
+    private static async Task<IResult> UpdateCustomBookingOperationPlan(
+        ISender sender,
+        Guid id,
+        UpdateCustomBookingOperationPlanApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateCustomBookingOperationPlanCommand(
+            id,
+            request.StaffAssignments,
+            request.Services), ct));
+
+    public sealed record UpdateCustomBookingRequestApiRequest(
+        int RequestedNumberOfDecks,
+        SeatSetupType RequestedSeatSetupType,
+        DateOnly DepartureDate,
+        TimeOnly? PreferredStartTime,
+        Guid FromStationId,
+        Guid ToStationId,
+        int AdultCount,
+        int ChildCount,
+        string? SpecialRequests = null,
+        IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null,
+        Guid? ServiceId = null);
+
+    public sealed record AssignCustomBookingVesselApiRequest(Guid VesselId);
+
     public sealed record QuoteCustomBookingRequestApiRequest(
         decimal QuotedPrice,
         decimal DepositPercent,
         string? Currency = null,
-        DateTimeOffset? ValidUntil = null);
+        string? PriceNote = null);
+
+    public sealed record CancelCustomBookingRequestApiRequest(string Reason);
+
+    public sealed record AssignCustomBookingManagerApiRequest(Guid ManagerUserId);
+
+    public sealed record UpdateCustomBookingOperationPlanApiRequest(
+        IReadOnlyCollection<CustomBookingStaffPlanItem> StaffAssignments,
+        IReadOnlyCollection<CustomBookingOperationServicePlanItem> Services);
 
     public sealed record CustomBookingStatusApiResponse(
         CustomBookingRequestStatus Status,

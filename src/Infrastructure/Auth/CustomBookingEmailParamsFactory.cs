@@ -1,6 +1,7 @@
 using System.Globalization;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Infrastructure.Auth;
 
@@ -24,7 +25,7 @@ internal static class CustomBookingEmailParamsFactory
         IReadOnlyCollection<RouteSegment>? routeSegments)
     {
         var quote = request.Quote;
-        var vessel = request.PreferredVessel;
+        var vessel = request.AssignedVessel;
         var startTimeText = request.PreferredStartTime?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "Chưa xác định";
         var routeEstimate = CustomBookingRouteEstimator.Estimate(request, routeSegments);
         var routeLegsText = RouteLegsText(request, routeEstimate);
@@ -46,8 +47,13 @@ internal static class CustomBookingEmailParamsFactory
             ["contactPhone"] = request.ContactPhone,
             ["contactEmail"] = request.ContactEmail,
             ["vesselCode"] = vessel?.Code,
-            ["vesselName"] = vessel is null ? "Chưa xác định" : $"{vessel.Code} - {vessel.Name}",
-            ["passengerCapacity"] = vessel?.PassengerCapacity.ToString(CultureInfo.InvariantCulture),
+            ["vesselName"] = vessel is null
+                ? $"Chưa gán tàu ({request.RequestedNumberOfDecks} tầng, {SeatSetupTypeLabel(request.RequestedSeatSetupType)})"
+                : $"{vessel.Code} - {vessel.Name}",
+            ["seatCount"] = vessel?.SeatCount.ToString(CultureInfo.InvariantCulture),
+            ["requestedNumberOfDecks"] = request.RequestedNumberOfDecks.ToString(CultureInfo.InvariantCulture),
+            ["requestedSeatSetupType"] = request.RequestedSeatSetupType.ToString(),
+            ["requestedSeatSetupTypeLabel"] = SeatSetupTypeLabel(request.RequestedSeatSetupType),
             ["departureDate"] = request.DepartureDate.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture),
             ["startTime"] = startTimeText,
             ["timelineStartTime"] = startTimeText,
@@ -79,7 +85,7 @@ internal static class CustomBookingEmailParamsFactory
             ["depositPercent"] = quote?.DepositPercent.ToString("0.##", CultureInfo.InvariantCulture),
             ["depositAmount"] = quote is null ? null : Money(quote.DepositAmount, quote.Currency),
             ["remainingAmount"] = quote is null ? null : Money(quote.RemainingAmount, quote.Currency),
-            ["priceNote"] = "Chi phí được ghi nhận theo báo giá đã xác nhận.",
+            ["priceNote"] = quote?.PriceNote ?? "Chi phí được ghi nhận theo báo giá đã xác nhận.",
             ["validUntil"] = quote?.ValidUntil?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)
         };
     }
@@ -190,6 +196,14 @@ internal static class CustomBookingEmailParamsFactory
 
     private static string Money(decimal amount, string currency) =>
         string.Create(ViCulture, $"{amount:N0} {currency}");
+
+    private static string SeatSetupTypeLabel(SeatSetupType seatSetupType) =>
+        seatSetupType switch
+        {
+            SeatSetupType.FullStandard => "Toàn bộ ghế Standard",
+            SeatSetupType.StandardAndVip => "Ghế Standard và VIP",
+            _ => seatSetupType.ToString()
+        };
 
     private static string DisplayRequestCode(CustomBookingRequest request)
     {

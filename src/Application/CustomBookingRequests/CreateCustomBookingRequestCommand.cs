@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -17,102 +18,48 @@ public sealed record CreateCustomBookingRequestCommand(
     string? ContactName = null,
     string? ContactPhone = null,
     string? ContactEmail = null,
-    Guid PreferredVesselId = default,
+    Guid? ServiceId = null,
+    int RequestedNumberOfDecks = 0,
+    SeatSetupType RequestedSeatSetupType = default,
     DateOnly DepartureDate = default,
     TimeOnly? PreferredStartTime = null,
     Guid FromStationId = default,
     Guid ToStationId = default,
     int AdultCount = 0,
     int ChildCount = 0,
-    IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null) : IRequest<CustomBookingRequestDto>;
+    string? SpecialRequests = null,
+    IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null)
+    : IRequest<CustomBookingRequestDto>, ICustomBookingTripRequest;
 
 public sealed class CreateCustomBookingRequestCommandValidator : AbstractValidator<CreateCustomBookingRequestCommand>
 {
     public CreateCustomBookingRequestCommandValidator()
     {
-        RuleFor(x => x.DepartureDate)
-            .Must(x => x != default)
-            .WithMessage("Ngày đi là bắt buộc.");
-
-        RuleFor(x => x.PreferredVesselId)
-            .NotEmpty()
-            .WithMessage("Tàu muốn thuê là bắt buộc.");
-
-        RuleFor(x => x.PreferredStartTime)
-            .NotNull()
-            .WithMessage("Giờ bắt đầu là bắt buộc.");
-
-        RuleFor(x => x.FromStationId)
-            .NotEmpty()
-            .WithMessage("Bến bắt đầu là bắt buộc.");
-
-        RuleFor(x => x.ToStationId)
-            .NotEmpty()
-            .WithMessage("Bến kết thúc là bắt buộc.");
-
-        RuleFor(x => x.AdultCount)
-            .GreaterThanOrEqualTo(1)
-            .WithMessage("Số người lớn phải lớn hơn hoặc bằng 1.");
-
-        RuleFor(x => x.ChildCount)
-            .GreaterThanOrEqualTo(0)
-            .WithMessage("Số trẻ em không được âm.");
-
-        RuleFor(x => x)
-            .Must(x => x.AdultCount + x.ChildCount <= 500)
-            .WithMessage("Tổng số khách không được vượt quá 500.")
-            .OverridePropertyName(nameof(CreateCustomBookingRequestCommand.AdultCount));
-
-        RuleFor(x => x.ItineraryStops)
-            .Must(x => x is null || x.Count <= 20)
-            .WithMessage("Lịch trình không được vượt quá 20 điểm ghé.")
-            .Must(HaveUniqueStopOrders)
-            .WithMessage("Thứ tự điểm ghé không được trùng nhau.")
-            .Must(HaveSequentialStopOrders)
-            .WithMessage("Thứ tự điểm ghé phải bắt đầu từ 1 và tăng liên tục.");
-
-        RuleForEach(x => x.ItineraryStops).ChildRules(stop =>
-        {
-            stop.RuleFor(x => x.StopOrder).GreaterThan(0);
-            stop.RuleFor(x => x.StationId).NotEmpty().WithMessage("Bến/điểm ghé là bắt buộc.");
-            stop.RuleFor(x => x.StayDurationMinutes)
-                .InclusiveBetween(0, 1440)
-                .WithMessage("Thời gian dừng phải từ 0 đến 1440 phút.");
-            stop.RuleFor(x => x.Note).MaximumLength(500).When(x => x.Note is not null);
-        });
+        Include(new CustomBookingTripRequestValidator<CreateCustomBookingRequestCommand>());
 
         When(x => !x.UseAccountContact, () =>
         {
             RuleFor(x => x.ContactName).NotEmpty().MaximumLength(150);
             RuleFor(x => x.ContactPhone).NotEmpty().MaximumLength(20);
+            RuleFor(x => x.ContactEmail)
+                .NotEmpty()
+                .WithMessage("Email liên hệ là bắt buộc.");
         });
 
         RuleFor(x => x.ContactName).MaximumLength(150).When(x => x.ContactName is not null);
         RuleFor(x => x.ContactPhone).MaximumLength(20).When(x => x.ContactPhone is not null);
-        RuleFor(x => x.ContactEmail).MaximumLength(255).When(x => x.ContactEmail is not null);
-    }
+        RuleFor(x => x.ContactEmail)
+            .Cascade(CascadeMode.Stop)
+            .MaximumLength(255)
+            .WithMessage("Email liên hệ không được vượt quá 255 ký tự.")
+            .Must(EmailRules.HasAllowedRegistrationDomain)
+            .WithMessage(EmailRules.AllowedEmailDomainMessage)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail));
 
-    private static bool HaveUniqueStopOrders(IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? stops)
-    {
-        if (stops is null)
-        {
-            return true;
-        }
-
-        return stops.Select(x => x.StopOrder).Distinct().Count() == stops.Count;
-    }
-
-    private static bool HaveSequentialStopOrders(IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? stops)
-    {
-        if (stops is null || stops.Count == 0)
-        {
-            return true;
-        }
-
-        return stops
-            .OrderBy(x => x.StopOrder)
-            .Select((stop, index) => stop.StopOrder == index + 1)
-            .All(x => x);
+        RuleFor(x => x.ServiceId)
+            .NotEqual(Guid.Empty)
+            .WithMessage("ServiceId không hợp lệ.")
+            .When(x => x.ServiceId.HasValue);
     }
 }
 
@@ -149,61 +96,18 @@ public sealed class CreateCustomBookingRequestCommandHandler
 
         var normalizedPhone = CustomBookingRequestSupport.NormalizePhoneOrThrow(contactPhone, nameof(request.ContactPhone));
         CustomBookingRequestSupport.EnsureValidEmailIfProvided(contactEmail, nameof(request.ContactEmail));
-        CustomBookingRequestSupport.EnsureDepartureDateIsNotPast(
-            request.DepartureDate,
-            CustomBookingRequestSupport.GetVietnamToday(_timeProvider));
-
-        var contactUserId = await ResolveContactUserIdAsync(normalizedPhone, contactEmail, cancellationToken);
-        var vessel = await ResolvePreferredVesselAsync(request.PreferredVesselId, cancellationToken);
-        var fromStation = await ResolveStationAsync(request.FromStationId, nameof(request.FromStationId), cancellationToken);
-        var toStation = await ResolveStationAsync(request.ToStationId, nameof(request.ToStationId), cancellationToken);
-        var itineraryStops = (request.ItineraryStops ?? Array.Empty<CreateCustomBookingItineraryStopRequest>())
-            .OrderBy(x => x.StopOrder)
-            .ToArray();
-        var itineraryStations = await ResolveItineraryStationsAsync(itineraryStops, cancellationToken);
-
-        if (fromStation.Id == toStation.Id && itineraryStops.Length == 0)
-        {
-            throw AuthSupport.CreateValidationException(
-                nameof(request.ToStationId),
-                "Nếu bến bắt đầu và bến kết thúc trùng nhau thì phải có ít nhất một điểm ghé.");
-        }
-
-        var passengerCount = request.AdultCount + request.ChildCount;
-        if (passengerCount > vessel.PassengerCapacity)
-        {
-            throw AuthSupport.CreateValidationException(
-                nameof(request.AdultCount),
-                $"Tổng số khách ({passengerCount}) vượt quá sức chứa tàu ({vessel.PassengerCapacity}).");
-        }
-
-        var itineraryStopEntities = itineraryStops
-            .Select(stop => new CustomBookingItineraryStop
-            {
-                StopOrder = stop.StopOrder,
-                StationId = stop.StationId,
-                Station = itineraryStations[stop.StationId],
-                StayDurationMinutes = stop.StayDurationMinutes,
-                Note = string.IsNullOrWhiteSpace(stop.Note) ? null : stop.Note.Trim()
-            })
-            .ToList();
-        var routeStationIds = new[] { fromStation.Id }
-            .Concat(itineraryStopEntities.Select(x => x.StationId))
-            .Append(toStation.Id)
-            .Distinct()
-            .ToArray();
-        var routeSegments = await _context.Set<RouteSegment>()
-            .Where(x => routeStationIds.Contains(x.FromStationId) && routeStationIds.Contains(x.ToStationId))
-            .OrderBy(x => x.SegmentOrder)
-            .ToArrayAsync(cancellationToken);
-        var routeEstimate = CustomBookingRouteEstimator.Estimate(
-            fromStation,
-            itineraryStopEntities,
-            toStation,
+        var service = await CustomBookingRequestSupport.ResolveVesselRentalServiceAsync(
+            _context,
+            request.ServiceId,
+            cancellationToken);
+        CustomBookingRequestSupport.EnsureDepartureIsInFuture(
             request.DepartureDate,
             request.PreferredStartTime,
-            vessel,
-            routeSegments);
+            _timeProvider.GetUtcNow());
+
+        var contactUserId = await ResolveContactUserIdAsync(normalizedPhone, contactEmail, cancellationToken);
+        var tripPlan = await CustomBookingTripPlanner.BuildAsync(_context, request, cancellationToken);
+        var passengerCount = request.AdultCount + request.ChildCount;
 
         var customRequest = new CustomBookingRequest
         {
@@ -211,29 +115,34 @@ public sealed class CreateCustomBookingRequestCommandHandler
             ContactUserId = contactUserId,
             ContactName = contactName.Trim(),
             ContactPhone = normalizedPhone,
-            ContactEmail = string.IsNullOrWhiteSpace(contactEmail) ? null : contactEmail.Trim(),
-            PreferredVesselId = vessel.Id,
+            ContactEmail = contactEmail.Trim(),
+            WaterbusServiceId = service.Id,
+            WaterbusService = service,
+            RequestedNumberOfDecks = request.RequestedNumberOfDecks,
+            RequestedSeatSetupType = request.RequestedSeatSetupType,
             DepartureDate = request.DepartureDate,
             PreferredStartTime = request.PreferredStartTime,
-            PreferredEndTime = routeEstimate.EstimatedEndTime,
-            EstimatedEndDate = routeEstimate.EstimatedEndDate,
-            EstimatedTravelMinutes = routeEstimate.EstimatedTravelMinutes,
-            EstimatedStayMinutes = routeEstimate.EstimatedStayMinutes,
-            BufferMinutes = routeEstimate.BufferMinutes,
-            EstimatedDurationMinutes = routeEstimate.EstimatedDurationMinutes,
-            FromLocation = fromStation.StationName,
-            ToLocation = toStation.StationName,
-            FromStationId = fromStation.Id,
-            FromStationCode = fromStation.StationCode,
-            ToStationId = toStation.Id,
-            ToStationCode = toStation.StationCode,
+            PreferredEndTime = tripPlan.RouteEstimate.EstimatedEndTime,
+            EstimatedEndDate = tripPlan.RouteEstimate.EstimatedEndDate,
+            EstimatedTravelMinutes = tripPlan.RouteEstimate.EstimatedTravelMinutes,
+            EstimatedStayMinutes = tripPlan.RouteEstimate.EstimatedStayMinutes,
+            BufferMinutes = tripPlan.RouteEstimate.BufferMinutes,
+            EstimatedDurationMinutes = tripPlan.RouteEstimate.EstimatedDurationMinutes,
+            FromLocation = tripPlan.FromStation.StationName,
+            ToLocation = tripPlan.ToStation.StationName,
+            FromStationId = tripPlan.FromStation.Id,
+            FromStationCode = tripPlan.FromStation.StationCode,
+            ToStationId = tripPlan.ToStation.Id,
+            ToStationCode = tripPlan.ToStation.StationCode,
             ItineraryNote = null,
             PassengerCount = passengerCount,
             AdultCount = request.AdultCount,
             ChildCount = request.ChildCount,
-            SpecialRequests = null,
+            SpecialRequests = string.IsNullOrWhiteSpace(request.SpecialRequests)
+                ? null
+                : request.SpecialRequests.Trim(),
             Status = CustomBookingRequestStatus.PendingReview,
-            ItineraryStops = itineraryStopEntities
+            ItineraryStops = tripPlan.ItineraryStops.ToList()
         };
 
         _context.Set<CustomBookingRequest>().Add(customRequest);
@@ -242,7 +151,7 @@ public sealed class CreateCustomBookingRequestCommandHandler
         customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
             .SingleAsync(x => x.Id == customRequest.Id, cancellationToken);
 
-        return CustomBookingRequestDto.From(customRequest, routeSegments);
+        return CustomBookingRequestDto.From(customRequest, tripPlan.RouteSegments);
     }
 
     private static string ResolveContactName(CreateCustomBookingRequestCommand request, User user)
@@ -275,107 +184,38 @@ public sealed class CreateCustomBookingRequestCommandHandler
         throw AuthSupport.CreateValidationException(nameof(request.ContactPhone), "Số điện thoại liên hệ là bắt buộc.");
     }
 
-    private static string? ResolveContactEmail(CreateCustomBookingRequestCommand request, User user)
+    internal static string ResolveContactEmail(CreateCustomBookingRequestCommand request, User user)
     {
         if (request.UseAccountContact && !string.IsNullOrWhiteSpace(user.Email))
         {
             return user.Email;
         }
 
-        return string.IsNullOrWhiteSpace(request.ContactEmail) ? null : request.ContactEmail;
+        if (!string.IsNullOrWhiteSpace(request.ContactEmail))
+        {
+            return request.ContactEmail;
+        }
+
+        throw AuthSupport.CreateValidationException(
+            nameof(request.ContactEmail),
+            request.UseAccountContact
+                ? "Tài khoản chưa có email. Vui lòng nhập email nhận thông tin vé cho yêu cầu này."
+                : "Email liên hệ là bắt buộc.");
     }
 
     private async Task<Guid?> ResolveContactUserIdAsync(
         string normalizedPhone,
-        string? contactEmail,
+        string contactEmail,
         CancellationToken cancellationToken)
     {
-        var normalizedEmail = string.IsNullOrWhiteSpace(contactEmail)
-            ? null
-            : contactEmail.Trim().ToUpperInvariant();
+        var normalizedEmail = contactEmail.Trim().ToUpperInvariant();
 
         var linkedUser = await _context.Set<User>()
             .Where(x => x.NormalizedPhoneNumber == normalizedPhone
-                     || (normalizedEmail != null && x.NormalizedEmail == normalizedEmail))
+                     || x.NormalizedEmail == normalizedEmail)
             .FirstOrDefaultAsync(cancellationToken);
 
         return linkedUser?.Id;
     }
 
-    private async Task<Vessel> ResolvePreferredVesselAsync(
-        Guid vesselId,
-        CancellationToken cancellationToken)
-    {
-        var vessel = await _context.Set<Vessel>()
-            .Include(x => x.RentalPrices)
-            .SingleOrDefaultAsync(x => x.Id == vesselId, cancellationToken);
-
-        if (vessel is null)
-        {
-            throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingRequestCommand.PreferredVesselId), "Tàu muốn thuê không tồn tại.");
-        }
-
-        if (vessel.Status != VesselStatus.Active || !vessel.SeatsConfigured)
-        {
-            throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingRequestCommand.PreferredVesselId), "Tàu chưa sẵn sàng để cho thuê.");
-        }
-
-        if (!vessel.RentalPrices.Any(x => x.RentalUnit == VesselRentalUnit.Day))
-        {
-            throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingRequestCommand.PreferredVesselId), "Tàu chưa được cấu hình giá thuê theo ngày.");
-        }
-
-        return vessel;
-    }
-
-    private async Task<Station> ResolveStationAsync(
-        Guid stationId,
-        string propertyName,
-        CancellationToken cancellationToken)
-    {
-        var station = await _context.Set<Station>()
-            .SingleOrDefaultAsync(x => x.Id == stationId, cancellationToken);
-
-        if (station is null)
-        {
-            throw AuthSupport.CreateValidationException(propertyName, "Bến không tồn tại.");
-        }
-
-        if (station.Status != StationStatus.Active)
-        {
-            throw AuthSupport.CreateValidationException(propertyName, "Bến không hoạt động.");
-        }
-
-        return station;
-    }
-
-    private async Task<Dictionary<Guid, Station>> ResolveItineraryStationsAsync(
-        IReadOnlyCollection<CreateCustomBookingItineraryStopRequest> stops,
-        CancellationToken cancellationToken)
-    {
-        if (stops.Count == 0)
-        {
-            return new Dictionary<Guid, Station>();
-        }
-
-        var stationIds = stops.Select(x => x.StationId).Distinct().ToArray();
-        var stations = await _context.Set<Station>()
-            .Where(x => stationIds.Contains(x.Id))
-            .ToDictionaryAsync(x => x.Id, cancellationToken);
-
-        foreach (var stationId in stationIds)
-        {
-            if (!stations.TryGetValue(stationId, out var station))
-            {
-                throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingItineraryStopRequest.StationId), "Điểm ghé không tồn tại.");
-            }
-
-            if (station.Status != StationStatus.Active)
-            {
-                throw AuthSupport.CreateValidationException(nameof(CreateCustomBookingItineraryStopRequest.StationId), "Điểm ghé không hoạt động.");
-            }
-        }
-
-        return stations;
-    }
 }

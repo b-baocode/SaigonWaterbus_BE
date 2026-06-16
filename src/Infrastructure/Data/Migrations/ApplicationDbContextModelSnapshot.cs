@@ -248,6 +248,47 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("custom_booking_itinerary_stops", (string)null);
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingOperationService", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("custom_booking_operation_service_id");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomBookingRequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("custom_booking_request_id");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("note");
+
+                    b.Property<int>("Quantity")
+                        .HasColumnType("integer")
+                        .HasColumnName("quantity");
+
+                    b.Property<string>("ServiceName")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("character varying(150)")
+                        .HasColumnName("service_name");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CustomBookingRequestId");
+
+                    b.ToTable("custom_booking_operation_services", (string)null);
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingQuote", b =>
                 {
                     b.Property<Guid>("Id")
@@ -317,9 +358,33 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("adult_count");
 
+                    b.Property<DateTimeOffset?>("AssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<Guid?>("AssignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_by_user_id");
+
+                    b.Property<Guid?>("AssignedManagerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_manager_user_id");
+
+                    b.Property<Guid?>("AssignedVesselId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_vessel_id");
+
                     b.Property<int>("BufferMinutes")
                         .HasColumnType("integer")
                         .HasColumnName("buffer_minutes");
+
+                    b.Property<DateTimeOffset?>("CancelledAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("cancelled_at");
+
+                    b.Property<Guid?>("CancelledByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("cancelled_by_user_id");
 
                     b.Property<int>("ChildCount")
                         .HasColumnType("integer")
@@ -391,8 +456,17 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnName("itinerary_note");
 
                     b.Property<DateTimeOffset>("LastModified")
+                        .IsConcurrencyToken()
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
+
+                    b.Property<DateTimeOffset?>("ManagerAssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("manager_assigned_at");
+
+                    b.Property<Guid?>("ManagerAssignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("manager_assigned_by_user_id");
 
                     b.Property<int>("PassengerCount")
                         .HasColumnType("integer")
@@ -406,10 +480,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("time without time zone")
                         .HasColumnName("preferred_start_time");
 
-                    b.Property<Guid?>("PreferredVesselId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("preferred_vessel_id");
-
                     b.Property<DateTimeOffset?>("QuoteAcceptedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("quote_accepted_at");
@@ -422,6 +492,16 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("quoted_by_user_id");
 
+                    b.Property<int>("RequestedNumberOfDecks")
+                        .HasColumnType("integer")
+                        .HasColumnName("requested_number_of_decks");
+
+                    b.Property<string>("RequestedSeatSetupType")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)")
+                        .HasColumnName("requested_seat_setup_type");
+
                     b.Property<string>("SpecialRequests")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
@@ -432,6 +512,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("status");
+
+                    b.Property<string>("StatusReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("status_reason");
 
                     b.Property<string>("ToLocation")
                         .IsRequired()
@@ -452,13 +537,25 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("user_id");
 
+                    b.Property<Guid?>("WaterbusServiceId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("waterbus_service_id");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("AssignedManagerUserId");
+
+                    b.HasIndex("AssignedVesselId");
+
+                    b.HasIndex("CancelledByUserId");
 
                     b.HasIndex("ContactUserId");
 
                     b.HasIndex("FromStationId");
 
-                    b.HasIndex("PreferredVesselId");
+                    b.HasIndex("ManagerAssignedByUserId");
 
                     b.HasIndex("QuotedByUserId");
 
@@ -466,9 +563,59 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("UserId");
 
+                    b.HasIndex("WaterbusServiceId");
+
                     b.HasIndex("Status", "DepartureDate");
 
                     b.ToTable("custom_booking_requests", (string)null);
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingStaffAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("custom_booking_staff_assignment_id");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<Guid>("AssignedByManagerUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_by_manager_user_id");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<Guid>("CustomBookingRequestId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("custom_booking_request_id");
+
+                    b.Property<string>("DutyNote")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("duty_note");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<Guid>("StaffUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("staff_user_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedByManagerUserId");
+
+                    b.HasIndex("StaffUserId");
+
+                    b.HasIndex("CustomBookingRequestId", "StaffUserId")
+                        .IsUnique();
+
+                    b.ToTable("custom_booking_staff_assignments", (string)null);
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ExternalLogin", b =>
@@ -1668,11 +1815,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<int>("NumberOfDecks")
                         .HasColumnType("integer");
 
-                    b.Property<int>("PassengerCapacity")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0);
-
                     b.Property<string>("RegistrationNumber")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
@@ -1801,6 +1943,51 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("VesselId", "Deck", "Row", "Column");
 
                     b.ToTable("vessel_facilities", (string)null);
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselLayoutCell", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Column")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int>("Deck")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Row")
+                        .IsRequired()
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("VesselId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VesselId", "Deck", "Row", "Column")
+                        .IsUnique();
+
+                    b.ToTable("vessel_layout_cells", (string)null);
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselRentalPrice", b =>
@@ -2061,6 +2248,17 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Station");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingOperationService", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.CustomBookingRequest", "CustomBookingRequest")
+                        .WithMany("OperationServices")
+                        .HasForeignKey("CustomBookingRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CustomBookingRequest");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingQuote", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.CustomBookingRequest", "CustomBookingRequest")
@@ -2074,6 +2272,26 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingRequest", b =>
                 {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "AssignedManagerUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedManagerUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "AssignedVessel")
+                        .WithMany()
+                        .HasForeignKey("AssignedVesselId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("CancelledByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("SaigonWaterbus.Domain.Entities.User", "ContactUser")
                         .WithMany()
                         .HasForeignKey("ContactUserId")
@@ -2084,9 +2302,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasForeignKey("FromStationId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "PreferredVessel")
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", null)
                         .WithMany()
-                        .HasForeignKey("PreferredVesselId")
+                        .HasForeignKey("ManagerAssignedByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.HasOne("SaigonWaterbus.Domain.Entities.User", "QuotedByUser")
@@ -2104,17 +2322,53 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("SaigonWaterbus.Domain.Entities.WaterbusService", "WaterbusService")
+                        .WithMany()
+                        .HasForeignKey("WaterbusServiceId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("AssignedManagerUser");
+
+                    b.Navigation("AssignedVessel");
+
                     b.Navigation("ContactUser");
 
                     b.Navigation("FromStation");
-
-                    b.Navigation("PreferredVessel");
 
                     b.Navigation("QuotedByUser");
 
                     b.Navigation("ToStation");
 
                     b.Navigation("User");
+
+                    b.Navigation("WaterbusService");
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingStaffAssignment", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "AssignedByManagerUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedByManagerUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.CustomBookingRequest", "CustomBookingRequest")
+                        .WithMany("StaffAssignments")
+                        .HasForeignKey("CustomBookingRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "StaffUser")
+                        .WithMany()
+                        .HasForeignKey("StaffUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AssignedByManagerUser");
+
+                    b.Navigation("CustomBookingRequest");
+
+                    b.Navigation("StaffUser");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ExternalLogin", b =>
@@ -2379,6 +2633,17 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Vessel");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselLayoutCell", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "Vessel")
+                        .WithMany("LayoutCells")
+                        .HasForeignKey("VesselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Vessel");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselRentalPrice", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "Vessel")
@@ -2399,7 +2664,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 {
                     b.Navigation("ItineraryStops");
 
+                    b.Navigation("OperationServices");
+
                     b.Navigation("Quote");
+
+                    b.Navigation("StaffAssignments");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Promotion", b =>
@@ -2478,6 +2747,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("DeckLayouts");
 
                     b.Navigation("Facilities");
+
+                    b.Navigation("LayoutCells");
 
                     b.Navigation("RentalPrices");
 

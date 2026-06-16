@@ -1,5 +1,3 @@
-using SaigonWaterbus.Domain.Enums;
-
 namespace SaigonWaterbus.Application.Fares;
 
 public sealed record FareMatrixDto(
@@ -30,17 +28,3 @@ public sealed record FareByServiceSeatTypeDto(
     decimal TicketTypeModifier,
     decimal SeatTypeModifier,
     decimal FinalPrice);
-
-public sealed record VesselRentalFareDto(
-    Guid VesselId,
-    string VesselCode,
-    string VesselName,
-    int SeatCount,
-    int PassengerCapacity,
-    int NumberOfDecks,
-    string ImageUrl,
-    string? Description,
-    VesselRentalUnit RentalUnit,
-    decimal UnitPrice,
-    string Currency,
-    string? Note);

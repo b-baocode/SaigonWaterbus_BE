@@ -45,6 +45,7 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
 
         var now = _timeProvider.GetUtcNow();
         CustomBookingRequestSupport.EnsureCanAcceptQuote(customRequest, now);
+        CustomBookingRequestSupport.EnsureVesselMatchesRequest(customRequest, customRequest.AssignedVessel!);
         var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
             _context,
             customRequest,
@@ -52,17 +53,8 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
         CustomBookingRequestSupport.ApplyRouteEstimate(customRequest, routeSegments);
 
         customRequest.Status = CustomBookingRequestStatus.Confirmed;
+        customRequest.StatusReason = null;
         customRequest.QuoteAcceptedAt = now;
-        customRequest.ContactName = actor.FullName.Trim();
-        if (!string.IsNullOrWhiteSpace(actor.PhoneNumber))
-        {
-            customRequest.ContactPhone = actor.PhoneNumber.Trim();
-        }
-
-        if (!string.IsNullOrWhiteSpace(actor.Email))
-        {
-            customRequest.ContactEmail = actor.Email.Trim();
-        }
 
         await _context.SaveChangesAsync(cancellationToken);
 

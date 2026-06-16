@@ -18,9 +18,29 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
 
     public string? ContactEmail { get; set; }
 
-    public Guid? PreferredVesselId { get; set; }
+    public Guid? WaterbusServiceId { get; set; }
 
-    public Vessel? PreferredVessel { get; set; }
+    public WaterbusService? WaterbusService { get; set; }
+
+    public int RequestedNumberOfDecks { get; set; }
+
+    public SeatSetupType RequestedSeatSetupType { get; set; }
+
+    public Guid? AssignedVesselId { get; set; }
+
+    public Vessel? AssignedVessel { get; set; }
+
+    public DateTimeOffset? AssignedAt { get; set; }
+
+    public Guid? AssignedByUserId { get; set; }
+
+    public Guid? AssignedManagerUserId { get; set; }
+
+    public User? AssignedManagerUser { get; set; }
+
+    public DateTimeOffset? ManagerAssignedAt { get; set; }
+
+    public Guid? ManagerAssignedByUserId { get; set; }
 
     public DateOnly DepartureDate { get; set; }
 
@@ -66,6 +86,8 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
 
     public CustomBookingRequestStatus Status { get; set; } = CustomBookingRequestStatus.PendingReview;
 
+    public string? StatusReason { get; set; }
+
     public DateTimeOffset? QuotedAt { get; set; }
 
     public Guid? QuotedByUserId { get; set; }
@@ -74,7 +96,17 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
 
     public DateTimeOffset? QuoteAcceptedAt { get; set; }
 
+    public DateTimeOffset? CancelledAt { get; set; }
+
+    public Guid? CancelledByUserId { get; set; }
+
     public CustomBookingQuote? Quote { get; set; }
 
     public ICollection<CustomBookingItineraryStop> ItineraryStops { get; set; } = new List<CustomBookingItineraryStop>();
+
+    public ICollection<CustomBookingStaffAssignment> StaffAssignments { get; set; } =
+        new List<CustomBookingStaffAssignment>();
+
+    public ICollection<CustomBookingOperationService> OperationServices { get; set; } =
+        new List<CustomBookingOperationService>();
 }

@@ -101,6 +101,21 @@ public class VesselSeatFlowIntegrationTests
         result.IsReadyForOperation.ShouldBeTrue();
     }
 
+    [Test]
+    public async Task GetVesselsCanSearchByVesselId()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
+        context.Add(vessel);
+        await context.SaveChangesAsync();
+
+        var result = await new GetVesselsRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetVesselsRequest(Search: vessel.Id.ToString()), CancellationToken.None);
+
+        result.Single().Id.ShouldBe(vessel.Id);
+    }
+
     private static CreateVesselRequestUseCase CreateVesselUseCase(
         Infrastructure.Data.ApplicationDbContext context,
         TestUserContext userContext) =>
@@ -124,7 +139,6 @@ public class VesselSeatFlowIntegrationTests
             $"NEW_{Guid.NewGuid():N}"[..20],
             "New vessel",
             VesselStatus.Inactive,
-            4,
             4,
             1,
             SeatSetupType: setupType);

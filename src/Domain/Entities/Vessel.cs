@@ -14,8 +14,6 @@ public class Vessel : BaseAuditableEntity
 
     public int SeatCount { get; set; }
 
-    public int PassengerCapacity { get; set; }
-
     public int NumberOfDecks { get; set; }
 
     public SeatSetupType SeatSetupType { get; set; } = SeatSetupType.FullStandard;
@@ -37,6 +35,8 @@ public class Vessel : BaseAuditableEntity
     public ICollection<VesselDeckLayout> DeckLayouts { get; set; } = new List<VesselDeckLayout>();
 
     public ICollection<VesselFacility> Facilities { get; set; } = new List<VesselFacility>();
+
+    public ICollection<VesselLayoutCell> LayoutCells { get; set; } = new List<VesselLayoutCell>();
 
     public ICollection<VesselRentalPrice> RentalPrices { get; set; } = new List<VesselRentalPrice>();
 }

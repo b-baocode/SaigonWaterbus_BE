@@ -10,7 +10,6 @@ public sealed record CreateVesselRequest(
     string Name,
     VesselStatus Status,
     int SeatCount,
-    int PassengerCapacity,
     int NumberOfDecks,
     string? RegistrationNumber = null,
     int? MaxSpeedKmh = null,
@@ -52,10 +51,6 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
         RuleFor(x => x.SeatCount)
             .GreaterThanOrEqualTo(0)
             .WithMessage("Số ghế không được âm.");
-
-        RuleFor(x => x.PassengerCapacity)
-            .GreaterThan(0)
-            .WithMessage("Sức chứa hành khách phải lớn hơn 0.");
 
         RuleFor(x => x.NumberOfDecks)
             .GreaterThanOrEqualTo(0)
@@ -113,7 +108,7 @@ public sealed class CreateVesselRequestUseCase
     {
         await VesselSupport.EnsureCurrentUserCanManageVesselsAsync(_context, _userContext, cancellationToken);
 
-        EnsureVesselCapacity(request.SeatCount, request.PassengerCapacity, request.NumberOfDecks);
+        EnsureVesselCapacity(request.SeatCount, request.NumberOfDecks);
         EnsureInitialStatus(request.Status);
 
         var normalizedCode = VesselSupport.NormalizeCode(request.Code);
@@ -149,7 +144,6 @@ public sealed class CreateVesselRequestUseCase
             Name = request.Name.Trim(),
             Status = request.Status,
             SeatCount = request.SeatCount,
-            PassengerCapacity = request.PassengerCapacity,
             NumberOfDecks = request.NumberOfDecks,
             SeatSetupType = request.SeatSetupType,
             MaxSpeedKmh = request.MaxSpeedKmh,
@@ -192,7 +186,6 @@ public sealed class CreateVesselRequestUseCase
 
     private static void EnsureVesselCapacity(
         int seatCount,
-        int passengerCapacity,
         int numberOfDecks)
     {
         if (seatCount <= 0)
@@ -205,10 +198,6 @@ public sealed class CreateVesselRequestUseCase
             throw AuthSupport.CreateValidationException(nameof(CreateVesselRequest.NumberOfDecks), "Tàu phải có số tầng lớn hơn 0 để setup sơ đồ ghế.");
         }
 
-        if (passengerCapacity < seatCount)
-        {
-            throw AuthSupport.CreateValidationException(nameof(CreateVesselRequest.PassengerCapacity), "Sức chứa hành khách phải lớn hơn hoặc bằng số ghế.");
-        }
     }
 
     private static void EnsureInitialStatus(VesselStatus status)

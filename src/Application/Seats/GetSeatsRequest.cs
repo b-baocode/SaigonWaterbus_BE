@@ -61,6 +61,14 @@ public sealed class GetSeatsRequestUseCase
             .ThenBy(x => x.Column)
             .ToListAsync(cancellationToken);
 
-        return SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts, facilities);
+        var layoutCells = await _context.VesselLayoutCells
+            .AsNoTracking()
+            .Where(x => x.VesselId == request.VesselId)
+            .OrderBy(x => x.Deck)
+            .ThenBy(x => x.Row)
+            .ThenBy(x => x.Column)
+            .ToListAsync(cancellationToken);
+
+        return SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts, facilities, layoutCells);
     }
 }

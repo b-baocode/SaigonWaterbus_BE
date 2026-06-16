@@ -19,7 +19,6 @@ public class VesselSupportTests
             "Waterbus 01",
             VesselStatus.Inactive,
             80,
-            80,
             1));
 
         result.IsValid.ShouldBeTrue();

@@ -34,10 +34,6 @@ public sealed class VesselConfiguration : IEntityTypeConfiguration<Vessel>
             .HasMaxLength(32)
             .IsRequired();
 
-        builder.Property(x => x.PassengerCapacity)
-            .HasDefaultValue(0)
-            .IsRequired();
-
         builder.Property(x => x.SeatSetupType)
             .HasConversion<string>()
             .HasMaxLength(32)

@@ -8,7 +8,8 @@ namespace SaigonWaterbus.Application.Seats;
 
 internal sealed record SeatLayoutPlan(
     IReadOnlyCollection<Seat> Seats,
-    IReadOnlyCollection<VesselFacility> Facilities);
+    IReadOnlyCollection<VesselFacility> Facilities,
+    IReadOnlyCollection<VesselLayoutCell> LayoutCells);
 
 internal static class SeatLayoutPlanner
 {
@@ -70,6 +71,7 @@ internal static class SeatLayoutPlanner
 
         var seats = new List<Seat>();
         var facilities = new List<VesselFacility>();
+        var layoutCells = new List<VesselLayoutCell>();
         var seatCells = new HashSet<LayoutCell>();
         var facilityCells = new HashSet<LayoutCell>();
         var useExplicitCellsLayout = ShouldUseExplicitCellsLayout(vessel, decks);
@@ -86,6 +88,7 @@ internal static class SeatLayoutPlanner
                     defaultSeatType,
                     seats,
                     facilities,
+                    layoutCells,
                     seatCells,
                     facilityCells,
                     useExplicitCellsLayout);
@@ -108,7 +111,7 @@ internal static class SeatLayoutPlanner
                 "Cells",
                 $"Tổng số ghế setup ({seats.Count}) không khớp với SeatCount của tàu ({vessel.SeatCount}).");
 
-        return new SeatLayoutPlan(seats, facilities);
+        return new SeatLayoutPlan(seats, facilities, layoutCells);
     }
 
     private static void AddCellsLayout(
@@ -119,6 +122,7 @@ internal static class SeatLayoutPlanner
         SeatType defaultSeatType,
         List<Seat> seats,
         List<VesselFacility> facilities,
+        List<VesselLayoutCell> layoutCells,
         HashSet<LayoutCell> seatCells,
         HashSet<LayoutCell> facilityCells,
         bool explicitCellsLayout)
@@ -209,7 +213,11 @@ internal static class SeatLayoutPlanner
                         break;
 
                     case SeatLayoutCellType.Aisle:
+                        AddLayoutCell(vessel, deck, cell, VesselLayoutCellType.Aisle, layoutCells);
+                        break;
+
                     case SeatLayoutCellType.Empty:
+                        AddLayoutCell(vessel, deck, cell, VesselLayoutCellType.Empty, layoutCells);
                         break;
 
                     default:
@@ -217,6 +225,25 @@ internal static class SeatLayoutPlanner
                 }
             }
         }
+    }
+
+    private static void AddLayoutCell(
+        Vessel vessel,
+        DeckConfigDto deck,
+        LayoutCell cell,
+        VesselLayoutCellType type,
+        List<VesselLayoutCell> layoutCells)
+    {
+        EnsureCellInsideDeck(cell, deck);
+
+        layoutCells.Add(new VesselLayoutCell
+        {
+            VesselId = vessel.Id,
+            Type = type,
+            Deck = deck.DeckNumber,
+            Row = SeatSupport.RowLabel(cell.RowIndex - 1),
+            Column = cell.Column
+        });
     }
 
     private static bool ShouldUseExplicitCellsLayout(Vessel vessel, IReadOnlyCollection<DeckConfigDto> decks)

@@ -60,6 +60,13 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                 Title = "Forbidden",
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.5.4"
             }),
+            Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException => (StatusCodes.Status409Conflict, new ProblemDetails
+            {
+                Status = StatusCodes.Status409Conflict,
+                Title = "Dữ liệu đã được cập nhật bởi yêu cầu khác.",
+                Detail = "Vui lòng tải lại custom booking và thực hiện thao tác trên trạng thái mới nhất.",
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.5.10"
+            }),
             OtpDispatchException ode => (StatusCodes.Status503ServiceUnavailable, new ProblemDetails
             {
                 Status = StatusCodes.Status503ServiceUnavailable,

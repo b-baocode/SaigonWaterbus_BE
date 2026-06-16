@@ -34,6 +34,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<VesselFacility> VesselFacilities => Set<VesselFacility>();
 
+    public DbSet<VesselLayoutCell> VesselLayoutCells => Set<VesselLayoutCell>();
+
     public DbSet<OtpChallenge> OtpChallenges => Set<OtpChallenge>();
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
@@ -73,6 +75,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<CustomBookingQuote> CustomBookingQuotes => Set<CustomBookingQuote>();
 
     public DbSet<CustomBookingItineraryStop> CustomBookingItineraryStops => Set<CustomBookingItineraryStop>();
+
+    public DbSet<CustomBookingStaffAssignment> CustomBookingStaffAssignments => Set<CustomBookingStaffAssignment>();
+
+    public DbSet<CustomBookingOperationService> CustomBookingOperationServices => Set<CustomBookingOperationService>();
 
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);

@@ -10,36 +10,49 @@ namespace SaigonWaterbus.Application.UnitTests.CustomBookingRequests;
 public class CustomBookingRequestSupportTests
 {
     [Test]
-    public void EnsurePreferredTimeRangeIsValidRejectsEndTimeBeforeStartTime()
+    public void CalculateQuoteValidUntilUsesTwentyFourHoursWhenDepartureIsLater()
     {
-        var exception = Should.Throw<ValidationException>(() =>
-            CustomBookingRequestSupport.EnsurePreferredTimeRangeIsValid(
-                new TimeOnly(11, 0),
-                new TimeOnly(10, 0)));
+        var now = new DateTimeOffset(2026, 6, 16, 3, 0, 0, TimeSpan.Zero);
+        var request = new CustomBookingRequest
+        {
+            DepartureDate = new DateOnly(2026, 6, 20),
+            PreferredStartTime = new TimeOnly(7, 0)
+        };
 
-        exception.Errors.Keys.ShouldContain("preferredEndTime");
+        var validUntil = CustomBookingRequestSupport.CalculateQuoteValidUntil(request, now);
+
+        validUntil.ShouldBe(now.AddHours(24));
     }
 
     [Test]
-    public void EnsureDepartureDateIsNotPastRejectsPastVietnamDate()
+    public void CalculateQuoteValidUntilUsesDepartureWhenItIsSooner()
     {
+        var now = new DateTimeOffset(2026, 6, 16, 3, 0, 0, TimeSpan.Zero);
+        var request = new CustomBookingRequest
+        {
+            DepartureDate = new DateOnly(2026, 6, 16),
+            PreferredStartTime = new TimeOnly(15, 0)
+        };
+
+        var validUntil = CustomBookingRequestSupport.CalculateQuoteValidUntil(request, now);
+
+        validUntil.ShouldBe(new DateTimeOffset(2026, 6, 16, 8, 0, 0, TimeSpan.Zero));
+    }
+
+    [Test]
+    public void CalculateQuoteValidUntilRejectsPastDeparture()
+    {
+        var now = new DateTimeOffset(2026, 6, 16, 8, 0, 0, TimeSpan.Zero);
+        var request = new CustomBookingRequest
+        {
+            DepartureDate = new DateOnly(2026, 6, 16),
+            PreferredStartTime = new TimeOnly(14, 0)
+        };
+
         var exception = Should.Throw<ValidationException>(() =>
-            CustomBookingRequestSupport.EnsureDepartureDateIsNotPast(
-                new DateOnly(2026, 6, 9),
-                new DateOnly(2026, 6, 10)));
+            CustomBookingRequestSupport.CalculateQuoteValidUntil(request, now));
 
         exception.Errors.Keys.ShouldContain("departureDate");
-    }
-
-    [Test]
-    public void EnsureQuoteIsValidRejectsExpiredValidUntil()
-    {
-        var now = new DateTimeOffset(2026, 6, 10, 8, 0, 0, TimeSpan.Zero);
-
-        var exception = Should.Throw<ValidationException>(() =>
-            CustomBookingRequestSupport.EnsureQuoteIsValid(now, now));
-
-        exception.Errors.Keys.ShouldContain("validUntil");
     }
 
     [Test]
@@ -60,22 +73,11 @@ public class CustomBookingRequestSupportTests
         var request = new CustomBookingRequest
         {
             Status = CustomBookingRequestStatus.Quoted,
+            AssignedVesselId = Guid.NewGuid(),
             Quote = new CustomBookingQuote { ValidUntil = now.AddDays(1) }
         };
 
         Should.NotThrow(() => CustomBookingRequestSupport.EnsureCanAcceptQuote(request, now));
-    }
-
-    [Test]
-    public void NormalizeUtcConvertsOffsetDateTimeToUtc()
-    {
-        var value = new DateTimeOffset(2026, 6, 30, 23, 59, 59, TimeSpan.FromHours(7));
-
-        var normalized = CustomBookingRequestSupport.NormalizeUtc(value);
-
-        normalized.ShouldNotBeNull();
-        normalized.Value.Offset.ShouldBe(TimeSpan.Zero);
-        normalized.Value.ShouldBe(new DateTimeOffset(2026, 6, 30, 16, 59, 59, TimeSpan.Zero));
     }
 
     [TestCase(null, true)]

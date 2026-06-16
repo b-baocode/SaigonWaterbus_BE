@@ -18,7 +18,6 @@ public class CompleteSeatSetupFlowIntegrationTests
         var standard = SeatFlowTestData.SeatType("STANDARD");
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
         vessel.SeatCount = 80;
-        vessel.PassengerCapacity = 80;
         context.AddRange(standard, vessel);
         await context.SaveChangesAsync();
 
@@ -38,8 +37,23 @@ public class CompleteSeatSetupFlowIntegrationTests
 
         configured.ConfiguredSeats.ShouldBe(80);
         configured.SeatsConfigured.ShouldBeTrue();
+        configured.Decks.Single().Cells.Count.ShouldBe(88);
+        configured.Decks.Single().Cells.Count(x => x.Type == SeatLayoutCellType.Aisle).ShouldBe(8);
         vessel.Status.ShouldBe(VesselStatus.Active);
         (await context.Seats.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(80);
+        (await context.VesselLayoutCells.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(8);
+
+        var fetched = await new GetSeatsRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetSeatsRequest(vessel.Id), CancellationToken.None);
+
+        fetched.Decks.Single().Cells.Count.ShouldBe(88);
+        fetched.Decks.Single().Cells
+            .Where(x => x.Row == 10)
+            .ShouldAllBe(x => x.Type == SeatLayoutCellType.Aisle);
+        fetched.Decks.Single().Cells
+            .Where(x => x.Type == SeatLayoutCellType.Seat)
+            .Count()
+            .ShouldBe(80);
     }
 
     [Test]
@@ -83,7 +97,6 @@ public class CompleteSeatSetupFlowIntegrationTests
         var vip = SeatFlowTestData.SeatType("VIP");
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
         vessel.SeatCount = 3;
-        vessel.PassengerCapacity = 3;
         context.AddRange(standard, vip, vessel);
         await context.SaveChangesAsync();
 
@@ -121,6 +134,64 @@ public class CompleteSeatSetupFlowIntegrationTests
             .ToListAsync();
         seats.Count(x => x.SeatType!.Code == "VIP").ShouldBe(1);
         seats.Count(x => x.SeatType!.Code == "STANDARD").ShouldBe(2);
+    }
+
+    [Test]
+    public async Task GetSeatsReturnsMixedLayoutCellsWithSeatsAislesEmptyCellsAndToilet()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var standard = SeatFlowTestData.SeatType("STANDARD");
+        var vip = SeatFlowTestData.SeatType("VIP");
+        var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
+        vessel.SeatCount = 6;
+        context.AddRange(standard, vip, vessel);
+        await context.SaveChangesAsync();
+
+        await GenerateMatrix(context, userContext, vessel.Id, 3, 4);
+
+        await Configure(
+            context,
+            userContext,
+            vessel.Id,
+            [
+                new DeckConfigDto(
+                    1,
+                    3,
+                    4,
+                    Cells:
+                    [
+                        new LayoutCellConfigDto(1, 1, SeatLayoutCellType.Seat, "VIP"),
+                        new LayoutCellConfigDto(1, 2, SeatLayoutCellType.Seat, "VIP"),
+                        new LayoutCellConfigDto(1, 3, SeatLayoutCellType.Aisle),
+                        new LayoutCellConfigDto(1, 4, SeatLayoutCellType.Seat, "STANDARD"),
+                        new LayoutCellConfigDto(2, 1, SeatLayoutCellType.Seat, "STANDARD"),
+                        new LayoutCellConfigDto(2, 2, SeatLayoutCellType.Toilet, RowSpan: 1, ColumnSpan: 2),
+                        new LayoutCellConfigDto(2, 4, SeatLayoutCellType.Empty),
+                        new LayoutCellConfigDto(3, 1, SeatLayoutCellType.Seat, "STANDARD"),
+                        new LayoutCellConfigDto(3, 2, SeatLayoutCellType.Seat, "STANDARD"),
+                        new LayoutCellConfigDto(3, 3, SeatLayoutCellType.Aisle),
+                        new LayoutCellConfigDto(3, 4, SeatLayoutCellType.Empty)
+                    ])
+            ]);
+
+        var fetched = await new GetSeatsRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetSeatsRequest(vessel.Id), CancellationToken.None);
+
+        var cells = fetched.Decks.Single().Cells;
+        cells.Count.ShouldBe(12);
+        cells.Count(x => x.Type == SeatLayoutCellType.Seat).ShouldBe(6);
+        cells.Count(x => x.Type == SeatLayoutCellType.Aisle).ShouldBe(2);
+        cells.Count(x => x.Type == SeatLayoutCellType.Empty).ShouldBe(2);
+        cells.Count(x => x.Type == SeatLayoutCellType.Toilet).ShouldBe(2);
+        cells.Count(x => x.Seat?.SeatType?.SeatTypeCode == "VIP").ShouldBe(2);
+        cells.Count(x => x.Seat?.SeatType?.SeatTypeCode == "STANDARD").ShouldBe(4);
+        cells.ShouldContain(x => x.Row == 2 && x.Column == 2 && x.Type == SeatLayoutCellType.Toilet && x.Facility != null);
+        cells.ShouldContain(x => x.Row == 2 && x.Column == 3 && x.Type == SeatLayoutCellType.Toilet && x.Facility != null);
+        cells.ShouldContain(x => x.Row == 1 && x.Column == 3 && x.Type == SeatLayoutCellType.Aisle);
+        cells.ShouldContain(x => x.Row == 3 && x.Column == 3 && x.Type == SeatLayoutCellType.Aisle);
+        cells.ShouldContain(x => x.Row == 2 && x.Column == 4 && x.Type == SeatLayoutCellType.Empty);
+        cells.ShouldContain(x => x.Row == 3 && x.Column == 4 && x.Type == SeatLayoutCellType.Empty);
     }
 
     [Test]

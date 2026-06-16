@@ -20,7 +20,6 @@ public sealed record VesselDto(
     string Name,
     VesselStatus Status,
     int SeatCount,
-    int PassengerCapacity,
     int GeneratedSeatCount,
     int NumberOfDecks,
     bool SeatsConfigured,
@@ -79,9 +78,12 @@ public sealed class GetVesselsRequestUseCase
 
         if (!string.IsNullOrWhiteSpace(request.Search))
         {
-            var keyword = request.Search.Trim().ToUpperInvariant();
+            var rawKeyword = request.Search.Trim();
+            var keyword = rawKeyword.ToUpperInvariant();
+            var searchById = Guid.TryParse(rawKeyword, out var vesselId);
             query = query.Where(x =>
-                x.Code.Contains(keyword)
+                (searchById && x.Id == vesselId)
+                || x.Code.Contains(keyword)
                 || x.Name.ToUpper().Contains(keyword)
                 || (x.RegistrationNumber != null && x.RegistrationNumber.Contains(keyword)));
         }

@@ -37,5 +37,5 @@ public class QuoteCustomBookingRequestCommandValidatorTests
             QuotedPrice: 15000000m,
             DepositPercent: depositPercent,
             Currency: "VND",
-            ValidUntil: DateTimeOffset.UtcNow.AddDays(1));
+            PriceNote: null);
 }

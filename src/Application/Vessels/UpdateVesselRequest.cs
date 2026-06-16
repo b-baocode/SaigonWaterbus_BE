@@ -9,7 +9,6 @@ public sealed record UpdateVesselRequest(
     string? Code = null,
     string? Name = null,
     int? SeatCount = null,
-    int? PassengerCapacity = null,
     int? NumberOfDecks = null,
     string? RegistrationNumber = null,
     int? MaxSpeedKmh = null,
@@ -54,11 +53,6 @@ public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesse
             .GreaterThanOrEqualTo(0)
             .WithMessage("Số ghế không được âm.")
             .When(x => x.SeatCount.HasValue);
-
-        RuleFor(x => x.PassengerCapacity)
-            .GreaterThan(0)
-            .WithMessage("Sức chứa hành khách phải lớn hơn 0.")
-            .When(x => x.PassengerCapacity.HasValue);
 
         RuleFor(x => x.NumberOfDecks)
             .GreaterThanOrEqualTo(0)
@@ -161,7 +155,8 @@ public sealed class UpdateVesselRequestUseCase
             var hasSeatLayout = vessel.SeatsConfigured
                 || await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
                 || await _context.VesselDeckLayouts.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
-                || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
+                || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
+                || await _context.VesselLayoutCells.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
 
             if (hasSeatLayout)
             {
@@ -176,11 +171,6 @@ public sealed class UpdateVesselRequestUseCase
             vessel.SeatCount = request.SeatCount.Value;
         }
 
-        if (request.PassengerCapacity.HasValue)
-        {
-            vessel.PassengerCapacity = request.PassengerCapacity.Value;
-        }
-
         if (request.NumberOfDecks.HasValue)
         {
             vessel.NumberOfDecks = request.NumberOfDecks.Value;
@@ -191,7 +181,7 @@ public sealed class UpdateVesselRequestUseCase
             vessel.SeatSetupType = request.SeatSetupType.Value;
         }
 
-        EnsureVesselCapacity(vessel.SeatCount, vessel.PassengerCapacity, vessel.NumberOfDecks);
+        EnsureVesselCapacity(vessel.SeatCount, vessel.NumberOfDecks);
 
         if (request.MaxSpeedKmh.HasValue)
         {
@@ -257,7 +247,6 @@ public sealed class UpdateVesselRequestUseCase
 
     private static void EnsureVesselCapacity(
         int seatCount,
-        int passengerCapacity,
         int numberOfDecks)
     {
         if (seatCount <= 0)
@@ -270,9 +259,5 @@ public sealed class UpdateVesselRequestUseCase
             throw AuthSupport.CreateValidationException(nameof(UpdateVesselRequest.NumberOfDecks), "Tàu phải có số tầng lớn hơn 0 để setup sơ đồ ghế.");
         }
 
-        if (passengerCapacity < seatCount)
-        {
-            throw AuthSupport.CreateValidationException(nameof(UpdateVesselRequest.PassengerCapacity), "Sức chứa hành khách phải lớn hơn hoặc bằng số ghế.");
-        }
     }
 }

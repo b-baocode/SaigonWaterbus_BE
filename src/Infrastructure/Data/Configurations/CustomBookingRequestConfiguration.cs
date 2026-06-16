@@ -17,7 +17,19 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ContactName).HasColumnName("contact_name").HasMaxLength(150).IsRequired();
         builder.Property(x => x.ContactPhone).HasColumnName("contact_phone").HasMaxLength(20).IsRequired();
         builder.Property(x => x.ContactEmail).HasColumnName("contact_email").HasMaxLength(255);
-        builder.Property(x => x.PreferredVesselId).HasColumnName("preferred_vessel_id");
+        builder.Property(x => x.WaterbusServiceId).HasColumnName("waterbus_service_id");
+        builder.Property(x => x.RequestedNumberOfDecks).HasColumnName("requested_number_of_decks").IsRequired();
+        builder.Property(x => x.RequestedSeatSetupType)
+            .HasColumnName("requested_seat_setup_type")
+            .HasConversion<string>()
+            .HasMaxLength(32)
+            .IsRequired();
+        builder.Property(x => x.AssignedVesselId).HasColumnName("assigned_vessel_id");
+        builder.Property(x => x.AssignedAt).HasColumnName("assigned_at");
+        builder.Property(x => x.AssignedByUserId).HasColumnName("assigned_by_user_id");
+        builder.Property(x => x.AssignedManagerUserId).HasColumnName("assigned_manager_user_id");
+        builder.Property(x => x.ManagerAssignedAt).HasColumnName("manager_assigned_at");
+        builder.Property(x => x.ManagerAssignedByUserId).HasColumnName("manager_assigned_by_user_id");
         builder.Property(x => x.DepartureDate).HasColumnName("departure_date").IsRequired();
         builder.Property(x => x.PreferredStartTime).HasColumnName("preferred_start_time");
         builder.Property(x => x.PreferredEndTime).HasColumnName("preferred_end_time");
@@ -38,19 +50,27 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.ChildCount).HasColumnName("child_count").IsRequired();
         builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(30).IsRequired();
+        builder.Property(x => x.StatusReason).HasColumnName("status_reason").HasMaxLength(500);
         builder.Property(x => x.QuotedAt).HasColumnName("quoted_at");
         builder.Property(x => x.QuotedByUserId).HasColumnName("quoted_by_user_id");
         builder.Property(x => x.QuoteAcceptedAt).HasColumnName("quote_accepted_at");
+        builder.Property(x => x.CancelledAt).HasColumnName("cancelled_at");
+        builder.Property(x => x.CancelledByUserId).HasColumnName("cancelled_by_user_id");
 
         builder.Property(x => x.Created).HasColumnName("created_at");
-        builder.Property(x => x.LastModified).HasColumnName("updated_at");
+        builder.Property(x => x.LastModified).HasColumnName("updated_at").IsConcurrencyToken();
         builder.Ignore(x => x.CreatedBy);
         builder.Ignore(x => x.LastModifiedBy);
 
         builder.HasIndex(x => new { x.Status, x.DepartureDate });
         builder.HasIndex(x => x.UserId);
         builder.HasIndex(x => x.ContactUserId);
-        builder.HasIndex(x => x.PreferredVesselId);
+        builder.HasIndex(x => x.WaterbusServiceId);
+        builder.HasIndex(x => x.AssignedVesselId);
+        builder.HasIndex(x => x.AssignedByUserId);
+        builder.HasIndex(x => x.AssignedManagerUserId);
+        builder.HasIndex(x => x.ManagerAssignedByUserId);
+        builder.HasIndex(x => x.CancelledByUserId);
         builder.HasIndex(x => x.FromStationId);
         builder.HasIndex(x => x.ToStationId);
 
@@ -64,14 +84,39 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
             .HasForeignKey(x => x.ContactUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
+        builder.HasOne(x => x.WaterbusService)
+            .WithMany()
+            .HasForeignKey(x => x.WaterbusServiceId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasOne(x => x.QuotedByUser)
             .WithMany()
             .HasForeignKey(x => x.QuotedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        builder.HasOne(x => x.PreferredVessel)
+        builder.HasOne(x => x.AssignedVessel)
             .WithMany()
-            .HasForeignKey(x => x.PreferredVesselId)
+            .HasForeignKey(x => x.AssignedVesselId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.AssignedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.AssignedManagerUser)
+            .WithMany()
+            .HasForeignKey(x => x.AssignedManagerUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.ManagerAssignedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(x => x.CancelledByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.FromStation)

@@ -11,7 +11,7 @@ public sealed record QuoteCustomBookingRequestCommand(
     decimal QuotedPrice,
     decimal DepositPercent,
     string? Currency,
-    DateTimeOffset? ValidUntil) : IRequest<CustomBookingRequestDto>;
+    string? PriceNote) : IRequest<CustomBookingRequestDto>;
 
 public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidator<QuoteCustomBookingRequestCommand>
 {
@@ -28,6 +28,10 @@ public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidato
             .Must(CustomBookingRequestSupport.IsValidCurrencyCode)
             .WithMessage("Currency phải là mã ISO 4217 gồm 3 chữ cái, ví dụ VND.")
             .When(x => x.Currency is not null);
+        RuleFor(x => x.PriceNote)
+            .MaximumLength(1000)
+            .WithMessage("Ghi chú báo giá không được vượt quá 1000 ký tự.")
+            .When(x => x.PriceNote is not null);
     }
 }
 
@@ -65,9 +69,9 @@ public sealed class QuoteCustomBookingRequestCommandHandler
             ?? throw new NotFoundException("Không tìm thấy yêu cầu thuê tàu.");
 
         CustomBookingRequestSupport.EnsureCanQuote(customRequest);
+        CustomBookingRequestSupport.EnsureVesselMatchesRequest(customRequest, customRequest.AssignedVessel!);
         var now = _timeProvider.GetUtcNow();
-        var validUntil = CustomBookingRequestSupport.NormalizeUtc(request.ValidUntil);
-        CustomBookingRequestSupport.EnsureQuoteIsValid(validUntil, now);
+        var validUntil = CustomBookingRequestSupport.CalculateQuoteValidUntil(customRequest, now);
         var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
             _context,
             customRequest,
@@ -94,9 +98,12 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         customRequest.Quote.DepositAmount = depositAmount;
         customRequest.Quote.RemainingAmount = remainingAmount;
         customRequest.Quote.Currency = CustomBookingRequestSupport.NormalizeCurrency(request.Currency);
-        customRequest.Quote.PriceNote = null;
+        customRequest.Quote.PriceNote = string.IsNullOrWhiteSpace(request.PriceNote)
+            ? null
+            : request.PriceNote.Trim();
         customRequest.Quote.ValidUntil = validUntil;
         customRequest.Status = CustomBookingRequestStatus.Quoted;
+        customRequest.StatusReason = null;
         customRequest.QuotedAt = now;
         customRequest.QuotedByUserId = actor.Id;
         customRequest.QuoteAcceptedAt = null;

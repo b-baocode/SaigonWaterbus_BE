@@ -71,7 +71,6 @@ internal static class VesselSupport
             vessel.Name,
             vessel.Status,
             vessel.SeatCount,
-            vessel.PassengerCapacity,
             generatedSeatCount,
             vessel.NumberOfDecks,
             vessel.SeatsConfigured,

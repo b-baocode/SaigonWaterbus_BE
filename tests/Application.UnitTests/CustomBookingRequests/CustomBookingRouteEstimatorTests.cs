@@ -157,6 +157,48 @@ public class CustomBookingRouteEstimatorTests
         estimate.EstimatedTravelMinutes.ShouldBe(24);
     }
 
+    [Test]
+    public void EstimateRoundTripMatchesCustomBookingResponseExample()
+    {
+        var fromStation = Station("Bến Ba Son", null, null);
+        var stopStation = Station("Bến Bạch Đằng", null, null);
+        var routeId = Guid.NewGuid();
+        var itineraryStops = new[]
+        {
+            new CustomBookingItineraryStop
+            {
+                StopOrder = 1,
+                Station = stopStation,
+                StationId = stopStation.Id,
+                StayDurationMinutes = 90
+            }
+        };
+        var segment = new RouteSegment
+        {
+            RouteId = routeId,
+            FromStationId = fromStation.Id,
+            ToStationId = stopStation.Id,
+            SegmentOrder = 1,
+            DistanceKm = 0.79m
+        };
+
+        var estimate = CustomBookingRouteEstimator.Estimate(
+            fromStation,
+            itineraryStops,
+            fromStation,
+            new DateOnly(2026, 6, 20),
+            new TimeOnly(7, 0),
+            vessel: null,
+            [segment]);
+
+        estimate.TotalDistanceKm.ShouldBe(1.58m);
+        estimate.EstimatedTravelMinutes.ShouldBe(8);
+        estimate.EstimatedStayMinutes.ShouldBe(90);
+        estimate.BufferMinutes.ShouldBe(10);
+        estimate.EstimatedDurationMinutes.ShouldBe(108);
+        estimate.EstimatedEndTime.ShouldBe(new TimeOnly(8, 48));
+    }
+
     private static Station Station(string name, decimal? latitude, decimal? longitude) =>
         new()
         {
