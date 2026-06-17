@@ -43,13 +43,14 @@ Các trạng thái cũ được dọn:
 GET /api/custom-booking-requests/pricing-options
     ?requestedNumberOfDecks=2
     &requestedSeatSetupType=StandardAndVip
+    &rentalUnit=Hour
     &passengerCount=20
 ```
 
 API chỉ trả:
 
 - Số tàu đang phù hợp.
-- Khoảng giá thuê theo ngày, nhóm theo currency.
+- Khoảng giá thuê theo `rentalUnit` khách chọn, nhóm theo currency.
 - Không trả `vesselId`, tên tàu hoặc cho khách chọn tàu.
 
 Giá này được lấy từ tàu:
@@ -59,9 +60,9 @@ Giá này được lấy từ tàu:
 - Đúng số tầng.
 - Đúng kiểu ghế.
 - Đủ sức chứa.
-- Có giá thuê `Day`.
+- Có giá thuê theo `rentalUnit` khách chọn.
 
-Đây không phải báo giá cuối cùng.
+Đây là khoảng giá trước khi Admin gán tàu cụ thể.
 
 ### 2. Gửi yêu cầu
 
@@ -77,6 +78,7 @@ POST /api/custom-booking-requests
   "contactEmail": null,
   "requestedNumberOfDecks": 2,
   "requestedSeatSetupType": "StandardAndVip",
+  "rentalUnit": "Hour",
   "departureDate": "20/06/2026",
   "preferredStartTime": "08:30:00",
   "fromStationId": "station-id",
@@ -101,6 +103,7 @@ Khách cần lấy ID từ:
 - Không cần `vesselId`.
 - Không cần service ID.
 - Không cần seat type ID. Chỉ gửi enum `FullStandard` hoặc `StandardAndVip`.
+- `rentalUnit` là `Hour` hoặc `Day`; backend dùng giá theo đơn vị này để tự tính báo giá.
 
 Booking luôn phải có email nhận thông tin vé và email phải thuộc `@gmail.com` hoặc `@fpt.edu.vn`.
 
@@ -206,16 +209,18 @@ Mỗi candidate đã được backend kiểm tra:
 - Đúng `requestedNumberOfDecks`.
 - Đúng `requestedSeatSetupType`.
 - `passengerCapacity >= passengerCount`.
-- Có giá thuê theo ngày.
+- Có giá thuê theo `rentalUnit` khách chọn.
 
 `estimatedBasePrice` được tính:
 
 ```text
-rentalDays = max(1, ceil(estimatedDurationMinutes / 1440))
-estimatedBasePrice = dailyPrice * rentalDays
+billingQuantity =
+  Hour: max(1, estimatedDurationMinutes) / 60
+  Day: max(1, ceil(estimatedDurationMinutes / 1440))
+estimatedBasePrice = round(unitPrice * billingQuantity, 2)
 ```
 
-Đây là giá cơ sở để Admin tham khảo, không tự động trở thành báo giá.
+Đây là giá hệ thống sẽ dùng làm báo giá sau khi Admin gán tàu.
 
 ### 3. Gán tàu
 
@@ -244,22 +249,21 @@ POST /api/custom-booking-requests/{id}/quote
 
 ```json
 {
-  "quotedPrice": 15000000,
   "depositPercent": 50,
-  "currency": "VND",
-  "priceNote": "Đã gồm tiền thuê tàu, chưa gồm dịch vụ phát sinh."
+  "priceNote": "Giá được hệ thống tính theo tàu và đơn vị thuê khách đã chọn."
 }
 ```
 
 Backend tính:
 
 ```text
+quotedPrice = round(unitPrice của tàu theo rentalUnit * billingQuantity, 2)
 depositAmount = round(quotedPrice * depositPercent / 100)
 remainingAmount = quotedPrice - depositAmount
 validUntil = min(thời điểm báo giá + 24 giờ, thời điểm khởi hành)
 ```
 
-Admin không nhập `validUntil`. Backend tự đặt thời hạn và trả nó trong `quote.validUntil`.
+Admin không nhập `quotedPrice`, `currency` hoặc `validUntil`. Backend tự lấy giá/currency từ tàu, tự đặt thời hạn và trả trong `quote`.
 Admin chỉ báo giá được sau khi gán tàu. Có thể cập nhật báo giá khi status đang là `Quoted`.
 
 ### 5. Hủy yêu cầu
@@ -400,7 +404,7 @@ PUT /api/fares/vessel-rental-prices/{vesselId}
 
 ## Phạm vi chưa xử lý
 
-- Chưa kiểm tra trùng lịch tàu vì `Trip` hiện chưa có `VesselId`.
+- Chưa liên kết sang `Trip`; hiện chỉ kiểm tra trùng tàu giữa các custom booking có khung giờ giữ tàu.
 - Chưa tạo payment.
 - Chưa tự tạo trip/lịch chạy sau `Confirmed`.
 - Chưa có catalog dịch vụ tiện ích và đơn giá riêng; dịch vụ vận hành hiện lưu theo từng booking.

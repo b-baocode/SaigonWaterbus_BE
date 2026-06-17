@@ -59,6 +59,11 @@ public sealed class AssignCustomBookingVesselCommandHandler
             ?? throw new NotFoundException("Không tìm thấy tàu.");
 
         CustomBookingRequestSupport.EnsureVesselMatchesRequest(customRequest, vessel);
+        await CustomBookingAvailability.EnsureVesselAvailableAsync(
+            _context,
+            customRequest,
+            vessel.Id,
+            cancellationToken);
 
         customRequest.AssignedVesselId = vessel.Id;
         customRequest.AssignedVessel = vessel;

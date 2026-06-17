@@ -68,6 +68,19 @@ internal static class CustomBookingRequestSupport
         throw new ForbiddenAccessException();
     }
 
+    public static void EnsureCanView(CustomBookingRequest request, User actor)
+    {
+        if (AuthSupport.IsAdmin(actor)
+            || (AuthSupport.IsManager(actor) && request.AssignedManagerUserId == actor.Id)
+            || (AuthSupport.IsStaff(actor) && request.StaffAssignments.Any(x => x.StaffUserId == actor.Id))
+            || (AuthSupport.IsCustomer(actor) && request.UserId == actor.Id))
+        {
+            return;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
     public static async Task<IReadOnlyList<RouteSegment>> GetMatchingRouteSegmentsAsync(
         IApplicationDbContext context,
         CustomBookingRequest request,
@@ -236,6 +249,23 @@ internal static class CustomBookingRequestSupport
         }
     }
 
+    public static decimal CalculateBillableQuantity(CustomBookingRequest request) =>
+        request.RentalUnit == VesselRentalUnit.Hour
+            ? Math.Max(1, request.EstimatedDurationMinutes) / 60m
+            : Math.Max(1, (int)Math.Ceiling(request.EstimatedDurationMinutes / 1440m));
+
+    public static decimal CalculateRentalPrice(CustomBookingRequest request, VesselRentalPrice rentalPrice) =>
+        decimal.Round(
+            rentalPrice.UnitPrice * CalculateBillableQuantity(request),
+            2,
+            MidpointRounding.AwayFromZero);
+
+    public static VesselRentalPrice GetRequiredRentalPriceOrThrow(CustomBookingRequest request, Vessel vessel) =>
+        vessel.RentalPrices.SingleOrDefault(x => x.RentalUnit == request.RentalUnit)
+        ?? throw AuthSupport.CreateValidationException(
+            nameof(request.AssignedVesselId),
+            $"Tàu được chọn chưa cấu hình giá thuê theo {request.RentalUnit}.");
+
     public static DateTimeOffset CalculateQuoteValidUntil(
         CustomBookingRequest request,
         DateTimeOffset utcNow)
@@ -385,11 +415,6 @@ internal static class CustomBookingRequestSupport
                 $"Tàu chỉ có {vessel.SeatCount} ghế, thấp hơn yêu cầu {request.PassengerCount} khách.");
         }
 
-        if (!vessel.RentalPrices.Any())
-        {
-            throw AuthSupport.CreateValidationException(
-                nameof(request.AssignedVesselId),
-                "Tàu được chọn chưa cấu hình giá thuê.");
-        }
+        GetRequiredRentalPriceOrThrow(request, vessel);
     }
 }

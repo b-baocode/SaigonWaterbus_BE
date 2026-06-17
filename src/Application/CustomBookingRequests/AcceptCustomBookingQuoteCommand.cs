@@ -51,15 +51,40 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
             customRequest,
             cancellationToken);
         CustomBookingRequestSupport.ApplyRouteEstimate(customRequest, routeSegments);
+        await CustomBookingAvailability.EnsureVesselAvailableAsync(
+            _context,
+            customRequest,
+            customRequest.AssignedVesselId!.Value,
+            cancellationToken);
 
         customRequest.Status = CustomBookingRequestStatus.Confirmed;
         customRequest.StatusReason = null;
         customRequest.QuoteAcceptedAt = now;
+        var ticketResult = await CustomBookingTicketSupport.EnsureActiveTicketAsync(
+            _context,
+            customRequest,
+            now,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
 
         await _confirmationEmailSender.SendConfirmationAsync(customRequest, cancellationToken);
 
-        return CustomBookingRequestDto.From(customRequest, routeSegments);
+        var dto = CustomBookingRequestDto.From(customRequest, routeSegments);
+        return ticketResult.QrToken is null
+            ? dto
+            : dto with
+            {
+                Ticket = new CustomBookingTicketQrDto(
+                    ticketResult.Ticket.Id,
+                    ticketResult.Ticket.CustomBookingRequestId,
+                    ticketResult.Ticket.TicketCode,
+                    ticketResult.Ticket.Status,
+                    ticketResult.QrToken,
+                    CustomBookingTicketSupport.CreateQrPayload(ticketResult.QrToken),
+                    ticketResult.Ticket.QrIssuedAt,
+                    ticketResult.Ticket.QrExpiresAt,
+                    ticketResult.Ticket.QrUsedAt)
+            };
     }
 }

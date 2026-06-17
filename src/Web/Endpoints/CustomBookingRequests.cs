@@ -20,6 +20,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
           "serviceId": null,
           "requestedNumberOfDecks": 2,
           "requestedSeatSetupType": "StandardAndVip",
+          "rentalUnit": "Hour",
           "departureDate": "20/06/2026",
           "preferredStartTime": "08:30:00",
           "fromStationId": "00000000-0000-0000-0000-000000000000",
@@ -41,10 +42,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
     private const string QuoteExample =
         """
         {
-          "quotedPrice": 5000000,
           "depositPercent": 50,
-          "currency": "VND",
-          "priceNote": "Đã gồm chi phí thuê tàu, chưa gồm dịch vụ phát sinh."
+          "priceNote": "Giá được hệ thống tính theo tàu và đơn vị thuê khách đã chọn."
         }
         """;
 
@@ -54,6 +53,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
           "serviceId": null,
           "requestedNumberOfDecks": 2,
           "requestedSeatSetupType": "StandardAndVip",
+          "rentalUnit": "Hour",
           "departureDate": "20/06/2026",
           "preferredStartTime": "08:30:00",
           "fromStationId": "00000000-0000-0000-0000-000000000000",
@@ -105,6 +105,13 @@ public sealed class CustomBookingRequests : IEndpointGroup
         }
         """;
 
+    private const string ScanTicketExample =
+        """
+        {
+          "qrToken": "swb:custom-booking:QR_TOKEN_FROM_ACCEPT_QUOTE"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetCustomBookingRequests)
@@ -142,8 +149,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer/Admin/Manager",
                 null,
-                "Query bắt buộc: requestedNumberOfDecks, requestedSeatSetupType, passengerCount.",
-                "Chỉ tính từ tàu Active, đã setup ghế, đúng cấu hình, đủ sức chứa và có giá thuê theo giờ hoặc theo ngày.",
+                "Query bắt buộc: requestedNumberOfDecks, requestedSeatSetupType, rentalUnit, passengerCount.",
+                "Chỉ tính từ tàu Active, đã setup ghế, đúng cấu hình, đủ sức chứa và có giá thuê theo đơn vị khách chọn.",
                 "Không trả vesselId cho khách và không phải báo giá cuối cùng."));
 
         group.MapGet(GetCustomBookingRequestDetail, "{id:guid}")
@@ -164,6 +171,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "serviceId optional; nếu không gửi, backend tự chọn dịch vụ thuê tàu mặc định WT.",
                 "Nếu gửi serviceId thì service phải Active và có BookingMode=VesselRental.",
                 "Khách không chọn tàu cụ thể, chỉ chọn số tầng và kiểu ghế.",
+                "rentalUnit là Hour hoặc Day; backend dùng đơn vị này để lọc tàu và tự tính báo giá sau khi Admin gán tàu.",
                 "requestedSeatSetupType nhận FullStandard hoặc StandardAndVip.",
                 "Booking luôn phải có email nhận thông tin vé và email phải thuộc @gmail.com hoặc @fpt.edu.vn.",
                 "useAccountContact=true ưu tiên email trong profile; nếu profile chưa có email thì phải gửi contactEmail.",
@@ -193,8 +201,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Admin",
                 null,
                 "Chỉ dùng khi status=PendingReview.",
-                "Backend lọc đúng số tầng, kiểu ghế, sức chứa, trạng thái setup và giá thuê.",
-                "estimatedBasePrice là giá ngày nhân số ngày ước tính từ thời lượng chuyến."));
+                "Backend lọc đúng số tầng, kiểu ghế, sức chứa, trạng thái setup và giá thuê theo rentalUnit khách chọn.",
+                "estimatedBasePrice là unitPrice nhân số giờ/ngày thuê làm tròn lên theo thời lượng chuyến."));
 
         group.MapPut(AssignCustomBookingVessel, "{id:guid}/assigned-vessel")
             .RequireAuthorization()
@@ -204,7 +212,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 AssignVesselExample,
                 "Chỉ gán hoặc đổi tàu khi status=PendingReview.",
                 "Backend kiểm tra lại trạng thái tàu, sơ đồ ghế, số tầng, kiểu ghế, sức chứa và giá thuê.",
-                "Chưa kiểm tra trùng lịch tàu vì module phân lịch hiện chưa liên kết vessel với trip."));
+                "Backend kiểm tra tàu không bị giữ bởi custom booking khác trong cùng khung giờ."));
 
         group.MapPost(QuoteCustomBookingRequest, "{id:guid}/quote")
             .RequireAuthorization()
@@ -213,6 +221,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Admin",
                 QuoteExample,
                 "Phải gán tàu phù hợp trước khi báo giá.",
+                "Backend tự tính quotedPrice từ giá thuê của tàu theo rentalUnit khách chọn và thời lượng chuyến.",
                 "Backend tự tính tiền cọc và số tiền còn lại.",
                 "Backend tự đặt validUntil là 24 giờ sau lúc báo giá hoặc giờ khởi hành, lấy thời điểm đến trước.",
                 "Có thể cập nhật lại báo giá khi status=Quoted.",
@@ -226,7 +235,28 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 null,
                 "Chỉ chấp nhận khi status=Quoted, báo giá chưa hết hạn và tàu vẫn hợp lệ.",
                 "Sau khi chấp nhận, status=Confirmed.",
+                "Backend tạo vé QR nếu chưa có vé active và trả ticket.qrPayload một lần để frontend render QR.",
                 "Hiện chưa tạo payment hoặc lịch chạy; đó là bước nghiệp vụ tiếp theo."));
+
+        group.MapGet(GetCustomBookingTicket, "{id:guid}/ticket")
+            .RequireAuthorization()
+            .WithSummary("Xem thông tin vé QR custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer chủ yêu cầu, Admin, Manager/Staff được phân công",
+                null,
+                "Trả metadata của vé QR active.",
+                "Vì backend chỉ lưu hash token, endpoint này không trả lại qrToken/qrPayload. Nếu mất QR cần cấp lại token bằng flow riêng."));
+
+        group.MapPost(ScanCustomBookingTicket, "tickets/scan")
+            .RequireAuthorization()
+            .WithSummary("Scan/check-in vé QR custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Manager hoặc Staff",
+                ScanTicketExample,
+                "qrToken nhận raw token hoặc payload dạng swb:custom-booking:{token}.",
+                "Backend kiểm tra vé active, booking Confirmed, chưa hết hạn và chưa dùng.",
+                "Scan thành công sẽ set status=Used, qrUsedAt và qrUsedByUserId.",
+                "Scan lại cùng mã sẽ báo vé đã được sử dụng."));
 
         group.MapPost(CancelCustomBookingRequest, "{id:guid}/cancel")
             .RequireAuthorization()
@@ -303,11 +333,13 @@ public sealed class CustomBookingRequests : IEndpointGroup
         ISender sender,
         int requestedNumberOfDecks,
         SeatSetupType requestedSeatSetupType,
+        VesselRentalUnit rentalUnit,
         int passengerCount,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCustomBookingPricingOptionsQuery(
             requestedNumberOfDecks,
             requestedSeatSetupType,
+            rentalUnit,
             passengerCount), ct));
 
     private static IResult GetCustomBookingStatuses() =>
@@ -373,6 +405,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
             request.ServiceId,
             request.RequestedNumberOfDecks,
             request.RequestedSeatSetupType,
+            request.RentalUnit,
             request.DepartureDate,
             request.PreferredStartTime,
             request.FromStationId,
@@ -402,9 +435,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new QuoteCustomBookingRequestCommand(
             id,
-            request.QuotedPrice,
             request.DepositPercent,
-            request.Currency,
             request.PriceNote), ct));
 
     private static async Task<IResult> AcceptCustomBookingQuote(
@@ -412,6 +443,18 @@ public sealed class CustomBookingRequests : IEndpointGroup
         Guid id,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new AcceptCustomBookingQuoteCommand(id), ct));
+
+    private static async Task<IResult> GetCustomBookingTicket(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingTicketQuery(id), ct));
+
+    private static async Task<IResult> ScanCustomBookingTicket(
+        ISender sender,
+        ScanCustomBookingTicketRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(request, ct));
 
     private static async Task<IResult> CancelCustomBookingRequest(
         ISender sender,
@@ -452,6 +495,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
     public sealed record UpdateCustomBookingRequestApiRequest(
         int RequestedNumberOfDecks,
         SeatSetupType RequestedSeatSetupType,
+        VesselRentalUnit RentalUnit,
         DateOnly DepartureDate,
         TimeOnly? PreferredStartTime,
         Guid FromStationId,
@@ -465,9 +509,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
     public sealed record AssignCustomBookingVesselApiRequest(Guid VesselId);
 
     public sealed record QuoteCustomBookingRequestApiRequest(
-        decimal QuotedPrice,
         decimal DepositPercent,
-        string? Currency = null,
         string? PriceNote = null);
 
     public sealed record CancelCustomBookingRequestApiRequest(string Reason);

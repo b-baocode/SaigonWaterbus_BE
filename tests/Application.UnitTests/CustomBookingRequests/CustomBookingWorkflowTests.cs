@@ -1,6 +1,8 @@
 using SaigonWaterbus.Application.Common.Exceptions;
+using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using System.Text.Json;
@@ -68,10 +70,11 @@ public class CustomBookingWorkflowTests
     public void PricingValidatorRejectsInvalidCriteria()
     {
         var result = new GetCustomBookingPricingOptionsQueryValidator()
-            .Validate(new GetCustomBookingPricingOptionsQuery(0, (SeatSetupType)999, 0));
+            .Validate(new GetCustomBookingPricingOptionsQuery(0, (SeatSetupType)999, (VesselRentalUnit)999, 0));
 
         result.Errors.ShouldContain(x => x.PropertyName == nameof(GetCustomBookingPricingOptionsQuery.RequestedNumberOfDecks));
         result.Errors.ShouldContain(x => x.PropertyName == nameof(GetCustomBookingPricingOptionsQuery.RequestedSeatSetupType));
+        result.Errors.ShouldContain(x => x.PropertyName == nameof(GetCustomBookingPricingOptionsQuery.RentalUnit));
         result.Errors.ShouldContain(x => x.PropertyName == nameof(GetCustomBookingPricingOptionsQuery.PassengerCount));
     }
 
@@ -187,15 +190,15 @@ public class CustomBookingWorkflowTests
             .Handle(new GetCustomBookingPricingOptionsQuery(
                 2,
                 SeatSetupType.StandardAndVip,
+                VesselRentalUnit.Hour,
                 20), CancellationToken.None);
 
         result.MatchingVesselCount.ShouldBe(2);
+        result.RentalUnit.ShouldBe(VesselRentalUnit.Hour);
         var hourlyRange = result.PriceRanges.Single(x => x.RentalUnit == VesselRentalUnit.Hour);
         hourlyRange.MinimumPrice.ShouldBe(2000000m);
         hourlyRange.MaximumPrice.ShouldBe(2500000m);
-        var dailyRange = result.PriceRanges.Single(x => x.RentalUnit == VesselRentalUnit.Day);
-        dailyRange.MinimumPrice.ShouldBe(12000000m);
-        dailyRange.MaximumPrice.ShouldBe(15000000m);
+        result.PriceRanges.ShouldNotContain(x => x.RentalUnit == VesselRentalUnit.Day);
     }
 
     [Test]
@@ -269,6 +272,33 @@ public class CustomBookingWorkflowTests
 
         result.Count.ShouldBe(1);
         result.Single().VesselId.ShouldBe(matching.Id);
+    }
+
+    [Test]
+    public async Task AdminCandidateListExcludesVesselsReservedByOverlappingCustomBooking()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var request = ValidRequest();
+        request.EstimatedEndDate = request.DepartureDate;
+        request.PreferredEndTime = new TimeOnly(13, 0);
+        var reserved = ValidVessel("WB01", 12000000m);
+        var available = ValidVessel("WB02", 12000000m);
+        var overlapping = ValidRequest();
+        overlapping.Status = CustomBookingRequestStatus.Quoted;
+        overlapping.AssignedVesselId = reserved.Id;
+        overlapping.AssignedVessel = reserved;
+        overlapping.DepartureDate = request.DepartureDate;
+        overlapping.PreferredStartTime = new TimeOnly(9, 0);
+        overlapping.EstimatedEndDate = request.DepartureDate;
+        overlapping.PreferredEndTime = new TimeOnly(10, 0);
+        context.AddRange(request, reserved, available, overlapping);
+        await context.SaveChangesAsync();
+
+        var result = await new GetCustomBookingVesselCandidatesQueryHandler(context, userContext)
+            .Handle(new GetCustomBookingVesselCandidatesQuery(request.Id), CancellationToken.None);
+
+        result.Select(x => x.VesselId).ShouldBe([available.Id]);
     }
 
     [Test]
@@ -362,6 +392,163 @@ public class CustomBookingWorkflowTests
                     CancellationToken.None));
 
         exception.Errors.Keys.ShouldContain("staffAssignments");
+    }
+
+    [Test]
+    public void HourlyRentalPriceUsesActualMinutes()
+    {
+        var request = ValidRequest();
+        request.RentalUnit = VesselRentalUnit.Hour;
+        request.EstimatedDurationMinutes = 130;
+        var rentalPrice = new VesselRentalPrice
+        {
+            RentalUnit = VesselRentalUnit.Hour,
+            UnitPrice = 2000000m,
+            Currency = "VND"
+        };
+
+        var price = CustomBookingRequestSupport.CalculateRentalPrice(request, rentalPrice);
+
+        price.ShouldBe(4333333.33m);
+    }
+
+    [Test]
+    public async Task QuoteUsesSelectedRentalUnitPrice()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.PendingReview;
+        request.RentalUnit = VesselRentalUnit.Hour;
+        request.EstimatedDurationMinutes = 125;
+        var vessel = ValidVessel("WB01", 12000000m);
+        vessel.RentalPrices.Add(new VesselRentalPrice
+        {
+            VesselId = vessel.Id,
+            Vessel = vessel,
+            RentalUnit = VesselRentalUnit.Hour,
+            UnitPrice = 2000000m,
+            Currency = "VND",
+            Note = "Theo gio"
+        });
+        request.AssignedVesselId = vessel.Id;
+        request.AssignedVessel = vessel;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var result = await new QuoteCustomBookingRequestCommandHandler(
+                context,
+                adminContext,
+                TimeProvider.System,
+                new TestCustomBookingQuoteEmailSender())
+            .Handle(new QuoteCustomBookingRequestCommand(request.Id, 50, null), CancellationToken.None);
+
+        result.Status.ShouldBe(CustomBookingRequestStatus.Quoted);
+        result.Quote.ShouldNotBeNull();
+        result.Quote.QuotedPrice.ShouldBe(33333.33m);
+        result.Quote.DepositAmount.ShouldBe(16667m);
+        result.Quote.RemainingAmount.ShouldBe(16666.33m);
+        result.Quote.PriceNote.ShouldBe("Theo gio");
+    }
+
+    [Test]
+    public async Task AcceptQuoteCreatesQrTicketOnce()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Quoted;
+        request.AssignedVessel = ValidVessel();
+        request.AssignedVesselId = request.AssignedVessel.Id;
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            QuotedPrice = 5000000m,
+            DepositPercent = 50m,
+            DepositAmount = 2500000m,
+            RemainingAmount = 2500000m,
+            Currency = "VND",
+            ValidUntil = DateTimeOffset.UtcNow.AddHours(1)
+        };
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var result = await new AcceptCustomBookingQuoteCommandHandler(
+                context,
+                customerContext,
+                TimeProvider.System,
+                new TestCustomBookingConfirmationEmailSender())
+            .Handle(new AcceptCustomBookingQuoteCommand(request.Id), CancellationToken.None);
+
+        result.Status.ShouldBe(CustomBookingRequestStatus.Confirmed);
+        result.Ticket.ShouldNotBeNull();
+        result.Ticket.QrPayload.ShouldStartWith("swb:custom-booking:");
+        result.Ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
+        context.CustomBookingTickets.Count().ShouldBe(1);
+        context.CustomBookingTickets.Single().QrTokenHash.ShouldBe(
+            CustomBookingTicketSupport.HashQrToken(result.Ticket.QrToken));
+        context.CustomBookingTickets.Single().QrTokenHash.ShouldNotBe(result.Ticket.QrToken);
+    }
+
+    [Test]
+    public async Task EnsureActiveTicketStoresQrExpiryAsUtc()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var request = ValidRequest();
+        request.EstimatedEndDate = new DateOnly(2026, 6, 20);
+        request.PreferredEndTime = new TimeOnly(10, 30);
+        var issuedAt = new DateTimeOffset(2026, 6, 17, 9, 0, 0, TimeSpan.Zero);
+
+        var result = await CustomBookingTicketSupport.EnsureActiveTicketAsync(
+            context,
+            request,
+            issuedAt,
+            CancellationToken.None);
+
+        var expectedExpiry = new DateTimeOffset(2026, 6, 20, 10, 30, 0, TimeSpan.FromHours(7))
+            .ToUniversalTime();
+        result.Ticket.QrExpiresAt.ShouldBe(expectedExpiry);
+        result.Ticket.QrExpiresAt!.Value.Offset.ShouldBe(TimeSpan.Zero);
+    }
+
+    [Test]
+    public async Task ScanTicketMarksTicketAsUsedAndRejectsSecondScan()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var qrToken = "test-token";
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-TEST",
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow,
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        var handler = new ScanCustomBookingTicketRequestHandler(
+            context,
+            staffContext,
+            TimeProvider.System);
+
+        var result = await handler.Handle(
+            new ScanCustomBookingTicketRequest(CustomBookingTicketSupport.CreateQrPayload(qrToken)),
+            CancellationToken.None);
+
+        result.Status.ShouldBe(CustomBookingTicketStatus.Used);
+        result.QrUsedAt.ShouldNotBeNull();
+        context.CustomBookingTickets.Single().QrUsedByUserId.ShouldBe(staffContext.UserId);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new ScanCustomBookingTicketRequest(qrToken), CancellationToken.None));
+
+        exception.Errors["qrToken"].ShouldContain("Vé này đã được sử dụng.");
     }
 
     [Test]
@@ -472,6 +659,7 @@ public class CustomBookingWorkflowTests
             null,
             2,
             SeatSetupType.StandardAndVip,
+            VesselRentalUnit.Day,
             new DateOnly(2026, 6, 20),
             new TimeOnly(8, 0),
             Guid.NewGuid(),
@@ -486,6 +674,7 @@ public class CustomBookingWorkflowTests
             ContactPhone = "+84900000000",
             RequestedNumberOfDecks = 2,
             RequestedSeatSetupType = SeatSetupType.StandardAndVip,
+            RentalUnit = VesselRentalUnit.Day,
             DepartureDate = new DateOnly(2026, 6, 20),
             PreferredStartTime = new TimeOnly(8, 0),
             FromLocation = "A",
@@ -550,4 +739,37 @@ public class CustomBookingWorkflowTests
             AssignedAt = DateTimeOffset.UtcNow,
             AssignedByUserId = assignedByUserId
         };
+
+    private static async Task<TestUserContext> SeedCustomerAsync(Infrastructure.Data.ApplicationDbContext context)
+    {
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Custom booking customer",
+            RoleId = role.Id,
+            Role = role,
+            Status = UserStatus.Active
+        };
+
+        context.AddRange(role, user);
+        await context.SaveChangesAsync();
+        return new TestUserContext(user.Id);
+    }
+
+    private sealed class TestCustomBookingConfirmationEmailSender : ICustomBookingConfirmationEmailSender
+    {
+        public Task SendConfirmationAsync(CustomBookingRequest request, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
+
+    private sealed class TestCustomBookingQuoteEmailSender : ICustomBookingQuoteEmailSender
+    {
+        public Task SendQuoteAsync(CustomBookingRequest request, CancellationToken cancellationToken) =>
+            Task.CompletedTask;
+    }
 }

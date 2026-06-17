@@ -21,6 +21,7 @@ public sealed record CreateCustomBookingRequestCommand(
     Guid? ServiceId = null,
     int RequestedNumberOfDecks = 0,
     SeatSetupType RequestedSeatSetupType = default,
+    VesselRentalUnit RentalUnit = VesselRentalUnit.Day,
     DateOnly DepartureDate = default,
     TimeOnly? PreferredStartTime = null,
     Guid FromStationId = default,
@@ -60,6 +61,10 @@ public sealed class CreateCustomBookingRequestCommandValidator : AbstractValidat
             .NotEqual(Guid.Empty)
             .WithMessage("ServiceId không hợp lệ.")
             .When(x => x.ServiceId.HasValue);
+
+        RuleFor(x => x.RentalUnit)
+            .IsInEnum()
+            .WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
     }
 }
 
@@ -120,6 +125,7 @@ public sealed class CreateCustomBookingRequestCommandHandler
             WaterbusService = service,
             RequestedNumberOfDecks = request.RequestedNumberOfDecks,
             RequestedSeatSetupType = request.RequestedSeatSetupType,
+            RentalUnit = request.RentalUnit,
             DepartureDate = request.DepartureDate,
             PreferredStartTime = request.PreferredStartTime,
             PreferredEndTime = tripPlan.RouteEstimate.EstimatedEndTime,
@@ -144,6 +150,16 @@ public sealed class CreateCustomBookingRequestCommandHandler
             Status = CustomBookingRequestStatus.PendingReview,
             ItineraryStops = tripPlan.ItineraryStops.ToList()
         };
+
+        if (!await CustomBookingAvailability.HasMatchingAvailableVesselAsync(
+                _context,
+                customRequest,
+                cancellationToken))
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.DepartureDate),
+                "Không có tàu phù hợp còn trống trong khung giờ yêu cầu. Vui lòng chọn ngày hoặc giờ khác.");
+        }
 
         _context.Set<CustomBookingRequest>().Add(customRequest);
         await _context.SaveChangesAsync(cancellationToken);

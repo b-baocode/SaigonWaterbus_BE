@@ -26,6 +26,8 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
 
     public SeatSetupType RequestedSeatSetupType { get; set; }
 
+    public VesselRentalUnit RentalUnit { get; set; } = VesselRentalUnit.Day;
+
     public Guid? AssignedVesselId { get; set; }
 
     public Vessel? AssignedVessel { get; set; }
@@ -109,4 +111,6 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
 
     public ICollection<CustomBookingOperationService> OperationServices { get; set; } =
         new List<CustomBookingOperationService>();
+
+    public ICollection<CustomBookingTicket> Tickets { get; set; } = new List<CustomBookingTicket>();
 }

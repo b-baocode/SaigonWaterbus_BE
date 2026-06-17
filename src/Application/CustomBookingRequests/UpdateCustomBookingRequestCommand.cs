@@ -12,6 +12,7 @@ public sealed record UpdateCustomBookingRequestCommand(
     Guid? ServiceId,
     int RequestedNumberOfDecks,
     SeatSetupType RequestedSeatSetupType,
+    VesselRentalUnit RentalUnit,
     DateOnly DepartureDate,
     TimeOnly? PreferredStartTime,
     Guid FromStationId,
@@ -34,6 +35,9 @@ public sealed class UpdateCustomBookingRequestCommandValidator
             .NotEqual(Guid.Empty)
             .WithMessage("ServiceId không hợp lệ.")
             .When(x => x.ServiceId.HasValue);
+        RuleFor(x => x.RentalUnit)
+            .IsInEnum()
+            .WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
         Include(new CustomBookingTripRequestValidator<UpdateCustomBookingRequestCommand>());
     }
 }
@@ -91,6 +95,7 @@ public sealed class UpdateCustomBookingRequestCommandHandler
         customRequest.WaterbusService = service;
         customRequest.RequestedNumberOfDecks = request.RequestedNumberOfDecks;
         customRequest.RequestedSeatSetupType = request.RequestedSeatSetupType;
+        customRequest.RentalUnit = request.RentalUnit;
         customRequest.DepartureDate = request.DepartureDate;
         customRequest.PreferredStartTime = request.PreferredStartTime;
         customRequest.PreferredEndTime = tripPlan.RouteEstimate.EstimatedEndTime;

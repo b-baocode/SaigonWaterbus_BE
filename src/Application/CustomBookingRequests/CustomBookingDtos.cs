@@ -99,6 +99,7 @@ public sealed record CustomBookingRequestDto(
     CustomBookingServiceDto? Service,
     int RequestedNumberOfDecks,
     SeatSetupType RequestedSeatSetupType,
+    VesselRentalUnit RentalUnit,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CustomBookingVesselDto? AssignedVessel,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -126,7 +127,9 @@ public sealed record CustomBookingRequestDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? StatusReason,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CustomBookingQuoteDto? Quote)
+    CustomBookingQuoteDto? Quote,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CustomBookingTicketQrDto? Ticket = null)
 {
     public static CustomBookingRequestDto From(
         CustomBookingRequest request,
@@ -147,6 +150,7 @@ public sealed record CustomBookingRequestDto(
                 request.WaterbusService.BookingMode),
             request.RequestedNumberOfDecks,
             request.RequestedSeatSetupType,
+            request.RentalUnit,
             request.AssignedVessel is null ? null : new CustomBookingVesselDto(
                 request.AssignedVessel.Id,
                 request.AssignedVessel.Code,

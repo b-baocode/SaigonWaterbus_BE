@@ -34,8 +34,6 @@ public class QuoteCustomBookingRequestCommandValidatorTests
     private static QuoteCustomBookingRequestCommand ValidCommand(decimal depositPercent) =>
         new(
             Guid.NewGuid(),
-            QuotedPrice: 15000000m,
             DepositPercent: depositPercent,
-            Currency: "VND",
             PriceNote: null);
 }

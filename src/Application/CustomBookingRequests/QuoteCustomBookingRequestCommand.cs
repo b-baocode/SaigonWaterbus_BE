@@ -8,9 +8,7 @@ namespace SaigonWaterbus.Application.CustomBookingRequests;
 
 public sealed record QuoteCustomBookingRequestCommand(
     Guid Id,
-    decimal QuotedPrice,
     decimal DepositPercent,
-    string? Currency,
     string? PriceNote) : IRequest<CustomBookingRequestDto>;
 
 public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidator<QuoteCustomBookingRequestCommand>
@@ -18,16 +16,11 @@ public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidato
     public QuoteCustomBookingRequestCommandValidator()
     {
         RuleFor(x => x.Id).NotEmpty();
-        RuleFor(x => x.QuotedPrice).GreaterThan(0).PrecisionScale(12, 2, false);
         RuleFor(x => x.DepositPercent)
             .GreaterThan(0)
             .LessThanOrEqualTo(100)
             .PrecisionScale(5, 2, false)
             .WithMessage("Phần trăm đặt cọc phải lớn hơn 0 và không vượt quá 100.");
-        RuleFor(x => x.Currency)
-            .Must(CustomBookingRequestSupport.IsValidCurrencyCode)
-            .WithMessage("Currency phải là mã ISO 4217 gồm 3 chữ cái, ví dụ VND.")
-            .When(x => x.Currency is not null);
         RuleFor(x => x.PriceNote)
             .MaximumLength(1000)
             .WithMessage("Ghi chú báo giá không được vượt quá 1000 ký tự.")
@@ -77,12 +70,21 @@ public sealed class QuoteCustomBookingRequestCommandHandler
             customRequest,
             cancellationToken);
         CustomBookingRequestSupport.ApplyRouteEstimate(customRequest, routeSegments);
+        await CustomBookingAvailability.EnsureVesselAvailableAsync(
+            _context,
+            customRequest,
+            customRequest.AssignedVesselId!.Value,
+            cancellationToken);
+        var rentalPrice = CustomBookingRequestSupport.GetRequiredRentalPriceOrThrow(
+            customRequest,
+            customRequest.AssignedVessel!);
+        var quotedPrice = CustomBookingRequestSupport.CalculateRentalPrice(customRequest, rentalPrice);
 
         var depositAmount = decimal.Round(
-            request.QuotedPrice * request.DepositPercent / 100m,
+            quotedPrice * request.DepositPercent / 100m,
             0,
             MidpointRounding.AwayFromZero);
-        var remainingAmount = request.QuotedPrice - depositAmount;
+        var remainingAmount = quotedPrice - depositAmount;
 
         if (customRequest.Quote is null)
         {
@@ -93,13 +95,13 @@ public sealed class QuoteCustomBookingRequestCommandHandler
             _context.Set<CustomBookingQuote>().Add(customRequest.Quote);
         }
 
-        customRequest.Quote.QuotedPrice = request.QuotedPrice;
+        customRequest.Quote.QuotedPrice = quotedPrice;
         customRequest.Quote.DepositPercent = request.DepositPercent;
         customRequest.Quote.DepositAmount = depositAmount;
         customRequest.Quote.RemainingAmount = remainingAmount;
-        customRequest.Quote.Currency = CustomBookingRequestSupport.NormalizeCurrency(request.Currency);
+        customRequest.Quote.Currency = CustomBookingRequestSupport.NormalizeCurrency(rentalPrice.Currency);
         customRequest.Quote.PriceNote = string.IsNullOrWhiteSpace(request.PriceNote)
-            ? null
+            ? rentalPrice.Note
             : request.PriceNote.Trim();
         customRequest.Quote.ValidUntil = validUntil;
         customRequest.Status = CustomBookingRequestStatus.Quoted;
