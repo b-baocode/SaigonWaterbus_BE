@@ -33,6 +33,8 @@ internal static class UserAuditSupport
             user.UserCode,
             user.FullName,
             user.DateOfBirth,
+            user.Gender,
+            user.Nationality,
             user.PhoneNumber,
             user.Email,
             user.RoleId,

@@ -385,11 +385,11 @@ internal static class CustomBookingRequestSupport
                 $"Tàu chỉ có {vessel.SeatCount} ghế, thấp hơn yêu cầu {request.PassengerCount} khách.");
         }
 
-        if (!vessel.RentalPrices.Any(x => x.RentalUnit == VesselRentalUnit.Day))
+        if (!vessel.RentalPrices.Any())
         {
             throw AuthSupport.CreateValidationException(
                 nameof(request.AssignedVesselId),
-                "Tàu được chọn chưa cấu hình giá thuê theo ngày.");
+                "Tàu được chọn chưa cấu hình giá thuê.");
         }
     }
 }

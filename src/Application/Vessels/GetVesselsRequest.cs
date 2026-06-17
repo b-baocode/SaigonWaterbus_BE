@@ -13,6 +13,12 @@ public sealed record VesselRentalPriceDto(
     string Currency,
     string? Note);
 
+public sealed record VesselRentalPriceRequest(
+    VesselRentalUnit RentalUnit,
+    decimal UnitPrice,
+    string? Currency = null,
+    string? Note = null);
+
 public sealed record VesselDto(
     Guid Id,
     string Code,
@@ -29,6 +35,7 @@ public sealed record VesselDto(
     string ImageUrl,
     string? Description,
     VesselRentalPriceDto? RentalPrice,
+    IReadOnlyCollection<VesselRentalPriceDto> RentalPrices,
     SeatSetupType SeatSetupType);
 
 public sealed class GetVesselsRequestValidator : AbstractValidator<GetVesselsRequest>

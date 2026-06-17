@@ -12,7 +12,9 @@ public sealed record UpdateUserRequest(
     DateOnly? DateOfBirth,
     string? PhoneNumber,
     string? Email,
-    Guid? RoleId);
+    Guid? RoleId,
+    string? Gender = null,
+    string? Nationality = null);
 
 public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
 {
@@ -32,6 +34,14 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
         RuleFor(x => x.DateOfBirth)
             .Must(x => !x.HasValue || x.Value <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
             .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
+
+        RuleFor(x => x.Gender)
+            .MaximumLength(30)
+            .WithMessage("Giới tính không được vượt quá 30 ký tự.");
+
+        RuleFor(x => x.Nationality)
+            .MaximumLength(100)
+            .WithMessage("Quốc tịch không được vượt quá 100 ký tự.");
 
         RuleFor(x => x.PhoneNumber)
             .NotEmpty()
@@ -162,6 +172,16 @@ public sealed class UpdateUserRequestUseCase
         if (request.DateOfBirth.HasValue)
         {
             user.DateOfBirth = request.DateOfBirth;
+        }
+
+        if (request.Gender is not null)
+        {
+            user.Gender = AuthSupport.NormalizeOptionalText(request.Gender);
+        }
+
+        if (request.Nationality is not null)
+        {
+            user.Nationality = AuthSupport.NormalizeOptionalText(request.Nationality);
         }
 
         if (roleChanged)

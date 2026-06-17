@@ -9,7 +9,8 @@ public sealed record UpdateVesselRentalPriceRequest(
     Guid VesselId,
     decimal UnitPrice,
     string? Currency = null,
-    string? Note = null);
+    string? Note = null,
+    VesselRentalUnit RentalUnit = VesselRentalUnit.Day);
 
 public sealed class UpdateVesselRentalPriceRequestValidator : AbstractValidator<UpdateVesselRentalPriceRequest>
 {
@@ -21,9 +22,13 @@ public sealed class UpdateVesselRentalPriceRequestValidator : AbstractValidator<
 
         RuleFor(x => x.UnitPrice)
             .GreaterThan(0)
-            .WithMessage("Giá thuê tàu theo ngày phải lớn hơn 0.")
+            .WithMessage("Giá thuê tàu phải lớn hơn 0.")
             .LessThanOrEqualTo(9999999999.99m)
-            .WithMessage("Giá thuê tàu theo ngày không hợp lệ.");
+            .WithMessage("Giá thuê tàu không hợp lệ.");
+
+        RuleFor(x => x.RentalUnit)
+            .IsInEnum()
+            .WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
 
         RuleFor(x => x.Currency)
             .Must(VesselSupport.IsValidCurrencyCode)
@@ -60,13 +65,13 @@ public sealed class UpdateVesselRentalPriceRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        var rentalPrice = vessel.RentalPrices.SingleOrDefault(x => x.RentalUnit == VesselRentalUnit.Day);
+        var rentalPrice = vessel.RentalPrices.SingleOrDefault(x => x.RentalUnit == request.RentalUnit);
         if (rentalPrice is null)
         {
             rentalPrice = new VesselRentalPrice
             {
                 VesselId = vessel.Id,
-                RentalUnit = VesselRentalUnit.Day
+                RentalUnit = request.RentalUnit
             };
             vessel.RentalPrices.Add(rentalPrice);
             _context.VesselRentalPrices.Add(rentalPrice);
@@ -74,7 +79,7 @@ public sealed class UpdateVesselRentalPriceRequestUseCase
 
         rentalPrice.UnitPrice = request.UnitPrice;
         rentalPrice.Currency = VesselSupport.NormalizeCurrency(request.Currency);
-        rentalPrice.Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
+        rentalPrice.Note = VesselSupport.NormalizeOptionalNote(request.Note);
 
         await _context.SaveChangesAsync(cancellationToken);
 

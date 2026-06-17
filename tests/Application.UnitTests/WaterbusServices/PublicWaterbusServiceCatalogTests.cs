@@ -30,11 +30,10 @@ public class PublicWaterbusServiceCatalogTests
         item.SupportedSeatSetupTypes.ShouldBe(
             [SeatSetupType.FullStandard, SeatSetupType.StandardAndVip]);
         item.SeatTypes.Select(x => x.Code).ShouldBe(["STANDARD", "VIP"]);
-        item.SeatTypes.Single(x => x.Code == "VIP").PriceModifier.ShouldBe(1.5m);
     }
 
     [Test]
-    public async Task HidesInactiveServicesPricesAndGlobalSeatTypes()
+    public async Task HidesInactiveServicesAndGlobalSeatTypes()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var standard = SeatFlowTestData.SeatType("STANDARD");
@@ -58,7 +57,7 @@ public class PublicWaterbusServiceCatalogTests
     }
 
     [Test]
-    public async Task HidesActiveServiceWithoutAnActiveSeatType()
+    public async Task ReturnsActiveServiceWithoutServiceSeatPriceConfiguration()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var standard = SeatFlowTestData.SeatType("STANDARD");
@@ -70,6 +69,6 @@ public class PublicWaterbusServiceCatalogTests
         var result = await new GetPublicWaterbusServiceCatalogRequestUseCase(context)
             .ExecuteAsync(CancellationToken.None);
 
-        result.ShouldHaveSingleItem().Code.ShouldBe("READY");
+        result.Select(x => x.Code).ShouldBe(["INCOMPLETE", "READY"]);
     }
 }

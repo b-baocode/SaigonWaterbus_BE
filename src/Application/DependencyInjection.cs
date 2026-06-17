@@ -79,7 +79,6 @@ public static class DependencyInjection
         builder.Services.AddScoped<GetWaterbusServicesRequestUseCase>();
         builder.Services.AddScoped<GetWaterbusServiceByIdRequestUseCase>();
         builder.Services.AddScoped<GetWaterbusServiceSeatTypesRequestUseCase>();
-        builder.Services.AddScoped<UpdateWaterbusServiceSeatPriceRequestUseCase>();
         builder.Services.AddScoped<CreateWaterbusServiceRequestUseCase>();
         builder.Services.AddScoped<UpdateWaterbusServiceRequestUseCase>();
         builder.Services.AddScoped<UpdateWaterbusServiceStatusRequestUseCase>();

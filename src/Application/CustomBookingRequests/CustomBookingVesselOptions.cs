@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -7,15 +8,15 @@ namespace SaigonWaterbus.Application.CustomBookingRequests;
 
 public sealed record CustomBookingPriceRangeDto(
     string Currency,
-    decimal MinimumDailyPrice,
-    decimal MaximumDailyPrice);
+    VesselRentalUnit RentalUnit,
+    decimal MinimumPrice,
+    decimal MaximumPrice);
 
 public sealed record CustomBookingPricingOptionsDto(
     int RequestedNumberOfDecks,
     SeatSetupType RequestedSeatSetupType,
     int PassengerCount,
     int MatchingVesselCount,
-    VesselRentalUnit RentalUnit,
     IReadOnlyCollection<CustomBookingPriceRangeDto> PriceRanges,
     string Note);
 
@@ -61,14 +62,15 @@ public sealed class GetCustomBookingPricingOptionsQueryHandler
                 request.RequestedSeatSetupType,
                 request.PassengerCount)
             .SelectMany(x => x.RentalPrices
-                .Where(price => price.RentalUnit == VesselRentalUnit.Day)
-                .Select(price => new { x.Id, price.UnitPrice, price.Currency }))
+                .Select(price => new { x.Id, price.RentalUnit, price.UnitPrice, price.Currency }))
             .ToListAsync(cancellationToken);
         var priceRanges = prices
-            .GroupBy(x => x.Currency.ToUpperInvariant())
-            .OrderBy(x => x.Key)
+            .GroupBy(x => new { Currency = x.Currency.ToUpperInvariant(), x.RentalUnit })
+            .OrderBy(x => x.Key.Currency)
+            .ThenBy(x => VesselSupport.RentalUnitDisplayOrder(x.Key.RentalUnit))
             .Select(group => new CustomBookingPriceRangeDto(
-                group.Key,
+                group.Key.Currency,
+                group.Key.RentalUnit,
                 group.Min(x => x.UnitPrice),
                 group.Max(x => x.UnitPrice)))
             .ToArray();
@@ -78,13 +80,19 @@ public sealed class GetCustomBookingPricingOptionsQueryHandler
             request.RequestedSeatSetupType,
             request.PassengerCount,
             prices.Select(x => x.Id).Distinct().Count(),
-            VesselRentalUnit.Day,
             priceRanges,
             prices.Count == 0
                 ? "Hiện chưa có tàu phù hợp đã cấu hình giá. Khách vẫn có thể gửi yêu cầu để Admin kiểm tra thủ công."
-                : "Đây là giá thuê tàu tham khảo theo ngày, chưa phải báo giá cuối cùng cho lịch trình.");
+                : "Đây là giá thuê tàu tham khảo theo giờ/ngày, chưa phải báo giá cuối cùng cho lịch trình.");
     }
 }
+
+public sealed record CustomBookingVesselRentalPriceOptionDto(
+    VesselRentalUnit RentalUnit,
+    decimal UnitPrice,
+    decimal EstimatedBasePrice,
+    string Currency,
+    string? PriceNote);
 
 public sealed record CustomBookingVesselCandidateDto(
     Guid VesselId,
@@ -94,11 +102,7 @@ public sealed record CustomBookingVesselCandidateDto(
     int NumberOfDecks,
     SeatSetupType SeatSetupType,
     string ImageUrl,
-    VesselRentalUnit RentalUnit,
-    decimal DailyPrice,
-    decimal EstimatedBasePrice,
-    string Currency,
-    string? PriceNote);
+    IReadOnlyCollection<CustomBookingVesselRentalPriceOptionDto> RentalPrices);
 
 public sealed record GetCustomBookingVesselCandidatesQuery(Guid Id)
     : IRequest<IReadOnlyCollection<CustomBookingVesselCandidateDto>>;
@@ -143,6 +147,7 @@ public sealed class GetCustomBookingVesselCandidatesQueryHandler
 
         CustomBookingRequestSupport.EnsureCanAssignVessel(customRequest);
 
+        var billableHours = Math.Max(1, (int)Math.Ceiling(customRequest.EstimatedDurationMinutes / 60m));
         var rentalDays = Math.Max(1, (int)Math.Ceiling(customRequest.EstimatedDurationMinutes / 1440m));
         var vessels = await CustomBookingVesselMatcher.Apply(
                 _context.Set<Vessel>().AsNoTracking().Include(x => x.RentalPrices),
@@ -156,7 +161,17 @@ public sealed class GetCustomBookingVesselCandidatesQueryHandler
         return vessels
             .Select(vessel =>
             {
-                var price = vessel.RentalPrices.Single(x => x.RentalUnit == VesselRentalUnit.Day);
+                var rentalPrices = vessel.RentalPrices
+                    .OrderBy(x => VesselSupport.RentalUnitDisplayOrder(x.RentalUnit))
+                    .ThenBy(x => x.Id)
+                    .Select(price => new CustomBookingVesselRentalPriceOptionDto(
+                        price.RentalUnit,
+                        price.UnitPrice,
+                        EstimateBasePrice(price, billableHours, rentalDays),
+                        price.Currency,
+                        price.Note))
+                    .ToArray();
+
                 return new CustomBookingVesselCandidateDto(
                     vessel.Id,
                     vessel.Code,
@@ -165,14 +180,18 @@ public sealed class GetCustomBookingVesselCandidatesQueryHandler
                     vessel.NumberOfDecks,
                     vessel.SeatSetupType,
                     vessel.ImageUrl ?? string.Empty,
-                    price.RentalUnit,
-                    price.UnitPrice,
-                    price.UnitPrice * rentalDays,
-                    price.Currency,
-                    price.Note);
+                    rentalPrices);
             })
             .ToArray();
     }
+
+    private static decimal EstimateBasePrice(
+        VesselRentalPrice price,
+        int billableHours,
+        int rentalDays) =>
+        price.RentalUnit == VesselRentalUnit.Hour
+            ? price.UnitPrice * billableHours
+            : price.UnitPrice * rentalDays;
 }
 
 internal static class CustomBookingVesselMatcher
@@ -188,5 +207,5 @@ internal static class CustomBookingVesselMatcher
             && x.NumberOfDecks == numberOfDecks
             && x.SeatSetupType == seatSetupType
             && x.SeatCount >= passengerCount
-            && x.RentalPrices.Any(price => price.RentalUnit == VesselRentalUnit.Day));
+            && x.RentalPrices.Any());
 }

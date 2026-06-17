@@ -10,7 +10,6 @@ public sealed record WaterbusServiceSeatTypeDto(
     string Code,
     string Name,
     int DisplayOrder,
-    decimal? PriceModifier,
     bool IsActive);
 
 public sealed record WaterbusServiceSeatTypesDto(
@@ -55,8 +54,6 @@ public sealed class GetWaterbusServiceSeatTypesRequestUseCase
         var service = await WaterbusServiceSupport.ApplyVisibilityFilter(
                 _context.WaterbusServices
                     .AsNoTracking()
-                    .Include(x => x.SeatTypePrices)
-                        .ThenInclude(x => x.SeatType)
                     .AsQueryable(),
                 actor,
                 includeInactive: WaterbusServiceSupport.CanManageWaterbusServices(actor))
@@ -65,13 +62,12 @@ public sealed class GetWaterbusServiceSeatTypesRequestUseCase
                 "Không tìm thấy dịch vụ WaterBus.");
 
         var includeInactive = WaterbusServiceSupport.CanManageWaterbusServices(actor);
-        var availableSeatTypes = includeInactive
-            ? await _context.SeatTypes
-                .AsNoTracking()
-                .OrderBy(x => x.DisplayOrder)
-                .ThenBy(x => x.Code)
-                .ToArrayAsync(cancellationToken)
-            : [];
+        var availableSeatTypes = await _context.SeatTypes
+            .AsNoTracking()
+            .Where(x => includeInactive || x.IsActive)
+            .OrderBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Code)
+            .ToArrayAsync(cancellationToken);
 
         return WaterbusServiceSupport.CreateSeatTypesDto(
             service,

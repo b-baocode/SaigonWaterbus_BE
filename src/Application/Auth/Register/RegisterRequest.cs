@@ -12,7 +12,9 @@ public sealed record RegisterRequest(
     string Password,
     string? Phone = null,
     string? Email = null,
-    string? OtpChannel = null);
+    string? OtpChannel = null,
+    string? Gender = null,
+    string? Nationality = null);
 
 public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest>
 {
@@ -29,6 +31,14 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
             .WithMessage("Ngày sinh là bắt buộc.")
             .Must(x => x <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
             .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
+
+        RuleFor(x => x.Gender)
+            .MaximumLength(30)
+            .WithMessage("Giới tính không được vượt quá 30 ký tự.");
+
+        RuleFor(x => x.Nationality)
+            .MaximumLength(100)
+            .WithMessage("Quốc tịch không được vượt quá 100 ký tự.");
 
         RuleFor(x => x)
             .Must(x => !string.IsNullOrWhiteSpace(x.Phone) || !string.IsNullOrWhiteSpace(x.Email))
@@ -212,6 +222,8 @@ public sealed class RegisterRequestUseCase
 
             user.FullName = request.FullName.Trim();
             user.DateOfBirth = request.DateOfBirth;
+            user.Gender = AuthSupport.NormalizeOptionalText(request.Gender);
+            user.Nationality = AuthSupport.NormalizeOptionalText(request.Nationality);
             user.PhoneNumber = hasPhone ? PhoneRules.ToInternationalFormat(request.Phone!) : null;
             user.NormalizedPhoneNumber = normalizedPhone;
             user.Email = email;

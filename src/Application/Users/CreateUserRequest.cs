@@ -12,7 +12,9 @@ public sealed record CreateUserRequest(
     string? PhoneNumber,
     string Email,
     string Password,
-    Guid RoleId);
+    Guid RoleId,
+    string? Gender = null,
+    string? Nationality = null);
 
 public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
 {
@@ -27,6 +29,14 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
         RuleFor(x => x.DateOfBirth)
             .Must(x => !x.HasValue || x.Value <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
             .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
+
+        RuleFor(x => x.Gender)
+            .MaximumLength(30)
+            .WithMessage("Giới tính không được vượt quá 30 ký tự.");
+
+        RuleFor(x => x.Nationality)
+            .MaximumLength(100)
+            .WithMessage("Quốc tịch không được vượt quá 100 ký tự.");
 
         RuleFor(x => x.PhoneNumber)
             .Must(phoneNumber => phoneNumber is null || PhoneRules.IsValid(phoneNumber))
@@ -109,6 +119,8 @@ public sealed class CreateUserRequestUseCase
         {
             FullName = request.FullName.Trim(),
             DateOfBirth = request.DateOfBirth,
+            Gender = AuthSupport.NormalizeOptionalText(request.Gender),
+            Nationality = AuthSupport.NormalizeOptionalText(request.Nationality),
             PhoneNumber = string.IsNullOrWhiteSpace(request.PhoneNumber)
                 ? null
                 : PhoneRules.ToInternationalFormat(request.PhoneNumber),

@@ -75,15 +75,6 @@ public class ApplicationDbContextInitialiser
         new("VIP", "VIP", 2)
     ];
 
-    private static readonly ServiceSeatTypePriceSeed[] ServiceSeatTypePriceSeeds =
-    [
-        new("WB", "STANDARD", 1m),
-        new("WS", "STANDARD", 1m),
-        new("WS", "VIP", 1.5m),
-        new("WT", "STANDARD", 1m),
-        new("WT", "VIP", 1m)
-    ];
-
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;
     private readonly ApplicationDbContext _context;
     private readonly DatabaseStartupSettings _databaseStartupSettings;
@@ -222,8 +213,6 @@ public class ApplicationDbContextInitialiser
     private async Task SeedServicesAndSeatTypesAsync()
     {
         var serviceByCode = await _context.WaterbusServices
-            .Include(x => x.SeatTypePrices)
-                .ThenInclude(x => x.SeatType)
             .ToDictionaryAsync(x => x.Code);
 
         foreach (var definition in ServiceSeeds)
@@ -278,29 +267,6 @@ public class ApplicationDbContextInitialiser
             }
         }
 
-        foreach (var definition in ServiceSeatTypePriceSeeds)
-        {
-            var service = serviceByCode[definition.ServiceCode];
-            var seatType = seatTypeByCode[definition.SeatTypeCode];
-            var price = service.SeatTypePrices
-                .SingleOrDefault(x => x.SeatTypeId == seatType.Id);
-
-            if (price is null)
-            {
-                service.SeatTypePrices.Add(new ServiceSeatTypePrice
-                {
-                    SeatTypeId = seatType.Id,
-                    SeatType = seatType,
-                    PriceModifier = definition.PriceModifier,
-                    IsActive = true
-                });
-            }
-            else
-            {
-                price.PriceModifier = definition.PriceModifier;
-                price.IsActive = true;
-            }
-        }
     }
 
     public async Task ResetAndSeedSampleDataAsync()
@@ -740,8 +706,4 @@ public class ApplicationDbContextInitialiser
         string Name,
         int DisplayOrder);
 
-    private sealed record ServiceSeatTypePriceSeed(
-        string ServiceCode,
-        string SeatTypeCode,
-        decimal PriceModifier);
 }

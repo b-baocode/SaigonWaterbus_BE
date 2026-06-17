@@ -86,16 +86,6 @@ public sealed class CreateWaterbusServiceRequestUseCase
             BookingMode = request.BookingMode
         };
 
-        var standardSeatType = await _context.SeatTypes
-            .SingleOrDefaultAsync(x => x.Code == "STANDARD", cancellationToken);
-        if (standardSeatType is null)
-        {
-            standardSeatType = WaterbusServiceSupport.CreateSeatType("STANDARD", "Standard", 1);
-            _context.SeatTypes.Add(standardSeatType);
-        }
-        service.SeatTypePrices.Add(
-            WaterbusServiceSupport.CreateServiceSeatTypePrice(service, standardSeatType));
-
         try
         {
             _context.WaterbusServices.Add(service);

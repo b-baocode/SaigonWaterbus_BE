@@ -28,35 +28,6 @@ public sealed class FareCalculator : IFareCalculator
         return basePrice * ticketModifier;
     }
 
-    public async Task<decimal> CalculateAsync(
-        Guid routeId,
-        Guid fromStationId,
-        Guid toStationId,
-        Guid ticketTypeId,
-        Guid waterbusServiceId,
-        Guid seatTypeId,
-        CancellationToken cancellationToken)
-    {
-        var (basePrice, ticketModifier) = await GetBaseComponentsAsync(
-            routeId,
-            fromStationId,
-            toStationId,
-            ticketTypeId,
-            cancellationToken);
-
-        var seatModifier = await _context.ServiceSeatTypePrices
-            .Where(x => x.WaterbusServiceId == waterbusServiceId
-                     && x.SeatTypeId == seatTypeId
-                     && x.IsActive
-                     && x.SeatType.IsActive)
-            .Select(x => (decimal?)x.PriceModifier)
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException(
-                $"No active seat price is configured for service {waterbusServiceId} and seat type {seatTypeId}.");
-
-        return basePrice * ticketModifier * seatModifier;
-    }
-
     private async Task<(decimal BasePrice, decimal TicketModifier)> GetBaseComponentsAsync(
         Guid routeId,
         Guid fromStationId,

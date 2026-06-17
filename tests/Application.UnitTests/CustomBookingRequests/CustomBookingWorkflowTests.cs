@@ -162,6 +162,22 @@ public class CustomBookingWorkflowTests
         await using var context = SeatFlowTestData.CreateContext();
         var first = ValidVessel("WB01", 12000000m);
         var second = ValidVessel("WB02", 15000000m);
+        first.RentalPrices.Add(new VesselRentalPrice
+        {
+            VesselId = first.Id,
+            Vessel = first,
+            RentalUnit = VesselRentalUnit.Hour,
+            UnitPrice = 2000000m,
+            Currency = "VND"
+        });
+        second.RentalPrices.Add(new VesselRentalPrice
+        {
+            VesselId = second.Id,
+            Vessel = second,
+            RentalUnit = VesselRentalUnit.Hour,
+            UnitPrice = 2500000m,
+            Currency = "VND"
+        });
         var wrongDeck = ValidVessel("WB03", 9000000m);
         wrongDeck.NumberOfDecks = 1;
         context.AddRange(first, second, wrongDeck);
@@ -174,8 +190,12 @@ public class CustomBookingWorkflowTests
                 20), CancellationToken.None);
 
         result.MatchingVesselCount.ShouldBe(2);
-        result.PriceRanges.Single().MinimumDailyPrice.ShouldBe(12000000m);
-        result.PriceRanges.Single().MaximumDailyPrice.ShouldBe(15000000m);
+        var hourlyRange = result.PriceRanges.Single(x => x.RentalUnit == VesselRentalUnit.Hour);
+        hourlyRange.MinimumPrice.ShouldBe(2000000m);
+        hourlyRange.MaximumPrice.ShouldBe(2500000m);
+        var dailyRange = result.PriceRanges.Single(x => x.RentalUnit == VesselRentalUnit.Day);
+        dailyRange.MinimumPrice.ShouldBe(12000000m);
+        dailyRange.MaximumPrice.ShouldBe(15000000m);
     }
 
     [Test]

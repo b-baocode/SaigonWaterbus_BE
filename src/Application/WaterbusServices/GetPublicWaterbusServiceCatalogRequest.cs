@@ -6,8 +6,7 @@ namespace SaigonWaterbus.Application.WaterbusServices;
 public sealed record PublicWaterbusServiceSeatTypeDto(
     Guid SeatTypeId,
     string Code,
-    string Name,
-    decimal PriceModifier);
+    string Name);
 
 public sealed record PublicWaterbusServiceCatalogDto(
     Guid ServiceId,
@@ -32,53 +31,46 @@ public sealed class GetPublicWaterbusServiceCatalogRequestUseCase
     {
         var services = await _context.WaterbusServices
             .AsNoTracking()
-            .Include(x => x.SeatTypePrices)
-                .ThenInclude(x => x.SeatType)
-            .Where(x =>
-                x.IsActive
-                && x.SeatTypePrices.Any(price => price.IsActive && price.SeatType.IsActive))
+            .Where(x => x.IsActive)
             .OrderBy(x => x.DisplayOrder)
             .ThenBy(x => x.Code)
             .ToArrayAsync(cancellationToken);
 
+        var seatTypes = await _context.SeatTypes
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .OrderBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Code)
+            .Select(x => new PublicWaterbusServiceSeatTypeDto(
+                x.Id,
+                x.Code,
+                x.Name))
+            .ToArrayAsync(cancellationToken);
+
+        var seatTypeCodes = seatTypes
+            .Select(x => x.Code)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var supportedSeatSetupTypes = new List<SeatSetupType>();
+
+        if (seatTypeCodes.Contains("STANDARD"))
+        {
+            supportedSeatSetupTypes.Add(SeatSetupType.FullStandard);
+        }
+
+        if (seatTypeCodes.Contains("STANDARD") && seatTypeCodes.Contains("VIP"))
+        {
+            supportedSeatSetupTypes.Add(SeatSetupType.StandardAndVip);
+        }
+
         return services
-            .Select(service =>
-            {
-                var seatTypes = service.SeatTypePrices
-                    .Where(x => x.IsActive && x.SeatType.IsActive)
-                    .OrderBy(x => x.SeatType.DisplayOrder)
-                    .ThenBy(x => x.SeatType.Code)
-                    .Select(x => new PublicWaterbusServiceSeatTypeDto(
-                        x.SeatTypeId,
-                        x.SeatType.Code,
-                        x.SeatType.Name,
-                        x.PriceModifier))
-                    .ToArray();
-
-                var seatTypeCodes = seatTypes
-                    .Select(x => x.Code)
-                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
-                var supportedSeatSetupTypes = new List<SeatSetupType>();
-
-                if (seatTypeCodes.Contains("STANDARD"))
-                {
-                    supportedSeatSetupTypes.Add(SeatSetupType.FullStandard);
-                }
-
-                if (seatTypeCodes.Contains("STANDARD") && seatTypeCodes.Contains("VIP"))
-                {
-                    supportedSeatSetupTypes.Add(SeatSetupType.StandardAndVip);
-                }
-
-                return new PublicWaterbusServiceCatalogDto(
-                    service.Id,
-                    service.Code,
-                    service.Name,
-                    service.Description,
-                    service.BookingMode,
-                    supportedSeatSetupTypes,
-                    seatTypes);
-            })
+            .Select(service => new PublicWaterbusServiceCatalogDto(
+                service.Id,
+                service.Code,
+                service.Name,
+                service.Description,
+                service.BookingMode,
+                supportedSeatSetupTypes,
+                seatTypes))
             .ToArray();
     }
 }

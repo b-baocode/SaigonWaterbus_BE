@@ -57,29 +57,12 @@ public sealed class WaterbusServices : IEndpointGroup
 
         groupBuilder.MapGet(GetWaterbusServiceSeatTypes, "{serviceId:guid}/seat-types")
             .RequireAuthorization()
-            .WithSummary("Lấy các loại ghế được phép theo dịch vụ")
+            .WithSummary("Lấy danh sách loại ghế")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
                 null,
-                "Trả về các loại ghế dịch vụ hỗ trợ cùng hệ số giá.",
-                "Giá cuối = giá tuyến x hệ số loại vé x priceModifier của loại ghế.",
-                "Admin thấy toàn bộ loại ghế, loại chưa cấu hình có priceModifier=null.",
-                "Manager và Staff chỉ thấy cấu hình active."));
-
-        groupBuilder.MapPut(UpdateWaterbusServiceSeatPrice, "{serviceId:guid}/seat-types/{seatTypeCode}")
-            .RequireAuthorization()
-            .WithSummary("Cấu hình giá loại ghế cho dịch vụ")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                """
-                {
-                  "priceModifier": 1.5,
-                  "isActive": true
-                }
-                """,
-                "Tạo hoặc cập nhật liên kết giữa dịch vụ và loại ghế.",
-                "Ví dụ STANDARD = 1.0, VIP = 1.5.",
-                "isActive=false để dịch vụ ngừng hỗ trợ loại ghế đó."));
+                "Trả về danh sách loại ghế global từ bảng seat_types.",
+                "Không còn cấu hình giá loại ghế theo dịch vụ."));
 
         groupBuilder.MapPost(CreateWaterbusService, "")
             .RequireAuthorization()
@@ -134,20 +117,6 @@ public sealed class WaterbusServices : IEndpointGroup
         Guid serviceId,
         CancellationToken cancellationToken) =>
         Results.Ok(await waterbusServiceManagementService.GetServiceSeatTypesAsync(serviceId, cancellationToken));
-
-    private static async Task<IResult> UpdateWaterbusServiceSeatPrice(
-        IWaterbusServiceManagementService waterbusServiceManagementService,
-        Guid serviceId,
-        string seatTypeCode,
-        UpdateWaterbusServiceSeatPriceApiRequest request,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await waterbusServiceManagementService.UpdateServiceSeatPriceAsync(
-            new UpdateWaterbusServiceSeatPriceRequest(
-                serviceId,
-                seatTypeCode,
-                request.PriceModifier,
-                request.IsActive),
-            cancellationToken));
 
     private static async Task<IResult> CreateWaterbusService(
         IWaterbusServiceManagementService waterbusServiceManagementService,
@@ -213,7 +182,4 @@ public sealed class WaterbusServices : IEndpointGroup
     public sealed record UpdateWaterbusServiceStatusApiRequest(
         bool IsActive);
 
-    public sealed record UpdateWaterbusServiceSeatPriceApiRequest(
-        decimal PriceModifier,
-        bool IsActive = true);
 }

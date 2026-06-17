@@ -25,6 +25,12 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.DateOfBirth)
             .HasColumnType("date");
 
+        builder.Property(x => x.Gender)
+            .HasMaxLength(30);
+
+        builder.Property(x => x.Nationality)
+            .HasMaxLength(100);
+
         builder.Property(x => x.PhoneNumber)
             .HasMaxLength(20);
 

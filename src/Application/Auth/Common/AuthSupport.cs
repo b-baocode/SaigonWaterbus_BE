@@ -112,6 +112,8 @@ internal static class AuthSupport
                 user.UserCode,
                 user.FullName,
                 user.DateOfBirth,
+                user.Gender,
+                user.Nationality,
                 user.PhoneNumber,
                 user.PhoneVerifiedAt,
                 user.Email,
@@ -160,6 +162,8 @@ internal static class AuthSupport
             user.UserCode,
             user.FullName,
             user.DateOfBirth,
+            user.Gender,
+            user.Nationality,
             user.PhoneNumber,
             user.PhoneVerifiedAt,
             user.Email,
@@ -168,6 +172,9 @@ internal static class AuthSupport
             user.Status,
             [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)]);
     }
+
+    public static string? NormalizeOptionalText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     public static async Task RevokeActiveRefreshTokensAsync(
         IApplicationDbContext context,

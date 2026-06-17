@@ -9,6 +9,8 @@ public sealed record AuthUserDto(
     string? Code,
     string FullName,
     DateOnly? DateOfBirth,
+    string? Gender,
+    string? Nationality,
     string? PhoneNumber,
     DateTimeOffset? PhoneVerifiedAt,
     string? Email,

@@ -24,8 +24,6 @@ public interface IApplicationDbContext
 
     DbSet<SeatType> SeatTypes { get; }
 
-    DbSet<ServiceSeatTypePrice> ServiceSeatTypePrices { get; }
-
     DbSet<VesselDeckLayout> VesselDeckLayouts { get; }
 
     DbSet<VesselFacility> VesselFacilities { get; }

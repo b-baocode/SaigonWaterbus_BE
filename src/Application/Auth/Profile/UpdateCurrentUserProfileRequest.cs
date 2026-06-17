@@ -9,6 +9,8 @@ namespace SaigonWaterbus.Application.Auth.Profile;
 public sealed record UpdateCurrentUserProfileRequest(
     string? FullName = null,
     DateOnly? DateOfBirth = null,
+    string? Gender = null,
+    string? Nationality = null,
     string? PhoneNumber = null,
     string? Email = null,
     string? AvatarFileName = null,
@@ -30,6 +32,14 @@ public sealed class UpdateCurrentUserProfileRequestValidator : AbstractValidator
         RuleFor(x => x.DateOfBirth)
             .Must(x => !x.HasValue || x.Value <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
             .WithMessage("Ngày sinh không được lớn hơn ngày hiện tại.");
+
+        RuleFor(x => x.Gender)
+            .MaximumLength(30)
+            .WithMessage("Giới tính không được vượt quá 30 ký tự.");
+
+        RuleFor(x => x.Nationality)
+            .MaximumLength(100)
+            .WithMessage("Quốc tịch không được vượt quá 100 ký tự.");
 
         RuleFor(x => x.PhoneNumber)
             .NotEmpty()
@@ -288,6 +298,16 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
             if (request.DateOfBirth.HasValue)
             {
                 user.DateOfBirth = request.DateOfBirth;
+            }
+
+            if (request.Gender is not null)
+            {
+                user.Gender = AuthSupport.NormalizeOptionalText(request.Gender);
+            }
+
+            if (request.Nationality is not null)
+            {
+                user.Nationality = AuthSupport.NormalizeOptionalText(request.Nationality);
             }
 
             if (hasPhoneUpdate)

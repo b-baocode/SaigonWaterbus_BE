@@ -19,6 +19,8 @@ public class Auth : IEndpointGroup
         {
           "fullName": "Nguyen Van A",
           "dateOfBirth": "02/09/2003",
+          "gender": "Male",
+          "nationality": "Vietnamese",
           "password": "P@ssword123",
           "email": "vana@gmail.com"
         }
@@ -90,6 +92,8 @@ public class Auth : IEndpointGroup
         {
           "fullName": "Nguyen Van A Updated",
           "dateOfBirth": "02/09/2003",
+          "gender": "Male",
+          "nationality": "Vietnamese",
           "phoneNumber": "+84901234567",
           "email": "vana@gmail.com"
         }
@@ -229,10 +233,10 @@ public class Auth : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateMeExample,
-                "User được cập nhật fullName, dateOfBirth, phoneNumber, email và ảnh đại diện.",
+                "User được cập nhật fullName, dateOfBirth, gender, nationality, phoneNumber, email và ảnh đại diện.",
                 "Chỉ field nào gửi lên mới được cập nhật; field không gửi sẽ giữ dữ liệu cũ.",
                 "Có thể gửi application/json nếu không đổi ảnh.",
-                "Nếu đổi ảnh, gửi multipart/form-data với các field fullName, dateOfBirth, phoneNumber, email và file.",
+                "Nếu đổi ảnh, gửi multipart/form-data với các field fullName, dateOfBirth, gender, nationality, phoneNumber, email và file.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
                 "User đăng nhập Google có thể thêm phoneNumber một lần và cần verify OTP.",
                 "Customer đăng ký thường không được tự thay đổi phoneNumber; Admin hoặc Manager đổi số điện thoại customer qua API quản lý user.",
@@ -426,6 +430,8 @@ public class Auth : IEndpointGroup
         return new UpdateCurrentUserProfileRequest(
             profileRequest?.FullName,
             profileRequest?.DateOfBirth,
+            profileRequest?.Gender,
+            profileRequest?.Nationality,
             profileRequest?.PhoneNumber,
             profileRequest?.Email);
     }
@@ -443,6 +449,8 @@ public class Auth : IEndpointGroup
         return new UpdateCurrentUserProfileRequest(
             GetOptionalFormValue(form, "fullName"),
             ParseOptionalDateOnly(GetOptionalFormValue(form, "dateOfBirth")),
+            GetOptionalFormValue(form, "gender"),
+            GetOptionalFormValue(form, "nationality"),
             GetOptionalFormValue(form, "phoneNumber"),
             GetOptionalFormValue(form, "email"),
             file?.FileName,
@@ -480,12 +488,16 @@ public class Auth : IEndpointGroup
     private sealed record UpdateCurrentUserProfileJsonRequest(
         string? FullName = null,
         DateOnly? DateOfBirth = null,
+        string? Gender = null,
+        string? Nationality = null,
         string? PhoneNumber = null,
         string? Email = null);
 
     private sealed record UpdateCurrentUserProfileFormRequest(
         string? FullName = null,
         DateOnly? DateOfBirth = null,
+        string? Gender = null,
+        string? Nationality = null,
         string? PhoneNumber = null,
         string? Email = null,
         IFormFile? File = null);

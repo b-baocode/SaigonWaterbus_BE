@@ -9,6 +9,8 @@ public sealed class Users : IEndpointGroup
         {
           "fullName": "Tran Thi B",
           "dateOfBirth": "10/05/1998",
+          "gender": "Female",
+          "nationality": "Vietnamese",
           "phoneNumber": "0912345678",
           "email": "thib@gmail.com",
           "password": "P@ssword123",
@@ -176,7 +178,9 @@ public sealed class Users : IEndpointGroup
                 request.PhoneNumber,
                 request.Email,
                 request.Password,
-                request.RoleId),
+                request.RoleId,
+                request.Gender,
+                request.Nationality),
             cancellationToken));
 
     private static async Task<IResult> Update(
@@ -191,7 +195,9 @@ public sealed class Users : IEndpointGroup
                 request.DateOfBirth,
                 request.PhoneNumber,
                 request.Email,
-                request.RoleId),
+                request.RoleId,
+                request.Gender,
+                request.Nationality),
             cancellationToken));
 
     private static async Task<IResult> UpdateStatus(
@@ -232,14 +238,18 @@ public sealed class Users : IEndpointGroup
         string? PhoneNumber,
         string Email,
         string Password,
-        Guid RoleId);
+        Guid RoleId,
+        string? Gender = null,
+        string? Nationality = null);
 
     public sealed record UpdateUserApiRequest(
         string? FullName = null,
         DateOnly? DateOfBirth = null,
         string? PhoneNumber = null,
         string? Email = null,
-        Guid? RoleId = null);
+        Guid? RoleId = null,
+        string? Gender = null,
+        string? Nationality = null);
 
     public sealed record UpdateUserStatusApiRequest(
         Domain.Enums.UserStatus Status);

@@ -16,10 +16,6 @@ public interface IWaterbusServiceManagementService
         Guid serviceId,
         CancellationToken cancellationToken);
 
-    Task<WaterbusServiceSeatTypesDto> UpdateServiceSeatPriceAsync(
-        UpdateWaterbusServiceSeatPriceRequest request,
-        CancellationToken cancellationToken);
-
     Task<WaterbusServiceDto> CreateServiceAsync(
         CreateWaterbusServiceRequest request,
         CancellationToken cancellationToken);

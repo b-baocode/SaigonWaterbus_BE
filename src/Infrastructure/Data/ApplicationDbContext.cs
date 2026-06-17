@@ -28,8 +28,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<SeatType> SeatTypes => Set<SeatType>();
 
-    public DbSet<ServiceSeatTypePrice> ServiceSeatTypePrices => Set<ServiceSeatTypePrice>();
-
     public DbSet<VesselDeckLayout> VesselDeckLayouts => Set<VesselDeckLayout>();
 
     public DbSet<VesselFacility> VesselFacilities => Set<VesselFacility>();

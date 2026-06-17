@@ -51,7 +51,7 @@ public class VesselSupportTests
     }
 
     [Test]
-    public void CreateDtoIncludesDayRentalPriceWhenConfigured()
+    public void CreateDtoIncludesRentalPricesWhenConfigured()
     {
         var vessel = Vessel(seatsConfigured: true);
         vessel.RentalPrices.Add(new VesselRentalPrice
@@ -62,6 +62,14 @@ public class VesselSupportTests
             Currency = "VND",
             Note = "Gia thue theo ngay"
         });
+        vessel.RentalPrices.Add(new VesselRentalPrice
+        {
+            VesselId = vessel.Id,
+            RentalUnit = VesselRentalUnit.Hour,
+            UnitPrice = 2000000m,
+            Currency = "VND",
+            Note = "Gia thue theo gio"
+        });
 
         var dto = VesselSupport.CreateDto(vessel);
 
@@ -69,6 +77,9 @@ public class VesselSupportTests
         dto.RentalPrice.RentalUnit.ShouldBe(VesselRentalUnit.Day);
         dto.RentalPrice.UnitPrice.ShouldBe(15000000m);
         dto.RentalPrice.Currency.ShouldBe("VND");
+        dto.RentalPrices.Count.ShouldBe(2);
+        dto.RentalPrices.First().RentalUnit.ShouldBe(VesselRentalUnit.Hour);
+        dto.RentalPrices.Last().RentalUnit.ShouldBe(VesselRentalUnit.Day);
     }
 
     [TestCase(SeatSetupType.FullStandard)]
@@ -79,29 +90,6 @@ public class VesselSupportTests
         vessel.SeatSetupType = expected;
 
         VesselSupport.CreateDto(vessel).SeatSetupType.ShouldBe(expected);
-    }
-
-    [Test]
-    public void EnsureServiceSupportsSeatSetupAcceptsStandardAndVipWhenBothPricesExist()
-    {
-        var service = ServiceWithSeatPrices("STANDARD", "VIP");
-
-        Should.NotThrow(() => VesselSupport.EnsureServiceSupportsSeatSetup(
-            service,
-            SeatSetupType.StandardAndVip,
-            "ServiceId"));
-    }
-
-    [Test]
-    public void EnsureServiceSupportsSeatSetupRejectsMissingVipPrice()
-    {
-        var exception = Should.Throw<ValidationException>(() =>
-            VesselSupport.EnsureServiceSupportsSeatSetup(
-                ServiceWithSeatPrices("STANDARD"),
-                SeatSetupType.StandardAndVip,
-                "ServiceId"));
-
-        exception.Errors.Keys.ShouldContain("serviceId");
     }
 
     [TestCase(null, "VND")]
@@ -123,6 +111,26 @@ public class VesselSupportTests
         result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateVesselRentalPriceRequest.UnitPrice));
     }
 
+    [Test]
+    public void CreateVesselRequestValidatorRejectsDuplicateRentalUnits()
+    {
+        var validator = new CreateVesselRequestValidator();
+        var result = validator.Validate(new CreateVesselRequest(
+            "WB01",
+            "Waterbus 01",
+            VesselStatus.Inactive,
+            80,
+            1,
+            RentalPrices:
+            [
+                new VesselRentalPriceRequest(VesselRentalUnit.Hour, 2000000m),
+                new VesselRentalPriceRequest(VesselRentalUnit.Hour, 2500000m)
+            ]));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
+    }
+
     private static Vessel Vessel(
         bool seatsConfigured,
         VesselStatus status = VesselStatus.Active) =>
@@ -134,38 +142,4 @@ public class VesselSupportTests
             SeatsConfigured = seatsConfigured
         };
 
-    private static WaterbusService ServiceWithSeatPrices(params string[] seatTypeCodes)
-    {
-        var service = new WaterbusService
-        {
-            Code = "WS",
-            Name = "WaterSightseeing",
-            IsActive = true
-        };
-
-        service.SeatTypePrices = seatTypeCodes
-            .Select((code, index) =>
-            {
-                var seatType = new SeatType
-                {
-                    Code = code,
-                    Name = code,
-                    DisplayOrder = index + 1,
-                    IsActive = true
-                };
-
-                return new ServiceSeatTypePrice
-                {
-                    WaterbusServiceId = service.Id,
-                    WaterbusService = service,
-                    SeatTypeId = seatType.Id,
-                    SeatType = seatType,
-                    PriceModifier = code == "VIP" ? 1.5m : 1m,
-                    IsActive = true
-                };
-            })
-            .ToList();
-
-        return service;
-    }
 }

@@ -143,7 +143,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer/Admin/Manager",
                 null,
                 "Query bắt buộc: requestedNumberOfDecks, requestedSeatSetupType, passengerCount.",
-                "Chỉ tính từ tàu Active, đã setup ghế, đúng cấu hình, đủ sức chứa và có giá thuê theo ngày.",
+                "Chỉ tính từ tàu Active, đã setup ghế, đúng cấu hình, đủ sức chứa và có giá thuê theo giờ hoặc theo ngày.",
                 "Không trả vesselId cho khách và không phải báo giá cuối cùng."));
 
         group.MapGet(GetCustomBookingRequestDetail, "{id:guid}")

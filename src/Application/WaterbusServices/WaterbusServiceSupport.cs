@@ -67,67 +67,28 @@ internal static class WaterbusServiceSupport
             IsActive = true
         };
 
-    public static ServiceSeatTypePrice CreateServiceSeatTypePrice(
-        WaterbusService service,
-        SeatType seatType,
-        decimal priceModifier = 1m) =>
-        new()
-        {
-            WaterbusServiceId = service.Id,
-            WaterbusService = service,
-            SeatTypeId = seatType.Id,
-            SeatType = seatType,
-            PriceModifier = priceModifier,
-            IsActive = true
-        };
-
     public static WaterbusServiceSeatTypesDto CreateSeatTypesDto(
         WaterbusService service,
         bool includeInactive,
         IReadOnlyCollection<SeatType>? availableSeatTypes = null)
     {
-        WaterbusServiceSeatTypeDto[] prices;
-        if (includeInactive && availableSeatTypes is { Count: > 0 })
-        {
-            var priceBySeatTypeId = service.SeatTypePrices
-                .ToDictionary(x => x.SeatTypeId);
-            prices = availableSeatTypes
-                .OrderBy(x => x.DisplayOrder)
-                .ThenBy(x => x.Code)
-                .Select(seatType =>
-                {
-                    priceBySeatTypeId.TryGetValue(seatType.Id, out var price);
-                    return new WaterbusServiceSeatTypeDto(
-                        seatType.Id,
-                        seatType.Code,
-                        seatType.Name,
-                        seatType.DisplayOrder,
-                        price?.PriceModifier,
-                        seatType.IsActive && price?.IsActive == true);
-                })
-                .ToArray();
-        }
-        else
-        {
-            prices = service.SeatTypePrices
-                .Where(x => includeInactive || (x.IsActive && x.SeatType.IsActive))
-                .OrderBy(x => x.SeatType.DisplayOrder)
-                .ThenBy(x => x.SeatType.Code)
-                .Select(x => new WaterbusServiceSeatTypeDto(
-                    x.SeatType.Id,
-                    x.SeatType.Code,
-                    x.SeatType.Name,
-                    x.SeatType.DisplayOrder,
-                    x.PriceModifier,
-                    x.IsActive && x.SeatType.IsActive))
-                .ToArray();
-        }
+        var seatTypes = (availableSeatTypes ?? [])
+            .Where(x => includeInactive || x.IsActive)
+            .OrderBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Code)
+            .Select(x => new WaterbusServiceSeatTypeDto(
+                x.Id,
+                x.Code,
+                x.Name,
+                x.DisplayOrder,
+                x.IsActive))
+            .ToArray();
 
         return new WaterbusServiceSeatTypesDto(
             service.Id,
             service.Code,
             service.BookingMode,
-            prices);
+            seatTypes);
     }
 
     public static WaterbusServiceDto CreateDto(WaterbusService service) =>

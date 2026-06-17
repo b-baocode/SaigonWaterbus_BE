@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Vessels;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -28,6 +29,7 @@ public sealed class Fares : IEndpointGroup
     private const string UpdateVesselRentalFareExample =
         """
         {
+          "rentalUnit": "Day",
           "unitPrice": 15000000,
           "currency": "VND",
           "note": "Gia thue tau tham khao theo ngay."
@@ -47,16 +49,6 @@ public sealed class Fares : IEndpointGroup
                 "Tra ve list gia theo tung loai ve (ADULT, STUDENT, ...).",
                 "finalPrice = basePrice x priceModifier.",
                 "Tra ve 404 neu chua co fare cho cap tram nay."));
-
-        group.MapGet(GetFareByServiceSeatType, "service-seat")
-            .AllowAnonymous()
-            .WithSummary("Tra giá theo dịch vụ và hạng ghế")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
-                null,
-                "Query params: routeCode, fromStationCode, toStationCode, serviceId, seatTypeCode.",
-                "finalPrice = basePrice x ticketTypeModifier x seatTypeModifier.",
-                "Trả về 404 nếu dịch vụ không hỗ trợ loại ghế hoặc cấu hình giá đang inactive."));
 
         group.MapGet(GetFareMatrix, "matrix")
             .RequireAuthorization()
@@ -90,12 +82,12 @@ public sealed class Fares : IEndpointGroup
 
         group.MapPut(UpdateVesselRentalFare, "vessel-rental-prices/{vesselId:guid}")
             .RequireAuthorization()
-            .WithSummary("Cap nhat gia thue tau theo ngay")
+            .WithSummary("Cap nhat gia thue tau theo gio hoac theo ngay")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 UpdateVesselRentalFareExample,
                 "Neu tau chua co gia thi tao moi, neu da co thi cap nhat.",
-                "Hien chi ho tro rentalUnit = Day.",
+                "rentalUnit: Hour hoac Day. Neu khong gui thi mac dinh Day.",
                 "API nay cap nhat bang vessel_rental_prices, khong dung fare_matrices."));
 
         group.MapDelete(DeleteFare, "{id:guid}")
@@ -114,21 +106,6 @@ public sealed class Fares : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetFareQuery(routeCode, fromStationCode, toStationCode), ct));
 
-    private static async Task<IResult> GetFareByServiceSeatType(
-        ISender sender,
-        string routeCode,
-        string fromStationCode,
-        string toStationCode,
-        Guid serviceId,
-        string seatTypeCode,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetFareByServiceSeatTypeQuery(
-            routeCode,
-            fromStationCode,
-            toStationCode,
-            serviceId,
-            seatTypeCode), ct));
-
     private static async Task<IResult> GetFareMatrix(ISender sender, string? routeCode, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetFareMatrixListQuery(routeCode), ct));
 
@@ -144,7 +121,7 @@ public sealed class Fares : IEndpointGroup
         UpdateVesselRentalFareRequest req,
         CancellationToken ct) =>
         Results.Ok(await vesselManagementService.UpdateVesselRentalPriceAsync(
-            new UpdateVesselRentalPriceRequest(vesselId, req.UnitPrice, req.Currency, req.Note),
+            new UpdateVesselRentalPriceRequest(vesselId, req.UnitPrice, req.Currency, req.Note, req.RentalUnit),
             ct));
 
     private static async Task<IResult> DeleteFare(ISender sender, Guid id, CancellationToken ct)
@@ -158,5 +135,6 @@ public sealed class Fares : IEndpointGroup
     public sealed record UpdateVesselRentalFareRequest(
         decimal UnitPrice,
         string? Currency = null,
-        string? Note = null);
+        string? Note = null,
+        VesselRentalUnit RentalUnit = VesselRentalUnit.Day);
 }

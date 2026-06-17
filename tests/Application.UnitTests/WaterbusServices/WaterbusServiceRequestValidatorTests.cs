@@ -58,22 +58,6 @@ public class WaterbusServiceRequestValidatorTests
     }
 
     [Test]
-    public void UpdateSeatPriceRejectsInvalidModifier()
-    {
-        var validator = new UpdateWaterbusServiceSeatPriceRequestValidator();
-
-        var result = validator.Validate(new UpdateWaterbusServiceSeatPriceRequest(
-            Guid.NewGuid(),
-            "VIP",
-            0,
-            true));
-
-        result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x =>
-            x.PropertyName == nameof(UpdateWaterbusServiceSeatPriceRequest.PriceModifier));
-    }
-
-    [Test]
     public void UpdateRejectsEmptyNameWhenNameIsProvided()
     {
         var validator = new UpdateWaterbusServiceRequestValidator();

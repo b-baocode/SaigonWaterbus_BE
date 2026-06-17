@@ -99,4 +99,20 @@ public class RegisterRequestValidatorTests
         result.IsValid.ShouldBeFalse();
         result.Errors.ShouldContain(x => x.ErrorMessage == "OTP qua email chỉ hỗ trợ khi không có số điện thoại.");
     }
+
+    [Test]
+    public void ValidateRejectsTooLongGenderAndNationality()
+    {
+        var result = _validator.Validate(new RegisterRequest(
+            FullName: "Nguyen Van A",
+            DateOfBirth: new DateOnly(2003, 9, 2),
+            Password: "P@ssword123",
+            Email: "customer@gmail.com",
+            Gender: new string('a', 31),
+            Nationality: new string('b', 101)));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Giới tính không được vượt quá 30 ký tự.");
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Quốc tịch không được vượt quá 100 ký tự.");
+    }
 }

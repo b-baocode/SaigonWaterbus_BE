@@ -20,7 +20,8 @@ public sealed record CreateVesselRequest(
     string? ImageContentType = null,
     long? ImageLength = null,
     Stream? ImageContent = null,
-    SeatSetupType SeatSetupType = SeatSetupType.FullStandard);
+    SeatSetupType SeatSetupType = SeatSetupType.FullStandard,
+    IReadOnlyCollection<VesselRentalPriceRequest>? RentalPrices = null);
 
 public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesselRequest>
 {
@@ -80,6 +81,33 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
             .Must(url => Uri.TryCreate(url, UriKind.Absolute, out _))
             .WithMessage("Đường dẫn ảnh không hợp lệ.")
             .When(x => !string.IsNullOrWhiteSpace(x.ImageUrl));
+
+        RuleFor(x => x.RentalPrices)
+            .Must(VesselSupport.HasDistinctRentalUnits)
+            .WithMessage("Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
+
+        RuleForEach(x => x.RentalPrices)
+            .ChildRules(price =>
+            {
+                price.RuleFor(x => x.RentalUnit)
+                    .IsInEnum()
+                    .WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
+
+                price.RuleFor(x => x.UnitPrice)
+                    .GreaterThan(0)
+                    .WithMessage("Giá thuê tàu phải lớn hơn 0.")
+                    .LessThanOrEqualTo(9999999999.99m)
+                    .WithMessage("Giá thuê tàu không hợp lệ.");
+
+                price.RuleFor(x => x.Currency)
+                    .Must(VesselSupport.IsValidCurrencyCode)
+                    .WithMessage("Currency phải là mã ISO 4217 gồm 3 chữ cái, ví dụ VND.")
+                    .When(x => x.Currency is not null);
+
+                price.RuleFor(x => x.Note)
+                    .MaximumLength(500)
+                    .WithMessage("Ghi chú giá thuê tàu không được vượt quá 500 ký tự.");
+            });
     }
 }
 
@@ -150,6 +178,11 @@ public sealed class CreateVesselRequestUseCase
             YearBuilt = request.YearBuilt,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim()
         };
+
+        foreach (var rentalPrice in request.RentalPrices ?? [])
+        {
+            vessel.RentalPrices.Add(VesselSupport.CreateRentalPrice(vessel.Id, rentalPrice));
+        }
 
         if (hasImageUrl && !hasImageFile)
         {

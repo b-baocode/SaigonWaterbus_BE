@@ -1,3 +1,4 @@
+using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
 using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Domain.Enums;
@@ -14,6 +15,20 @@ public sealed class Vessels : IEndpointGroup
           "seatCount": 80,
           "numberOfDecks": 1,
           "seatSetupType": "FullStandard",
+          "rentalPrices": [
+            {
+              "rentalUnit": "Hour",
+              "unitPrice": 2000000,
+              "currency": "VND",
+              "note": "Gia tham khao theo gio."
+            },
+            {
+              "rentalUnit": "Day",
+              "unitPrice": 15000000,
+              "currency": "VND",
+              "note": "Gia tham khao theo ngay."
+            }
+          ],
           "registrationNumber": "SG-1234",
           "maxSpeedKmh": 30,
           "yearBuilt": 2020,
@@ -39,6 +54,7 @@ public sealed class Vessels : IEndpointGroup
     private const string UpdateRentalPriceExample =
         """
         {
+          "rentalUnit": "Day",
           "unitPrice": 15000000,
           "currency": "VND",
           "note": "Gia thue tau tham khao theo ngay."
@@ -111,11 +127,11 @@ public sealed class Vessels : IEndpointGroup
 
         groupBuilder.MapPut(UpdateVesselRentalPrice, "{vesselId:guid}/rental-price")
             .RequireAuthorization()
-            .WithSummary("Cập nhật giá thuê tàu theo ngày")
+            .WithSummary("Cập nhật giá thuê tàu theo giờ hoặc theo ngày")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 UpdateRentalPriceExample,
-                "Hiện chỉ hỗ trợ đơn vị thuê theo ngày.",
+                "rentalUnit: Hour hoặc Day. Nếu không gửi thì mặc định Day để tương thích API cũ.",
                 "Nếu tàu chưa có giá thì tạo mới, nếu đã có thì cập nhật.",
                 "Giá này là giá thuê tàu cơ bản để custom booking dùng làm giá tham khảo."));
 
@@ -200,7 +216,8 @@ public sealed class Vessels : IEndpointGroup
                 vesselId,
                 request.UnitPrice,
                 request.Currency,
-                request.Note),
+                request.Note,
+                request.RentalUnit),
             cancellationToken));
 
     private static async Task<IResult> DeleteVessel(
@@ -225,7 +242,8 @@ public sealed class Vessels : IEndpointGroup
             body?.YearBuilt,
             body?.Description,
             body?.ImageUrl,
-            SeatSetupType: body?.SeatSetupType ?? SeatSetupType.FullStandard);
+            SeatSetupType: body?.SeatSetupType ?? SeatSetupType.FullStandard,
+            RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray());
     }
 
     private static async Task<CreateVesselRequest> CreateVesselRequestFromFormAsync(
@@ -251,7 +269,8 @@ public sealed class Vessels : IEndpointGroup
             file?.Length,
             file?.OpenReadStream(),
             ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType"))
-                ?? SeatSetupType.FullStandard);
+                ?? SeatSetupType.FullStandard,
+            RentalPrices: CreateRentalPricesFromForm(form));
     }
 
     private static async Task<UpdateVesselRequest> UpdateVesselRequestFromJsonAsync(
@@ -309,8 +328,45 @@ public sealed class Vessels : IEndpointGroup
     private static int? ParseOptionalInt(string? value) =>
         int.TryParse(value, out var result) ? result : null;
 
+    private static decimal? ParseOptionalDecimal(string? value) =>
+        decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var result)
+            ? result
+            : null;
+
     private static T? ParseOptionalEnum<T>(string? value) where T : struct, Enum =>
         Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : null;
+
+    private static VesselRentalPriceRequest ToApplicationRentalPrice(VesselRentalPriceApiRequest request) =>
+        new(request.RentalUnit, request.UnitPrice, request.Currency, request.Note);
+
+    private static IReadOnlyCollection<VesselRentalPriceRequest>? CreateRentalPricesFromForm(IFormCollection form)
+    {
+        var rentalPrices = new List<VesselRentalPriceRequest>();
+        var hourlyPrice = ParseOptionalDecimal(GetFormValue(form, "hourlyUnitPrice")
+            ?? GetFormValue(form, "hourlyRentalPrice"));
+        var dailyPrice = ParseOptionalDecimal(GetFormValue(form, "dailyUnitPrice")
+            ?? GetFormValue(form, "dailyRentalPrice"));
+
+        if (hourlyPrice.HasValue)
+        {
+            rentalPrices.Add(new VesselRentalPriceRequest(
+                VesselRentalUnit.Hour,
+                hourlyPrice.Value,
+                GetFormValue(form, "hourlyCurrency"),
+                GetFormValue(form, "hourlyNote")));
+        }
+
+        if (dailyPrice.HasValue)
+        {
+            rentalPrices.Add(new VesselRentalPriceRequest(
+                VesselRentalUnit.Day,
+                dailyPrice.Value,
+                GetFormValue(form, "dailyCurrency"),
+                GetFormValue(form, "dailyNote")));
+        }
+
+        return rentalPrices.Count == 0 ? null : rentalPrices;
+    }
 
     private sealed record CreateVesselJsonRequest(
         string Code,
@@ -322,7 +378,8 @@ public sealed class Vessels : IEndpointGroup
         int? MaxSpeedKmh = null,
         int? YearBuilt = null,
         string? Description = null,
-        string? ImageUrl = null);
+        string? ImageUrl = null,
+        IReadOnlyCollection<VesselRentalPriceApiRequest>? RentalPrices = null);
 
     private sealed record UpdateVesselJsonRequest(
         string? Code = null,
@@ -339,6 +396,13 @@ public sealed class Vessels : IEndpointGroup
     private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);
 
     private sealed record UpdateVesselRentalPriceApiRequest(
+        decimal UnitPrice,
+        string? Currency = null,
+        string? Note = null,
+        VesselRentalUnit RentalUnit = VesselRentalUnit.Day);
+
+    private sealed record VesselRentalPriceApiRequest(
+        VesselRentalUnit RentalUnit,
         decimal UnitPrice,
         string? Currency = null,
         string? Note = null);

@@ -58,11 +58,13 @@ internal static class VesselSupport
 
     public static VesselDto CreateDto(Vessel vessel, int generatedSeatCount = 0)
     {
-        var rentalPrice = vessel.RentalPrices
-            .Where(x => x.RentalUnit == VesselRentalUnit.Day)
-            .OrderBy(x => x.Id)
+        var rentalPrices = vessel.RentalPrices
+            .OrderBy(x => RentalUnitDisplayOrder(x.RentalUnit))
+            .ThenBy(x => x.Id)
             .Select(x => new VesselRentalPriceDto(x.RentalUnit, x.UnitPrice, x.Currency, x.Note))
-            .FirstOrDefault();
+            .ToArray();
+        var rentalPrice = rentalPrices.FirstOrDefault(x => x.RentalUnit == VesselRentalUnit.Day)
+            ?? rentalPrices.FirstOrDefault();
 
         return new VesselDto(
             vessel.Id,
@@ -80,34 +82,42 @@ internal static class VesselSupport
             vessel.ImageUrl ?? string.Empty,
             vessel.Description,
             rentalPrice,
+            rentalPrices,
             vessel.SeatSetupType);
     }
+
+    public static VesselRentalPrice CreateRentalPrice(Guid vesselId, VesselRentalPriceRequest request) =>
+        new()
+        {
+            VesselId = vesselId,
+            RentalUnit = request.RentalUnit,
+            UnitPrice = request.UnitPrice,
+            Currency = NormalizeCurrency(request.Currency),
+            Note = NormalizeOptionalNote(request.Note)
+        };
+
+    public static string? NormalizeOptionalNote(string? note) =>
+        string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+
+    public static bool HasDistinctRentalUnits(IEnumerable<VesselRentalPriceRequest>? rentalPrices) =>
+        rentalPrices is null
+        || rentalPrices
+            .Select(x => x.RentalUnit)
+            .Distinct()
+            .Count() == rentalPrices.Count();
+
+    public static int RentalUnitDisplayOrder(VesselRentalUnit rentalUnit) =>
+        rentalUnit switch
+        {
+            VesselRentalUnit.Hour => 1,
+            VesselRentalUnit.Day => 2,
+            _ => 99
+        };
 
     public static IReadOnlyCollection<string> RequiredSeatTypeCodes(SeatSetupType seatSetupType) =>
         seatSetupType == SeatSetupType.StandardAndVip
             ? ["STANDARD", "VIP"]
             : ["STANDARD"];
-
-    public static void EnsureServiceSupportsSeatSetup(
-        WaterbusService service,
-        SeatSetupType seatSetupType,
-        string propertyName)
-    {
-        var supportedCodes = service.SeatTypePrices
-            .Where(x => x.IsActive && x.SeatType.IsActive)
-            .Select(x => x.SeatType.Code)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var missingCodes = RequiredSeatTypeCodes(seatSetupType)
-            .Where(code => !supportedCodes.Contains(code))
-            .ToArray();
-
-        if (missingCodes.Length > 0)
-        {
-            throw AuthSupport.CreateValidationException(
-                propertyName,
-                $"Dịch vụ {service.Code} chưa cấu hình giá cho loại ghế: {string.Join(", ", missingCodes)}.");
-        }
-    }
 
     public static string NormalizeCurrency(string? currency) =>
         string.IsNullOrWhiteSpace(currency) ? "VND" : currency.Trim().ToUpperInvariant();

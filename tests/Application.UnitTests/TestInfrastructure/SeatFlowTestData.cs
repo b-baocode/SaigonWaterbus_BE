@@ -83,27 +83,12 @@ internal static class SeatFlowTestData
         string code,
         params (SeatType SeatType, decimal Modifier, bool IsActive)[] prices)
     {
-        var service = new WaterbusService
+        return new WaterbusService
         {
             Code = code,
             Name = code,
             IsActive = true
         };
-
-        foreach (var (seatType, modifier, isActive) in prices)
-        {
-            service.SeatTypePrices.Add(new ServiceSeatTypePrice
-            {
-                WaterbusServiceId = service.Id,
-                WaterbusService = service,
-                SeatTypeId = seatType.Id,
-                SeatType = seatType,
-                PriceModifier = modifier,
-                IsActive = isActive
-            });
-        }
-
-        return service;
     }
 
     public static Vessel Vessel(
