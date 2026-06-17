@@ -16,7 +16,8 @@ public sealed record CreateRouteCommand(
 public sealed record CreateRouteWaypointDto(
     string Type,
     string? StationCode,
-    string? WaterwayOsmId);
+    string? WaterwayOsmId,
+    int? StopOrder = null);
 
 public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteCommand>
 {
@@ -31,7 +32,11 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
             .Must(HaveMinimumRequiredWaypoints)
             .WithMessage("Waypoints must contain at least 2 station waypoints.")
             .Must(HaveStationAtBothEnds)
-            .WithMessage("The first and last waypoint must be station waypoints.");
+            .WithMessage("The first and last waypoint must be station waypoints.")
+            .Must(HaveConsistentStopOrders)
+            .WithMessage("Either all station waypoints must specify StopOrder, or none must.")
+            .Must(HaveUniqueStopOrders)
+            .WithMessage("StopOrder values must be unique across all station waypoints.");
 
         RuleForEach(x => x.Waypoints)
             .SetValidator(new CreateRouteWaypointDtoValidator());
@@ -46,6 +51,24 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
         && waypoints.Count >= 2
         && IsStationWaypoint(waypoints[0])
         && IsStationWaypoint(waypoints[^1]);
+
+    private static bool HaveConsistentStopOrders(IReadOnlyList<CreateRouteWaypointDto>? waypoints)
+    {
+        if (waypoints is null) return true;
+        var stations = waypoints.Where(IsStationWaypoint).ToList();
+        var withOrder = stations.Count(x => x.StopOrder.HasValue);
+        return withOrder == 0 || withOrder == stations.Count;
+    }
+
+    private static bool HaveUniqueStopOrders(IReadOnlyList<CreateRouteWaypointDto>? waypoints)
+    {
+        if (waypoints is null) return true;
+        var orders = waypoints
+            .Where(x => IsStationWaypoint(x) && x.StopOrder.HasValue)
+            .Select(x => x.StopOrder!.Value)
+            .ToList();
+        return orders.Count == orders.Distinct().Count();
+    }
 
     private static bool IsStationWaypoint(CreateRouteWaypointDto waypoint) =>
         string.Equals(waypoint.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase);
@@ -96,8 +119,12 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             .Where(station => stationCodes.Contains(station.StationCode))
             .ToDictionaryAsync(station => station.StationCode, cancellationToken);
 
-        var routeStations = new List<Station>();
+        var useExplicitStopOrder = request.Waypoints
+            .Any(w => string.Equals(w.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase) && w.StopOrder.HasValue);
+
+        var routeStationPairs = new List<(Station Station, int StopOrder)>();
         var waypointPoints = new List<Point>();
+        var autoStopOrderCounter = 0;
 
         foreach (var waypoint in request.Waypoints)
         {
@@ -111,7 +138,10 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
                         $"Station '{stationCode}' was not found. Import the ferry terminal first or choose another station.")]);
                 }
 
-                routeStations.Add(station);
+                autoStopOrderCounter++;
+                var assignedStopOrder = useExplicitStopOrder ? waypoint.StopOrder!.Value : autoStopOrderCounter;
+                routeStationPairs.Add((station, assignedStopOrder));
+
                 if (hasViaWaterway)
                 {
                     waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
@@ -147,13 +177,6 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             waypointPoints.Add(RouteGeoJsonImportSupport.CreateRepresentativePoint(viaGeometries));
         }
 
-        if (routeStations.Select(station => station.Id).Distinct().Count() != routeStations.Count)
-        {
-            throw new ValidationException([new ValidationFailure(
-                nameof(request.Waypoints),
-                "The selected route contains duplicate stations. Repeating the same station in one route is not supported.")]);
-        }
-
         var routeGeometry = hasViaWaterway
             ? RouteGeoJsonImportSupport.BuildRouteGeometry(
                 waterwaySegments.Select(segment => segment.Geometry).ToList(),
@@ -176,16 +199,16 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
 
         _context.Set<Route>().Add(route);
 
-        for (var i = 0; i < routeStations.Count; i++)
+        for (var i = 0; i < routeStationPairs.Count; i++)
         {
-            var stopOrder = i + 1;
+            var (station, stopOrder) = routeStationPairs[i];
             _context.Set<RouteStop>().Add(new RouteStop
             {
                 RouteId = route.Id,
-                StationId = routeStations[i].Id,
+                StationId = station.Id,
                 StopOrder = stopOrder,
-                IsPickupAllowed = stopOrder < routeStations.Count,
-                IsDropoffAllowed = stopOrder > 1
+                IsPickupAllowed = i < routeStationPairs.Count - 1,
+                IsDropoffAllowed = i > 0
             });
         }
 
@@ -240,6 +263,7 @@ internal sealed class CreateRouteWaypointDtoValidator : AbstractValidator<Create
         {
             RuleFor(x => x.StationCode).NotEmpty().MaximumLength(50);
             RuleFor(x => x.WaterwayOsmId).Empty();
+            RuleFor(x => x.StopOrder).GreaterThan(0).When(x => x.StopOrder.HasValue);
         });
 
         When(x => string.Equals(x.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase), () =>

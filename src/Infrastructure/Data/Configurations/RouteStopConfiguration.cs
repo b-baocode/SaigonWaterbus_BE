@@ -21,7 +21,6 @@ public sealed class RouteStopConfiguration : IEntityTypeConfiguration<RouteStop>
         builder.Property(x => x.IsDropoffAllowed).HasColumnName("is_dropoff_allowed").IsRequired();
 
         builder.HasIndex(x => new { x.RouteId, x.StopOrder }).IsUnique();
-        builder.HasIndex(x => new { x.RouteId, x.StationId }).IsUnique();
 
         builder.HasOne(x => x.Route).WithMany(r => r.RouteStops).HasForeignKey(x => x.RouteId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.Station).WithMany(s => s.RouteStops).HasForeignKey(x => x.StationId).OnDelete(DeleteBehavior.Restrict);

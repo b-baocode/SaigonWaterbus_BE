@@ -11,14 +11,20 @@ public sealed class Routes : IEndpointGroup
     private const string CreateRouteExample =
         """
         {
-          "routeCode": "R02-BD-NVL",
-          "routeName": "Tuyen 02: Bach Dang den Linh Dong",
-          "description": "Tuyen waterbus Q1 → Q7",
-          "estimatedDurationMin": 75,
+          "routeCode": "R01-BD-LD2",
+          "routeName": "Tuyen 01: Bach Dang - Linh Dong",
+          "estimatedDurationMin": 60,
           "waypoints": [
-            { "type": "station", "stationCode": "BD" },
-            { "type": "viaWaterway", "waterwayOsmId": "way/123456" },
-            { "type": "station", "stationCode": "LD" }
+            { "type": "station",     "stationCode": "ST-BD",          "stopOrder": 1 },
+            { "type": "viaWaterway", "waterwayOsmId": "way/708678320" },
+            { "type": "station",     "stationCode": "ST-TT",          "stopOrder": 2 },
+            { "type": "station",     "stationCode": "ST-BS",          "stopOrder": 3 },
+            { "type": "station",     "stationCode": "ST-BA",          "stopOrder": 4 },
+            { "type": "viaWaterway", "waterwayOsmId": "way/552372203" },
+            { "type": "station",     "stationCode": "ST-TD2",         "stopOrder": 5 },
+            { "type": "station",     "stationCode": "ST-TD",          "stopOrder": 6 },
+            { "type": "station",     "stationCode": "ST-HBC",         "stopOrder": 7 },
+            { "type": "station",     "stationCode": "ST-LD",          "stopOrder": 8 }
           ]
         }
         """;
