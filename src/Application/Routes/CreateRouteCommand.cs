@@ -11,7 +11,9 @@ public sealed record CreateRouteCommand(
     string RouteName,
     string? Description,
     int? EstimatedDurationMin,
-    IReadOnlyList<CreateRouteWaypointDto> Waypoints) : IRequest<RouteDto>;
+    IReadOnlyList<CreateRouteWaypointDto> Waypoints,
+    bool AutoRouteGeometry = false,
+    string? PreferWaterwayType = null) : IRequest<RouteDto>;
 
 public sealed record CreateRouteWaypointDto(
     string Type,
@@ -26,6 +28,10 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.RouteName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.EstimatedDurationMin).GreaterThan(0).When(x => x.EstimatedDurationMin.HasValue);
+        RuleFor(x => x.PreferWaterwayType)
+            .Must(t => t == null || t == "river" || t == "canal" || t == "custom")
+            .WithMessage("PreferWaterwayType phai la 'river', 'canal', hoac 'custom'.")
+            .When(x => x.PreferWaterwayType != null);
 
         RuleFor(x => x.Waypoints)
             .NotNull()
@@ -94,7 +100,9 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
 
         var hasViaWaterway = request.Waypoints.Any(waypoint =>
             string.Equals(waypoint.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase));
-        var waterwaySegments = hasViaWaterway
+        var buildGeometry = hasViaWaterway || request.AutoRouteGeometry;
+
+        var waterwaySegments = buildGeometry
             ? await _context.Set<WaterwaySegment>()
                 .AsNoTracking()
                 .OrderBy(segment => segment.OsmId)
@@ -102,11 +110,23 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
                 .ToListAsync(cancellationToken)
             : [];
 
-        if (hasViaWaterway && waterwaySegments.Count == 0)
+        if (buildGeometry)
         {
-            throw new ValidationException([new ValidationFailure(
-                nameof(request.Waypoints),
-                "No waterway network has been imported yet. Import GeoJSON map data first or create the route with station waypoints only.")]);
+            var filtered = string.IsNullOrWhiteSpace(request.PreferWaterwayType)
+                ? waterwaySegments
+                : waterwaySegments
+                    .Where(s => string.Equals(s.WaterwayType, request.PreferWaterwayType.Trim().ToLowerInvariant(), StringComparison.Ordinal))
+                    .ToList();
+
+            if (filtered.Count == 0)
+            {
+                var detail = string.IsNullOrWhiteSpace(request.PreferWaterwayType)
+                    ? "No waterway network has been imported yet. Import GeoJSON map data first or create the route with station waypoints only."
+                    : $"No waterway segments of type '{request.PreferWaterwayType}' found. Import GeoJSON map data with the correct waterway type first.";
+                throw new ValidationException([new ValidationFailure(nameof(request.Waypoints), detail)]);
+            }
+
+            waterwaySegments = filtered;
         }
 
         var stationCodes = request.Waypoints
@@ -142,7 +162,7 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
                 var assignedStopOrder = useExplicitStopOrder ? waypoint.StopOrder!.Value : autoStopOrderCounter;
                 routeStationPairs.Add((station, assignedStopOrder));
 
-                if (hasViaWaterway)
+                if (buildGeometry)
                 {
                     waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
                 }
@@ -177,7 +197,7 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             waypointPoints.Add(RouteGeoJsonImportSupport.CreateRepresentativePoint(viaGeometries));
         }
 
-        var routeGeometry = hasViaWaterway
+        var routeGeometry = buildGeometry
             ? RouteGeoJsonImportSupport.BuildRouteGeometry(
                 waterwaySegments.Select(segment => segment.Geometry).ToList(),
                 waypointPoints)
