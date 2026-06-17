@@ -302,6 +302,39 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
+    public async Task CustomerCanViewOwnCandidateVessels()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        var matching = ValidVessel("WB01", 12000000m);
+        context.AddRange(request, matching);
+        await context.SaveChangesAsync();
+
+        var result = await new GetCustomBookingVesselCandidatesQueryHandler(context, customerContext)
+            .Handle(new GetCustomBookingVesselCandidatesQuery(request.Id), CancellationToken.None);
+
+        result.Select(x => x.VesselId).ShouldBe([matching.Id]);
+    }
+
+    [Test]
+    public async Task CustomerCannotViewAnotherCustomersCandidateVessels()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var ownerContext = await SeedCustomerAsync(context);
+        var otherCustomerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = ownerContext.UserId;
+        context.AddRange(request, ValidVessel("WB01", 12000000m));
+        await context.SaveChangesAsync();
+
+        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+            new GetCustomBookingVesselCandidatesQueryHandler(context, otherCustomerContext)
+                .Handle(new GetCustomBookingVesselCandidatesQuery(request.Id), CancellationToken.None));
+    }
+
+    [Test]
     public async Task ManagerCandidatesContainOnlyActiveManagersAtDepartureStation()
     {
         await using var context = SeatFlowTestData.CreateContext();

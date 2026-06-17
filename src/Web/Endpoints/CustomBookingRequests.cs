@@ -196,12 +196,13 @@ public sealed class CustomBookingRequests : IEndpointGroup
 
         group.MapGet(GetCustomBookingVesselCandidates, "{id:guid}/vessel-candidates")
             .RequireAuthorization()
-            .WithSummary("Admin xem tàu phù hợp")
+            .WithSummary("Xem tàu phù hợp còn trống")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
+                "Customer chủ yêu cầu hoặc Admin",
                 null,
                 "Chỉ dùng khi status=PendingReview.",
                 "Backend lọc đúng số tầng, kiểu ghế, sức chứa, trạng thái setup và giá thuê theo rentalUnit khách chọn.",
+                "Customer chỉ xem được danh sách tàu của yêu cầu do chính mình tạo.",
                 "estimatedBasePrice là unitPrice nhân số giờ/ngày thuê làm tròn lên theo thời lượng chuyến."));
 
         group.MapPut(AssignCustomBookingVessel, "{id:guid}/assigned-vessel")

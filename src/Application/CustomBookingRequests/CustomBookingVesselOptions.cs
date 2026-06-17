@@ -1,7 +1,9 @@
+using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
+using ForbiddenAccessException = SaigonWaterbus.Application.Common.Exceptions.ForbiddenAccessException;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.CustomBookingRequests;
@@ -144,14 +146,17 @@ public sealed class GetCustomBookingVesselCandidatesQueryHandler
         GetCustomBookingVesselCandidatesQuery request,
         CancellationToken cancellationToken)
     {
-        await CustomBookingRequestSupport.EnsureCurrentUserCanManageCustomBookingRequestsAsync(
-            _context,
-            _userContext,
-            cancellationToken);
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
         var customRequest = await _context.Set<CustomBookingRequest>()
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy yêu cầu thuê tàu.");
+
+        if (!AuthSupport.IsAdmin(actor)
+            && (!AuthSupport.IsCustomer(actor) || customRequest.UserId != actor.Id))
+        {
+            throw new ForbiddenAccessException();
+        }
 
         CustomBookingRequestSupport.EnsureCanAssignVessel(customRequest);
 
