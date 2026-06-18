@@ -55,6 +55,13 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.Property(x => x.AdultCount).HasColumnName("adult_count").IsRequired();
         builder.Property(x => x.ChildCount).HasColumnName("child_count").IsRequired();
         builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
+        builder.Property(x => x.PassengerManifestStatus)
+            .HasColumnName("passenger_manifest_status")
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired();
+        builder.Property(x => x.PassengerManifestCompletedAt).HasColumnName("passenger_manifest_completed_at");
+        builder.Property(x => x.PassengerManifestCompletedByUserId).HasColumnName("passenger_manifest_completed_by_user_id");
         builder.Property(x => x.Status).HasColumnName("status").HasConversion<string>().HasMaxLength(30).IsRequired();
         builder.Property(x => x.StatusReason).HasColumnName("status_reason").HasMaxLength(500);
         builder.Property(x => x.QuotedAt).HasColumnName("quoted_at");
@@ -77,6 +84,7 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.HasIndex(x => x.AssignedByUserId);
         builder.HasIndex(x => x.AssignedManagerUserId);
         builder.HasIndex(x => x.ManagerAssignedByUserId);
+        builder.HasIndex(x => x.PassengerManifestCompletedByUserId);
         builder.HasIndex(x => x.CancelledByUserId);
         builder.HasIndex(x => x.FromStationId);
         builder.HasIndex(x => x.ToStationId);
@@ -129,6 +137,11 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.HasOne<User>()
             .WithMany()
             .HasForeignKey(x => x.CancelledByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.PassengerManifestCompletedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.PassengerManifestCompletedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.FromStation)

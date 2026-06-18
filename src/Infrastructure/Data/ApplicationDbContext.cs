@@ -82,6 +82,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<CustomBookingTicket> CustomBookingTickets => Set<CustomBookingTicket>();
 
+    public DbSet<CustomBookingPassenger> CustomBookingPassengers => Set<CustomBookingPassenger>();
+
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);
 

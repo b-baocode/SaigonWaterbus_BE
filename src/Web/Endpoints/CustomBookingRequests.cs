@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Domain.Enums;
 
@@ -42,6 +43,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
         """
         {
           "depositPercent": 50,
+          "serviceFeeAmount": 400000,
           "priceNote": "Giá được hệ thống tính theo tàu và đơn vị thuê khách đã chọn."
         }
         """;
@@ -117,6 +119,29 @@ public sealed class CustomBookingRequests : IEndpointGroup
         }
         """;
 
+    private const string ReissueTicketExample =
+        """
+        {
+          "reason": "QR không quét được tại cổng check-in."
+        }
+        """;
+
+    private const string PassengerManifestExample =
+        """
+        {
+          "passengers": [
+            {
+              "fullName": "Nguyen Van A",
+              "dateOfBirth": "20/06/1995"
+            },
+            {
+              "fullName": "Nguyen Van C",
+              "dateOfBirth": "21/06/2018"
+            }
+          ]
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetCustomBookingRequests)
@@ -129,15 +154,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Admin thấy tất cả yêu cầu.",
                 "Manager chỉ thấy yêu cầu được Admin giao; Staff chỉ thấy yêu cầu được Manager phân công.",
                 "Query optional: status, departureDate."));
-
-        group.MapGet(GetCustomBookingStatuses, "statuses")
-            .RequireAuthorization()
-            .WithSummary("Danh sách trạng thái custom booking")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
-                null,
-                "State machine chỉ gồm PendingReview, Quoted, Confirmed, Cancelled.",
-                "Response có label, mô tả và nextActions cho frontend."));
 
         group.MapGet(GetCustomBookingRentalServices, "rental-services")
             .RequireAuthorization()
@@ -250,8 +266,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 null,
                 "Chỉ chấp nhận khi status=Quoted, báo giá chưa hết hạn và tàu vẫn hợp lệ.",
                 "Sau khi chấp nhận, status=Confirmed.",
-                "Backend tạo vé QR nếu chưa có vé active và trả ticket.qrPayload một lần để frontend render QR.",
-                "Hiện chưa tạo payment hoặc lịch chạy; đó là bước nghiệp vụ tiếp theo."));
+                "Bước này chưa tạo/gửi QR. QR chỉ phát sau khi khách đã hoàn tất danh sách hành khách.",
+                "Hiện chưa tạo payment hoặc lịch chạy; nếu cần khóa theo đặt cọc thật sự cần thêm trạng thái payment/deposit."));
 
         group.MapGet(GetCustomBookingTicket, "{id:guid}/ticket")
             .RequireAuthorization()
@@ -260,16 +276,64 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer chủ yêu cầu, Admin, Manager/Staff được phân công",
                 null,
                 "Trả metadata của vé QR active.",
-                "Vì backend chỉ lưu hash token, endpoint này không trả lại qrToken/qrPayload. Nếu mất QR cần cấp lại token bằng flow riêng."));
+                "Chỉ Customer chủ yêu cầu, Admin và Manager được giao booking nhận qrPayload để frontend render lại QR; Staff chỉ nhận metadata để phục vụ scan/check-in.",
+                "Vé tạo trước khi có cột qr_token có thể không có qrPayload; dữ liệu cũ cần được backfill bằng token gốc nếu còn giữ."));
+
+        group.MapGet(GetCustomBookingPassengers, "{id:guid}/passengers")
+            .RequireAuthorization()
+            .WithSummary("Xem danh sách hành khách custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer chủ yêu cầu, Admin, Manager/Staff được phân công",
+                null,
+                "Trả trạng thái manifest và danh sách hành khách hiện tại.",
+                "Staff được xem để đối soát vận hành nhưng không được cập nhật."));
+
+        group.MapPut(UpdateCustomBookingPassengers, "{id:guid}/passengers")
+            .RequireAuthorization()
+            .WithSummary("Cập nhật danh sách hành khách custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer chủ yêu cầu, Admin hoặc Manager được giao booking",
+                PassengerManifestExample,
+                "PUT thay thế toàn bộ danh sách hành khách.",
+                "Chỉ cập nhật sau khi booking Confirmed và trước khi check-in.",
+                "Backend tự tính Adult/Child từ ngày sinh rồi kiểm tra đúng số đã đăng ký.",
+                "Trẻ em là người dưới 11 tuổi tại ngày khởi hành; người từ đủ 11 tuổi được tính là Adult.",
+                "Khi manifest chuyển hoàn tất, backend tạo vé QR nếu chưa có active ticket và gửi email confirmation template có QR."));
+
+        group.MapPost(PreviewImportCustomBookingPassengers, "{id:guid}/passengers/import/preview")
+            .RequireAuthorization()
+            .DisableAntiforgery()
+            .WithSummary("Preview CSV/XLSX danh sách hành khách custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer chủ yêu cầu, Admin hoặc Manager được giao booking",
+                null,
+                "Multipart/form-data field file, hỗ trợ .csv hoặc .xlsx.",
+                "Header bắt buộc: FullName/Tên/Họ và tên và DateOfBirth/Ngày sinh.",
+                "Các cột khác trong file như giới tính, số điện thoại, email, địa chỉ, ghi chú sẽ bị bỏ qua.",
+                "Endpoint chỉ parse, tính Adult/Child và trả preview/error/warning; không lưu DB.",
+                "Frontend cho khách kiểm tra/sửa rồi gọi PUT /passengers để xác nhận."));
+
+        group.MapPost(ReissueCustomBookingTicket, "{id:guid}/ticket/reissue")
+            .RequireAuthorization()
+            .WithSummary("Admin/Manager cấp lại QR custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc Manager được giao booking",
+                ReissueTicketExample,
+                "Chỉ dùng khi QR bị lỗi tại bước check-in.",
+                "Chỉ cấp lại khi booking Confirmed, vé Active, chưa dùng và chưa hết hạn.",
+                "Backend tạo token QR mới, QR cũ mất hiệu lực, và ghi audit log kèm lý do."));
 
         group.MapPost(ScanCustomBookingTicket, "tickets/scan")
             .RequireAuthorization()
+            .Accepts<ScanCustomBookingTicketRequest>("application/json", "text/plain")
             .WithSummary("Scan/check-in vé QR custom booking")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
                 ScanTicketExample,
+                "Body nhận được dạng JSON object { \"qrToken\": \"...\" }, JSON string hoặc text/plain.",
                 "qrToken nhận raw token hoặc payload dạng swb:custom-booking:{token}.",
                 "Backend kiểm tra vé active, booking Confirmed, chưa hết hạn và chưa dùng.",
+                "Chỉ cho check-in từ 30 phút trước giờ khởi hành; quét sớm hơn trả lỗi và vé vẫn Active.",
                 "Scan thành công sẽ set status=Used, qrUsedAt và qrUsedByUserId.",
                 "Scan lại cùng mã sẽ báo vé đã được sử dụng."));
 
@@ -356,46 +420,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
             requestedSeatSetupType,
             rentalUnit,
             passengerCount), ct));
-
-    private static IResult GetCustomBookingStatuses() =>
-        Results.Ok(new[]
-        {
-            new CustomBookingStatusApiResponse(
-                CustomBookingRequestStatus.PendingReview,
-                "Chờ Admin xử lý",
-                "Khách có thể chỉnh sửa, chọn tàu mong muốn hoặc hủy. Admin gán tàu chính thức rồi mới báo giá.",
-                [
-                    "PUT /api/custom-booking-requests/{id}",
-                    "GET /api/custom-booking-requests/{id}/vessel-candidates",
-                    "PUT /api/custom-booking-requests/{id}/preferred-vessel",
-                    "PUT /api/custom-booking-requests/{id}/assigned-vessel",
-                    "POST /api/custom-booking-requests/{id}/quote",
-                    "POST /api/custom-booking-requests/{id}/cancel"
-                ]),
-            new CustomBookingStatusApiResponse(
-                CustomBookingRequestStatus.Quoted,
-                "Đã báo giá",
-                "Admin đã gán tàu và báo giá. Khách có thể chấp nhận hoặc hủy/từ chối.",
-                [
-                    "POST /api/custom-booking-requests/{id}/accept-quote",
-                    "POST /api/custom-booking-requests/{id}/cancel"
-                ]),
-            new CustomBookingStatusApiResponse(
-                CustomBookingRequestStatus.Confirmed,
-                "Đã xác nhận",
-                "Khách đã đồng ý báo giá. Admin giao Manager bến khởi hành; Manager phân Staff và dịch vụ vận hành.",
-                [
-                    "GET /api/custom-booking-requests/{id}/manager-candidates",
-                    "PUT /api/custom-booking-requests/{id}/assigned-manager",
-                    "GET /api/custom-booking-requests/{id}/staff-candidates",
-                    "PUT /api/custom-booking-requests/{id}/operation-plan"
-                ]),
-            new CustomBookingStatusApiResponse(
-                CustomBookingRequestStatus.Cancelled,
-                "Đã hủy",
-                "Khách hoặc Admin đã hủy. Xem statusReason để biết lý do.",
-                [])
-        });
 
     private static async Task<IResult> GetCustomBookingRentalServices(
         ISender sender,
@@ -493,7 +517,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
         Results.Ok(await sender.Send(new QuoteCustomBookingRequestCommand(
             id,
             request.DepositPercent,
-            request.PriceNote), ct));
+            request.PriceNote,
+            request.ServiceFeeAmount), ct));
 
     private static async Task<IResult> AcceptCustomBookingQuote(
         ISender sender,
@@ -507,11 +532,100 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCustomBookingTicketQuery(id), ct));
 
+    private static async Task<IResult> GetCustomBookingPassengers(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingPassengerManifestQuery(id), ct));
+
+    private static async Task<IResult> UpdateCustomBookingPassengers(
+        ISender sender,
+        Guid id,
+        UpdateCustomBookingPassengersApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateCustomBookingPassengerManifestCommand(id, request.Passengers), ct));
+
+    private static async Task<IResult> PreviewImportCustomBookingPassengers(
+        ISender sender,
+        Guid id,
+        IFormFile file,
+        CancellationToken ct)
+    {
+        await using var stream = file.OpenReadStream();
+        var rows = CustomBookingPassengerManifestFileParser.Parse(file.FileName, stream);
+        return Results.Ok(await sender.Send(new PreviewCustomBookingPassengerManifestImportCommand(id, rows), ct));
+    }
+
+    private static async Task<IResult> ReissueCustomBookingTicket(
+        ISender sender,
+        Guid id,
+        ReissueCustomBookingTicketApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ReissueCustomBookingTicketCommand(id, request.Reason), ct));
+
     private static async Task<IResult> ScanCustomBookingTicket(
         ISender sender,
-        ScanCustomBookingTicketRequest request,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(request, ct));
+        HttpRequest httpRequest,
+        CancellationToken ct)
+    {
+        var request = await ReadScanTicketRequestAsync(httpRequest, ct);
+        return Results.Ok(await sender.Send(request, ct));
+    }
+
+    private static async Task<ScanCustomBookingTicketRequest> ReadScanTicketRequestAsync(
+        HttpRequest httpRequest,
+        CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(httpRequest.Body);
+        var body = await reader.ReadToEndAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return new ScanCustomBookingTicketRequest(null);
+        }
+
+        var trimmed = body.Trim();
+        if (LooksLikeJson(trimmed))
+        {
+            var request = TryReadScanTicketJson(trimmed);
+            if (request is not null)
+            {
+                return request;
+            }
+        }
+
+        return new ScanCustomBookingTicketRequest(trimmed);
+    }
+
+    private static ScanCustomBookingTicketRequest? TryReadScanTicketJson(string body)
+    {
+        var request = TryDeserializeScanTicketJson(body);
+        if (request is not null || body[^1] != '"')
+        {
+            return request;
+        }
+
+        var withoutTrailingQuote = body[..^1].TrimEnd();
+        return LooksLikeJson(withoutTrailingQuote)
+            ? TryDeserializeScanTicketJson(withoutTrailingQuote)
+            : null;
+    }
+
+    private static ScanCustomBookingTicketRequest? TryDeserializeScanTicketJson(string body)
+    {
+        try
+        {
+            return body[0] == '"'
+                ? new ScanCustomBookingTicketRequest(JsonSerializer.Deserialize<string>(body, JsonSerializerOptions.Web))
+                : JsonSerializer.Deserialize<ScanCustomBookingTicketRequest>(body, JsonSerializerOptions.Web);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static bool LooksLikeJson(string body) =>
+        body.Length > 0 && (body[0] == '{' || body[0] == '"');
 
     private static async Task<IResult> CancelCustomBookingRequest(
         ISender sender,
@@ -568,7 +682,13 @@ public sealed class CustomBookingRequests : IEndpointGroup
 
     public sealed record QuoteCustomBookingRequestApiRequest(
         decimal DepositPercent,
+        decimal ServiceFeeAmount = 0m,
         string? PriceNote = null);
+
+    public sealed record ReissueCustomBookingTicketApiRequest(string? Reason);
+
+    public sealed record UpdateCustomBookingPassengersApiRequest(
+        IReadOnlyCollection<CustomBookingPassengerInput> Passengers);
 
     public sealed record CancelCustomBookingRequestApiRequest(string Reason);
 
@@ -577,12 +697,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
     public sealed record UpdateCustomBookingOperationPlanApiRequest(
         IReadOnlyCollection<CustomBookingStaffPlanItem> StaffAssignments,
         IReadOnlyCollection<CustomBookingOperationServicePlanItem> Services);
-
-    public sealed record CustomBookingStatusApiResponse(
-        CustomBookingRequestStatus Status,
-        string Label,
-        string Description,
-        IReadOnlyCollection<string> NextActions);
 
     private static bool TryParseOptionalDateOnly(string? value, out DateOnly? date)
     {

@@ -8,6 +8,8 @@ public class CustomBookingQuote : BaseGuidAuditableEntity
 
     public decimal QuotedPrice { get; set; }
 
+    public decimal ServiceFeeAmount { get; set; }
+
     public decimal DepositPercent { get; set; } = 50m;
 
     public decimal DepositAmount { get; set; }

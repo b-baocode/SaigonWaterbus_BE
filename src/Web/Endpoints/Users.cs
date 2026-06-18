@@ -1,3 +1,4 @@
+using SaigonWaterbus.Application.BookingHistory;
 using SaigonWaterbus.Application.Users;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -66,6 +67,16 @@ public sealed class Users : IEndpointGroup
                 null,
                 "Lấy danh sách user theo quyền.",
                 "Manager chỉ thấy Customer và Staff."));
+
+        groupBuilder.MapGet(GetBookingHistory, "booking-history")
+            .RequireAuthorization()
+            .WithSummary("Lịch sử booking của user hiện tại")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Trả về lịch sử chung gồm booking vé thường và custom booking thuê nguyên tàu của user đang đăng nhập.",
+                "Custom booking có ticket sẽ trả ticket.qrPayload nếu backend còn lưu token QR.",
+                "detailEndpoint cho biết API chi tiết cần gọi tiếp theo cho từng loại booking."));
 
         groupBuilder.MapGet(GetById, "detail/{userId:guid}")
             .RequireAuthorization()
@@ -166,6 +177,9 @@ public sealed class Users : IEndpointGroup
         IUserManagementService userManagementService,
         CancellationToken cancellationToken) =>
         Results.Ok(await userManagementService.GetManageableRolesAsync(cancellationToken));
+
+    private static async Task<IResult> GetBookingHistory(ISender sender, CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(new GetMyBookingHistoryQuery(), cancellationToken));
 
     private static async Task<IResult> CreateManagedUser(
         IUserManagementService userManagementService,

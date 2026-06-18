@@ -31,7 +31,6 @@ public sealed class BrevoCustomBookingConfirmationEmailSender : ICustomBookingCo
 
     public async Task SendConfirmationAsync(
         CustomBookingRequest request,
-        string? qrPayload,
         CancellationToken cancellationToken)
     {
         var options = _optionsMonitor.CurrentValue;
@@ -71,7 +70,7 @@ public sealed class BrevoCustomBookingConfirmationEmailSender : ICustomBookingCo
                 sender = new { email = options.SenderEmail, name = options.SenderName },
                 to = new[] { new { email = request.ContactEmail, name = request.ContactName } },
                 templateId = options.CustomBookingConfirmationTemplateId,
-                @params = CustomBookingEmailParamsFactory.CreateConfirmationParams(request, routeSegments, qrPayload)
+                @params = CustomBookingEmailParamsFactory.CreateConfirmationParams(request, routeSegments)
             };
 
             var client = _httpClientFactory.CreateClient(HttpClientName);

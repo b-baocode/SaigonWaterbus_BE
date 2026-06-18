@@ -15,18 +15,15 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
-    private readonly ICustomBookingConfirmationEmailSender _confirmationEmailSender;
 
     public AcceptCustomBookingQuoteCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider,
-        ICustomBookingConfirmationEmailSender confirmationEmailSender)
+        TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
-        _confirmationEmailSender = confirmationEmailSender;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -60,34 +57,9 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
         customRequest.Status = CustomBookingRequestStatus.Confirmed;
         customRequest.StatusReason = null;
         customRequest.QuoteAcceptedAt = now;
-        var ticketResult = await CustomBookingTicketSupport.EnsureActiveTicketAsync(
-            _context,
-            customRequest,
-            now,
-            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        var qrPayload = ticketResult.QrToken is null
-            ? null
-            : CustomBookingTicketSupport.CreateQrPayload(ticketResult.QrToken);
-        await _confirmationEmailSender.SendConfirmationAsync(customRequest, qrPayload, cancellationToken);
-
-        var dto = CustomBookingRequestDto.From(customRequest, routeSegments);
-        return ticketResult.QrToken is null
-            ? dto
-            : dto with
-            {
-                Ticket = new CustomBookingTicketQrDto(
-                    ticketResult.Ticket.Id,
-                    ticketResult.Ticket.CustomBookingRequestId,
-                    ticketResult.Ticket.TicketCode,
-                    ticketResult.Ticket.Status,
-                    ticketResult.QrToken,
-                    qrPayload!,
-                    ticketResult.Ticket.QrIssuedAt,
-                    ticketResult.Ticket.QrExpiresAt,
-                    ticketResult.Ticket.QrUsedAt)
-            };
+        return CustomBookingRequestDto.From(customRequest, routeSegments);
     }
 }

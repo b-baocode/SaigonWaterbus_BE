@@ -9,7 +9,8 @@ namespace SaigonWaterbus.Application.CustomBookingRequests;
 public sealed record QuoteCustomBookingRequestCommand(
     Guid Id,
     decimal DepositPercent,
-    string? PriceNote) : IRequest<CustomBookingRequestDto>;
+    string? PriceNote,
+    decimal ServiceFeeAmount = 0m) : IRequest<CustomBookingRequestDto>;
 
 public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidator<QuoteCustomBookingRequestCommand>
 {
@@ -25,6 +26,11 @@ public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidato
             .MaximumLength(1000)
             .WithMessage("Ghi chú báo giá không được vượt quá 1000 ký tự.")
             .When(x => x.PriceNote is not null);
+        RuleFor(x => x.ServiceFeeAmount)
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Phụ phí dịch vụ không được âm.")
+            .PrecisionScale(12, 2, false)
+            .WithMessage("Phụ phí dịch vụ không được vượt quá 12 chữ số và tối đa 2 số thập phân.");
     }
 }
 
@@ -78,7 +84,8 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         var rentalPrice = CustomBookingRequestSupport.GetRequiredRentalPriceOrThrow(
             customRequest,
             customRequest.AssignedVessel!);
-        var quotedPrice = CustomBookingRequestSupport.CalculateRentalPrice(customRequest, rentalPrice);
+        var baseVesselPrice = CustomBookingRequestSupport.CalculateRentalPrice(customRequest, rentalPrice);
+        var quotedPrice = baseVesselPrice + request.ServiceFeeAmount;
 
         var depositAmount = decimal.Round(
             quotedPrice * request.DepositPercent / 100m,
@@ -96,6 +103,7 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         }
 
         customRequest.Quote.QuotedPrice = quotedPrice;
+        customRequest.Quote.ServiceFeeAmount = request.ServiceFeeAmount;
         customRequest.Quote.DepositPercent = request.DepositPercent;
         customRequest.Quote.DepositAmount = depositAmount;
         customRequest.Quote.RemainingAmount = remainingAmount;

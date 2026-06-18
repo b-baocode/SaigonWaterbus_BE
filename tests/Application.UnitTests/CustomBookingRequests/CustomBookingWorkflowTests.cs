@@ -1,3 +1,5 @@
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using NUnit.Framework;
@@ -501,7 +503,7 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
-    public async Task QuoteUsesSelectedRentalUnitPrice()
+    public async Task QuoteAddsServiceFeeToSelectedRentalUnitPrice()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -529,18 +531,19 @@ public class CustomBookingWorkflowTests
                 adminContext,
                 TimeProvider.System,
                 new TestCustomBookingQuoteEmailSender())
-            .Handle(new QuoteCustomBookingRequestCommand(request.Id, 50, null), CancellationToken.None);
+            .Handle(new QuoteCustomBookingRequestCommand(request.Id, 50, null, 400000m), CancellationToken.None);
 
         result.Status.ShouldBe(CustomBookingRequestStatus.Quoted);
         result.Quote.ShouldNotBeNull();
-        result.Quote.QuotedPrice.ShouldBe(33333.33m);
-        result.Quote.DepositAmount.ShouldBe(16667m);
-        result.Quote.RemainingAmount.ShouldBe(16666.33m);
+        result.Quote.QuotedPrice.ShouldBe(433333.33m);
+        result.Quote.ServiceFeeAmount.ShouldBe(400000m);
+        result.Quote.DepositAmount.ShouldBe(216667m);
+        result.Quote.RemainingAmount.ShouldBe(216666.33m);
         result.Quote.PriceNote.ShouldBe("Theo gio");
     }
 
     [Test]
-    public async Task AcceptQuoteCreatesQrTicketOnce()
+    public async Task AcceptQuoteConfirmsRequestWithoutIssuingQrTicket()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var customerContext = await SeedCustomerAsync(context);
@@ -565,18 +568,12 @@ public class CustomBookingWorkflowTests
         var result = await new AcceptCustomBookingQuoteCommandHandler(
                 context,
                 customerContext,
-                TimeProvider.System,
-                new TestCustomBookingConfirmationEmailSender())
+                TimeProvider.System)
             .Handle(new AcceptCustomBookingQuoteCommand(request.Id), CancellationToken.None);
 
         result.Status.ShouldBe(CustomBookingRequestStatus.Confirmed);
-        result.Ticket.ShouldNotBeNull();
-        result.Ticket.QrPayload.ShouldStartWith("swb:custom-booking:");
-        result.Ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
-        context.CustomBookingTickets.Count().ShouldBe(1);
-        context.CustomBookingTickets.Single().QrTokenHash.ShouldBe(
-            CustomBookingTicketSupport.HashQrToken(result.Ticket.QrToken));
-        context.CustomBookingTickets.Single().QrTokenHash.ShouldNotBe(result.Ticket.QrToken);
+        result.Ticket.ShouldBeNull();
+        context.CustomBookingTickets.Count().ShouldBe(0);
     }
 
     [Test]
@@ -601,6 +598,702 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
+    public async Task EnsureActiveTicketReturnsStoredQrTokenForExistingActiveTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var qrToken = "stored-token";
+        var request = ValidRequest();
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-TEST",
+            QrToken = qrToken,
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        var result = await CustomBookingTicketSupport.EnsureActiveTicketAsync(
+            context,
+            request,
+            DateTimeOffset.UtcNow,
+            CancellationToken.None);
+
+        result.Ticket.Id.ShouldBe(ticket.Id);
+        result.QrToken.ShouldBe(qrToken);
+        context.CustomBookingTickets.Count().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task AssignedManagerCanReissueQrForUnusedActiveTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var oldQrToken = "old-token";
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AssignedManagerUserId = managerContext.UserId;
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-TEST",
+            QrToken = oldQrToken,
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(oldQrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            QrExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        var result = await new ReissueCustomBookingTicketCommandHandler(
+                context,
+                managerContext,
+                TimeProvider.System)
+            .Handle(new ReissueCustomBookingTicketCommand(request.Id, "QR không quét được"), CancellationToken.None);
+
+        result.QrToken.ShouldNotBe(oldQrToken);
+        result.QrPayload.ShouldBe(CustomBookingTicketSupport.CreateQrPayload(result.QrToken));
+        var storedTicket = context.CustomBookingTickets.Single();
+        storedTicket.QrToken.ShouldBe(result.QrToken);
+        storedTicket.QrTokenHash.ShouldBe(CustomBookingTicketSupport.HashQrToken(result.QrToken));
+        context.AuditLogs.Count().ShouldBe(1);
+        context.AuditLogs.Single().Action.ShouldBe("CustomBookingTicketQrReissued");
+    }
+
+    [Test]
+    public async Task AssignedStaffCanViewTicketMetadataButQrPayloadIsHidden()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var qrToken = "stored-token";
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AssignedManagerUserId = managerContext.UserId;
+        request.StaffAssignments.Add(new CustomBookingStaffAssignment
+        {
+            CustomBookingRequestId = request.Id,
+            StaffUserId = staffContext.UserId!.Value,
+            AssignedByManagerUserId = managerContext.UserId!.Value,
+            AssignedAt = DateTimeOffset.UtcNow
+        });
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-TEST",
+            QrToken = qrToken,
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow,
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        var result = await new GetCustomBookingTicketQueryHandler(context, staffContext)
+            .Handle(new GetCustomBookingTicketQuery(request.Id), CancellationToken.None);
+
+        result.TicketCode.ShouldBe("CBT-TEST");
+        result.QrPayload.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task AssignedStaffCannotReissueQr()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var oldQrToken = "old-token";
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AssignedManagerUserId = managerContext.UserId;
+        request.StaffAssignments.Add(new CustomBookingStaffAssignment
+        {
+            CustomBookingRequestId = request.Id,
+            StaffUserId = staffContext.UserId!.Value,
+            AssignedByManagerUserId = managerContext.UserId!.Value,
+            AssignedAt = DateTimeOffset.UtcNow
+        });
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-TEST",
+            QrToken = oldQrToken,
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(oldQrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow.AddDays(-1),
+            QrExpiresAt = DateTimeOffset.UtcNow.AddDays(1),
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        var handler = new ReissueCustomBookingTicketCommandHandler(
+            context,
+            staffContext,
+            TimeProvider.System);
+
+        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+            handler.Handle(new ReissueCustomBookingTicketCommand(request.Id, "QR không quét được"), CancellationToken.None));
+
+        var storedTicket = context.CustomBookingTickets.Single();
+        storedTicket.QrToken.ShouldBe(oldQrToken);
+        storedTicket.QrTokenHash.ShouldBe(CustomBookingTicketSupport.HashQrToken(oldQrToken));
+        context.AuditLogs.Count().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task CustomerCanUpdatePassengerManifestAfterConfirmed()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 1;
+        request.PassengerCount = 2;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var confirmationEmailSender = new TestCustomBookingConfirmationEmailSender();
+        var result = await new UpdateCustomBookingPassengerManifestCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)),
+                confirmationEmailSender)
+            .Handle(
+                new UpdateCustomBookingPassengerManifestCommand(
+                    request.Id,
+                    [
+                        new CustomBookingPassengerInput(
+                            "Nguyen Van A",
+                            new DateOnly(1995, 6, 20)),
+                        new CustomBookingPassengerInput(
+                            "Nguyen Van B",
+                            new DateOnly(2015, 6, 21))
+                    ]),
+                CancellationToken.None);
+
+        result.Status.ShouldBe(PassengerManifestStatus.Completed);
+        result.PassengerCount.ShouldBe(2);
+        result.AdultCount.ShouldBe(1);
+        result.ChildCount.ShouldBe(1);
+        result.Passengers.Single(x => x.PassengerType == CustomBookingPassengerType.Child)
+            .AgeOnDepartureDate.ShouldBe(10);
+        context.CustomBookingPassengers.Count().ShouldBe(2);
+        context.CustomBookingRequests.Single().PassengerManifestCompletedAt.ShouldNotBeNull();
+        confirmationEmailSender.SentRequestId.ShouldBe(request.Id);
+        context.CustomBookingTickets.Count().ShouldBe(1);
+        var ticketDto = await new GetCustomBookingTicketQueryHandler(context, customerContext)
+            .Handle(new GetCustomBookingTicketQuery(request.Id), CancellationToken.None);
+        ticketDto.QrPayload.ShouldStartWith("swb:custom-booking:");
+    }
+
+    [Test]
+    public async Task PassengerManifestUsesDateOfBirthToCalculatePassengerType()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 0;
+        request.ChildCount = 1;
+        request.PassengerCount = 1;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCustomBookingPassengerManifestCommandHandler(
+            context,
+            customerContext,
+            TimeProvider.System,
+            new TestCustomBookingConfirmationEmailSender());
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCustomBookingPassengerManifestCommand(
+                    request.Id,
+                    [
+                        new CustomBookingPassengerInput(
+                            "Nguyen Van B",
+                            new DateOnly(2015, 6, 20))
+                    ]),
+                CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x)
+            .ShouldContain("Danh sách phải có đúng 0 người lớn.");
+        exception.Errors.Values.SelectMany(x => x)
+            .ShouldContain("Danh sách phải có đúng 1 trẻ em.");
+        context.CustomBookingPassengers.Count().ShouldBe(0);
+        context.CustomBookingRequests.Single().PassengerManifestStatus.ShouldBe(PassengerManifestStatus.NotStarted);
+    }
+
+    [Test]
+    public async Task PassengerManifestImportPreviewCalculatesStatsWithoutSaving()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 1;
+        request.PassengerCount = 2;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        const string csv =
+            """
+            FullName,DateOfBirth,PhoneNumber
+            Nguyen Van A,20/06/1995,0900000000
+            Nguyen Van B,21/06/2015,
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var rows = CustomBookingPassengerManifestFileParser.Parse("passengers.csv", stream);
+
+        var result = await new PreviewCustomBookingPassengerManifestImportCommandHandler(context, customerContext)
+            .Handle(new PreviewCustomBookingPassengerManifestImportCommand(request.Id, rows), CancellationToken.None);
+
+        result.CanConfirm.ShouldBeTrue();
+        result.PassengerCount.ShouldBe(2);
+        result.AdultCount.ShouldBe(1);
+        result.ChildCount.ShouldBe(1);
+        result.Rows.Single(x => x.FullName == "Nguyen Van B").PassengerType.ShouldBe(CustomBookingPassengerType.Child);
+        context.CustomBookingPassengers.Count().ShouldBe(0);
+        context.CustomBookingRequests.Single().PassengerManifestStatus.ShouldBe(PassengerManifestStatus.NotStarted);
+    }
+
+    [Test]
+    public void PassengerManifestDtosExposeOnlyPassengerIdentityAndAgeFields()
+    {
+        typeof(CustomBookingPassengerPreviewRowDto)
+            .GetProperties()
+            .Select(x => x.Name)
+            .ShouldBe(
+            [
+                nameof(CustomBookingPassengerPreviewRowDto.RowNumber),
+                nameof(CustomBookingPassengerPreviewRowDto.FullName),
+                nameof(CustomBookingPassengerPreviewRowDto.DateOfBirth),
+                nameof(CustomBookingPassengerPreviewRowDto.AgeOnDepartureDate),
+                nameof(CustomBookingPassengerPreviewRowDto.PassengerType)
+            ]);
+
+        typeof(CustomBookingPassengerDto)
+            .GetProperties()
+            .Select(x => x.Name)
+            .ShouldBe(
+            [
+                nameof(CustomBookingPassengerDto.Id),
+                nameof(CustomBookingPassengerDto.PassengerOrder),
+                nameof(CustomBookingPassengerDto.FullName),
+                nameof(CustomBookingPassengerDto.PassengerType),
+                nameof(CustomBookingPassengerDto.DateOfBirth),
+                nameof(CustomBookingPassengerDto.AgeOnDepartureDate)
+            ]);
+    }
+
+    [Test]
+    public async Task PassengerManifestImportPreviewAcceptsXlsxWithTitleAndVietnameseHeaders()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 2;
+        request.ChildCount = 0;
+        request.PassengerCount = 2;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        using var stream = CreateVietnamesePassengerManifestXlsx();
+        var rows = CustomBookingPassengerManifestFileParser.Parse("passengers.xlsx", stream);
+
+        var result = await new PreviewCustomBookingPassengerManifestImportCommandHandler(context, customerContext)
+            .Handle(new PreviewCustomBookingPassengerManifestImportCommand(request.Id, rows), CancellationToken.None);
+
+        result.CanConfirm.ShouldBeTrue();
+        result.PassengerCount.ShouldBe(2);
+        result.AdultCount.ShouldBe(2);
+        result.ChildCount.ShouldBe(0);
+        result.Rows.Select(x => x.RowNumber).ShouldBe([4, 5]);
+        result.Rows.Select(x => x.FullName).ShouldBe(["Nguyen Van An", "Tran Thi Binh"]);
+        result.Rows.All(x => x.PassengerType == CustomBookingPassengerType.Adult).ShouldBeTrue();
+        context.CustomBookingPassengers.Count().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task PassengerManifestImportPreviewAndUpdateAcceptSevenPassengerExcelTemplate()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 7;
+        request.ChildCount = 0;
+        request.PassengerCount = 7;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        using var stream = CreateSevenPassengerExcelTemplate();
+        var rows = CustomBookingPassengerManifestFileParser.Parse("danh-sach-7-nguoi.xlsx", stream);
+
+        var preview = await new PreviewCustomBookingPassengerManifestImportCommandHandler(context, customerContext)
+            .Handle(new PreviewCustomBookingPassengerManifestImportCommand(request.Id, rows), CancellationToken.None);
+
+        preview.CanConfirm.ShouldBeTrue();
+        preview.Rows.Select(x => x.RowNumber).ShouldBe([4, 5, 6, 7, 8, 9, 10]);
+        preview.Rows.Select(x => x.FullName).ShouldBe(
+        [
+            "Nguyễn Văn An",
+            "Trần Thị Bình",
+            "Lê Hoàng Cường",
+            "Phạm Minh Duy",
+            "Võ Ngọc Hân",
+            "Đặng Gia Khánh",
+            "Bùi Thanh Mai"
+        ]);
+        preview.Rows.Single(x => x.FullName == "Nguyễn Văn An").DateOfBirth.ShouldBe(new DateOnly(2000, 3, 12));
+        preview.Rows.All(x => x.PassengerType == CustomBookingPassengerType.Adult).ShouldBeTrue();
+
+        var passengers = preview.Rows
+            .Select(x => new CustomBookingPassengerInput(
+                x.FullName,
+                x.DateOfBirth!.Value))
+            .ToArray();
+
+        var updated = await new UpdateCustomBookingPassengerManifestCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)),
+                new TestCustomBookingConfirmationEmailSender())
+            .Handle(
+                new UpdateCustomBookingPassengerManifestCommand(request.Id, passengers),
+                CancellationToken.None);
+
+        updated.Status.ShouldBe(PassengerManifestStatus.Completed);
+        updated.PassengerCount.ShouldBe(7);
+        updated.AdultCount.ShouldBe(7);
+        updated.ChildCount.ShouldBe(0);
+        context.CustomBookingPassengers.Count().ShouldBe(7);
+        context.CustomBookingPassengers.Single(x => x.FullName == "Nguyễn Văn An").DateOfBirth.ShouldBe(new DateOnly(2000, 3, 12));
+        context.CustomBookingRequests.Single().PassengerManifestCompletedAt.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task PassengerManifestImportPreviewAcceptsMinimalXlsxWithNameAndFullBirthDateHeaders()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 1;
+        request.PassengerCount = 2;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        using var stream = CreateMinimalPassengerManifestXlsx();
+        var rows = CustomBookingPassengerManifestFileParser.Parse("passengers.xlsx", stream);
+
+        var result = await new PreviewCustomBookingPassengerManifestImportCommandHandler(context, customerContext)
+            .Handle(new PreviewCustomBookingPassengerManifestImportCommand(request.Id, rows), CancellationToken.None);
+
+        result.CanConfirm.ShouldBeTrue();
+        result.PassengerCount.ShouldBe(2);
+        result.AdultCount.ShouldBe(1);
+        result.ChildCount.ShouldBe(1);
+        result.Rows.Select(x => x.RowNumber).ShouldBe([2, 3]);
+        result.Rows.Select(x => x.FullName).ShouldBe(["Nguyen Van A", "Nguyen Van B"]);
+        result.Rows.Single(x => x.FullName == "Nguyen Van A").DateOfBirth.ShouldBe(new DateOnly(1995, 6, 20));
+        result.Rows.Single(x => x.FullName == "Nguyen Van B").PassengerType.ShouldBe(CustomBookingPassengerType.Child);
+        context.CustomBookingPassengers.Count().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task PassengerManifestImportPreviewReportsErrorsWithoutSaving()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 1;
+        request.PassengerCount = 2;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        const string csv =
+            """
+            FullName;PassengerType;DateOfBirth;PhoneNumber
+            Nguyen Van A;Adult;20/06/1995;0900000000
+            ;Child;21/06/2015;
+            Nguyen Van C;Child;not-a-date;
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var rows = CustomBookingPassengerManifestFileParser.Parse("passengers.csv", stream);
+
+        var result = await new PreviewCustomBookingPassengerManifestImportCommandHandler(context, customerContext)
+            .Handle(new PreviewCustomBookingPassengerManifestImportCommand(request.Id, rows), CancellationToken.None);
+
+        result.CanConfirm.ShouldBeFalse();
+        result.PassengerCount.ShouldBe(1);
+        result.Errors.ShouldContain("Danh sách hợp lệ phải có đúng 2 hành khách.");
+        result.Errors.ShouldContain("File còn dòng lỗi, vui lòng sửa trước khi xác nhận.");
+        result.Rows.Single(x => x.RowNumber == 3).FullName.ShouldBeNull();
+        result.Rows.Single(x => x.RowNumber == 4).DateOfBirth.ShouldBeNull();
+        context.CustomBookingPassengers.Count().ShouldBe(0);
+        context.CustomBookingRequests.Single().PassengerManifestStatus.ShouldBe(PassengerManifestStatus.NotStarted);
+    }
+
+    [Test]
+    public async Task PassengerManifestImportPreviewWarnsWhenFileTypeDiffersFromDateOfBirth()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 0;
+        request.PassengerCount = 1;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        const string csv =
+            """
+            FullName,PassengerType,DateOfBirth
+            Nguyen Van A,Child,20/06/1995
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var rows = CustomBookingPassengerManifestFileParser.Parse("passengers.csv", stream);
+
+        var result = await new PreviewCustomBookingPassengerManifestImportCommandHandler(context, customerContext)
+            .Handle(new PreviewCustomBookingPassengerManifestImportCommand(request.Id, rows), CancellationToken.None);
+
+        result.CanConfirm.ShouldBeTrue();
+        result.Warnings.ShouldContain(
+            "Một số PassengerType trong file khác với kết quả hệ thống tự tính theo ngày sinh.");
+        result.AdultCount.ShouldBe(1);
+        result.ChildCount.ShouldBe(0);
+        context.CustomBookingPassengers.Count().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task PassengerManifestUpdateReplacesExistingPassengerList()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 1;
+        request.PassengerCount = 2;
+        request.PassengerManifestStatus = PassengerManifestStatus.Completed;
+        request.Passengers.Add(new CustomBookingPassenger
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            PassengerOrder = 1,
+            FullName = "Old Passenger",
+            PassengerType = CustomBookingPassengerType.Adult,
+            DateOfBirth = new DateOnly(1990, 1, 1)
+        });
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var result = await new UpdateCustomBookingPassengerManifestCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)),
+                new TestCustomBookingConfirmationEmailSender())
+            .Handle(
+                new UpdateCustomBookingPassengerManifestCommand(
+                    request.Id,
+                    [
+                        new CustomBookingPassengerInput(
+                            "New Adult",
+                            new DateOnly(1995, 6, 20)),
+                        new CustomBookingPassengerInput(
+                            "New Child",
+                            new DateOnly(2015, 6, 21))
+                    ]),
+                CancellationToken.None);
+
+        result.PassengerCount.ShouldBe(2);
+        result.Passengers.Select(x => x.FullName).ShouldBe(["New Adult", "New Child"]);
+        result.Passengers.Select(x => x.PassengerOrder).ShouldBe([1, 2]);
+        context.CustomBookingPassengers.Count().ShouldBe(2);
+        context.CustomBookingPassengers.Select(x => x.FullName).ShouldNotContain("Old Passenger");
+    }
+
+    [Test]
+    public async Task AssignedStaffCanViewPassengerManifestButCannotUpdateIt()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 0;
+        request.PassengerCount = 1;
+        request.AssignedManagerUserId = managerContext.UserId;
+        request.PassengerManifestStatus = PassengerManifestStatus.Completed;
+        request.StaffAssignments.Add(new CustomBookingStaffAssignment
+        {
+            CustomBookingRequestId = request.Id,
+            StaffUserId = staffContext.UserId!.Value,
+            AssignedByManagerUserId = managerContext.UserId!.Value,
+            AssignedAt = DateTimeOffset.UtcNow
+        });
+        request.Passengers.Add(new CustomBookingPassenger
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            PassengerOrder = 1,
+            FullName = "Nguyen Van A",
+            PassengerType = CustomBookingPassengerType.Adult,
+            DateOfBirth = new DateOnly(1995, 6, 20)
+        });
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var manifest = await new GetCustomBookingPassengerManifestQueryHandler(context, staffContext)
+            .Handle(new GetCustomBookingPassengerManifestQuery(request.Id), CancellationToken.None);
+
+        manifest.PassengerCount.ShouldBe(1);
+        manifest.Passengers.Single().FullName.ShouldBe("Nguyen Van A");
+
+        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+            new UpdateCustomBookingPassengerManifestCommandHandler(
+                    context,
+                    staffContext,
+                    TimeProvider.System,
+                    new TestCustomBookingConfirmationEmailSender())
+                .Handle(
+                    new UpdateCustomBookingPassengerManifestCommand(
+                        request.Id,
+                        [
+                            new CustomBookingPassengerInput(
+                                "Changed Name",
+                                new DateOnly(1995, 6, 20))
+                        ]),
+                    CancellationToken.None));
+
+        context.CustomBookingPassengers.Single().FullName.ShouldBe("Nguyen Van A");
+    }
+
+    [Test]
+    public async Task PassengerManifestCannotBeUpdatedAfterCheckInLocksIt()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var qrToken = "locked-manifest-token";
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 1;
+        request.ChildCount = 0;
+        request.PassengerCount = 1;
+        request.PassengerManifestStatus = PassengerManifestStatus.Completed;
+        request.Passengers.Add(new CustomBookingPassenger
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            PassengerOrder = 1,
+            FullName = "Nguyen Van A",
+            PassengerType = CustomBookingPassengerType.Adult,
+            DateOfBirth = new DateOnly(1995, 6, 20)
+        });
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-LOCKED",
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow,
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        await new ScanCustomBookingTicketRequestHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 0, 45, 0, TimeSpan.Zero)))
+            .Handle(
+                new ScanCustomBookingTicketRequest(CustomBookingTicketSupport.CreateQrPayload(qrToken)),
+                CancellationToken.None);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new UpdateCustomBookingPassengerManifestCommandHandler(
+                    context,
+                    customerContext,
+                    TimeProvider.System,
+                    new TestCustomBookingConfirmationEmailSender())
+                .Handle(
+                    new UpdateCustomBookingPassengerManifestCommand(
+                        request.Id,
+                        [
+                            new CustomBookingPassengerInput(
+                                "Changed Name",
+                                new DateOnly(1995, 6, 20))
+                        ]),
+                    CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x)
+            .ShouldContain("Danh sách hành khách đã khóa sau khi check-in.");
+        context.CustomBookingRequests.Single().PassengerManifestStatus.ShouldBe(PassengerManifestStatus.Locked);
+        context.CustomBookingPassengers.Single().FullName.ShouldBe("Nguyen Van A");
+    }
+
+    [Test]
+    public async Task PassengerManifestRejectsMismatchedRegisteredCounts()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.AdultCount = 2;
+        request.ChildCount = 0;
+        request.PassengerCount = 2;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCustomBookingPassengerManifestCommandHandler(
+            context,
+            customerContext,
+            TimeProvider.System,
+            new TestCustomBookingConfirmationEmailSender());
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCustomBookingPassengerManifestCommand(
+                    request.Id,
+                    [
+                        new CustomBookingPassengerInput(
+                            "Nguyen Van A",
+                            new DateOnly(1995, 6, 20))
+                    ]),
+                CancellationToken.None));
+
+        exception.Errors["passengers"].ShouldContain("Danh sách phải có đúng 2 hành khách.");
+    }
+
+    [Test]
     public async Task ScanTicketMarksTicketAsUsedAndRejectsSecondScan()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -608,6 +1301,7 @@ public class CustomBookingWorkflowTests
         var qrToken = "test-token";
         var request = ValidRequest();
         request.Status = CustomBookingRequestStatus.Confirmed;
+        request.PassengerManifestStatus = PassengerManifestStatus.Completed;
         var ticket = new CustomBookingTicket
         {
             CustomBookingRequestId = request.Id,
@@ -623,7 +1317,7 @@ public class CustomBookingWorkflowTests
         var handler = new ScanCustomBookingTicketRequestHandler(
             context,
             staffContext,
-            TimeProvider.System);
+            new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 0, 45, 0, TimeSpan.Zero)));
 
         var result = await handler.Handle(
             new ScanCustomBookingTicketRequest(CustomBookingTicketSupport.CreateQrPayload(qrToken)),
@@ -632,11 +1326,87 @@ public class CustomBookingWorkflowTests
         result.Status.ShouldBe(CustomBookingTicketStatus.Used);
         result.QrUsedAt.ShouldNotBeNull();
         context.CustomBookingTickets.Single().QrUsedByUserId.ShouldBe(staffContext.UserId);
+        context.CustomBookingRequests.Single().PassengerManifestStatus.ShouldBe(PassengerManifestStatus.Locked);
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(new ScanCustomBookingTicketRequest(qrToken), CancellationToken.None));
 
         exception.Errors["qrToken"].ShouldContain("Vé này đã được sử dụng.");
+    }
+
+    [Test]
+    public async Task ScanTicketBeforeCheckInWindowKeepsTicketActive()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var qrToken = "early-token";
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.PassengerManifestStatus = PassengerManifestStatus.Completed;
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-EARLY",
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow,
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        var handler = new ScanCustomBookingTicketRequestHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 0, 29, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new ScanCustomBookingTicketRequest(CustomBookingTicketSupport.CreateQrPayload(qrToken)),
+                CancellationToken.None));
+
+        exception.Errors["qrToken"].ShouldContain("Chưa đến thời gian check-in.");
+        var storedTicket = context.CustomBookingTickets.Single();
+        storedTicket.Status.ShouldBe(CustomBookingTicketStatus.Active);
+        storedTicket.QrUsedAt.ShouldBeNull();
+        storedTicket.QrUsedByUserId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ScanTicketBeforePassengerManifestCompletedKeepsTicketActive()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var qrToken = "no-manifest-token";
+        var request = ValidRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        var ticket = new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CBT-NO-MANIFEST",
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken),
+            QrIssuedAt = DateTimeOffset.UtcNow,
+            Status = CustomBookingTicketStatus.Active
+        };
+        context.AddRange(request, ticket);
+        await context.SaveChangesAsync();
+
+        var handler = new ScanCustomBookingTicketRequestHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2026, 6, 20, 0, 45, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new ScanCustomBookingTicketRequest(CustomBookingTicketSupport.CreateQrPayload(qrToken)),
+                CancellationToken.None));
+
+        exception.Errors["qrToken"].ShouldContain("Danh sách hành khách chưa hoàn tất.");
+        var storedTicket = context.CustomBookingTickets.Single();
+        storedTicket.Status.ShouldBe(CustomBookingTicketStatus.Active);
+        storedTicket.QrUsedAt.ShouldBeNull();
+        context.CustomBookingRequests.Single().PassengerManifestStatus.ShouldBe(PassengerManifestStatus.NotStarted);
     }
 
     [Test]
@@ -850,13 +1620,293 @@ public class CustomBookingWorkflowTests
         return new TestUserContext(user.Id);
     }
 
+    private static MemoryStream CreateVietnamesePassengerManifestXlsx()
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var sharedStrings = archive.CreateEntry("xl/sharedStrings.xml");
+            using (var writer = new StreamWriter(sharedStrings.Open(), Encoding.UTF8))
+            {
+                writer.Write(
+                    """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main" />
+                    """);
+            }
+
+            var worksheet = archive.CreateEntry("xl/worksheets/sheet1.xml");
+            using (var writer = new StreamWriter(worksheet.Open(), Encoding.UTF8))
+            {
+                writer.Write(
+                    """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                      <x:sheetData>
+                        <x:row r="1">
+                          <x:c r="A1" t="str"><x:v>DANH SACH 7 NGUOI</x:v></x:c>
+                        </x:row>
+                        <x:row r="2" />
+                        <x:row r="3">
+                          <x:c r="A3" t="str"><x:v>STT</x:v></x:c>
+                          <x:c r="B3" t="str"><x:v>Họ và tên</x:v></x:c>
+                          <x:c r="C3" t="str"><x:v>Giới tính</x:v></x:c>
+                          <x:c r="D3" t="str"><x:v>Ngày sinh</x:v></x:c>
+                          <x:c r="E3" t="str"><x:v>Số điện thoại</x:v></x:c>
+                          <x:c r="F3" t="str"><x:v>Email</x:v></x:c>
+                          <x:c r="G3" t="str"><x:v>Địa chỉ</x:v></x:c>
+                          <x:c r="H3" t="str"><x:v>Ghi chú</x:v></x:c>
+                        </x:row>
+                        <x:row r="4">
+                          <x:c r="A4" t="n"><x:v>1</x:v></x:c>
+                          <x:c r="B4" t="str"><x:v>Nguyen Van An</x:v></x:c>
+                          <x:c r="C4" t="str"><x:v>Nam</x:v></x:c>
+                          <x:c r="D4" t="n"><x:v>36597</x:v></x:c>
+                          <x:c r="E4" t="str"><x:v>0901234567</x:v></x:c>
+                          <x:c r="H4" t="str"><x:v></x:v></x:c>
+                        </x:row>
+                        <x:row r="5">
+                          <x:c r="A5" t="n"><x:v>2</x:v></x:c>
+                          <x:c r="B5" t="str"><x:v>Tran Thi Binh</x:v></x:c>
+                          <x:c r="C5" t="str"><x:v>Nu</x:v></x:c>
+                          <x:c r="D5" t="n"><x:v>37097</x:v></x:c>
+                          <x:c r="E5" t="str"><x:v>0902345678</x:v></x:c>
+                          <x:c r="H5" t="str"><x:v></x:v></x:c>
+                        </x:row>
+                      </x:sheetData>
+                    </x:worksheet>
+                    """);
+            }
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private static MemoryStream CreateSevenPassengerExcelTemplate()
+    {
+        var sharedStrings = new[]
+        {
+            "DANH SÁCH 7 NGƯỜI",
+            "STT",
+            "Họ và tên",
+            "Giới tính",
+            "Ngày sinh",
+            "Số điện thoại",
+            "Email",
+            "Địa chỉ",
+            "Ghi chú",
+            "Nguyễn Văn An",
+            "Nam",
+            "0901 234 567",
+            "an.nguyen@example.com",
+            "TP Hồ Chí Minh",
+            "Trần Thị Bình",
+            "Nữ",
+            "0902 345 678",
+            "binh.tran@example.com",
+            "Hà Nội",
+            "Lê Hoàng Cường",
+            "0903 456 789",
+            "cuong.le@example.com",
+            "Đà Nẵng",
+            "Phạm Minh Duy",
+            "0904 567 890",
+            "duy.pham@example.com",
+            "Cần Thơ",
+            "Võ Ngọc Hân",
+            "0905 678 901",
+            "han.vo@example.com",
+            "Huế",
+            "Đặng Gia Khánh",
+            "0906 789 012",
+            "khanh.dang@example.com",
+            "Bình Dương",
+            "Bùi Thanh Mai",
+            "0907 890 123",
+            "mai.bui@example.com",
+            "Đồng Nai"
+        };
+
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            WriteSharedStrings(archive, sharedStrings);
+            WriteWorkbookForFirstWorksheet(archive, "worksheets/sheet1.xml");
+
+            var worksheet = archive.CreateEntry("xl/worksheets/sheet1.xml");
+            using (var writer = new StreamWriter(worksheet.Open(), Encoding.UTF8))
+            {
+                writer.Write(
+                    $$"""
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                      <x:sheetData>
+                        <x:row r="1">
+                          {{Cell("A1", 0)}}
+                        </x:row>
+                        <x:row r="2" />
+                        <x:row r="3">
+                          {{Cell("A3", 1)}}
+                          {{Cell("B3", 2)}}
+                          {{Cell("C3", 3)}}
+                          {{Cell("D3", 4)}}
+                          {{Cell("E3", 5)}}
+                          {{Cell("F3", 6)}}
+                          {{Cell("G3", 7)}}
+                          {{Cell("H3", 8)}}
+                        </x:row>
+                        {{PassengerRow(4, 1, 9, 10, new DateOnly(2000, 3, 12), 11, 12, 13)}}
+                        {{PassengerRow(5, 2, 14, 15, new DateOnly(2001, 7, 25), 16, 17, 18)}}
+                        {{PassengerRow(6, 3, 19, 10, new DateOnly(1999, 11, 4), 20, 21, 22)}}
+                        {{PassengerRow(7, 4, 23, 10, new DateOnly(2002, 1, 18), 24, 25, 26)}}
+                        {{PassengerRow(8, 5, 27, 15, new DateOnly(2000, 9, 30), 28, 29, 30)}}
+                        {{PassengerRow(9, 6, 31, 10, new DateOnly(1998, 5, 9), 32, 33, 34)}}
+                        {{PassengerRow(10, 7, 35, 15, new DateOnly(2003, 12, 22), 36, 37, 38)}}
+                      </x:sheetData>
+                      <x:mergeCells count="1">
+                        <x:mergeCell ref="A1:H1" />
+                      </x:mergeCells>
+                    </x:worksheet>
+                    """);
+            }
+        }
+
+        stream.Position = 0;
+        return stream;
+
+        static string Cell(string reference, int sharedStringIndex) =>
+            $"""<x:c r="{reference}" t="s"><x:v>{sharedStringIndex}</x:v></x:c>""";
+
+        static string PassengerRow(
+            int rowNumber,
+            int order,
+            int fullNameIndex,
+            int genderIndex,
+            DateOnly dateOfBirth,
+            int phoneIndex,
+            int emailIndex,
+            int addressIndex) =>
+            $$"""
+            <x:row r="{{rowNumber}}">
+              <x:c r="A{{rowNumber}}" t="n"><x:v>{{order}}</x:v></x:c>
+              {{Cell($"B{rowNumber}", fullNameIndex)}}
+              {{Cell($"C{rowNumber}", genderIndex)}}
+              <x:c r="D{{rowNumber}}" t="n"><x:v>{{ToExcelSerialDate(dateOfBirth)}}</x:v></x:c>
+              {{Cell($"E{rowNumber}", phoneIndex)}}
+              {{Cell($"F{rowNumber}", emailIndex)}}
+              {{Cell($"G{rowNumber}", addressIndex)}}
+              <x:c r="H{{rowNumber}}" t="str"><x:v></x:v></x:c>
+            </x:row>
+            """;
+
+        static int ToExcelSerialDate(DateOnly value) =>
+            (int)value.ToDateTime(TimeOnly.MinValue).ToOADate();
+    }
+
+    private static void WriteSharedStrings(ZipArchive archive, IReadOnlyList<string> sharedStrings)
+    {
+        var sharedStringsEntry = archive.CreateEntry("xl/sharedStrings.xml");
+        using var writer = new StreamWriter(sharedStringsEntry.Open(), Encoding.UTF8);
+        writer.Write(
+            $$"""
+            <?xml version="1.0" encoding="utf-8"?>
+            <x:sst xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+                count="{{sharedStrings.Count}}" uniqueCount="{{sharedStrings.Count}}">
+            """);
+        foreach (var value in sharedStrings)
+        {
+            writer.Write($"<x:si><x:t>{value}</x:t></x:si>");
+        }
+
+        writer.Write("</x:sst>");
+    }
+
+    private static void WriteWorkbookForFirstWorksheet(ZipArchive archive, string worksheetTarget)
+    {
+        var workbook = archive.CreateEntry("xl/workbook.xml");
+        using (var writer = new StreamWriter(workbook.Open(), Encoding.UTF8))
+        {
+            writer.Write(
+                """
+                <?xml version="1.0" encoding="utf-8"?>
+                <x:workbook xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+                    xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">
+                  <x:sheets>
+                    <x:sheet name="Danh sach" sheetId="1" r:id="rId1" />
+                  </x:sheets>
+                </x:workbook>
+                """);
+        }
+
+        var relationships = archive.CreateEntry("xl/_rels/workbook.xml.rels");
+        using (var writer = new StreamWriter(relationships.Open(), Encoding.UTF8))
+        {
+            writer.Write(
+                $$"""
+                <?xml version="1.0" encoding="utf-8"?>
+                <x:Relationships xmlns:x="http://schemas.openxmlformats.org/package/2006/relationships">
+                  <x:Relationship Id="rId1"
+                      Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet"
+                      Target="{{worksheetTarget}}" />
+                </x:Relationships>
+                """);
+        }
+    }
+
+    private static MemoryStream CreateMinimalPassengerManifestXlsx()
+    {
+        var stream = new MemoryStream();
+        using (var archive = new ZipArchive(stream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            WriteWorkbookForFirstWorksheet(archive, "worksheets/sheet2.xml");
+
+            var worksheet = archive.CreateEntry("xl/worksheets/sheet2.xml");
+            using (var writer = new StreamWriter(worksheet.Open(), Encoding.UTF8))
+            {
+                writer.Write(
+                    """
+                    <?xml version="1.0" encoding="utf-8"?>
+                    <x:worksheet xmlns:x="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+                      <x:sheetData>
+                        <x:row r="1">
+                          <x:c r="A1" t="str"><x:v>Tên</x:v></x:c>
+                          <x:c r="B1" t="str"><x:v>Ngày tháng năm sinh</x:v></x:c>
+                        </x:row>
+                        <x:row r="2">
+                          <x:c r="A2" t="str"><x:v>Nguyen Van A</x:v></x:c>
+                          <x:c r="B2" t="d"><x:v>1995-06-20T00:00:00</x:v></x:c>
+                        </x:row>
+                        <x:row r="3">
+                          <x:c r="A3" t="str"><x:v>Nguyen Van B</x:v></x:c>
+                          <x:c r="B3" t="d"><x:v>2015-06-21T00:00:00</x:v></x:c>
+                        </x:row>
+                      </x:sheetData>
+                    </x:worksheet>
+                    """);
+            }
+        }
+
+        stream.Position = 0;
+        return stream;
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
     private sealed class TestCustomBookingConfirmationEmailSender : ICustomBookingConfirmationEmailSender
     {
+        public Guid? SentRequestId { get; private set; }
+
         public Task SendConfirmationAsync(
             CustomBookingRequest request,
-            string? qrPayload,
-            CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+            CancellationToken cancellationToken)
+        {
+            SentRequestId = request.Id;
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestCustomBookingQuoteEmailSender : ICustomBookingQuoteEmailSender

@@ -15,6 +15,7 @@ public sealed class CustomBookingTicketConfiguration : IEntityTypeConfiguration<
         builder.Property(x => x.CustomBookingRequestId).HasColumnName("custom_booking_request_id").IsRequired();
         builder.Property(x => x.TicketCode).HasColumnName("ticket_code").HasMaxLength(50).IsRequired();
         builder.Property(x => x.QrTokenHash).HasColumnName("qr_token_hash").HasMaxLength(512).IsRequired();
+        builder.Property(x => x.QrToken).HasColumnName("qr_token").HasMaxLength(256);
         builder.Property(x => x.QrIssuedAt).HasColumnName("qr_issued_at").IsRequired();
         builder.Property(x => x.QrExpiresAt).HasColumnName("qr_expires_at");
         builder.Property(x => x.QrUsedAt).HasColumnName("qr_used_at");

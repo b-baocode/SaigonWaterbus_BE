@@ -15,7 +15,6 @@ public sealed class NoOpCustomBookingConfirmationEmailSender : ICustomBookingCon
 
     public Task SendConfirmationAsync(
         CustomBookingRequest request,
-        string? qrPayload,
         CancellationToken cancellationToken)
     {
         _logger.LogInformation(

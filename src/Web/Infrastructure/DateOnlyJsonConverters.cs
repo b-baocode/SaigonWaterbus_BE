@@ -9,14 +9,30 @@ internal sealed class DateOnlyJsonConverter : JsonConverter<DateOnly>
     private static readonly string[] AcceptedFormats =
     [
         "dd/MM/yyyy",
-        "dd-MM-yyyy"
+        "dd-MM-yyyy",
+        "yyyy-MM-dd",
+        "d/M/yyyy",
+        "d-M-yyyy"
+    ];
+
+    private static readonly string[] AcceptedDateTimeFormats =
+    [
+        "dd/MM/yyyy HH:mm:ss",
+        "dd-MM-yyyy HH:mm:ss",
+        "yyyy-MM-dd HH:mm:ss",
+        "yyyy-MM-ddTHH:mm:ss",
+        "yyyy-MM-ddTHH:mm:ss.FFF",
+        "yyyy-MM-ddTHH:mm:ss.fff",
+        "yyyy-MM-ddTHH:mm:ssK",
+        "yyyy-MM-ddTHH:mm:ss.FFFK",
+        "yyyy-MM-ddTHH:mm:ss.fffK"
     ];
 
     public override DateOnly Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
     {
         if (reader.TokenType != JsonTokenType.String)
         {
-            throw new JsonException("Date must be a string in dd/MM/yyyy or dd-MM-yyyy format.");
+            throw new JsonException("Date must be a string in dd/MM/yyyy, dd-MM-yyyy or yyyy-MM-dd format.");
         }
 
         var value = reader.GetString();
@@ -35,7 +51,17 @@ internal sealed class DateOnlyJsonConverter : JsonConverter<DateOnly>
             return date;
         }
 
-        throw new JsonException("Invalid date format. Use dd/MM/yyyy or dd-MM-yyyy.");
+        if (DateTime.TryParseExact(
+                value,
+                AcceptedDateTimeFormats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.AllowWhiteSpaces,
+                out var dateTime))
+        {
+            return DateOnly.FromDateTime(dateTime);
+        }
+
+        throw new JsonException("Invalid date format. Use dd/MM/yyyy, dd-MM-yyyy or yyyy-MM-dd.");
     }
 
     public override void Write(Utf8JsonWriter writer, DateOnly value, JsonSerializerOptions options) =>

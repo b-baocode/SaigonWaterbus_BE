@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -14,6 +15,7 @@ public sealed record CustomBookingTicketDto(
     Guid CustomBookingRequestId,
     string TicketCode,
     CustomBookingTicketStatus Status,
+    string? QrPayload,
     DateTimeOffset QrIssuedAt,
     DateTimeOffset? QrExpiresAt,
     DateTimeOffset? QrUsedAt);
@@ -54,6 +56,8 @@ internal static class CustomBookingTicketSupport
 {
     private const int QrTokenBytes = 32;
     private const string QrPayloadPrefix = "swb:custom-booking:";
+    private static readonly TimeSpan VietnamUtcOffset = TimeSpan.FromHours(7);
+    private static readonly TimeSpan CheckInLeadTime = TimeSpan.FromMinutes(30);
 
     public static async Task<(CustomBookingTicket Ticket, string? QrToken)> EnsureActiveTicketAsync(
         IApplicationDbContext context,
@@ -69,7 +73,7 @@ internal static class CustomBookingTicketSupport
 
         if (existingTicket is not null)
         {
-            return (existingTicket, null);
+            return (existingTicket, existingTicket.QrToken);
         }
 
         var qrToken = GenerateQrToken();
@@ -79,6 +83,7 @@ internal static class CustomBookingTicketSupport
             CustomBookingRequest = customRequest,
             TicketCode = CreateTicketCode(customRequest, now),
             QrTokenHash = HashQrToken(qrToken),
+            QrToken = qrToken,
             QrIssuedAt = now,
             QrExpiresAt = customRequest.EstimatedEndDate.HasValue && customRequest.PreferredEndTime.HasValue
                 ? new DateTimeOffset(
@@ -108,17 +113,43 @@ internal static class CustomBookingTicketSupport
             : trimmed;
     }
 
-    public static CustomBookingTicketDto CreateDto(CustomBookingTicket ticket) =>
-        new(
+    public static DateTimeOffset? CalculateCheckInOpensAt(CustomBookingRequest customRequest)
+    {
+        if (!customRequest.PreferredStartTime.HasValue)
+        {
+            return null;
+        }
+
+        return new DateTimeOffset(
+                customRequest.DepartureDate.ToDateTime(customRequest.PreferredStartTime.Value),
+                VietnamUtcOffset)
+            .ToUniversalTime()
+            .Add(-CheckInLeadTime);
+    }
+
+    public static CustomBookingTicketDto CreateDto(
+        CustomBookingTicket ticket,
+        CustomBookingRequest customRequest,
+        User actor)
+    {
+        var canReceiveQrPayload = AuthSupport.IsAdmin(actor)
+            || (AuthSupport.IsManager(actor) && customRequest.AssignedManagerUserId == actor.Id)
+            || (AuthSupport.IsCustomer(actor) && customRequest.UserId == actor.Id);
+
+        return new CustomBookingTicketDto(
             ticket.Id,
             ticket.CustomBookingRequestId,
             ticket.TicketCode,
             ticket.Status,
+            canReceiveQrPayload && !string.IsNullOrWhiteSpace(ticket.QrToken)
+                ? CreateQrPayload(ticket.QrToken)
+                : null,
             ticket.QrIssuedAt,
             ticket.QrExpiresAt,
             ticket.QrUsedAt);
+    }
 
-    private static string GenerateQrToken() =>
+    public static string GenerateQrToken() =>
         Convert.ToBase64String(RandomNumberGenerator.GetBytes(QrTokenBytes))
             .TrimEnd('=')
             .Replace('+', '-')
@@ -129,6 +160,9 @@ internal static class CustomBookingTicketSupport
 }
 
 public sealed record GetCustomBookingTicketQuery(Guid Id) : IRequest<CustomBookingTicketDto>;
+
+public sealed record ReissueCustomBookingTicketCommand(Guid Id, string? Reason)
+    : IRequest<CustomBookingTicketQrDto>;
 
 public sealed class GetCustomBookingTicketQueryHandler
     : IRequestHandler<GetCustomBookingTicketQuery, CustomBookingTicketDto>
@@ -160,7 +194,7 @@ public sealed class GetCustomBookingTicketQueryHandler
             .FirstOrDefault()
             ?? throw AuthSupport.CreateValidationException(nameof(request.Id), "Yêu cầu thuê tàu chưa có vé QR.");
 
-        return CustomBookingTicketSupport.CreateDto(ticket);
+        return CustomBookingTicketSupport.CreateDto(ticket, customRequest, actor);
     }
 }
 
@@ -219,6 +253,17 @@ public sealed class ScanCustomBookingTicketRequestHandler
             throw AuthSupport.CreateValidationException(nameof(request.QrToken), "Vé không còn hiệu lực.");
         }
 
+        if (ticket.CustomBookingRequest.PassengerManifestStatus != PassengerManifestStatus.Completed)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.QrToken), "Danh sách hành khách chưa hoàn tất.");
+        }
+
+        var checkInOpensAt = CustomBookingTicketSupport.CalculateCheckInOpensAt(ticket.CustomBookingRequest);
+        if (checkInOpensAt.HasValue && now < checkInOpensAt.Value)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.QrToken), "Chưa đến thời gian check-in.");
+        }
+
         if (ticket.QrExpiresAt.HasValue && ticket.QrExpiresAt <= now)
         {
             ticket.Status = CustomBookingTicketStatus.Expired;
@@ -229,6 +274,7 @@ public sealed class ScanCustomBookingTicketRequestHandler
         ticket.Status = CustomBookingTicketStatus.Used;
         ticket.QrUsedAt = now;
         ticket.QrUsedByUserId = actor.Id;
+        ticket.CustomBookingRequest.PassengerManifestStatus = PassengerManifestStatus.Locked;
         await _context.SaveChangesAsync(cancellationToken);
 
         return new ScanCustomBookingTicketResultDto(
@@ -238,5 +284,119 @@ public sealed class ScanCustomBookingTicketRequestHandler
             ticket.Status,
             ticket.QrUsedAt,
             "Check-in vé thành công.");
+    }
+}
+
+public sealed class ReissueCustomBookingTicketCommandHandler
+    : IRequestHandler<ReissueCustomBookingTicketCommand, CustomBookingTicketQrDto>
+{
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public ReissueCustomBookingTicketCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<CustomBookingTicketQrDto> Handle(
+        ReissueCustomBookingTicketCommand request,
+        CancellationToken cancellationToken)
+    {
+        var reason = request.Reason?.Trim();
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Reason), "Lý do cấp lại QR là bắt buộc.");
+        }
+
+        if (reason.Length > 500)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Reason), "Lý do cấp lại QR tối đa 500 ký tự.");
+        }
+
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
+            .Include(x => x.Tickets)
+            .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken)
+            ?? throw new NotFoundException("Không tìm thấy yêu cầu thuê tàu.");
+
+        var canReissue = AuthSupport.IsAdmin(actor)
+            || (AuthSupport.IsManager(actor) && customRequest.AssignedManagerUserId == actor.Id);
+        if (!canReissue)
+        {
+            throw new ForbiddenAccessException();
+        }
+
+        if (customRequest.Status != CustomBookingRequestStatus.Confirmed)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Id), "Chỉ cấp lại QR cho yêu cầu đã xác nhận.");
+        }
+
+        var ticket = customRequest.Tickets
+            .Where(x => x.Status == CustomBookingTicketStatus.Active)
+            .OrderByDescending(x => x.QrIssuedAt)
+            .FirstOrDefault()
+            ?? throw AuthSupport.CreateValidationException(nameof(request.Id), "Yêu cầu thuê tàu chưa có vé QR active.");
+
+        if (ticket.QrUsedAt.HasValue)
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Id), "Vé này đã được sử dụng.");
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        if (ticket.QrExpiresAt.HasValue && ticket.QrExpiresAt <= now)
+        {
+            ticket.Status = CustomBookingTicketStatus.Expired;
+            await _context.SaveChangesAsync(cancellationToken);
+            throw AuthSupport.CreateValidationException(nameof(request.Id), "Vé đã hết hạn.");
+        }
+
+        var oldValues = new
+        {
+            ticket.QrTokenHash,
+            ticket.QrIssuedAt
+        };
+
+        var qrToken = CustomBookingTicketSupport.GenerateQrToken();
+        ticket.QrToken = qrToken;
+        ticket.QrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken);
+        ticket.QrIssuedAt = now;
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            ActorUserId = actor.Id,
+            Action = "CustomBookingTicketQrReissued",
+            TargetTable = "custom_booking_tickets",
+            TargetId = ticket.Id,
+            OldValues = JsonSerializer.Serialize(oldValues, JsonOptions),
+            NewValues = JsonSerializer.Serialize(new
+            {
+                ticket.QrTokenHash,
+                ticket.QrIssuedAt,
+                Reason = reason,
+                ticket.CustomBookingRequestId
+            }, JsonOptions),
+            CreatedAt = now
+        });
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new CustomBookingTicketQrDto(
+            ticket.Id,
+            ticket.CustomBookingRequestId,
+            ticket.TicketCode,
+            ticket.Status,
+            qrToken,
+            CustomBookingTicketSupport.CreateQrPayload(qrToken),
+            ticket.QrIssuedAt,
+            ticket.QrExpiresAt,
+            ticket.QrUsedAt);
     }
 }

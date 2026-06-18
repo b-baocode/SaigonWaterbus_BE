@@ -90,6 +90,14 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
 
     public string? SpecialRequests { get; set; }
 
+    public PassengerManifestStatus PassengerManifestStatus { get; set; } = PassengerManifestStatus.NotStarted;
+
+    public DateTimeOffset? PassengerManifestCompletedAt { get; set; }
+
+    public Guid? PassengerManifestCompletedByUserId { get; set; }
+
+    public User? PassengerManifestCompletedByUser { get; set; }
+
     public CustomBookingRequestStatus Status { get; set; } = CustomBookingRequestStatus.PendingReview;
 
     public string? StatusReason { get; set; }
@@ -117,4 +125,6 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
         new List<CustomBookingOperationService>();
 
     public ICollection<CustomBookingTicket> Tickets { get; set; } = new List<CustomBookingTicket>();
+
+    public ICollection<CustomBookingPassenger> Passengers { get; set; } = new List<CustomBookingPassenger>();
 }

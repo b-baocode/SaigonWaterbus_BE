@@ -31,6 +31,30 @@ public class QuoteCustomBookingRequestCommandValidatorTests
         result.Errors.ShouldContain(x => x.PropertyName == nameof(QuoteCustomBookingRequestCommand.DepositPercent));
     }
 
+    [TestCase(0)]
+    [TestCase(400000)]
+    [TestCase(123.45)]
+    public void ValidatorAcceptsValidServiceFeeAmount(decimal serviceFeeAmount)
+    {
+        var validator = new QuoteCustomBookingRequestCommandValidator();
+
+        var result = validator.Validate(ValidCommand(50) with { ServiceFeeAmount = serviceFeeAmount });
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [TestCase(-1)]
+    [TestCase(123.456)]
+    public void ValidatorRejectsInvalidServiceFeeAmount(decimal serviceFeeAmount)
+    {
+        var validator = new QuoteCustomBookingRequestCommandValidator();
+
+        var result = validator.Validate(ValidCommand(50) with { ServiceFeeAmount = serviceFeeAmount });
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.PropertyName == nameof(QuoteCustomBookingRequestCommand.ServiceFeeAmount));
+    }
+
     private static QuoteCustomBookingRequestCommand ValidCommand(decimal depositPercent) =>
         new(
             Guid.NewGuid(),

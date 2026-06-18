@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260618102837_AddCustomBookingQrTokenAndPassengerManifest")]
+    partial class AddCustomBookingQrTokenAndPassengerManifest
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -384,10 +387,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<decimal>("RemainingAmount")
                         .HasColumnType("numeric(12,2)")
                         .HasColumnName("remaining_amount");
-
-                    b.Property<decimal>("ServiceFeeAmount")
-                        .HasColumnType("numeric(12,2)")
-                        .HasColumnName("service_fee_amount");
 
                     b.Property<DateTimeOffset?>("ValidUntil")
                         .HasColumnType("timestamp with time zone")

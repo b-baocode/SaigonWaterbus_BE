@@ -12,6 +12,8 @@ public class CustomBookingTicket : BaseGuidAuditableEntity
 
     public string QrTokenHash { get; set; } = null!;
 
+    public string? QrToken { get; set; }
+
     public DateTimeOffset QrIssuedAt { get; set; }
 
     public DateTimeOffset? QrExpiresAt { get; set; }

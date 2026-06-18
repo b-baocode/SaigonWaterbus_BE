@@ -6,6 +6,5 @@ public interface ICustomBookingConfirmationEmailSender
 {
     Task SendConfirmationAsync(
         CustomBookingRequest request,
-        string? qrPayload,
         CancellationToken cancellationToken);
 }

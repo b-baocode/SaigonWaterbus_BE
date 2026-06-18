@@ -121,6 +121,9 @@ public sealed record CustomBookingRequestDto(
     int PassengerCount,
     int AdultCount,
     int ChildCount,
+    PassengerManifestStatus PassengerManifestStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? PassengerManifestCompletedAt,
     CustomBookingRouteEstimateDto RouteEstimate,
     IReadOnlyCollection<CustomBookingItineraryStopDto> ItineraryStops,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -199,6 +202,8 @@ public sealed record CustomBookingRequestDto(
             request.PassengerCount,
             request.AdultCount,
             request.ChildCount,
+            request.PassengerManifestStatus,
+            request.PassengerManifestCompletedAt,
             routeEstimate,
             request.ItineraryStops
                 .OrderBy(x => x.StopOrder)
@@ -221,6 +226,7 @@ public sealed record CustomBookingRequestDto(
 public sealed record CustomBookingQuoteDto(
     Guid Id,
     decimal QuotedPrice,
+    decimal ServiceFeeAmount,
     decimal DepositPercent,
     decimal DepositAmount,
     decimal RemainingAmount,
@@ -233,6 +239,7 @@ public sealed record CustomBookingQuoteDto(
     public static CustomBookingQuoteDto From(CustomBookingQuote quote) => new(
         quote.Id,
         quote.QuotedPrice,
+        quote.ServiceFeeAmount,
         quote.DepositPercent,
         quote.DepositAmount,
         quote.RemainingAmount,
