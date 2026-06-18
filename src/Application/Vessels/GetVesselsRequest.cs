@@ -19,6 +19,12 @@ public sealed record VesselRentalPriceRequest(
     string? Currency = null,
     string? Note = null);
 
+public sealed record VesselImageFileRequest(
+    string FileName,
+    string? ContentType,
+    long Length,
+    Stream Content);
+
 public sealed record VesselDto(
     Guid Id,
     string Code,
@@ -26,13 +32,13 @@ public sealed record VesselDto(
     string Name,
     VesselStatus Status,
     int SeatCount,
-    int GeneratedSeatCount,
     int NumberOfDecks,
     bool SeatsConfigured,
     bool IsReadyForOperation,
     int? MaxSpeedKmh,
     int? YearBuilt,
     string ImageUrl,
+    IReadOnlyCollection<string> ImageUrls,
     string? Description,
     VesselRentalPriceDto? RentalPrice,
     IReadOnlyCollection<VesselRentalPriceDto> RentalPrices,
@@ -74,6 +80,7 @@ public sealed class GetVesselsRequestUseCase
         var query = VesselSupport.ApplyVisibilityFilter(
             _context.Vessels
                 .AsNoTracking()
+                .Include(x => x.Images)
                 .Include(x => x.RentalPrices)
                 .AsQueryable(),
             actor);
@@ -100,14 +107,6 @@ public sealed class GetVesselsRequestUseCase
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        var vesselIds = vessels.Select(v => v.Id).ToList();
-        var seatCounts = await _context.Seats
-            .AsNoTracking()
-            .Where(s => vesselIds.Contains(s.VesselId))
-            .GroupBy(s => s.VesselId)
-            .Select(g => new { VesselId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.VesselId, x => x.Count, cancellationToken);
-
-        return vessels.Select(v => VesselSupport.CreateDto(v, seatCounts.GetValueOrDefault(v.Id, 0))).ToArray();
+        return vessels.Select(VesselSupport.CreateDto).ToArray();
     }
 }

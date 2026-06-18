@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
@@ -114,6 +115,35 @@ public class VesselSeatFlowIntegrationTests
             .ExecuteAsync(new GetVesselsRequest(Search: vessel.Id.ToString()), CancellationToken.None);
 
         result.Single().Id.ShouldBe(vessel.Id);
+    }
+
+    [Test]
+    public async Task CreateVesselStoresMultipleImageUrls()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+
+        var result = await CreateVesselUseCase(context, userContext).ExecuteAsync(
+            new CreateVesselRequest(
+                $"IMG_{Guid.NewGuid():N}"[..20],
+                "Image vessel",
+                VesselStatus.Inactive,
+                4,
+                1,
+                SeatSetupType: SeatSetupType.FullStandard,
+                ImageUrls:
+                [
+                    "https://example.test/vessels/main.jpg",
+                    "https://example.test/vessels/deck.jpg"
+                ]),
+            CancellationToken.None);
+
+        result.ImageUrl.ShouldBe("https://example.test/vessels/main.jpg");
+        result.ImageUrls.ShouldBe([
+            "https://example.test/vessels/main.jpg",
+            "https://example.test/vessels/deck.jpg"
+        ]);
+        (await context.VesselImages.CountAsync(x => x.VesselId == result.Id)).ShouldBe(2);
     }
 
     private static CreateVesselRequestUseCase CreateVesselUseCase(

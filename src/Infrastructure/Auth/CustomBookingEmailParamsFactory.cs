@@ -16,13 +16,15 @@ internal static class CustomBookingEmailParamsFactory
 
     public static IReadOnlyDictionary<string, object?> CreateConfirmationParams(
         CustomBookingRequest request,
-        IReadOnlyCollection<RouteSegment>? routeSegments = null) =>
-        CreateCommonParams(request, statusLabel: "Đã chốt thành công", routeSegments);
+        IReadOnlyCollection<RouteSegment>? routeSegments = null,
+        string? qrPayload = null) =>
+        CreateCommonParams(request, statusLabel: "Đã chốt thành công", routeSegments, qrPayload);
 
     private static IReadOnlyDictionary<string, object?> CreateCommonParams(
         CustomBookingRequest request,
         string statusLabel,
-        IReadOnlyCollection<RouteSegment>? routeSegments)
+        IReadOnlyCollection<RouteSegment>? routeSegments,
+        string? qrPayload = null)
     {
         var quote = request.Quote;
         var vessel = request.AssignedVessel;
@@ -51,6 +53,7 @@ internal static class CustomBookingEmailParamsFactory
                 ? $"Chưa gán tàu ({request.RequestedNumberOfDecks} tầng, {SeatSetupTypeLabel(request.RequestedSeatSetupType)})"
                 : $"{vessel.Code} - {vessel.Name}",
             ["seatCount"] = vessel?.SeatCount.ToString(CultureInfo.InvariantCulture),
+            ["passengerCapacity"] = vessel?.SeatCount.ToString(CultureInfo.InvariantCulture),
             ["requestedNumberOfDecks"] = request.RequestedNumberOfDecks.ToString(CultureInfo.InvariantCulture),
             ["requestedSeatSetupType"] = request.RequestedSeatSetupType.ToString(),
             ["requestedSeatSetupTypeLabel"] = SeatSetupTypeLabel(request.RequestedSeatSetupType),
@@ -86,7 +89,16 @@ internal static class CustomBookingEmailParamsFactory
             ["depositAmount"] = quote is null ? null : Money(quote.DepositAmount, quote.Currency),
             ["remainingAmount"] = quote is null ? null : Money(quote.RemainingAmount, quote.Currency),
             ["priceNote"] = quote?.PriceNote ?? "Chi phí được ghi nhận theo báo giá đã xác nhận.",
-            ["validUntil"] = quote?.ValidUntil?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture)
+            ["validUntil"] = quote?.ValidUntil?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
+            ["ticketCode"] = request.Tickets
+                .Where(x => x.Status == CustomBookingTicketStatus.Active)
+                .OrderByDescending(x => x.QrIssuedAt)
+                .Select(x => x.TicketCode)
+                .FirstOrDefault(),
+            ["qrPayload"] = qrPayload,
+            ["qrImageUrl"] = string.IsNullOrWhiteSpace(qrPayload)
+                ? null
+                : $"https://api.qrserver.com/v1/create-qr-code/?size=240x240&data={Uri.EscapeDataString(qrPayload)}"
         };
     }
 
@@ -201,7 +213,7 @@ internal static class CustomBookingEmailParamsFactory
         seatSetupType switch
         {
             SeatSetupType.FullStandard => "Toàn bộ ghế Standard",
-            SeatSetupType.StandardAndVip => "Ghế Standard và VIP",
+            SeatSetupType.StandardAndVip => "Ghế Standard + River/Sky",
             _ => seatSetupType.ToString()
         };
 

@@ -1,5 +1,5 @@
-using SaigonWaterbus.Domain.Constants;
 using NUnit.Framework;
+using SaigonWaterbus.Domain.Constants;
 using Shouldly;
 
 namespace SaigonWaterbus.Domain.UnitTests.Constants;

@@ -30,6 +30,8 @@ public class Vessel : BaseAuditableEntity
 
     public string? Description { get; set; }
 
+    public ICollection<VesselImage> Images { get; set; } = new List<VesselImage>();
+
     public ICollection<Seat> Seats { get; set; } = new List<Seat>();
 
     public ICollection<VesselDeckLayout> DeckLayouts { get; set; } = new List<VesselDeckLayout>();

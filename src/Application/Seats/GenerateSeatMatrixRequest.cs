@@ -67,6 +67,15 @@ public sealed class GenerateSeatMatrixRequestUseCase
 
         await EnsureVesselHasNoLayoutAsync(vessel.Id, cancellationToken);
         EnsureDecksMatchVessel(vessel, request.Decks);
+        var seatTypes = await _context.SeatTypes
+            .ToListAsync(cancellationToken);
+        var previewSeatTypeDefinition = SeatLayoutPlanner.DefaultSeatTypeDefinition(vessel.SeatSetupType);
+        var previewSeatType = SeatLayoutPlanner.EnsureSeatType(
+            _context,
+            seatTypes,
+            previewSeatTypeDefinition.Code,
+            previewSeatTypeDefinition.Name,
+            previewSeatTypeDefinition.DisplayOrder);
 
         var deckLayouts = request.Decks
             .OrderBy(x => x.DeckNumber)
@@ -84,7 +93,13 @@ public sealed class GenerateSeatMatrixRequestUseCase
         vessel.Status = VesselStatus.Inactive;
         await _context.SaveChangesAsync(cancellationToken);
 
-        return SeatSupport.CreateVesselSeatsDto(vessel, [], deckLayouts, []);
+        return SeatSupport.CreateVesselSeatsDto(
+            vessel,
+            [],
+            deckLayouts,
+            [],
+            previewEmptyCellsAsSeats: true,
+            previewSeatType: previewSeatType);
     }
 
     private async Task EnsureVesselHasNoLayoutAsync(Guid vesselId, CancellationToken cancellationToken)

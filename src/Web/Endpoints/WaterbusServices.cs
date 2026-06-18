@@ -11,7 +11,8 @@ public sealed class WaterbusServices : IEndpointGroup
           "name": "WaterBus cong cong",
           "description": "Dich vu WaterBus cong cong theo tuyen.",
           "isActive": true,
-          "displayOrder": 1
+          "displayOrder": 1,
+          "bookingMode": "SeatBased"
         }
         """;
 
@@ -20,7 +21,8 @@ public sealed class WaterbusServices : IEndpointGroup
         {
           "name": "WaterBus du lich",
           "description": "Dich vu WaterBus du lich theo plan.",
-          "displayOrder": 2
+          "displayOrder": 2,
+          "bookingMode": "VesselRental"
         }
         """;
 
@@ -71,6 +73,8 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin",
                 CreateServiceExample,
                 "Code nên ngắn gọn, ví dụ PUBLIC hoặc TOURIST.",
+                "bookingMode hợp lệ: SeatBased, SeatTypeBased, VesselRental.",
+                "Custom booking chỉ dùng service có bookingMode=VesselRental và isActive=true.",
                 "Dữ liệu được lưu trong database, không seed cứng trong code."));
 
         groupBuilder.MapPut(UpdateWaterbusService, "{serviceId:guid}")
@@ -80,6 +84,7 @@ public sealed class WaterbusServices : IEndpointGroup
                 "Admin",
                 UpdateServiceExample,
                 "Chỉ field nào gửi lên mới được cập nhật.",
+                "bookingMode hợp lệ: SeatBased, SeatTypeBased, VesselRental.",
                 "Code được chuẩn hóa thành chữ in hoa."));
 
         groupBuilder.MapPatch(UpdateWaterbusServiceStatus, "status/{serviceId:guid}")

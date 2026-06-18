@@ -68,7 +68,10 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        await _confirmationEmailSender.SendConfirmationAsync(customRequest, cancellationToken);
+        var qrPayload = ticketResult.QrToken is null
+            ? null
+            : CustomBookingTicketSupport.CreateQrPayload(ticketResult.QrToken);
+        await _confirmationEmailSender.SendConfirmationAsync(customRequest, qrPayload, cancellationToken);
 
         var dto = CustomBookingRequestDto.From(customRequest, routeSegments);
         return ticketResult.QrToken is null
@@ -81,7 +84,7 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
                     ticketResult.Ticket.TicketCode,
                     ticketResult.Ticket.Status,
                     ticketResult.QrToken,
-                    CustomBookingTicketSupport.CreateQrPayload(ticketResult.QrToken),
+                    qrPayload!,
                     ticketResult.Ticket.QrIssuedAt,
                     ticketResult.Ticket.QrExpiresAt,
                     ticketResult.Ticket.QrUsedAt)

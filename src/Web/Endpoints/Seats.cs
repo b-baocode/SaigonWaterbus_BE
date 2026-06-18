@@ -33,7 +33,7 @@ public sealed class Seats : IEndpointGroup
                 { "row": 4, "column": 1, "type": "Toilet", "rowSpan": 1, "columnSpan": 2 },
                 { "row": 4, "column": 3, "type": "Aisle" },
                 { "row": 5, "column": 3, "type": "Aisle" },
-                { "row": 5, "column": 4, "type": "Seat", "seatTypeCode": "VIP" }
+                { "row": 5, "column": 4, "type": "Seat", "seatTypeCode": "RIVER" }
               ]
             }
           ]
@@ -80,8 +80,11 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 GenerateMatrixExample,
                 "API này chỉ sinh ma trận vật lý theo số tầng, số hàng và số cột.",
-                "Chưa tạo ghế thật, chưa tạo WC, chưa chọn VIP/Standard.",
-                "Sau bước này frontend dùng rowCount × columnCount để hiển thị lưới cho admin click chọn từng ô.",
+                "Response trả cells mặc định type=Seat để frontend hiển thị full ghế theo kiểu tàu.",
+                "FullStandard preview là STANDARD; StandardAndVip preview là CABIN.",
+                "Loại ghế seed mặc định: STANDARD, CABIN, RIVER, SKY.",
+                "Các cell Seat trong response generate chỉ là preview, chưa có seatId và chưa tạo ghế thật trong database.",
+                "Sau bước này frontend chỉ cần đổi các ô đặc biệt như Aisle, Empty, Toilet hoặc đổi seatTypeCode nếu tàu hỗ trợ nhiều loại ghế.",
                 "Tàu vẫn SeatsConfigured=false và Status=Inactive.",
                 "Nếu tàu đã có ma trận hoặc sơ đồ ghế, phải xóa toàn bộ trước khi generate lại."));
 
@@ -93,9 +96,9 @@ public sealed class Seats : IEndpointGroup
                 ConfigureExample,
                 "Dùng sau khi đã sinh ma trận bằng /seats/generate.",
                 "Kiểu FullStandard: toàn bộ ghế là STANDARD.",
-                "Kiểu StandardAndVip: mặc định là STANDARD; FE chỉ đánh dấu các ô VIP bằng type=Seat và seatTypeCode=VIP.",
+                "Kiểu StandardAndVip: mặc định là CABIN; FE có thể đánh dấu ô Seat bằng seatTypeCode đã seed trong database: STANDARD, CABIN, RIVER hoặc SKY.",
                 "Mỗi override cell có type=Seat/Aisle/Empty/Toilet.",
-                "Kiểu ghế được lưu trực tiếp trên tàu; dịch vụ chỉ quyết định hỗ trợ và hệ số giá.",
+                "Kiểu ghế được lưu trực tiếp trên ghế của tàu; không còn bảng giá ghế theo dịch vụ.",
                 "Aisle/Empty không lưu thành ghế; frontend dựng lại từ ma trận rowCount × columnCount và danh sách ghế/WC.",
                 "Tổng số ô Seat phải bằng SeatCount của tàu.",
                 "Toilet phải chiếm đúng 2 ô: rowSpan=1,columnSpan=2 hoặc rowSpan=2,columnSpan=1.",
@@ -203,4 +206,5 @@ public sealed class Seats : IEndpointGroup
 
     private sealed record UpdateSeatApiRequest(string? Code = null);
 
-    private sealed record UpdateSeatStatusApiRequest(bool? IsActive);}
+    private sealed record UpdateSeatStatusApiRequest(bool? IsActive);
+}

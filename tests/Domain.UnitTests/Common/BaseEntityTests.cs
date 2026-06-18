@@ -1,6 +1,6 @@
+using NUnit.Framework;
 using SaigonWaterbus.Domain.Common;
 using SaigonWaterbus.Domain.Entities;
-using NUnit.Framework;
 using Shouldly;
 
 namespace SaigonWaterbus.Domain.UnitTests.Common;

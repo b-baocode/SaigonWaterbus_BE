@@ -30,13 +30,13 @@ public class SeatLayoutFlowIntegrationTests
     }
 
     [Test]
-    public async Task FullStandardLayoutRejectsVipCell()
+    public async Task FullStandardLayoutRejectsNonStandardCell()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var standard = SeatFlowTestData.SeatType("STANDARD");
-        var vip = SeatFlowTestData.SeatType("VIP");
+        var river = SeatFlowTestData.SeatType("RIVER");
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        context.AddRange(standard, vip, vessel);
+        context.AddRange(standard, river, vessel);
         await context.SaveChangesAsync();
 
         await Should.ThrowAsync<ValidationException>(() =>
@@ -54,7 +54,7 @@ public class SeatLayoutFlowIntegrationTests
                                 1,
                                 1,
                                 SeatLayoutCellType.Seat,
-                                "VIP")
+                                "RIVER")
                         ])
                 ],
                 rejectExistingLayout: true,
@@ -62,13 +62,13 @@ public class SeatLayoutFlowIntegrationTests
     }
 
     [Test]
-    public async Task StandardAndVipLayoutCreatesMixedSeatsWithoutServicePrices()
+    public async Task StandardAndVipLayoutCreatesMixedSeededSeatTypesWithoutServicePrices()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var standard = SeatFlowTestData.SeatType("STANDARD");
-        var vip = SeatFlowTestData.SeatType("VIP");
+        var cabin = SeatFlowTestData.SeatType("CABIN");
+        var river = SeatFlowTestData.SeatType("RIVER");
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
-        context.AddRange(standard, vip, vessel);
+        context.AddRange(cabin, river, vessel);
         await context.SaveChangesAsync();
 
         var plan = await SeatLayoutPlanner.BuildAsync(
@@ -85,14 +85,14 @@ public class SeatLayoutFlowIntegrationTests
                             1,
                             1,
                             SeatLayoutCellType.Seat,
-                            "VIP")
+                            "RIVER")
                     ])
             ],
             rejectExistingLayout: true,
             CancellationToken.None);
 
-        plan.Seats.Count(x => x.SeatType!.Code == "VIP").ShouldBe(1);
-        plan.Seats.Count(x => x.SeatType!.Code == "STANDARD").ShouldBe(3);
+        plan.Seats.Count(x => x.SeatType!.Code == "RIVER").ShouldBe(1);
+        plan.Seats.Count(x => x.SeatType!.Code == "CABIN").ShouldBe(3);
     }
 
     [Test]

@@ -1,7 +1,7 @@
 using NetTopologySuite.Geometries;
 using NUnit.Framework;
-using Shouldly;
 using SaigonWaterbus.Application.Routes;
+using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Routes;
 

@@ -15,7 +15,8 @@ public sealed record VesselImageUpload(
     Guid VesselId,
     Stream Content,
     string FileName,
-    string? ContentType);
+    string? ContentType,
+    Guid? ImageId = null);
 
 public sealed record StoredVesselImage(
     string Url,

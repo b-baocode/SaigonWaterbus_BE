@@ -1,6 +1,6 @@
+using NUnit.Framework;
 using SaigonWaterbus.Application.Auth.Password;
 using SaigonWaterbus.Domain.Constants;
-using NUnit.Framework;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Auth;

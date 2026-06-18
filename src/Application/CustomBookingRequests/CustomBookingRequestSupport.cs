@@ -17,6 +17,7 @@ internal static class CustomBookingRequestSupport
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.WaterbusService)
+            .Include(x => x.PreferredVessel)
             .Include(x => x.AssignedVessel)
             .ThenInclude(x => x!.RentalPrices)
             .Include(x => x.AssignedManagerUser)

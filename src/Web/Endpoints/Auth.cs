@@ -2,13 +2,13 @@ using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.Json;
 using Microsoft.Extensions.Options;
+using SaigonWaterbus.Application.Auth;
 using SaigonWaterbus.Application.Auth.Login;
 using SaigonWaterbus.Application.Auth.Otp;
 using SaigonWaterbus.Application.Auth.Password;
 using SaigonWaterbus.Application.Auth.Profile;
 using SaigonWaterbus.Application.Auth.Register;
 using SaigonWaterbus.Application.Auth.Token;
-using SaigonWaterbus.Application.Auth;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -21,15 +21,17 @@ public class Auth : IEndpointGroup
           "dateOfBirth": "02/09/2003",
           "gender": "Male",
           "nationality": "Vietnamese",
-          "password": "P@ssword123",
-          "email": "vana@gmail.com"
+          "phone": "+84901234567",
+          "email": "vana@gmail.com",
+          "otpChannel": "phone",
+          "password": "P@ssword123"
         }
         """;
 
     private const string VerifyRegisterOtpExample =
         """
         {
-          "challengeId": 12,
+          "challengeId": "019ecf65-3496-7c9c-8792-4e9fbc31cb5b",
           "code": "123456"
         }
         """;
@@ -37,7 +39,7 @@ public class Auth : IEndpointGroup
     private const string ResendOtpExample =
         """
         {
-          "challengeId": 12
+          "challengeId": "019ecf65-3496-7c9c-8792-4e9fbc31cb5b"
         }
         """;
 
@@ -128,7 +130,8 @@ public class Auth : IEndpointGroup
                 "Cần có ít nhất email hoặc số điện thoại.",
                 "Nếu chỉ có email thì OTP mặc định gửi về email.",
                 "Nếu chỉ có số điện thoại thì OTP mặc định gửi về SMS.",
-                "Nếu có cả email và số điện thoại thì frontend phải cho user chọn kênh và gửi otpChannel.",
+                "Nếu có cả email và số điện thoại thì frontend phải cho user chọn kênh và gửi otpChannel=email hoặc otpChannel=phone.",
+                "gender và nationality không bắt buộc; nếu không gửi thì backend lưu null.",
                 "Do hệ thống xác thực số điện thoại khi đăng ký, otpChannel=phone là lựa chọn an toàn khi có số điện thoại.",
                 "Trả về challengeId để gọi /api/auth/verify-register-otp."));
 
@@ -238,7 +241,7 @@ public class Auth : IEndpointGroup
                 "Có thể gửi application/json nếu không đổi ảnh.",
                 "Nếu đổi ảnh, gửi multipart/form-data với các field fullName, dateOfBirth, gender, nationality, phoneNumber, email và file.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "User đăng nhập Google có thể thêm phoneNumber một lần và cần verify OTP.",
+                "User đăng nhập Google có thể thêm phoneNumber một lần; backend chỉ gửi OTP và chưa lưu số cho tới khi gọi verify-phone-change-otp thành công.",
                 "Customer đăng ký thường không được tự thay đổi phoneNumber; Admin hoặc Manager đổi số điện thoại customer qua API quản lý user.",
                 "Nếu email thay đổi, backend gửi OTP tới email mới và chưa đổi email cho tới khi verify OTP."));
 
@@ -268,7 +271,8 @@ public class Auth : IEndpointGroup
                 "Bearer token",
                 VerifyPhoneChangeOtpExample,
                 "Dùng challengeId trả về từ PUT /api/auth/me khi Google user thêm số điện thoại.",
-                "Thành công sẽ cập nhật phoneNumber và PhoneVerifiedAt."));
+                "Thành công sẽ cập nhật phoneNumber và PhoneVerifiedAt.",
+                "Trước khi verify thành công, số điện thoại mới chưa dùng được để login."));
     }
 
     public static async Task<IResult> Register(

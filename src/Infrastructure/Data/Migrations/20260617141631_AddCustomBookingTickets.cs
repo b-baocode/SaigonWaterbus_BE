@@ -6,19 +6,11 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class AddCustomBookingRentalUnitAndTickets : Migration
+    public partial class AddCustomBookingTickets : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<string>(
-                name: "rental_unit",
-                table: "custom_booking_requests",
-                type: "character varying(20)",
-                maxLength: 20,
-                nullable: false,
-                defaultValue: "Day");
-
             migrationBuilder.CreateTable(
                 name: "custom_booking_tickets",
                 columns: table => new
@@ -85,10 +77,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
         {
             migrationBuilder.DropTable(
                 name: "custom_booking_tickets");
-
-            migrationBuilder.DropColumn(
-                name: "rental_unit",
-                table: "custom_booking_requests");
         }
     }
 }

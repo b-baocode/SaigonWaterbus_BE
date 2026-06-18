@@ -1,8 +1,8 @@
 ﻿using System.Reflection;
-using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Infrastructure.Data;
 
@@ -21,6 +21,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<WaterbusService> WaterbusServices => Set<WaterbusService>();
 
     public DbSet<Vessel> Vessels => Set<Vessel>();
+
+    public DbSet<VesselImage> VesselImages => Set<VesselImage>();
 
     public DbSet<VesselRentalPrice> VesselRentalPrices => Set<VesselRentalPrice>();
 

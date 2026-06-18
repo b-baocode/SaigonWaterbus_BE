@@ -1,8 +1,8 @@
+using System.ComponentModel.DataAnnotations;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
-using System.ComponentModel.DataAnnotations;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.Auth.Login;
@@ -77,10 +77,16 @@ public sealed class LoginRequestUseCase
 
         AuthSupport.EnsureUserCanLogin(user, nameof(request.EmailOrPhone));
 
-        if (string.IsNullOrWhiteSpace(user.PasswordHash)
-            || !_secretHasher.Verify(request.Password, user.PasswordHash))
+        if (string.IsNullOrWhiteSpace(user.PasswordHash))
         {
-            throw new UnauthorizedAccessException();
+            throw AuthSupport.CreateValidationException(
+                nameof(request.Password),
+                "Tài khoản này đăng nhập bằng Google và chưa có mật khẩu. Vui lòng đăng nhập bằng Google hoặc dùng quên mật khẩu để đặt mật khẩu.");
+        }
+
+        if (!_secretHasher.Verify(request.Password, user.PasswordHash))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Password), "Mật khẩu không đúng.");
         }
 
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);

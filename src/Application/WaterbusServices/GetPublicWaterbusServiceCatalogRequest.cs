@@ -57,7 +57,8 @@ public sealed class GetPublicWaterbusServiceCatalogRequestUseCase
             supportedSeatSetupTypes.Add(SeatSetupType.FullStandard);
         }
 
-        if (seatTypeCodes.Contains("STANDARD") && seatTypeCodes.Contains("VIP"))
+        if (seatTypeCodes.Contains("STANDARD")
+            && seatTypeCodes.Any(code => !string.Equals(code, "STANDARD", StringComparison.OrdinalIgnoreCase)))
         {
             supportedSeatSetupTypes.Add(SeatSetupType.StandardAndVip);
         }

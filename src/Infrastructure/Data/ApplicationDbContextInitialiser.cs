@@ -37,14 +37,7 @@ public class ApplicationDbContextInitialiser
             "System Administrator",
             "admin@saigonwaterbus.local",
             "0900000001",
-            "Admin@123"),
-        new(
-            Roles.ManagerCode,
-            "MG0000001",
-            "Operations Manager",
-            "manager@saigonwaterbus.local",
-            "0900000002",
-            "Manager@123")
+            "Admin@123")
     ];
 
     private static readonly ServiceSeed[] ServiceSeeds =
@@ -71,8 +64,10 @@ public class ApplicationDbContextInitialiser
 
     private static readonly SeatTypeSeed[] SeatTypeSeeds =
     [
-        new("STANDARD", "Standard", 1),
-        new("VIP", "VIP", 2)
+        new("STANDARD", "Standard Seat", 1),
+        new("CABIN", "Cabin Seat", 2),
+        new("RIVER", "River Seat", 3),
+        new("SKY", "Sky Seat", 4)
     ];
 
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;

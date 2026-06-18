@@ -27,7 +27,8 @@ internal sealed class CloudinaryVesselImageStorageService : IVesselImageStorageS
         cancellationToken.ThrowIfCancellationRequested();
 
         var cloudinary = CreateCloudinaryClient();
-        var publicId = $"{_options.VesselFolder.Trim('/')}/{upload.VesselId}";
+        var imageId = upload.ImageId ?? Guid.NewGuid();
+        var publicId = $"{_options.VesselFolder.Trim('/')}/{upload.VesselId}/{imageId:N}";
         ImageUploadResult result;
         try
         {

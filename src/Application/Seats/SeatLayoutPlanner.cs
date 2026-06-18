@@ -22,22 +22,13 @@ internal static class SeatLayoutPlanner
     {
         var seatTypes = await context.SeatTypes
             .ToListAsync(cancellationToken);
+        var defaultSeatTypeDefinition = DefaultSeatTypeDefinition(vessel.SeatSetupType);
         var defaultSeatType = EnsureSeatType(
             context,
             seatTypes,
-            "STANDARD",
-            "Standard",
-            1);
-
-        if (vessel.SeatSetupType == SeatSetupType.StandardAndVip)
-        {
-            EnsureSeatType(
-                context,
-                seatTypes,
-                "VIP",
-                "VIP",
-                2);
-        }
+            defaultSeatTypeDefinition.Code,
+            defaultSeatTypeDefinition.Name,
+            defaultSeatTypeDefinition.DisplayOrder);
 
         var seatTypesByCode = seatTypes
             .Where(x => x.IsActive && IsAllowedSeatType(vessel.SeatSetupType, x.Code))
@@ -448,10 +439,9 @@ internal static class SeatLayoutPlanner
         var normalizedCode = seatTypeCode.Trim().ToUpperInvariant();
         if (!IsAllowedSeatType(seatSetupType, normalizedCode))
         {
-            var message = seatSetupType == SeatSetupType.StandardAndVip
-                ? "Kiểu ghế StandardAndVip chỉ hỗ trợ STANDARD và VIP."
-                : "Kiểu ghế FullStandard chỉ hỗ trợ STANDARD.";
-            throw AuthSupport.CreateValidationException(errorField, message);
+            throw AuthSupport.CreateValidationException(
+                errorField,
+                "Kiểu ghế FullStandard chỉ hỗ trợ STANDARD.");
         }
 
         if (seatTypesByCode.TryGetValue(normalizedCode, out var seatType))
@@ -465,9 +455,13 @@ internal static class SeatLayoutPlanner
     }
 
     internal static bool IsAllowedSeatType(SeatSetupType seatSetupType, string code) =>
-        string.Equals(code, "STANDARD", StringComparison.OrdinalIgnoreCase)
-        || (seatSetupType == SeatSetupType.StandardAndVip
-            && string.Equals(code, "VIP", StringComparison.OrdinalIgnoreCase));
+        seatSetupType != SeatSetupType.FullStandard
+        || string.Equals(code, "STANDARD", StringComparison.OrdinalIgnoreCase);
+
+    internal static SeatTypeDefinition DefaultSeatTypeDefinition(SeatSetupType seatSetupType) =>
+        seatSetupType == SeatSetupType.FullStandard
+            ? new SeatTypeDefinition("STANDARD", "Standard Seat", 1)
+            : new SeatTypeDefinition("CABIN", "Cabin Seat", 2);
 
     private static IEnumerable<LayoutCell> CreateFacilityCells(int deckNumber, FacilityConfigDto facility)
     {
@@ -505,3 +499,5 @@ internal static class SeatLayoutPlanner
             throw AuthSupport.CreateValidationException("Facilities", "WC phải chiếm đúng 2 ô, theo chiều ngang hoặc chiều dọc.");
     }
 }
+
+internal sealed record SeatTypeDefinition(string Code, string Name, int DisplayOrder);

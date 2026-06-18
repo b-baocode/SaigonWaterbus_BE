@@ -17,14 +17,14 @@ public static class WaterbusSeedData
             return;
 
         // ─── STATIONS ────────────────────────────────────
-        var sBD    = S("BD",    "Bến Bạch Đằng",        "Bến Bạch Đằng, Quận 1, TP.HCM",                   10.776760m, 106.703500m);
-        var sTT    = S("TT",    "Bến Thủ Thiêm",         "Thủ Thiêm, TP. Thủ Đức, TP.HCM",                  10.788100m, 106.719500m);
-        var sBS    = S("BS",    "Bến Ba Sơn",             "Ba Sơn, Quận 1, TP.HCM",                          10.793000m, 106.708300m);
-        var sBA    = S("BA",    "Bến Bình An",            "Bình An, TP. Thủ Đức, TP.HCM",                    10.803800m, 106.732700m);
-        var sTD    = S("TD",    "Bến Thảo Điền",          "Thảo Điền, TP. Thủ Đức, TP.HCM",                  10.807700m, 106.738300m);
-        var sTADA  = S("TADA",  "Bến Thanh Đa",           "Thanh Đa, Bình Thạnh, TP.HCM",                    10.825200m, 106.723000m);
-        var sHBC   = S("HBC",   "Bến Hiệp Bình Chánh",   "Hiệp Bình Chánh, TP. Thủ Đức, TP.HCM",            10.832000m, 106.710000m);
-        var sLD    = S("LD",    "Bến Linh Đông",          "Linh Đông, TP. Thủ Đức, TP.HCM",                  10.841800m, 106.716700m);
+        var sBD = S("BD", "Bến Bạch Đằng", "Bến Bạch Đằng, Quận 1, TP.HCM", 10.776760m, 106.703500m);
+        var sTT = S("TT", "Bến Thủ Thiêm", "Thủ Thiêm, TP. Thủ Đức, TP.HCM", 10.788100m, 106.719500m);
+        var sBS = S("BS", "Bến Ba Sơn", "Ba Sơn, Quận 1, TP.HCM", 10.793000m, 106.708300m);
+        var sBA = S("BA", "Bến Bình An", "Bình An, TP. Thủ Đức, TP.HCM", 10.803800m, 106.732700m);
+        var sTD = S("TD", "Bến Thảo Điền", "Thảo Điền, TP. Thủ Đức, TP.HCM", 10.807700m, 106.738300m);
+        var sTADA = S("TADA", "Bến Thanh Đa", "Thanh Đa, Bình Thạnh, TP.HCM", 10.825200m, 106.723000m);
+        var sHBC = S("HBC", "Bến Hiệp Bình Chánh", "Hiệp Bình Chánh, TP. Thủ Đức, TP.HCM", 10.832000m, 106.710000m);
+        var sLD = S("LD", "Bến Linh Đông", "Linh Đông, TP. Thủ Đức, TP.HCM", 10.841800m, 106.716700m);
 
         context.Set<Station>().AddRange(sBD, sTT, sBS, sBA, sTD, sTADA, sHBC, sLD);
         await context.SaveChangesAsync();
@@ -32,15 +32,21 @@ public static class WaterbusSeedData
         // ─── ROUTES ──────────────────────────────────────
         var rFwd = new Route
         {
-            RouteCode = "R01-BD-LD", RouteName = "Tuyến 01: Bạch Đằng → Linh Đông",
+            RouteCode = "R01-BD-LD",
+            RouteName = "Tuyến 01: Bạch Đằng → Linh Đông",
             Description = "Tuyến waterbus từ Bến Bạch Đằng (Q.1) đến Linh Đông (TP.Thủ Đức) qua 8 bến.",
-            BaseDistanceKm = 10.8m, EstimatedDurationMin = 60, Status = "Active"
+            BaseDistanceKm = 10.8m,
+            EstimatedDurationMin = 60,
+            Status = "Active"
         };
         var rBwd = new Route
         {
-            RouteCode = "R01-LD-BD", RouteName = "Tuyến 01: Linh Đông → Bạch Đằng",
+            RouteCode = "R01-LD-BD",
+            RouteName = "Tuyến 01: Linh Đông → Bạch Đằng",
             Description = "Tuyến waterbus từ Linh Đông (TP.Thủ Đức) đến Bến Bạch Đằng (Q.1) qua 8 bến.",
-            BaseDistanceKm = 10.8m, EstimatedDurationMin = 60, Status = "Active"
+            BaseDistanceKm = 10.8m,
+            EstimatedDurationMin = 60,
+            Status = "Active"
         };
 
         context.Set<Route>().AddRange(rFwd, rBwd);
@@ -100,10 +106,10 @@ public static class WaterbusSeedData
         const int b1 = 80, b2 = 80, b3 = 60;
 
         // ─── TICKET TYPES ────────────────────────────────
-        var ttAdult   = TT("ADULT",   "Vé người lớn",           "Hành khách từ 12 tuổi trở lên",           1.0m, pointsRate: 10);
-        var ttChild   = TT("CHILD",   "Vé trẻ em",              "Trẻ em dưới 12 tuổi",                     0.5m, pointsRate:  0);
-        var ttSenior  = TT("SENIOR",  "Vé người cao tuổi",      "Hành khách từ 60 tuổi trở lên",           0.5m, pointsRate:  5);
-        var ttStudent = TT("STUDENT", "Vé học sinh / sinh viên", "Học sinh, sinh viên có xuất trình thẻ",  0.8m, pointsRate:  8);
+        var ttAdult = TT("ADULT", "Vé người lớn", "Hành khách từ 12 tuổi trở lên", 1.0m, pointsRate: 10);
+        var ttChild = TT("CHILD", "Vé trẻ em", "Trẻ em dưới 12 tuổi", 0.5m, pointsRate: 0);
+        var ttSenior = TT("SENIOR", "Vé người cao tuổi", "Hành khách từ 60 tuổi trở lên", 0.5m, pointsRate: 5);
+        var ttStudent = TT("STUDENT", "Vé học sinh / sinh viên", "Học sinh, sinh viên có xuất trình thẻ", 0.8m, pointsRate: 8);
 
         context.Set<TicketType>().AddRange(ttAdult, ttChild, ttSenior, ttStudent);
         await context.SaveChangesAsync();
@@ -113,7 +119,7 @@ public static class WaterbusSeedData
         // Prices (VND base — multiplied by TicketType.PriceModifier at booking)
         static decimal FarePrice(int stopsApart) => stopsApart switch
         {
-            1 =>  7_000m,
+            1 => 7_000m,
             2 => 10_000m,
             3 => 12_000m,
             4 => 15_000m,
@@ -132,11 +138,11 @@ public static class WaterbusSeedData
                 for (var j = i + 1; j < stations.Length; j++)
                     fareEntries.Add(new FareMatrix
                     {
-                        Route       = route,
+                        Route = route,
                         FromStation = stations[i],
-                        ToStation   = stations[j],
-                        BasePrice   = FarePrice(j - i),
-                        IsActive    = true
+                        ToStation = stations[j],
+                        BasePrice = FarePrice(j - i),
+                        IsActive = true
                     });
         }
 
@@ -217,9 +223,12 @@ public static class WaterbusSeedData
         {
             var trip = new Trip
             {
-                Route = rFwd, TripCode = code,
-                OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = cap,
+                Route = rFwd,
+                TripCode = code,
+                OperatingDate = refDate,
+                DepartureTime = times[0],
+                ArrivalTime = times[^1],
+                CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             trip.TripStops = rsF.Select((rs, i) =>
@@ -233,9 +242,12 @@ public static class WaterbusSeedData
         {
             var trip = new Trip
             {
-                Route = rFwd, TripCode = code,
-                OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = cap,
+                Route = rFwd,
+                TripCode = code,
+                OperatingDate = refDate,
+                DepartureTime = times[0],
+                ArrivalTime = times[^1],
+                CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             trip.TripStops = rsF.Take(5).Select((rs, i) =>
@@ -291,9 +303,12 @@ public static class WaterbusSeedData
         {
             var trip = new Trip
             {
-                Route = rBwd, TripCode = code,
-                OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = cap,
+                Route = rBwd,
+                TripCode = code,
+                OperatingDate = refDate,
+                DepartureTime = times[0],
+                ArrivalTime = times[^1],
+                CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             trip.TripStops = rsB.Select((rs, i) =>
@@ -307,9 +322,12 @@ public static class WaterbusSeedData
         {
             var trip = new Trip
             {
-                Route = rBwd, TripCode = code,
-                OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = cap,
+                Route = rBwd,
+                TripCode = code,
+                OperatingDate = refDate,
+                DepartureTime = times[0],
+                ArrivalTime = times[^1],
+                CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             // Stops 4-8 (index 3-7 in rsB array)
@@ -324,9 +342,12 @@ public static class WaterbusSeedData
         {
             var trip = new Trip
             {
-                Route = rBwd, TripCode = code,
-                OperatingDate = refDate, DepartureTime = times[0],
-                ArrivalTime = times[^1], CapacitySnapshot = cap,
+                Route = rBwd,
+                TripCode = code,
+                OperatingDate = refDate,
+                DepartureTime = times[0],
+                ArrivalTime = times[^1],
+                CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
             // Stops 5-8 (index 4-7 in rsB array)
@@ -344,27 +365,43 @@ public static class WaterbusSeedData
 
     private static Station S(string code, string name, string? address, decimal lat, decimal lng) => new()
     {
-        StationCode = code, StationName = name, Address = address,
-        Latitude = lat, Longitude = lng, Status = StationStatus.Active
+        StationCode = code,
+        StationName = name,
+        Address = address,
+        Latitude = lat,
+        Longitude = lng,
+        Status = StationStatus.Active
     };
 
     private static RouteStop RS(Route route, Station station, int order,
         int travelMin, int dwellMin, bool pickup = true) => new()
-    {
-        Route = route, Station = station, StopOrder = order,
-        StandardTravelMin = travelMin, StandardDwellMin = dwellMin,
-        IsPickupAllowed = pickup, IsDropoffAllowed = true
-    };
+        {
+            Route = route,
+            Station = station,
+            StopOrder = order,
+            StandardTravelMin = travelMin,
+            StandardDwellMin = dwellMin,
+            IsPickupAllowed = pickup,
+            IsDropoffAllowed = true
+        };
 
     private static TicketType TT(string code, string name, string? desc, decimal modifier, int pointsRate) => new()
     {
-        TicketTypeCode = code, TicketTypeName = name, Description = desc,
-        PriceModifier = modifier, PointsEarnedRate = pointsRate, IsActive = true
+        TicketTypeCode = code,
+        TicketTypeName = name,
+        Description = desc,
+        PriceModifier = modifier,
+        PointsEarnedRate = pointsRate,
+        IsActive = true
     };
 
     private static Landmark LM(Station station, string name, string? desc, decimal lat, decimal lng) => new()
     {
-        Station = station, LandmarkName = name, Description = desc,
-        Latitude = lat, Longitude = lng, IsActive = true
+        Station = station,
+        LandmarkName = name,
+        Description = desc,
+        Latitude = lat,
+        Longitude = lng,
+        IsActive = true
     };
 }

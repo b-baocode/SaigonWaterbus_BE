@@ -1,8 +1,8 @@
+using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Users;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
-using NUnit.Framework;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Users;

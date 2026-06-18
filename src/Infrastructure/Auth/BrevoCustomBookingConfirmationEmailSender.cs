@@ -29,7 +29,10 @@ public sealed class BrevoCustomBookingConfirmationEmailSender : ICustomBookingCo
         _logger = logger;
     }
 
-    public async Task SendConfirmationAsync(CustomBookingRequest request, CancellationToken cancellationToken)
+    public async Task SendConfirmationAsync(
+        CustomBookingRequest request,
+        string? qrPayload,
+        CancellationToken cancellationToken)
     {
         var options = _optionsMonitor.CurrentValue;
         if (!options.Enabled)
@@ -68,7 +71,7 @@ public sealed class BrevoCustomBookingConfirmationEmailSender : ICustomBookingCo
                 sender = new { email = options.SenderEmail, name = options.SenderName },
                 to = new[] { new { email = request.ContactEmail, name = request.ContactName } },
                 templateId = options.CustomBookingConfirmationTemplateId,
-                @params = CustomBookingEmailParamsFactory.CreateConfirmationParams(request, routeSegments)
+                @params = CustomBookingEmailParamsFactory.CreateConfirmationParams(request, routeSegments, qrPayload)
             };
 
             var client = _httpClientFactory.CreateClient(HttpClientName);

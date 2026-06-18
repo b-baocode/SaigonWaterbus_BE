@@ -1,5 +1,5 @@
-using SaigonWaterbus.Application.WaterbusServices;
 using NUnit.Framework;
+using SaigonWaterbus.Application.WaterbusServices;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.WaterbusServices;

@@ -1,15 +1,15 @@
-using Azure.Identity;
 using System.Text;
 using System.Text.Json.Serialization;
-using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Domain.Enums;
-using SaigonWaterbus.Web.Infrastructure;
-using SaigonWaterbus.Infrastructure.Auth;
-using SaigonWaterbus.Infrastructure.Data;
+using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
+using SaigonWaterbus.Infrastructure.Auth;
+using SaigonWaterbus.Infrastructure.Data;
+using SaigonWaterbus.Web.Infrastructure;
 
 namespace Microsoft.Extensions.DependencyInjection;
 

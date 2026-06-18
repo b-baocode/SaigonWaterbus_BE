@@ -109,7 +109,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         foreach (var item in request.Items)
         {
             var fromCode = item.FromStationCode.Trim().ToUpperInvariant();
-            var toCode   = item.ToStationCode.Trim().ToUpperInvariant();
+            var toCode = item.ToStationCode.Trim().ToUpperInvariant();
 
             if (!tripStopByStationCode.TryGetValue(fromCode, out var fromStop))
                 throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),

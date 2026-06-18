@@ -17,7 +17,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
           "contactName": null,
           "contactPhone": null,
           "contactEmail": null,
-          "serviceId": null,
           "requestedNumberOfDecks": 2,
           "requestedSeatSetupType": "StandardAndVip",
           "rentalUnit": "Hour",
@@ -50,7 +49,6 @@ public sealed class CustomBookingRequests : IEndpointGroup
     private const string UpdateExample =
         """
         {
-          "serviceId": null,
           "requestedNumberOfDecks": 2,
           "requestedSeatSetupType": "StandardAndVip",
           "rentalUnit": "Hour",
@@ -66,6 +64,13 @@ public sealed class CustomBookingRequests : IEndpointGroup
         """;
 
     private const string AssignVesselExample =
+        """
+        {
+          "vesselId": "00000000-0000-0000-0000-000000000000"
+        }
+        """;
+
+    private const string PreferredVesselExample =
         """
         {
           "vesselId": "00000000-0000-0000-0000-000000000000"
@@ -141,7 +146,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer/Admin/Manager/Staff",
                 null,
                 "Trả về các service đang active có BookingMode=VesselRental.",
-                "Dùng để lấy serviceId cho custom booking; nếu không gửi serviceId khi tạo request thì backend dùng WT mặc định."));
+                "Customer không cần gọi endpoint này khi tạo yêu cầu; backend tự dùng service thuê tàu mặc định."));
 
         group.MapGet(GetCustomBookingPricingOptions, "pricing-options")
             .RequireAuthorization()
@@ -168,8 +173,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer",
                 CreateExample,
-                "serviceId optional; nếu không gửi, backend tự chọn dịch vụ thuê tàu mặc định WT.",
-                "Nếu gửi serviceId thì service phải Active và có BookingMode=VesselRental.",
+                "Customer không gửi serviceId; backend tự chọn dịch vụ thuê tàu mặc định WT.",
                 "Khách không chọn tàu cụ thể, chỉ chọn số tầng và kiểu ghế.",
                 "rentalUnit là Hour hoặc Day; backend dùng đơn vị này để lọc tàu và tự tính báo giá sau khi Admin gán tàu.",
                 "requestedSeatSetupType nhận FullStandard hoặc StandardAndVip.",
@@ -178,7 +182,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Email nhập trong booking chỉ lưu cho yêu cầu này, không cập nhật profile.",
                 "useAccountContact=false phải gửi contactName, contactPhone và contactEmail.",
                 "Ngày và giờ khởi hành phải ở tương lai.",
-                "Tổng khách tối đa 500; sức chứa tàu được kiểm tra khi Admin gán tàu.",
+                "Tổng khách tối đa 500; backend kiểm tra có ít nhất một tàu phù hợp còn trống.",
                 "Hai điểm liên tiếp trong lịch trình không được trùng nhau.",
                 "Backend tự tính khoảng cách, thời lượng và giờ kết thúc dự kiến.",
                 "Status ban đầu là PendingReview."));
@@ -190,7 +194,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer là chủ yêu cầu",
                 UpdateExample,
                 "Chỉ sửa được khi status=PendingReview và Admin chưa gán tàu.",
-                "serviceId optional; nếu gửi thì service phải Active và có BookingMode=VesselRental.",
+                "Customer không gửi serviceId; backend tự dùng dịch vụ thuê tàu mặc định.",
                 "API cập nhật toàn bộ lịch trình, số khách, tiêu chí tàu và yêu cầu đặc biệt.",
                 "Thông tin liên hệ không bị thay đổi."));
 
@@ -204,6 +208,16 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Backend lọc đúng số tầng, kiểu ghế, sức chứa, trạng thái setup và giá thuê theo rentalUnit khách chọn.",
                 "Customer chỉ xem được danh sách tàu của yêu cầu do chính mình tạo.",
                 "estimatedBasePrice là unitPrice nhân số giờ/ngày thuê làm tròn lên theo thời lượng chuyến."));
+
+        group.MapPut(SelectPreferredCustomBookingVessel, "{id:guid}/preferred-vessel")
+            .RequireAuthorization()
+            .WithSummary("Khách chọn tàu mong muốn")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer là chủ yêu cầu",
+                PreferredVesselExample,
+                "Chỉ chọn được khi status=PendingReview và Admin chưa gán tàu.",
+                "Backend kiểm tra lại tàu còn trống, Active, đã setup ghế, đúng số tầng, đúng kiểu ghế, đủ sức chứa và có giá theo rentalUnit.",
+                "Đây là tàu khách mong muốn; Admin vẫn phải gán tàu chính thức trước khi báo giá."));
 
         group.MapPut(AssignCustomBookingVessel, "{id:guid}/assigned-vessel")
             .RequireAuthorization()
@@ -263,7 +277,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Khách hoặc Admin hủy yêu cầu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Customer là chủ yêu cầu, Admin hoặc Manager",
+                "Customer là chủ yêu cầu hoặc Admin",
                 CancelExample,
                 "Chỉ hủy được khi status=PendingReview hoặc Quoted.",
                 "Khách từ chối báo giá cũng dùng endpoint này và ghi lý do.",
@@ -349,10 +363,11 @@ public sealed class CustomBookingRequests : IEndpointGroup
             new CustomBookingStatusApiResponse(
                 CustomBookingRequestStatus.PendingReview,
                 "Chờ Admin xử lý",
-                "Khách có thể chỉnh sửa hoặc hủy. Admin chọn tàu phù hợp rồi mới báo giá.",
+                "Khách có thể chỉnh sửa, chọn tàu mong muốn hoặc hủy. Admin gán tàu chính thức rồi mới báo giá.",
                 [
                     "PUT /api/custom-booking-requests/{id}",
                     "GET /api/custom-booking-requests/{id}/vessel-candidates",
+                    "PUT /api/custom-booking-requests/{id}/preferred-vessel",
                     "PUT /api/custom-booking-requests/{id}/assigned-vessel",
                     "POST /api/custom-booking-requests/{id}/quote",
                     "POST /api/custom-booking-requests/{id}/cancel"
@@ -389,9 +404,26 @@ public sealed class CustomBookingRequests : IEndpointGroup
 
     private static async Task<IResult> CreateCustomBookingRequest(
         ISender sender,
-        CreateCustomBookingRequestCommand command,
+        CreateCustomBookingRequestApiRequest request,
         CancellationToken ct)
     {
+        var command = new CreateCustomBookingRequestCommand(
+            request.UseAccountContact,
+            request.ContactName,
+            request.ContactPhone,
+            request.ContactEmail,
+            null,
+            request.RequestedNumberOfDecks,
+            request.RequestedSeatSetupType,
+            request.RentalUnit,
+            request.DepartureDate,
+            request.PreferredStartTime,
+            request.FromStationId,
+            request.ToStationId,
+            request.AdultCount,
+            request.ChildCount,
+            request.SpecialRequests,
+            request.ItineraryStops);
         var result = await sender.Send(command, ct);
         return Results.Created($"{RoutePrefix}/{result.Id}", result);
     }
@@ -403,7 +435,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateCustomBookingRequestCommand(
             id,
-            request.ServiceId,
+            null,
             request.RequestedNumberOfDecks,
             request.RequestedSeatSetupType,
             request.RentalUnit,
@@ -416,11 +448,35 @@ public sealed class CustomBookingRequests : IEndpointGroup
             request.SpecialRequests,
             request.ItineraryStops), ct));
 
+    public sealed record CreateCustomBookingRequestApiRequest(
+        bool UseAccountContact = true,
+        string? ContactName = null,
+        string? ContactPhone = null,
+        string? ContactEmail = null,
+        int RequestedNumberOfDecks = 0,
+        SeatSetupType RequestedSeatSetupType = default,
+        VesselRentalUnit RentalUnit = VesselRentalUnit.Day,
+        DateOnly DepartureDate = default,
+        TimeOnly? PreferredStartTime = null,
+        Guid FromStationId = default,
+        Guid ToStationId = default,
+        int AdultCount = 0,
+        int ChildCount = 0,
+        string? SpecialRequests = null,
+        IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null);
+
     private static async Task<IResult> GetCustomBookingVesselCandidates(
         ISender sender,
         Guid id,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCustomBookingVesselCandidatesQuery(id), ct));
+
+    private static async Task<IResult> SelectPreferredCustomBookingVessel(
+        ISender sender,
+        Guid id,
+        PreferredCustomBookingVesselApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new SelectPreferredCustomBookingVesselCommand(id, request.VesselId), ct));
 
     private static async Task<IResult> AssignCustomBookingVessel(
         ISender sender,
@@ -504,10 +560,11 @@ public sealed class CustomBookingRequests : IEndpointGroup
         int AdultCount,
         int ChildCount,
         string? SpecialRequests = null,
-        IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null,
-        Guid? ServiceId = null);
+        IReadOnlyCollection<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null);
 
     public sealed record AssignCustomBookingVesselApiRequest(Guid VesselId);
+
+    public sealed record PreferredCustomBookingVesselApiRequest(Guid VesselId);
 
     public sealed record QuoteCustomBookingRequestApiRequest(
         decimal DepositPercent,

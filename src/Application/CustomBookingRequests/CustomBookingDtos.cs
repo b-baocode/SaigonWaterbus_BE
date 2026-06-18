@@ -1,6 +1,6 @@
-using SaigonWaterbus.Domain.Enums;
-using SaigonWaterbus.Domain.Entities;
 using System.Text.Json.Serialization;
+using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.CustomBookingRequests;
 
@@ -101,6 +101,8 @@ public sealed record CustomBookingRequestDto(
     SeatSetupType RequestedSeatSetupType,
     VesselRentalUnit RentalUnit,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CustomBookingVesselDto? PreferredVessel,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CustomBookingVesselDto? AssignedVessel,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CustomBookingAssignedUserDto? AssignedManager,
@@ -151,6 +153,14 @@ public sealed record CustomBookingRequestDto(
             request.RequestedNumberOfDecks,
             request.RequestedSeatSetupType,
             request.RentalUnit,
+            request.PreferredVessel is null ? null : new CustomBookingVesselDto(
+                request.PreferredVessel.Id,
+                request.PreferredVessel.Code,
+                request.PreferredVessel.Name,
+                request.PreferredVessel.SeatCount,
+                request.PreferredVessel.NumberOfDecks,
+                request.PreferredVessel.SeatSetupType,
+                request.PreferredVessel.ImageUrl ?? string.Empty),
             request.AssignedVessel is null ? null : new CustomBookingVesselDto(
                 request.AssignedVessel.Id,
                 request.AssignedVessel.Code,

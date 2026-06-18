@@ -1,3 +1,6 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.CustomBookingRequests;
@@ -5,9 +8,6 @@ using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
-using System.Text.Json;
-using System.Text.Json.Serialization;
-using NUnit.Framework;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.CustomBookingRequests;
@@ -332,6 +332,61 @@ public class CustomBookingWorkflowTests
         await Should.ThrowAsync<ForbiddenAccessException>(() =>
             new GetCustomBookingVesselCandidatesQueryHandler(context, otherCustomerContext)
                 .Handle(new GetCustomBookingVesselCandidatesQuery(request.Id), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task CustomerCanSelectPreferredVesselFromCandidates()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        var vessel = ValidVessel("WB01", 12000000m);
+        context.AddRange(request, vessel);
+        await context.SaveChangesAsync();
+
+        var result = await new SelectPreferredCustomBookingVesselCommandHandler(context, customerContext)
+            .Handle(new SelectPreferredCustomBookingVesselCommand(request.Id, vessel.Id), CancellationToken.None);
+
+        result.PreferredVessel.ShouldNotBeNull();
+        result.PreferredVessel.Id.ShouldBe(vessel.Id);
+        context.Set<CustomBookingRequest>().Single(x => x.Id == request.Id).PreferredVesselId.ShouldBe(vessel.Id);
+    }
+
+    [Test]
+    public async Task CustomerCannotSelectPreferredVesselForAnotherCustomersRequest()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var ownerContext = await SeedCustomerAsync(context);
+        var otherCustomerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = ownerContext.UserId;
+        var vessel = ValidVessel("WB01", 12000000m);
+        context.AddRange(request, vessel);
+        await context.SaveChangesAsync();
+
+        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+            new SelectPreferredCustomBookingVesselCommandHandler(context, otherCustomerContext)
+                .Handle(new SelectPreferredCustomBookingVesselCommand(request.Id, vessel.Id), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task CustomerCannotSelectPreferredVesselAfterAdminAssignedVessel()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.AssignedVesselId = Guid.NewGuid();
+        var vessel = ValidVessel("WB01", 12000000m);
+        context.AddRange(request, vessel);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new SelectPreferredCustomBookingVesselCommandHandler(context, customerContext)
+                .Handle(new SelectPreferredCustomBookingVesselCommand(request.Id, vessel.Id), CancellationToken.None));
+
+        exception.Errors.Keys.ShouldContain("assignedVesselId");
     }
 
     [Test]
@@ -678,6 +733,7 @@ public class CustomBookingWorkflowTests
         json.ShouldNotContain("\"cancelledAt\"");
         json.ShouldNotContain("\"cancelledByUserId\"");
         json.ShouldNotContain("\"assignedVessel\"");
+        json.ShouldNotContain("\"preferredVessel\"");
         json.ShouldNotContain("\"statusReason\"");
         json.ShouldNotContain("\"quote\"");
         json.ShouldNotContain("\"preferredEndTime\"");
@@ -796,7 +852,10 @@ public class CustomBookingWorkflowTests
 
     private sealed class TestCustomBookingConfirmationEmailSender : ICustomBookingConfirmationEmailSender
     {
-        public Task SendConfirmationAsync(CustomBookingRequest request, CancellationToken cancellationToken) =>
+        public Task SendConfirmationAsync(
+            CustomBookingRequest request,
+            string? qrPayload,
+            CancellationToken cancellationToken) =>
             Task.CompletedTask;
     }
 

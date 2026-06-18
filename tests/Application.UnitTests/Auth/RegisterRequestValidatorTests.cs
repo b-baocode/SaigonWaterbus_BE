@@ -1,5 +1,5 @@
-using SaigonWaterbus.Application.Auth.Register;
 using NUnit.Framework;
+using SaigonWaterbus.Application.Auth.Register;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Auth;
@@ -86,7 +86,7 @@ public class RegisterRequestValidatorTests
     }
 
     [Test]
-    public void ValidateRejectsEmailOtpWhenPhoneIsProvided()
+    public void ValidateAcceptsEmailOtpWhenEmailAndPhoneAreProvided()
     {
         var result = _validator.Validate(new RegisterRequest(
             FullName: "Nguyen Van A",
@@ -96,8 +96,21 @@ public class RegisterRequestValidatorTests
             Email: "customer@gmail.com",
             OtpChannel: "email"));
 
-        result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "OTP qua email chỉ hỗ trợ khi không có số điện thoại.");
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ValidateAcceptsPhoneOtpWhenEmailAndPhoneAreProvided()
+    {
+        var result = _validator.Validate(new RegisterRequest(
+            FullName: "Nguyen Van A",
+            DateOfBirth: new DateOnly(2003, 9, 2),
+            Password: "P@ssword123",
+            Phone: "0901234567",
+            Email: "customer@gmail.com",
+            OtpChannel: "phone"));
+
+        result.IsValid.ShouldBeTrue();
     }
 
     [Test]

@@ -1,6 +1,6 @@
-﻿using SaigonWaterbus.Domain.Common;
-using Microsoft.EntityFrameworkCore;
+﻿using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
+using SaigonWaterbus.Domain.Common;
 
 namespace SaigonWaterbus.Infrastructure.Data.Interceptors;
 

@@ -28,6 +28,10 @@ public class CustomBookingRequest : BaseGuidAuditableEntity
 
     public VesselRentalUnit RentalUnit { get; set; } = VesselRentalUnit.Day;
 
+    public Guid? PreferredVesselId { get; set; }
+
+    public Vessel? PreferredVessel { get; set; }
+
     public Guid? AssignedVesselId { get; set; }
 
     public Vessel? AssignedVessel { get; set; }

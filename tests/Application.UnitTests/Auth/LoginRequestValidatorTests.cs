@@ -1,5 +1,5 @@
-using SaigonWaterbus.Application.Auth.Login;
 using NUnit.Framework;
+using SaigonWaterbus.Application.Auth.Login;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Auth;

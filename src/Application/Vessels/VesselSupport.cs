@@ -8,6 +8,8 @@ namespace SaigonWaterbus.Application.Vessels;
 
 internal static class VesselSupport
 {
+    public const int MaxVesselImages = 10;
+
     public static async Task<User> EnsureCurrentUserCanViewVesselsAsync(
         IApplicationDbContext context,
         IUserContext userContext,
@@ -56,7 +58,7 @@ internal static class VesselSupport
             ? null
             : registrationNumber.Trim().ToUpperInvariant();
 
-    public static VesselDto CreateDto(Vessel vessel, int generatedSeatCount = 0)
+    public static VesselDto CreateDto(Vessel vessel)
     {
         var rentalPrices = vessel.RentalPrices
             .OrderBy(x => RentalUnitDisplayOrder(x.RentalUnit))
@@ -65,6 +67,8 @@ internal static class VesselSupport
             .ToArray();
         var rentalPrice = rentalPrices.FirstOrDefault(x => x.RentalUnit == VesselRentalUnit.Day)
             ?? rentalPrices.FirstOrDefault();
+        var imageUrls = CreateImageUrls(vessel);
+        var primaryImageUrl = imageUrls.FirstOrDefault() ?? string.Empty;
 
         return new VesselDto(
             vessel.Id,
@@ -73,17 +77,143 @@ internal static class VesselSupport
             vessel.Name,
             vessel.Status,
             vessel.SeatCount,
-            generatedSeatCount,
             vessel.NumberOfDecks,
             vessel.SeatsConfigured,
             IsReadyForOperation(vessel),
             vessel.MaxSpeedKmh,
             vessel.YearBuilt,
-            vessel.ImageUrl ?? string.Empty,
+            primaryImageUrl,
+            imageUrls,
             vessel.Description,
             rentalPrice,
             rentalPrices,
             vessel.SeatSetupType);
+    }
+
+    public static IReadOnlyCollection<string> CreateImageUrls(Vessel vessel)
+    {
+        var urls = vessel.Images
+            .Where(x => !string.IsNullOrWhiteSpace(x.Url))
+            .OrderByDescending(x => x.IsPrimary)
+            .ThenBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Id)
+            .Select(x => x.Url.Trim())
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(vessel.ImageUrl)
+            && !urls.Contains(vessel.ImageUrl.Trim(), StringComparer.OrdinalIgnoreCase))
+        {
+            urls.Insert(0, vessel.ImageUrl.Trim());
+        }
+
+        return urls
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static IReadOnlyCollection<string> NormalizeImageUrls(
+        string? imageUrl,
+        IReadOnlyCollection<string>? imageUrls)
+    {
+        var urls = new List<string>();
+        AddImageUrl(urls, imageUrl);
+
+        foreach (var url in imageUrls ?? [])
+        {
+            AddImageUrl(urls, url);
+        }
+
+        return urls
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    public static IReadOnlyCollection<VesselImageFileRequest> CreateImageFiles(
+        string? imageFileName,
+        string? imageContentType,
+        long? imageLength,
+        Stream? imageContent,
+        IReadOnlyCollection<VesselImageFileRequest>? imageFiles)
+    {
+        var files = new List<VesselImageFileRequest>();
+        if (imageContent is not null)
+        {
+            files.Add(new VesselImageFileRequest(
+                imageFileName ?? string.Empty,
+                imageContentType,
+                imageLength ?? 0,
+                imageContent));
+        }
+
+        files.AddRange(imageFiles ?? []);
+        return files;
+    }
+
+    public static bool IsValidImageUrl(string? imageUrl) =>
+        string.IsNullOrWhiteSpace(imageUrl)
+        || Uri.TryCreate(imageUrl, UriKind.Absolute, out _);
+
+    public static bool HasValidRequestedImageCount(
+        string? imageUrl,
+        IReadOnlyCollection<string>? imageUrls,
+        Stream? imageContent,
+        IReadOnlyCollection<VesselImageFileRequest>? imageFiles)
+    {
+        var count = NormalizeImageUrls(imageUrl, imageUrls).Count
+            + CreateImageFiles(null, null, null, imageContent, imageFiles).Count;
+
+        return count <= MaxVesselImages;
+    }
+
+    public static VesselImage CreateImage(
+        string url,
+        string? publicId,
+        int displayOrder,
+        bool isPrimary) =>
+        new()
+        {
+            Url = url,
+            PublicId = publicId,
+            DisplayOrder = displayOrder,
+            IsPrimary = isPrimary
+        };
+
+    public static void SyncPrimaryImage(Vessel vessel)
+    {
+        var orderedImages = vessel.Images
+            .Where(x => !string.IsNullOrWhiteSpace(x.Url))
+            .OrderBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Id)
+            .ToArray();
+
+        if (orderedImages.Length == 0)
+        {
+            vessel.ImageUrl = null;
+            vessel.ImagePublicId = null;
+            return;
+        }
+
+        var primary = orderedImages.FirstOrDefault(x => x.IsPrimary) ?? orderedImages[0];
+        foreach (var image in orderedImages)
+        {
+            image.IsPrimary = image.Id == primary.Id;
+        }
+
+        vessel.ImageUrl = primary.Url;
+        vessel.ImagePublicId = primary.PublicId;
+    }
+
+    public static int NextImageDisplayOrder(Vessel vessel) =>
+        vessel.Images.Count == 0
+            ? 1
+            : vessel.Images.Max(x => x.DisplayOrder) + 1;
+
+    private static void AddImageUrl(List<string> urls, string? imageUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(imageUrl))
+        {
+            urls.Add(imageUrl.Trim());
+        }
     }
 
     public static VesselRentalPrice CreateRentalPrice(Guid vesselId, VesselRentalPriceRequest request) =>
@@ -115,9 +245,10 @@ internal static class VesselSupport
         };
 
     public static IReadOnlyCollection<string> RequiredSeatTypeCodes(SeatSetupType seatSetupType) =>
-        seatSetupType == SeatSetupType.StandardAndVip
-            ? ["STANDARD", "VIP"]
-            : ["STANDARD"];
+        seatSetupType switch
+        {
+            _ => ["STANDARD"]
+        };
 
     public static string NormalizeCurrency(string? currency) =>
         string.IsNullOrWhiteSpace(currency) ? "VND" : currency.Trim().ToUpperInvariant();

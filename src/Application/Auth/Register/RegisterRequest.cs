@@ -87,12 +87,6 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
             .OverridePropertyName(nameof(RegisterRequest.OtpChannel));
 
         RuleFor(x => x)
-            .Must(x => !string.Equals(x.OtpChannel, "email", StringComparison.OrdinalIgnoreCase)
-                || string.IsNullOrWhiteSpace(x.Phone))
-            .WithMessage("OTP qua email chỉ hỗ trợ khi không có số điện thoại.")
-            .OverridePropertyName(nameof(RegisterRequest.OtpChannel));
-
-        RuleFor(x => x)
             .Must(x => !IsPhoneOtpChannel(x.OtpChannel)
                 || !string.IsNullOrWhiteSpace(x.Phone))
             .WithMessage("Số điện thoại là bắt buộc khi chọn nhận OTP qua phone.")
@@ -319,11 +313,6 @@ public sealed class RegisterRequestUseCase
         if (resolvedChannel == OtpChannel.Email && !hasEmail)
         {
             throw AuthSupport.CreateValidationException(nameof(RegisterRequest.OtpChannel), "Email is required when OtpChannel is 'email'.");
-        }
-
-        if (resolvedChannel == OtpChannel.Email && hasPhone)
-        {
-            throw AuthSupport.CreateValidationException(nameof(RegisterRequest.OtpChannel), "Email OTP is only supported when phone is not provided.");
         }
 
         if (resolvedChannel == OtpChannel.Phone && !hasPhone)

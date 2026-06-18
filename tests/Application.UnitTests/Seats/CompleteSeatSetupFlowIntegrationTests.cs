@@ -70,6 +70,11 @@ public class CompleteSeatSetupFlowIntegrationTests
 
         matrix.ConfiguredSeats.ShouldBe(0);
         matrix.Decks.Single().RowCount.ShouldBe(2);
+        matrix.Decks.Single().Cells.Count.ShouldBe(4);
+        matrix.Decks.Single().Cells.ShouldAllBe(x => x.Type == SeatLayoutCellType.Seat);
+        matrix.Decks.Single().Cells.ShouldAllBe(x =>
+            x.SeatType != null && x.SeatType.SeatTypeCode == "STANDARD");
+        (await context.Seats.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(0);
         vessel.Status.ShouldBe(VesselStatus.Inactive);
 
         var configured = await Configure(
@@ -93,14 +98,17 @@ public class CompleteSeatSetupFlowIntegrationTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var standard = SeatFlowTestData.SeatType("STANDARD");
-        var vip = SeatFlowTestData.SeatType("VIP");
+        var cabin = SeatFlowTestData.SeatType("CABIN");
+        var river = SeatFlowTestData.SeatType("RIVER");
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
         vessel.SeatCount = 3;
-        context.AddRange(standard, vip, vessel);
+        context.AddRange(cabin, river, vessel);
         await context.SaveChangesAsync();
 
-        await GenerateMatrix(context, userContext, vessel.Id, 2, 2);
+        var matrix = await GenerateMatrix(context, userContext, vessel.Id, 2, 2);
+        matrix.Decks.Single().Cells.ShouldAllBe(x =>
+            x.SeatType != null && x.SeatType.SeatTypeCode == "CABIN");
+
         var configured = await Configure(
             context,
             userContext,
@@ -116,7 +124,7 @@ public class CompleteSeatSetupFlowIntegrationTests
                             1,
                             1,
                             SeatLayoutCellType.Seat,
-                            "VIP"),
+                            "RIVER"),
                         new LayoutCellConfigDto(
                             1,
                             2,
@@ -132,20 +140,21 @@ public class CompleteSeatSetupFlowIntegrationTests
             .Include(x => x.SeatType)
             .Where(x => x.VesselId == vessel.Id)
             .ToListAsync();
-        seats.Count(x => x.SeatType!.Code == "VIP").ShouldBe(1);
-        seats.Count(x => x.SeatType!.Code == "STANDARD").ShouldBe(2);
+        seats.Count(x => x.SeatType!.Code == "RIVER").ShouldBe(1);
+        seats.Count(x => x.SeatType!.Code == "CABIN").ShouldBe(2);
     }
 
     [Test]
-    public async Task GetSeatsReturnsMixedLayoutCellsWithSeatsAislesEmptyCellsAndToilet()
+    public async Task GetSeatsReturnsMixedSeededLayoutCellsWithSeatsAislesEmptyCellsAndToilet()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var standard = SeatFlowTestData.SeatType("STANDARD");
-        var vip = SeatFlowTestData.SeatType("VIP");
+        var cabin = SeatFlowTestData.SeatType("CABIN");
+        var river = SeatFlowTestData.SeatType("RIVER");
+        var sky = SeatFlowTestData.SeatType("SKY");
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
         vessel.SeatCount = 6;
-        context.AddRange(standard, vip, vessel);
+        context.AddRange(cabin, river, sky, vessel);
         await context.SaveChangesAsync();
 
         await GenerateMatrix(context, userContext, vessel.Id, 3, 4);
@@ -161,15 +170,15 @@ public class CompleteSeatSetupFlowIntegrationTests
                     4,
                     Cells:
                     [
-                        new LayoutCellConfigDto(1, 1, SeatLayoutCellType.Seat, "VIP"),
-                        new LayoutCellConfigDto(1, 2, SeatLayoutCellType.Seat, "VIP"),
+                        new LayoutCellConfigDto(1, 1, SeatLayoutCellType.Seat, "RIVER"),
+                        new LayoutCellConfigDto(1, 2, SeatLayoutCellType.Seat, "SKY"),
                         new LayoutCellConfigDto(1, 3, SeatLayoutCellType.Aisle),
-                        new LayoutCellConfigDto(1, 4, SeatLayoutCellType.Seat, "STANDARD"),
-                        new LayoutCellConfigDto(2, 1, SeatLayoutCellType.Seat, "STANDARD"),
+                        new LayoutCellConfigDto(1, 4, SeatLayoutCellType.Seat, "CABIN"),
+                        new LayoutCellConfigDto(2, 1, SeatLayoutCellType.Seat, "CABIN"),
                         new LayoutCellConfigDto(2, 2, SeatLayoutCellType.Toilet, RowSpan: 1, ColumnSpan: 2),
                         new LayoutCellConfigDto(2, 4, SeatLayoutCellType.Empty),
-                        new LayoutCellConfigDto(3, 1, SeatLayoutCellType.Seat, "STANDARD"),
-                        new LayoutCellConfigDto(3, 2, SeatLayoutCellType.Seat, "STANDARD"),
+                        new LayoutCellConfigDto(3, 1, SeatLayoutCellType.Seat, "CABIN"),
+                        new LayoutCellConfigDto(3, 2, SeatLayoutCellType.Seat, "CABIN"),
                         new LayoutCellConfigDto(3, 3, SeatLayoutCellType.Aisle),
                         new LayoutCellConfigDto(3, 4, SeatLayoutCellType.Empty)
                     ])
@@ -184,8 +193,9 @@ public class CompleteSeatSetupFlowIntegrationTests
         cells.Count(x => x.Type == SeatLayoutCellType.Aisle).ShouldBe(2);
         cells.Count(x => x.Type == SeatLayoutCellType.Empty).ShouldBe(2);
         cells.Count(x => x.Type == SeatLayoutCellType.Toilet).ShouldBe(2);
-        cells.Count(x => x.Seat?.SeatType?.SeatTypeCode == "VIP").ShouldBe(2);
-        cells.Count(x => x.Seat?.SeatType?.SeatTypeCode == "STANDARD").ShouldBe(4);
+        cells.Count(x => x.Seat?.SeatType?.SeatTypeCode == "RIVER").ShouldBe(1);
+        cells.Count(x => x.Seat?.SeatType?.SeatTypeCode == "SKY").ShouldBe(1);
+        cells.Count(x => x.Seat?.SeatType?.SeatTypeCode == "CABIN").ShouldBe(4);
         cells.ShouldContain(x => x.Row == 2 && x.Column == 2 && x.Type == SeatLayoutCellType.Toilet && x.Facility != null);
         cells.ShouldContain(x => x.Row == 2 && x.Column == 3 && x.Type == SeatLayoutCellType.Toilet && x.Facility != null);
         cells.ShouldContain(x => x.Row == 1 && x.Column == 3 && x.Type == SeatLayoutCellType.Aisle);

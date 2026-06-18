@@ -36,7 +36,9 @@ public sealed record SeatLayoutCellDto(
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
     SeatDto? Seat,
     [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
-    VesselFacilityDto? Facility);
+    VesselFacilityDto? Facility,
+    [property: System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)]
+    SeatTypeDto? SeatType = null);
 
 public sealed record SeatDeckDto(
     int DeckNumber,
@@ -97,7 +99,9 @@ internal static class SeatSupport
         IList<Seat> seats,
         IList<VesselDeckLayout>? deckLayouts = null,
         IList<VesselFacility>? facilities = null,
-        IList<VesselLayoutCell>? layoutCells = null)
+        IList<VesselLayoutCell>? layoutCells = null,
+        bool previewEmptyCellsAsSeats = false,
+        SeatType? previewSeatType = null)
     {
         var layoutsByDeck = (deckLayouts ?? [])
             .ToDictionary(x => x.DeckNumber);
@@ -127,7 +131,13 @@ internal static class SeatSupport
                 deckFacilities ??= [];
                 layoutCellsByDeck.TryGetValue(deckNumber, out var deckLayoutCells);
                 deckLayoutCells ??= [];
-                var cells = CreateLayoutCellDtos(layout, deckSeats, deckFacilities, deckLayoutCells);
+                var cells = CreateLayoutCellDtos(
+                    layout,
+                    deckSeats,
+                    deckFacilities,
+                    deckLayoutCells,
+                    previewEmptyCellsAsSeats,
+                    previewSeatType);
 
                 return new SeatDeckDto(
                     deckNumber,
@@ -170,7 +180,9 @@ internal static class SeatSupport
         VesselDeckLayout? layout,
         IReadOnlyCollection<Seat> seats,
         IReadOnlyCollection<VesselFacility> facilities,
-        IReadOnlyCollection<VesselLayoutCell> layoutCells)
+        IReadOnlyCollection<VesselLayoutCell> layoutCells,
+        bool previewEmptyCellsAsSeats,
+        SeatType? previewSeatType)
     {
         var seatByCell = seats.ToDictionary(
             seat => (Row: RowIndex(seat.Row), seat.Column));
@@ -201,9 +213,11 @@ internal static class SeatSupport
             return [];
         }
 
-        var defaultOpenCellType = seats.Count > 0 && layoutCells.Count == 0
-            ? SeatLayoutCellType.Aisle
-            : SeatLayoutCellType.Empty;
+        var defaultOpenCellType = previewEmptyCellsAsSeats
+            ? SeatLayoutCellType.Seat
+            : seats.Count > 0 && layoutCells.Count == 0
+                ? SeatLayoutCellType.Aisle
+                : SeatLayoutCellType.Empty;
         var cells = new List<SeatLayoutCellDto>(rowCount * columnCount);
         for (var row = 1; row <= rowCount; row++)
         {
@@ -212,12 +226,14 @@ internal static class SeatSupport
                 var key = (Row: row, Column: column);
                 if (seatByCell.TryGetValue(key, out var seat))
                 {
+                    var seatDto = CreateSeatDto(seat);
                     cells.Add(new SeatLayoutCellDto(
                         row,
                         column,
                         SeatLayoutCellType.Seat,
-                        CreateSeatDto(seat),
-                        null));
+                        seatDto,
+                        null,
+                        seatDto.SeatType));
                     continue;
                 }
 
@@ -235,12 +251,21 @@ internal static class SeatSupport
                 var cellType = layoutCellByCell.TryGetValue(key, out var explicitCellType)
                     ? ToSeatLayoutCellType(explicitCellType)
                     : defaultOpenCellType;
-                cells.Add(new SeatLayoutCellDto(row, column, cellType, null, null));
+                cells.Add(new SeatLayoutCellDto(
+                    row,
+                    column,
+                    cellType,
+                    null,
+                    null,
+                    cellType == SeatLayoutCellType.Seat ? CreateSeatTypeDto(previewSeatType) : null));
             }
         }
 
         return cells;
     }
+
+    private static SeatTypeDto? CreateSeatTypeDto(SeatType? seatType) =>
+        seatType is null ? null : new SeatTypeDto(seatType.Id, seatType.Code, seatType.Name);
 
     private static IEnumerable<(int Row, int Column)> FacilityCells(VesselFacility facility)
     {

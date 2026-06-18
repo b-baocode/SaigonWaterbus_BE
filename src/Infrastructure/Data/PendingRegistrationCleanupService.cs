@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -10,6 +11,7 @@ public sealed class PendingRegistrationCleanupService : BackgroundService
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PendingRegistrationCleanupService> _logger;
+    private bool _databaseUnavailableWarningLogged;
 
     public PendingRegistrationCleanupService(
         IServiceScopeFactory scopeFactory,
@@ -36,6 +38,19 @@ public sealed class PendingRegistrationCleanupService : BackgroundService
         try
         {
             using var scope = _scopeFactory.CreateScope();
+            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+            if (!await dbContext.Database.CanConnectAsync(cancellationToken))
+            {
+                if (!_databaseUnavailableWarningLogged)
+                {
+                    _logger.LogWarning("Skipping expired pending registration cleanup because the database is not reachable.");
+                    _databaseUnavailableWarningLogged = true;
+                }
+
+                return;
+            }
+
+            _databaseUnavailableWarningLogged = false;
             var initialiser = scope.ServiceProvider.GetRequiredService<ApplicationDbContextInitialiser>();
             var removed = await initialiser.CleanupExpiredPendingRegistrationUsersAsync(cancellationToken);
 

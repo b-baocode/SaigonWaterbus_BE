@@ -29,6 +29,7 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
             .HasConversion<string>()
             .HasMaxLength(20)
             .IsRequired();
+        builder.Property(x => x.PreferredVesselId).HasColumnName("preferred_vessel_id");
         builder.Property(x => x.AssignedVesselId).HasColumnName("assigned_vessel_id");
         builder.Property(x => x.AssignedAt).HasColumnName("assigned_at");
         builder.Property(x => x.AssignedByUserId).HasColumnName("assigned_by_user_id");
@@ -71,6 +72,7 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.HasIndex(x => x.UserId);
         builder.HasIndex(x => x.ContactUserId);
         builder.HasIndex(x => x.WaterbusServiceId);
+        builder.HasIndex(x => x.PreferredVesselId);
         builder.HasIndex(x => x.AssignedVesselId);
         builder.HasIndex(x => x.AssignedByUserId);
         builder.HasIndex(x => x.AssignedManagerUserId);
@@ -102,6 +104,11 @@ public sealed class CustomBookingRequestConfiguration : IEntityTypeConfiguration
         builder.HasOne(x => x.AssignedVessel)
             .WithMany()
             .HasForeignKey(x => x.AssignedVesselId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.PreferredVessel)
+            .WithMany()
+            .HasForeignKey(x => x.PreferredVesselId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne<User>()

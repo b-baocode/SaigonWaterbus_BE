@@ -1,8 +1,8 @@
+using NUnit.Framework;
 using SaigonWaterbus.Application.WaterbusServices;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
-using NUnit.Framework;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.WaterbusServices;

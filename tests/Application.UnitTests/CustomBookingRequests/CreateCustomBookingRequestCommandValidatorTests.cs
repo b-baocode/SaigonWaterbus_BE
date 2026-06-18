@@ -1,6 +1,6 @@
+using NUnit.Framework;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Domain.Enums;
-using NUnit.Framework;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.CustomBookingRequests;

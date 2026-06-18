@@ -21,7 +21,9 @@ public sealed record CreateVesselRequest(
     long? ImageLength = null,
     Stream? ImageContent = null,
     SeatSetupType SeatSetupType = SeatSetupType.FullStandard,
-    IReadOnlyCollection<VesselRentalPriceRequest>? RentalPrices = null);
+    IReadOnlyCollection<VesselRentalPriceRequest>? RentalPrices = null,
+    IReadOnlyCollection<string>? ImageUrls = null,
+    IReadOnlyCollection<VesselImageFileRequest>? ImageFiles = null);
 
 public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesselRequest>
 {
@@ -78,9 +80,23 @@ public sealed class CreateVesselRequestValidator : AbstractValidator<CreateVesse
         RuleFor(x => x.ImageUrl)
             .MaximumLength(2048)
             .WithMessage("Đường dẫn ảnh không được vượt quá 2048 ký tự.")
-            .Must(url => Uri.TryCreate(url, UriKind.Absolute, out _))
+            .Must(VesselSupport.IsValidImageUrl)
             .WithMessage("Đường dẫn ảnh không hợp lệ.")
             .When(x => !string.IsNullOrWhiteSpace(x.ImageUrl));
+
+        RuleForEach(x => x.ImageUrls)
+            .MaximumLength(2048)
+            .WithMessage("Đường dẫn ảnh không được vượt quá 2048 ký tự.")
+            .Must(VesselSupport.IsValidImageUrl)
+            .WithMessage("Đường dẫn ảnh không hợp lệ.");
+
+        RuleFor(x => x)
+            .Must(x => VesselSupport.HasValidRequestedImageCount(
+                x.ImageUrl,
+                x.ImageUrls,
+                x.ImageContent,
+                x.ImageFiles))
+            .WithMessage($"Tàu chỉ được có tối đa {VesselSupport.MaxVesselImages} ảnh.");
 
         RuleFor(x => x.RentalPrices)
             .Must(VesselSupport.HasDistinctRentalUnits)
@@ -152,16 +168,21 @@ public sealed class CreateVesselRequestUseCase
             throw AuthSupport.CreateValidationException(nameof(request.RegistrationNumber), "Số đăng ký tàu đã tồn tại.");
         }
 
-        var hasImageFile = request.ImageContent is not null;
-        var hasImageUrl = !string.IsNullOrWhiteSpace(request.ImageUrl);
+        var imageUrls = VesselSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls);
+        var imageFiles = VesselSupport.CreateImageFiles(
+            request.ImageFileName,
+            request.ImageContentType,
+            request.ImageLength,
+            request.ImageContent,
+            request.ImageFiles);
 
-        if (hasImageFile)
+        foreach (var imageFile in imageFiles)
         {
             VesselSupport.EnsureValidImage(
                 "Image",
-                request.ImageFileName,
-                request.ImageContentType,
-                request.ImageLength,
+                imageFile.FileName,
+                imageFile.ContentType,
+                imageFile.Length,
                 _vesselImageStorage);
         }
 
@@ -184,30 +205,46 @@ public sealed class CreateVesselRequestUseCase
             vessel.RentalPrices.Add(VesselSupport.CreateRentalPrice(vessel.Id, rentalPrice));
         }
 
-        if (hasImageUrl && !hasImageFile)
+        var displayOrder = 1;
+        foreach (var imageUrl in imageUrls)
         {
-            vessel.ImageUrl = request.ImageUrl!.Trim();
+            vessel.Images.Add(VesselSupport.CreateImage(
+                imageUrl,
+                null,
+                displayOrder++,
+                isPrimary: vessel.Images.Count == 0));
         }
+        VesselSupport.SyncPrimaryImage(vessel);
 
         try
         {
             _context.Vessels.Add(vessel);
             await _context.SaveChangesAsync(cancellationToken);
 
-            if (hasImageFile)
+            foreach (var imageFile in imageFiles)
             {
+                var vesselImage = new VesselImage
+                {
+                    VesselId = vessel.Id,
+                    DisplayOrder = displayOrder++,
+                    IsPrimary = vessel.Images.Count == 0
+                };
                 var uploadedImage = await _vesselImageStorage.UploadImageAsync(
                     new VesselImageUpload(
                         vessel.Id,
-                        request.ImageContent!,
-                        request.ImageFileName!,
-                        request.ImageContentType),
+                        imageFile.Content,
+                        imageFile.FileName,
+                        imageFile.ContentType,
+                        vesselImage.Id),
                     cancellationToken);
 
-                vessel.ImageUrl = uploadedImage.Url;
-                vessel.ImagePublicId = uploadedImage.PublicId;
-                await _context.SaveChangesAsync(cancellationToken);
+                vesselImage.Url = uploadedImage.Url;
+                vesselImage.PublicId = uploadedImage.PublicId;
+                vessel.Images.Add(vesselImage);
             }
+
+            VesselSupport.SyncPrimaryImage(vessel);
+            await _context.SaveChangesAsync(cancellationToken);
         }
         catch (DbUpdateException ex) when (_databaseExceptionClassifier.IsUniqueConstraintViolation(ex))
         {

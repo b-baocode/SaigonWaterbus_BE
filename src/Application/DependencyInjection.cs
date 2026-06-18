@@ -1,4 +1,5 @@
 ﻿using System.Reflection;
+using Microsoft.Extensions.Hosting;
 using SaigonWaterbus.Application.Auth;
 using SaigonWaterbus.Application.Auth.Login;
 using SaigonWaterbus.Application.Auth.Otp;
@@ -12,7 +13,6 @@ using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.Users;
 using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Application.WaterbusServices;
-using Microsoft.Extensions.Hosting;
 
 namespace Microsoft.Extensions.DependencyInjection;
 

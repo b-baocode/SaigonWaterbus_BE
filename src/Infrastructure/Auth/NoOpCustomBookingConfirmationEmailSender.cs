@@ -13,7 +13,10 @@ public sealed class NoOpCustomBookingConfirmationEmailSender : ICustomBookingCon
         _logger = logger;
     }
 
-    public Task SendConfirmationAsync(CustomBookingRequest request, CancellationToken cancellationToken)
+    public Task SendConfirmationAsync(
+        CustomBookingRequest request,
+        string? qrPayload,
+        CancellationToken cancellationToken)
     {
         _logger.LogInformation(
             "Custom booking confirmation email is disabled. Skipping email for request {CustomBookingRequestId}.",

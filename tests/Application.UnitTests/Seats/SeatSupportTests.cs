@@ -1,7 +1,7 @@
+using NUnit.Framework;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
-using NUnit.Framework;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Seats;

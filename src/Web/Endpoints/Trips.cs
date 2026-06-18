@@ -1,6 +1,6 @@
+using System.Globalization;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Enums;
-using System.Globalization;
 
 namespace SaigonWaterbus.Web.Endpoints;
 

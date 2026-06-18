@@ -32,6 +32,10 @@ public sealed class Vessels : IEndpointGroup
           "registrationNumber": "SG-1234",
           "maxSpeedKmh": 30,
           "yearBuilt": 2020,
+          "imageUrls": [
+            "https://cdn.example.com/vessels/wb01-main.jpg",
+            "https://cdn.example.com/vessels/wb01-deck.jpg"
+          ],
           "description": "Tau cong cong tuyen so 1."
         }
         """;
@@ -95,8 +99,10 @@ public sealed class Vessels : IEndpointGroup
                 "Admin",
                 CreateVesselExample,
                 "Có thể gửi application/json nếu không có ảnh.",
-                "Nếu có ảnh, gửi multipart/form-data với các field tương ứng và field 'image'.",
+                "Nếu gửi URL ảnh bằng JSON, dùng imageUrls là danh sách ảnh; imageUrl cũ vẫn được hỗ trợ cho 1 ảnh.",
+                "Nếu upload ảnh, gửi multipart/form-data với các field tương ứng và field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
+                "Mỗi tàu tối đa 10 ảnh.",
                 "Code tàu được chuẩn hóa thành chữ in hoa.",
                 "seatSetupType: FullStandard hoặc StandardAndVip, là đặc tính của tàu.",
                 "Tàu chưa thuộc dịch vụ nào; dịch vụ sẽ được chọn khi phân lịch chạy.",
@@ -113,7 +119,8 @@ public sealed class Vessels : IEndpointGroup
                 UpdateVesselExample,
                 "Chỉ field nào gửi lên mới được cập nhật.",
                 "Có thể gửi application/json nếu không đổi ảnh.",
-                "Nếu đổi ảnh, gửi multipart/form-data với field 'image'."));
+                "Nếu gửi ảnh mới bằng imageUrl/imageUrls/images thì backend thay bộ ảnh hiện tại bằng bộ ảnh mới.",
+                "Nếu upload ảnh, gửi multipart/form-data với field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh."));
 
         groupBuilder.MapPatch(UpdateVesselStatus, "status/{vesselId:guid}")
             .RequireAuthorization()
@@ -173,7 +180,7 @@ public sealed class Vessels : IEndpointGroup
         }
         finally
         {
-            command.ImageContent?.Dispose();
+            DisposeImageStreams(command);
         }
     }
 
@@ -193,7 +200,7 @@ public sealed class Vessels : IEndpointGroup
         }
         finally
         {
-            command.ImageContent?.Dispose();
+            DisposeImageStreams(command);
         }
     }
 
@@ -243,7 +250,8 @@ public sealed class Vessels : IEndpointGroup
             body?.Description,
             body?.ImageUrl,
             SeatSetupType: body?.SeatSetupType ?? SeatSetupType.FullStandard,
-            RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray());
+            RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray(),
+            ImageUrls: body?.ImageUrls);
     }
 
     private static async Task<CreateVesselRequest> CreateVesselRequestFromFormAsync(
@@ -251,7 +259,6 @@ public sealed class Vessels : IEndpointGroup
         CancellationToken cancellationToken)
     {
         var form = await request.ReadFormAsync(cancellationToken);
-        var file = form.Files["image"] ?? form.Files["Image"] ?? form.Files.FirstOrDefault();
 
         return new CreateVesselRequest(
             GetFormValue(form, "code") ?? string.Empty,
@@ -264,13 +271,11 @@ public sealed class Vessels : IEndpointGroup
             ParseOptionalInt(GetFormValue(form, "yearBuilt")),
             GetFormValue(form, "description"),
             GetFormValue(form, "imageUrl"),
-            file?.FileName,
-            file?.ContentType,
-            file?.Length,
-            file?.OpenReadStream(),
-            ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType"))
+            SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType"))
                 ?? SeatSetupType.FullStandard,
-            RentalPrices: CreateRentalPricesFromForm(form));
+            RentalPrices: CreateRentalPricesFromForm(form),
+            ImageUrls: GetFormValues(form, "imageUrls"),
+            ImageFiles: CreateImageFilesFromForm(form));
     }
 
     private static async Task<UpdateVesselRequest> UpdateVesselRequestFromJsonAsync(
@@ -290,7 +295,8 @@ public sealed class Vessels : IEndpointGroup
             body?.YearBuilt,
             body?.Description,
             body?.ImageUrl,
-            SeatSetupType: body?.SeatSetupType);
+            SeatSetupType: body?.SeatSetupType,
+            ImageUrls: body?.ImageUrls);
     }
 
     private static async Task<UpdateVesselRequest> UpdateVesselRequestFromFormAsync(
@@ -299,7 +305,6 @@ public sealed class Vessels : IEndpointGroup
         CancellationToken cancellationToken)
     {
         var form = await request.ReadFormAsync(cancellationToken);
-        var file = form.Files["image"] ?? form.Files["Image"] ?? form.Files.FirstOrDefault();
 
         return new UpdateVesselRequest(
             vesselId,
@@ -312,17 +317,85 @@ public sealed class Vessels : IEndpointGroup
             ParseOptionalInt(GetFormValue(form, "yearBuilt")),
             GetFormValue(form, "description"),
             GetFormValue(form, "imageUrl"),
-            file?.FileName,
-            file?.ContentType,
-            file?.Length,
-            file?.OpenReadStream(),
-            ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType")));
+            SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType")),
+            ImageUrls: GetFormValues(form, "imageUrls"),
+            ImageFiles: CreateImageFilesFromForm(form));
     }
 
     private static string? GetFormValue(IFormCollection form, string name)
     {
         var value = form[name].ToString();
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static IReadOnlyCollection<string>? GetFormValues(IFormCollection form, string name)
+    {
+        var values = new List<string>();
+        AddFormValues(values, form, name);
+
+        foreach (var key in form.Keys.Where(key =>
+                     key.StartsWith($"{name}[", StringComparison.OrdinalIgnoreCase)))
+        {
+            AddFormValues(values, form, key);
+        }
+
+        return values.Count == 0 ? null : values.ToArray();
+    }
+
+    private static void AddFormValues(List<string> values, IFormCollection form, string name)
+    {
+        foreach (var value in form[name])
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                values.Add(value!.Trim());
+            }
+        }
+    }
+
+    private static IReadOnlyCollection<VesselImageFileRequest>? CreateImageFilesFromForm(IFormCollection form)
+    {
+        var files = form.Files.GetFiles("images")
+            .Concat(form.Files.GetFiles("Images"))
+            .Concat(form.Files.GetFiles("images[]"))
+            .ToList();
+
+        if (files.Count == 0)
+        {
+            var singleFile = form.Files["image"] ?? form.Files["Image"];
+            if (singleFile is not null)
+            {
+                files.Add(singleFile);
+            }
+        }
+
+        return files.Count == 0
+            ? null
+            : files
+                .Select(file => new VesselImageFileRequest(
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    file.OpenReadStream()))
+                .ToArray();
+    }
+
+    private static void DisposeImageStreams(CreateVesselRequest command)
+    {
+        command.ImageContent?.Dispose();
+        foreach (var imageFile in command.ImageFiles ?? [])
+        {
+            imageFile.Content.Dispose();
+        }
+    }
+
+    private static void DisposeImageStreams(UpdateVesselRequest command)
+    {
+        command.ImageContent?.Dispose();
+        foreach (var imageFile in command.ImageFiles ?? [])
+        {
+            imageFile.Content.Dispose();
+        }
     }
 
     private static int? ParseOptionalInt(string? value) =>
@@ -379,6 +452,7 @@ public sealed class Vessels : IEndpointGroup
         int? YearBuilt = null,
         string? Description = null,
         string? ImageUrl = null,
+        IReadOnlyCollection<string>? ImageUrls = null,
         IReadOnlyCollection<VesselRentalPriceApiRequest>? RentalPrices = null);
 
     private sealed record UpdateVesselJsonRequest(
@@ -391,7 +465,8 @@ public sealed class Vessels : IEndpointGroup
         int? MaxSpeedKmh = null,
         int? YearBuilt = null,
         string? Description = null,
-        string? ImageUrl = null);
+        string? ImageUrl = null,
+        IReadOnlyCollection<string>? ImageUrls = null);
 
     private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);
 

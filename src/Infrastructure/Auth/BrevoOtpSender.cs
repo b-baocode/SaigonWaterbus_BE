@@ -139,14 +139,14 @@ public sealed class BrevoOtpSender : IOtpSender
         options.TemplateId > 0
             ? options.TemplateId
             : purpose switch
-        {
-            OtpPurpose.Register => options.RegisterTemplateId,
-            OtpPurpose.ForgotPassword => options.ForgotPasswordTemplateId,
-            OtpPurpose.EmailChange or OtpPurpose.PhoneChange => options.EmailChangeTemplateId > 0
-                ? options.EmailChangeTemplateId
-                : options.LoginTemplateId,
-            _ => options.LoginTemplateId
-        };
+            {
+                OtpPurpose.Register => options.RegisterTemplateId,
+                OtpPurpose.ForgotPassword => options.ForgotPasswordTemplateId,
+                OtpPurpose.EmailChange or OtpPurpose.PhoneChange => options.EmailChangeTemplateId > 0
+                    ? options.EmailChangeTemplateId
+                    : options.LoginTemplateId,
+                _ => options.LoginTemplateId
+            };
 
     private static string? TryGetMessageId(string responseBody)
     {

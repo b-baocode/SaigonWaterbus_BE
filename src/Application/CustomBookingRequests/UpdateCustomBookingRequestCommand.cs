@@ -96,6 +96,8 @@ public sealed class UpdateCustomBookingRequestCommandHandler
         customRequest.RequestedNumberOfDecks = request.RequestedNumberOfDecks;
         customRequest.RequestedSeatSetupType = request.RequestedSeatSetupType;
         customRequest.RentalUnit = request.RentalUnit;
+        customRequest.PreferredVesselId = null;
+        customRequest.PreferredVessel = null;
         customRequest.DepartureDate = request.DepartureDate;
         customRequest.PreferredStartTime = request.PreferredStartTime;
         customRequest.PreferredEndTime = tripPlan.RouteEstimate.EstimatedEndTime;

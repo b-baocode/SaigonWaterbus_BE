@@ -13,8 +13,8 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260617220021_AddCustomBookingRentalUnitAndTickets")]
-    partial class AddCustomBookingRentalUnitAndTickets
+    [Migration("20260617201129_AddCustomBookingRentalUnit")]
+    partial class AddCustomBookingRentalUnit
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -1278,6 +1278,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("StationId");
 
+                    b.HasIndex("RouteId", "StationId")
+                        .IsUnique();
+
                     b.HasIndex("RouteId", "StopOrder")
                         .IsUnique();
 
@@ -1865,10 +1868,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.Property<string>("SeatSetupType")
                         .IsRequired()
-                        .ValueGeneratedOnAdd()
                         .HasMaxLength(32)
-                        .HasColumnType("character varying(32)")
-                        .HasDefaultValue("FullStandard");
+                        .HasColumnType("character varying(32)");
 
                     b.Property<bool>("SeatsConfigured")
                         .HasColumnType("boolean");
@@ -1984,6 +1985,55 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("VesselId", "Deck", "Row", "Column");
 
                     b.ToTable("vessel_facilities", (string)null);
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselImage", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int>("DisplayOrder")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("IsPrimary")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastModifiedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PublicId")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("Url")
+                        .IsRequired()
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<Guid>("VesselId")
+                        .HasColumnType("uuid");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("VesselId", "DisplayOrder");
+
+                    b.HasIndex("VesselId", "IsPrimary")
+                        .IsUnique()
+                        .HasFilter("\"IsPrimary\" = TRUE");
+
+                    b.ToTable("vessel_images", (string)null);
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselLayoutCell", b =>
@@ -2673,6 +2723,17 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Vessel");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselImage", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "Vessel")
+                        .WithMany("Images")
+                        .HasForeignKey("VesselId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Vessel");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.VesselLayoutCell", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Vessel", "Vessel")
@@ -2787,6 +2848,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("DeckLayouts");
 
                     b.Navigation("Facilities");
+
+                    b.Navigation("Images");
 
                     b.Navigation("LayoutCells");
 

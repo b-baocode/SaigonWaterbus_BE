@@ -37,7 +37,6 @@ public sealed class VesselConfiguration : IEntityTypeConfiguration<Vessel>
         builder.Property(x => x.SeatSetupType)
             .HasConversion<string>()
             .HasMaxLength(32)
-            .HasDefaultValue(SeatSetupType.FullStandard)
             .IsRequired();
 
         builder.Property(x => x.ImageUrl)

@@ -1,7 +1,7 @@
-using SaigonWaterbus.Application.Common.Exceptions;
+using System.Text.Json;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
-using System.Text.Json;
+using SaigonWaterbus.Application.Common.Exceptions;
 
 namespace SaigonWaterbus.Web.Infrastructure;
 

@@ -1,6 +1,6 @@
-using SaigonWaterbus.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using SaigonWaterbus.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
@@ -163,12 +163,15 @@ if (app.Environment.IsDevelopment())
     await app.InitialiseDatabaseAsync();
 }
 else
-{ 
+{
     app.UseHsts();
 }
 
 app.UseExceptionHandler();
-app.UseHttpsRedirection();
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
 app.UseCors("FrontendClientPolicy");
 app.UseAuthentication();
 app.UseAuthorization();

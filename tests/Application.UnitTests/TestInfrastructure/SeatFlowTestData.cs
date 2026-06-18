@@ -128,8 +128,11 @@ internal sealed class TestVesselImageStorageService : IVesselImageStorageService
 
     public Task<StoredVesselImage> UploadImageAsync(
         VesselImageUpload upload,
-        CancellationToken cancellationToken) =>
-        Task.FromResult(new StoredVesselImage(
-            $"https://example.test/vessels/{upload.VesselId}",
-            upload.VesselId.ToString("N")));
+        CancellationToken cancellationToken)
+    {
+        var imageId = upload.ImageId ?? upload.VesselId;
+        return Task.FromResult(new StoredVesselImage(
+            $"https://example.test/vessels/{upload.VesselId}/{imageId:N}",
+            imageId.ToString("N")));
+    }
 }
