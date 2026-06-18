@@ -46,6 +46,12 @@ public interface IApplicationDbContext
 
     DbSet<RouteSegment> RouteSegments { get; }
 
+    DbSet<TripSchedule> TripSchedules { get; }
+
+    DbSet<GeneratedTrip> GeneratedTrips { get; }
+
+    DbSet<TripSeat> TripSeats { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

@@ -50,6 +50,14 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var tripIds = trips.Select(t => t.Id).ToList();
 
+        // Số ghế thực tế từ TripSeat (nguồn chính xác hơn CapacitySnapshot)
+        // Trips tạo thủ công không có TripSeat → fallback về CapacitySnapshot
+        var tripSeatCounts = await _context.Set<TripSeat>()
+            .Where(ts => tripIds.Contains(ts.TripId))
+            .GroupBy(ts => ts.TripId)
+            .Select(g => new { TripId = g.Key, Total = g.Count() })
+            .ToDictionaryAsync(x => x.TripId, x => x.Total, cancellationToken);
+
         var bookedCounts = await _context.Set<BookingItem>()
             .Where(bi => tripIds.Contains(bi.TripId) && bi.ItemStatus != BookingItemStatus.Cancelled)
             .GroupBy(bi => bi.TripId)
@@ -79,8 +87,12 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 ? t.TripStops.FirstOrDefault(ts => ts.RouteStopId == routeStops.ToStop.Id)
                 : null;
 
+            var totalSeats = tripSeatCounts.TryGetValue(t.Id, out var seatCount)
+                ? seatCount
+                : t.CapacitySnapshot;
+
             var booked = bookedCounts.GetValueOrDefault(t.Id, 0);
-            var available = t.CapacitySnapshot - booked;
+            var available = totalSeats - booked;
 
             farePrices.TryGetValue(t.RouteId, out var basePrice);
             var minPrice = basePrice > 0 ? (decimal?)(basePrice * minModifier) : null;
@@ -89,7 +101,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 t.Id, t.TripCode, t.Route.RouteName,
                 t.DepartureTime, t.ArrivalTime,
                 fromTripStop?.ScheduledDeparture, toTripStop?.ScheduledArrival,
-                Math.Max(0, available), t.CapacitySnapshot,
+                Math.Max(0, available), totalSeats,
                 minPrice, t.TripStatus.ToString());
         }).ToList();
     }

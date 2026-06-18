@@ -58,6 +58,12 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<TripStop> TripStops => Set<TripStop>();
 
+    public DbSet<TripSchedule> TripSchedules => Set<TripSchedule>();
+
+    public DbSet<GeneratedTrip> GeneratedTrips => Set<GeneratedTrip>();
+
+    public DbSet<TripSeat> TripSeats => Set<TripSeat>();
+
     public DbSet<Incident> Incidents => Set<Incident>();
 
     public DbSet<TicketType> TicketTypes => Set<TicketType>();

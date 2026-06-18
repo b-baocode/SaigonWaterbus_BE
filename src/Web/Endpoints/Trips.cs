@@ -67,6 +67,17 @@ public sealed class Trips : IEndpointGroup
                 "capacity: so hanh khach toi da cua chuyen.",
                 "tripCode tu sinh: TR-{yyyyMMdd}-{routeCode}-{4 so ngau nhien}."));
 
+        group.MapGet(GetTripSeats, "{id:guid}/seats")
+            .AllowAnonymous()
+            .WithSummary("So do ghe cua chuyen tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Tra ve so do ghe grouped theo tang (deck) va hang (row).",
+                "Moi ghe co SeatTypeCode, SeatTypeName.",
+                "TotalSeats = tong so ghe; BookedSeats = da dat; AvailableSeats = con trong.",
+                "Chi co TripSeat neu trip duoc tao tu TripSchedule hoac co vessel."));
+
         group.MapPatch(UpdateTripStatus, "{id:guid}/status")
             .RequireAuthorization()
             .WithSummary("Cap nhat trang thai chuyen tau")
@@ -105,6 +116,9 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
+
+    private static async Task<IResult> GetTripSeats(ISender sender, Guid id, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetTripSeatsQuery(id), ct));
 
     private static async Task<IResult> CreateTrip(ISender sender, CreateTripCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

@@ -24,9 +24,12 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         builder.Property(x => x.TripStatus).HasColumnName("trip_status").HasConversion<string>().HasMaxLength(20).IsRequired();
         builder.Property(x => x.StatusNote).HasColumnName("status_note");
 
+        builder.Property(x => x.VesselId).HasColumnName("vessel_id");
+
         builder.HasIndex(x => new { x.RouteId, x.OperatingDate });
 
         builder.HasOne(x => x.Route).WithMany(r => r.Trips).HasForeignKey(x => x.RouteId).OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Vessel).WithMany().HasForeignKey(x => x.VesselId).OnDelete(DeleteBehavior.Restrict);
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property(x => x.LastModified).HasColumnName("updated_at");
