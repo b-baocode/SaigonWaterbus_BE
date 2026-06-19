@@ -263,6 +263,13 @@ internal static class CustomBookingPassengerManifestSupport
                 "Chỉ cập nhật danh sách hành khách sau khi booking đã xác nhận.");
         }
 
+        if (!CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote))
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(customRequest.Quote.DepositPaymentStatus),
+                "Vui lòng thanh toán đầy đủ trước khi cập nhật danh sách hành khách và nhận QR.");
+        }
+
         if (customRequest.Tickets.Any(x => x.QrUsedAt.HasValue || x.Status == CustomBookingTicketStatus.Used)
             || customRequest.PassengerManifestStatus == PassengerManifestStatus.Locked)
         {

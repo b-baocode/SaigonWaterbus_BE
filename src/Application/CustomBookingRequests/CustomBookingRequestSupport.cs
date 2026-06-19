@@ -242,6 +242,16 @@ internal static class CustomBookingRequestSupport
                 "Chỉ yêu cầu đang chờ xử lý hoặc đã báo giá mới được cập nhật báo giá.");
         }
 
+        if (request.Quote?.DepositPaymentStatus is CustomBookingDepositPaymentStatus.Pending
+            or CustomBookingDepositPaymentStatus.Paid
+            || request.Quote?.RemainingPaymentStatus is CustomBookingDepositPaymentStatus.Pending
+                or CustomBookingDepositPaymentStatus.Paid)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.Quote.DepositPaymentStatus),
+                "Không thể cập nhật báo giá khi đã có thanh toán PayOS đang chờ xử lý hoặc đã thanh toán.");
+        }
+
         if (request.AssignedVesselId is null || request.AssignedVessel is null)
         {
             throw AuthSupport.CreateValidationException(
@@ -343,11 +353,12 @@ internal static class CustomBookingRequestSupport
 
     public static void EnsureCanAssignManager(CustomBookingRequest request)
     {
-        if (request.Status != CustomBookingRequestStatus.Confirmed)
+        if (request.Status != CustomBookingRequestStatus.Confirmed
+            || request.Quote?.DepositPaymentStatus != CustomBookingDepositPaymentStatus.Paid)
         {
             throw AuthSupport.CreateValidationException(
                 nameof(request.Status),
-                "Chỉ được giao Manager sau khi khách đã xác nhận báo giá.");
+                "Chỉ được giao Manager sau khi PayOS xác nhận thanh toán đặt cọc.");
         }
 
         if (!request.FromStationId.HasValue)
@@ -360,11 +371,12 @@ internal static class CustomBookingRequestSupport
 
     public static void EnsureAssignedManagerCanPlanOperations(CustomBookingRequest request, User actor)
     {
-        if (request.Status != CustomBookingRequestStatus.Confirmed)
+        if (request.Status != CustomBookingRequestStatus.Confirmed
+            || !CustomBookingPaymentSupport.IsFullyPaid(request.Quote))
         {
             throw AuthSupport.CreateValidationException(
                 nameof(request.Status),
-                "Chỉ được phân Staff và dịch vụ vận hành cho yêu cầu đã được khách xác nhận.");
+                "Chỉ được phân Staff và dịch vụ vận hành sau khi PayOS xác nhận booking đã thanh toán đủ.");
         }
 
         if (!AuthSupport.IsManager(actor) || request.AssignedManagerUserId != actor.Id)
@@ -375,11 +387,11 @@ internal static class CustomBookingRequestSupport
 
     public static void EnsureCanCancel(CustomBookingRequest request)
     {
-        if (request.Status is not (CustomBookingRequestStatus.PendingReview or CustomBookingRequestStatus.Quoted))
+        if (request.Status is CustomBookingRequestStatus.Cancelled)
         {
             throw AuthSupport.CreateValidationException(
                 nameof(request.Status),
-                "Chỉ yêu cầu đang chờ xử lý hoặc đã báo giá mới được hủy.");
+                "Yêu cầu đã hủy trước đó.");
         }
     }
 

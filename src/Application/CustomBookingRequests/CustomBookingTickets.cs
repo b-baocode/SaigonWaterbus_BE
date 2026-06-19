@@ -141,7 +141,9 @@ internal static class CustomBookingTicketSupport
             ticket.CustomBookingRequestId,
             ticket.TicketCode,
             ticket.Status,
-            canReceiveQrPayload && !string.IsNullOrWhiteSpace(ticket.QrToken)
+            canReceiveQrPayload
+                && CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote)
+                && !string.IsNullOrWhiteSpace(ticket.QrToken)
                 ? CreateQrPayload(ticket.QrToken)
                 : null,
             ticket.QrIssuedAt,
@@ -234,6 +236,7 @@ public sealed class ScanCustomBookingTicketRequestHandler
         var qrTokenHash = CustomBookingTicketSupport.HashQrToken(qrToken);
         var ticket = await _context.Set<CustomBookingTicket>()
             .Include(x => x.CustomBookingRequest)
+            .ThenInclude(x => x.Quote)
             .SingleOrDefaultAsync(x => x.QrTokenHash == qrTokenHash, cancellationToken)
             ?? throw AuthSupport.CreateValidationException(nameof(request.QrToken), "Mã QR không hợp lệ.");
 
@@ -251,6 +254,11 @@ public sealed class ScanCustomBookingTicketRequestHandler
         if (ticket.CustomBookingRequest.Status != CustomBookingRequestStatus.Confirmed)
         {
             throw AuthSupport.CreateValidationException(nameof(request.QrToken), "Vé không còn hiệu lực.");
+        }
+
+        if (!CustomBookingPaymentSupport.IsFullyPaid(ticket.CustomBookingRequest.Quote))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.QrToken), "Booking chưa thanh toán đủ.");
         }
 
         if (ticket.CustomBookingRequest.PassengerManifestStatus != PassengerManifestStatus.Completed)
@@ -337,6 +345,11 @@ public sealed class ReissueCustomBookingTicketCommandHandler
         if (customRequest.Status != CustomBookingRequestStatus.Confirmed)
         {
             throw AuthSupport.CreateValidationException(nameof(request.Id), "Chỉ cấp lại QR cho yêu cầu đã xác nhận.");
+        }
+
+        if (!CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote))
+        {
+            throw AuthSupport.CreateValidationException(nameof(request.Id), "Chỉ cấp lại QR sau khi booking đã thanh toán đủ.");
         }
 
         var ticket = customRequest.Tickets

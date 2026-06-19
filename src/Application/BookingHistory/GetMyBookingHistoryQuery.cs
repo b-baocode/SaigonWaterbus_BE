@@ -123,6 +123,7 @@ public sealed class GetMyBookingHistoryQueryHandler
             ?? booking.Tickets
                 .OrderByDescending(x => x.QrIssuedAt)
                 .FirstOrDefault();
+        var canExposeQr = CustomBookingPaymentSupport.IsFullyPaid(booking.Quote);
 
         return new BookingHistoryItemDto(
             booking.Id,
@@ -145,7 +146,7 @@ public sealed class GetMyBookingHistoryQueryHandler
                     ticket.Id,
                     ticket.TicketCode,
                     ticket.Status,
-                    string.IsNullOrWhiteSpace(ticket.QrToken)
+                    !canExposeQr || string.IsNullOrWhiteSpace(ticket.QrToken)
                         ? null
                         : CustomBookingTicketSupport.CreateQrPayload(ticket.QrToken),
                     ticket.QrIssuedAt,

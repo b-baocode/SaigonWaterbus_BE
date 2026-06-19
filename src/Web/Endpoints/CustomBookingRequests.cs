@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Domain.Enums;
 
@@ -44,6 +45,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
         {
           "depositPercent": 50,
           "serviceFeeAmount": 400000,
+          "discountCode": "TESTPAY",
           "priceNote": "Giá được hệ thống tính theo tàu và đơn vị thuê khách đã chọn."
         }
         """;
@@ -82,7 +84,10 @@ public sealed class CustomBookingRequests : IEndpointGroup
     private const string CancelExample =
         """
         {
-          "reason": "Khách thay đổi kế hoạch."
+          "reason": "Khách thay đổi kế hoạch.",
+          "refundBankBin": "970415",
+          "refundAccountNumber": "123456789",
+          "refundAccountName": "NGUYEN VAN A"
         }
         """;
 
@@ -115,7 +120,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
     private const string ScanTicketExample =
         """
         {
-          "qrToken": "swb:custom-booking:QR_TOKEN_FROM_ACCEPT_QUOTE"
+          "qrToken": "swb:custom-booking:QR_TOKEN_AFTER_FULL_PAYMENT"
         }
         """;
 
@@ -139,6 +144,34 @@ public sealed class CustomBookingRequests : IEndpointGroup
               "dateOfBirth": "21/06/2018"
             }
           ]
+        }
+        """;
+
+    private const string PayOsWebhookExample =
+        """
+        {
+          "code": "00",
+          "desc": "success",
+          "success": true,
+          "data": {
+            "orderCode": 123,
+            "amount": 2500000,
+            "description": "SWB000123",
+            "accountNumber": "12345678",
+            "reference": "TF230204212323",
+            "transactionDateTime": "2026-06-19 18:25:00",
+            "currency": "VND",
+            "paymentLinkId": "124c33293c43417ab7879e14c8d9eb18",
+            "code": "00",
+            "desc": "Thanh cong",
+            "counterAccountBankId": "",
+            "counterAccountBankName": "",
+            "counterAccountName": "",
+            "counterAccountNumber": "",
+            "virtualAccountName": "",
+            "virtualAccountNumber": ""
+          },
+          "signature": "signature"
         }
         """;
 
@@ -255,7 +288,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Backend tự tính quotedPrice từ giá thuê của tàu theo rentalUnit khách chọn và thời lượng chuyến.",
                 "Backend tự tính tiền cọc và số tiền còn lại.",
                 "Backend tự đặt validUntil là 24 giờ sau lúc báo giá hoặc giờ khởi hành, lấy thời điểm đến trước.",
-                "Có thể cập nhật lại báo giá khi status=Quoted.",
+                "Chỉ cập nhật lại báo giá khi chưa có payment PayOS pending hoặc paid.",
                 "Sau khi báo giá, status=Quoted."));
 
         group.MapPost(AcceptCustomBookingQuote, "{id:guid}/accept-quote")
@@ -265,9 +298,33 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer là chủ yêu cầu",
                 null,
                 "Chỉ chấp nhận khi status=Quoted, báo giá chưa hết hạn và tàu vẫn hợp lệ.",
-                "Sau khi chấp nhận, status=Confirmed.",
+                "Sau khi chấp nhận, backend tạo link thanh toán PayOS cho tiền cọc và trả quote.depositPaymentCheckoutUrl.",
+                "Sau khi tạo link đặt cọc, booking vẫn status=Quoted và quote.depositPaymentStatus=Pending.",
+                "Chỉ webhook PayOS hợp lệ, success và đúng amount mới chuyển booking sang Confirmed.",
                 "Bước này chưa tạo/gửi QR. QR chỉ phát sau khi khách đã hoàn tất danh sách hành khách.",
-                "Hiện chưa tạo payment hoặc lịch chạy; nếu cần khóa theo đặt cọc thật sự cần thêm trạng thái payment/deposit."));
+                "Danh sách hành khách và QR bị khóa cho đến khi booking thanh toán đủ."));
+
+        group.MapPost(CreateCustomBookingRemainingPayment, "{id:guid}/remaining-payment")
+            .RequireAuthorization()
+            .WithSummary("Khách tạo link thanh toán phần còn lại")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer là chủ yêu cầu",
+                null,
+                "Chỉ tạo link sau khi booking Confirmed và tiền cọc đã Paid.",
+                "Nếu quote.remainingAmount > 0, khách phải thanh toán phần còn lại trước 24 giờ so với giờ khởi hành.",
+                "Backend trả quote.remainingPaymentCheckoutUrl và giữ quote.remainingPaymentStatus=Pending cho đến khi webhook PayOS xác nhận.",
+                "QR, cấp lại QR và scan/check-in bị khóa cho đến khi booking đã thanh toán đủ."));
+
+        group.MapPost(HandleCustomBookingDepositPaymentWebhook, "payments/payos/webhook")
+            .AllowAnonymous()
+            .WithSummary("Webhook PayOS xác nhận thanh toán custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "PayOS gọi public endpoint, không dùng JWT.",
+                PayOsWebhookExample,
+                "Backend verify signature bằng PayOs:ChecksumKey.",
+                "Nếu orderCode khớp tiền cọc và amount khớp depositAmount thì quote.depositPaymentStatus=Paid và booking chuyển sang Confirmed.",
+                "Nếu orderCode khớp phần còn lại và amount khớp remainingAmount thì quote.remainingPaymentStatus=Paid.",
+                "Webhook idempotent; PayOS gửi lại nhiều lần không tạo QR hoặc gửi mail lặp."));
 
         group.MapGet(GetCustomBookingTicket, "{id:guid}/ticket")
             .RequireAuthorization()
@@ -276,6 +333,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer chủ yêu cầu, Admin, Manager/Staff được phân công",
                 null,
                 "Trả metadata của vé QR active.",
+                "qrPayload chỉ trả khi booking đã thanh toán đủ.",
                 "Chỉ Customer chủ yêu cầu, Admin và Manager được giao booking nhận qrPayload để frontend render lại QR; Staff chỉ nhận metadata để phục vụ scan/check-in.",
                 "Vé tạo trước khi có cột qr_token có thể không có qrPayload; dữ liệu cũ cần được backfill bằng token gốc nếu còn giữ."));
 
@@ -295,10 +353,10 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer chủ yêu cầu, Admin hoặc Manager được giao booking",
                 PassengerManifestExample,
                 "PUT thay thế toàn bộ danh sách hành khách.",
-                "Chỉ cập nhật sau khi booking Confirmed và trước khi check-in.",
+                "Chỉ cập nhật sau khi booking Confirmed, đã thanh toán đủ và trước khi check-in.",
                 "Backend tự tính Adult/Child từ ngày sinh rồi kiểm tra đúng số đã đăng ký.",
                 "Trẻ em là người dưới 11 tuổi tại ngày khởi hành; người từ đủ 11 tuổi được tính là Adult.",
-                "Khi manifest chuyển hoàn tất, backend tạo vé QR nếu chưa có active ticket và gửi email confirmation template có QR."));
+                "Khi manifest chuyển hoàn tất, backend tạo vé QR nếu chưa có active ticket và gửi confirmation email không kèm QR."));
 
         group.MapPost(PreviewImportCustomBookingPassengers, "{id:guid}/passengers/import/preview")
             .RequireAuthorization()
@@ -320,7 +378,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Admin hoặc Manager được giao booking",
                 ReissueTicketExample,
                 "Chỉ dùng khi QR bị lỗi tại bước check-in.",
-                "Chỉ cấp lại khi booking Confirmed, vé Active, chưa dùng và chưa hết hạn.",
+                "Chỉ cấp lại khi booking Confirmed, đã thanh toán đủ, vé Active, chưa dùng và chưa hết hạn.",
                 "Backend tạo token QR mới, QR cũ mất hiệu lực, và ghi audit log kèm lý do."));
 
         group.MapPost(ScanCustomBookingTicket, "tickets/scan")
@@ -332,7 +390,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 ScanTicketExample,
                 "Body nhận được dạng JSON object { \"qrToken\": \"...\" }, JSON string hoặc text/plain.",
                 "qrToken nhận raw token hoặc payload dạng swb:custom-booking:{token}.",
-                "Backend kiểm tra vé active, booking Confirmed, chưa hết hạn và chưa dùng.",
+                "Backend kiểm tra vé active, booking Confirmed, đã thanh toán đủ, chưa hết hạn và chưa dùng.",
                 "Chỉ cho check-in từ 30 phút trước giờ khởi hành; quét sớm hơn trả lỗi và vé vẫn Active.",
                 "Scan thành công sẽ set status=Used, qrUsedAt và qrUsedByUserId.",
                 "Scan lại cùng mã sẽ báo vé đã được sử dụng."));
@@ -343,9 +401,11 @@ public sealed class CustomBookingRequests : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer là chủ yêu cầu hoặc Admin",
                 CancelExample,
-                "Chỉ hủy được khi status=PendingReview hoặc Quoted.",
-                "Khách từ chối báo giá cũng dùng endpoint này và ghi lý do.",
-                "Backend lưu người hủy, thời điểm hủy và lý do."));
+                "Hủy được khi booking chưa Cancelled.",
+                "Nếu payment đang Pending, backend hủy link PayOS rồi chuyển trạng thái payment sang Cancelled.",
+                "Nếu đã thanh toán, backend tính hoàn tiền trên tổng số tiền đã Paid: trước giờ khởi hành ít nhất 3 ngày hoàn 100%, ít nhất 24 giờ hoàn 30%, dưới 24 giờ không hoàn.",
+                "Booking đủ điều kiện hoàn tiền phải gửi refundBankBin, refundAccountNumber và refundAccountName để tạo lệnh chi PayOS.",
+                "Backend lưu người hủy, thời điểm hủy, lý do và trạng thái hoàn tiền."));
 
         group.MapGet(GetCustomBookingManagerCandidates, "{id:guid}/manager-candidates")
             .RequireAuthorization()
@@ -518,13 +578,26 @@ public sealed class CustomBookingRequests : IEndpointGroup
             id,
             request.DepositPercent,
             request.PriceNote,
-            request.ServiceFeeAmount), ct));
+            request.ServiceFeeAmount,
+            request.DiscountCode), ct));
 
     private static async Task<IResult> AcceptCustomBookingQuote(
         ISender sender,
         Guid id,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new AcceptCustomBookingQuoteCommand(id), ct));
+
+    private static async Task<IResult> CreateCustomBookingRemainingPayment(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CreateCustomBookingRemainingPaymentCommand(id), ct));
+
+    private static async Task<IResult> HandleCustomBookingDepositPaymentWebhook(
+        ISender sender,
+        CustomBookingDepositPaymentWebhook request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new HandleCustomBookingDepositPaymentWebhookCommand(request), ct));
 
     private static async Task<IResult> GetCustomBookingTicket(
         ISender sender,
@@ -632,7 +705,12 @@ public sealed class CustomBookingRequests : IEndpointGroup
         Guid id,
         CancelCustomBookingRequestApiRequest request,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new CancelCustomBookingRequestCommand(id, request.Reason), ct));
+        Results.Ok(await sender.Send(new CancelCustomBookingRequestCommand(
+            id,
+            request.Reason,
+            request.RefundBankBin,
+            request.RefundAccountNumber,
+            request.RefundAccountName), ct));
 
     private static async Task<IResult> GetCustomBookingManagerCandidates(
         ISender sender,
@@ -683,6 +761,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
     public sealed record QuoteCustomBookingRequestApiRequest(
         decimal DepositPercent,
         decimal ServiceFeeAmount = 0m,
+        string? DiscountCode = null,
         string? PriceNote = null);
 
     public sealed record ReissueCustomBookingTicketApiRequest(string? Reason);
@@ -690,7 +769,11 @@ public sealed class CustomBookingRequests : IEndpointGroup
     public sealed record UpdateCustomBookingPassengersApiRequest(
         IReadOnlyCollection<CustomBookingPassengerInput> Passengers);
 
-    public sealed record CancelCustomBookingRequestApiRequest(string Reason);
+    public sealed record CancelCustomBookingRequestApiRequest(
+        string Reason,
+        string? RefundBankBin = null,
+        string? RefundAccountNumber = null,
+        string? RefundAccountName = null);
 
     public sealed record AssignCustomBookingManagerApiRequest(Guid ManagerUserId);
 

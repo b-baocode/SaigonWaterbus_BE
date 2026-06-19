@@ -51,7 +51,7 @@ public class CustomBookingBrevoEmailSenderTests
     }
 
     [Test]
-    public async Task ConfirmationEmailUsesTemplate13AndIncludesQrParams()
+    public async Task ConfirmationEmailUsesTemplate13AndNeverIncludesQrParams()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var request = CreateCustomBookingRequest();
@@ -75,19 +75,17 @@ public class CustomBookingBrevoEmailSenderTests
         parameters.GetProperty("statusLabel").GetString().ShouldBe("Đã chốt thành công");
         parameters.TryGetProperty("logoUrl", out _).ShouldBeFalse();
         parameters.GetProperty("ticketCode").GetString().ShouldBe("CBT-TEST");
-        parameters.GetProperty("qrPayload").GetString().ShouldBe("swb:custom-booking:test-token");
-        parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Đã thanh toán");
-        parameters.GetProperty("paymentSummaryAmount").GetString().ShouldBe("5.000.000 VND");
-        parameters.GetProperty("paidAmount").GetString().ShouldBe("5.000.000 VND");
-        parameters.GetProperty("totalPaidAmount").GetString().ShouldBe("5.000.000 VND");
+        parameters.GetProperty("qrPayload").ValueKind.ShouldBe(JsonValueKind.Null);
+        parameters.GetProperty("qrImageUrl").ValueKind.ShouldBe(JsonValueKind.Null);
+        parameters.GetProperty("qrCodeUrl").ValueKind.ShouldBe(JsonValueKind.Null);
+        parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Đã thanh toán đặt cọc");
+        parameters.GetProperty("paymentSummaryAmount").GetString().ShouldBe("2.500.000 VND");
+        parameters.GetProperty("paidAmount").GetString().ShouldBe("2.500.000 VND");
+        parameters.GetProperty("totalPaidAmount").GetString().ShouldBe("2.500.000 VND");
         parameters.GetProperty("baseVesselPrice").GetString().ShouldBe("4.600.000 VND");
         parameters.GetProperty("serviceFeeAmount").GetString().ShouldBe("400.000 VND");
         parameters.GetProperty("hasServiceFee").GetBoolean().ShouldBeTrue();
         parameters.GetProperty("specialRequests").GetString().ShouldBe("Trang trí sinh nhật");
-        var qrImageUrl = parameters.GetProperty("qrImageUrl").GetString().ShouldNotBeNull();
-        qrImageUrl.ShouldContain("https://api.qrserver.com/v1/create-qr-code/");
-        qrImageUrl.ShouldContain("swb%3Acustom-booking%3Atest-token");
-        parameters.GetProperty("qrCodeUrl").GetString().ShouldBe(qrImageUrl);
     }
 
     private static CustomBookingRequest CreateCustomBookingRequest()

@@ -7,24 +7,23 @@ namespace SaigonWaterbus.Infrastructure.Auth;
 
 internal static class CustomBookingEmailParamsFactory
 {
-    private const string QrPayloadPrefix = "swb:custom-booking:";
     private static readonly CultureInfo ViCulture = CultureInfo.GetCultureInfo("vi-VN");
 
     public static IReadOnlyDictionary<string, object?> CreateQuoteParams(
         CustomBookingRequest request,
         IReadOnlyCollection<RouteSegment>? routeSegments = null) =>
-        CreateCommonParams(request, statusLabel: "Đã báo giá", routeSegments, includeQr: false);
+        CreateCommonParams(request, statusLabel: "Đã báo giá", routeSegments, isConfirmation: false);
 
     public static IReadOnlyDictionary<string, object?> CreateConfirmationParams(
         CustomBookingRequest request,
         IReadOnlyCollection<RouteSegment>? routeSegments = null) =>
-        CreateCommonParams(request, statusLabel: "Đã chốt thành công", routeSegments, includeQr: true);
+        CreateCommonParams(request, statusLabel: "Đã chốt thành công", routeSegments, isConfirmation: true);
 
     private static IReadOnlyDictionary<string, object?> CreateCommonParams(
         CustomBookingRequest request,
         string statusLabel,
         IReadOnlyCollection<RouteSegment>? routeSegments,
-        bool includeQr)
+        bool isConfirmation)
     {
         var quote = request.Quote;
         var vessel = request.AssignedVessel;
@@ -38,31 +37,27 @@ internal static class CustomBookingEmailParamsFactory
         var travelDurationText = CustomBookingRouteEstimator.FormatDuration(routeEstimate.EstimatedTravelMinutes);
         var stayDurationText = CustomBookingRouteEstimator.FormatDuration(routeEstimate.EstimatedStayMinutes);
         var durationText = CustomBookingRouteEstimator.FormatDuration(routeEstimate.EstimatedDurationMinutes);
-        var activeTicket = includeQr
+        var activeTicket = isConfirmation
             ? request.Tickets
                 .Where(x => x.Status == CustomBookingTicketStatus.Active)
                 .OrderByDescending(x => x.QrIssuedAt)
                 .FirstOrDefault()
             : null;
-        var qrPayload = string.IsNullOrWhiteSpace(activeTicket?.QrToken)
-            ? null
-            : $"{QrPayloadPrefix}{activeTicket.QrToken}";
-        var qrImageUrl = CreateQrImageUrl(qrPayload);
-        var totalPaidAmount = includeQr && quote is not null
-            ? Money(quote.QuotedPrice, quote.Currency)
+        var totalPaidAmount = isConfirmation && quote is not null
+            ? Money(quote.DepositAmount, quote.Currency)
             : null;
         var baseVesselPrice = quote is null
             ? null
-            : Money(quote.QuotedPrice - quote.ServiceFeeAmount, quote.Currency);
+            : Money(quote.QuotedPrice + quote.DiscountAmount - quote.ServiceFeeAmount, quote.Currency);
         var serviceFeeAmount = quote is null || quote.ServiceFeeAmount <= 0
             ? null
             : Money(quote.ServiceFeeAmount, quote.Currency);
         var paymentSummaryAmount = quote is null
             ? null
-            : includeQr
+            : isConfirmation
                 ? totalPaidAmount
                 : Money(quote.RemainingAmount, quote.Currency);
-        var paymentSummaryLabel = includeQr ? "Đã thanh toán" : "Còn lại";
+        var paymentSummaryLabel = isConfirmation ? "Đã thanh toán đặt cọc" : "Còn lại";
 
         return new Dictionary<string, object?>
         {
@@ -113,6 +108,11 @@ internal static class CustomBookingEmailParamsFactory
             ["baseVesselPrice"] = baseVesselPrice,
             ["serviceFeeAmount"] = serviceFeeAmount,
             ["hasServiceFee"] = quote?.ServiceFeeAmount > 0,
+            ["discountCode"] = quote?.DiscountCode,
+            ["discountAmount"] = quote is null || quote.DiscountAmount <= 0
+                ? null
+                : Money(quote.DiscountAmount, quote.Currency),
+            ["hasDiscount"] = quote?.DiscountAmount > 0,
             ["specialRequests"] = request.SpecialRequests,
             ["depositPercent"] = quote?.DepositPercent.ToString("0.##", CultureInfo.InvariantCulture),
             ["depositAmount"] = quote is null ? null : Money(quote.DepositAmount, quote.Currency),
@@ -124,9 +124,9 @@ internal static class CustomBookingEmailParamsFactory
             ["priceNote"] = quote?.PriceNote ?? "Chi phí được ghi nhận theo báo giá đã xác nhận.",
             ["validUntil"] = quote?.ValidUntil?.ToOffset(TimeSpan.FromHours(7)).ToString("dd/MM/yyyy HH:mm", CultureInfo.InvariantCulture),
             ["ticketCode"] = activeTicket?.TicketCode,
-            ["qrPayload"] = qrPayload,
-            ["qrImageUrl"] = qrImageUrl,
-            ["qrCodeUrl"] = qrImageUrl
+            ["qrPayload"] = null,
+            ["qrImageUrl"] = null,
+            ["qrCodeUrl"] = null
         };
     }
 
@@ -236,11 +236,6 @@ internal static class CustomBookingEmailParamsFactory
 
     private static string Money(decimal amount, string currency) =>
         string.Create(ViCulture, $"{amount:N0} {currency}");
-
-    private static string? CreateQrImageUrl(string? qrPayload) =>
-        string.IsNullOrWhiteSpace(qrPayload)
-            ? null
-            : $"https://api.qrserver.com/v1/create-qr-code/?size=240x240&data={Uri.EscapeDataString(qrPayload)}";
 
     private static string SeatSetupTypeLabel(SeatSetupType seatSetupType) =>
         seatSetupType switch

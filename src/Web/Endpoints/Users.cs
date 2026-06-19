@@ -75,7 +75,7 @@ public sealed class Users : IEndpointGroup
                 "Bearer token",
                 null,
                 "Trả về lịch sử chung gồm booking vé thường và custom booking thuê nguyên tàu của user đang đăng nhập.",
-                "Custom booking có ticket sẽ trả ticket.qrPayload nếu backend còn lưu token QR.",
+                "Custom booking có ticket chỉ trả ticket.qrPayload khi booking đã thanh toán đủ và backend còn lưu token QR.",
                 "detailEndpoint cho biết API chi tiết cần gọi tiếp theo cho từng loại booking."));
 
         groupBuilder.MapGet(GetById, "detail/{userId:guid}")

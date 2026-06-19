@@ -8,6 +8,7 @@ using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Infrastructure.Data.Interceptors;
 using SaigonWaterbus.Infrastructure.Media;
 using SaigonWaterbus.Infrastructure.Options;
+using SaigonWaterbus.Infrastructure.Payments;
 using SaigonWaterbus.Infrastructure.Security;
 
 namespace Microsoft.Extensions.DependencyInjection;
@@ -18,6 +19,7 @@ public static class DependencyInjection
     private const string DatabaseConnectionOverrideKey = "SAIGONWATERBUS_DB_CONNECTION_STRING";
     private const string BrevoHttpClientName = "Brevo";
     private const string EsmsHttpClientName = "Esms";
+    private const string PayOsHttpClientName = "PayOS";
 
     public static void AddInfrastructureServices(this IHostApplicationBuilder builder)
     {
@@ -50,8 +52,10 @@ public static class DependencyInjection
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IVesselImageStorageService, CloudinaryVesselImageStorageService>();
+        builder.Services.AddScoped<ICustomBookingPaymentGateway, PayOsCustomBookingPaymentGateway>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
+        builder.Services.AddHttpClient(PayOsHttpClientName);
         builder.Services.AddScoped<EsmsSmsSender>();
         builder.Services.AddScoped<ISmsOtpSender, EsmsOtpSender>();
         builder.Services.AddScoped<ILoginNotificationSender>(provider =>
@@ -131,6 +135,7 @@ public static class DependencyInjection
         builder.Services.Configure<LoginNotificationOptions>(builder.Configuration.GetSection(LoginNotificationOptions.SectionName));
         builder.Services.Configure<EsmsOptions>(builder.Configuration.GetSection(EsmsOptions.SectionName));
         builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection(CloudinaryOptions.SectionName));
+        builder.Services.Configure<PayOsOptions>(builder.Configuration.GetSection(PayOsOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
     }

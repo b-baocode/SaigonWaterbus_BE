@@ -125,7 +125,9 @@ public class GetMyBookingHistoryQueryTests
             QuotedPrice = 1_500_000m,
             DepositAmount = 750_000m,
             RemainingAmount = 750_000m,
-            Currency = "VND"
+            Currency = "VND",
+            DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid,
+            RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Paid
         };
 
         return booking;

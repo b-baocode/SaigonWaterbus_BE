@@ -227,10 +227,53 @@ public sealed record CustomBookingQuoteDto(
     Guid Id,
     decimal QuotedPrice,
     decimal ServiceFeeAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? DiscountCode,
+    decimal DiscountAmount,
     decimal DepositPercent,
     decimal DepositAmount,
     decimal RemainingAmount,
     string Currency,
+    CustomBookingDepositPaymentStatus DepositPaymentStatus,
+    long? DepositPaymentOrderCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? DepositPaymentLinkId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? DepositPaymentCheckoutUrl,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? DepositPaymentQrCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? DepositPaymentCreatedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? DepositPaymentPaidAt,
+    CustomBookingDepositPaymentStatus RemainingPaymentStatus,
+    long? RemainingPaymentOrderCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RemainingPaymentLinkId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RemainingPaymentCheckoutUrl,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RemainingPaymentQrCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? RemainingPaymentCreatedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? RemainingPaymentPaidAt,
+    decimal RefundEligiblePercent,
+    decimal RefundAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundPolicyNote,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundReferenceId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundPayoutId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundFailureReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? RefundRequestedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? RefundProcessedAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PriceNote,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -240,10 +283,35 @@ public sealed record CustomBookingQuoteDto(
         quote.Id,
         quote.QuotedPrice,
         quote.ServiceFeeAmount,
+        quote.DiscountCode,
+        quote.DiscountAmount,
         quote.DepositPercent,
         quote.DepositAmount,
         quote.RemainingAmount,
         quote.Currency,
+        quote.DepositPaymentStatus,
+        quote.DepositPaymentOrderCode,
+        quote.DepositPaymentLinkId,
+        quote.DepositPaymentCheckoutUrl,
+        quote.DepositPaymentQrCode,
+        quote.DepositPaymentCreatedAt,
+        quote.DepositPaymentPaidAt,
+        quote.RemainingPaymentStatus,
+        quote.RemainingPaymentOrderCode,
+        quote.RemainingPaymentLinkId,
+        quote.RemainingPaymentCheckoutUrl,
+        quote.RemainingPaymentQrCode,
+        quote.RemainingPaymentCreatedAt,
+        quote.RemainingPaymentPaidAt,
+        quote.RefundEligiblePercent,
+        quote.RefundAmount,
+        quote.RefundPolicyNote,
+        quote.RefundReferenceId,
+        quote.RefundPayoutId,
+        quote.RefundStatus,
+        quote.RefundFailureReason,
+        quote.RefundRequestedAt,
+        quote.RefundProcessedAt,
         quote.PriceNote,
         quote.ValidUntil);
 }

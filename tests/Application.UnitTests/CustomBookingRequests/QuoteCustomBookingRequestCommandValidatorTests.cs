@@ -33,7 +33,7 @@ public class QuoteCustomBookingRequestCommandValidatorTests
 
     [TestCase(0)]
     [TestCase(400000)]
-    [TestCase(123.45)]
+    [TestCase(123)]
     public void ValidatorAcceptsValidServiceFeeAmount(decimal serviceFeeAmount)
     {
         var validator = new QuoteCustomBookingRequestCommandValidator();
@@ -44,6 +44,7 @@ public class QuoteCustomBookingRequestCommandValidatorTests
     }
 
     [TestCase(-1)]
+    [TestCase(123.45)]
     [TestCase(123.456)]
     public void ValidatorRejectsInvalidServiceFeeAmount(decimal serviceFeeAmount)
     {

@@ -10,7 +10,8 @@ public sealed record QuoteCustomBookingRequestCommand(
     Guid Id,
     decimal DepositPercent,
     string? PriceNote,
-    decimal ServiceFeeAmount = 0m) : IRequest<CustomBookingRequestDto>;
+    decimal ServiceFeeAmount = 0m,
+    string? DiscountCode = null) : IRequest<CustomBookingRequestDto>;
 
 public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidator<QuoteCustomBookingRequestCommand>
 {
@@ -30,7 +31,13 @@ public sealed class QuoteCustomBookingRequestCommandValidator : AbstractValidato
             .GreaterThanOrEqualTo(0)
             .WithMessage("Phụ phí dịch vụ không được âm.")
             .PrecisionScale(12, 2, false)
-            .WithMessage("Phụ phí dịch vụ không được vượt quá 12 chữ số và tối đa 2 số thập phân.");
+            .WithMessage("Phụ phí dịch vụ không được vượt quá 12 chữ số và tối đa 2 số thập phân.")
+            .Must(x => decimal.Truncate(x) == x)
+            .WithMessage("Phụ phí dịch vụ phải là số nguyên VND.");
+        RuleFor(x => x.DiscountCode)
+            .MaximumLength(50)
+            .WithMessage("Mã giảm giá không được vượt quá 50 ký tự.")
+            .When(x => x.DiscountCode is not null);
     }
 }
 
@@ -85,13 +92,46 @@ public sealed class QuoteCustomBookingRequestCommandHandler
             customRequest,
             customRequest.AssignedVessel!);
         var baseVesselPrice = CustomBookingRequestSupport.CalculateRentalPrice(customRequest, rentalPrice);
-        var quotedPrice = baseVesselPrice + request.ServiceFeeAmount;
+        var grossPrice = decimal.Round(
+            baseVesselPrice + request.ServiceFeeAmount,
+            0,
+            MidpointRounding.AwayFromZero);
+        var discount = await ResolveDiscountAsync(request.DiscountCode, grossPrice, now, cancellationToken);
+        var quotedPrice = grossPrice - discount.Amount;
+        if (quotedPrice <= 0)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.DiscountCode),
+                "Mã giảm giá không được làm tổng tiền sau giảm nhỏ hơn hoặc bằng 0.");
+        }
 
         var depositAmount = decimal.Round(
             quotedPrice * request.DepositPercent / 100m,
             0,
             MidpointRounding.AwayFromZero);
         var remainingAmount = quotedPrice - depositAmount;
+        if (depositAmount <= 0)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.DepositPercent),
+                "Tiền đặt cọc sau giảm giá phải lớn hơn 0 VND.");
+        }
+
+        if (remainingAmount > 0m)
+        {
+            var remainingPaymentDeadline = CustomBookingPaymentSupport.ResolveRemainingPaymentDeadline(customRequest);
+            if (now >= remainingPaymentDeadline)
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.DepositPercent),
+                    "Booking trong vòng 24 giờ trước khởi hành phải thanh toán 100% ngay khi chấp nhận báo giá.");
+            }
+
+            if (validUntil > remainingPaymentDeadline)
+            {
+                validUntil = remainingPaymentDeadline;
+            }
+        }
 
         if (customRequest.Quote is null)
         {
@@ -104,6 +144,8 @@ public sealed class QuoteCustomBookingRequestCommandHandler
 
         customRequest.Quote.QuotedPrice = quotedPrice;
         customRequest.Quote.ServiceFeeAmount = request.ServiceFeeAmount;
+        customRequest.Quote.DiscountCode = discount.Code;
+        customRequest.Quote.DiscountAmount = discount.Amount;
         customRequest.Quote.DepositPercent = request.DepositPercent;
         customRequest.Quote.DepositAmount = depositAmount;
         customRequest.Quote.RemainingAmount = remainingAmount;
@@ -112,6 +154,7 @@ public sealed class QuoteCustomBookingRequestCommandHandler
             ? rentalPrice.Note
             : request.PriceNote.Trim();
         customRequest.Quote.ValidUntil = validUntil;
+        ResetPaymentAndRefundState(customRequest.Quote);
         customRequest.Status = CustomBookingRequestStatus.Quoted;
         customRequest.StatusReason = null;
         customRequest.QuotedAt = now;
@@ -126,5 +169,84 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
 
         return CustomBookingRequestDto.From(customRequest, routeSegments);
+    }
+
+    private async Task<(string? Code, decimal Amount)> ResolveDiscountAsync(
+        string? discountCode,
+        decimal subtotalAmount,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(discountCode))
+        {
+            return (null, 0m);
+        }
+
+        var code = discountCode.Trim().ToUpperInvariant();
+        var promotion = await _context.Set<Promotion>()
+            .SingleOrDefaultAsync(x => x.PromotionCode == code, cancellationToken)
+            ?? throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá không tồn tại.");
+
+        if (!string.Equals(promotion.Status, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá không hoạt động.");
+        }
+
+        if (promotion.ValidFrom > now || promotion.ValidTo < now)
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá không còn hiệu lực.");
+        }
+
+        if (promotion.UsageLimit.HasValue && promotion.UsageCount >= promotion.UsageLimit.Value)
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá đã hết lượt sử dụng.");
+        }
+
+        if (promotion.MinOrderValue.HasValue && subtotalAmount < promotion.MinOrderValue.Value)
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Giá trị đơn hàng chưa đủ điều kiện dùng mã giảm giá.");
+        }
+
+        var discountAmount = promotion.PromotionType == PromotionType.Percent
+            ? decimal.Round(subtotalAmount * promotion.DiscountValue / 100m, 0, MidpointRounding.AwayFromZero)
+            : decimal.Round(Math.Min(promotion.DiscountValue, subtotalAmount), 0, MidpointRounding.AwayFromZero);
+
+        return (code, discountAmount);
+    }
+
+    private static void ResetPaymentAndRefundState(CustomBookingQuote quote)
+    {
+        quote.DepositPaymentStatus = CustomBookingDepositPaymentStatus.NotCreated;
+        quote.DepositPaymentOrderCode = null;
+        quote.DepositPaymentLinkId = null;
+        quote.DepositPaymentCheckoutUrl = null;
+        quote.DepositPaymentQrCode = null;
+        quote.DepositPaymentCreatedAt = null;
+        quote.DepositPaymentPaidAt = null;
+        quote.DepositPaymentCancelledAt = null;
+        quote.DepositPaymentFailureReason = null;
+
+        quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.NotCreated;
+        quote.RemainingPaymentOrderCode = null;
+        quote.RemainingPaymentLinkId = null;
+        quote.RemainingPaymentCheckoutUrl = null;
+        quote.RemainingPaymentQrCode = null;
+        quote.RemainingPaymentCreatedAt = null;
+        quote.RemainingPaymentPaidAt = null;
+        quote.RemainingPaymentCancelledAt = null;
+        quote.RemainingPaymentFailureReason = null;
+
+        quote.RefundEligiblePercent = 0m;
+        quote.RefundAmount = 0m;
+        quote.RefundPolicyNote = null;
+        quote.RefundBankBin = null;
+        quote.RefundAccountNumber = null;
+        quote.RefundAccountName = null;
+        quote.RefundReferenceId = null;
+        quote.RefundPayoutId = null;
+        quote.RefundStatus = null;
+        quote.RefundFailureReason = null;
+        quote.RefundRequestedAt = null;
+        quote.RefundProcessedAt = null;
     }
 }

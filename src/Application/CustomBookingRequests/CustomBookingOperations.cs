@@ -54,6 +54,7 @@ public sealed class GetCustomBookingManagerCandidatesQueryHandler
 
         var customRequest = await _context.Set<CustomBookingRequest>()
             .AsNoTracking()
+            .Include(x => x.Quote)
             .SingleOrDefaultAsync(x => x.Id == request.Id, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy yêu cầu thuê tàu.");
 
