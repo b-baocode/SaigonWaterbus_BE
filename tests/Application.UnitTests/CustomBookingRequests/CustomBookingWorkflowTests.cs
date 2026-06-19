@@ -1212,6 +1212,61 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
+    public async Task RetryFailedRefundCreatesNewPayOsPayout()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Cancelled;
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            QuotedPrice = 1000000m,
+            DepositPercent = 100m,
+            DepositAmount = 1000000m,
+            RemainingAmount = 0m,
+            Currency = "VND",
+            DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid,
+            DepositPaymentPaidAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero),
+            RefundEligiblePercent = 100m,
+            RefundAmount = 1000000m,
+            RefundBankBin = "string",
+            RefundAccountNumber = "123456789",
+            RefundAccountName = "NGUYEN VAN A",
+            RefundReferenceId = "CBR-FAILED",
+            RefundStatus = "Failed",
+            RefundFailureReason = "Không tạo được lệnh hoàn tiền PayOS."
+        };
+        context.Add(request);
+        await context.SaveChangesAsync();
+        var paymentGateway = new TestCustomBookingPaymentGateway();
+
+        var result = await new RetryCustomBookingRefundCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 16, 0, 0, 0, TimeSpan.Zero)),
+                paymentGateway)
+            .Handle(
+                new RetryCustomBookingRefundCommand(
+                    request.Id,
+                    "970415",
+                    "123456789",
+                    "NGUYEN VAN A"),
+                CancellationToken.None);
+
+        result.Quote!.RefundStatus.ShouldBe("Created");
+        paymentGateway.CreatedRefundPayout.ShouldNotBeNull();
+        paymentGateway.CreatedRefundPayout.ToBin.ShouldBe("970415");
+        paymentGateway.CreatedRefundPayout.Amount.ShouldBe(1000000);
+        var quote = context.CustomBookingQuotes.Single();
+        quote.RefundBankBin.ShouldBe("970415");
+        quote.RefundReferenceId.ShouldNotBe("CBR-FAILED");
+        quote.RefundFailureReason.ShouldBeNull();
+    }
+
+    [Test]
     public async Task EnsureActiveTicketStoresQrExpiryAsUtc()
     {
         await using var context = SeatFlowTestData.CreateContext();

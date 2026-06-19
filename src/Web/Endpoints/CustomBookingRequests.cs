@@ -100,6 +100,15 @@ public sealed class CustomBookingRequests : IEndpointGroup
         }
         """;
 
+    private const string RetryRefundExample =
+        """
+        {
+          "refundBankBin": "970415",
+          "refundAccountNumber": "123456789",
+          "refundAccountName": "NGUYEN VAN A"
+        }
+        """;
+
     private const string AssignManagerExample =
         """
         {
@@ -449,6 +458,16 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Nếu đã thanh toán, backend tính hoàn tiền trên tổng số tiền đã Paid: trước giờ khởi hành ít nhất 3 ngày hoàn 100%, ít nhất 24 giờ hoàn 30%, dưới 24 giờ không hoàn.",
                 "Booking đủ điều kiện hoàn tiền phải gửi refundBankBin, refundAccountNumber và refundAccountName để tạo lệnh chi PayOS.",
                 "Backend lưu người hủy, thời điểm hủy, lý do và trạng thái hoàn tiền."));
+
+        group.MapPost(RetryCustomBookingRefund, "{id:guid}/refund/retry")
+            .RequireAuthorization()
+            .WithSummary("Khách hoặc Admin retry hoàn tiền PayOS")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer là chủ yêu cầu hoặc Admin",
+                RetryRefundExample,
+                "Chỉ dùng khi booking đã Cancelled, refundAmount > 0 và refundStatus=Failed.",
+                "Dùng để nhập lại đúng ngân hàng/số tài khoản/tên chủ tài khoản sau khi lệnh hoàn tiền PayOS bị lỗi.",
+                "Backend tạo lại refundReferenceId mới rồi gọi PayOS payout lại."));
 
         group.MapGet(GetCustomBookingManagerCandidates, "{id:guid}/manager-candidates")
             .RequireAuthorization()
@@ -856,6 +875,17 @@ public sealed class CustomBookingRequests : IEndpointGroup
             request.RefundAccountNumber,
             request.RefundAccountName), ct));
 
+    private static async Task<IResult> RetryCustomBookingRefund(
+        ISender sender,
+        Guid id,
+        RetryCustomBookingRefundApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new RetryCustomBookingRefundCommand(
+            id,
+            request.RefundBankBin,
+            request.RefundAccountNumber,
+            request.RefundAccountName), ct));
+
     private static async Task<IResult> GetCustomBookingManagerCandidates(
         ISender sender,
         Guid id,
@@ -918,6 +948,11 @@ public sealed class CustomBookingRequests : IEndpointGroup
         string? RefundBankBin = null,
         string? RefundAccountNumber = null,
         string? RefundAccountName = null);
+
+    public sealed record RetryCustomBookingRefundApiRequest(
+        string RefundBankBin,
+        string RefundAccountNumber,
+        string RefundAccountName);
 
     public sealed record SyncCustomBookingPayOsPaymentApiRequest(long OrderCode);
 
