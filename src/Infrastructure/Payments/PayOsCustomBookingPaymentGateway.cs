@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -153,7 +154,10 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                     request.ReferenceId,
                     (int)response.StatusCode,
                     Truncate(body, 500));
-                throw new PaymentGatewayException("Không tạo được lệnh hoàn tiền PayOS.");
+                throw new PaymentGatewayException(CreatePayOsErrorMessage(
+                    "Không tạo được lệnh hoàn tiền PayOS",
+                    response.StatusCode,
+                    body));
             }
 
             var result = await response.Content.ReadFromJsonAsync<PayOsApiResponse<PayOsCreatePayoutData>>(
@@ -390,6 +394,42 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         string.IsNullOrEmpty(value) || value.Length <= maxLength
             ? value
             : value[..maxLength];
+
+    private static string CreatePayOsErrorMessage(
+        string fallbackMessage,
+        System.Net.HttpStatusCode statusCode,
+        string body)
+    {
+        var description = TryReadPayOsDescription(body);
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            return $"{fallbackMessage}: {description}";
+        }
+
+        return string.IsNullOrWhiteSpace(body)
+            ? $"{fallbackMessage}. HTTP {(int)statusCode}."
+            : $"{fallbackMessage}. HTTP {(int)statusCode}: {Truncate(body, 300)}";
+    }
+
+    private static string? TryReadPayOsDescription(string body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return null;
+        }
+
+        try
+        {
+            var result = JsonSerializer.Deserialize<PayOsApiResponse<object>>(body);
+            return string.IsNullOrWhiteSpace(result?.Desc)
+                ? null
+                : result.Desc;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
 
     private sealed record PayOsCredentials(
         string ClientId,
