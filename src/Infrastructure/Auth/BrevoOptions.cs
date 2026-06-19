@@ -14,6 +14,8 @@ public sealed class BrevoOptions
 
     public string SenderName { get; set; } = "SG_WATERBUS";
 
+    public string? PublicApiBaseUrl { get; set; }
+
     public int TemplateId { get; set; }
 
     public int RegisterTemplateId { get; set; }

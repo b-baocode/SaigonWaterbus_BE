@@ -70,7 +70,10 @@ public sealed class BrevoCustomBookingConfirmationEmailSender : ICustomBookingCo
                 sender = new { email = options.SenderEmail, name = options.SenderName },
                 to = new[] { new { email = request.ContactEmail, name = request.ContactName } },
                 templateId = options.CustomBookingConfirmationTemplateId,
-                @params = CustomBookingEmailParamsFactory.CreateConfirmationParams(request, routeSegments)
+                @params = CustomBookingEmailParamsFactory.CreateConfirmationParams(
+                    request,
+                    routeSegments,
+                    options.PublicApiBaseUrl)
             };
 
             var client = _httpClientFactory.CreateClient(HttpClientName);

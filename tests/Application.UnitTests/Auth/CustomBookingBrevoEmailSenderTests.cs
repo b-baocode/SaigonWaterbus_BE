@@ -51,12 +51,14 @@ public class CustomBookingBrevoEmailSenderTests
     }
 
     [Test]
-    public async Task ConfirmationEmailUsesTemplate13AndNeverIncludesQrParams()
+    public async Task ConfirmationEmailUsesTemplate13AndIncludesQrParams()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var request = CreateCustomBookingRequest();
         request.Status = CustomBookingRequestStatus.Confirmed;
         request.PassengerManifestStatus = PassengerManifestStatus.Completed;
+        request.Quote!.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid;
+        request.Quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Paid;
         request.Tickets.Add(CreateActiveTicket(request));
         var httpHandler = new CapturingHttpMessageHandler();
         var sender = new BrevoCustomBookingConfirmationEmailSender(
@@ -74,14 +76,20 @@ public class CustomBookingBrevoEmailSenderTests
         root.GetProperty("templateId").GetInt32().ShouldBe(13);
         parameters.GetProperty("statusLabel").GetString().ShouldBe("Đã chốt thành công");
         parameters.TryGetProperty("logoUrl", out _).ShouldBeFalse();
+        parameters.GetProperty("bookingDate").GetString().ShouldBe("18/06/2026");
+        parameters.GetProperty("routeShortName").GetString().ShouldBe("Bach Dang - Linh Dong");
+        parameters.GetProperty("fromStationAddress").GetString().ShouldBe("Bach Dang");
+        parameters.GetProperty("toStationAddress").GetString().ShouldBe("Linh Dong");
+        parameters.GetProperty("middleBoardingRows").GetString().ShouldBe(string.Empty);
         parameters.GetProperty("ticketCode").GetString().ShouldBe("CBT-TEST");
-        parameters.GetProperty("qrPayload").ValueKind.ShouldBe(JsonValueKind.Null);
-        parameters.GetProperty("qrImageUrl").ValueKind.ShouldBe(JsonValueKind.Null);
-        parameters.GetProperty("qrCodeUrl").ValueKind.ShouldBe(JsonValueKind.Null);
-        parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Đã thanh toán đặt cọc");
-        parameters.GetProperty("paymentSummaryAmount").GetString().ShouldBe("2.500.000 VND");
-        parameters.GetProperty("paidAmount").GetString().ShouldBe("2.500.000 VND");
-        parameters.GetProperty("totalPaidAmount").GetString().ShouldBe("2.500.000 VND");
+        parameters.GetProperty("qrPayload").GetString().ShouldBe("swb:custom-booking:test-token");
+        parameters.GetProperty("qrImageUrl").GetString()
+            .ShouldBe("https://api.test/api/custom-booking-requests/tickets/qr-image?payload=swb%3Acustom-booking%3Atest-token");
+        parameters.GetProperty("qrCodeUrl").GetString().ShouldBe(parameters.GetProperty("qrImageUrl").GetString());
+        parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Đã thanh toán");
+        parameters.GetProperty("paymentSummaryAmount").GetString().ShouldBe("5.000.000 VND");
+        parameters.GetProperty("paidAmount").GetString().ShouldBe("5.000.000 VND");
+        parameters.GetProperty("totalPaidAmount").GetString().ShouldBe("5.000.000 VND");
         parameters.GetProperty("baseVesselPrice").GetString().ShouldBe("4.600.000 VND");
         parameters.GetProperty("serviceFeeAmount").GetString().ShouldBe("400.000 VND");
         parameters.GetProperty("hasServiceFee").GetBoolean().ShouldBeTrue();
@@ -109,7 +117,8 @@ public class CustomBookingBrevoEmailSenderTests
             AdultCount = 2,
             ChildCount = 0,
             SpecialRequests = "Trang trí sinh nhật",
-            QuoteAcceptedAt = new DateTimeOffset(2026, 6, 18, 2, 0, 0, TimeSpan.Zero)
+            QuoteAcceptedAt = new DateTimeOffset(2026, 6, 18, 2, 0, 0, TimeSpan.Zero),
+            Created = new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero)
         };
         request.Quote = new CustomBookingQuote
         {
@@ -149,6 +158,7 @@ public class CustomBookingBrevoEmailSenderTests
             ApiKey = "test-api-key",
             SenderEmail = "noreply@saigonwaterbus.test",
             SenderName = "Saigon Waterbus",
+            PublicApiBaseUrl = "https://api.test",
             CustomBookingQuoteTemplateId = quoteTemplateId,
             CustomBookingConfirmationTemplateId = confirmationTemplateId
         });

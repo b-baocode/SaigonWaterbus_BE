@@ -707,6 +707,7 @@ public class CustomBookingWorkflowTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var customerContext = await SeedCustomerAsync(context);
+        var now = new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero);
         var request = ValidRequest();
         request.UserId = customerContext.UserId;
         request.Status = CustomBookingRequestStatus.Quoted;
@@ -720,7 +721,7 @@ public class CustomBookingWorkflowTests
             DepositAmount = 2500000m,
             RemainingAmount = 2500000m,
             Currency = "VND",
-            ValidUntil = DateTimeOffset.UtcNow.AddHours(1)
+            ValidUntil = now.AddHours(1)
         };
         context.Add(request);
         await context.SaveChangesAsync();
@@ -729,7 +730,7 @@ public class CustomBookingWorkflowTests
         var result = await new AcceptCustomBookingQuoteCommandHandler(
                 context,
                 customerContext,
-                TimeProvider.System,
+                new FixedTimeProvider(now),
                 paymentGateway)
             .Handle(new AcceptCustomBookingQuoteCommand(request.Id), CancellationToken.None);
 

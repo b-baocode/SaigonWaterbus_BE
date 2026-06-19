@@ -20,5 +20,11 @@ public sealed class PayOsOptions
 
     public string CancelUrl { get; set; } = string.Empty;
 
-    public string? PayoutSignatureKey { get; set; }
+    public string? PayoutClientId { get; set; }
+
+    public string? PayoutApiKey { get; set; }
+
+    public string? PayoutChecksumKey { get; set; }
+
+    public string? PayoutPartnerCode { get; set; }
 }

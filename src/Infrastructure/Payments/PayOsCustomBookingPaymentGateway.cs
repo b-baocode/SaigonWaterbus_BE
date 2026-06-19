@@ -109,16 +109,14 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         CancellationToken cancellationToken)
     {
         var options = GetEnabledOptions();
-        var signatureKey = string.IsNullOrWhiteSpace(options.PayoutSignatureKey)
-            ? options.ChecksumKey
-            : options.PayoutSignatureKey;
+        var payoutCredentials = GetPayoutCredentials(options);
         var signature = PayOsSignature.CreatePayoutRequestSignature(
             request.ReferenceId,
             request.Amount,
             request.Description,
             request.ToBin,
             request.ToAccountNumber,
-            signatureKey);
+            payoutCredentials.ChecksumKey);
 
         var payload = new PayOsCreatePayoutRequest(
             request.ReferenceId,
@@ -134,13 +132,13 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             using var httpRequest = new HttpRequestMessage(
                 HttpMethod.Post,
                 $"{options.ApiBaseUrl.TrimEnd('/')}/v1/payouts");
-            httpRequest.Headers.TryAddWithoutValidation("x-client-id", options.ClientId);
-            httpRequest.Headers.TryAddWithoutValidation("x-api-key", options.ApiKey);
+            httpRequest.Headers.TryAddWithoutValidation("x-client-id", payoutCredentials.ClientId);
+            httpRequest.Headers.TryAddWithoutValidation("x-api-key", payoutCredentials.ApiKey);
             httpRequest.Headers.TryAddWithoutValidation("x-idempotency-key", request.IdempotencyKey);
             httpRequest.Headers.TryAddWithoutValidation("x-signature", signature);
-            if (!string.IsNullOrWhiteSpace(options.PartnerCode))
+            if (!string.IsNullOrWhiteSpace(payoutCredentials.PartnerCode))
             {
-                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", options.PartnerCode);
+                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", payoutCredentials.PartnerCode);
             }
 
             httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
@@ -302,10 +300,41 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         return options;
     }
 
+    private static PayOsCredentials GetPayoutCredentials(PayOsOptions options)
+    {
+        var clientId = string.IsNullOrWhiteSpace(options.PayoutClientId)
+            ? options.ClientId
+            : options.PayoutClientId;
+        var apiKey = string.IsNullOrWhiteSpace(options.PayoutApiKey)
+            ? options.ApiKey
+            : options.PayoutApiKey;
+        var checksumKey = string.IsNullOrWhiteSpace(options.PayoutChecksumKey)
+            ? options.ChecksumKey
+            : options.PayoutChecksumKey;
+        var partnerCode = string.IsNullOrWhiteSpace(options.PayoutPartnerCode)
+            ? options.PartnerCode
+            : options.PayoutPartnerCode;
+
+        if (string.IsNullOrWhiteSpace(clientId)
+            || string.IsNullOrWhiteSpace(apiKey)
+            || string.IsNullOrWhiteSpace(checksumKey))
+        {
+            throw new PaymentGatewayException("PayOS chưa cấu hình đủ PayoutClientId, PayoutApiKey và PayoutChecksumKey để hoàn tiền.");
+        }
+
+        return new PayOsCredentials(clientId, apiKey, checksumKey, partnerCode);
+    }
+
     private static string Truncate(string value, int maxLength) =>
         string.IsNullOrEmpty(value) || value.Length <= maxLength
             ? value
             : value[..maxLength];
+
+    private sealed record PayOsCredentials(
+        string ClientId,
+        string ApiKey,
+        string ChecksumKey,
+        string? PartnerCode);
 
     private sealed record PayOsCreatePaymentRequest(
         [property: JsonPropertyName("orderCode")]

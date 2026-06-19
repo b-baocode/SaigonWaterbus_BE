@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using QRCoder;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Domain.Enums;
@@ -175,6 +176,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
         }
         """;
 
+    private const string CustomBookingQrPayloadPrefix = "swb:custom-booking:";
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetCustomBookingRequests)
@@ -326,6 +329,15 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Nếu orderCode khớp phần còn lại và amount khớp remainingAmount thì quote.remainingPaymentStatus=Paid.",
                 "Webhook idempotent; PayOS gửi lại nhiều lần không tạo QR hoặc gửi mail lặp."));
 
+        group.MapGet(RenderCustomBookingTicketQrImage, "tickets/qr-image")
+            .AllowAnonymous()
+            .WithSummary("Render ảnh QR vé custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Public endpoint dùng cho email Brevo.",
+                null,
+                "Query payload nhận dạng swb:custom-booking:{token}.",
+                "Endpoint chỉ render ảnh PNG từ payload; việc xác thực vé vẫn nằm ở API scan/check-in."));
+
         group.MapGet(GetCustomBookingTicket, "{id:guid}/ticket")
             .RequireAuthorization()
             .WithSummary("Xem thông tin vé QR custom booking")
@@ -356,7 +368,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Chỉ cập nhật sau khi booking Confirmed, đã thanh toán đủ và trước khi check-in.",
                 "Backend tự tính Adult/Child từ ngày sinh rồi kiểm tra đúng số đã đăng ký.",
                 "Trẻ em là người dưới 11 tuổi tại ngày khởi hành; người từ đủ 11 tuổi được tính là Adult.",
-                "Khi manifest chuyển hoàn tất, backend tạo vé QR nếu chưa có active ticket và gửi confirmation email không kèm QR."));
+                "Khi manifest chuyển hoàn tất, backend tạo vé QR nếu chưa có active ticket và gửi confirmation email có QR."));
 
         group.MapPost(PreviewImportCustomBookingPassengers, "{id:guid}/passengers/import/preview")
             .RequireAuthorization()
@@ -604,6 +616,22 @@ public sealed class CustomBookingRequests : IEndpointGroup
         Guid id,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCustomBookingTicketQuery(id), ct));
+
+    private static IResult RenderCustomBookingTicketQrImage(string? payload)
+    {
+        if (string.IsNullOrWhiteSpace(payload)
+            || !payload.StartsWith(CustomBookingQrPayloadPrefix, StringComparison.Ordinal))
+        {
+            return Results.BadRequest(new { message = "payload QR không hợp lệ." });
+        }
+
+        using var qrGenerator = new QRCodeGenerator();
+        using var qrCodeData = qrGenerator.CreateQrCode(payload, QRCodeGenerator.ECCLevel.Q);
+        var qrCode = new PngByteQRCode(qrCodeData);
+        var pngBytes = qrCode.GetGraphic(12);
+
+        return Results.File(pngBytes, "image/png");
+    }
 
     private static async Task<IResult> GetCustomBookingPassengers(
         ISender sender,
