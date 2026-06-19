@@ -10,7 +10,7 @@ public sealed class JwtOptions
 
     public string SigningKey { get; set; } = "ChangeThisJwtSigningKeyForProductionAtLeast32Chars!";
 
-    public int AccessTokenMinutes { get; set; } = 30;
+    public int AccessTokenMinutes { get; set; } = 300;
 
     public int RefreshTokenDays { get; set; } = 30;
 }

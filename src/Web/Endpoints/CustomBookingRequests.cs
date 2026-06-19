@@ -304,6 +304,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
 
         group.MapPost(AcceptCustomBookingQuote, "{id:guid}/accept-quote")
             .RequireAuthorization()
+            .Accepts<AcceptCustomBookingQuoteRequestBody>("application/json")
             .WithSummary("Khách chấp nhận báo giá")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer là chủ yêu cầu",
@@ -626,6 +627,10 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CustomBookingQuotePaymentOption PaymentOption = CustomBookingQuotePaymentOption.Deposit,
         string? DiscountCode = null,
         string? Error = null);
+
+    public sealed record AcceptCustomBookingQuoteRequestBody(
+        CustomBookingQuotePaymentOption PaymentOption = CustomBookingQuotePaymentOption.Deposit,
+        string? DiscountCode = null);
 
     private static async Task<AcceptCustomBookingQuoteApiRequest> ReadAcceptQuoteRequestAsync(
         HttpRequest httpRequest,
