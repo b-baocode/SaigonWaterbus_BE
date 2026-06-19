@@ -25,18 +25,18 @@ public sealed class TripSchedules : IEndpointGroup
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(ListSchedules, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Danh sach lich trinh (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Query param: isActive (bool, optional)."));
 
         group.MapPost(CreateSchedule, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Tao lich trinh moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateExample,
                 "recurrenceType: Daily | Weekly | Monthly.",
                 "weeklyDays: chuoi DayOfWeek cach nhau dau phay, vd '1,2,3,4,5' = Thu 2-6 (0=CN, 1=T2...).",
@@ -44,19 +44,19 @@ public sealed class TripSchedules : IEndpointGroup
                 "horizonDays: sinh trip truoc bao nhieu ngay (mac dinh 30, toi da 365)."));
 
         group.MapPut(UpdateSchedule, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Cap nhat lich trinh")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Chi cho phep sua horizonDays, validTo va isActive.",
                 "De thay doi recurrence/vessel/route: xoa va tao lai."));
 
         group.MapPost(TriggerGeneration, "generate-now")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Kich hoat tao trip ngay lap tuc")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Chay GenerateScheduledTripsCommand ngay, khong can doi job 00:05.",
                 "Tra ve so trip da tao va loi neu co."));

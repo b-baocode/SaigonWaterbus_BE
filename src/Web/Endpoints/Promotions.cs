@@ -36,10 +36,10 @@ public sealed class Promotions : IEndpointGroup
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetPromotions, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Danh sach tat ca khuyen mai (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Tra ve tat ca promotion (ca Active lan Inactive), sap xep moi nhat truoc.",
                 "Dung de quan ly, khong dung de hien thi cho khach hang."));
@@ -56,10 +56,10 @@ public sealed class Promotions : IEndpointGroup
                 "discountAmount = gia tri giam thuc te tinh theo subtotalAmount."));
 
         group.MapPost(CreatePromotion, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Tao khuyen mai moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateExample,
                 "promotionCode phai unique (tu dong uppercase).",
                 "promotionType (enum): 0 = Percent (giam theo %), 1 = Fixed (giam so tien co dinh).",
@@ -70,19 +70,19 @@ public sealed class Promotions : IEndpointGroup
                 "minOrderValue: null = khong yeu cau gia tri don toi thieu."));
 
         group.MapPut(UpdatePromotion, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Cap nhat khuyen mai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateExample,
                 "status hop le: Active | Inactive.",
                 "PromotionCode va PromotionType khong doi duoc sau khi tao."));
 
         group.MapDelete(DeletePromotion, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Vo hieu hoa khuyen mai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Soft delete: dat Status = Inactive.",
                 "Tra ve 204 khi thanh cong."));

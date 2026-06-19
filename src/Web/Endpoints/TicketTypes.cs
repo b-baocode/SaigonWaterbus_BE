@@ -40,29 +40,29 @@ public sealed class TicketTypes : IEndpointGroup
                 "priceModifier: he so gia (1.0 = gia goc, 0.5 = giam 50%)."));
 
         group.MapPost(CreateTicketType, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Tao loai ve moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateExample,
                 "TicketTypeCode phai unique (tu dong uppercase).",
                 "priceModifier > 0. Vi du: Adult=1.0, Student=0.8, Child=0.5.",
                 "pointsEarnedRate: so diem tich luy tren moi don vi gia (co the = 0)."));
 
         group.MapPut(UpdateTicketType, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Cap nhat loai ve")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateExample,
                 "isActive = false de an loai ve, khong xoa du lieu.",
                 "TicketTypeCode khong doi duoc sau khi tao."));
 
         group.MapDelete(DeleteTicketType, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Vo hieu hoa loai ve")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Soft delete: dat isActive = false, khong xoa khoi DB.",
                 "Tra ve 204 khi thanh cong."));

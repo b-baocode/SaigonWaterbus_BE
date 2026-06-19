@@ -51,28 +51,28 @@ public sealed class Stations : IEndpointGroup
                 "Managers va Staff la danh sach user active dang duoc gan voi tram."));
 
         group.MapPost(CreateStation, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Tao tram moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateExample,
                 "StationCode phai unique (tu dong uppercase).",
                 "Status mac dinh la Active khi tao moi."));
 
         group.MapPut(UpdateStation, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Cap nhat tram")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateExample,
                 "Status hop le: Active | Inactive.",
                 "StationCode khong doi duoc sau khi tao."));
 
         group.MapDelete(DeleteStation, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Xoa tram")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Tra ve 204 khi xoa thanh cong.",
                 "Tra ve 404 neu khong tim thay tram."));

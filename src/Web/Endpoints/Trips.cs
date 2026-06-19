@@ -29,10 +29,10 @@ public sealed class Trips : IEndpointGroup
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetTripList, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminManagerOrStaff)
             .WithSummary("Danh sach chuyen tau (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin, Manager hoặc Staff",
                 null,
                 "Query params (tat ca optional): operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeCode (string), status (string).",
                 "status hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
@@ -57,10 +57,10 @@ public sealed class Trips : IEndpointGroup
                 "Tra ve TripDetailDto kem stops[] sap xep theo stop_order."));
 
         group.MapPost(CreateTrip, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Tao chuyen tau moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateTripExample,
                 "Route phai Active va co it nhat 2 ben dung.",
                 "departureTime phai lon hon thoi diem hien tai.",
@@ -79,10 +79,10 @@ public sealed class Trips : IEndpointGroup
                 "Chi co TripSeat neu trip duoc tao tu TripSchedule hoac co vessel."));
 
         group.MapPatch(UpdateTripStatus, "{id:guid}/status")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminManagerOrStaff)
             .WithSummary("Cap nhat trang thai chuyen tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin, Manager hoặc Staff",
                 UpdateStatusExample,
                 "tripStatus hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
                 "statusNote: ghi chu kem theo (optional)."));

@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
@@ -63,7 +64,17 @@ public static class DependencyInjection
                 };
             });
 
-        builder.Services.AddAuthorization();
+        builder.Services.AddAuthorization(options =>
+        {
+            options.AddPolicy(PolicyNames.AdminOnly, policy =>
+                policy.RequireRole(Roles.AdminName));
+
+            options.AddPolicy(PolicyNames.AdminOrManager, policy =>
+                policy.RequireRole(Roles.AdminName, Roles.ManagerSystemName));
+
+            options.AddPolicy(PolicyNames.AdminManagerOrStaff, policy =>
+                policy.RequireRole(Roles.AdminName, Roles.ManagerSystemName, Roles.StaffSystemName));
+        });
 
         builder.Services.AddSwaggerGen(options =>
         {

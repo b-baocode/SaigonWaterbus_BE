@@ -97,10 +97,10 @@ public sealed class Routes : IEndpointGroup
                 "Tra ve 404 neu khong tim thay tuyen."));
 
         group.MapPost(CreateRoute, string.Empty)
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Tao tuyen moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateRouteExample,
                 "RouteCode phai unique (tu dong uppercase).",
                 "Request phai chua it nhat 2 waypoint type=station.",
@@ -109,19 +109,19 @@ public sealed class Routes : IEndpointGroup
                 "Neu ban ve duong san, co the tao route chi bang station waypoints roi nhap duong that o /segments."));
 
         group.MapPut(UpdateRoute, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Cap nhat thong tin tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateRouteExample,
                 "Status hop le: Active | Inactive.",
                 "RouteCode khong doi duoc sau khi tao."));
 
         group.MapPost(AddRouteStop, "{id:guid}/stops")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Them ben dung vao tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 AddStopExample,
                 "stopOrder phai unique trong cung mot tuyen.",
                 "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
@@ -130,67 +130,67 @@ public sealed class Routes : IEndpointGroup
                 "standardDwellMin: phut tau dung tai stop (default 2)."));
 
         group.MapPut(UpdateRouteStop, "{id:guid}/stops/{stopId:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Cap nhat ben dung")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateStopExample,
                 "Khong doi duoc stationId hay stopOrder sau khi tao.",
                 "Dung API nay de chinh thoi gian di chuyen va quyen len/xuong."));
 
         group.MapDelete(RemoveRouteStop, "{id:guid}/stops/{stopId:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Xoa ben dung khoi tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Tra ve 204 khi xoa thanh cong.",
                 "Tra ve 404 neu khong tim thay tuyen hoac stop."));
 
         group.MapPost(AddRouteSegment, "{id:guid}/segments")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Them doan chay giua 2 ben trong tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 SegmentExample,
                 "Dung de khai bao khoang cach va thoi gian chay that cho custom booking.",
                 "fromStationCode va toStationCode phai nam trong stops cua route.",
                 "geometry la danh sach diem [longitude, latitude] cua doan duong thuy, co the bo trong neu chua ve xong."));
 
         group.MapPut(UpdateRouteSegment, "{id:guid}/segments/{segmentId:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Cap nhat doan chay giua 2 ben trong tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 SegmentExample,
                 "Dung de cap nhat khoang cach, thoi gian chay, thu tu va geometry cua doan.",
                 "Neu truyen geometry thi phai co it nhat 2 diem."));
 
         group.MapDelete(RemoveRouteSegment, "{id:guid}/segments/{segmentId:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Xoa doan chay khoi tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Tra ve 204 khi xoa thanh cong.",
                 "Tra ve 404 neu khong tim thay route segment."));
 
         group.MapDelete(DeleteRoute, "{id:guid}")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .WithSummary("Xoa tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Chi xoa duoc tuyen chua co trip nao.",
                 "Neu tuyen da co trip, dung PUT /{id} de doi Status=Inactive thay vi xoa.",
                 "Tra ve 204 khi xoa thanh cong."));
 
         group.MapPost(ImportGeoJson, "geojson-import")
-            .RequireAuthorization()
+            .RequireAuthorization(PolicyNames.AdminOnly)
             .DisableAntiforgery()
             .WithSummary("Import mang song rach va ben tu file GeoJSON")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Content-Type: multipart/form-data.",
                 "Form fields: file (.geojson file).",
