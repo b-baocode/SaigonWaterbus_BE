@@ -184,6 +184,13 @@ public sealed class CustomBookingRequests : IEndpointGroup
         }
         """;
 
+    private const string SyncPayOsPaymentExample =
+        """
+        {
+          "orderCode": 78187350019200
+        }
+        """;
+
     private const string CustomBookingQrPayloadPrefix = "swb:custom-booking:";
 
     public static void Map(RouteGroupBuilder group)
@@ -340,6 +347,18 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Nếu orderCode khớp tiền cọc và amount khớp depositAmount thì quote.depositPaymentStatus=Paid và booking chuyển sang Confirmed.",
                 "Nếu orderCode khớp phần còn lại và amount khớp remainingAmount thì quote.remainingPaymentStatus=Paid.",
                 "Webhook idempotent; PayOS gửi lại nhiều lần không tạo QR hoặc gửi mail lặp."));
+
+        group.MapPost(SyncCustomBookingPayOsPayment, "payments/payos/sync")
+            .RequireAuthorization()
+            .Accepts<SyncCustomBookingPayOsPaymentApiRequest>("application/json")
+            .WithSummary("Đồng bộ trạng thái thanh toán PayOS sau khi FE nhận returnUrl")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer là chủ yêu cầu hoặc Admin",
+                SyncPayOsPaymentExample,
+                "FE gọi API này trên trang payment success/cancel bằng orderCode PayOS nhận từ query string.",
+                "Backend gọi PayOS để lấy trạng thái thật của payment request.",
+                "Nếu PayOS trả PAID và amount khớp DB, backend cập nhật deposit/remaining payment sang Paid.",
+                "Nếu là thanh toán cọc hoặc thanh toán full ở bước accept quote, booking chuyển sang Confirmed."));
 
         group.MapGet(RenderCustomBookingTicketQrImage, "tickets/qr-image")
             .AllowAnonymous()
@@ -702,6 +721,12 @@ public sealed class CustomBookingRequests : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new HandleCustomBookingDepositPaymentWebhookCommand(request), ct));
 
+    private static async Task<IResult> SyncCustomBookingPayOsPayment(
+        ISender sender,
+        SyncCustomBookingPayOsPaymentApiRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new SyncCustomBookingPayOsPaymentCommand(request.OrderCode), ct));
+
     private static async Task<IResult> GetCustomBookingTicket(
         ISender sender,
         Guid id,
@@ -893,6 +918,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
         string? RefundBankBin = null,
         string? RefundAccountNumber = null,
         string? RefundAccountName = null);
+
+    public sealed record SyncCustomBookingPayOsPaymentApiRequest(long OrderCode);
 
     public sealed record AssignCustomBookingManagerApiRequest(Guid ManagerUserId);
 

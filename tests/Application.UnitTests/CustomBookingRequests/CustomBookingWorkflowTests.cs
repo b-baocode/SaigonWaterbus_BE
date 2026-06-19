@@ -904,6 +904,62 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
+    public async Task PayOsSyncConfirmsDepositPaymentAfterReturnUrl()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Quoted;
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            QuotedPrice = 5000000m,
+            DepositPercent = 50m,
+            DepositAmount = 2500000m,
+            RemainingAmount = 2500000m,
+            Currency = "VND",
+            DepositPaymentStatus = CustomBookingDepositPaymentStatus.Pending,
+            DepositPaymentOrderCode = 123456,
+            DiscountCode = "WELCOME10",
+            DiscountAmount = 500000m
+        };
+        context.Add(request);
+        context.Add(new Promotion
+        {
+            PromotionCode = "WELCOME10",
+            PromotionName = "Welcome 10",
+            PromotionType = PromotionType.Percent,
+            DiscountValue = 10m,
+            ValidFrom = new DateTimeOffset(2026, 6, 17, 1, 0, 0, TimeSpan.Zero),
+            ValidTo = new DateTimeOffset(2026, 6, 19, 1, 0, 0, TimeSpan.Zero),
+            Status = "Active"
+        });
+        await context.SaveChangesAsync();
+        var paymentGateway = new TestCustomBookingPaymentGateway();
+        paymentGateway.PaymentStatuses[123456] = new CustomBookingPaymentStatusResult(
+            123456,
+            2500000,
+            "PAID",
+            "payos-link-id");
+
+        var result = await new SyncCustomBookingPayOsPaymentCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero)),
+                paymentGateway)
+            .Handle(new SyncCustomBookingPayOsPaymentCommand(123456), CancellationToken.None);
+
+        result.Status.ShouldBe(CustomBookingRequestStatus.Confirmed);
+        result.Quote!.DepositPaymentStatus.ShouldBe(CustomBookingDepositPaymentStatus.Paid);
+        var storedRequest = context.CustomBookingRequests.Include(x => x.Quote).Single(x => x.Id == request.Id);
+        storedRequest.QuoteAcceptedAt.ShouldBe(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero));
+        storedRequest.Quote!.DepositPaymentPaidAt.ShouldBe(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero));
+        context.Set<Promotion>().Single(x => x.PromotionCode == "WELCOME10").UsageCount.ShouldBe(1);
+    }
+
+    [Test]
     public async Task CustomerCanCreateRemainingPaymentAfterDepositIsPaid()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -2560,6 +2616,8 @@ public class CustomBookingWorkflowTests
 
         public CustomBookingRefundPayoutRequest? CreatedRefundPayout { get; private set; }
 
+        public Dictionary<long, CustomBookingPaymentStatusResult> PaymentStatuses { get; } = [];
+
         public List<long> CancelledOrderCodes { get; } = [];
 
         public Task<CustomBookingDepositPaymentResult> CreateDepositPaymentAsync(
@@ -2584,6 +2642,15 @@ public class CustomBookingWorkflowTests
                 orderCode.ToString(),
                 "CANCELLED",
                 reason));
+        }
+
+        public Task<CustomBookingPaymentStatusResult> GetPaymentAsync(
+            long orderCode,
+            CancellationToken cancellationToken)
+        {
+            return Task.FromResult(PaymentStatuses.TryGetValue(orderCode, out var result)
+                ? result
+                : new CustomBookingPaymentStatusResult(orderCode, null, "PENDING", null));
         }
 
         public Task<CustomBookingRefundPayoutResult> CreateRefundPayoutAsync(

@@ -21,6 +21,12 @@ public sealed record CustomBookingPaymentCancellationResult(
     string Status,
     string? Description);
 
+public sealed record CustomBookingPaymentStatusResult(
+    long OrderCode,
+    long? Amount,
+    string Status,
+    string? PaymentLinkId);
+
 public sealed record CustomBookingRefundPayoutRequest(
     string ReferenceId,
     long Amount,
@@ -69,6 +75,10 @@ public interface ICustomBookingPaymentGateway
     Task<CustomBookingPaymentCancellationResult> CancelPaymentAsync(
         long orderCode,
         string reason,
+        CancellationToken cancellationToken);
+
+    Task<CustomBookingPaymentStatusResult> GetPaymentAsync(
+        long orderCode,
         CancellationToken cancellationToken);
 
     Task<CustomBookingRefundPayoutResult> CreateRefundPayoutAsync(

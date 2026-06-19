@@ -248,6 +248,67 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         }
     }
 
+    public async Task<CustomBookingPaymentStatusResult> GetPaymentAsync(
+        long orderCode,
+        CancellationToken cancellationToken)
+    {
+        var options = GetEnabledOptions();
+
+        try
+        {
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{options.ApiBaseUrl.TrimEnd('/')}/v2/payment-requests/{orderCode}");
+            httpRequest.Headers.TryAddWithoutValidation("x-client-id", options.ClientId);
+            httpRequest.Headers.TryAddWithoutValidation("x-api-key", options.ApiKey);
+            if (!string.IsNullOrWhiteSpace(options.PartnerCode))
+            {
+                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", options.PartnerCode);
+            }
+
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "PayOS get payment failed. OrderCode: {OrderCode}, Status: {StatusCode}, Body: {Body}",
+                    orderCode,
+                    (int)response.StatusCode,
+                    Truncate(body, 500));
+                throw new PaymentGatewayException("Không kiểm tra được trạng thái thanh toán PayOS.");
+            }
+
+            var result = await response.Content.ReadFromJsonAsync<PayOsApiResponse<PayOsPaymentRequestData>>(
+                cancellationToken);
+            if (result?.Code != "00" || result.Data is null)
+            {
+                _logger.LogWarning(
+                    "PayOS get payment returned business error. OrderCode: {OrderCode}, Code: {Code}, Desc: {Desc}",
+                    orderCode,
+                    result?.Code,
+                    result?.Desc);
+                throw new PaymentGatewayException(result?.Desc ?? "Không kiểm tra được trạng thái thanh toán PayOS.");
+            }
+
+            return new CustomBookingPaymentStatusResult(
+                result.Data.OrderCode ?? orderCode,
+                result.Data.Amount,
+                result.Data.Status,
+                result.Data.Id ?? result.Data.PaymentLinkId);
+        }
+        catch (PaymentGatewayException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new PaymentGatewayException("Không kiểm tra được trạng thái thanh toán PayOS.", ex);
+        }
+    }
+
     public bool IsValidWebhook(CustomBookingDepositPaymentWebhook webhook)
     {
         var options = _optionsMonitor.CurrentValue;
@@ -412,6 +473,10 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
     private sealed record PayOsPaymentRequestData(
         [property: JsonPropertyName("id")]
         string? Id,
+        [property: JsonPropertyName("orderCode")]
+        long? OrderCode,
+        [property: JsonPropertyName("amount")]
+        long? Amount,
         [property: JsonPropertyName("paymentLinkId")]
         string? PaymentLinkId,
         [property: JsonPropertyName("status")]
