@@ -21,15 +21,18 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
     private readonly TimeProvider _timeProvider;
+    private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
 
     public HandleCustomBookingDepositPaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICustomBookingPaymentGateway paymentGateway,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICustomBookingQuoteEmailSender quoteEmailSender)
     {
         _context = context;
         _paymentGateway = paymentGateway;
         _timeProvider = timeProvider;
+        _quoteEmailSender = quoteEmailSender;
     }
 
     public async Task<CustomBookingDepositPaymentWebhookResultDto> Handle(
@@ -108,6 +111,11 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
             }
 
             await _context.SaveChangesAsync(cancellationToken);
+            if (paymentKind == CustomBookingPaymentKind.Deposit && !wasPaid)
+            {
+                await SendPaymentConfirmationEmailAsync(quote.CustomBookingRequest.Id, cancellationToken);
+            }
+
             return new CustomBookingDepositPaymentWebhookResultDto(
                 true,
                 webhook.Data.OrderCode,
@@ -158,6 +166,15 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
         {
             quote.RemainingPaymentLinkId = paymentLinkId;
         }
+    }
+
+    private async Task SendPaymentConfirmationEmailAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
+            .SingleAsync(x => x.Id == requestId, cancellationToken);
+        await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
     }
 
     private static void MarkPaymentFailed(

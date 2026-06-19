@@ -885,10 +885,12 @@ public class CustomBookingWorkflowTests
         });
         await context.SaveChangesAsync();
 
+        var quoteEmailSender = new TestCustomBookingQuoteEmailSender();
         var result = await new HandleCustomBookingDepositPaymentWebhookCommandHandler(
                 context,
                 new TestCustomBookingPaymentGateway(),
-                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero)))
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero)),
+                quoteEmailSender)
             .Handle(
                 new HandleCustomBookingDepositPaymentWebhookCommand(PaidWebhook(123456, 2500000)),
                 CancellationToken.None);
@@ -901,6 +903,7 @@ public class CustomBookingWorkflowTests
         storedRequest.Quote!.DepositPaymentStatus.ShouldBe(CustomBookingDepositPaymentStatus.Paid);
         storedRequest.Quote.DepositPaymentPaidAt.ShouldBe(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero));
         context.Set<Promotion>().Single(x => x.PromotionCode == "WELCOME10").UsageCount.ShouldBe(1);
+        quoteEmailSender.SentRequestIds.ShouldBe([request.Id]);
     }
 
     [Test]
@@ -944,11 +947,13 @@ public class CustomBookingWorkflowTests
             "PAID",
             "payos-link-id");
 
+        var quoteEmailSender = new TestCustomBookingQuoteEmailSender();
         var result = await new SyncCustomBookingPayOsPaymentCommandHandler(
                 context,
                 customerContext,
                 new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero)),
-                paymentGateway)
+                paymentGateway,
+                quoteEmailSender)
             .Handle(new SyncCustomBookingPayOsPaymentCommand(123456), CancellationToken.None);
 
         result.Status.ShouldBe(CustomBookingRequestStatus.Confirmed);
@@ -957,6 +962,7 @@ public class CustomBookingWorkflowTests
         storedRequest.QuoteAcceptedAt.ShouldBe(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero));
         storedRequest.Quote!.DepositPaymentPaidAt.ShouldBe(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero));
         context.Set<Promotion>().Single(x => x.PromotionCode == "WELCOME10").UsageCount.ShouldBe(1);
+        quoteEmailSender.SentRequestIds.ShouldBe([request.Id]);
     }
 
     [Test]
@@ -1028,7 +1034,8 @@ public class CustomBookingWorkflowTests
         var result = await new HandleCustomBookingDepositPaymentWebhookCommandHandler(
                 context,
                 new TestCustomBookingPaymentGateway(),
-                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 2, 0, 0, TimeSpan.Zero)))
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 2, 0, 0, TimeSpan.Zero)),
+                new TestCustomBookingQuoteEmailSender())
             .Handle(
                 new HandleCustomBookingDepositPaymentWebhookCommand(PaidWebhook(987654, 500000)),
                 CancellationToken.None);
@@ -2661,8 +2668,13 @@ public class CustomBookingWorkflowTests
 
     private sealed class TestCustomBookingQuoteEmailSender : ICustomBookingQuoteEmailSender
     {
-        public Task SendQuoteAsync(CustomBookingRequest request, CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+        public List<Guid> SentRequestIds { get; } = [];
+
+        public Task SendQuoteAsync(CustomBookingRequest request, CancellationToken cancellationToken)
+        {
+            SentRequestIds.Add(request.Id);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class TestCustomBookingPaymentGateway : ICustomBookingPaymentGateway

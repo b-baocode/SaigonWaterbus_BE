@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 
 namespace SaigonWaterbus.Infrastructure.Payments;
 
@@ -12,11 +13,44 @@ internal static class PayOsSignature
         string description,
         string toBin,
         string toAccountNumber,
+        IReadOnlyCollection<string> category,
         string checksumKey)
     {
-        var data =
-            $"amount={amount}&description={description}&referenceId={referenceId}&toAccountNumber={toAccountNumber}&toBin={toBin}";
-        return HmacSha256(data, checksumKey);
+        var data = new Dictionary<string, object?>
+        {
+            ["referenceId"] = referenceId,
+            ["amount"] = amount,
+            ["description"] = description,
+            ["toBin"] = toBin,
+            ["toAccountNumber"] = toAccountNumber,
+            ["category"] = category
+        };
+        var queryString = string.Join(
+            '&',
+            data
+                .OrderBy(x => x.Key, StringComparer.Ordinal)
+                .Select(x => $"{Uri.EscapeDataString(x.Key)}={Uri.EscapeDataString(FormatPayoutSignatureValue(x.Value))}"));
+        return HmacSha256(queryString, checksumKey);
+    }
+
+    private static string FormatPayoutSignatureValue(object? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        if (value is string text)
+        {
+            return text;
+        }
+
+        if (value is IReadOnlyCollection<string> array)
+        {
+            return JsonSerializer.Serialize(array);
+        }
+
+        return Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
     }
 
     public static string CreatePaymentRequestSignature(

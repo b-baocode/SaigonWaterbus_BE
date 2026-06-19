@@ -120,7 +120,7 @@ public sealed class RetryCustomBookingRefundCommandHandler
                     quote.RefundBankBin,
                     quote.RefundAccountNumber,
                     quote.RefundAccountName,
-                    referenceId),
+                    Guid.NewGuid().ToString("D")),
                 cancellationToken);
 
             quote.RefundPayoutId = result.PayoutId;

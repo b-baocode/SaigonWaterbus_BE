@@ -29,17 +29,20 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
 
     public SyncCustomBookingPayOsPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        ICustomBookingPaymentGateway paymentGateway)
+        ICustomBookingPaymentGateway paymentGateway,
+        ICustomBookingQuoteEmailSender quoteEmailSender)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _paymentGateway = paymentGateway;
+        _quoteEmailSender = quoteEmailSender;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -130,7 +133,21 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        if (paymentKind == CustomBookingPaymentKind.Deposit && !wasPaid)
+        {
+            await SendPaymentConfirmationEmailAsync(customRequest.Id, cancellationToken);
+        }
+
         return await LoadResultAsync(customRequest.Id, cancellationToken);
+    }
+
+    private async Task SendPaymentConfirmationEmailAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
+            .SingleAsync(x => x.Id == requestId, cancellationToken);
+        await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
     }
 
     private async Task<CustomBookingRequestDto> LoadResultAsync(

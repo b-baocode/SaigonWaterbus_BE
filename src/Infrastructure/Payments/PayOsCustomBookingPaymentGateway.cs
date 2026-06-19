@@ -111,12 +111,14 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
     {
         var options = GetEnabledOptions();
         var payoutCredentials = GetPayoutCredentials(options);
+        var category = new[] { "refund", "custom-booking" };
         var signature = PayOsSignature.CreatePayoutRequestSignature(
             request.ReferenceId,
             request.Amount,
             request.Description,
             request.ToBin,
             request.ToAccountNumber,
+            category,
             payoutCredentials.ChecksumKey);
 
         var payload = new PayOsCreatePayoutRequest(
@@ -125,7 +127,7 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             request.Description,
             request.ToBin,
             request.ToAccountNumber,
-            ["refund", "custom-booking"]);
+            category);
 
         try
         {

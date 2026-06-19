@@ -51,6 +51,37 @@ public class CustomBookingBrevoEmailSenderTests
     }
 
     [Test]
+    public async Task PaymentConfirmedEmailUsesTemplate14AndIncludesPaidAmountWithoutQr()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var request = CreateCustomBookingRequest();
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.Quote!.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid;
+        request.Quote.DepositPaymentPaidAt = new DateTimeOffset(2026, 6, 18, 2, 0, 0, TimeSpan.Zero);
+        var httpHandler = new CapturingHttpMessageHandler();
+        var sender = new BrevoCustomBookingQuoteEmailSender(
+            new TestHttpClientFactory(httpHandler),
+            context,
+            OptionsMonitor(quoteTemplateId: 14, confirmationTemplateId: 13),
+            NullLogger<BrevoCustomBookingQuoteEmailSender>.Instance);
+
+        await sender.SendQuoteAsync(request, CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
+        var root = payload.RootElement;
+        var parameters = root.GetProperty("params");
+        root.GetProperty("templateId").GetInt32().ShouldBe(14);
+        parameters.GetProperty("statusLabel").GetString().ShouldBe("Đã xác nhận thanh toán");
+        parameters.GetProperty("ticketCode").ValueKind.ShouldBe(JsonValueKind.Null);
+        parameters.GetProperty("qrPayload").ValueKind.ShouldBe(JsonValueKind.Null);
+        parameters.GetProperty("qrImageUrl").ValueKind.ShouldBe(JsonValueKind.Null);
+        parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Còn lại");
+        parameters.GetProperty("paymentSummaryAmount").GetString().ShouldBe("2.500.000 VND");
+        parameters.GetProperty("paidAmount").GetString().ShouldBe("2.500.000 VND");
+        parameters.GetProperty("totalPaidAmount").GetString().ShouldBe("2.500.000 VND");
+    }
+
+    [Test]
     public async Task ConfirmationEmailUsesTemplate13AndIncludesQrParams()
     {
         await using var context = SeatFlowTestData.CreateContext();

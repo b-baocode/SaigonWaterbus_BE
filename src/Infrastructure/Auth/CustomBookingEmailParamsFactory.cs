@@ -16,7 +16,7 @@ internal static class CustomBookingEmailParamsFactory
     public static IReadOnlyDictionary<string, object?> CreateQuoteParams(
         CustomBookingRequest request,
         IReadOnlyCollection<RouteSegment>? routeSegments = null) =>
-        CreateCommonParams(request, statusLabel: "Đã báo giá", routeSegments, isConfirmation: false);
+        CreateCommonParams(request, QuoteStatusLabel(request), routeSegments, isConfirmation: false);
 
     public static IReadOnlyDictionary<string, object?> CreateConfirmationParams(
         CustomBookingRequest request,
@@ -58,7 +58,10 @@ internal static class CustomBookingEmailParamsFactory
             ? null
             : $"{QrPayloadPrefix}{activeTicket.QrToken}";
         var qrImageUrl = CreateQrImageUrl(publicApiBaseUrl, qrPayload);
-        var totalPaidAmount = isConfirmation && quote is not null
+        var isPaymentConfirmed = !isConfirmation
+            && request.Status == CustomBookingRequestStatus.Confirmed
+            && quote?.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Paid;
+        var totalPaidAmount = quote is not null && (isConfirmation || isPaymentConfirmed)
             ? Money(CalculatePaidAmount(quote), quote.Currency)
             : null;
         var baseVesselPrice = quote is null
@@ -69,10 +72,12 @@ internal static class CustomBookingEmailParamsFactory
             : Money(quote.ServiceFeeAmount, quote.Currency);
         var paymentSummaryAmount = quote is null
             ? null
-            : isConfirmation
+            : isConfirmation || (isPaymentConfirmed && quote.RemainingAmount <= 0)
                 ? totalPaidAmount
                 : Money(quote.RemainingAmount, quote.Currency);
-        var paymentSummaryLabel = isConfirmation ? "Đã thanh toán" : "Còn lại";
+        var paymentSummaryLabel = isConfirmation || (isPaymentConfirmed && quote?.RemainingAmount <= 0)
+            ? "Đã thanh toán"
+            : "Còn lại";
 
         return new Dictionary<string, object?>
         {
@@ -149,6 +154,12 @@ internal static class CustomBookingEmailParamsFactory
             ["qrCodeUrl"] = qrImageUrl
         };
     }
+
+    private static string QuoteStatusLabel(CustomBookingRequest request) =>
+        request.Status == CustomBookingRequestStatus.Confirmed
+        && request.Quote?.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Paid
+            ? "Đã xác nhận thanh toán"
+            : "Đã báo giá";
 
     private static string FormatDateTimeOffset(DateTimeOffset value, string format)
     {

@@ -268,7 +268,7 @@ public sealed class CancelCustomBookingRequestCommandHandler
                     bankBin!,
                     accountNumber!,
                     accountName!,
-                    referenceId),
+                    Guid.NewGuid().ToString("D")),
                 cancellationToken);
 
             quote.RefundPayoutId = result.PayoutId;
