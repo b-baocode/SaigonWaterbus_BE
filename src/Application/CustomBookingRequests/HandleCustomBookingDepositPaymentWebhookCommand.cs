@@ -65,6 +65,7 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
         var paymentKind = quote.DepositPaymentOrderCode == webhook.Data.OrderCode
             ? CustomBookingPaymentKind.Deposit
             : CustomBookingPaymentKind.Remaining;
+        var wasPaid = GetPaymentStatus(quote, paymentKind) == CustomBookingDepositPaymentStatus.Paid;
 
         if (isPaid)
         {
@@ -94,6 +95,10 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
             }
 
             MarkPaymentPaid(quote, paymentKind, webhook.Data.PaymentLinkId);
+            if (paymentKind == CustomBookingPaymentKind.Deposit && !wasPaid)
+            {
+                await IncrementPromotionUsageAsync(quote, cancellationToken);
+            }
 
             if (paymentKind == CustomBookingPaymentKind.Deposit
                 && quote.CustomBookingRequest.Status == CustomBookingRequestStatus.Quoted)
@@ -177,6 +182,23 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
         paymentKind == CustomBookingPaymentKind.Deposit
             ? quote.DepositPaymentStatus
             : quote.RemainingPaymentStatus;
+
+    private async Task IncrementPromotionUsageAsync(
+        CustomBookingQuote quote,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(quote.DiscountCode))
+        {
+            return;
+        }
+
+        var promotion = await _context.Set<Promotion>()
+            .SingleOrDefaultAsync(x => x.PromotionCode == quote.DiscountCode, cancellationToken);
+        if (promotion is not null)
+        {
+            promotion.UsageCount++;
+        }
+    }
 
     private enum CustomBookingPaymentKind
     {

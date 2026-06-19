@@ -8,7 +8,17 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.CustomBookingRequests;
 
-public sealed record AcceptCustomBookingQuoteCommand(Guid Id) : IRequest<CustomBookingRequestDto>;
+public enum CustomBookingQuotePaymentOption
+{
+    Deposit = 0,
+    Full = 1
+}
+
+public sealed record AcceptCustomBookingQuoteCommand(
+    Guid Id,
+    CustomBookingQuotePaymentOption PaymentOption = CustomBookingQuotePaymentOption.Deposit,
+    string? DiscountCode = null)
+    : IRequest<CustomBookingRequestDto>;
 
 public sealed class AcceptCustomBookingQuoteCommandHandler
     : IRequestHandler<AcceptCustomBookingQuoteCommand, CustomBookingRequestDto>
@@ -59,14 +69,7 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
             cancellationToken);
 
         var quote = customRequest.Quote!;
-        if (quote.RemainingAmount > 0m
-            && now >= CustomBookingPaymentSupport.ResolveRemainingPaymentDeadline(customRequest))
-        {
-            throw AuthSupport.CreateValidationException(
-                "payment",
-                "Booking đã quá hạn thanh toán phần còn lại trước 24 giờ khởi hành. Vui lòng liên hệ Admin để báo giá thanh toán 100%.");
-        }
-
+        var requestedDiscountCode = NormalizeDiscountCode(request.DiscountCode);
         if (quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Paid)
         {
             throw AuthSupport.CreateValidationException("payment", "Booking này đã được thanh toán đặt cọc.");
@@ -75,7 +78,36 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
         if (quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Pending
             && !string.IsNullOrWhiteSpace(quote.DepositPaymentCheckoutUrl))
         {
+            if (!string.IsNullOrWhiteSpace(requestedDiscountCode)
+                && !string.Equals(requestedDiscountCode, NormalizeDiscountCode(quote.DiscountCode), StringComparison.Ordinal))
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.DiscountCode),
+                    "Booking đã có link thanh toán đang chờ xử lý, không thể đổi mã giảm giá trên link hiện tại.");
+            }
+
             return CustomBookingRequestDto.From(customRequest, routeSegments);
+        }
+
+        if (!string.IsNullOrWhiteSpace(requestedDiscountCode))
+        {
+            await ApplyCustomerDiscountAsync(quote, requestedDiscountCode, now, cancellationToken);
+        }
+
+        var payFullAmount = request.PaymentOption == CustomBookingQuotePaymentOption.Full;
+        if (payFullAmount)
+        {
+            quote.DepositPercent = 100m;
+            quote.DepositAmount = quote.QuotedPrice;
+            quote.RemainingAmount = 0m;
+        }
+
+        if (quote.RemainingAmount > 0m
+            && now >= CustomBookingPaymentSupport.ResolveRemainingPaymentDeadline(customRequest))
+        {
+            throw AuthSupport.CreateValidationException(
+                "payment",
+                "Booking đã quá hạn thanh toán phần còn lại trước 24 giờ khởi hành. Vui lòng liên hệ Admin để báo giá thanh toán 100%.");
         }
 
         var orderCode = await CustomBookingPaymentSupport.GeneratePaymentOrderCodeAsync(
@@ -94,11 +126,13 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
                 new CustomBookingDepositPaymentRequest(
                     orderCode,
                     amount,
-                    CustomBookingPaymentSupport.CreatePaymentDescription(orderCode),
+                    CustomBookingPaymentSupport.CreatePaymentDescription(customRequest),
                     customRequest.ContactName,
                     customRequest.ContactEmail,
                     customRequest.ContactPhone,
-                    $"Dat coc tour {customRequest.Id.ToString("N")[..8].ToUpperInvariant()}",
+                    payFullAmount || quote.RemainingAmount <= 0m
+                        ? $"Full payment {CustomBookingPaymentSupport.CreateBookingReference(customRequest)}"
+                        : $"Deposit booking {CustomBookingPaymentSupport.CreateBookingReference(customRequest)}",
                     paymentExpiredAt),
                 cancellationToken);
         }
@@ -140,4 +174,80 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
             : departureAt;
     }
 
+    private async Task ApplyCustomerDiscountAsync(
+        CustomBookingQuote quote,
+        string discountCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var grossPrice = quote.QuotedPrice + quote.DiscountAmount;
+        var discount = await ResolveDiscountAsync(discountCode, grossPrice, now, cancellationToken);
+        var quotedPrice = grossPrice - discount.Amount;
+        if (quotedPrice <= 0)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(discountCode),
+                "Mã giảm giá không được làm tổng tiền sau giảm nhỏ hơn hoặc bằng 0.");
+        }
+
+        var depositAmount = decimal.Round(
+            quotedPrice * quote.DepositPercent / 100m,
+            0,
+            MidpointRounding.AwayFromZero);
+        if (depositAmount <= 0)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(discountCode),
+                "Tiền đặt cọc sau giảm giá phải lớn hơn 0 VND.");
+        }
+
+        quote.DiscountCode = discount.Code;
+        quote.DiscountAmount = discount.Amount;
+        quote.QuotedPrice = quotedPrice;
+        quote.DepositAmount = depositAmount;
+        quote.RemainingAmount = quotedPrice - depositAmount;
+    }
+
+    private async Task<(string Code, decimal Amount)> ResolveDiscountAsync(
+        string discountCode,
+        decimal subtotalAmount,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var code = discountCode.Trim().ToUpperInvariant();
+        var promotion = await _context.Set<Promotion>()
+            .SingleOrDefaultAsync(x => x.PromotionCode == code, cancellationToken)
+            ?? throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá không tồn tại.");
+
+        if (!string.Equals(promotion.Status, "Active", StringComparison.OrdinalIgnoreCase))
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá không hoạt động.");
+        }
+
+        if (promotion.ValidFrom > now || promotion.ValidTo < now)
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá không còn hiệu lực.");
+        }
+
+        if (promotion.UsageLimit.HasValue && promotion.UsageCount >= promotion.UsageLimit.Value)
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Mã giảm giá đã hết lượt sử dụng.");
+        }
+
+        if (promotion.MinOrderValue.HasValue && subtotalAmount < promotion.MinOrderValue.Value)
+        {
+            throw AuthSupport.CreateValidationException(nameof(discountCode), "Giá trị đơn hàng chưa đủ điều kiện dùng mã giảm giá.");
+        }
+
+        var discountAmount = promotion.PromotionType == PromotionType.Percent
+            ? decimal.Round(subtotalAmount * promotion.DiscountValue / 100m, 0, MidpointRounding.AwayFromZero)
+            : decimal.Round(Math.Min(promotion.DiscountValue, subtotalAmount), 0, MidpointRounding.AwayFromZero);
+
+        return (code, discountAmount);
+    }
+
+    private static string? NormalizeDiscountCode(string? discountCode) =>
+        string.IsNullOrWhiteSpace(discountCode)
+            ? null
+            : discountCode.Trim().ToUpperInvariant();
 }

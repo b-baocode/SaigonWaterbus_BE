@@ -75,6 +75,14 @@ public sealed class CustomBookingRequests : IEndpointGroup
         }
         """;
 
+    private const string AcceptQuoteExample =
+        """
+        {
+          "paymentOption": "Deposit",
+          "discountCode": "WELCOME10"
+        }
+        """;
+
     private const string PreferredVesselExample =
         """
         {
@@ -299,9 +307,12 @@ public sealed class CustomBookingRequests : IEndpointGroup
             .WithSummary("Khách chấp nhận báo giá")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Customer là chủ yêu cầu",
-                null,
+                AcceptQuoteExample,
                 "Chỉ chấp nhận khi status=Quoted, báo giá chưa hết hạn và tàu vẫn hợp lệ.",
+                "Body optional. paymentOption nhận Deposit hoặc Full; nếu không gửi thì mặc định Deposit.",
+                "discountCode optional. Nếu khách nhập mã hợp lệ, backend tính lại giá sau giảm trước khi tạo link PayOS.",
                 "Sau khi chấp nhận, backend tạo link thanh toán PayOS cho tiền cọc và trả quote.depositPaymentCheckoutUrl.",
+                "Nếu paymentOption=Full, backend tạo link thanh toán 100% ngay ở quote.depositPaymentCheckoutUrl và quote.remainingAmount=0.",
                 "Sau khi tạo link đặt cọc, booking vẫn status=Quoted và quote.depositPaymentStatus=Pending.",
                 "Chỉ webhook PayOS hợp lệ, success và đúng amount mới chuyển booking sang Confirmed.",
                 "Bước này chưa tạo/gửi QR. QR chỉ phát sau khi khách đã hoàn tất danh sách hành khách.",
@@ -596,8 +607,83 @@ public sealed class CustomBookingRequests : IEndpointGroup
     private static async Task<IResult> AcceptCustomBookingQuote(
         ISender sender,
         Guid id,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new AcceptCustomBookingQuoteCommand(id), ct));
+        HttpRequest httpRequest,
+        CancellationToken ct)
+    {
+        var request = await ReadAcceptQuoteRequestAsync(httpRequest, ct);
+        if (request.Error is not null)
+        {
+            return Results.BadRequest(new { message = request.Error });
+        }
+
+        return Results.Ok(await sender.Send(new AcceptCustomBookingQuoteCommand(
+            id,
+            request.PaymentOption,
+            request.DiscountCode), ct));
+    }
+
+    public sealed record AcceptCustomBookingQuoteApiRequest(
+        CustomBookingQuotePaymentOption PaymentOption = CustomBookingQuotePaymentOption.Deposit,
+        string? DiscountCode = null,
+        string? Error = null);
+
+    private static async Task<AcceptCustomBookingQuoteApiRequest> ReadAcceptQuoteRequestAsync(
+        HttpRequest httpRequest,
+        CancellationToken cancellationToken)
+    {
+        using var reader = new StreamReader(httpRequest.Body);
+        var body = await reader.ReadToEndAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return new AcceptCustomBookingQuoteApiRequest();
+        }
+
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.ValueKind != JsonValueKind.Object)
+            {
+                return new AcceptCustomBookingQuoteApiRequest(Error: "Body phải là JSON object.");
+            }
+
+            var paymentOption = CustomBookingQuotePaymentOption.Deposit;
+            if (json.RootElement.TryGetProperty("paymentOption", out var paymentOptionElement)
+                && !TryReadPaymentOption(paymentOptionElement, out paymentOption))
+            {
+                return new AcceptCustomBookingQuoteApiRequest(Error: "paymentOption phải là Deposit hoặc Full.");
+            }
+
+            var discountCode = json.RootElement.TryGetProperty("discountCode", out var discountCodeElement)
+                && discountCodeElement.ValueKind == JsonValueKind.String
+                ? discountCodeElement.GetString()
+                : null;
+
+            return new AcceptCustomBookingQuoteApiRequest(paymentOption, discountCode);
+        }
+        catch (JsonException)
+        {
+            return new AcceptCustomBookingQuoteApiRequest(Error: "Body JSON không hợp lệ.");
+        }
+    }
+
+    private static bool TryReadPaymentOption(
+        JsonElement element,
+        out CustomBookingQuotePaymentOption paymentOption)
+    {
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            return Enum.TryParse(element.GetString(), ignoreCase: true, out paymentOption);
+        }
+
+        if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var value))
+        {
+            paymentOption = (CustomBookingQuotePaymentOption)value;
+            return Enum.IsDefined(paymentOption);
+        }
+
+        paymentOption = CustomBookingQuotePaymentOption.Deposit;
+        return false;
+    }
 
     private static async Task<IResult> CreateCustomBookingRemainingPayment(
         ISender sender,

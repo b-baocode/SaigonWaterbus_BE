@@ -56,6 +56,9 @@ internal static class CustomBookingPaymentSupport
         return (long)amount;
     }
 
-    public static string CreatePaymentDescription(long orderCode) =>
-        $"SWB{orderCode % 1_000_000:000000}";
+    public static string CreatePaymentDescription(CustomBookingRequest request) =>
+        $"{request.DepartureDate:yyMMdd}{request.Id.ToString("N")[^3..].ToUpperInvariant()}";
+
+    public static string CreateBookingReference(CustomBookingRequest request) =>
+        $"CB-{request.DepartureDate:yyyyMMdd}-{request.Id.ToString("N")[^6..].ToUpperInvariant()}";
 }

@@ -118,6 +118,10 @@ public sealed class CancelCustomBookingRequestCommandHandler
         customRequest.StatusReason = request.Reason.Trim();
         customRequest.CancelledAt = now;
         customRequest.CancelledByUserId = actor.Id;
+        if (paidAmount > 0)
+        {
+            await RestorePromotionUsageAsync(quote, cancellationToken);
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -179,6 +183,23 @@ public sealed class CancelCustomBookingRequestCommandHandler
             throw AuthSupport.CreateValidationException(
                 "payment",
                 $"Không hủy được link thanh toán PayOS đang chờ xử lý: {ex.Message}");
+        }
+    }
+
+    private async Task RestorePromotionUsageAsync(
+        CustomBookingQuote? quote,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(quote?.DiscountCode))
+        {
+            return;
+        }
+
+        var promotion = await _context.Set<Promotion>()
+            .SingleOrDefaultAsync(x => x.PromotionCode == quote.DiscountCode, cancellationToken);
+        if (promotion is not null)
+        {
+            promotion.UsageCount = Math.Max(0, promotion.UsageCount - 1);
         }
     }
 

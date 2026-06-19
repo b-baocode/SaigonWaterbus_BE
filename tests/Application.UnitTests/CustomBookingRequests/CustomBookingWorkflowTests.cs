@@ -739,8 +739,117 @@ public class CustomBookingWorkflowTests
         result.Quote.DepositPaymentCheckoutUrl.ShouldBe("https://payos.test/checkout");
         paymentGateway.CreatedDepositPayment.ShouldNotBeNull();
         paymentGateway.CreatedDepositPayment.Amount.ShouldBe(2500000);
+        paymentGateway.CreatedDepositPayment.Description.ShouldBe($"260620{request.Id.ToString("N")[^3..].ToUpperInvariant()}");
+        paymentGateway.CreatedDepositPayment.Description.Length.ShouldBe(9);
+        paymentGateway.CreatedDepositPayment.ItemName.ShouldBe(
+            $"Deposit booking CB-20260620-{request.Id.ToString("N")[^6..].ToUpperInvariant()}");
         result.Ticket.ShouldBeNull();
         context.CustomBookingTickets.Count().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task AcceptQuoteCanCreateFullPaymentLinkWhenCustomerChoosesFull()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var now = new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Quoted;
+        request.AssignedVessel = ValidVessel();
+        request.AssignedVesselId = request.AssignedVessel.Id;
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            QuotedPrice = 5000000m,
+            DepositPercent = 50m,
+            DepositAmount = 2500000m,
+            RemainingAmount = 2500000m,
+            Currency = "VND",
+            ValidUntil = now.AddHours(1)
+        };
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var paymentGateway = new TestCustomBookingPaymentGateway();
+        var result = await new AcceptCustomBookingQuoteCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(now),
+                paymentGateway)
+            .Handle(
+                new AcceptCustomBookingQuoteCommand(request.Id, CustomBookingQuotePaymentOption.Full),
+                CancellationToken.None);
+
+        result.Status.ShouldBe(CustomBookingRequestStatus.Quoted);
+        result.Quote!.DepositPercent.ShouldBe(100m);
+        result.Quote.DepositAmount.ShouldBe(5000000m);
+        result.Quote.RemainingAmount.ShouldBe(0m);
+        result.Quote.DepositPaymentStatus.ShouldBe(CustomBookingDepositPaymentStatus.Pending);
+        result.Quote.DepositPaymentCheckoutUrl.ShouldBe("https://payos.test/checkout");
+        paymentGateway.CreatedDepositPayment.ShouldNotBeNull();
+        paymentGateway.CreatedDepositPayment.Amount.ShouldBe(5000000);
+        paymentGateway.CreatedDepositPayment.Description.ShouldBe($"260620{request.Id.ToString("N")[^3..].ToUpperInvariant()}");
+        paymentGateway.CreatedDepositPayment.Description.Length.ShouldBe(9);
+        paymentGateway.CreatedDepositPayment.ItemName.ShouldBe(
+            $"Full payment CB-20260620-{request.Id.ToString("N")[^6..].ToUpperInvariant()}");
+    }
+
+    [Test]
+    public async Task AcceptQuoteCanApplyCustomerDiscountCodeBeforeCreatingPaymentLink()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var now = new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Quoted;
+        request.AssignedVessel = ValidVessel();
+        request.AssignedVesselId = request.AssignedVessel.Id;
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            QuotedPrice = 5000000m,
+            DepositPercent = 50m,
+            DepositAmount = 2500000m,
+            RemainingAmount = 2500000m,
+            Currency = "VND",
+            ValidUntil = now.AddHours(1)
+        };
+        context.Add(request);
+        context.Add(new Promotion
+        {
+            PromotionCode = "WELCOME10",
+            PromotionName = "Welcome 10",
+            PromotionType = PromotionType.Percent,
+            DiscountValue = 10m,
+            ValidFrom = now.AddDays(-1),
+            ValidTo = now.AddDays(1),
+            Status = "Active"
+        });
+        await context.SaveChangesAsync();
+
+        var paymentGateway = new TestCustomBookingPaymentGateway();
+        var result = await new AcceptCustomBookingQuoteCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(now),
+                paymentGateway)
+            .Handle(
+                new AcceptCustomBookingQuoteCommand(
+                    request.Id,
+                    CustomBookingQuotePaymentOption.Deposit,
+                    "welcome10"),
+                CancellationToken.None);
+
+        result.Quote!.DiscountCode.ShouldBe("WELCOME10");
+        result.Quote.DiscountAmount.ShouldBe(500000m);
+        result.Quote.QuotedPrice.ShouldBe(4500000m);
+        result.Quote.DepositAmount.ShouldBe(2250000m);
+        result.Quote.RemainingAmount.ShouldBe(2250000m);
+        result.Quote.DepositPaymentStatus.ShouldBe(CustomBookingDepositPaymentStatus.Pending);
+        paymentGateway.CreatedDepositPayment.ShouldNotBeNull();
+        paymentGateway.CreatedDepositPayment.Amount.ShouldBe(2250000);
     }
 
     [Test]
@@ -759,9 +868,21 @@ public class CustomBookingWorkflowTests
             RemainingAmount = 2500000m,
             Currency = "VND",
             DepositPaymentStatus = CustomBookingDepositPaymentStatus.Pending,
-            DepositPaymentOrderCode = 123456
+            DepositPaymentOrderCode = 123456,
+            DiscountCode = "WELCOME10",
+            DiscountAmount = 500000m
         };
         context.Add(request);
+        context.Add(new Promotion
+        {
+            PromotionCode = "WELCOME10",
+            PromotionName = "Welcome 10",
+            PromotionType = PromotionType.Percent,
+            DiscountValue = 10m,
+            ValidFrom = new DateTimeOffset(2026, 6, 17, 1, 0, 0, TimeSpan.Zero),
+            ValidTo = new DateTimeOffset(2026, 6, 19, 1, 0, 0, TimeSpan.Zero),
+            Status = "Active"
+        });
         await context.SaveChangesAsync();
 
         var result = await new HandleCustomBookingDepositPaymentWebhookCommandHandler(
@@ -779,6 +900,7 @@ public class CustomBookingWorkflowTests
         storedRequest.QuoteAcceptedAt.ShouldBe(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero));
         storedRequest.Quote!.DepositPaymentStatus.ShouldBe(CustomBookingDepositPaymentStatus.Paid);
         storedRequest.Quote.DepositPaymentPaidAt.ShouldBe(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero));
+        context.Set<Promotion>().Single(x => x.PromotionCode == "WELCOME10").UsageCount.ShouldBe(1);
     }
 
     [Test]
@@ -818,6 +940,10 @@ public class CustomBookingWorkflowTests
         result.Quote.RemainingPaymentCheckoutUrl.ShouldBe("https://payos.test/checkout");
         paymentGateway.CreatedDepositPayment.ShouldNotBeNull();
         paymentGateway.CreatedDepositPayment.Amount.ShouldBe(500000);
+        paymentGateway.CreatedDepositPayment.Description.ShouldBe($"260620{request.Id.ToString("N")[^3..].ToUpperInvariant()}");
+        paymentGateway.CreatedDepositPayment.Description.Length.ShouldBe(9);
+        paymentGateway.CreatedDepositPayment.ItemName.ShouldBe(
+            $"Balance booking CB-20260620-{request.Id.ToString("N")[^6..].ToUpperInvariant()}");
     }
 
     [Test]
@@ -942,6 +1068,8 @@ public class CustomBookingWorkflowTests
             CustomBookingRequestId = request.Id,
             CustomBookingRequest = request,
             QuotedPrice = 1000000m,
+            DiscountCode = "WELCOME10",
+            DiscountAmount = 100000m,
             DepositPercent = 100m,
             DepositAmount = 1000000m,
             RemainingAmount = 0m,
@@ -950,6 +1078,17 @@ public class CustomBookingWorkflowTests
             DepositPaymentPaidAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)
         };
         context.Add(request);
+        context.Add(new Promotion
+        {
+            PromotionCode = "WELCOME10",
+            PromotionName = "Welcome 10",
+            PromotionType = PromotionType.Percent,
+            DiscountValue = 10m,
+            UsageCount = 1,
+            ValidFrom = new DateTimeOffset(2026, 6, 15, 0, 0, 0, TimeSpan.Zero),
+            ValidTo = new DateTimeOffset(2026, 6, 21, 0, 0, 0, TimeSpan.Zero),
+            Status = "Active"
+        });
         await context.SaveChangesAsync();
         var paymentGateway = new TestCustomBookingPaymentGateway();
 
@@ -975,6 +1114,7 @@ public class CustomBookingWorkflowTests
         quote.RefundAmount.ShouldBe(1000000m);
         quote.RefundStatus.ShouldBe("Created");
         quote.RefundReferenceId.ShouldNotBeNullOrWhiteSpace();
+        context.Set<Promotion>().Single(x => x.PromotionCode == "WELCOME10").UsageCount.ShouldBe(0);
     }
 
     [Test]

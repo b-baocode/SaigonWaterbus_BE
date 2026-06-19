@@ -113,11 +113,11 @@ public sealed class CreateCustomBookingRemainingPaymentCommandHandler
                 new CustomBookingDepositPaymentRequest(
                     orderCode,
                     amount,
-                    CustomBookingPaymentSupport.CreatePaymentDescription(orderCode),
+                    CustomBookingPaymentSupport.CreatePaymentDescription(customRequest),
                     customRequest.ContactName,
                     customRequest.ContactEmail,
                     customRequest.ContactPhone,
-                    $"Thanh toan con lai {customRequest.Id.ToString("N")[..8].ToUpperInvariant()}",
+                    $"Balance booking {CustomBookingPaymentSupport.CreateBookingReference(customRequest)}",
                     paymentExpiredAt),
                 cancellationToken);
         }
