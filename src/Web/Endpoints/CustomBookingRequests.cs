@@ -330,6 +330,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "discountCode optional. Nếu khách nhập mã hợp lệ, backend tính lại giá sau giảm trước khi tạo link PayOS.",
                 "Sau khi chấp nhận, backend tạo link thanh toán PayOS cho tiền cọc và trả quote.depositPaymentCheckoutUrl.",
                 "Nếu paymentOption=Full, backend tạo link thanh toán 100% ngay ở quote.depositPaymentCheckoutUrl và quote.remainingAmount=0.",
+                "Backend lưu quote.depositPaymentOrderCode trước khi gọi PayOS; nếu PayOS đã tạo link nhưng response lỗi, backend tự đối soát orderCode và trả lại link nếu tìm thấy.",
                 "Sau khi tạo link đặt cọc, booking vẫn status=Quoted và quote.depositPaymentStatus=Pending.",
                 "Chỉ webhook PayOS hợp lệ, success và đúng amount mới chuyển booking sang Confirmed.",
                 "Bước này chưa tạo/gửi QR. QR chỉ phát sau khi khách đã hoàn tất danh sách hành khách.",
@@ -344,6 +345,7 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Chỉ tạo link sau khi booking Confirmed và tiền cọc đã Paid.",
                 "Nếu quote.remainingAmount > 0, khách phải thanh toán phần còn lại trước 24 giờ so với giờ khởi hành.",
                 "Backend trả quote.remainingPaymentCheckoutUrl và giữ quote.remainingPaymentStatus=Pending cho đến khi webhook PayOS xác nhận.",
+                "Backend lưu quote.remainingPaymentOrderCode trước khi gọi PayOS; nếu PayOS đã tạo link nhưng response lỗi, backend tự đối soát orderCode và trả lại link nếu tìm thấy.",
                 "QR, cấp lại QR và scan/check-in bị khóa cho đến khi booking đã thanh toán đủ."));
 
         group.MapPost(HandleCustomBookingDepositPaymentWebhook, "payments/payos/webhook")
@@ -366,6 +368,8 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 SyncPayOsPaymentExample,
                 "FE gọi API này trên trang payment success/cancel bằng orderCode PayOS nhận từ query string.",
                 "Backend gọi PayOS để lấy trạng thái thật của payment request.",
+                "Nếu DB đã có orderCode nhưng chưa có checkoutUrl do lỗi response lúc tạo link, API này cũng backfill paymentLinkId/checkoutUrl khi PayOS trả về.",
+                "Nếu PayOS trả CANCELLED hoặc EXPIRED, backend cập nhật payment status tương ứng để không bị kẹt Pending.",
                 "Nếu PayOS trả PAID và amount khớp DB, backend cập nhật deposit/remaining payment sang Paid.",
                 "Nếu là thanh toán cọc hoặc thanh toán full ở bước accept quote, booking chuyển sang Confirmed."));
 
@@ -468,6 +472,16 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Chỉ dùng khi booking đã Cancelled, refundAmount > 0 và refundStatus=Failed.",
                 "Dùng để nhập lại đúng ngân hàng/số tài khoản/tên chủ tài khoản sau khi lệnh hoàn tiền PayOS bị lỗi.",
                 "Backend tạo lại refundReferenceId mới rồi gọi PayOS payout lại."));
+
+        group.MapPost(SyncCustomBookingRefund, "{id:guid}/refund/sync")
+            .RequireAuthorization()
+            .WithSummary("Đối soát trạng thái hoàn tiền PayOS")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer là chủ yêu cầu hoặc Admin",
+                null,
+                "Chỉ dùng khi booking đã Cancelled và đã có refundReferenceId.",
+                "Backend không tạo lệnh chi mới, chỉ gọi PayOS để tìm lệnh chi theo refundReferenceId hiện tại.",
+                "Nếu PayOS đã có lệnh chi, backend cập nhật refundStatus/refundPayoutId/refundFailureReason theo kết quả PayOS."));
 
         group.MapGet(GetCustomBookingManagerCandidates, "{id:guid}/manager-candidates")
             .RequireAuthorization()
@@ -885,6 +899,12 @@ public sealed class CustomBookingRequests : IEndpointGroup
             request.RefundBankBin,
             request.RefundAccountNumber,
             request.RefundAccountName), ct));
+
+    private static async Task<IResult> SyncCustomBookingRefund(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new SyncCustomBookingRefundCommand(id), ct));
 
     private static async Task<IResult> GetCustomBookingManagerCandidates(
         ISender sender,

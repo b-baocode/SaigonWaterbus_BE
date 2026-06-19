@@ -25,7 +25,8 @@ public sealed record CustomBookingPaymentStatusResult(
     long OrderCode,
     long? Amount,
     string Status,
-    string? PaymentLinkId);
+    string? PaymentLinkId,
+    string? CheckoutUrl = null);
 
 public sealed record CustomBookingRefundPayoutRequest(
     string ReferenceId,
@@ -39,7 +40,9 @@ public sealed record CustomBookingRefundPayoutRequest(
 public sealed record CustomBookingRefundPayoutResult(
     string? PayoutId,
     string Status,
-    string? Description);
+    string? Description,
+    string? ReferenceId = null,
+    long? Amount = null);
 
 public sealed record CustomBookingDepositPaymentWebhook(
     string Code,
@@ -83,6 +86,10 @@ public interface ICustomBookingPaymentGateway
 
     Task<CustomBookingRefundPayoutResult> CreateRefundPayoutAsync(
         CustomBookingRefundPayoutRequest request,
+        CancellationToken cancellationToken);
+
+    Task<CustomBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdAsync(
+        string referenceId,
         CancellationToken cancellationToken);
 
     bool IsValidWebhook(CustomBookingDepositPaymentWebhook webhook);

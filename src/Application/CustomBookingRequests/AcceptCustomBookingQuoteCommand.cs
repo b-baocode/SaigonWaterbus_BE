@@ -27,17 +27,20 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
 
     public AcceptCustomBookingQuoteCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        ICustomBookingPaymentGateway paymentGateway)
+        ICustomBookingPaymentGateway paymentGateway,
+        ICustomBookingQuoteEmailSender quoteEmailSender)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _paymentGateway = paymentGateway;
+        _quoteEmailSender = quoteEmailSender;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -119,6 +122,20 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
             nameof(quote.DepositAmount),
             "Số tiền đặt cọc phải là số nguyên VND lớn hơn 0.");
         var paymentExpiredAt = ResolvePaymentExpiredAt(quote.ValidUntil, customRequest);
+        customRequest.Status = CustomBookingRequestStatus.Quoted;
+        customRequest.StatusReason = null;
+        customRequest.QuoteAcceptedAt = null;
+        quote.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Pending;
+        quote.DepositPaymentOrderCode = orderCode;
+        quote.DepositPaymentLinkId = null;
+        quote.DepositPaymentCheckoutUrl = null;
+        quote.DepositPaymentQrCode = null;
+        quote.DepositPaymentCreatedAt = now;
+        quote.DepositPaymentPaidAt = null;
+        quote.DepositPaymentCancelledAt = null;
+        quote.DepositPaymentFailureReason = null;
+        await _context.SaveChangesAsync(cancellationToken);
+
         CustomBookingDepositPaymentResult paymentResult;
         try
         {
@@ -138,20 +155,25 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
         }
         catch (PaymentGatewayException ex)
         {
+            var recovered = await TryRecoverCreatedPaymentAsync(
+                quote,
+                orderCode,
+                amount,
+                cancellationToken);
+            if (recovered)
+            {
+                return CustomBookingRequestDto.From(customRequest, routeSegments);
+            }
+
+            quote.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Failed;
+            quote.DepositPaymentFailureReason = ex.Message;
+            await _context.SaveChangesAsync(cancellationToken);
             throw AuthSupport.CreateValidationException("payment", ex.Message);
         }
 
-        customRequest.Status = CustomBookingRequestStatus.Quoted;
-        customRequest.StatusReason = null;
-        customRequest.QuoteAcceptedAt = null;
-        quote.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Pending;
-        quote.DepositPaymentOrderCode = orderCode;
         quote.DepositPaymentLinkId = paymentResult.PaymentLinkId;
         quote.DepositPaymentCheckoutUrl = paymentResult.CheckoutUrl;
         quote.DepositPaymentQrCode = paymentResult.QrCode;
-        quote.DepositPaymentCreatedAt = now;
-        quote.DepositPaymentPaidAt = null;
-        quote.DepositPaymentCancelledAt = null;
         quote.DepositPaymentFailureReason = null;
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -250,4 +272,96 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
         string.IsNullOrWhiteSpace(discountCode)
             ? null
             : discountCode.Trim().ToUpperInvariant();
+
+    private async Task<bool> TryRecoverCreatedPaymentAsync(
+        CustomBookingQuote quote,
+        long orderCode,
+        long expectedAmount,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var payment = await _paymentGateway.GetPaymentAsync(orderCode, cancellationToken);
+            if (payment.OrderCode != orderCode
+                || !payment.Amount.HasValue
+                || payment.Amount.Value != expectedAmount)
+            {
+                return false;
+            }
+
+            quote.DepositPaymentStatus = ResolveRecoveredPaymentStatus(payment.Status);
+            quote.DepositPaymentLinkId = payment.PaymentLinkId;
+            quote.DepositPaymentCheckoutUrl = payment.CheckoutUrl;
+            quote.DepositPaymentFailureReason = null;
+            if (quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Paid)
+            {
+                quote.DepositPaymentPaidAt ??= _timeProvider.GetUtcNow();
+                quote.CustomBookingRequest.Status = CustomBookingRequestStatus.Confirmed;
+                quote.CustomBookingRequest.QuoteAcceptedAt ??= _timeProvider.GetUtcNow();
+                await IncrementPromotionUsageAsync(quote, cancellationToken);
+            }
+            else if (quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Cancelled)
+            {
+                quote.DepositPaymentCancelledAt ??= _timeProvider.GetUtcNow();
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            if (quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Paid)
+            {
+                await SendPaymentConfirmationEmailAsync(quote.CustomBookingRequest.Id, cancellationToken);
+            }
+
+            return true;
+        }
+        catch (PaymentGatewayException)
+        {
+            return false;
+        }
+    }
+
+    private async Task IncrementPromotionUsageAsync(
+        CustomBookingQuote quote,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(quote.DiscountCode))
+        {
+            return;
+        }
+
+        var promotion = await _context.Set<Promotion>()
+            .SingleOrDefaultAsync(x => x.PromotionCode == quote.DiscountCode, cancellationToken);
+        if (promotion is not null)
+        {
+            promotion.UsageCount++;
+        }
+    }
+
+    private async Task SendPaymentConfirmationEmailAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
+            .SingleAsync(x => x.Id == requestId, cancellationToken);
+        await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
+    }
+
+    private static CustomBookingDepositPaymentStatus ResolveRecoveredPaymentStatus(string status)
+    {
+        if (string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase))
+        {
+            return CustomBookingDepositPaymentStatus.Paid;
+        }
+
+        if (string.Equals(status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+        {
+            return CustomBookingDepositPaymentStatus.Cancelled;
+        }
+
+        if (string.Equals(status, "EXPIRED", StringComparison.OrdinalIgnoreCase))
+        {
+            return CustomBookingDepositPaymentStatus.Expired;
+        }
+
+        return CustomBookingDepositPaymentStatus.Pending;
+    }
 }

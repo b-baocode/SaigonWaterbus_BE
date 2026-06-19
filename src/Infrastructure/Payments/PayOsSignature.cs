@@ -29,7 +29,7 @@ internal static class PayOsSignature
             '&',
             data
                 .OrderBy(x => x.Key, StringComparer.Ordinal)
-                .Select(x => $"{Uri.EscapeDataString(x.Key)}={Uri.EscapeDataString(FormatPayoutSignatureValue(x.Value))}"));
+                .Select(x => $"{x.Key}={FormatPayoutSignatureValue(x.Value)}"));
         return HmacSha256(queryString, checksumKey);
     }
 

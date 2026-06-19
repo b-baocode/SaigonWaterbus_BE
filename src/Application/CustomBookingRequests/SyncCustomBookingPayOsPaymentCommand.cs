@@ -86,6 +86,9 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
             : CustomBookingPaymentKind.Remaining;
         if (!string.Equals(payment.Status, "PAID", StringComparison.OrdinalIgnoreCase))
         {
+            StorePaymentLinkIfAvailable(quote, paymentKind, payment);
+            MarkTerminalPaymentStatusIfNeeded(quote, paymentKind, payment.Status);
+            await _context.SaveChangesAsync(cancellationToken);
             return await LoadResultAsync(customRequest.Id, cancellationToken);
         }
 
@@ -191,6 +194,30 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
         }
     }
 
+    private static void StorePaymentLinkIfAvailable(
+        CustomBookingQuote quote,
+        CustomBookingPaymentKind paymentKind,
+        CustomBookingPaymentStatusResult payment)
+    {
+        if (paymentKind == CustomBookingPaymentKind.Deposit)
+        {
+            quote.DepositPaymentLinkId = string.IsNullOrWhiteSpace(payment.PaymentLinkId)
+                ? quote.DepositPaymentLinkId
+                : payment.PaymentLinkId;
+            quote.DepositPaymentCheckoutUrl = string.IsNullOrWhiteSpace(payment.CheckoutUrl)
+                ? quote.DepositPaymentCheckoutUrl
+                : payment.CheckoutUrl;
+            return;
+        }
+
+        quote.RemainingPaymentLinkId = string.IsNullOrWhiteSpace(payment.PaymentLinkId)
+            ? quote.RemainingPaymentLinkId
+            : payment.PaymentLinkId;
+        quote.RemainingPaymentCheckoutUrl = string.IsNullOrWhiteSpace(payment.CheckoutUrl)
+            ? quote.RemainingPaymentCheckoutUrl
+            : payment.CheckoutUrl;
+    }
+
     private static void MarkPaymentFailed(
         CustomBookingQuote quote,
         CustomBookingPaymentKind paymentKind,
@@ -205,6 +232,56 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
 
         quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Failed;
         quote.RemainingPaymentFailureReason = reason;
+    }
+
+    private void MarkTerminalPaymentStatusIfNeeded(
+        CustomBookingQuote quote,
+        CustomBookingPaymentKind paymentKind,
+        string status)
+    {
+        if (string.Equals(status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+        {
+            MarkPaymentCancelled(quote, paymentKind);
+            return;
+        }
+
+        if (string.Equals(status, "EXPIRED", StringComparison.OrdinalIgnoreCase))
+        {
+            MarkPaymentExpired(quote, paymentKind);
+        }
+    }
+
+    private void MarkPaymentCancelled(
+        CustomBookingQuote quote,
+        CustomBookingPaymentKind paymentKind)
+    {
+        var now = _timeProvider.GetUtcNow();
+        if (paymentKind == CustomBookingPaymentKind.Deposit)
+        {
+            quote.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Cancelled;
+            quote.DepositPaymentCancelledAt ??= now;
+            quote.DepositPaymentFailureReason = null;
+            return;
+        }
+
+        quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Cancelled;
+        quote.RemainingPaymentCancelledAt ??= now;
+        quote.RemainingPaymentFailureReason = null;
+    }
+
+    private static void MarkPaymentExpired(
+        CustomBookingQuote quote,
+        CustomBookingPaymentKind paymentKind)
+    {
+        if (paymentKind == CustomBookingPaymentKind.Deposit)
+        {
+            quote.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Expired;
+            quote.DepositPaymentFailureReason = null;
+            return;
+        }
+
+        quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Expired;
+        quote.RemainingPaymentFailureReason = null;
     }
 
     private static CustomBookingDepositPaymentStatus GetPaymentStatus(

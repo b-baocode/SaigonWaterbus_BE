@@ -162,8 +162,7 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                     body));
             }
 
-            var result = await response.Content.ReadFromJsonAsync<PayOsApiResponse<PayOsCreatePayoutData>>(
-                cancellationToken);
+            var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsCreatePayoutData>>(body);
             if (result?.Code != "00" || result.Data is null)
             {
                 _logger.LogWarning(
@@ -174,21 +173,49 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                 throw new PaymentGatewayException(result?.Desc ?? "Không tạo được lệnh hoàn tiền PayOS.");
             }
 
-            return new CustomBookingRefundPayoutResult(
-                result.Data.Id,
-                result.Data.ApprovalState
-                    ?? result.Data.Transactions?.Values.FirstOrDefault()?.State
-                    ?? "Created",
-                result.Desc);
+            return ToRefundPayoutResult(result.Data, result.Desc);
         }
         catch (PaymentGatewayException)
         {
+            var reconciled = await TryGetRefundPayoutByReferenceIdAsync(
+                options,
+                payoutCredentials,
+                request.ReferenceId,
+                cancellationToken);
+            if (reconciled is not null)
+            {
+                return reconciled;
+            }
+
             throw;
         }
         catch (Exception ex)
         {
+            var reconciled = await TryGetRefundPayoutByReferenceIdAsync(
+                options,
+                payoutCredentials,
+                request.ReferenceId,
+                cancellationToken);
+            if (reconciled is not null)
+            {
+                return reconciled;
+            }
+
             throw new PaymentGatewayException("Không tạo được lệnh hoàn tiền PayOS.", ex);
         }
+    }
+
+    public async Task<CustomBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdAsync(
+        string referenceId,
+        CancellationToken cancellationToken)
+    {
+        var options = GetEnabledOptions();
+        var payoutCredentials = GetPayoutCredentials(options);
+        return await GetRefundPayoutByReferenceIdCoreAsync(
+            options,
+            payoutCredentials,
+            referenceId,
+            cancellationToken);
     }
 
     public async Task<CustomBookingPaymentCancellationResult> CancelPaymentAsync(
@@ -303,7 +330,8 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                 result.Data.OrderCode ?? orderCode,
                 result.Data.Amount,
                 result.Data.Status,
-                result.Data.Id ?? result.Data.PaymentLinkId);
+                result.Data.Id ?? result.Data.PaymentLinkId,
+                result.Data.CheckoutUrl);
         }
         catch (PaymentGatewayException)
         {
@@ -396,6 +424,110 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         string.IsNullOrEmpty(value) || value.Length <= maxLength
             ? value
             : value[..maxLength];
+
+    private async Task<CustomBookingRefundPayoutResult?> TryGetRefundPayoutByReferenceIdAsync(
+        PayOsOptions options,
+        PayOsCredentials payoutCredentials,
+        string referenceId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await GetRefundPayoutByReferenceIdCoreAsync(
+                options,
+                payoutCredentials,
+                referenceId,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            _logger.LogWarning(
+                ex,
+                "PayOS refund payout reconciliation failed after create failure. ReferenceId: {ReferenceId}",
+                referenceId);
+            return null;
+        }
+    }
+
+    private async Task<CustomBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdCoreAsync(
+        PayOsOptions options,
+        PayOsCredentials payoutCredentials,
+        string referenceId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var client = _httpClientFactory.CreateClient(HttpClientName);
+            var query = $"limit=1&offset=0&referenceId={Uri.EscapeDataString(referenceId)}";
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Get,
+                $"{options.ApiBaseUrl.TrimEnd('/')}/v1/payouts?{query}");
+            httpRequest.Headers.TryAddWithoutValidation("x-client-id", payoutCredentials.ClientId);
+            httpRequest.Headers.TryAddWithoutValidation("x-api-key", payoutCredentials.ApiKey);
+            if (!string.IsNullOrWhiteSpace(payoutCredentials.PartnerCode))
+            {
+                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", payoutCredentials.PartnerCode);
+            }
+
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+
+            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "PayOS get refund payout failed. ReferenceId: {ReferenceId}, Status: {StatusCode}, Body: {Body}",
+                    referenceId,
+                    (int)response.StatusCode,
+                    Truncate(body, 500));
+                throw new PaymentGatewayException(CreatePayOsErrorMessage(
+                    "Không kiểm tra được trạng thái hoàn tiền PayOS",
+                    response.StatusCode,
+                    body));
+            }
+
+            var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsPayoutListData>>(body);
+            if (result?.Code != "00" || result.Data is null)
+            {
+                _logger.LogWarning(
+                    "PayOS get refund payout returned business error. ReferenceId: {ReferenceId}, Code: {Code}, Desc: {Desc}",
+                    referenceId,
+                    result?.Code,
+                    result?.Desc);
+                throw new PaymentGatewayException(result?.Desc ?? "Không kiểm tra được trạng thái hoàn tiền PayOS.");
+            }
+
+            var payout = result.Data.Payouts?.Values.FirstOrDefault(x =>
+                string.Equals(x.ReferenceId, referenceId, StringComparison.OrdinalIgnoreCase))
+                ?? result.Data.Payouts?.Values.FirstOrDefault();
+            return payout is null
+                ? null
+                : ToRefundPayoutResult(payout, result.Desc);
+        }
+        catch (PaymentGatewayException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new PaymentGatewayException("Không kiểm tra được trạng thái hoàn tiền PayOS.", ex);
+        }
+    }
+
+    private static CustomBookingRefundPayoutResult ToRefundPayoutResult(
+        PayOsCreatePayoutData data,
+        string? description)
+    {
+        var transaction = data.Transactions?.Values.FirstOrDefault();
+        return new CustomBookingRefundPayoutResult(
+            data.Id,
+            data.ApprovalState
+                ?? transaction?.State
+                ?? "Created",
+            description,
+            data.ReferenceId ?? transaction?.ReferenceId,
+            transaction?.Amount);
+    }
 
     private static string CreatePayOsErrorMessage(
         string fallbackMessage,
@@ -521,18 +653,30 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         long? Amount,
         [property: JsonPropertyName("paymentLinkId")]
         string? PaymentLinkId,
+        [property: JsonPropertyName("checkoutUrl")]
+        string? CheckoutUrl,
         [property: JsonPropertyName("status")]
         string Status);
 
     private sealed record PayOsCreatePayoutData(
         [property: JsonPropertyName("id")]
         string? Id,
+        [property: JsonPropertyName("referenceId")]
+        string? ReferenceId,
         [property: JsonPropertyName("approvalState")]
         string? ApprovalState,
         [property: JsonPropertyName("transactions")]
         IReadOnlyDictionary<string, PayOsPayoutTransaction>? Transactions);
 
+    private sealed record PayOsPayoutListData(
+        [property: JsonPropertyName("payouts")]
+        IReadOnlyDictionary<string, PayOsCreatePayoutData>? Payouts);
+
     private sealed record PayOsPayoutTransaction(
+        [property: JsonPropertyName("referenceId")]
+        string? ReferenceId,
+        [property: JsonPropertyName("amount")]
+        long? Amount,
         [property: JsonPropertyName("state")]
         string? State);
 }

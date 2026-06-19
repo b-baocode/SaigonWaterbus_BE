@@ -106,6 +106,17 @@ public sealed class CreateCustomBookingRemainingPaymentCommandHandler
             nameof(quote.RemainingAmount),
             "Số tiền còn lại phải là số nguyên VND lớn hơn 0.");
 
+        quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Pending;
+        quote.RemainingPaymentOrderCode = orderCode;
+        quote.RemainingPaymentLinkId = null;
+        quote.RemainingPaymentCheckoutUrl = null;
+        quote.RemainingPaymentQrCode = null;
+        quote.RemainingPaymentCreatedAt = now;
+        quote.RemainingPaymentPaidAt = null;
+        quote.RemainingPaymentCancelledAt = null;
+        quote.RemainingPaymentFailureReason = null;
+        await _context.SaveChangesAsync(cancellationToken);
+
         CustomBookingDepositPaymentResult paymentResult;
         try
         {
@@ -123,21 +134,87 @@ public sealed class CreateCustomBookingRemainingPaymentCommandHandler
         }
         catch (PaymentGatewayException ex)
         {
+            var recovered = await TryRecoverCreatedPaymentAsync(
+                quote,
+                orderCode,
+                amount,
+                cancellationToken);
+            if (recovered)
+            {
+                return CustomBookingRequestDto.From(customRequest, routeSegments);
+            }
+
+            quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Failed;
+            quote.RemainingPaymentFailureReason = ex.Message;
+            await _context.SaveChangesAsync(cancellationToken);
             throw AuthSupport.CreateValidationException("payment", ex.Message);
         }
 
-        quote.RemainingPaymentStatus = CustomBookingDepositPaymentStatus.Pending;
-        quote.RemainingPaymentOrderCode = orderCode;
         quote.RemainingPaymentLinkId = paymentResult.PaymentLinkId;
         quote.RemainingPaymentCheckoutUrl = paymentResult.CheckoutUrl;
         quote.RemainingPaymentQrCode = paymentResult.QrCode;
-        quote.RemainingPaymentCreatedAt = now;
-        quote.RemainingPaymentPaidAt = null;
-        quote.RemainingPaymentCancelledAt = null;
         quote.RemainingPaymentFailureReason = null;
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return CustomBookingRequestDto.From(customRequest, routeSegments);
+    }
+
+    private async Task<bool> TryRecoverCreatedPaymentAsync(
+        CustomBookingQuote quote,
+        long orderCode,
+        long expectedAmount,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var payment = await _paymentGateway.GetPaymentAsync(orderCode, cancellationToken);
+            if (payment.OrderCode != orderCode
+                || !payment.Amount.HasValue
+                || payment.Amount.Value != expectedAmount)
+            {
+                return false;
+            }
+
+            quote.RemainingPaymentStatus = ResolveRecoveredPaymentStatus(payment.Status);
+            quote.RemainingPaymentLinkId = payment.PaymentLinkId;
+            quote.RemainingPaymentCheckoutUrl = payment.CheckoutUrl;
+            quote.RemainingPaymentFailureReason = null;
+            if (quote.RemainingPaymentStatus == CustomBookingDepositPaymentStatus.Paid)
+            {
+                quote.RemainingPaymentPaidAt ??= _timeProvider.GetUtcNow();
+            }
+            else if (quote.RemainingPaymentStatus == CustomBookingDepositPaymentStatus.Cancelled)
+            {
+                quote.RemainingPaymentCancelledAt ??= _timeProvider.GetUtcNow();
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            return true;
+        }
+        catch (PaymentGatewayException)
+        {
+            return false;
+        }
+    }
+
+    private static CustomBookingDepositPaymentStatus ResolveRecoveredPaymentStatus(string status)
+    {
+        if (string.Equals(status, "PAID", StringComparison.OrdinalIgnoreCase))
+        {
+            return CustomBookingDepositPaymentStatus.Paid;
+        }
+
+        if (string.Equals(status, "CANCELLED", StringComparison.OrdinalIgnoreCase))
+        {
+            return CustomBookingDepositPaymentStatus.Cancelled;
+        }
+
+        if (string.Equals(status, "EXPIRED", StringComparison.OrdinalIgnoreCase))
+        {
+            return CustomBookingDepositPaymentStatus.Expired;
+        }
+
+        return CustomBookingDepositPaymentStatus.Pending;
     }
 }
