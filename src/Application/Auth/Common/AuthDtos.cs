@@ -4,6 +4,13 @@ namespace SaigonWaterbus.Application.Auth.Common;
 
 public sealed record AuthRoleDto(string Code, string SystemName, string DisplayName);
 
+public sealed record AuthStationAssignmentDto(
+    Guid StationId,
+    string StationCode,
+    string StationName,
+    bool IsPrimary,
+    bool IsActive);
+
 public sealed record AuthUserDto(
     Guid Id,
     string? Code,
@@ -17,7 +24,8 @@ public sealed record AuthUserDto(
     string? AvatarUrl,
     AvatarSource AvatarSource,
     UserStatus Status,
-    IReadOnlyCollection<AuthRoleDto> Roles);
+    IReadOnlyCollection<AuthRoleDto> Roles,
+    IReadOnlyCollection<AuthStationAssignmentDto> StationAssignments);
 
 public sealed record AuthTokensDto(
     string AccessToken,

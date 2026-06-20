@@ -275,7 +275,7 @@ public sealed class Vessels : IEndpointGroup
                 ?? SeatSetupType.FullStandard,
             RentalPrices: CreateRentalPricesFromForm(form),
             ImageUrls: GetFormValues(form, "imageUrls"),
-            ImageFiles: CreateImageFilesFromForm(form));
+            ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken));
     }
 
     private static async Task<UpdateVesselRequest> UpdateVesselRequestFromJsonAsync(
@@ -319,7 +319,7 @@ public sealed class Vessels : IEndpointGroup
             GetFormValue(form, "imageUrl"),
             SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType")),
             ImageUrls: GetFormValues(form, "imageUrls"),
-            ImageFiles: CreateImageFilesFromForm(form));
+            ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken));
     }
 
     private static string? GetFormValue(IFormCollection form, string name)
@@ -353,16 +353,20 @@ public sealed class Vessels : IEndpointGroup
         }
     }
 
-    private static IReadOnlyCollection<VesselImageFileRequest>? CreateImageFilesFromForm(IFormCollection form)
+    private static async Task<IReadOnlyCollection<VesselImageFileRequest>?> CreateImageFilesFromFormAsync(
+        IFormCollection form,
+        CancellationToken cancellationToken)
     {
-        var files = form.Files.GetFiles("images")
-            .Concat(form.Files.GetFiles("Images"))
-            .Concat(form.Files.GetFiles("images[]"))
+        var files = form.Files
+            .Where(file =>
+                string.Equals(file.Name, "images", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(file.Name, "images[]", StringComparison.OrdinalIgnoreCase))
             .ToList();
 
         if (files.Count == 0)
         {
-            var singleFile = form.Files["image"] ?? form.Files["Image"];
+            var singleFile = form.Files.FirstOrDefault(file =>
+                string.Equals(file.Name, "image", StringComparison.OrdinalIgnoreCase));
             if (singleFile is not null)
             {
                 files.Add(singleFile);
@@ -371,13 +375,27 @@ public sealed class Vessels : IEndpointGroup
 
         return files.Count == 0
             ? null
-            : files
-                .Select(file => new VesselImageFileRequest(
-                    file.FileName,
-                    file.ContentType,
-                    file.Length,
-                    file.OpenReadStream()))
-                .ToArray();
+            : await CopyImageFilesAsync(files, cancellationToken);
+    }
+
+    private static async Task<IReadOnlyCollection<VesselImageFileRequest>> CopyImageFilesAsync(
+        IReadOnlyCollection<IFormFile> files,
+        CancellationToken cancellationToken)
+    {
+        var copiedFiles = new List<VesselImageFileRequest>(files.Count);
+        foreach (var file in files)
+        {
+            var content = new MemoryStream();
+            await file.CopyToAsync(content, cancellationToken);
+            content.Position = 0;
+            copiedFiles.Add(new VesselImageFileRequest(
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                content));
+        }
+
+        return copiedFiles;
     }
 
     private static void DisposeImageStreams(CreateVesselRequest command)

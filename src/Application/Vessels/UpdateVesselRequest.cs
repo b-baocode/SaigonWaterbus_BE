@@ -280,7 +280,11 @@ public sealed class UpdateVesselRequestUseCase
 
                     vesselImage.Url = uploadedImage.Url;
                     vesselImage.PublicId = uploadedImage.PublicId;
-                    vessel.Images.Add(vesselImage);
+                    _context.VesselImages.Add(vesselImage);
+                    if (!vessel.Images.Contains(vesselImage))
+                    {
+                        vessel.Images.Add(vesselImage);
+                    }
                 }
 
                 VesselSupport.SyncPrimaryImage(vessel);

@@ -58,6 +58,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             tripStops.Add(new TripStop
             {
                 RouteStopId = routeStop.Id,
+                RouteStop = routeStop,
                 StopOrder = routeStop.StopOrder,
                 ScheduledArrival = scheduledArrival,
                 ScheduledDeparture = scheduledDeparture,
@@ -68,6 +69,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         }
 
         var arrivalTime = tripStops.Max(ts => ts.ScheduledArrival ?? request.DepartureTime);
+
+        await EnsureNoStationDepartureConflictAsync(tripStops, cancellationToken);
 
         var trip = new Trip
         {
@@ -101,5 +104,40 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
                     ts.ScheduledArrival, ts.ScheduledDeparture,
                     ts.ActualArrival, ts.ActualDeparture, ts.StopStatus);
             }).ToList());
+    }
+
+    private async Task EnsureNoStationDepartureConflictAsync(
+        IReadOnlyCollection<TripStop> tripStops,
+        CancellationToken cancellationToken)
+    {
+        var stationDepartures = tripStops
+            .Where(x => x.ScheduledDeparture.HasValue)
+            .Select(x => new
+            {
+                StationId = x.RouteStop.StationId,
+                ScheduledDeparture = x.ScheduledDeparture!.Value
+            })
+            .ToArray();
+
+        foreach (var stationDeparture in stationDepartures)
+        {
+            var hasConflict = await _context.Set<TripStop>()
+                .AsNoTracking()
+                .AnyAsync(x =>
+                    x.ScheduledDeparture == stationDeparture.ScheduledDeparture
+                    && x.Trip.TripStatus != TripStatus.Cancelled
+                    && x.RouteStop.StationId == stationDeparture.StationId,
+                    cancellationToken);
+
+            if (hasConflict)
+            {
+                throw new ValidationException(
+                [
+                    new ValidationFailure(
+                        nameof(CreateTripCommand.DepartureTime),
+                        "Bến đã có chuyến tàu xuất phát trong cùng thời điểm.")
+                ]);
+            }
+        }
     }
 }

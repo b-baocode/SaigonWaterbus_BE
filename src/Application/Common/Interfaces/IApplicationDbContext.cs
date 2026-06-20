@@ -46,6 +46,8 @@ public interface IApplicationDbContext
 
     DbSet<CustomBookingPassenger> CustomBookingPassengers { get; }
 
+    DbSet<OperationScheduleEntry> OperationScheduleEntries { get; }
+
     DbSet<RouteSegment> RouteSegments { get; }
 
     DbSet<TEntity> Set<TEntity>()

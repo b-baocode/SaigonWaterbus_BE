@@ -117,6 +117,7 @@ public static class DependencyInjection
 
         builder.Services.AddScoped<ApplicationDbContextInitialiser>();
         builder.Services.AddHostedService<PendingRegistrationCleanupService>();
+        builder.Services.AddHostedService<OperationScheduleSyncService>();
         builder.Services.Configure<DatabaseStartupSettings>(options =>
         {
             options.ResetOnStartup = builder.Environment.IsDevelopment() &&
@@ -136,6 +137,7 @@ public static class DependencyInjection
         builder.Services.Configure<EsmsOptions>(builder.Configuration.GetSection(EsmsOptions.SectionName));
         builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection(CloudinaryOptions.SectionName));
         builder.Services.Configure<PayOsOptions>(builder.Configuration.GetSection(PayOsOptions.SectionName));
+        builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
     }

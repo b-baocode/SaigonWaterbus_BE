@@ -120,7 +120,8 @@ internal static class AuthSupport
                 user.AvatarUrl,
                 user.AvatarSource,
                 user.Status,
-                roleDtos),
+                roleDtos,
+                CreateStationAssignmentDtos(user)),
             new AuthTokensDto(
                 accessToken.Token,
                 accessToken.ExpiresAt,
@@ -170,8 +171,22 @@ internal static class AuthSupport
             user.AvatarUrl,
             user.AvatarSource,
             user.Status,
-            [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)]);
+            [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)],
+            CreateStationAssignmentDtos(user));
     }
+
+    private static IReadOnlyCollection<AuthStationAssignmentDto> CreateStationAssignmentDtos(User user) =>
+        user.StationAssignments
+            .Where(x => x.Station is not null)
+            .OrderByDescending(x => x.IsPrimary)
+            .ThenBy(x => x.Station.StationName)
+            .Select(x => new AuthStationAssignmentDto(
+                x.StationId,
+                x.Station.StationCode,
+                x.Station.StationName,
+                x.IsPrimary,
+                x.IsActive))
+            .ToArray();
 
     public static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

@@ -48,7 +48,7 @@ internal sealed class CloudinaryVesselImageStorageService : IVesselImageStorageS
         }
         catch (Exception ex) when (ex is not ProfileImageStorageException)
         {
-            throw new ProfileImageStorageException($"Unable to upload vessel image to Cloudinary: {ex.Message}");
+            throw new ProfileImageStorageException($"Unable to upload vessel image to Cloudinary: {ex.Message}", ex);
         }
 
         if (result.Error is not null)

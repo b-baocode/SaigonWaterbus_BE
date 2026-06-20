@@ -6,4 +6,9 @@ public sealed class ProfileImageStorageException : Exception
         : base(message)
     {
     }
+
+    public ProfileImageStorageException(string message, Exception innerException)
+        : base(message, innerException)
+    {
+    }
 }

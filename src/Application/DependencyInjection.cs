@@ -9,6 +9,7 @@ using SaigonWaterbus.Application.Auth.Register;
 using SaigonWaterbus.Application.Auth.Token;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Common.Validation;
+using SaigonWaterbus.Application.Operations;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.Users;
 using SaigonWaterbus.Application.Vessels;
@@ -28,6 +29,7 @@ public static class DependencyInjection
 
         builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
         builder.Services.AddScoped<IRequestValidator, RequestValidator>();
+        builder.Services.AddScoped<IOperationScheduleSynchronizer, OperationScheduleSynchronizer>();
 
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<RegisterRequestUseCase>();

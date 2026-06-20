@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260620050415_AddOperationScheduleEntries")]
+    partial class AddOperationScheduleEntries
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1139,22 +1142,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("operation_schedule_entry_id");
 
-                    b.Property<DateTimeOffset?>("ActualEndAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("actual_end_at");
-
-                    b.Property<DateTimeOffset?>("ActualStartAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("actual_start_at");
-
-                    b.Property<DateTimeOffset?>("AdjustedEndAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("adjusted_end_at");
-
-                    b.Property<DateTimeOffset?>("AdjustedStartAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("adjusted_start_at");
-
                     b.Property<Guid?>("AssignedManagerUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("assigned_manager_user_id");
@@ -1171,15 +1158,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<Guid?>("CustomerUserId")
                         .HasColumnType("uuid")
                         .HasColumnName("customer_user_id");
-
-                    b.Property<int>("DelayMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("delay_minutes");
-
-                    b.Property<string>("DelayReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("delay_reason");
 
                     b.Property<DateTimeOffset>("EndAt")
                         .HasColumnType("timestamp with time zone")
@@ -1211,12 +1189,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<DateOnly>("OperatingDate")
                         .HasColumnType("date")
                         .HasColumnName("operating_date");
-
-                    b.Property<string>("OperationStatus")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("operation_status");
 
                     b.Property<string>("PaymentStage")
                         .HasMaxLength(50)
@@ -1334,15 +1306,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("FromStationId");
 
-                    b.HasIndex("OperationStatus");
-
                     b.HasIndex("RouteId");
 
                     b.HasIndex("ServiceId");
 
                     b.HasIndex("ToStationId");
-
-                    b.HasIndex("AdjustedStartAt", "AdjustedEndAt");
 
                     b.HasIndex("OperatingDate", "StartAt");
 
