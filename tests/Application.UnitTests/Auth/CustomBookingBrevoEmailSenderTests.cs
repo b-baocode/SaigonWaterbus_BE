@@ -21,6 +21,7 @@ public class CustomBookingBrevoEmailSenderTests
         var request = CreateCustomBookingRequest();
         request.Status = CustomBookingRequestStatus.Quoted;
         request.Tickets.Add(CreateActiveTicket(request));
+        AddItineraryStop(request);
         var httpHandler = new CapturingHttpMessageHandler();
         var sender = new BrevoCustomBookingQuoteEmailSender(
             new TestHttpClientFactory(httpHandler),
@@ -46,6 +47,13 @@ public class CustomBookingBrevoEmailSenderTests
         root.GetProperty("params").GetProperty("serviceFeeAmount").GetString().ShouldBe("400.000 VND");
         root.GetProperty("params").GetProperty("hasServiceFee").GetBoolean().ShouldBeTrue();
         root.GetProperty("params").GetProperty("specialRequests").GetString().ShouldBe("Trang trí sinh nhật");
+        root.GetProperty("params").TryGetProperty("routeShortName", out _).ShouldBeFalse();
+        root.GetProperty("params").TryGetProperty("middleBoardingRows", out _).ShouldBeFalse();
+        var stops = root.GetProperty("params").GetProperty("STOPS").EnumerateArray().ToArray();
+        stops.Length.ShouldBe(1);
+        stops[0].GetProperty("name").GetString().ShouldBe("Bến Thanh Đa");
+        stops[0].GetProperty("description").GetString().ShouldBe("Tham quan");
+        stops[0].GetProperty("durationMinutes").GetInt32().ShouldBe(30);
         root.GetProperty("params").GetProperty("paidAmount").ValueKind.ShouldBe(JsonValueKind.Null);
         root.GetProperty("params").GetProperty("totalPaidAmount").ValueKind.ShouldBe(JsonValueKind.Null);
     }
@@ -108,10 +116,11 @@ public class CustomBookingBrevoEmailSenderTests
         parameters.GetProperty("statusLabel").GetString().ShouldBe("Đã chốt thành công");
         parameters.TryGetProperty("logoUrl", out _).ShouldBeFalse();
         parameters.GetProperty("bookingDate").GetString().ShouldBe("18/06/2026");
-        parameters.GetProperty("routeShortName").GetString().ShouldBe("Bach Dang - Linh Dong");
+        parameters.TryGetProperty("routeShortName", out _).ShouldBeFalse();
         parameters.GetProperty("fromStationAddress").GetString().ShouldBe("Bach Dang");
         parameters.GetProperty("toStationAddress").GetString().ShouldBe("Linh Dong");
-        parameters.GetProperty("middleBoardingRows").GetString().ShouldBe(string.Empty);
+        parameters.TryGetProperty("middleBoardingRows", out _).ShouldBeFalse();
+        parameters.GetProperty("STOPS").GetArrayLength().ShouldBe(0);
         parameters.GetProperty("ticketCode").GetString().ShouldBe("CBT-TEST");
         parameters.GetProperty("qrPayload").GetString().ShouldBe("swb:custom-booking:test-token");
         parameters.GetProperty("qrImageUrl").GetString()
@@ -165,6 +174,26 @@ public class CustomBookingBrevoEmailSenderTests
         };
 
         return request;
+    }
+
+    private static void AddItineraryStop(CustomBookingRequest request)
+    {
+        var station = new Station
+        {
+            Id = Guid.NewGuid(),
+            StationCode = "ST-TDA",
+            StationName = "Bến Thanh Đa"
+        };
+        request.ItineraryStops.Add(new CustomBookingItineraryStop
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            StopOrder = 1,
+            StationId = station.Id,
+            Station = station,
+            StayDurationMinutes = 30,
+            Note = "Tham quan"
+        });
     }
 
     private static CustomBookingTicket CreateActiveTicket(CustomBookingRequest request) =>

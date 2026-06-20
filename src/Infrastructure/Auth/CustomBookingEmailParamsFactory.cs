@@ -1,6 +1,4 @@
 using System.Globalization;
-using System.Net;
-using System.Text;
 using SaigonWaterbus.Application.CustomBookingRequests;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -111,12 +109,11 @@ internal static class CustomBookingEmailParamsFactory
             ["adultCount"] = request.AdultCount.ToString(CultureInfo.InvariantCulture),
             ["childCount"] = request.ChildCount.ToString(CultureInfo.InvariantCulture),
             ["itineraryText"] = routeDetailText,
-            ["routeShortName"] = RouteShortName(request),
             ["routeSummary"] = RouteSummary(request),
             ["routeTimelineText"] = routeTimelineText,
             ["routeDetailText"] = routeDetailText,
             ["routeLegsText"] = routeLegsText,
-            ["middleBoardingRows"] = MiddleBoardingRows(request),
+            ["STOPS"] = BoardingStops(request),
             ["routeStopCount"] = request.ItineraryStops.Count.ToString(CultureInfo.InvariantCulture),
             ["totalDistanceKm"] = routeEstimate.TotalDistanceKm?.ToString("0.##", CultureInfo.InvariantCulture),
             ["distanceText"] = distanceText,
@@ -169,9 +166,6 @@ internal static class CustomBookingEmailParamsFactory
 
     private static string RouteSummary(CustomBookingRequest request) =>
         string.Join(" -> ", RoutePointNames(request));
-
-    private static string RouteShortName(CustomBookingRequest request) =>
-        string.Join(" - ", RoutePointShortNames(request));
 
     private static string RouteDetailText(
         CustomBookingRequest request,
@@ -258,18 +252,6 @@ internal static class CustomBookingEmailParamsFactory
         yield return ToStationName(request);
     }
 
-    private static IEnumerable<string> RoutePointShortNames(CustomBookingRequest request)
-    {
-        yield return request.FromStation?.StationCode ?? FromStationName(request);
-
-        foreach (var stop in request.ItineraryStops.OrderBy(x => x.StopOrder))
-        {
-            yield return stop.Station.StationCode;
-        }
-
-        yield return request.ToStation?.StationCode ?? ToStationName(request);
-    }
-
     private static string FromStationName(CustomBookingRequest request) =>
         request.FromStation?.StationName ?? request.FromLocation;
 
@@ -286,57 +268,21 @@ internal static class CustomBookingEmailParamsFactory
             ? ToStationName(request)
             : request.ToStation.Address;
 
-    private static string MiddleBoardingRows(CustomBookingRequest request)
-    {
-        if (request.ItineraryStops.Count == 0)
-        {
-            return string.Empty;
-        }
-
-        var builder = new StringBuilder();
-        foreach (var stop in request.ItineraryStops.OrderBy(x => x.StopOrder))
-        {
-            var stationName = WebUtility.HtmlEncode(stop.Station.StationName);
-            var description = WebUtility.HtmlEncode(MiddleStopDescription(stop));
-            builder.Append(
-                """
-                <tr>
-                  <td width="28" style="vertical-align:top;padding:2px 0 0 0;">
-                    <div style="width:12px;height:12px;border-radius:50%;background:#f1c85d;margin:4px 0 0 0;"></div>
-                    <div style="width:2px;height:48px;background:#d3dde3;margin-left:5px;margin-top:4px;"></div>
-                  </td>
-                  <td style="vertical-align:top;padding:0 0 18px 14px;">
-                    <div style="font-size:13px;color:#7c8b95;font-weight:900;text-transform:uppercase;letter-spacing:.5px;">Stop / Điểm dừng</div>
-                    <div style="margin-top:6px;font-size:18px;line-height:1.35;color:#283640;font-weight:900;">
-                """);
-            builder.Append(stationName);
-            builder.Append(
-                """
-                    </div>
-                    <div style="margin-top:4px;font-size:14px;line-height:1.55;color:#6b7780;">
-                """);
-            builder.Append(description);
-            builder.Append(
-                """
-                    </div>
-                  </td>
-                </tr>
-                """);
-        }
-
-        return builder.ToString();
-    }
-
-    private static string MiddleStopDescription(CustomBookingItineraryStop stop)
-    {
-        var stayText = CustomBookingRouteEstimator.FormatDuration(stop.StayDurationMinutes);
-        if (string.IsNullOrWhiteSpace(stop.Note))
-        {
-            return $"Dừng theo lịch trình: {stayText}.";
-        }
-
-        return $"{stop.Note.Trim()} - {stayText}.";
-    }
+    private static IReadOnlyCollection<IReadOnlyDictionary<string, object?>> BoardingStops(CustomBookingRequest request) =>
+        request.ItineraryStops
+            .OrderBy(x => x.StopOrder)
+            .Select(stop => new Dictionary<string, object?>
+            {
+                ["order"] = stop.StopOrder,
+                ["code"] = stop.Station.StationCode,
+                ["name"] = stop.Station.StationName,
+                ["description"] = string.IsNullOrWhiteSpace(stop.Note)
+                    ? "Dừng theo lịch trình"
+                    : stop.Note.Trim(),
+                ["durationMinutes"] = stop.StayDurationMinutes,
+                ["durationText"] = CustomBookingRouteEstimator.FormatDuration(stop.StayDurationMinutes)
+            } as IReadOnlyDictionary<string, object?>)
+            .ToArray();
 
     private static string? CreateQrImageUrl(string? publicApiBaseUrl, string? qrPayload)
     {

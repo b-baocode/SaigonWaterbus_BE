@@ -70,6 +70,59 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
+    public void CancelValidatorRejectsInvalidRefundAccountFields()
+    {
+        var command = new CancelCustomBookingRequestCommand(
+            Guid.NewGuid(),
+            "Hello",
+            "97041A",
+            "2292 9167",
+            "NGUYEN HUU HOANG");
+
+        var result = new CancelCustomBookingRequestCommandValidator().Validate(command);
+
+        result.Errors.ShouldContain(x =>
+            x.PropertyName == nameof(CancelCustomBookingRequestCommand.RefundBankBin)
+            && x.ErrorMessage == "Mã BIN ngân hàng nhận hoàn tiền phải gồm đúng 6 chữ số theo chuẩn PayOS.");
+        result.Errors.ShouldContain(x =>
+            x.PropertyName == nameof(CancelCustomBookingRequestCommand.RefundAccountNumber)
+            && x.ErrorMessage == "Số tài khoản nhận hoàn tiền chỉ được gồm chữ số và không vượt quá 50 ký tự.");
+    }
+
+    [Test]
+    public void RetryRefundValidatorAcceptsPayOsSampleAccount()
+    {
+        var command = new RetryCustomBookingRefundCommand(
+            Guid.NewGuid(),
+            "970416",
+            "22929167",
+            "NGUYEN HUU HOANG");
+
+        var result = new RetryCustomBookingRefundCommandValidator().Validate(command);
+
+        result.Errors.ShouldBeEmpty();
+    }
+
+    [Test]
+    public void RetryRefundValidatorRejectsInvalidRefundAccountFields()
+    {
+        var command = new RetryCustomBookingRefundCommand(
+            Guid.NewGuid(),
+            "string",
+            "2292 9167",
+            "NGUYEN HUU HOANG");
+
+        var result = new RetryCustomBookingRefundCommandValidator().Validate(command);
+
+        result.Errors.ShouldContain(x =>
+            x.PropertyName == nameof(RetryCustomBookingRefundCommand.RefundBankBin)
+            && x.ErrorMessage == "Mã BIN ngân hàng nhận hoàn tiền phải gồm đúng 6 chữ số theo chuẩn PayOS.");
+        result.Errors.ShouldContain(x =>
+            x.PropertyName == nameof(RetryCustomBookingRefundCommand.RefundAccountNumber)
+            && x.ErrorMessage == "Số tài khoản nhận hoàn tiền chỉ được gồm chữ số và không vượt quá 50 ký tự.");
+    }
+
+    [Test]
     public void PricingValidatorRejectsInvalidCriteria()
     {
         var result = new GetCustomBookingPricingOptionsQueryValidator()
@@ -1467,6 +1520,63 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
+    public async Task CancelPaidBookingKeepsOriginalStatusWhenRefundPayoutFails()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        MarkDepositPaid(request);
+        request.DepartureDate = new DateOnly(2026, 6, 20);
+        request.PreferredStartTime = new TimeOnly(8, 0);
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            QuotedPrice = 1000000m,
+            DepositPercent = 100m,
+            DepositAmount = 1000000m,
+            RemainingAmount = 0m,
+            Currency = "VND",
+            DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid,
+            DepositPaymentPaidAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)
+        };
+        context.Add(request);
+        await context.SaveChangesAsync();
+        var paymentGateway = new TestCustomBookingPaymentGateway
+        {
+            ThrowOnCreateRefundPayout = true
+        };
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CancelCustomBookingRequestCommandHandler(
+                    context,
+                    customerContext,
+                    new FixedTimeProvider(new DateTimeOffset(2026, 6, 16, 0, 0, 0, TimeSpan.Zero)),
+                    paymentGateway)
+                .Handle(
+                    new CancelCustomBookingRequestCommand(
+                        request.Id,
+                        "Hello",
+                        "970416",
+                        "22929167",
+                        "NGUYEN HUU HOANG"),
+                    CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x)
+            .ShouldContain("Mã kiểm tra(signature) không hợp lệ");
+        var storedRequest = context.CustomBookingRequests.Include(x => x.Quote).Single(x => x.Id == request.Id);
+        storedRequest.Status.ShouldBe(CustomBookingRequestStatus.Confirmed);
+        storedRequest.CancelledAt.ShouldBeNull();
+        storedRequest.CancelledByUserId.ShouldBeNull();
+        storedRequest.StatusReason.ShouldBeNull();
+        storedRequest.Quote!.RefundStatus.ShouldBe("Failed");
+        storedRequest.Quote.RefundFailureReason.ShouldBe("Mã kiểm tra(signature) không hợp lệ");
+        storedRequest.Quote.RefundReferenceId.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
     public async Task CancelPendingPaymentCancelsPayOsLinkBeforeSavingCancelledState()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -1495,10 +1605,12 @@ public class CustomBookingWorkflowTests
                 customerContext,
                 TimeProvider.System,
                 paymentGateway)
-            .Handle(new CancelCustomBookingRequestCommand(request.Id, "Khach huy"), CancellationToken.None);
+            .Handle(new CancelCustomBookingRequestCommand(request.Id, "Khách hủy vì đổi lịch"), CancellationToken.None);
 
         result.Status.ShouldBe(CustomBookingRequestStatus.Cancelled);
+        result.StatusReason.ShouldBe("Khách hủy vì đổi lịch");
         paymentGateway.CancelledOrderCodes.ShouldBe([123456]);
+        paymentGateway.CancelledPaymentReasons.ShouldBe(["Khach huy vi doi lich"]);
         var quote = context.CustomBookingQuotes.Single();
         quote.DepositPaymentStatus.ShouldBe(CustomBookingDepositPaymentStatus.Cancelled);
         quote.DepositPaymentCancelledAt.ShouldNotBeNull();
@@ -1557,6 +1669,119 @@ public class CustomBookingWorkflowTests
         quote.RefundBankBin.ShouldBe("970415");
         quote.RefundReferenceId.ShouldNotBe("CBR-FAILED");
         quote.RefundFailureReason.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task RetryFailedRefundForConfirmedCancellationPendingBookingCancelsAfterPayoutSucceeds()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            QuotedPrice = 1000000m,
+            DepositPercent = 100m,
+            DepositAmount = 1000000m,
+            RemainingAmount = 0m,
+            Currency = "VND",
+            DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid,
+            DepositPaymentPaidAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero),
+            RefundEligiblePercent = 100m,
+            RefundAmount = 1000000m,
+            RefundBankBin = "970416",
+            RefundAccountNumber = "22929167",
+            RefundAccountName = "NGUYEN HUU HOANG",
+            RefundReferenceId = "CBR-FAILED",
+            RefundStatus = "Failed",
+            RefundFailureReason = "Mã kiểm tra(signature) không hợp lệ"
+        };
+        context.Add(request);
+        await context.SaveChangesAsync();
+        var paymentGateway = new TestCustomBookingPaymentGateway();
+
+        var result = await new RetryCustomBookingRefundCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 16, 0, 0, 0, TimeSpan.Zero)),
+                paymentGateway)
+            .Handle(
+                new RetryCustomBookingRefundCommand(
+                    request.Id,
+                    "970416",
+                    "22929167",
+                    "NGUYEN HUU HOANG"),
+                CancellationToken.None);
+
+        result.Status.ShouldBe(CustomBookingRequestStatus.Cancelled);
+        result.Quote!.RefundStatus.ShouldBe("Created");
+        var storedRequest = context.CustomBookingRequests.Include(x => x.Quote).Single(x => x.Id == request.Id);
+        storedRequest.Status.ShouldBe(CustomBookingRequestStatus.Cancelled);
+        storedRequest.CancelledAt.ShouldNotBeNull();
+        storedRequest.CancelledByUserId.ShouldBe(customerContext.UserId);
+        storedRequest.Quote!.RefundFailureReason.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task RetryFailedRefundKeepsConfirmedBookingWhenPayoutFails()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        request.Quote = new CustomBookingQuote
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            QuotedPrice = 1000000m,
+            DepositPercent = 100m,
+            DepositAmount = 1000000m,
+            RemainingAmount = 0m,
+            Currency = "VND",
+            DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid,
+            DepositPaymentPaidAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero),
+            RefundEligiblePercent = 100m,
+            RefundAmount = 1000000m,
+            RefundBankBin = "970416",
+            RefundAccountNumber = "22929167",
+            RefundAccountName = "NGUYEN HUU HOANG",
+            RefundReferenceId = "CBR-FAILED",
+            RefundStatus = "Failed",
+            RefundFailureReason = "Mã kiểm tra(signature) không hợp lệ"
+        };
+        context.Add(request);
+        await context.SaveChangesAsync();
+        var paymentGateway = new TestCustomBookingPaymentGateway
+        {
+            ThrowOnCreateRefundPayout = true
+        };
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new RetryCustomBookingRefundCommandHandler(
+                    context,
+                    customerContext,
+                    new FixedTimeProvider(new DateTimeOffset(2026, 6, 16, 0, 0, 0, TimeSpan.Zero)),
+                    paymentGateway)
+                .Handle(
+                    new RetryCustomBookingRefundCommand(
+                        request.Id,
+                        "970416",
+                        "22929167",
+                        "NGUYEN HUU HOANG"),
+                    CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x)
+            .ShouldContain("Mã kiểm tra(signature) không hợp lệ");
+        var storedRequest = context.CustomBookingRequests.Include(x => x.Quote).Single(x => x.Id == request.Id);
+        storedRequest.Status.ShouldBe(CustomBookingRequestStatus.Confirmed);
+        storedRequest.CancelledAt.ShouldBeNull();
+        storedRequest.Quote!.RefundStatus.ShouldBe("Failed");
+        storedRequest.Quote.RefundFailureReason.ShouldBe("Mã kiểm tra(signature) không hợp lệ");
+        storedRequest.Quote.RefundReferenceId.ShouldNotBe("CBR-FAILED");
     }
 
     [Test]
@@ -3022,6 +3247,8 @@ public class CustomBookingWorkflowTests
 
         public bool ThrowOnCreatePayment { get; init; }
 
+        public bool ThrowOnCreateRefundPayout { get; init; }
+
         public string RecoveredPaymentStatus { get; init; } = "PENDING";
 
         public Dictionary<long, CustomBookingPaymentStatusResult> PaymentStatuses { get; } = [];
@@ -3033,6 +3260,8 @@ public class CustomBookingWorkflowTests
         public List<long> QueriedPaymentOrderCodes { get; } = [];
 
         public List<long> CancelledOrderCodes { get; } = [];
+
+        public List<string> CancelledPaymentReasons { get; } = [];
 
         public Task<CustomBookingDepositPaymentResult> CreateDepositPaymentAsync(
             CustomBookingDepositPaymentRequest request,
@@ -3063,6 +3292,7 @@ public class CustomBookingWorkflowTests
             CancellationToken cancellationToken)
         {
             CancelledOrderCodes.Add(orderCode);
+            CancelledPaymentReasons.Add(reason);
             return Task.FromResult(new CustomBookingPaymentCancellationResult(
                 orderCode.ToString(),
                 "CANCELLED",
@@ -3084,6 +3314,11 @@ public class CustomBookingWorkflowTests
             CancellationToken cancellationToken)
         {
             CreatedRefundPayout = request;
+            if (ThrowOnCreateRefundPayout)
+            {
+                throw new PaymentGatewayException("Mã kiểm tra(signature) không hợp lệ");
+            }
+
             return Task.FromResult(new CustomBookingRefundPayoutResult("payout-id", "Created", "ok"));
         }
 

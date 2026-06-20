@@ -16,6 +16,25 @@ internal static class PayOsSignature
         IReadOnlyCollection<string> category,
         string checksumKey)
     {
+        return HmacSha256(
+            CreatePayoutRequestSignatureData(
+                referenceId,
+                amount,
+                description,
+                toBin,
+                toAccountNumber,
+                category),
+            checksumKey);
+    }
+
+    public static string CreatePayoutRequestSignatureData(
+        string referenceId,
+        long amount,
+        string description,
+        string toBin,
+        string toAccountNumber,
+        IReadOnlyCollection<string> category)
+    {
         var data = new Dictionary<string, object?>
         {
             ["referenceId"] = referenceId,
@@ -29,8 +48,12 @@ internal static class PayOsSignature
             '&',
             data
                 .OrderBy(x => x.Key, StringComparer.Ordinal)
-                .Select(x => $"{x.Key}={FormatPayoutSignatureValue(x.Value)}"));
-        return HmacSha256(queryString, checksumKey);
+                .Select(x =>
+                {
+                    var value = FormatPayoutSignatureValue(x.Value);
+                    return $"{Uri.EscapeDataString(x.Key)}={Uri.EscapeDataString(value)}";
+                }));
+        return queryString;
     }
 
     private static string FormatPayoutSignatureValue(object? value)

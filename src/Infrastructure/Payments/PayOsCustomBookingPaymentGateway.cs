@@ -109,6 +109,8 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         CustomBookingRefundPayoutRequest request,
         CancellationToken cancellationToken)
     {
+        ValidateRefundPayoutRequest(request);
+
         var options = GetEnabledOptions();
         var payoutCredentials = GetPayoutCredentials(options);
         var category = new[] { "refund", "custom-booking" };
@@ -120,6 +122,16 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             request.ToAccountNumber,
             category,
             payoutCredentials.ChecksumKey);
+        _logger.LogDebug(
+            "PayOS payout signature string. ReferenceId: {ReferenceId}, Data: {SignatureData}",
+            request.ReferenceId,
+            PayOsSignature.CreatePayoutRequestSignatureData(
+                request.ReferenceId,
+                request.Amount,
+                request.Description,
+                request.ToBin,
+                request.ToAccountNumber,
+                category));
 
         var payload = new PayOsCreatePayoutRequest(
             request.ReferenceId,
@@ -397,27 +409,18 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
 
     private static PayOsCredentials GetPayoutCredentials(PayOsOptions options)
     {
-        var clientId = string.IsNullOrWhiteSpace(options.PayoutClientId)
-            ? options.ClientId
-            : options.PayoutClientId;
-        var apiKey = string.IsNullOrWhiteSpace(options.PayoutApiKey)
-            ? options.ApiKey
-            : options.PayoutApiKey;
-        var checksumKey = string.IsNullOrWhiteSpace(options.PayoutChecksumKey)
-            ? options.ChecksumKey
-            : options.PayoutChecksumKey;
-        var partnerCode = string.IsNullOrWhiteSpace(options.PayoutPartnerCode)
-            ? options.PartnerCode
-            : options.PayoutPartnerCode;
-
-        if (string.IsNullOrWhiteSpace(clientId)
-            || string.IsNullOrWhiteSpace(apiKey)
-            || string.IsNullOrWhiteSpace(checksumKey))
+        if (string.IsNullOrWhiteSpace(options.PayoutClientId)
+            || string.IsNullOrWhiteSpace(options.PayoutApiKey)
+            || string.IsNullOrWhiteSpace(options.PayoutChecksumKey))
         {
             throw new PaymentGatewayException("PayOS chưa cấu hình đủ PayoutClientId, PayoutApiKey và PayoutChecksumKey để hoàn tiền.");
         }
 
-        return new PayOsCredentials(clientId, apiKey, checksumKey, partnerCode);
+        return new PayOsCredentials(
+            options.PayoutClientId,
+            options.PayoutApiKey,
+            options.PayoutChecksumKey,
+            options.PayoutPartnerCode);
     }
 
     private static string Truncate(string value, int maxLength) =>
@@ -497,9 +500,9 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                 throw new PaymentGatewayException(result?.Desc ?? "Không kiểm tra được trạng thái hoàn tiền PayOS.");
             }
 
-            var payout = result.Data.Payouts?.Values.FirstOrDefault(x =>
+            var payout = result.Data.Payouts?.FirstOrDefault(x =>
                 string.Equals(x.ReferenceId, referenceId, StringComparison.OrdinalIgnoreCase))
-                ?? result.Data.Payouts?.Values.FirstOrDefault();
+                ?? result.Data.Payouts?.FirstOrDefault();
             return payout is null
                 ? null
                 : ToRefundPayoutResult(payout, result.Desc);
@@ -518,7 +521,7 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         PayOsCreatePayoutData data,
         string? description)
     {
-        var transaction = data.Transactions?.Values.FirstOrDefault();
+        var transaction = data.Transactions?.FirstOrDefault();
         return new CustomBookingRefundPayoutResult(
             data.Id,
             data.ApprovalState
@@ -527,6 +530,51 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             description,
             data.ReferenceId ?? transaction?.ReferenceId,
             transaction?.Amount);
+    }
+
+    private static void ValidateRefundPayoutRequest(CustomBookingRefundPayoutRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(request.ReferenceId) || request.ReferenceId.Trim().Length > 100)
+        {
+            throw new PaymentGatewayException("PayOS payout referenceId không hợp lệ.");
+        }
+
+        if (request.Amount <= 0)
+        {
+            throw new PaymentGatewayException("PayOS payout amount phải là số nguyên VND lớn hơn 0.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Description) || request.Description.Trim().Length > 100)
+        {
+            throw new PaymentGatewayException("PayOS payout description không hợp lệ.");
+        }
+
+        if (!IsAsciiDigits(request.ToBin, 6, 6))
+        {
+            throw new PaymentGatewayException("PayOS payout toBin phải gồm đúng 6 chữ số.");
+        }
+
+        if (!IsAsciiDigits(request.ToAccountNumber, 1, 50))
+        {
+            throw new PaymentGatewayException("PayOS payout toAccountNumber chỉ được gồm chữ số và không vượt quá 50 ký tự.");
+        }
+
+        if (string.IsNullOrWhiteSpace(request.IdempotencyKey) || request.IdempotencyKey.Trim().Length > 100)
+        {
+            throw new PaymentGatewayException("PayOS payout idempotency key không hợp lệ.");
+        }
+    }
+
+    private static bool IsAsciiDigits(string? value, int minLength, int maxLength)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return false;
+        }
+
+        return value.Length >= minLength
+            && value.Length <= maxLength
+            && value.All(static c => c is >= '0' and <= '9');
     }
 
     private static string CreatePayOsErrorMessage(
@@ -666,11 +714,11 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         [property: JsonPropertyName("approvalState")]
         string? ApprovalState,
         [property: JsonPropertyName("transactions")]
-        IReadOnlyDictionary<string, PayOsPayoutTransaction>? Transactions);
+        IReadOnlyCollection<PayOsPayoutTransaction>? Transactions);
 
     private sealed record PayOsPayoutListData(
         [property: JsonPropertyName("payouts")]
-        IReadOnlyDictionary<string, PayOsCreatePayoutData>? Payouts);
+        IReadOnlyCollection<PayOsCreatePayoutData>? Payouts);
 
     private sealed record PayOsPayoutTransaction(
         [property: JsonPropertyName("referenceId")]

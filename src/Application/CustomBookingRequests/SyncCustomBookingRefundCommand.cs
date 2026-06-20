@@ -58,11 +58,11 @@ public sealed class SyncCustomBookingRefundCommandHandler
             throw new ForbiddenAccessException();
         }
 
-        if (customRequest.Status != CustomBookingRequestStatus.Cancelled)
+        if (customRequest.Status is not (CustomBookingRequestStatus.Cancelled or CustomBookingRequestStatus.Confirmed))
         {
             throw AuthSupport.CreateValidationException(
                 nameof(customRequest.Status),
-                "Chỉ đối soát hoàn tiền cho booking đã hủy.");
+                "Chỉ đối soát hoàn tiền cho booking đã hủy hoặc đang chờ xử lý hủy do hoàn tiền lỗi.");
         }
 
         var quote = customRequest.Quote
@@ -121,6 +121,22 @@ public sealed class SyncCustomBookingRefundCommandHandler
         quote.RefundStatus = payout.Status;
         quote.RefundFailureReason = null;
         quote.RefundProcessedAt = _timeProvider.GetUtcNow();
+        if (!CustomBookingRefundPayoutStatus.IsAccepted(quote))
+        {
+            quote.RefundFailureReason = CustomBookingRefundPayoutStatus.CreateNotAcceptedReason(
+                payout.Status,
+                payout.Description);
+            await _context.SaveChangesAsync(cancellationToken);
+            throw AuthSupport.CreateValidationException("refund", quote.RefundFailureReason);
+        }
+
+        if (customRequest.Status != CustomBookingRequestStatus.Cancelled)
+        {
+            customRequest.Status = CustomBookingRequestStatus.Cancelled;
+            customRequest.CancelledAt ??= _timeProvider.GetUtcNow();
+            customRequest.CancelledByUserId ??= actor.Id;
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
         var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(

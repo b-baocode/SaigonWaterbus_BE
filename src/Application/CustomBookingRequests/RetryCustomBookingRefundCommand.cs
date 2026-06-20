@@ -26,17 +26,17 @@ public sealed class RetryCustomBookingRefundCommandValidator
         RuleFor(x => x.RefundBankBin)
             .NotEmpty()
             .WithMessage("Mã BIN ngân hàng nhận hoàn tiền là bắt buộc.")
-            .MaximumLength(20)
-            .WithMessage("Mã BIN ngân hàng nhận hoàn tiền không được vượt quá 20 ký tự.");
+            .Must(CustomBookingRefundAccountValidation.IsValidBankBin)
+            .WithMessage("Mã BIN ngân hàng nhận hoàn tiền phải gồm đúng 6 chữ số theo chuẩn PayOS.");
         RuleFor(x => x.RefundAccountNumber)
             .NotEmpty()
             .WithMessage("Số tài khoản nhận hoàn tiền là bắt buộc.")
-            .MaximumLength(50)
-            .WithMessage("Số tài khoản nhận hoàn tiền không được vượt quá 50 ký tự.");
+            .Must(CustomBookingRefundAccountValidation.IsValidAccountNumber)
+            .WithMessage("Số tài khoản nhận hoàn tiền chỉ được gồm chữ số và không vượt quá 50 ký tự.");
         RuleFor(x => x.RefundAccountName)
             .NotEmpty()
             .WithMessage("Tên tài khoản nhận hoàn tiền là bắt buộc.")
-            .MaximumLength(150)
+            .MaximumLength(CustomBookingRefundAccountValidation.MaxAccountNameLength)
             .WithMessage("Tên tài khoản nhận hoàn tiền không được vượt quá 150 ký tự.");
     }
 }
@@ -77,11 +77,11 @@ public sealed class RetryCustomBookingRefundCommandHandler
             throw new ForbiddenAccessException();
         }
 
-        if (customRequest.Status != CustomBookingRequestStatus.Cancelled)
+        if (customRequest.Status is not (CustomBookingRequestStatus.Cancelled or CustomBookingRequestStatus.Confirmed))
         {
             throw AuthSupport.CreateValidationException(
                 nameof(customRequest.Status),
-                "Chỉ retry hoàn tiền cho booking đã hủy.");
+                "Chỉ retry hoàn tiền cho booking đã hủy hoặc đang chờ xử lý hủy do hoàn tiền lỗi.");
         }
 
         var quote = customRequest.Quote
@@ -100,9 +100,15 @@ public sealed class RetryCustomBookingRefundCommandHandler
 
         var now = _timeProvider.GetUtcNow();
         var referenceId = CreateRefundReferenceId(customRequest, now);
-        quote.RefundBankBin = request.RefundBankBin.Trim();
-        quote.RefundAccountNumber = request.RefundAccountNumber.Trim();
-        quote.RefundAccountName = request.RefundAccountName.Trim();
+        quote.RefundBankBin = CustomBookingRefundAccountValidation.NormalizeRequiredBankBin(
+            request.RefundBankBin,
+            nameof(request.RefundBankBin));
+        quote.RefundAccountNumber = CustomBookingRefundAccountValidation.NormalizeRequiredAccountNumber(
+            request.RefundAccountNumber,
+            nameof(request.RefundAccountNumber));
+        quote.RefundAccountName = CustomBookingRefundAccountValidation.NormalizeRequiredAccountName(
+            request.RefundAccountName,
+            nameof(request.RefundAccountName));
         quote.RefundReferenceId = referenceId;
         quote.RefundStatus = "Pending";
         quote.RefundFailureReason = null;
@@ -125,7 +131,24 @@ public sealed class RetryCustomBookingRefundCommandHandler
 
             quote.RefundPayoutId = result.PayoutId;
             quote.RefundStatus = result.Status;
+            quote.RefundFailureReason = null;
             quote.RefundProcessedAt = _timeProvider.GetUtcNow();
+            if (!CustomBookingRefundPayoutStatus.IsAccepted(quote))
+            {
+                quote.RefundFailureReason = CustomBookingRefundPayoutStatus.CreateNotAcceptedReason(
+                    result.Status,
+                    result.Description);
+                await _context.SaveChangesAsync(cancellationToken);
+                throw AuthSupport.CreateValidationException("refund", quote.RefundFailureReason);
+            }
+
+            if (customRequest.Status != CustomBookingRequestStatus.Cancelled)
+            {
+                customRequest.Status = CustomBookingRequestStatus.Cancelled;
+                customRequest.CancelledAt = _timeProvider.GetUtcNow();
+                customRequest.CancelledByUserId = actor.Id;
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
         }
         catch (PaymentGatewayException ex)
@@ -133,6 +156,7 @@ public sealed class RetryCustomBookingRefundCommandHandler
             quote.RefundStatus = "Failed";
             quote.RefundFailureReason = ex.Message;
             await _context.SaveChangesAsync(cancellationToken);
+            throw AuthSupport.CreateValidationException("refund", ex.Message);
         }
 
         var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(

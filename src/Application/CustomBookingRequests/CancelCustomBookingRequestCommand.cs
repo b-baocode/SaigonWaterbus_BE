@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -28,17 +30,17 @@ public sealed class CancelCustomBookingRequestCommandValidator
             .MaximumLength(500)
             .WithMessage("Lý do hủy không được vượt quá 500 ký tự.");
         RuleFor(x => x.RefundBankBin)
-            .MaximumLength(20)
-            .WithMessage("Mã BIN ngân hàng nhận hoàn tiền không được vượt quá 20 ký tự.")
-            .When(x => x.RefundBankBin is not null);
+            .Must(CustomBookingRefundAccountValidation.IsValidBankBin)
+            .WithMessage("Mã BIN ngân hàng nhận hoàn tiền phải gồm đúng 6 chữ số theo chuẩn PayOS.")
+            .When(x => !string.IsNullOrWhiteSpace(x.RefundBankBin));
         RuleFor(x => x.RefundAccountNumber)
-            .MaximumLength(50)
-            .WithMessage("Số tài khoản nhận hoàn tiền không được vượt quá 50 ký tự.")
-            .When(x => x.RefundAccountNumber is not null);
+            .Must(CustomBookingRefundAccountValidation.IsValidAccountNumber)
+            .WithMessage("Số tài khoản nhận hoàn tiền chỉ được gồm chữ số và không vượt quá 50 ký tự.")
+            .When(x => !string.IsNullOrWhiteSpace(x.RefundAccountNumber));
         RuleFor(x => x.RefundAccountName)
-            .MaximumLength(150)
+            .MaximumLength(CustomBookingRefundAccountValidation.MaxAccountNameLength)
             .WithMessage("Tên tài khoản nhận hoàn tiền không được vượt quá 150 ký tự.")
-            .When(x => x.RefundAccountName is not null);
+            .When(x => !string.IsNullOrWhiteSpace(x.RefundAccountName));
     }
 }
 
@@ -91,13 +93,19 @@ public sealed class CancelCustomBookingRequestCommandHandler
             ? CustomBookingRefundPolicy.Calculate(customRequest, paidAmount, now)
             : null;
         var refundBankBin = refund?.Amount > 0
-            ? NormalizeRequiredRefundField(request.RefundBankBin, nameof(request.RefundBankBin))
+            ? CustomBookingRefundAccountValidation.NormalizeRequiredBankBin(
+                request.RefundBankBin,
+                nameof(request.RefundBankBin))
             : null;
         var refundAccountNumber = refund?.Amount > 0
-            ? NormalizeRequiredRefundField(request.RefundAccountNumber, nameof(request.RefundAccountNumber))
+            ? CustomBookingRefundAccountValidation.NormalizeRequiredAccountNumber(
+                request.RefundAccountNumber,
+                nameof(request.RefundAccountNumber))
             : null;
         var refundAccountName = refund?.Amount > 0
-            ? NormalizeRequiredRefundField(request.RefundAccountName, nameof(request.RefundAccountName))
+            ? CustomBookingRefundAccountValidation.NormalizeRequiredAccountName(
+                request.RefundAccountName,
+                nameof(request.RefundAccountName))
             : null;
 
         await CancelPendingPaymentLinksAsync(quote, request.Reason, cancellationToken);
@@ -114,17 +122,6 @@ public sealed class CancelCustomBookingRequestCommandHandler
             quote.RemainingPaymentCancelledAt = now;
         }
 
-        customRequest.Status = CustomBookingRequestStatus.Cancelled;
-        customRequest.StatusReason = request.Reason.Trim();
-        customRequest.CancelledAt = now;
-        customRequest.CancelledByUserId = actor.Id;
-        if (paidAmount > 0)
-        {
-            await RestorePromotionUsageAsync(quote, cancellationToken);
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
-
         if (paidAmount > 0 && quote is not null)
         {
             await ProcessRefundIfEligibleAsync(
@@ -137,6 +134,17 @@ public sealed class CancelCustomBookingRequestCommandHandler
                 now,
                 cancellationToken);
         }
+
+        customRequest.Status = CustomBookingRequestStatus.Cancelled;
+        customRequest.StatusReason = request.Reason.Trim();
+        customRequest.CancelledAt = now;
+        customRequest.CancelledByUserId = actor.Id;
+        if (paidAmount > 0)
+        {
+            await RestorePromotionUsageAsync(quote, cancellationToken);
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
 
         var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
             _context,
@@ -176,7 +184,10 @@ public sealed class CancelCustomBookingRequestCommandHandler
     {
         try
         {
-            await _paymentGateway.CancelPaymentAsync(orderCode, reason.Trim(), cancellationToken);
+            await _paymentGateway.CancelPaymentAsync(
+                orderCode,
+                CreatePayOsCancellationReason(reason),
+                cancellationToken);
         }
         catch (PaymentGatewayException ex)
         {
@@ -232,11 +243,6 @@ public sealed class CancelCustomBookingRequestCommandHandler
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (!string.IsNullOrWhiteSpace(quote.RefundReferenceId))
-        {
-            return;
-        }
-
         quote.RefundEligiblePercent = refund.Percent;
         quote.RefundAmount = refund.Amount;
         quote.RefundPolicyNote = refund.Note;
@@ -246,6 +252,18 @@ public sealed class CancelCustomBookingRequestCommandHandler
             quote.RefundStatus = "NotEligible";
             quote.RefundProcessedAt = now;
             await _context.SaveChangesAsync(cancellationToken);
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(quote.RefundReferenceId))
+        {
+            if (!CustomBookingRefundPayoutStatus.IsAccepted(quote))
+            {
+                throw AuthSupport.CreateValidationException(
+                    "refund",
+                    "Lệnh hoàn tiền PayOS trước đó chưa thành công. Vui lòng đối soát hoặc retry hoàn tiền trước khi hủy booking.");
+            }
+
             return;
         }
 
@@ -276,25 +294,22 @@ public sealed class CancelCustomBookingRequestCommandHandler
             quote.RefundFailureReason = null;
             quote.RefundProcessedAt = _timeProvider.GetUtcNow();
             await _context.SaveChangesAsync(cancellationToken);
+            if (!CustomBookingRefundPayoutStatus.IsAccepted(quote))
+            {
+                quote.RefundFailureReason = CustomBookingRefundPayoutStatus.CreateNotAcceptedReason(
+                    result.Status,
+                    result.Description);
+                await _context.SaveChangesAsync(cancellationToken);
+                throw AuthSupport.CreateValidationException("refund", quote.RefundFailureReason);
+            }
         }
         catch (PaymentGatewayException ex)
         {
             quote.RefundStatus = "Failed";
             quote.RefundFailureReason = ex.Message;
             await _context.SaveChangesAsync(cancellationToken);
+            throw AuthSupport.CreateValidationException("refund", ex.Message);
         }
-    }
-
-    private static string NormalizeRequiredRefundField(string? value, string propertyName)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            throw AuthSupport.CreateValidationException(
-                propertyName,
-                "Thông tin tài khoản nhận hoàn tiền là bắt buộc khi booking đủ điều kiện hoàn tiền.");
-        }
-
-        return value.Trim();
     }
 
     private static long ToPayOsAmount(decimal amount)
@@ -312,4 +327,45 @@ public sealed class CancelCustomBookingRequestCommandHandler
 
     private static string CreateRefundDescription(CustomBookingRequest request) =>
         $"Hoan tien SWB {request.Id.ToString("N")[..8].ToUpperInvariant()}";
+
+    private static string CreatePayOsCancellationReason(string reason)
+    {
+        var normalized = RemoveVietnameseDiacritics(reason.Trim());
+        var ascii = new string(normalized
+            .Select(static c => c is >= ' ' and <= '~' ? c : ' ')
+            .ToArray());
+        ascii = string.Join(' ', ascii.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+
+        if (string.IsNullOrWhiteSpace(ascii))
+        {
+            return "Huy booking custom";
+        }
+
+        const int maxPayOsReasonLength = 100;
+        return ascii.Length <= maxPayOsReasonLength
+            ? ascii
+            : ascii[..maxPayOsReasonLength].TrimEnd();
+    }
+
+    private static string RemoveVietnameseDiacritics(string value)
+    {
+        var builder = new StringBuilder(value.Length);
+        foreach (var c in value.Normalize(NormalizationForm.FormD))
+        {
+            var category = CharUnicodeInfo.GetUnicodeCategory(c);
+            if (category == UnicodeCategory.NonSpacingMark)
+            {
+                continue;
+            }
+
+            builder.Append(c switch
+            {
+                'đ' => 'd',
+                'Đ' => 'D',
+                _ => c
+            });
+        }
+
+        return builder.ToString().Normalize(NormalizationForm.FormC);
+    }
 }
