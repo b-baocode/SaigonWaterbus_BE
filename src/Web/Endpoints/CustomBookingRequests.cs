@@ -409,10 +409,11 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Customer chủ yêu cầu, Admin hoặc Manager được giao booking",
                 PassengerManifestExample,
                 "PUT thay thế toàn bộ danh sách hành khách.",
-                "Chỉ cập nhật sau khi booking Confirmed, đã thanh toán đủ và trước khi check-in.",
+                "Chỉ cập nhật sau khi booking Confirmed và trước khi check-in.",
                 "Backend tự tính Adult/Child từ ngày sinh rồi kiểm tra đúng số đã đăng ký.",
                 "Trẻ em là người dưới 11 tuổi tại ngày khởi hành; người từ đủ 11 tuổi được tính là Adult.",
-                "Khi manifest chuyển hoàn tất, backend tạo vé QR nếu chưa có active ticket và gửi confirmation email có QR."));
+                "Nếu booking đã thanh toán đủ, khi manifest chuyển hoàn tất backend tạo vé QR nếu chưa có active ticket và gửi confirmation email có QR.",
+                "Nếu khách nhập manifest trước khi thanh toán đủ, backend chỉ lưu danh sách; QR sẽ được gửi tự động sau khi PayOS xác nhận phần còn lại đã Paid."));
 
         group.MapPost(PreviewImportCustomBookingPassengers, "{id:guid}/passengers/import/preview")
             .RequireAuthorization()

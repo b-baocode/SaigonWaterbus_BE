@@ -22,17 +22,20 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
     private readonly ICustomBookingPaymentGateway _paymentGateway;
     private readonly TimeProvider _timeProvider;
     private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
+    private readonly ICustomBookingConfirmationEmailSender _confirmationEmailSender;
 
     public HandleCustomBookingDepositPaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICustomBookingPaymentGateway paymentGateway,
         TimeProvider timeProvider,
-        ICustomBookingQuoteEmailSender quoteEmailSender)
+        ICustomBookingQuoteEmailSender quoteEmailSender,
+        ICustomBookingConfirmationEmailSender confirmationEmailSender)
     {
         _context = context;
         _paymentGateway = paymentGateway;
         _timeProvider = timeProvider;
         _quoteEmailSender = quoteEmailSender;
+        _confirmationEmailSender = confirmationEmailSender;
     }
 
     public async Task<CustomBookingDepositPaymentWebhookResultDto> Handle(
@@ -116,6 +119,11 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
                 await SendPaymentConfirmationEmailAsync(quote.CustomBookingRequest.Id, cancellationToken);
             }
 
+            if (!wasPaid)
+            {
+                await SendBoardingPassIfReadyAsync(quote.CustomBookingRequest.Id, cancellationToken);
+            }
+
             return new CustomBookingDepositPaymentWebhookResultDto(
                 true,
                 webhook.Data.OrderCode,
@@ -175,6 +183,30 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
         var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
             .SingleAsync(x => x.Id == requestId, cancellationToken);
         await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
+    }
+
+    private async Task SendBoardingPassIfReadyAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
+            .Include(x => x.Tickets)
+            .SingleAsync(x => x.Id == requestId, cancellationToken);
+        if (customRequest.Status != CustomBookingRequestStatus.Confirmed
+            || customRequest.PassengerManifestStatus != PassengerManifestStatus.Completed
+            || !CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote)
+            || customRequest.Tickets.Any(x => x.Status == CustomBookingTicketStatus.Active))
+        {
+            return;
+        }
+
+        await CustomBookingTicketSupport.EnsureActiveTicketAsync(
+            _context,
+            customRequest,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+        await _confirmationEmailSender.SendConfirmationAsync(customRequest, cancellationToken);
     }
 
     private static void MarkPaymentFailed(

@@ -193,9 +193,11 @@ public sealed class UpdateCustomBookingPassengerManifestCommandHandler
 
         CustomBookingPassengerManifestSupport.EnsureCanUpdate(customRequest, actor);
         CustomBookingPassengerManifestSupport.ValidatePassengers(customRequest, request.Passengers);
-        var shouldSendConfirmationEmail =
+        var isFullyPaid = CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote);
+        var shouldSendConfirmationEmail = isFullyPaid
+            && (
             customRequest.PassengerManifestStatus != PassengerManifestStatus.Completed
-            || customRequest.Tickets.All(x => x.Status != CustomBookingTicketStatus.Active);
+            || customRequest.Tickets.All(x => x.Status != CustomBookingTicketStatus.Active));
 
         _context.Set<CustomBookingPassenger>().RemoveRange(customRequest.Passengers);
         customRequest.Passengers.Clear();
@@ -261,13 +263,6 @@ internal static class CustomBookingPassengerManifestSupport
             throw AuthSupport.CreateValidationException(
                 nameof(customRequest.Status),
                 "Chỉ cập nhật danh sách hành khách sau khi booking đã xác nhận.");
-        }
-
-        if (!CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote))
-        {
-            throw AuthSupport.CreateValidationException(
-                nameof(customRequest.Quote.DepositPaymentStatus),
-                "Vui lòng thanh toán đầy đủ trước khi cập nhật danh sách hành khách và nhận QR.");
         }
 
         if (customRequest.Tickets.Any(x => x.QrUsedAt.HasValue || x.Status == CustomBookingTicketStatus.Used)

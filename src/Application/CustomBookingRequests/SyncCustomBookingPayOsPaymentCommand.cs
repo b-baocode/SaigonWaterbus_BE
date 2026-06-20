@@ -30,19 +30,22 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
     private readonly TimeProvider _timeProvider;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
     private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
+    private readonly ICustomBookingConfirmationEmailSender _confirmationEmailSender;
 
     public SyncCustomBookingPayOsPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
         ICustomBookingPaymentGateway paymentGateway,
-        ICustomBookingQuoteEmailSender quoteEmailSender)
+        ICustomBookingQuoteEmailSender quoteEmailSender,
+        ICustomBookingConfirmationEmailSender confirmationEmailSender)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _paymentGateway = paymentGateway;
         _quoteEmailSender = quoteEmailSender;
+        _confirmationEmailSender = confirmationEmailSender;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -141,6 +144,11 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
             await SendPaymentConfirmationEmailAsync(customRequest.Id, cancellationToken);
         }
 
+        if (!wasPaid)
+        {
+            await SendBoardingPassIfReadyAsync(customRequest.Id, cancellationToken);
+        }
+
         return await LoadResultAsync(customRequest.Id, cancellationToken);
     }
 
@@ -151,6 +159,30 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
         var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
             .SingleAsync(x => x.Id == requestId, cancellationToken);
         await _quoteEmailSender.SendQuoteAsync(customRequest, cancellationToken);
+    }
+
+    private async Task SendBoardingPassIfReadyAsync(
+        Guid requestId,
+        CancellationToken cancellationToken)
+    {
+        var customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
+            .Include(x => x.Tickets)
+            .SingleAsync(x => x.Id == requestId, cancellationToken);
+        if (customRequest.Status != CustomBookingRequestStatus.Confirmed
+            || customRequest.PassengerManifestStatus != PassengerManifestStatus.Completed
+            || !CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote)
+            || customRequest.Tickets.Any(x => x.Status == CustomBookingTicketStatus.Active))
+        {
+            return;
+        }
+
+        await CustomBookingTicketSupport.EnsureActiveTicketAsync(
+            _context,
+            customRequest,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
+        await _confirmationEmailSender.SendConfirmationAsync(customRequest, cancellationToken);
     }
 
     private async Task<CustomBookingRequestDto> LoadResultAsync(
