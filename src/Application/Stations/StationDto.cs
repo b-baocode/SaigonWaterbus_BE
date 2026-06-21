@@ -22,6 +22,7 @@ public sealed record StationDto(
     decimal? Longitude,
     string Status,
     string? ImageUrl,
+    IReadOnlyCollection<string> ImageUrls,
     bool HasWaitingArea,
     bool HasParking,
     bool HasTicketCounter,
@@ -31,7 +32,7 @@ public sealed record StationDto(
     public static StationDto From(Station s) => new(
         s.Id, s.StationCode, s.StationName,
         s.Address, s.Description, s.Latitude, s.Longitude, s.Status.ToString(),
-        s.ImageUrl, s.HasWaitingArea, s.HasParking, s.HasTicketCounter,
+        s.ImageUrl, StationImageSupport.CreateImageUrls(s), s.HasWaitingArea, s.HasParking, s.HasTicketCounter,
         CreateAssignedUserDtos(s, Roles.ManagerSystemName),
         CreateAssignedUserDtos(s, Roles.StaffSystemName));
 

@@ -236,6 +236,67 @@ public class VesselSeatFlowIntegrationTests
         images[0].IsPrimary.ShouldBeTrue();
     }
 
+    [Test]
+    public async Task UpdateVesselAcceptsSwaggerPayloadWithImageUrl()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var vessel = new Vessel
+        {
+            Code = "WB_005",
+            Name = "Waterbus 05",
+            Status = VesselStatus.Inactive,
+            SeatCount = 80,
+            NumberOfDecks = 1,
+            SeatSetupType = SeatSetupType.FullStandard,
+            RegistrationNumber = "VN-005"
+        };
+        vessel.Images.Add(new VesselImage
+        {
+            VesselId = vessel.Id,
+            Url = "https://example.test/vessels/old-main.jpg",
+            DisplayOrder = 1,
+            IsPrimary = true
+        });
+        context.Add(vessel);
+        await context.SaveChangesAsync();
+
+        var result = await UpdateVesselUseCase(context, userContext).ExecuteAsync(
+            new UpdateVesselRequest(
+                vessel.Id,
+                Code: "WB_006",
+                Name: "Waterbus 06",
+                SeatCount: 80,
+                NumberOfDecks: 1,
+                RegistrationNumber: "VN-006",
+                MaxSpeedKmh: 50,
+                YearBuilt: 2026,
+                Description: "abcdef",
+                ImageUrl: "https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg",
+                SeatSetupType: SeatSetupType.FullStandard,
+                RentalPrices:
+                [
+                    new VesselRentalPriceRequest(VesselRentalUnit.Hour, 10m, "VND", "abc"),
+                    new VesselRentalPriceRequest(VesselRentalUnit.Day, 20m, "VND", "abc")
+                ]),
+            CancellationToken.None);
+
+        result.Code.ShouldBe("WB_006");
+        result.Name.ShouldBe("Waterbus 06");
+        result.SeatCount.ShouldBe(80);
+        result.NumberOfDecks.ShouldBe(1);
+        result.RegistrationNumber.ShouldBe("VN-006");
+        result.MaxSpeedKmh.ShouldBe(50);
+        result.YearBuilt.ShouldBe(2026);
+        result.Description.ShouldBe("abcdef");
+        result.ImageUrl.ShouldBe("https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg");
+        result.ImageUrls.ShouldBe(["https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg"]);
+        result.RentalPrices.Count.ShouldBe(2);
+        result.RentalPrices.Single(x => x.RentalUnit == VesselRentalUnit.Hour).UnitPrice.ShouldBe(10m);
+        result.RentalPrices.Single(x => x.RentalUnit == VesselRentalUnit.Day).UnitPrice.ShouldBe(20m);
+        (await context.VesselImages.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(1);
+    }
+
     private static CreateVesselRequestUseCase CreateVesselUseCase(
         Infrastructure.Data.ApplicationDbContext context,
         TestUserContext userContext) =>

@@ -14,9 +14,13 @@ public sealed class CloudinaryOptions
 
     public string VesselFolder { get; set; } = "saigon-waterbus/vessels";
 
+    public string StationFolder { get; set; } = "saigon-waterbus/stations";
+
     public long MaxAvatarBytes { get; set; } = 5 * 1024 * 1024;
 
     public long MaxVesselImageBytes { get; set; } = 5 * 1024 * 1024;
+
+    public long MaxStationImageBytes { get; set; } = 5 * 1024 * 1024;
 
     public string[] AllowedAvatarContentTypes { get; set; } =
     [
@@ -26,6 +30,13 @@ public sealed class CloudinaryOptions
     ];
 
     public string[] AllowedVesselImageContentTypes { get; set; } =
+    [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+    ];
+
+    public string[] AllowedStationImageContentTypes { get; set; } =
     [
         "image/jpeg",
         "image/png",

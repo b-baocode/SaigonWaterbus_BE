@@ -138,3 +138,21 @@ internal sealed class TestVesselImageStorageService : IVesselImageStorageService
             imageId.ToString("N")));
     }
 }
+
+internal sealed class TestStationImageStorageService : IStationImageStorageService
+{
+    public long MaxImageBytes => 5 * 1024 * 1024;
+
+    public IReadOnlyCollection<string> AllowedImageContentTypes { get; } =
+        ["image/jpeg", "image/png", "image/webp"];
+
+    public Task<StoredStationImage> UploadImageAsync(
+        StationImageUpload upload,
+        CancellationToken cancellationToken)
+    {
+        var imageId = upload.ImageId ?? upload.StationId;
+        return Task.FromResult(new StoredStationImage(
+            $"https://example.test/stations/{upload.StationId}/{imageId:N}",
+            imageId.ToString("N")));
+    }
+}

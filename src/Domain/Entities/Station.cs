@@ -21,6 +21,8 @@ public class Station : BaseGuidAuditableEntity
     public bool HasParking { get; set; }
     public bool HasTicketCounter { get; set; }
 
+    public ICollection<StationImage> Images { get; set; } = new List<StationImage>();
+
     public ICollection<RouteStop> RouteStops { get; set; } = new List<RouteStop>();
     public ICollection<Landmark> Landmarks { get; set; } = new List<Landmark>();
     public ICollection<UserStationAssignment> UserAssignments { get; set; } = new List<UserStationAssignment>();

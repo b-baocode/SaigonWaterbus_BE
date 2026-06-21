@@ -52,6 +52,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IVesselImageStorageService, CloudinaryVesselImageStorageService>();
+        builder.Services.AddScoped<IStationImageStorageService, CloudinaryStationImageStorageService>();
         builder.Services.AddScoped<ICustomBookingPaymentGateway, PayOsCustomBookingPaymentGateway>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);

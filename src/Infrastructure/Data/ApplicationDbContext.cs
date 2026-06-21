@@ -46,6 +46,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Station> Stations => Set<Station>();
 
+    public DbSet<StationImage> StationImages => Set<StationImage>();
+
     public DbSet<WaterwaySegment> WaterwaySegments => Set<WaterwaySegment>();
 
     public DbSet<Route> Routes => Set<Route>();

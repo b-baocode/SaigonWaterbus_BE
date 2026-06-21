@@ -34,6 +34,8 @@ public interface IApplicationDbContext
 
     DbSet<VesselLayoutCell> VesselLayoutCells { get; }
 
+    DbSet<StationImage> StationImages { get; }
+
     DbSet<CustomBookingRequest> CustomBookingRequests { get; }
 
     DbSet<CustomBookingQuote> CustomBookingQuotes { get; }
