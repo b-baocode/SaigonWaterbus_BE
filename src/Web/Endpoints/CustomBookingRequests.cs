@@ -428,6 +428,19 @@ public sealed class CustomBookingRequests : IEndpointGroup
                 "Endpoint chỉ parse, tính Adult/Child và trả preview/error/warning; không lưu DB.",
                 "Frontend cho khách kiểm tra/sửa rồi gọi PUT /passengers để xác nhận."));
 
+        group.MapPost(ImportCustomBookingPassengers, "{id:guid}/passengers/import/confirm")
+            .RequireAuthorization()
+            .DisableAntiforgery()
+            .WithSummary("Import và lưu CSV/XLSX danh sách hành khách custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Customer chủ yêu cầu, Admin hoặc Manager được giao booking",
+                null,
+                "Multipart/form-data field file, hỗ trợ .csv hoặc .xlsx.",
+                "Header bắt buộc: FullName/Tên/Họ và tên và DateOfBirth/Ngày sinh.",
+                "Endpoint parse file rồi lưu DB ngay, không qua bước preview.",
+                "Backend tự tính Adult/Child từ ngày sinh và kiểm tra đúng số đã đăng ký.",
+                "Nếu booking đã thanh toán đủ, backend tạo QR nếu chưa có active ticket và gửi confirmation email có QR."));
+
         group.MapPost(ReissueCustomBookingTicket, "{id:guid}/ticket/reissue")
             .RequireAuthorization()
             .WithSummary("Admin/Manager cấp lại QR custom booking")
@@ -805,6 +818,17 @@ public sealed class CustomBookingRequests : IEndpointGroup
         await using var stream = file.OpenReadStream();
         var rows = CustomBookingPassengerManifestFileParser.Parse(file.FileName, stream);
         return Results.Ok(await sender.Send(new PreviewCustomBookingPassengerManifestImportCommand(id, rows), ct));
+    }
+
+    private static async Task<IResult> ImportCustomBookingPassengers(
+        ISender sender,
+        Guid id,
+        IFormFile file,
+        CancellationToken ct)
+    {
+        await using var stream = file.OpenReadStream();
+        var rows = CustomBookingPassengerManifestFileParser.Parse(file.FileName, stream);
+        return Results.Ok(await sender.Send(new ImportCustomBookingPassengerManifestCommand(id, rows), ct));
     }
 
     private static async Task<IResult> ReissueCustomBookingTicket(

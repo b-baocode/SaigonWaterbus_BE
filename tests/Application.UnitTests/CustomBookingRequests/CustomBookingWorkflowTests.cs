@@ -2266,6 +2266,108 @@ public class CustomBookingWorkflowTests
     }
 
     [Test]
+    public async Task PassengerManifestImportConfirmSavesAndSendsQrEmailWhenFullyPaid()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        MarkDepositPaid(request);
+        request.AdultCount = 1;
+        request.ChildCount = 1;
+        request.PassengerCount = 2;
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        const string csv =
+            """
+            FullName,DateOfBirth,PhoneNumber
+            Nguyen Van A,20/06/1995,0900000000
+            Nguyen Van B,21/06/2015,
+            """;
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(csv));
+        var rows = CustomBookingPassengerManifestFileParser.Parse("passengers.csv", stream);
+        var confirmationEmailSender = new TestCustomBookingConfirmationEmailSender();
+        var updateHandler = new UpdateCustomBookingPassengerManifestCommandHandler(
+            context,
+            customerContext,
+            new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)),
+            confirmationEmailSender);
+
+        var result = await new ImportCustomBookingPassengerManifestCommandHandler(updateHandler)
+            .Handle(new ImportCustomBookingPassengerManifestCommand(request.Id, rows), CancellationToken.None);
+
+        result.Status.ShouldBe(PassengerManifestStatus.Completed);
+        result.PassengerCount.ShouldBe(2);
+        result.AdultCount.ShouldBe(1);
+        result.ChildCount.ShouldBe(1);
+        result.Passengers.Select(x => x.FullName).ShouldBe(["Nguyen Van A", "Nguyen Van B"]);
+        result.Passengers.Single(x => x.FullName == "Nguyen Van B").PassengerType.ShouldBe(CustomBookingPassengerType.Child);
+        context.CustomBookingPassengers.Count().ShouldBe(2);
+        context.CustomBookingTickets.Count().ShouldBe(1);
+        confirmationEmailSender.SentRequestId.ShouldBe(request.Id);
+    }
+
+    [Test]
+    public async Task PassengerManifestUpdateResendsConfirmationEmailWhenFullyPaidAndTicketAlreadyExists()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeedCustomerAsync(context);
+        var request = ValidRequest();
+        request.UserId = customerContext.UserId;
+        request.Status = CustomBookingRequestStatus.Confirmed;
+        MarkDepositPaid(request);
+        request.AdultCount = 1;
+        request.ChildCount = 0;
+        request.PassengerCount = 1;
+        request.PassengerManifestStatus = PassengerManifestStatus.Completed;
+        request.PassengerManifestCompletedAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero);
+        request.Passengers.Add(new CustomBookingPassenger
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            PassengerOrder = 1,
+            FullName = "Old Passenger",
+            PassengerType = CustomBookingPassengerType.Adult,
+            DateOfBirth = new DateOnly(1995, 6, 20)
+        });
+
+        const string existingQrToken = "existing-custom-booking-token";
+        request.Tickets.Add(new CustomBookingTicket
+        {
+            CustomBookingRequestId = request.Id,
+            CustomBookingRequest = request,
+            TicketCode = "CB-TEST-001",
+            QrToken = existingQrToken,
+            QrTokenHash = CustomBookingTicketSupport.HashQrToken(existingQrToken),
+            QrIssuedAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero),
+            Status = CustomBookingTicketStatus.Active
+        });
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var confirmationEmailSender = new TestCustomBookingConfirmationEmailSender();
+        var result = await new UpdateCustomBookingPassengerManifestCommandHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero)),
+                confirmationEmailSender)
+            .Handle(
+                new UpdateCustomBookingPassengerManifestCommand(
+                    request.Id,
+                    [new CustomBookingPassengerInput("Updated Passenger", new DateOnly(1995, 6, 20))]),
+                CancellationToken.None);
+
+        result.Status.ShouldBe(PassengerManifestStatus.Completed);
+        result.Passengers.Single().FullName.ShouldBe("Updated Passenger");
+        context.CustomBookingPassengers.Count().ShouldBe(1);
+        context.CustomBookingTickets.Count().ShouldBe(1);
+        context.CustomBookingTickets.Single().QrToken.ShouldBe(existingQrToken);
+        confirmationEmailSender.SentRequestId.ShouldBe(request.Id);
+    }
+
+    [Test]
     public void PassengerManifestDtosExposeOnlyPassengerIdentityAndAgeFields()
     {
         typeof(CustomBookingPassengerPreviewRowDto)

@@ -71,6 +71,11 @@ public sealed record PreviewCustomBookingPassengerManifestImportCommand(
     IReadOnlyCollection<CustomBookingPassengerFileRow> Rows)
     : IRequest<CustomBookingPassengerManifestPreviewDto>;
 
+public sealed record ImportCustomBookingPassengerManifestCommand(
+    Guid Id,
+    IReadOnlyCollection<CustomBookingPassengerFileRow> Rows)
+    : IRequest<CustomBookingPassengerManifestDto>;
+
 public sealed record UpdateCustomBookingPassengerManifestCommand(
     Guid Id,
     IReadOnlyCollection<CustomBookingPassengerInput> Passengers)
@@ -160,6 +165,28 @@ public sealed class PreviewCustomBookingPassengerManifestImportCommandHandler
     }
 }
 
+public sealed class ImportCustomBookingPassengerManifestCommandHandler
+    : IRequestHandler<ImportCustomBookingPassengerManifestCommand, CustomBookingPassengerManifestDto>
+{
+    private readonly IRequestHandler<UpdateCustomBookingPassengerManifestCommand, CustomBookingPassengerManifestDto> _updateHandler;
+
+    public ImportCustomBookingPassengerManifestCommandHandler(
+        IRequestHandler<UpdateCustomBookingPassengerManifestCommand, CustomBookingPassengerManifestDto> updateHandler)
+    {
+        _updateHandler = updateHandler;
+    }
+
+    public async Task<CustomBookingPassengerManifestDto> Handle(
+        ImportCustomBookingPassengerManifestCommand request,
+        CancellationToken cancellationToken)
+    {
+        var passengers = CustomBookingPassengerManifestSupport.CreateInputsFromImportRows(request.Rows);
+        return await _updateHandler.Handle(
+            new UpdateCustomBookingPassengerManifestCommand(request.Id, passengers),
+            cancellationToken);
+    }
+}
+
 public sealed class UpdateCustomBookingPassengerManifestCommandHandler
     : IRequestHandler<UpdateCustomBookingPassengerManifestCommand, CustomBookingPassengerManifestDto>
 {
@@ -193,11 +220,7 @@ public sealed class UpdateCustomBookingPassengerManifestCommandHandler
 
         CustomBookingPassengerManifestSupport.EnsureCanUpdate(customRequest, actor);
         CustomBookingPassengerManifestSupport.ValidatePassengers(customRequest, request.Passengers);
-        var isFullyPaid = CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote);
-        var shouldSendConfirmationEmail = isFullyPaid
-            && (
-            customRequest.PassengerManifestStatus != PassengerManifestStatus.Completed
-            || customRequest.Tickets.All(x => x.Status != CustomBookingTicketStatus.Active));
+        var shouldSendConfirmationEmail = CustomBookingPaymentSupport.IsFullyPaid(customRequest.Quote);
 
         _context.Set<CustomBookingPassenger>().RemoveRange(customRequest.Passengers);
         customRequest.Passengers.Clear();
@@ -456,6 +479,52 @@ internal static class CustomBookingPassengerManifestSupport
             globalErrors,
             globalWarnings,
             previewRows);
+    }
+
+    public static IReadOnlyCollection<CustomBookingPassengerInput> CreateInputsFromImportRows(
+        IReadOnlyCollection<CustomBookingPassengerFileRow> rows)
+    {
+        var failures = new List<ValidationFailure>();
+        var passengers = new List<CustomBookingPassengerInput>();
+
+        foreach (var row in rows)
+        {
+            var fullName = NormalizeOptionalText(row.FullName);
+            if (string.IsNullOrWhiteSpace(fullName))
+            {
+                failures.Add(new ValidationFailure(
+                    "file",
+                    $"Dòng {row.RowNumber}: thiếu họ tên."));
+            }
+
+            if (string.IsNullOrWhiteSpace(row.DateOfBirth))
+            {
+                failures.Add(new ValidationFailure(
+                    "file",
+                    $"Dòng {row.RowNumber}: thiếu ngày sinh."));
+                continue;
+            }
+
+            if (!TryParsePassengerDate(row.DateOfBirth, out var dateOfBirth))
+            {
+                failures.Add(new ValidationFailure(
+                    "file",
+                    $"Dòng {row.RowNumber}: ngày sinh phải dùng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd."));
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(fullName))
+            {
+                passengers.Add(new CustomBookingPassengerInput(fullName, dateOfBirth));
+            }
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new ValidationException(failures);
+        }
+
+        return passengers;
     }
 
     public static int CalculateAge(DateOnly dateOfBirth, DateOnly atDate)
