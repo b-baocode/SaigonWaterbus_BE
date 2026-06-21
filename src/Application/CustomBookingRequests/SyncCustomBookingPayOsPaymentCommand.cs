@@ -91,6 +91,21 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
         {
             StorePaymentLinkIfAvailable(quote, paymentKind, payment);
             MarkTerminalPaymentStatusIfNeeded(quote, paymentKind, payment.Status);
+            if (paymentKind == CustomBookingPaymentKind.Deposit
+                && (string.Equals(payment.Status, "CANCELLED", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(payment.Status, "EXPIRED", StringComparison.OrdinalIgnoreCase)))
+            {
+                await CustomBookingVesselReservations.ReleaseAsync(
+                    _context,
+                    customRequest.Id,
+                    string.Equals(payment.Status, "EXPIRED", StringComparison.OrdinalIgnoreCase)
+                        ? VesselReservationStatus.Expired
+                        : VesselReservationStatus.Cancelled,
+                    _timeProvider.GetUtcNow(),
+                    $"Deposit payment {payment.Status}.",
+                    cancellationToken);
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
             return await LoadResultAsync(customRequest.Id, cancellationToken);
         }
@@ -136,6 +151,16 @@ public sealed class SyncCustomBookingPayOsPaymentCommandHandler
         {
             customRequest.Status = CustomBookingRequestStatus.Confirmed;
             customRequest.QuoteAcceptedAt ??= _timeProvider.GetUtcNow();
+        }
+
+        if (paymentKind == CustomBookingPaymentKind.Deposit)
+        {
+            await CustomBookingVesselReservations.ConfirmAsync(
+                _context,
+                customRequest,
+                actor.Id,
+                _timeProvider.GetUtcNow(),
+                cancellationToken);
         }
 
         await _context.SaveChangesAsync(cancellationToken);

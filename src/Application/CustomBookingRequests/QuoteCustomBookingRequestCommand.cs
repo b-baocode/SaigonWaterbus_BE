@@ -48,17 +48,20 @@ public sealed class QuoteCustomBookingRequestCommandHandler
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
+    private readonly IDatabaseExceptionClassifier _databaseExceptionClassifier;
 
     public QuoteCustomBookingRequestCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        ICustomBookingQuoteEmailSender quoteEmailSender)
+        ICustomBookingQuoteEmailSender quoteEmailSender,
+        IDatabaseExceptionClassifier? databaseExceptionClassifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _quoteEmailSender = quoteEmailSender;
+        _databaseExceptionClassifier = databaseExceptionClassifier ?? NoOpDatabaseExceptionClassifier.Instance;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -83,10 +86,19 @@ public sealed class QuoteCustomBookingRequestCommandHandler
             customRequest,
             cancellationToken);
         CustomBookingRequestSupport.ApplyRouteEstimate(customRequest, routeSegments);
-        await CustomBookingAvailability.EnsureVesselAvailableAsync(
+        if (await CustomBookingVesselReservations.ExpireStaleReservationsAsync(
+            _context,
+            now,
+            cancellationToken) > 0)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        await CustomBookingVesselReservations.EnsureVesselAvailableAsync(
             _context,
             customRequest,
             customRequest.AssignedVesselId!.Value,
+            now,
             cancellationToken);
         var rentalPrice = CustomBookingRequestSupport.GetRequiredRentalPriceOrThrow(
             customRequest,
@@ -160,8 +172,21 @@ public sealed class QuoteCustomBookingRequestCommandHandler
         customRequest.QuotedAt = now;
         customRequest.QuotedByUserId = actor.Id;
         customRequest.QuoteAcceptedAt = null;
+        await CustomBookingVesselReservations.HoldUntilQuoteExpiryAsync(
+            _context,
+            customRequest,
+            actor.Id,
+            now,
+            cancellationToken);
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (_databaseExceptionClassifier.IsExclusionConstraintViolation(ex))
+        {
+            throw CustomBookingVesselReservations.CreateUnavailableException();
+        }
 
         customRequest = await CustomBookingRequestSupport.IncludeDetails(_context.Set<CustomBookingRequest>())
             .SingleAsync(x => x.Id == customRequest.Id, cancellationToken);

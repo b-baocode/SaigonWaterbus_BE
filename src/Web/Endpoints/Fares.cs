@@ -1,6 +1,4 @@
 using SaigonWaterbus.Application.Fares;
-using SaigonWaterbus.Application.Vessels;
-using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -23,16 +21,6 @@ public sealed class Fares : IEndpointGroup
         {
           "basePrice": 22000,
           "isActive": true
-        }
-        """;
-
-    private const string UpdateVesselRentalFareExample =
-        """
-        {
-          "rentalUnit": "Day",
-          "unitPrice": 15000000,
-          "currency": "VND",
-          "note": "Gia thue tau tham khao theo ngay."
         }
         """;
 
@@ -80,16 +68,6 @@ public sealed class Fares : IEndpointGroup
                 "isActive = false de vo hieu hoa muc gia (khong xoa).",
                 "Khi isActive = false, GetFare se khong tim thay cap tram nay."));
 
-        group.MapPut(UpdateVesselRentalFare, "vessel-rental-prices/{vesselId:guid}")
-            .RequireAuthorization()
-            .WithSummary("Cap nhat gia thue tau theo gio hoac theo ngay")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                UpdateVesselRentalFareExample,
-                "Neu tau chua co gia thi tao moi, neu da co thi cap nhat.",
-                "rentalUnit: Hour hoac Day. Neu khong gui thi mac dinh Day.",
-                "API nay cap nhat bang vessel_rental_prices, khong dung fare_matrices."));
-
         group.MapDelete(DeleteFare, "{id:guid}")
             .RequireAuthorization()
             .WithSummary("Vo hieu hoa muc gia")
@@ -115,15 +93,6 @@ public sealed class Fares : IEndpointGroup
     private static async Task<IResult> UpdateFare(ISender sender, Guid id, UpdateFareRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateFareCommand(id, req.BasePrice, req.IsActive), ct));
 
-    private static async Task<IResult> UpdateVesselRentalFare(
-        IVesselManagementService vesselManagementService,
-        Guid vesselId,
-        UpdateVesselRentalFareRequest req,
-        CancellationToken ct) =>
-        Results.Ok(await vesselManagementService.UpdateVesselRentalPriceAsync(
-            new UpdateVesselRentalPriceRequest(vesselId, req.UnitPrice, req.Currency, req.Note, req.RentalUnit),
-            ct));
-
     private static async Task<IResult> DeleteFare(ISender sender, Guid id, CancellationToken ct)
     {
         await sender.Send(new DeleteFareCommand(id), ct);
@@ -132,9 +101,4 @@ public sealed class Fares : IEndpointGroup
 
     public sealed record UpdateFareRequest(decimal BasePrice, bool IsActive);
 
-    public sealed record UpdateVesselRentalFareRequest(
-        decimal UnitPrice,
-        string? Currency = null,
-        string? Note = null,
-        VesselRentalUnit RentalUnit = VesselRentalUnit.Day);
 }

@@ -28,19 +28,22 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
     private readonly TimeProvider _timeProvider;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
     private readonly ICustomBookingQuoteEmailSender _quoteEmailSender;
+    private readonly IDatabaseExceptionClassifier _databaseExceptionClassifier;
 
     public AcceptCustomBookingQuoteCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
         ICustomBookingPaymentGateway paymentGateway,
-        ICustomBookingQuoteEmailSender quoteEmailSender)
+        ICustomBookingQuoteEmailSender quoteEmailSender,
+        IDatabaseExceptionClassifier? databaseExceptionClassifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _paymentGateway = paymentGateway;
         _quoteEmailSender = quoteEmailSender;
+        _databaseExceptionClassifier = databaseExceptionClassifier ?? NoOpDatabaseExceptionClassifier.Instance;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -65,10 +68,19 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
             customRequest,
             cancellationToken);
         CustomBookingRequestSupport.ApplyRouteEstimate(customRequest, routeSegments);
-        await CustomBookingAvailability.EnsureVesselAvailableAsync(
+        if (await CustomBookingVesselReservations.ExpireStaleReservationsAsync(
+            _context,
+            now,
+            cancellationToken) > 0)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        await CustomBookingVesselReservations.EnsureVesselAvailableAsync(
             _context,
             customRequest,
             customRequest.AssignedVesselId!.Value,
+            now,
             cancellationToken);
 
         var quote = customRequest.Quote!;
@@ -134,7 +146,22 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
         quote.DepositPaymentPaidAt = null;
         quote.DepositPaymentCancelledAt = null;
         quote.DepositPaymentFailureReason = null;
-        await _context.SaveChangesAsync(cancellationToken);
+        await CustomBookingVesselReservations.MarkPaymentPendingAsync(
+            _context,
+            customRequest,
+            actor.Id,
+            paymentExpiredAt,
+            now,
+            cancellationToken);
+
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (_databaseExceptionClassifier.IsExclusionConstraintViolation(ex))
+        {
+            throw CustomBookingVesselReservations.CreateUnavailableException();
+        }
 
         CustomBookingDepositPaymentResult paymentResult;
         try
@@ -167,6 +194,12 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
 
             quote.DepositPaymentStatus = CustomBookingDepositPaymentStatus.Failed;
             quote.DepositPaymentFailureReason = ex.Message;
+            await CustomBookingVesselReservations.HoldUntilQuoteExpiryAsync(
+                _context,
+                customRequest,
+                actor.Id,
+                now,
+                cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
             throw AuthSupport.CreateValidationException("payment", ex.Message);
         }
@@ -298,6 +331,12 @@ public sealed class AcceptCustomBookingQuoteCommandHandler
                 quote.DepositPaymentPaidAt ??= _timeProvider.GetUtcNow();
                 quote.CustomBookingRequest.Status = CustomBookingRequestStatus.Confirmed;
                 quote.CustomBookingRequest.QuoteAcceptedAt ??= _timeProvider.GetUtcNow();
+                await CustomBookingVesselReservations.ConfirmAsync(
+                    _context,
+                    quote.CustomBookingRequest,
+                    null,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken);
                 await IncrementPromotionUsageAsync(quote, cancellationToken);
             }
             else if (quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Cancelled)

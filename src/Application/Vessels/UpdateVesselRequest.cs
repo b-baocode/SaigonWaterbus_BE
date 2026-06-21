@@ -22,7 +22,8 @@ public sealed record UpdateVesselRequest(
     Stream? ImageContent = null,
     SeatSetupType? SeatSetupType = null,
     IReadOnlyCollection<string>? ImageUrls = null,
-    IReadOnlyCollection<VesselImageFileRequest>? ImageFiles = null);
+    IReadOnlyCollection<VesselImageFileRequest>? ImageFiles = null,
+    IReadOnlyCollection<VesselRentalPriceRequest>? RentalPrices = null);
 
 public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesselRequest>
 {
@@ -101,6 +102,33 @@ public sealed class UpdateVesselRequestValidator : AbstractValidator<UpdateVesse
                 x.ImageContent,
                 x.ImageFiles))
             .WithMessage($"Tàu chỉ được có tối đa {VesselSupport.MaxVesselImages} ảnh.");
+
+        RuleFor(x => x.RentalPrices)
+            .Must(VesselSupport.HasDistinctRentalUnits)
+            .WithMessage("Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
+
+        RuleForEach(x => x.RentalPrices)
+            .ChildRules(price =>
+            {
+                price.RuleFor(x => x.RentalUnit)
+                    .IsInEnum()
+                    .WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
+
+                price.RuleFor(x => x.UnitPrice)
+                    .GreaterThan(0)
+                    .WithMessage("Giá thuê tàu phải lớn hơn 0.")
+                    .LessThanOrEqualTo(9999999999.99m)
+                    .WithMessage("Giá thuê tàu không hợp lệ.");
+
+                price.RuleFor(x => x.Currency)
+                    .Must(VesselSupport.IsValidCurrencyCode)
+                    .WithMessage("Currency phải là mã ISO 4217 gồm 3 chữ cái, ví dụ VND.")
+                    .When(x => x.Currency is not null);
+
+                price.RuleFor(x => x.Note)
+                    .MaximumLength(500)
+                    .WithMessage("Ghi chú giá thuê tàu không được vượt quá 500 ký tự.");
+            });
     }
 }
 
@@ -219,6 +247,11 @@ public sealed class UpdateVesselRequestUseCase
                 : request.Description.Trim();
         }
 
+        if (request.RentalPrices is not null)
+        {
+            UpsertRentalPrices(vessel, request.RentalPrices);
+        }
+
         var imageUrls = VesselSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls);
         var imageFiles = VesselSupport.CreateImageFiles(
             request.ImageFileName,
@@ -298,6 +331,30 @@ public sealed class UpdateVesselRequestUseCase
         }
 
         return VesselSupport.CreateDto(vessel);
+    }
+
+    private void UpsertRentalPrices(
+        Vessel vessel,
+        IReadOnlyCollection<VesselRentalPriceRequest> rentalPrices)
+    {
+        foreach (var request in rentalPrices)
+        {
+            var rentalPrice = vessel.RentalPrices.SingleOrDefault(x => x.RentalUnit == request.RentalUnit);
+            if (rentalPrice is null)
+            {
+                rentalPrice = new VesselRentalPrice
+                {
+                    VesselId = vessel.Id,
+                    RentalUnit = request.RentalUnit
+                };
+                vessel.RentalPrices.Add(rentalPrice);
+                _context.VesselRentalPrices.Add(rentalPrice);
+            }
+
+            rentalPrice.UnitPrice = request.UnitPrice;
+            rentalPrice.Currency = VesselSupport.NormalizeCurrency(request.Currency);
+            rentalPrice.Note = VesselSupport.NormalizeOptionalNote(request.Note);
+        }
     }
 
     private static void EnsureVesselCapacity(

@@ -28,15 +28,18 @@ public sealed class AssignCustomBookingVesselCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IDatabaseExceptionClassifier _databaseExceptionClassifier;
 
     public AssignCustomBookingVesselCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IDatabaseExceptionClassifier? databaseExceptionClassifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _databaseExceptionClassifier = databaseExceptionClassifier ?? NoOpDatabaseExceptionClassifier.Instance;
     }
 
     public async Task<CustomBookingRequestDto> Handle(
@@ -59,19 +62,43 @@ public sealed class AssignCustomBookingVesselCommandHandler
             ?? throw new NotFoundException("Không tìm thấy tàu.");
 
         CustomBookingRequestSupport.EnsureVesselMatchesRequest(customRequest, vessel);
-        await CustomBookingAvailability.EnsureVesselAvailableAsync(
+        var now = _timeProvider.GetUtcNow();
+        if (await CustomBookingVesselReservations.ExpireStaleReservationsAsync(
+            _context,
+            now,
+            cancellationToken) > 0)
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        await CustomBookingVesselReservations.EnsureVesselAvailableAsync(
             _context,
             customRequest,
             vessel.Id,
+            now,
             cancellationToken);
 
         customRequest.AssignedVesselId = vessel.Id;
         customRequest.AssignedVessel = vessel;
-        customRequest.AssignedAt = _timeProvider.GetUtcNow();
+        customRequest.AssignedAt = now;
         customRequest.AssignedByUserId = actor.Id;
         customRequest.StatusReason = null;
+        await CustomBookingVesselReservations.HoldForQuoteAsync(
+            _context,
+            customRequest,
+            vessel.Id,
+            actor.Id,
+            now,
+            cancellationToken);
 
-        await _context.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (_databaseExceptionClassifier.IsExclusionConstraintViolation(ex))
+        {
+            throw CustomBookingVesselReservations.CreateUnavailableException();
+        }
 
         var routeSegments = await CustomBookingRequestSupport.GetMatchingRouteSegmentsAsync(
             _context,

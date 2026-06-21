@@ -26,6 +26,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<VesselRentalPrice> VesselRentalPrices => Set<VesselRentalPrice>();
 
+    public DbSet<VesselReservation> VesselReservations => Set<VesselReservation>();
+
     public DbSet<Seat> Seats => Set<Seat>();
 
     public DbSet<SeatType> SeatTypes => Set<SeatType>();

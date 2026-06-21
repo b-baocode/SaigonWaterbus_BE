@@ -139,6 +139,14 @@ public sealed class CancelCustomBookingRequestCommandHandler
         customRequest.StatusReason = request.Reason.Trim();
         customRequest.CancelledAt = now;
         customRequest.CancelledByUserId = actor.Id;
+        await CustomBookingVesselReservations.ReleaseAsync(
+            _context,
+            customRequest.Id,
+            VesselReservationStatus.Cancelled,
+            now,
+            request.Reason.Trim(),
+            cancellationToken);
+
         if (paidAmount > 0)
         {
             await RestorePromotionUsageAsync(quote, cancellationToken);

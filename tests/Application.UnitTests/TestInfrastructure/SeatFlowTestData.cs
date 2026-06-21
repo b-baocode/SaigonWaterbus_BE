@@ -117,6 +117,8 @@ internal sealed class TestUserContext(Guid userId) : IUserContext
 internal sealed class TestDatabaseExceptionClassifier : IDatabaseExceptionClassifier
 {
     public bool IsUniqueConstraintViolation(Exception exception) => false;
+
+    public bool IsExclusionConstraintViolation(Exception exception) => false;
 }
 
 internal sealed class TestVesselImageStorageService : IVesselImageStorageService

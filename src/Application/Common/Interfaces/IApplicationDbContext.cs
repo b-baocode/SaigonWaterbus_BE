@@ -22,6 +22,8 @@ public interface IApplicationDbContext
 
     DbSet<VesselRentalPrice> VesselRentalPrices { get; }
 
+    DbSet<VesselReservation> VesselReservations { get; }
+
     DbSet<Seat> Seats { get; }
 
     DbSet<SeatType> SeatTypes { get; }

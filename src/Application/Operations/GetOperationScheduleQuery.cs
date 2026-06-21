@@ -643,6 +643,10 @@ public sealed class OperationScheduleSynchronizer : IOperationScheduleSynchroniz
             .Include(x => x.ToStation)
             .Include(x => x.Quote)
             .Where(x => x.PreferredStartTime.HasValue
+                        && x.AssignedVesselId.HasValue
+                        && x.AssignedManagerUserId.HasValue
+                        && x.Quote != null
+                        && x.Quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Paid
                         && x.DepartureDate <= toDate
                         && (x.EstimatedEndDate ?? x.DepartureDate) >= fromDate)
             .ToArrayAsync(cancellationToken);

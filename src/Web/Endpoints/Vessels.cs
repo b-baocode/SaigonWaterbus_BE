@@ -44,7 +44,15 @@ public sealed class Vessels : IEndpointGroup
         """
         {
           "name": "Tau Waterbus 01 (moi)",
-          "seatCount": 90
+          "seatCount": 90,
+          "rentalPrices": [
+            {
+              "rentalUnit": "Hour",
+              "unitPrice": 2500000,
+              "currency": "VND",
+              "note": "Gia cap nhat theo gio."
+            }
+          ]
         }
         """;
 
@@ -52,16 +60,6 @@ public sealed class Vessels : IEndpointGroup
         """
         {
           "status": "Maintenance"
-        }
-        """;
-
-    private const string UpdateRentalPriceExample =
-        """
-        {
-          "rentalUnit": "Day",
-          "unitPrice": 15000000,
-          "currency": "VND",
-          "note": "Gia thue tau tham khao theo ngay."
         }
         """;
 
@@ -118,9 +116,11 @@ public sealed class Vessels : IEndpointGroup
                 "Admin",
                 UpdateVesselExample,
                 "Chỉ field nào gửi lên mới được cập nhật.",
+                "Nếu gửi rentalPrices thì backend cập nhật/thêm các giá theo rentalUnit được gửi, không xóa giá cũ không có trong payload.",
                 "Có thể gửi application/json nếu không đổi ảnh.",
                 "Nếu gửi ảnh mới bằng imageUrl/imageUrls/images thì backend thay bộ ảnh hiện tại bằng bộ ảnh mới.",
-                "Nếu upload ảnh, gửi multipart/form-data với field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh."));
+                "Nếu upload ảnh, gửi multipart/form-data với field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh.",
+                "Với multipart/form-data, rentalPrices dùng dạng rentalPrices[0].rentalUnit, rentalPrices[0].unitPrice, rentalPrices[0].currency, rentalPrices[0].note."));
 
         groupBuilder.MapPatch(UpdateVesselStatus, "status/{vesselId:guid}")
             .RequireAuthorization()
@@ -131,16 +131,6 @@ public sealed class Vessels : IEndpointGroup
                 "Các trạng thái hợp lệ: Active, Maintenance, Inactive, Retired.",
                 "Muốn chuyển Active thì tàu phải setup đủ ghế.",
                 "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."));
-
-        groupBuilder.MapPut(UpdateVesselRentalPrice, "{vesselId:guid}/rental-price")
-            .RequireAuthorization()
-            .WithSummary("Cập nhật giá thuê tàu theo giờ hoặc theo ngày")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                UpdateRentalPriceExample,
-                "rentalUnit: Hour hoặc Day. Nếu không gửi thì mặc định Day để tương thích API cũ.",
-                "Nếu tàu chưa có giá thì tạo mới, nếu đã có thì cập nhật.",
-                "Giá này là giá thuê tàu cơ bản để custom booking dùng làm giá tham khảo."));
 
         groupBuilder.MapDelete(DeleteVessel, "{vesselId:guid}")
             .RequireAuthorization()
@@ -213,20 +203,6 @@ public sealed class Vessels : IEndpointGroup
             new UpdateVesselStatusRequest(vesselId, request.Status),
             cancellationToken));
 
-    private static async Task<IResult> UpdateVesselRentalPrice(
-        IVesselManagementService vesselManagementService,
-        Guid vesselId,
-        UpdateVesselRentalPriceApiRequest request,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await vesselManagementService.UpdateVesselRentalPriceAsync(
-            new UpdateVesselRentalPriceRequest(
-                vesselId,
-                request.UnitPrice,
-                request.Currency,
-                request.Note,
-                request.RentalUnit),
-            cancellationToken));
-
     private static async Task<IResult> DeleteVessel(
         IVesselManagementService vesselManagementService,
         Guid vesselId,
@@ -296,7 +272,8 @@ public sealed class Vessels : IEndpointGroup
             body?.Description,
             body?.ImageUrl,
             SeatSetupType: body?.SeatSetupType,
-            ImageUrls: body?.ImageUrls);
+            ImageUrls: body?.ImageUrls,
+            RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray());
     }
 
     private static async Task<UpdateVesselRequest> UpdateVesselRequestFromFormAsync(
@@ -319,7 +296,8 @@ public sealed class Vessels : IEndpointGroup
             GetFormValue(form, "imageUrl"),
             SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType")),
             ImageUrls: GetFormValues(form, "imageUrls"),
-            ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken));
+            ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken),
+            RentalPrices: CreateRentalPricesFromForm(form));
     }
 
     private static string? GetFormValue(IFormCollection form, string name)
@@ -432,6 +410,14 @@ public sealed class Vessels : IEndpointGroup
 
     private static IReadOnlyCollection<VesselRentalPriceRequest>? CreateRentalPricesFromForm(IFormCollection form)
     {
+        // FE gửi multipart theo dạng mảng có chỉ số: rentalPrices[i].rentalUnit/unitPrice/currency/note
+        // (giống shape JSON). Ưu tiên đọc dạng này; nếu không có thì fallback key phẳng hourly*/daily*.
+        var indexedRentalPrices = CreateIndexedRentalPricesFromForm(form);
+        if (indexedRentalPrices is not null)
+        {
+            return indexedRentalPrices;
+        }
+
         var rentalPrices = new List<VesselRentalPriceRequest>();
         var hourlyPrice = ParseOptionalDecimal(GetFormValue(form, "hourlyUnitPrice")
             ?? GetFormValue(form, "hourlyRentalPrice"));
@@ -454,6 +440,61 @@ public sealed class Vessels : IEndpointGroup
                 dailyPrice.Value,
                 GetFormValue(form, "dailyCurrency"),
                 GetFormValue(form, "dailyNote")));
+        }
+
+        return rentalPrices.Count == 0 ? null : rentalPrices;
+    }
+
+    // Đọc mảng giá thuê dạng có chỉ số trong multipart: rentalPrices[i].rentalUnit / unitPrice / currency / note.
+    // Đây là convention FE dùng (khớp với shape JSON). Trả về null nếu form không chứa dạng này.
+    private static IReadOnlyCollection<VesselRentalPriceRequest>? CreateIndexedRentalPricesFromForm(IFormCollection form)
+    {
+        const string prefix = "rentalPrices[";
+
+        var indices = new SortedSet<int>();
+        foreach (var key in form.Keys)
+        {
+            if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var closeIndex = key.IndexOf(']');
+            if (closeIndex <= prefix.Length)
+            {
+                continue;
+            }
+
+            if (int.TryParse(key.AsSpan(prefix.Length, closeIndex - prefix.Length), out var index))
+            {
+                indices.Add(index);
+            }
+        }
+
+        if (indices.Count == 0)
+        {
+            return null;
+        }
+
+        var rentalPrices = new List<VesselRentalPriceRequest>();
+        foreach (var index in indices)
+        {
+            var rentalUnit = ParseOptionalEnum<VesselRentalUnit>(
+                GetFormValue(form, $"rentalPrices[{index}].rentalUnit"));
+            var unitPrice = ParseOptionalDecimal(
+                GetFormValue(form, $"rentalPrices[{index}].unitPrice"));
+
+            // Bỏ qua phần tử thiếu dữ liệu bắt buộc thay vì lưu giá rác.
+            if (rentalUnit is null || unitPrice is null)
+            {
+                continue;
+            }
+
+            rentalPrices.Add(new VesselRentalPriceRequest(
+                rentalUnit.Value,
+                unitPrice.Value,
+                GetFormValue(form, $"rentalPrices[{index}].currency"),
+                GetFormValue(form, $"rentalPrices[{index}].note")));
         }
 
         return rentalPrices.Count == 0 ? null : rentalPrices;
@@ -484,15 +525,10 @@ public sealed class Vessels : IEndpointGroup
         int? YearBuilt = null,
         string? Description = null,
         string? ImageUrl = null,
-        IReadOnlyCollection<string>? ImageUrls = null);
+        IReadOnlyCollection<string>? ImageUrls = null,
+        IReadOnlyCollection<VesselRentalPriceApiRequest>? RentalPrices = null);
 
     private sealed record UpdateVesselStatusApiRequest(VesselStatus Status);
-
-    private sealed record UpdateVesselRentalPriceApiRequest(
-        decimal UnitPrice,
-        string? Currency = null,
-        string? Note = null,
-        VesselRentalUnit RentalUnit = VesselRentalUnit.Day);
 
     private sealed record VesselRentalPriceApiRequest(
         VesselRentalUnit RentalUnit,

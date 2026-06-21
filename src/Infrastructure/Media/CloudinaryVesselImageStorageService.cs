@@ -39,10 +39,10 @@ internal sealed class CloudinaryVesselImageStorageService : IVesselImageStorageS
                 Overwrite = true,
                 Invalidate = true,
                 Transformation = new Transformation()
-                    .Width(1600)
-                    .Height(1000)
+                    .Width(2000)
+                    .Height(1400)
                     .Crop("limit")
-                    .Quality("auto")
+                    .Quality("auto:best")
                     .FetchFormat("auto")
             });
         }

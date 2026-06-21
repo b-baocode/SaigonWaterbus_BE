@@ -118,6 +118,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<ApplicationDbContextInitialiser>();
         builder.Services.AddHostedService<PendingRegistrationCleanupService>();
         builder.Services.AddHostedService<OperationScheduleSyncService>();
+        builder.Services.AddHostedService<VesselReservationExpiryService>();
         builder.Services.Configure<DatabaseStartupSettings>(options =>
         {
             options.ResetOnStartup = builder.Environment.IsDevelopment() &&

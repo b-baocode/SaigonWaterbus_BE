@@ -348,7 +348,19 @@ public class CustomBookingWorkflowTests
         overlapping.PreferredStartTime = new TimeOnly(9, 0);
         overlapping.EstimatedEndDate = request.DepartureDate;
         overlapping.PreferredEndTime = new TimeOnly(10, 0);
-        context.AddRange(request, reserved, available, overlapping);
+        context.AddRange(request, reserved, available, overlapping, new VesselReservation
+        {
+            VesselId = reserved.Id,
+            SourceType = VesselReservationSourceType.CustomBooking,
+            SourceId = overlapping.Id,
+            StartAt = new DateTimeOffset(
+                overlapping.DepartureDate.ToDateTime(overlapping.PreferredStartTime.Value),
+                TimeSpan.FromHours(7)).ToUniversalTime(),
+            EndAt = new DateTimeOffset(
+                overlapping.EstimatedEndDate!.Value.ToDateTime(overlapping.PreferredEndTime!.Value),
+                TimeSpan.FromHours(7)).ToUniversalTime(),
+            Status = VesselReservationStatus.Confirmed
+        });
         await context.SaveChangesAsync();
 
         var result = await new GetCustomBookingVesselCandidatesQueryHandler(context, userContext)
@@ -443,6 +455,68 @@ public class CustomBookingWorkflowTests
                 .Handle(new SelectPreferredCustomBookingVesselCommand(request.Id, vessel.Id), CancellationToken.None));
 
         exception.Errors.Keys.ShouldContain("assignedVesselId");
+    }
+
+    [Test]
+    public async Task AssigningVesselCreatesHoldAndBlocksOverlappingAssignment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var firstRequest = ValidRequest();
+        var secondRequest = ValidRequest();
+        var vessel = ValidVessel("WB01", 12000000m);
+        context.AddRange(firstRequest, secondRequest, vessel);
+        await context.SaveChangesAsync();
+
+        var handler = new AssignCustomBookingVesselCommandHandler(
+            context,
+            adminContext,
+            new FixedTimeProvider(new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)));
+
+        await handler.Handle(
+            new AssignCustomBookingVesselCommand(firstRequest.Id, vessel.Id),
+            CancellationToken.None);
+
+        var reservation = context.VesselReservations.Single(x => x.SourceId == firstRequest.Id);
+        reservation.Status.ShouldBe(VesselReservationStatus.Held);
+        reservation.VesselId.ShouldBe(vessel.Id);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new AssignCustomBookingVesselCommand(secondRequest.Id, vessel.Id),
+                CancellationToken.None));
+
+        exception.Errors.Keys.ShouldContain("assignedVesselId");
+    }
+
+    [Test]
+    public async Task ExpiredHoldDoesNotBlockCandidateVessel()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var request = ValidRequest();
+        var expiredRequest = ValidRequest();
+        var vessel = ValidVessel("WB01", 12000000m);
+        context.AddRange(request, expiredRequest, vessel, new VesselReservation
+        {
+            VesselId = vessel.Id,
+            SourceType = VesselReservationSourceType.CustomBooking,
+            SourceId = expiredRequest.Id,
+            StartAt = new DateTimeOffset(
+                expiredRequest.DepartureDate.ToDateTime(expiredRequest.PreferredStartTime!.Value),
+                TimeSpan.FromHours(7)).ToUniversalTime(),
+            EndAt = new DateTimeOffset(
+                expiredRequest.DepartureDate.ToDateTime(expiredRequest.PreferredStartTime.Value),
+                TimeSpan.FromHours(7)).ToUniversalTime().AddMinutes(expiredRequest.EstimatedDurationMinutes),
+            Status = VesselReservationStatus.Held,
+            ExpiresAt = new DateTimeOffset(2026, 6, 18, 0, 0, 0, TimeSpan.Zero)
+        });
+        await context.SaveChangesAsync();
+
+        var result = await new GetCustomBookingVesselCandidatesQueryHandler(context, adminContext)
+            .Handle(new GetCustomBookingVesselCandidatesQuery(request.Id), CancellationToken.None);
+
+        result.Select(x => x.VesselId).ShouldBe([vessel.Id]);
     }
 
     [Test]

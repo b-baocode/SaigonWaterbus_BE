@@ -101,17 +101,6 @@ public class VesselSupportTests
     }
 
     [Test]
-    public void UpdateVesselRentalPriceValidatorRejectsInvalidPrice()
-    {
-        var validator = new UpdateVesselRentalPriceRequestValidator();
-
-        var result = validator.Validate(new UpdateVesselRentalPriceRequest(Guid.NewGuid(), 0));
-
-        result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.PropertyName == nameof(UpdateVesselRentalPriceRequest.UnitPrice));
-    }
-
-    [Test]
     public void CreateVesselRequestValidatorRejectsDuplicateRentalUnits()
     {
         var validator = new CreateVesselRequestValidator();
@@ -125,6 +114,22 @@ public class VesselSupportTests
             [
                 new VesselRentalPriceRequest(VesselRentalUnit.Hour, 2000000m),
                 new VesselRentalPriceRequest(VesselRentalUnit.Hour, 2500000m)
+            ]));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
+    }
+
+    [Test]
+    public void UpdateVesselRequestValidatorRejectsDuplicateRentalUnits()
+    {
+        var validator = new UpdateVesselRequestValidator();
+        var result = validator.Validate(new UpdateVesselRequest(
+            Guid.NewGuid(),
+            RentalPrices:
+            [
+                new VesselRentalPriceRequest(VesselRentalUnit.Day, 15000000m),
+                new VesselRentalPriceRequest(VesselRentalUnit.Day, 16000000m)
             ]));
 
         result.IsValid.ShouldBeFalse();

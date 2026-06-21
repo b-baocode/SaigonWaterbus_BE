@@ -113,6 +113,16 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
                 quote.CustomBookingRequest.QuoteAcceptedAt ??= _timeProvider.GetUtcNow();
             }
 
+            if (paymentKind == CustomBookingPaymentKind.Deposit)
+            {
+                await CustomBookingVesselReservations.ConfirmAsync(
+                    _context,
+                    quote.CustomBookingRequest,
+                    null,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken);
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
             if (paymentKind == CustomBookingPaymentKind.Deposit && !wasPaid)
             {
@@ -138,6 +148,17 @@ public sealed class HandleCustomBookingDepositPaymentWebhookCommandHandler
         if (GetPaymentStatus(quote, paymentKind) != CustomBookingDepositPaymentStatus.Paid)
         {
             MarkPaymentFailed(quote, paymentKind, webhook.Data.Desc ?? webhook.Desc);
+            if (paymentKind == CustomBookingPaymentKind.Deposit)
+            {
+                await CustomBookingVesselReservations.ReleaseAsync(
+                    _context,
+                    quote.CustomBookingRequest.Id,
+                    VesselReservationStatus.Cancelled,
+                    _timeProvider.GetUtcNow(),
+                    "Deposit payment webhook was not successful.",
+                    cancellationToken);
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
         }
 

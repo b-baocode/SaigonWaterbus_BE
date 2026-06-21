@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using SaigonWaterbus.Infrastructure.Data;
@@ -13,6 +14,12 @@ builder.AddKeyVaultIfConfigured();
 builder.AddApplicationServices();
 builder.AddInfrastructureServices();
 builder.AddWebServices();
+
+// Cho phép upload nhiều ảnh tàu trong một request multipart (mặc định Kestrel ~30MB là quá sát với 5 ảnh × 5MB).
+builder.WebHost.ConfigureKestrel(options =>
+    options.Limits.MaxRequestBodySize = 60 * 1024 * 1024);
+builder.Services.Configure<FormOptions>(options =>
+    options.MultipartBodyLengthLimit = 60 * 1024 * 1024);
 
 var app = builder.Build();
 
