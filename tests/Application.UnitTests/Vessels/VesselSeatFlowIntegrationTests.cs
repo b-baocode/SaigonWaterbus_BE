@@ -197,6 +197,45 @@ public class VesselSeatFlowIntegrationTests
         (await context.VesselImages.CountAsync(x => x.VesselId == result.Id)).ShouldBe(2);
     }
 
+    [Test]
+    public async Task UpdateVesselReplacesImageUrls()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
+        vessel.Images.Add(new VesselImage
+        {
+            VesselId = vessel.Id,
+            Url = "https://example.test/vessels/old-main.jpg",
+            DisplayOrder = 1,
+            IsPrimary = true
+        });
+        vessel.Images.Add(new VesselImage
+        {
+            VesselId = vessel.Id,
+            Url = "https://example.test/vessels/old-deck.jpg",
+            DisplayOrder = 2
+        });
+        context.Add(vessel);
+        await context.SaveChangesAsync();
+
+        var result = await UpdateVesselUseCase(context, userContext).ExecuteAsync(
+            new UpdateVesselRequest(
+                vessel.Id,
+                ImageUrl: "https://example.test/vessels/new-main.jpg"),
+            CancellationToken.None);
+
+        result.ImageUrl.ShouldBe("https://example.test/vessels/new-main.jpg");
+        result.ImageUrls.ShouldBe(["https://example.test/vessels/new-main.jpg"]);
+        var images = await context.VesselImages
+            .Where(x => x.VesselId == vessel.Id)
+            .OrderBy(x => x.DisplayOrder)
+            .ToListAsync();
+        images.Count.ShouldBe(1);
+        images[0].Url.ShouldBe("https://example.test/vessels/new-main.jpg");
+        images[0].IsPrimary.ShouldBeTrue();
+    }
+
     private static CreateVesselRequestUseCase CreateVesselUseCase(
         Infrastructure.Data.ApplicationDbContext context,
         TestUserContext userContext) =>

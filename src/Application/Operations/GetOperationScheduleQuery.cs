@@ -351,14 +351,6 @@ internal static class OperationScheduleAccess
                     && assignedCustomBookingIds.Contains(x.SourceId)));
         }
 
-        if (AuthSupport.IsCustomer(actor))
-        {
-            return query.Where(x =>
-                x.SourceType == OperationScheduleSourceType.RegularTrip
-                || (x.SourceType == OperationScheduleSourceType.CustomBooking
-                    && x.CustomerUserId == actor.Id));
-        }
-
         throw new ForbiddenAccessException();
     }
 
@@ -644,7 +636,6 @@ public sealed class OperationScheduleSynchronizer : IOperationScheduleSynchroniz
             .Include(x => x.Quote)
             .Where(x => x.PreferredStartTime.HasValue
                         && x.AssignedVesselId.HasValue
-                        && x.AssignedManagerUserId.HasValue
                         && x.Quote != null
                         && x.Quote.DepositPaymentStatus == CustomBookingDepositPaymentStatus.Paid
                         && x.DepartureDate <= toDate

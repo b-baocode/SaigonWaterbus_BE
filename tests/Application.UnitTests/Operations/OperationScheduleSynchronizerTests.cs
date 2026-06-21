@@ -106,6 +106,57 @@ public class OperationScheduleSynchronizerTests
             .OperationStatus.ShouldBe(expectedOperationStatus);
     }
 
+    [Test]
+    public async Task SyncIncludesCustomBookingAfterDepositIsPaidEvenBeforeManagerAssignment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var vessel = SeatFlowTestData.Vessel(
+            SeatSetupType.FullStandard,
+            seatsConfigured: true,
+            status: VesselStatus.Active);
+        var request = CustomBooking(vessel, CustomBookingDepositPaymentStatus.Paid);
+        context.Add(vessel);
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var count = await CreateSynchronizer(context)
+            .SyncAsync(FixedNow.AddDays(-1), FixedNow.AddDays(3), CancellationToken.None);
+
+        count.ShouldBe(1);
+        var entry = context.OperationScheduleEntries.Single(x => x.SourceId == request.Id);
+        entry.SourceType.ShouldBe(OperationScheduleSourceType.CustomBooking);
+        entry.VesselId.ShouldBe(vessel.Id);
+        entry.VesselCode.ShouldBe(vessel.Code);
+        entry.StartAt.ShouldBe(new DateTimeOffset(
+            request.DepartureDate.ToDateTime(request.PreferredStartTime!.Value),
+            TimeSpan.FromHours(7)).ToUniversalTime());
+        entry.EndAt.ShouldBe(entry.StartAt.AddMinutes(request.EstimatedDurationMinutes));
+        entry.ScheduleState.ShouldBe("Reserved");
+        entry.PaymentStage.ShouldBe("DepositPaid");
+        entry.OperationStatus.ShouldBe(OperationStatuses.Scheduled);
+        entry.AssignedManagerUserId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task SyncSkipsCustomBookingBeforeDepositIsPaid()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var vessel = SeatFlowTestData.Vessel(
+            SeatSetupType.FullStandard,
+            seatsConfigured: true,
+            status: VesselStatus.Active);
+        var request = CustomBooking(vessel, CustomBookingDepositPaymentStatus.Pending);
+        context.Add(vessel);
+        context.Add(request);
+        await context.SaveChangesAsync();
+
+        var count = await CreateSynchronizer(context)
+            .SyncAsync(FixedNow.AddDays(-1), FixedNow.AddDays(3), CancellationToken.None);
+
+        count.ShouldBe(0);
+        context.OperationScheduleEntries.Count(x => x.SourceId == request.Id).ShouldBe(0);
+    }
+
     private static OperationScheduleSynchronizer CreateSynchronizer(Infrastructure.Data.ApplicationDbContext context) =>
         new(
             context,
@@ -169,6 +220,40 @@ public class OperationScheduleSynchronizerTests
             StationName = name,
             Status = StationStatus.Active
         };
+
+    private static CustomBookingRequest CustomBooking(
+        Vessel vessel,
+        CustomBookingDepositPaymentStatus depositPaymentStatus)
+    {
+        var departureDate = DateOnly.FromDateTime(FixedNow.AddDays(2).ToOffset(TimeSpan.FromHours(7)).DateTime);
+        return new CustomBookingRequest
+        {
+            ContactName = "Customer",
+            ContactPhone = "+84900000000",
+            RequestedNumberOfDecks = 1,
+            RequestedSeatSetupType = SeatSetupType.FullStandard,
+            RentalUnit = VesselRentalUnit.Hour,
+            AssignedVesselId = vessel.Id,
+            AssignedVessel = vessel,
+            DepartureDate = departureDate,
+            PreferredStartTime = new TimeOnly(9, 0),
+            EstimatedDurationMinutes = 120,
+            FromLocation = "Bach Dang",
+            ToLocation = "Linh Dong",
+            PassengerCount = 10,
+            AdultCount = 10,
+            ChildCount = 0,
+            Status = CustomBookingRequestStatus.Confirmed,
+            Quote = new CustomBookingQuote
+            {
+                QuotedPrice = 5000000m,
+                DepositPercent = 50m,
+                DepositAmount = 2500000m,
+                RemainingAmount = 2500000m,
+                DepositPaymentStatus = depositPaymentStatus
+            }
+        };
+    }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {

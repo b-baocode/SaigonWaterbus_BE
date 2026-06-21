@@ -158,7 +158,6 @@ public sealed class UpdateVesselRequestUseCase
         await VesselSupport.EnsureCurrentUserCanManageVesselsAsync(_context, _userContext, cancellationToken);
 
         var vessel = await _context.Vessels
-            .Include(x => x.Images)
             .Include(x => x.RentalPrices)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
@@ -271,67 +270,121 @@ public sealed class UpdateVesselRequestUseCase
                 _vesselImageStorage);
         }
 
-        if (hasImageUpdate)
-        {
-            _context.VesselImages.RemoveRange(vessel.Images);
-            vessel.Images.Clear();
-            vessel.ImageUrl = null;
-            vessel.ImagePublicId = null;
-
-            var displayOrder = 1;
-            foreach (var imageUrl in imageUrls)
-            {
-                vessel.Images.Add(VesselSupport.CreateImage(
-                    imageUrl,
-                    null,
-                    displayOrder++,
-                    isPrimary: vessel.Images.Count == 0));
-            }
-        }
-
         try
         {
             if (hasImageUpdate)
             {
-                var displayOrder = VesselSupport.NextImageDisplayOrder(vessel);
-                foreach (var imageFile in imageFiles)
+                if (SupportsTransactionalBulkImageReplace())
                 {
-                    var vesselImage = new VesselImage
-                    {
-                        VesselId = vessel.Id,
-                        DisplayOrder = displayOrder++,
-                        IsPrimary = vessel.Images.Count == 0
-                    };
-                    var uploadedImage = await _vesselImageStorage.UploadImageAsync(
-                        new VesselImageUpload(
-                            vessel.Id,
-                            imageFile.Content,
-                            imageFile.FileName,
-                            imageFile.ContentType,
-                            vesselImage.Id),
-                        cancellationToken);
-
-                    vesselImage.Url = uploadedImage.Url;
-                    vesselImage.PublicId = uploadedImage.PublicId;
-                    _context.VesselImages.Add(vesselImage);
-                    if (!vessel.Images.Contains(vesselImage))
-                    {
-                        vessel.Images.Add(vesselImage);
-                    }
+                    await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
+                    await ReplaceImagesAsync(vessel, imageUrls, imageFiles, useBulkDelete: true, cancellationToken);
+                    await _context.SaveChangesAsync(cancellationToken);
+                    await transaction.CommitAsync(cancellationToken);
                 }
-
-                VesselSupport.SyncPrimaryImage(vessel);
+                else
+                {
+                    await ReplaceImagesAsync(vessel, imageUrls, imageFiles, useBulkDelete: false, cancellationToken);
+                    await _context.SaveChangesAsync(cancellationToken);
+                }
             }
-
-            await _context.SaveChangesAsync(cancellationToken);
+            else
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+            }
         }
         catch (DbUpdateException ex) when (_databaseExceptionClassifier.IsUniqueConstraintViolation(ex))
         {
             throw AuthSupport.CreateValidationException(nameof(request.Code), "Mã tàu hoặc số đăng ký tàu đã tồn tại.");
         }
 
+        await LoadImagesAsync(vessel, cancellationToken);
         return VesselSupport.CreateDto(vessel);
     }
+
+    private async Task ReplaceImagesAsync(
+        Vessel vessel,
+        IReadOnlyCollection<string> imageUrls,
+        IReadOnlyCollection<VesselImageFileRequest> imageFiles,
+        bool useBulkDelete,
+        CancellationToken cancellationToken)
+    {
+        if (useBulkDelete)
+        {
+            await _context.VesselImages
+                .Where(x => x.VesselId == vessel.Id)
+                .ExecuteDeleteAsync(cancellationToken);
+        }
+        else
+        {
+            var existingImages = await _context.VesselImages
+                .Where(x => x.VesselId == vessel.Id)
+                .ToListAsync(cancellationToken);
+            _context.VesselImages.RemoveRange(existingImages);
+        }
+
+        vessel.Images.Clear();
+        vessel.ImageUrl = null;
+        vessel.ImagePublicId = null;
+
+        var displayOrder = 1;
+        foreach (var imageUrl in imageUrls)
+        {
+            AddImage(
+                vessel,
+                VesselSupport.CreateImage(
+                    imageUrl,
+                    null,
+                    displayOrder++,
+                    isPrimary: vessel.Images.Count == 0));
+        }
+
+        foreach (var imageFile in imageFiles)
+        {
+            var vesselImage = new VesselImage
+            {
+                VesselId = vessel.Id,
+                DisplayOrder = displayOrder++,
+                IsPrimary = vessel.Images.Count == 0
+            };
+            var uploadedImage = await _vesselImageStorage.UploadImageAsync(
+                new VesselImageUpload(
+                    vessel.Id,
+                    imageFile.Content,
+                    imageFile.FileName,
+                    imageFile.ContentType,
+                    vesselImage.Id),
+                cancellationToken);
+
+            vesselImage.Url = uploadedImage.Url;
+            vesselImage.PublicId = uploadedImage.PublicId;
+            AddImage(vessel, vesselImage);
+        }
+
+        VesselSupport.SyncPrimaryImage(vessel);
+    }
+
+    private void AddImage(Vessel vessel, VesselImage image)
+    {
+        image.VesselId = vessel.Id;
+        _context.VesselImages.Add(image);
+        vessel.Images.Add(image);
+    }
+
+    private async Task LoadImagesAsync(Vessel vessel, CancellationToken cancellationToken)
+    {
+        vessel.Images = await _context.VesselImages
+            .Where(x => x.VesselId == vessel.Id)
+            .OrderBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    private bool SupportsTransactionalBulkImageReplace() =>
+        _context is DbContext dbContext
+        && !string.Equals(
+            dbContext.Database.ProviderName,
+            "Microsoft.EntityFrameworkCore.InMemory",
+            StringComparison.Ordinal);
 
     private void UpsertRentalPrices(
         Vessel vessel,

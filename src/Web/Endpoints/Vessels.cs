@@ -120,6 +120,8 @@ public sealed class Vessels : IEndpointGroup
                 "Có thể gửi application/json nếu không đổi ảnh.",
                 "Nếu gửi ảnh mới bằng imageUrl/imageUrls/images thì backend thay bộ ảnh hiện tại bằng bộ ảnh mới.",
                 "Nếu upload ảnh, gửi multipart/form-data với field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh.",
+                "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
+                "Mỗi tàu tối đa 10 ảnh.",
                 "Với multipart/form-data, rentalPrices dùng dạng rentalPrices[0].rentalUnit, rentalPrices[0].unitPrice, rentalPrices[0].currency, rentalPrices[0].note."));
 
         groupBuilder.MapPatch(UpdateVesselStatus, "status/{vesselId:guid}")

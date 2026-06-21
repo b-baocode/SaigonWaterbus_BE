@@ -1,4 +1,7 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.Mvc;
 using SaigonWaterbus.Application.Operations;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -16,8 +19,8 @@ public sealed class Operations : IEndpointGroup
     private const string RefreshScheduleExample =
         """
         {
-          "from": "2026-06-20",
-          "to": "2026-06-21"
+          "fromDate": "2026-06-20",
+          "toDate": "2026-06-21"
         }
         """;
 
@@ -31,11 +34,13 @@ public sealed class Operations : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Xem lịch vận hành chung")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager, Staff hoặc Customer",
+                "Admin, Manager hoặc Staff",
                 null,
-                "Query params: from, to dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy. Nếu bỏ to thì lấy một ngày.",
+                "Query params: fromDate, toDate là ngày bắt đầu/kết thúc, không phải bến đi/bến đến.",
+                "Định dạng ngày: yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy. Nếu bỏ toDate thì lấy một ngày.",
+                "Query cũ from/to vẫn được đọc để tương thích, nhưng FE nên dùng fromDate/toDate.",
                 "GET chỉ đọc dữ liệu đã được đồng bộ bởi job nền hoặc POST /api/operations/schedule/sync.",
-                "Admin/Manager/Staff xem lịch nội bộ. Customer xem lịch tuyến thường và custom booking của chính họ."));
+                "Đây là lịch vận hành nội bộ. Bảng công cộng/khách hàng không dùng API này và không hiển thị custom booking."));
 
         groupBuilder.MapPost(RefreshSchedule, "schedule/sync")
             .RequireAuthorization()
@@ -43,8 +48,10 @@ public sealed class Operations : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
                 RefreshScheduleExample,
+                "Body dùng fromDate, toDate là ngày bắt đầu/kết thúc, không phải bến đi/bến đến.",
                 "Đồng bộ bảng operation_schedule_entries từ trips và custom_booking_requests trong khoảng ngày yêu cầu.",
-                "Nếu bỏ from thì mặc định hôm nay theo giờ Việt Nam; nếu bỏ to thì lấy cùng ngày với from."));
+                "Nếu bỏ fromDate thì mặc định hôm nay theo giờ Việt Nam; nếu bỏ toDate thì lấy cùng ngày với fromDate.",
+                "Field cũ from/to vẫn được đọc để tương thích, nhưng FE nên dùng fromDate/toDate."));
 
         groupBuilder.MapPatch(DelayScheduleEntry, "schedule/{id:guid}/delay")
             .RequireAuthorization()
@@ -59,26 +66,30 @@ public sealed class Operations : IEndpointGroup
 
     private static async Task<IResult> GetSchedule(
         ISender sender,
-        string? from,
-        string? to,
-        bool includeCancelled,
+        HttpRequest httpRequest,
+        [FromQuery] string? fromDate,
+        [FromQuery] string? toDate,
+        [FromQuery] bool includeCancelled,
         CancellationToken cancellationToken)
     {
-        if (!TryParseDateOnly(from, out var fromDate))
+        var requestedFromDate = fromDate ?? GetQueryValue(httpRequest, "from");
+        var requestedToDate = toDate ?? GetQueryValue(httpRequest, "to");
+
+        if (!TryParseDateOnly(requestedFromDate, out var parsedFromDate))
         {
-            return Results.BadRequest(new { message = "from phải có định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+            return Results.BadRequest(new { message = "fromDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
         }
 
-        if (!TryParseOptionalDateOnly(to, out var toDate))
+        if (!TryParseOptionalDateOnly(requestedToDate, out var parsedToDate))
         {
-            return Results.BadRequest(new { message = "to phải có định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+            return Results.BadRequest(new { message = "toDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
         }
 
-        var startDate = fromDate ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7)).DateTime);
-        var endDate = toDate ?? startDate;
+        var startDate = parsedFromDate ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7)).DateTime);
+        var endDate = parsedToDate ?? startDate;
         if (endDate < startDate)
         {
-            return Results.BadRequest(new { message = "to phải lớn hơn hoặc bằng from." });
+            return Results.BadRequest(new { message = "toDate phải lớn hơn hoặc bằng fromDate." });
         }
 
         if (endDate.DayNumber - startDate.DayNumber > 62)
@@ -98,21 +109,21 @@ public sealed class Operations : IEndpointGroup
         RefreshOperationScheduleApiRequest request,
         CancellationToken cancellationToken)
     {
-        if (!TryParseDateOnly(request.From, out var fromDate))
+        if (!TryParseDateOnly(request.ResolveFromDate(), out var fromDate))
         {
-            return Results.BadRequest(new { message = "from phải có định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+            return Results.BadRequest(new { message = "fromDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
         }
 
-        if (!TryParseOptionalDateOnly(request.To, out var toDate))
+        if (!TryParseOptionalDateOnly(request.ResolveToDate(), out var toDate))
         {
-            return Results.BadRequest(new { message = "to phải có định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+            return Results.BadRequest(new { message = "toDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
         }
 
         var startDate = fromDate ?? DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7)).DateTime);
         var endDate = toDate ?? startDate;
         if (endDate < startDate)
         {
-            return Results.BadRequest(new { message = "to phải lớn hơn hoặc bằng from." });
+            return Results.BadRequest(new { message = "toDate phải lớn hơn hoặc bằng fromDate." });
         }
 
         if (endDate.DayNumber - startDate.DayNumber > 62)
@@ -141,6 +152,12 @@ public sealed class Operations : IEndpointGroup
 
     private static DateTimeOffset ToVietnamStartOfDay(DateOnly date) =>
         new(date.ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(7));
+
+    private static string? GetQueryValue(HttpRequest request, string name)
+    {
+        var value = request.Query[name].ToString();
+        return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
 
     private static bool TryParseOptionalDateOnly(string? value, out DateOnly? date)
     {
@@ -188,7 +205,30 @@ public sealed class Operations : IEndpointGroup
         int DelayMinutes,
         string Reason);
 
-    public sealed record RefreshOperationScheduleApiRequest(
-        string? From,
-        string? To);
+    public sealed record RefreshOperationScheduleApiRequest
+    {
+        public string? FromDate { get; init; }
+
+        public string? ToDate { get; init; }
+
+        [JsonExtensionData]
+        public IDictionary<string, JsonElement>? ExtensionData { get; init; }
+
+        public string? ResolveFromDate() => FromDate ?? GetLegacyDate("from");
+
+        public string? ResolveToDate() => ToDate ?? GetLegacyDate("to");
+
+        private string? GetLegacyDate(string name)
+        {
+            if (ExtensionData is null
+                || !ExtensionData.TryGetValue(name, out var value)
+                || value.ValueKind != JsonValueKind.String)
+            {
+                return null;
+            }
+
+            var date = value.GetString();
+            return string.IsNullOrWhiteSpace(date) ? null : date;
+        }
+    }
 }
