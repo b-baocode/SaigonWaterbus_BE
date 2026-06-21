@@ -241,8 +241,8 @@ public class Auth : IEndpointGroup
                 "Có thể gửi application/json nếu không đổi ảnh.",
                 "Nếu đổi ảnh, gửi multipart/form-data với các field fullName, dateOfBirth, gender, nationality, phoneNumber, email và file.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "User đăng nhập Google có thể thêm phoneNumber một lần; backend chỉ gửi OTP và chưa lưu số cho tới khi gọi verify-phone-change-otp thành công.",
-                "Customer đăng ký thường không được tự thay đổi phoneNumber; Admin hoặc Manager đổi số điện thoại customer qua API quản lý user.",
+                "User chưa có số điện thoại có thể thêm phoneNumber một lần; backend chỉ gửi OTP và chưa lưu số cho tới khi gọi verify-phone-change-otp thành công.",
+                "User đã có số điện thoại không được tự đổi phoneNumber; Admin hoặc Manager đổi số điện thoại customer qua API quản lý user.",
                 "Nếu email thay đổi, backend gửi OTP tới email mới và chưa đổi email cho tới khi verify OTP."));
 
         groupBuilder.MapDelete(DeleteMe, "me")
@@ -270,7 +270,7 @@ public class Auth : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 VerifyPhoneChangeOtpExample,
-                "Dùng challengeId trả về từ PUT /api/auth/me khi Google user thêm số điện thoại.",
+                "Dùng challengeId trả về từ PUT /api/auth/me khi user thêm số điện thoại lần đầu.",
                 "Thành công sẽ cập nhật phoneNumber và PhoneVerifiedAt.",
                 "Trước khi verify thành công, số điện thoại mới chưa dùng được để login."));
     }

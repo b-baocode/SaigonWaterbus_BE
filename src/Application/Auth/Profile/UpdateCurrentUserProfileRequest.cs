@@ -132,8 +132,6 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
         PendingEmailVerification? pendingEmailVerification = null;
         PendingPhoneVerification? pendingPhoneVerification = null;
         StoredProfileImage? uploadedAvatar = null;
-        ExternalLogin? googleLogin = null;
-
         if (emailChanged)
         {
             if (await _context.Set<ExternalLogin>().AnyAsync(
@@ -167,18 +165,6 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
 
         if (phoneChanged)
         {
-            googleLogin = await _context.Set<ExternalLogin>()
-                .FirstOrDefaultAsync(
-                    x => x.UserId == user.Id && x.Provider == AuthSupport.GoogleProvider,
-                    cancellationToken);
-
-            if (googleLogin is null)
-            {
-                throw AuthSupport.CreateValidationException(
-                    nameof(request.PhoneNumber),
-                    "Khách hàng không được tự thay đổi số điện thoại. Vui lòng liên hệ Admin hoặc Manager.");
-            }
-
             if (user.NormalizedPhoneNumber is not null)
             {
                 throw AuthSupport.CreateValidationException(
@@ -191,14 +177,6 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
                 throw AuthSupport.CreateValidationException(
                     nameof(request.PhoneNumber),
                     "Vui lòng xác thực đổi email trước khi cập nhật số điện thoại.");
-            }
-
-            if (!PhoneRules.IsVietnamPhone(request.PhoneNumber)
-                && !EmailRules.HasAllowedRegistrationDomain(googleLogin.Email))
-            {
-                throw AuthSupport.CreateValidationException(
-                    nameof(request.PhoneNumber),
-                    "Số điện thoại quốc tế sẽ xác thực OTP qua email Google, nhưng email Google hiện không được hỗ trợ.");
             }
 
             if (await _context.Set<User>().AnyAsync(
@@ -263,18 +241,12 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
                 await AuthSupport.RetirePendingOtpChallengesAsync(_context, user.Id, OtpPurpose.PhoneChange, now, ct);
 
                 otpCode = _otpCodeService.GenerateCode();
-                var phoneOtpChannel = PhoneRules.IsVietnamPhone(request.PhoneNumber)
-                    ? OtpChannel.Phone
-                    : OtpChannel.Email;
-                var destination = phoneOtpChannel == OtpChannel.Phone
-                    ? normalizedPhone!
-                    : googleLogin!.Email!.Trim();
 
                 challenge = new OtpChallenge
                 {
                     UserId = user.Id,
                     Purpose = OtpPurpose.PhoneChange,
-                    Email = destination,
+                    Email = normalizedPhone!,
                     PendingPhoneNumber = normalizedPhone,
                     CodeHash = _secretHasher.Hash(otpCode),
                     ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),

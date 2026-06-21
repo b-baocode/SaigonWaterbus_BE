@@ -97,15 +97,6 @@ public sealed class VerifyPhoneChangeOtpRequestUseCase
 
         return await _context.ExecuteInTransactionAsync(async ct =>
         {
-            if (!await _context.Set<ExternalLogin>().AnyAsync(
-                    x => x.UserId == user.Id && x.Provider == AuthSupport.GoogleProvider,
-                    ct))
-            {
-                challenge.ConsumedAt = now;
-                await _context.SaveChangesAsync(ct);
-                throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Chỉ tài khoản đăng nhập Google mới được tự cập nhật số điện thoại.");
-            }
-
             if (user.NormalizedPhoneNumber is not null)
             {
                 challenge.ConsumedAt = now;
