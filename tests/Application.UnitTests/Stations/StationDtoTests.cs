@@ -39,6 +39,38 @@ public class StationDtoTests
         dto.Staff.Single().UserId.ShouldBe(activeStaff.Id);
     }
 
+    [Test]
+    public void FromIgnoresAssignmentsWithMissingUserOrRole()
+    {
+        var station = new Station
+        {
+            Id = Guid.NewGuid(),
+            StationCode = "BD",
+            StationName = "Bach Dang",
+            Status = StationStatus.Active,
+            UserAssignments =
+            [
+                new UserStationAssignment
+                {
+                    UserId = Guid.NewGuid(),
+                    IsActive = true,
+                    IsPrimary = false
+                },
+                Assignment(new User
+                {
+                    Id = Guid.NewGuid(),
+                    FullName = "Missing Role",
+                    Status = UserStatus.Active
+                }, isActive: true, isPrimary: false)
+            ]
+        };
+
+        var dto = StationDto.From(station);
+
+        dto.Managers.ShouldBeEmpty();
+        dto.Staff.ShouldBeEmpty();
+    }
+
     private static UserStationAssignment Assignment(User user, bool isActive, bool isPrimary) =>
         new()
         {

@@ -41,7 +41,7 @@ public sealed record StationDto(
         string roleSystemName) =>
         station.UserAssignments
             .Where(x => x.IsActive
-                        && x.User.Status == UserStatus.Active
+                        && x.User is { Status: UserStatus.Active, Role: not null }
                         && x.User.Role.SystemName == roleSystemName)
             .OrderByDescending(x => x.IsPrimary)
             .ThenBy(x => x.User.FullName)
