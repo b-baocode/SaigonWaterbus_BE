@@ -276,10 +276,11 @@ public sealed class UpdateVesselRequestUseCase
             {
                 if (SupportsTransactionalBulkImageReplace())
                 {
-                    await using var transaction = await _context.BeginTransactionAsync(cancellationToken);
-                    await ReplaceImagesAsync(vessel, imageUrls, imageFiles, useBulkDelete: true, cancellationToken);
-                    await _context.SaveChangesAsync(cancellationToken);
-                    await transaction.CommitAsync(cancellationToken);
+                    await _context.ExecuteInTransactionAsync(async ct =>
+                    {
+                        await ReplaceImagesAsync(vessel, imageUrls, imageFiles, useBulkDelete: true, ct);
+                        await _context.SaveChangesAsync(ct);
+                    }, cancellationToken);
                 }
                 else
                 {
