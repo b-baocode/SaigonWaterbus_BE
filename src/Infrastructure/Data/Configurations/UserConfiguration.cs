@@ -10,67 +10,111 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
     {
         builder.ToTable("users");
 
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Id)
+            .HasColumnName("user_id");
+
         builder.Property(x => x.UserCode)
-            .HasColumnName("Code")
-            .HasMaxLength(9);
+            .HasColumnName("user_code")
+            .HasMaxLength(30);
 
         builder.HasIndex(x => x.UserCode)
             .IsUnique()
-            .HasFilter("\"Code\" IS NOT NULL");
+            .HasFilter("\"user_code\" IS NOT NULL");
 
         builder.Property(x => x.FullName)
+            .HasColumnName("full_name")
             .HasMaxLength(150)
             .IsRequired();
 
         builder.Property(x => x.DateOfBirth)
-            .HasColumnType("date");
+            .HasColumnName("date_of_birth");
 
         builder.Property(x => x.Gender)
+            .HasColumnName("gender")
             .HasMaxLength(30);
 
         builder.Property(x => x.Nationality)
+            .HasColumnName("nationality")
             .HasMaxLength(100);
 
         builder.Property(x => x.PhoneNumber)
-            .HasMaxLength(20);
+            .HasColumnName("phone_number")
+            .HasMaxLength(30);
+
+        builder.HasIndex(x => x.PhoneNumber)
+            .IsUnique()
+            .HasFilter("\"phone_number\" IS NOT NULL");
 
         builder.Property(x => x.NormalizedPhoneNumber)
-            .HasMaxLength(20);
-
-        builder.Property(x => x.PhoneVerifiedAt);
+            .HasColumnName("normalized_phone_number")
+            .HasMaxLength(30);
 
         builder.HasIndex(x => x.NormalizedPhoneNumber)
             .IsUnique()
-            .HasFilter("\"NormalizedPhoneNumber\" IS NOT NULL");
+            .HasFilter("\"normalized_phone_number\" IS NOT NULL");
+
+        builder.Property(x => x.PhoneVerifiedAt)
+            .HasColumnName("phone_verified_at");
 
         builder.Property(x => x.Email)
+            .HasColumnName("email")
             .HasMaxLength(255);
 
+        builder.HasIndex(x => x.Email)
+            .IsUnique()
+            .HasFilter("\"email\" IS NOT NULL");
+
         builder.Property(x => x.NormalizedEmail)
+            .HasColumnName("normalized_email")
             .HasMaxLength(255);
 
         builder.HasIndex(x => x.NormalizedEmail)
             .IsUnique()
-            .HasFilter("\"NormalizedEmail\" IS NOT NULL");
+            .HasFilter("\"normalized_email\" IS NOT NULL");
 
         builder.Property(x => x.PasswordHash)
+            .HasColumnName("password_hash")
             .HasMaxLength(500);
 
+        builder.Property(x => x.RoleId)
+            .HasColumnName("role_id");
+
         builder.Property(x => x.AvatarUrl)
-            .HasMaxLength(2048);
+            .HasColumnName("avatar_url")
+            .HasMaxLength(1000);
 
         builder.Property(x => x.AvatarPublicId)
-            .HasMaxLength(255);
+            .HasColumnName("avatar_public_id")
+            .HasMaxLength(500);
 
         builder.Property(x => x.AvatarSource)
+            .HasColumnName("avatar_source")
             .HasConversion<string>()
-            .HasMaxLength(32)
+            .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(x => x.AvatarUpdatedAt)
+            .HasColumnName("avatar_updated_at");
+
         builder.Property(x => x.Status)
+            .HasColumnName("status")
             .HasConversion<string>()
-            .HasMaxLength(32)
+            .HasMaxLength(30)
             .IsRequired();
+
+        builder.Property(x => x.LastLoginAt)
+            .HasColumnName("last_login_at");
+        builder.Property(x => x.Created)
+            .HasColumnName("created_at");
+
+        builder.Property<DateTimeOffset?>("UpdatedAt")
+            .HasColumnName("updated_at");
+
+        builder.Ignore(x => x.CreatedBy);
+        builder.Ignore(x => x.LastModified);
+        builder.Ignore(x => x.LastModifiedBy);
 
         builder.HasOne(x => x.Role)
             .WithMany(x => x.Users)

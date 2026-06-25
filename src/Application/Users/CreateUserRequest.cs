@@ -100,7 +100,8 @@ public sealed class CreateUserRequestUseCase
         UserManagementSupport.EnsureCanCreateRole(actor, role, nameof(request.RoleId));
 
         var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
-        if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken))
+        if (await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), null, normalizedEmail)
+                .AnyAsync(cancellationToken))
         {
             throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
         }
@@ -110,7 +111,8 @@ public sealed class CreateUserRequestUseCase
             : _identityNormalizer.NormalizePhone(request.PhoneNumber);
 
         if (normalizedPhone is not null
-            && await _context.Set<User>().AnyAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken))
+            && await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), normalizedPhone, null)
+                .AnyAsync(cancellationToken))
         {
             throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
         }
@@ -133,7 +135,7 @@ public sealed class CreateUserRequestUseCase
         };
 
         var now = _timeProvider.GetUtcNow();
-        if (user.Status == UserStatus.Active && user.NormalizedPhoneNumber is not null)
+        if (user.Status == UserStatus.Active && user.PhoneNumber is not null)
         {
             user.PhoneVerifiedAt = now;
         }
@@ -144,19 +146,11 @@ public sealed class CreateUserRequestUseCase
         {
             _context.Set<User>().Add(user);
             await _context.SaveChangesAsync(ct);
-
-            _context.AuditLogs.Add(UserAuditSupport.CreateUserAuditLog(
-                actor.Id,
-                AuditActions.CreateUser,
-                user.Id,
-                oldValues: null,
-                newValues: UserAuditSupport.CreateUserSnapshot(user, role),
-                now));
-            await _context.SaveChangesAsync(ct);
         }, cancellationToken);
 
         var createdUser = await _context.Set<User>()
             .Include(x => x.Role)
+            .Include(x => x.StationAssignments).ThenInclude(a => a.Station)
             .SingleAsync(x => x.Id == user.Id, cancellationToken);
 
         return AuthSupport.CreateUserDto(createdUser);

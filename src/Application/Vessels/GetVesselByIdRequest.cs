@@ -35,8 +35,7 @@ public sealed class GetVesselByIdRequestUseCase
         var vessel = await VesselSupport.ApplyVisibilityFilter(
                 _context.Vessels
                     .AsNoTracking()
-                    .Include(x => x.Images)
-                    .Include(x => x.RentalPrices)
+                    .Include(x => x.Seats)
                     .AsQueryable(),
                 actor)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)

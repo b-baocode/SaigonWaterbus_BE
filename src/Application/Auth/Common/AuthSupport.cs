@@ -40,6 +40,36 @@ internal static class AuthSupport
         return roleKey.Trim().ToUpperInvariant();
     }
 
+    public static string RoleCodeFromSystemName(string systemName) =>
+        systemName switch
+        {
+            Roles.CustomerSystemName => Roles.CustomerCode,
+            Roles.ManagerSystemName => Roles.ManagerCode,
+            Roles.AdminName => Roles.AdminCode,
+            Roles.StaffSystemName => Roles.StaffCode,
+            _ => NormalizeRoleKey(systemName)
+        };
+
+    public static IQueryable<User> WhereUserIdentityMatches(
+        IQueryable<User> query,
+        string? normalizedPhone,
+        string? normalizedEmail) =>
+        query.Where(x =>
+            (normalizedPhone != null && x.PhoneNumber == normalizedPhone)
+            || (normalizedEmail != null && x.Email != null && x.Email.ToUpper() == normalizedEmail));
+
+    public static bool UserIdentityMatches(User user, string? normalizedPhone, string? normalizedEmail) =>
+        (normalizedPhone is null ? user.PhoneNumber is null : user.PhoneNumber == normalizedPhone)
+        && (normalizedEmail is null
+            ? user.Email is null
+            : user.Email is not null && user.Email.ToUpperInvariant() == normalizedEmail);
+
+    public static bool UserPhoneMatches(User user, string normalizedPhone) =>
+        user.PhoneNumber == normalizedPhone;
+
+    public static bool UserEmailMatches(User user, string normalizedEmail) =>
+        user.Email is not null && user.Email.ToUpperInvariant() == normalizedEmail;
+
     public static async Task<IReadOnlyCollection<Role>> GetActiveRolesAsync(
         IApplicationDbContext context,
         Guid userId,
@@ -99,8 +129,8 @@ internal static class AuthSupport
         User user,
         IReadOnlyCollection<Role> roles,
         AccessTokenResult accessToken,
-        string refreshToken,
-        DateTimeOffset refreshTokenExpiresAt)
+        string? refreshToken,
+        DateTimeOffset? refreshTokenExpiresAt)
     {
         var roleDtos = roles
             .Select(x => new AuthRoleDto(x.Code, x.SystemName, x.DisplayName))
@@ -121,7 +151,9 @@ internal static class AuthSupport
                 user.AvatarSource,
                 user.Status,
                 roleDtos,
-                CreateStationAssignmentDtos(user)),
+                CreateStationAssignmentDtos(
+                    user,
+                    roles.Any(r => r.SystemName is Roles.StaffSystemName or Roles.ManagerSystemName))),
             new AuthTokensDto(
                 accessToken.Token,
                 accessToken.ExpiresAt,
@@ -146,13 +178,9 @@ internal static class AuthSupport
             throw CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa.");
         }
 
-        if (requireVerifiedPhone
-            && !string.IsNullOrWhiteSpace(user.NormalizedPhoneNumber)
-            && user.PhoneVerifiedAt is null)
+        if (user.Status == UserStatus.Deleted)
         {
-            throw new AccountNotCompletedException(
-                AccountNotCompletedException.PhoneNotVerifiedCode,
-                "Tài khoản chưa xác minh số điện thoại.");
+            throw CreateValidationException(propertyName, "Tài khoản đã bị xóa.");
         }
     }
 
@@ -172,21 +200,29 @@ internal static class AuthSupport
             user.AvatarSource,
             user.Status,
             [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)],
-            CreateStationAssignmentDtos(user));
+            CreateStationAssignmentDtos(user, IsStaff(user) || IsManager(user)));
     }
 
-    private static IReadOnlyCollection<AuthStationAssignmentDto> CreateStationAssignmentDtos(User user) =>
-        user.StationAssignments
-            .Where(x => x.Station is not null)
-            .OrderByDescending(x => x.IsPrimary)
-            .ThenBy(x => x.Station.StationName)
-            .Select(x => new AuthStationAssignmentDto(
-                x.StationId,
-                x.Station.StationCode,
-                x.Station.StationName,
-                x.IsPrimary,
-                x.IsActive))
+    private static IReadOnlyCollection<AuthStationAssignmentDto>? CreateStationAssignmentDtos(
+        User user, bool includeStationAssignments)
+    {
+        if (!includeStationAssignments)
+        {
+            return null;
+        }
+
+        return user.StationAssignments
+            .Where(a => a.IsActive)
+            .OrderByDescending(a => a.IsPrimary)
+            .ThenBy(a => a.Station.StationName)
+            .Select(a => new AuthStationAssignmentDto(
+                a.StationId,
+                a.Station.StationCode,
+                a.Station.StationName,
+                a.IsPrimary,
+                a.IsActive))
             .ToArray();
+    }
 
     public static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -243,7 +279,8 @@ internal static class AuthSupport
                    .Where(x => x.UserId == challenge.UserId
                             && x.Purpose == purpose
                             && x.ConsumedAt == null)
-                   .OrderByDescending(x => x.Id)
+                   .OrderByDescending(x => x.Created)
+                   .ThenByDescending(x => x.Id)
                    .FirstOrDefaultAsync(cancellationToken)
                ?? challenge;
     }
@@ -258,8 +295,8 @@ internal static class AuthSupport
         var users = await context.Set<User>()
             .Include(x => x.OtpChallenges)
             .Where(x => x.Status == UserStatus.PendingVerification
-                     && ((normalizedPhone != null && x.NormalizedPhoneNumber == normalizedPhone)
-                         || (normalizedEmail != null && x.NormalizedEmail == normalizedEmail)))
+                     && ((normalizedPhone != null && x.PhoneNumber == normalizedPhone)
+                         || (normalizedEmail != null && x.Email != null && x.Email.ToUpper() == normalizedEmail)))
             .ToListAsync(cancellationToken);
 
         var removedAny = false;

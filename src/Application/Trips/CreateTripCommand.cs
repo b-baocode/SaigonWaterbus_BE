@@ -42,10 +42,23 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route must have at least 2 stops.")]);
 
+        var service = await _context.Set<WaterbusService>()
+            .Where(x => x.IsActive
+                && (x.BookingMode == BookingMode.SeatBased || x.BookingMode == BookingMode.SeatTypeBased))
+            .OrderBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Code)
+            .FirstOrDefaultAsync(cancellationToken)
+            ?? throw new ValidationException(
+            [
+                new ValidationFailure(
+                    nameof(request.RouteCode),
+                    "Chưa có waterbus service đang active để tạo chuyến.")
+            ]);
+
         var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
 
-        var tripStops = new List<TripStop>();
         var currentTime = request.DepartureTime;
+        var stopDtos = new List<TripStopDto>();
 
         foreach (var routeStop in route.RouteStops.OrderBy(rs => rs.StopOrder))
         {
@@ -55,25 +68,28 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
             var scheduledDeparture = scheduledArrival.AddMinutes(routeStop.StandardDwellMin ?? 2);
 
-            tripStops.Add(new TripStop
-            {
-                RouteStopId = routeStop.Id,
-                RouteStop = routeStop,
-                StopOrder = routeStop.StopOrder,
-                ScheduledArrival = scheduledArrival,
-                ScheduledDeparture = scheduledDeparture,
-                StopStatus = "Scheduled"
-            });
+            stopDtos.Add(new TripStopDto(
+                routeStop.Id,
+                routeStop.Station.Id,
+                routeStop.Station.StationName,
+                routeStop.Station.StationCode,
+                routeStop.StopOrder,
+                scheduledArrival,
+                scheduledDeparture,
+                null,
+                null,
+                "Scheduled"));
 
             currentTime = scheduledDeparture.AddMinutes(routeStop.StandardTravelMin ?? 15);
         }
 
-        var arrivalTime = tripStops.Max(ts => ts.ScheduledArrival ?? request.DepartureTime);
+        var arrivalTime = stopDtos.Max(ts => ts.ScheduledArrival ?? request.DepartureTime);
 
-        await EnsureNoStationDepartureConflictAsync(tripStops, cancellationToken);
+        await EnsureNoRouteDepartureConflictAsync(route.Id, request.DepartureTime, cancellationToken);
 
         var trip = new Trip
         {
+            WaterbusServiceId = service.Id,
             RouteId = route.Id,
             TripCode = tripCode,
             OperatingDate = request.OperatingDate,
@@ -83,11 +99,6 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             TripStatus = TripStatus.Scheduled
         };
 
-        foreach (var ts in tripStops)
-            ts.Trip = trip;
-
-        trip.TripStops = tripStops;
-
         _context.Set<Trip>().Add(trip);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -96,48 +107,30 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             route.Id, route.RouteName,
             trip.DepartureTime, trip.ArrivalTime,
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
-            tripStops.OrderBy(ts => ts.StopOrder).Select(ts =>
-            {
-                var rs = route.RouteStops.Single(r => r.Id == ts.RouteStopId);
-                return new TripStopDto(ts.Id, rs.Station.Id, rs.Station.StationName,
-                    rs.Station.StationCode, ts.StopOrder,
-                    ts.ScheduledArrival, ts.ScheduledDeparture,
-                    ts.ActualArrival, ts.ActualDeparture, ts.StopStatus);
-            }).ToList());
+            stopDtos.OrderBy(ts => ts.StopOrder).ToList());
     }
 
-    private async Task EnsureNoStationDepartureConflictAsync(
-        IReadOnlyCollection<TripStop> tripStops,
+    private async Task EnsureNoRouteDepartureConflictAsync(
+        Guid routeId,
+        DateTimeOffset departureTime,
         CancellationToken cancellationToken)
     {
-        var stationDepartures = tripStops
-            .Where(x => x.ScheduledDeparture.HasValue)
-            .Select(x => new
-            {
-                StationId = x.RouteStop.StationId,
-                ScheduledDeparture = x.ScheduledDeparture!.Value
-            })
-            .ToArray();
+        var hasConflict = await _context.Set<Trip>()
+            .AsNoTracking()
+            .AnyAsync(x =>
+                x.RouteId == routeId
+                && x.DepartureTime == departureTime
+                && x.TripStatus != TripStatus.Cancelled,
+                cancellationToken);
 
-        foreach (var stationDeparture in stationDepartures)
+        if (hasConflict)
         {
-            var hasConflict = await _context.Set<TripStop>()
-                .AsNoTracking()
-                .AnyAsync(x =>
-                    x.ScheduledDeparture == stationDeparture.ScheduledDeparture
-                    && x.Trip.TripStatus != TripStatus.Cancelled
-                    && x.RouteStop.StationId == stationDeparture.StationId,
-                    cancellationToken);
-
-            if (hasConflict)
-            {
-                throw new ValidationException(
-                [
-                    new ValidationFailure(
-                        nameof(CreateTripCommand.DepartureTime),
-                        "Bến đã có chuyến tàu xuất phát trong cùng thời điểm.")
-                ]);
-            }
+            throw new ValidationException(
+            [
+                new ValidationFailure(
+                    nameof(CreateTripCommand.DepartureTime),
+                    "Tuyến đã có chuyến tàu xuất phát trong cùng thời điểm.")
+            ]);
         }
     }
 }

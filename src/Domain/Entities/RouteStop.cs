@@ -14,5 +14,4 @@ public class RouteStop : BaseGuidAuditableEntity
 
     public Route Route { get; set; } = null!;
     public Station Station { get; set; } = null!;
-    public ICollection<TripStop> TripStops { get; set; } = new List<TripStop>();
 }

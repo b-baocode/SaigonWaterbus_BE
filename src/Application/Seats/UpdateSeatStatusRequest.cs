@@ -38,7 +38,6 @@ public sealed class UpdateSeatStatusRequestUseCase
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
         var seat = await _context.Seats
-            .Include(x => x.SeatType)
             .SingleOrDefaultAsync(x => x.Id == request.SeatId && x.VesselId == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy ghế.");
 

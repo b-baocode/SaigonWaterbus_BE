@@ -67,6 +67,30 @@ public class RouteGeoJsonImportSupportTests
     }
 
     [Test]
+    public void ParseIncludesStationCodePointWithoutOsmFerryTerminalTag()
+    {
+        const string geoJson =
+            """
+            {
+              "type": "FeatureCollection",
+              "features": [
+                {
+                  "type": "Feature",
+                  "properties": { "station_code": "ST-BD", "name": "Ben Bach Dang" },
+                  "geometry": { "type": "Point", "coordinates": [106.7061, 10.7731] }
+                }
+              ]
+            }
+            """;
+
+        var parsed = RouteGeoJsonImportSupport.Parse(geoJson);
+
+        parsed.StationCandidates.Count.ShouldBe(1);
+        parsed.StationCandidates[0].StationCode.ShouldBe("ST-BD");
+        parsed.StationCandidates[0].Name.ShouldBe("Ben Bach Dang");
+    }
+
+    [Test]
     public void BuildRouteGeometryUsesViaWaypointToChooseSpecificBranch()
     {
         var a = new Coordinate(106.0000, 10.0000);

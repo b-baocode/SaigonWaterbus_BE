@@ -5,17 +5,19 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class Trip : BaseGuidAuditableEntity
 {
+    public Guid? WaterbusServiceId { get; set; }
     public Guid RouteId { get; set; }
+    public Guid? VesselId { get; set; }
     public string TripCode { get; set; } = null!;
     public DateOnly OperatingDate { get; set; }
+    public string? ServicePeriod { get; set; }
     public DateTimeOffset DepartureTime { get; set; }
     public DateTimeOffset ArrivalTime { get; set; }
     public int CapacitySnapshot { get; set; }
     public TripStatus TripStatus { get; set; } = TripStatus.Scheduled;
     public string? StatusNote { get; set; }
 
+    public WaterbusService? WaterbusService { get; set; }
     public Route Route { get; set; } = null!;
-    public ICollection<TripStop> TripStops { get; set; } = new List<TripStop>();
-    public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
-    public ICollection<BookingItem> BookingItems { get; set; } = new List<BookingItem>();
+    public Vessel? Vessel { get; set; }
 }

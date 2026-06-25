@@ -40,35 +40,12 @@ public sealed class GetSeatsRequestUseCase
 
         var seats = await _context.Seats
             .AsNoTracking()
-            .Include(x => x.SeatType)
             .Where(x => x.VesselId == request.VesselId)
             .OrderBy(x => x.Deck)
             .ThenBy(x => x.Row)
             .ThenBy(x => x.Column)
             .ToListAsync(cancellationToken);
 
-        var deckLayouts = await _context.VesselDeckLayouts
-            .AsNoTracking()
-            .Where(x => x.VesselId == request.VesselId)
-            .OrderBy(x => x.DeckNumber)
-            .ToListAsync(cancellationToken);
-
-        var facilities = await _context.VesselFacilities
-            .AsNoTracking()
-            .Where(x => x.VesselId == request.VesselId)
-            .OrderBy(x => x.Deck)
-            .ThenBy(x => x.Row)
-            .ThenBy(x => x.Column)
-            .ToListAsync(cancellationToken);
-
-        var layoutCells = await _context.VesselLayoutCells
-            .AsNoTracking()
-            .Where(x => x.VesselId == request.VesselId)
-            .OrderBy(x => x.Deck)
-            .ThenBy(x => x.Row)
-            .ThenBy(x => x.Column)
-            .ToListAsync(cancellationToken);
-
-        return SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts, facilities, layoutCells);
+        return SeatSupport.CreateVesselSeatsDto(vessel, seats);
     }
 }

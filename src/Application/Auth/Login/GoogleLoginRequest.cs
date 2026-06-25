@@ -86,21 +86,12 @@ public sealed class GoogleLoginRequestUseCase
         var normalizedEmail = _identityNormalizer.NormalizeEmail(payload.Email);
         var now = _timeProvider.GetUtcNow();
 
-        var externalLogin = await _context.Set<ExternalLogin>()
-            .Include(x => x.User)
-            .FirstOrDefaultAsync(
-                x => x.Provider == GoogleProvider && x.ProviderUserId == payload.Subject,
-                cancellationToken);
-
-        if (externalLogin is not null)
-        {
-            var linkedUser = externalLogin.User ?? throw new InvalidOperationException("User not found");
-            AuthSupport.EnsureUserCanLogin(linkedUser, nameof(request.IdToken), requireVerifiedPhone: false);
-            return await CreateLoggedInResultAsync(linkedUser, payload, now, cancellationToken);
-        }
-
-        var existingUser = await _context.Set<User>()
-            .FirstOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken);
+        var existingUser = await AuthSupport.WhereUserIdentityMatches(
+                _context.Set<User>(),
+                null,
+                normalizedEmail)
+            .Include(u => u.StationAssignments).ThenInclude(a => a.Station)
+            .FirstOrDefaultAsync(cancellationToken);
 
         if (existingUser is not null)
         {
@@ -119,7 +110,6 @@ public sealed class GoogleLoginRequestUseCase
                 AuthSupport.EnsureUserCanLogin(existingUser, nameof(request.IdToken), requireVerifiedPhone: false);
             }
 
-            AddExternalLogin(existingUser, payload, now);
             return await CreateLoggedInResultAsync(existingUser, payload, now, cancellationToken);
         }
 
@@ -165,7 +155,6 @@ public sealed class GoogleLoginRequestUseCase
         };
 
         _context.Set<User>().Add(user);
-        AddExternalLogin(user, payload, now);
         await _context.SaveChangesAsync(cancellationToken);
 
         return await CreateLoggedInResultAsync(user, payload, now, cancellationToken);
@@ -214,7 +203,6 @@ public sealed class GoogleLoginRequestUseCase
             }
             catch (ProfileImageStorageException)
             {
-                // Avatar import thất bại không block login
             }
         }
 
@@ -250,20 +238,4 @@ public sealed class GoogleLoginRequestUseCase
             session.Tokens);
     }
 
-    private void AddExternalLogin(
-        User user,
-        GoogleJsonWebSignature.Payload payload,
-        DateTimeOffset linkedAt)
-    {
-        _context.Set<ExternalLogin>().Add(new ExternalLogin
-        {
-            User = user,
-            Provider = GoogleProvider,
-            ProviderUserId = payload.Subject,
-            Email = payload.Email,
-            DisplayName = payload.Name,
-            ProfilePictureUrl = payload.Picture,
-            LinkedAt = linkedAt
-        });
-    }
 }

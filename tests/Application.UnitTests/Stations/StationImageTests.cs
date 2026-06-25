@@ -34,20 +34,18 @@ public class StationImageTests
 
         result.ImageUrl.ShouldBe("https://cdn.example.com/stations/nvl-main.jpg");
         result.ImageUrls.ShouldBe([
-            "https://cdn.example.com/stations/nvl-main.jpg",
-            "https://cdn.example.com/stations/nvl-pier.jpg"
+            "https://cdn.example.com/stations/nvl-main.jpg"
         ]);
         context.Stations.Single().ImageUrl.ShouldBe("https://cdn.example.com/stations/nvl-main.jpg");
-        context.StationImages.Count().ShouldBe(2);
     }
 
     [Test]
-    public async Task CreateStationUploadsImageFiles()
+    public async Task CreateStationRejectsImageFiles()
     {
         await using var context = SeatFlowTestData.CreateContext();
 
         await using var file = CreateImageFile();
-        var result = await new CreateStationCommandHandler(context, ImageStorage).Handle(
+        var act = async () => await new CreateStationCommandHandler(context, ImageStorage).Handle(
             new CreateStationCommand(
                 "bd",
                 "Bach Dang",
@@ -57,21 +55,16 @@ public class StationImageTests
                 ImageFiles: [new StationImageFileRequest("pier.jpg", "image/jpeg", file.Length, file)]),
             CancellationToken.None);
 
-        result.ImageUrls.Count.ShouldBe(1);
-        result.ImageUrl.ShouldStartWith("https://example.test/stations/");
-        var stored = context.StationImages.Single();
-        stored.Url.ShouldStartWith("https://example.test/stations/");
-        stored.PublicId.ShouldNotBeNullOrWhiteSpace();
-        stored.IsPrimary.ShouldBeTrue();
+        await act.ShouldThrowAsync<ValidationException>();
     }
 
     [Test]
-    public async Task CreateStationMixesUrlsAndFiles()
+    public async Task CreateStationRejectsMixedUrlsAndFiles()
     {
         await using var context = SeatFlowTestData.CreateContext();
 
         await using var file = CreateImageFile();
-        var result = await new CreateStationCommandHandler(context, ImageStorage).Handle(
+        var act = async () => await new CreateStationCommandHandler(context, ImageStorage).Handle(
             new CreateStationCommand(
                 "tt",
                 "Thu Thiem",
@@ -82,11 +75,7 @@ public class StationImageTests
                 ImageFiles: [new StationImageFileRequest("extra.png", "image/png", file.Length, file)]),
             CancellationToken.None);
 
-        // URL ảnh chính đứng đầu, file upload nối tiếp.
-        result.ImageUrls.Count.ShouldBe(2);
-        result.ImageUrl.ShouldBe("https://cdn.example.com/stations/tt-main.jpg");
-        context.StationImages.Count().ShouldBe(2);
-        context.StationImages.Count(x => x.PublicId != null).ShouldBe(1);
+        await act.ShouldThrowAsync<ValidationException>();
     }
 
     [Test]
@@ -109,7 +98,7 @@ public class StationImageTests
     }
 
     [Test]
-    public void ValidatorRejectsMoreThanSixImages()
+    public void ValidatorRejectsMoreThanOneImage()
     {
         var command = new CreateStationCommand(
             "many",
@@ -117,7 +106,7 @@ public class StationImageTests
             null,
             null,
             null,
-            ImageUrls: Enumerable.Range(1, 7)
+            ImageUrls: Enumerable.Range(1, 2)
                 .Select(i => $"https://cdn.example.com/stations/img-{i}.jpg")
                 .ToArray());
 
@@ -140,13 +129,6 @@ public class StationImageTests
             Status = StationStatus.Active,
             ImageUrl = "https://cdn.example.com/stations/old.jpg"
         };
-        station.Images.Add(new StationImage
-        {
-            StationId = station.Id,
-            Url = "https://cdn.example.com/stations/old.jpg",
-            DisplayOrder = 1,
-            IsPrimary = true
-        });
         context.Stations.Add(station);
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
@@ -172,13 +154,11 @@ public class StationImageTests
 
         result.ImageUrl.ShouldBe("https://cdn.example.com/stations/new-main.jpg");
         result.ImageUrls.ShouldBe([
-            "https://cdn.example.com/stations/new-main.jpg",
-            "https://cdn.example.com/stations/new-ticket-counter.jpg"
+            "https://cdn.example.com/stations/new-main.jpg"
         ]);
         (await context.Stations.SingleAsync(x => x.Id == station.Id))
             .ImageUrl
             .ShouldBe("https://cdn.example.com/stations/new-main.jpg");
-        context.StationImages.Count(x => x.StationId == station.Id).ShouldBe(2);
     }
 
     [Test]
@@ -192,19 +172,12 @@ public class StationImageTests
             Status = StationStatus.Active,
             ImageUrl = "https://cdn.example.com/stations/old.jpg"
         };
-        station.Images.Add(new StationImage
-        {
-            StationId = station.Id,
-            Url = "https://cdn.example.com/stations/old.jpg",
-            DisplayOrder = 1,
-            IsPrimary = true
-        });
         context.Stations.Add(station);
         await context.SaveChangesAsync();
         context.ChangeTracker.Clear();
 
         await using var file = CreateImageFile();
-        var result = await new UpdateStationCommandHandler(context, ImageStorage).Handle(
+        var act = async () => await new UpdateStationCommandHandler(context, ImageStorage).Handle(
             new UpdateStationCommand(
                 station.Id,
                 "Thu Duc",
@@ -221,11 +194,7 @@ public class StationImageTests
                 ImageFiles: [new StationImageFileRequest("new.jpg", "image/jpeg", file.Length, file)]),
             CancellationToken.None);
 
-        result.ImageUrls.Count.ShouldBe(1);
-        result.ImageUrl.ShouldStartWith("https://example.test/stations/");
-        var images = context.StationImages.Where(x => x.StationId == station.Id).ToList();
-        images.Count.ShouldBe(1);
-        images.Single().PublicId.ShouldNotBeNullOrWhiteSpace();
+        await act.ShouldThrowAsync<ValidationException>();
     }
 
     private static MemoryStream CreateImageFile() => new([0x1, 0x2, 0x3, 0x4]);

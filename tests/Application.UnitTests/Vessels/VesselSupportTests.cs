@@ -51,35 +51,20 @@ public class VesselSupportTests
     }
 
     [Test]
-    public void CreateDtoIncludesRentalPricesWhenConfigured()
+    public void CreateDtoIncludesOnlyRentalPricesWhenConfigured()
     {
         var vessel = Vessel(seatsConfigured: true);
-        vessel.RentalPrices.Add(new VesselRentalPrice
-        {
-            VesselId = vessel.Id,
-            RentalUnit = VesselRentalUnit.Day,
-            UnitPrice = 15000000m,
-            Currency = "VND",
-            Note = "Gia thue theo ngay"
-        });
-        vessel.RentalPrices.Add(new VesselRentalPrice
-        {
-            VesselId = vessel.Id,
-            RentalUnit = VesselRentalUnit.Hour,
-            UnitPrice = 2000000m,
-            Currency = "VND",
-            Note = "Gia thue theo gio"
-        });
+        vessel.DailyRentalPrice = 15000000m;
+        vessel.HourlyRentalPrice = 2000000m;
+        vessel.Currency = "VND";
 
         var dto = VesselSupport.CreateDto(vessel);
 
-        dto.RentalPrice.ShouldNotBeNull();
-        dto.RentalPrice.RentalUnit.ShouldBe(VesselRentalUnit.Day);
-        dto.RentalPrice.UnitPrice.ShouldBe(15000000m);
-        dto.RentalPrice.Currency.ShouldBe("VND");
         dto.RentalPrices.Count.ShouldBe(2);
         dto.RentalPrices.First().RentalUnit.ShouldBe(VesselRentalUnit.Hour);
+        dto.RentalPrices.First().UnitPrice.ShouldBe(2000000m);
         dto.RentalPrices.Last().RentalUnit.ShouldBe(VesselRentalUnit.Day);
+        dto.RentalPrices.Last().UnitPrice.ShouldBe(15000000m);
     }
 
     [TestCase(SeatSetupType.FullStandard)]
@@ -144,6 +129,7 @@ public class VesselSupportTests
             Code = "WB01",
             Name = "Waterbus 01",
             Status = status,
+            SeatCount = 1,
             SeatsConfigured = seatsConfigured
         };
 

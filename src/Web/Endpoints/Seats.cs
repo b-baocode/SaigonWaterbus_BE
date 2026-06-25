@@ -25,15 +25,14 @@ public sealed class Seats : IEndpointGroup
               "deckNumber": 1,
               "rowCount": 5,
               "columnCount": 6,
-              "cells": [
-                { "row": 1, "column": 3, "type": "Aisle" },
-                { "row": 2, "column": 3, "type": "Aisle" },
-                { "row": 3, "column": 1, "type": "Empty" },
-                { "row": 3, "column": 3, "type": "Aisle" },
-                { "row": 4, "column": 1, "type": "Toilet", "rowSpan": 1, "columnSpan": 2 },
-                { "row": 4, "column": 3, "type": "Aisle" },
-                { "row": 5, "column": 3, "type": "Aisle" },
-                { "row": 5, "column": 4, "type": "Seat", "seatTypeCode": "RIVER" }
+                "cells": [
+                  { "row": 1, "column": 3, "type": "Aisle" },
+                  { "row": 2, "column": 3, "type": "Aisle" },
+                  { "row": 3, "column": 1, "type": "Empty" },
+                  { "row": 3, "column": 3, "type": "Aisle" },
+                  { "row": 4, "column": 3, "type": "Aisle" },
+                  { "row": 5, "column": 3, "type": "Aisle" },
+                  { "row": 5, "column": 4, "type": "Seat", "seatTypeCode": "RIVER" }
               ]
             }
           ]
@@ -70,7 +69,6 @@ public sealed class Seats : IEndpointGroup
                 "Manager và Staff chỉ xem được ghế của tàu đang Active và đã setup đủ ghế.",
                 "TotalSeats là số ghế đăng ký của tàu.",
                 "ConfiguredSeats là tổng số ghế thật đã setup trong database.",
-                "Facilities là tiện ích thật đã setup trong database, ví dụ Toilet, không tính vào số ghế.",
                 "SeatsConfigured=true khi tàu đã được setup đủ ghế."));
 
         groupBuilder.MapPost(GenerateSeats, "{vesselId:guid}/seats/generate")
@@ -84,7 +82,7 @@ public sealed class Seats : IEndpointGroup
                 "FullStandard preview là STANDARD; StandardAndVip preview là CABIN.",
                 "Loại ghế seed mặc định: STANDARD, CABIN, RIVER, SKY.",
                 "Các cell Seat trong response generate chỉ là preview, chưa có seatId và chưa tạo ghế thật trong database.",
-                "Sau bước này frontend chỉ cần đổi các ô đặc biệt như Aisle, Empty, Toilet hoặc đổi seatTypeCode nếu tàu hỗ trợ nhiều loại ghế.",
+                "Sau bước này frontend chỉ cần đổi các ô đặc biệt như Aisle, Empty hoặc đổi seatTypeCode nếu tàu hỗ trợ nhiều loại ghế.",
                 "Tàu vẫn SeatsConfigured=false và Status=Inactive.",
                 "Nếu tàu đã có ma trận hoặc sơ đồ ghế, phải xóa toàn bộ trước khi generate lại."));
 
@@ -97,13 +95,14 @@ public sealed class Seats : IEndpointGroup
                 "Dùng sau khi đã sinh ma trận bằng /seats/generate.",
                 "Kiểu FullStandard: toàn bộ ghế là STANDARD.",
                 "Kiểu StandardAndVip: mặc định là CABIN; FE có thể đánh dấu ô Seat bằng seatTypeCode đã seed trong database: STANDARD, CABIN, RIVER hoặc SKY.",
-                "Mỗi override cell có type=Seat/Aisle/Empty/Toilet.",
+                "cells là danh sách override; ô không gửi sẽ mặc định là Seat.",
+                "Mỗi override cell có type=Seat/Aisle/Empty.",
+                "Chỉ cần gửi Aisle/Empty cho vị trí không phải ghế, hoặc gửi Seat kèm seatTypeCode để đổi loại ghế.",
                 "Kiểu ghế được lưu trực tiếp trên ghế của tàu; không còn bảng giá ghế theo dịch vụ.",
-                "Aisle/Empty không lưu thành ghế; frontend dựng lại từ ma trận rowCount × columnCount và danh sách ghế/WC.",
+                "Aisle/Empty không lưu thành ghế; frontend dựng lại từ ma trận rowCount × columnCount và danh sách ghế.",
                 "Tổng số ô Seat phải bằng SeatCount của tàu.",
-                "Toilet phải chiếm đúng 2 ô: rowSpan=1,columnSpan=2 hoặc rowSpan=2,columnSpan=1.",
-                "Nếu tàu đã có ghế/WC, phải xóa toàn bộ trước khi configure lại.",
-                "Khi setup hợp lệ, backend lưu ghế/WC vào database, đặt SeatsConfigured=true và chuyển tàu sang Active.",
+                "Nếu tàu đã có ghế, phải xóa toàn bộ trước khi configure lại.",
+                "Khi setup hợp lệ, backend lưu ghế vào database, đặt SeatsConfigured=true và chuyển tàu sang Active.",
                 "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."));
 
         groupBuilder.MapDelete(DeleteAllSeats, "{vesselId:guid}/seats")

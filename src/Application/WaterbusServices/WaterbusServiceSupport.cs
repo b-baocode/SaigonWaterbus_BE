@@ -2,11 +2,24 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.WaterbusServices;
 
 internal static class WaterbusServiceSupport
 {
+    private static readonly WaterbusServiceSeatTypeDto[] StandardSeatTypes =
+    [
+        new(Guid.Empty, "STANDARD", "Standard", 1, true)
+    ];
+
+    private static readonly WaterbusServiceSeatTypeDto[] SightseeingSeatTypes =
+    [
+        new(Guid.Empty, "CABIN", "Cabin", 1, true),
+        new(Guid.Empty, "RIVER", "River", 2, true),
+        new(Guid.Empty, "SKY", "Sky", 3, true)
+    ];
+
     public static async Task<User> EnsureCurrentUserCanViewWaterbusServicesAsync(
         IApplicationDbContext context,
         IUserContext userContext,
@@ -55,41 +68,30 @@ internal static class WaterbusServiceSupport
     public static string NormalizeCode(string code) =>
         code.Trim().ToUpperInvariant();
 
-    public static SeatType CreateSeatType(
-        string code,
-        string name,
-        int displayOrder) =>
-        new()
-        {
-            Code = code,
-            Name = name,
-            DisplayOrder = displayOrder,
-            IsActive = true
-        };
-
     public static WaterbusServiceSeatTypesDto CreateSeatTypesDto(
         WaterbusService service,
-        bool includeInactive,
-        IReadOnlyCollection<SeatType>? availableSeatTypes = null)
-    {
-        var seatTypes = (availableSeatTypes ?? [])
-            .Where(x => includeInactive || x.IsActive)
-            .OrderBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Code)
-            .Select(x => new WaterbusServiceSeatTypeDto(
-                x.Id,
-                x.Code,
-                x.Name,
-                x.DisplayOrder,
-                x.IsActive))
-            .ToArray();
-
-        return new WaterbusServiceSeatTypesDto(
+        bool includeInactive) =>
+        new(
             service.Id,
             service.Code,
             service.BookingMode,
-            seatTypes);
-    }
+            GetSeatTypesForBookingMode(service.BookingMode));
+
+    public static IReadOnlyCollection<WaterbusServiceSeatTypeDto> GetSeatTypesForBookingMode(BookingMode bookingMode) =>
+        bookingMode switch
+        {
+            BookingMode.SeatBased => StandardSeatTypes,
+            BookingMode.SeatTypeBased => SightseeingSeatTypes,
+            _ => []
+        };
+
+    public static IReadOnlyCollection<SeatSetupType> GetSupportedSeatSetupTypes(BookingMode bookingMode) =>
+        bookingMode switch
+        {
+            BookingMode.SeatBased => [SeatSetupType.FullStandard],
+            BookingMode.SeatTypeBased => [SeatSetupType.FullStandard, SeatSetupType.StandardAndVip],
+            _ => []
+        };
 
     public static WaterbusServiceDto CreateDto(WaterbusService service) =>
         new(

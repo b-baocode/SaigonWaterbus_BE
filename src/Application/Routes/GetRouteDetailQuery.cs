@@ -17,10 +17,6 @@ public sealed class GetRouteDetailQueryHandler : IRequestHandler<GetRouteDetailQ
         var route = await _context.Set<Route>()
             .Include(r => r.RouteStops)
                 .ThenInclude(rs => rs.Station)
-            .Include(r => r.RouteSegments)
-                .ThenInclude(rs => rs.FromStation)
-            .Include(r => r.RouteSegments)
-                .ThenInclude(rs => rs.ToStation)
             .SingleOrDefaultAsync(r => r.Id == request.RouteId, cancellationToken)
             ?? throw new NotFoundException("Route not found.");
 
@@ -32,18 +28,13 @@ public sealed class GetRouteDetailQueryHandler : IRequestHandler<GetRouteDetailQ
                 rs.IsPickupAllowed, rs.IsDropoffAllowed))
             .ToList();
 
-        var segments = route.RouteSegments
-            .OrderBy(segment => segment.SegmentOrder)
-            .Select(RouteSegmentSupport.ToDto)
-            .ToList();
-
         var geometry = route.RouteGeometry is null
             ? null
             : route.RouteGeometry.Coordinates
-                .Select(c => new double[] { c.X, c.Y })   // [longitude, latitude] — GeoJSON order
+                .Select(c => new double[] { c.X, c.Y })
                 .ToList();
 
         return new RouteDetailDto(route.Id, route.RouteCode, route.RouteName,
-            route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status, stops, segments, geometry);
+            route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status, stops, [], geometry);
     }
 }

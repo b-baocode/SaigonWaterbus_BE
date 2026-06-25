@@ -43,13 +43,14 @@ public sealed class RefreshTokenRequestUseCase
         }
 
         var refreshToken = await _context.Set<RefreshToken>()
-            .Include(x => x.User)
+            .Include(x => x.User).ThenInclude(u => u.StationAssignments).ThenInclude(a => a.Station)
             .SingleOrDefaultAsync(x => x.Id == refreshTokenId, cancellationToken)
             ?? throw new UnauthorizedAccessException();
 
+        var now = _timeProvider.GetUtcNow();
         if (!_secretHasher.Verify(refreshSecret, refreshToken.TokenHash)
             || refreshToken.RevokedAt.HasValue
-            || refreshToken.ExpiresAt <= _timeProvider.GetUtcNow())
+            || refreshToken.ExpiresAt <= now)
         {
             throw new UnauthorizedAccessException();
         }
@@ -57,8 +58,8 @@ public sealed class RefreshTokenRequestUseCase
         var user = refreshToken.User;
         AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
 
-        refreshToken.RevokedAt = _timeProvider.GetUtcNow();
-        user.LastLoginAt = _timeProvider.GetUtcNow();
+        refreshToken.RevokedAt = now;
+        user.LastLoginAt = now;
 
         var roles = await AuthSupport.GetActiveRolesAsync(_context, user.Id, cancellationToken);
         if (roles.Count == 0)

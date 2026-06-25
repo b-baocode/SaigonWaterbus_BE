@@ -2,6 +2,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Profile;
 
@@ -34,7 +35,7 @@ public sealed class DeleteCurrentUserAccountRequestUseCase
         }
 
         await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, _timeProvider.GetUtcNow(), cancellationToken);
-        _context.Set<User>().Remove(user);
+        user.Status = UserStatus.Deleted;
         await _context.SaveChangesAsync(cancellationToken);
 
         return new AuthActionResultDto("Xoa tai khoan thanh cong.");

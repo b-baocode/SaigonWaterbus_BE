@@ -96,7 +96,6 @@ internal static class PayOsSignature
         var queryString = string.Join(
             '&',
             data
-                .Where(x => x.Value is not null)
                 .OrderBy(x => x.Key, StringComparer.Ordinal)
                 .Select(x => $"{x.Key}={FormatValue(x.Value)}"));
 

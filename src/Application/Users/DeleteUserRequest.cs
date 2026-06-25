@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Users;
@@ -45,13 +44,6 @@ public sealed class DeleteUserRequestUseCase
 
         var now = _timeProvider.GetUtcNow();
         await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, now, cancellationToken);
-        _context.AuditLogs.Add(UserAuditSupport.CreateUserAuditLog(
-            actor.Id,
-            AuditActions.DeleteUser,
-            user.Id,
-            UserAuditSupport.CreateUserSnapshot(user),
-            newValues: null,
-            now));
         _context.Set<User>().Remove(user);
         await _context.SaveChangesAsync(cancellationToken);
 

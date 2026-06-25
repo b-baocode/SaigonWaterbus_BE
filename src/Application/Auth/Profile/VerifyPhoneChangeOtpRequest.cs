@@ -51,8 +51,8 @@ public sealed class VerifyPhoneChangeOtpRequestUseCase
         }
 
         var challenge = await _context.Set<OtpChallenge>()
-            .Include(x => x.User)
-            .ThenInclude(x => x.Role)
+            .Include(x => x.User).ThenInclude(x => x.Role)
+            .Include(x => x.User).ThenInclude(u => u.StationAssignments).ThenInclude(a => a.Station)
             .SingleOrDefaultAsync(
                 x => x.Id == request.ChallengeId
                   && x.Purpose == OtpPurpose.PhoneChange
@@ -97,7 +97,7 @@ public sealed class VerifyPhoneChangeOtpRequestUseCase
 
         return await _context.ExecuteInTransactionAsync(async ct =>
         {
-            if (user.NormalizedPhoneNumber is not null)
+            if (user.PhoneNumber is not null)
             {
                 challenge.ConsumedAt = now;
                 await _context.SaveChangesAsync(ct);
@@ -112,9 +112,8 @@ public sealed class VerifyPhoneChangeOtpRequestUseCase
                 throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Số điện thoại chờ xác thực không hợp lệ.");
             }
 
-            if (await _context.Set<User>().AnyAsync(
-                    x => x.NormalizedPhoneNumber == challenge.PendingPhoneNumber && x.Id != user.Id,
-                    ct))
+            if (await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), challenge.PendingPhoneNumber, null)
+                    .AnyAsync(x => x.Id != user.Id, ct))
             {
                 challenge.ConsumedAt = now;
                 await _context.SaveChangesAsync(ct);

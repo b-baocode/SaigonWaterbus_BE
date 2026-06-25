@@ -87,7 +87,8 @@ public sealed class ResendOtpRequestUseCase
         var now = _timeProvider.GetUtcNow();
         var latestChallenge = await _context.Set<OtpChallenge>()
             .Where(x => x.UserId == user.Id && x.Purpose == purpose)
-            .OrderByDescending(x => x.Id)
+            .OrderByDescending(x => x.Created)
+            .ThenByDescending(x => x.Id)
             .FirstAsync(cancellationToken);
         var otpChannel = AuthSupport.ResolveOtpChannelFromDestination(latestChallenge.Email);
         if (otpChannel == OtpChannel.Phone && !PhoneRules.IsVietnamPhone(latestChallenge.Email))
@@ -127,6 +128,7 @@ public sealed class ResendOtpRequestUseCase
             {
                 UserId = user.Id,
                 Purpose = purpose,
+                Channel = otpChannel,
                 Email = latestChallenge.Email,
                 PendingPhoneNumber = latestChallenge.PendingPhoneNumber,
                 CodeHash = _secretHasher.Hash(otpCode),

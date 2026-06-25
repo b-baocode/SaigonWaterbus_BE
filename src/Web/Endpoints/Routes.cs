@@ -1,3 +1,4 @@
+using System.IO;
 using Microsoft.AspNetCore.Http;
 using SaigonWaterbus.Application.Routes;
 
@@ -62,18 +63,11 @@ public sealed class Routes : IEndpointGroup
         }
         """;
 
-    private const string SegmentExample =
+    private const string UpdateGeoJsonExample =
         """
-        {
-          "fromStationCode": "BD",
-          "toStationCode": "BS",
-          "segmentOrder": 1,
-          "distanceKm": 1.25,
-          "geometry": [
-            { "longitude": 106.7061, "latitude": 10.7731 },
-            { "longitude": 106.7132, "latitude": 10.7810 }
-          ]
-        }
+        multipart/form-data
+        file: route.geojson
+        updateStations: true
         """;
 
     public static void Map(RouteGroupBuilder group)
@@ -117,6 +111,20 @@ public sealed class Routes : IEndpointGroup
                 "Status hop le: Active | Inactive.",
                 "RouteCode khong doi duoc sau khi tao."));
 
+        group.MapPut(UpdateRouteGeoJson, "{id:guid}/geojson")
+            .RequireAuthorization()
+            .DisableAntiforgery()
+            .Accepts<UpdateRouteGeoJsonFormRequest>("multipart/form-data")
+            .WithSummary("Cap nhat file GeoJSON cho route")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                UpdateGeoJsonExample,
+                "Gui multipart/form-data voi field file (.geojson).",
+                "LineString/MultiLineString duoc dung de cap nhat RouteGeometry va BaseDistanceKm.",
+                "Neu file co nhieu line, nen gan properties waterbus_route hoac route_code khop RouteCode.",
+                "Point co station_code hoac amenity=ferry_terminal se cap nhat latitude/longitude cho station trong route.",
+                "Co the gui updateStations=false neu khong muon cap nhat toa do station."));
+
         group.MapPost(AddRouteStop, "{id:guid}/stops")
             .RequireAuthorization()
             .WithSummary("Them ben dung vao tuyen")
@@ -147,34 +155,6 @@ public sealed class Routes : IEndpointGroup
                 "Tra ve 204 khi xoa thanh cong.",
                 "Tra ve 404 neu khong tim thay tuyen hoac stop."));
 
-        group.MapPost(AddRouteSegment, "{id:guid}/segments")
-            .RequireAuthorization()
-            .WithSummary("Them doan chay giua 2 ben trong tuyen")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
-                SegmentExample,
-                "Dung de khai bao khoang cach va thoi gian chay that cho custom booking.",
-                "fromStationCode va toStationCode phai nam trong stops cua route.",
-                "geometry la danh sach diem [longitude, latitude] cua doan duong thuy, co the bo trong neu chua ve xong."));
-
-        group.MapPut(UpdateRouteSegment, "{id:guid}/segments/{segmentId:guid}")
-            .RequireAuthorization()
-            .WithSummary("Cap nhat doan chay giua 2 ben trong tuyen")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
-                SegmentExample,
-                "Dung de cap nhat khoang cach, thoi gian chay, thu tu va geometry cua doan.",
-                "Neu truyen geometry thi phai co it nhat 2 diem."));
-
-        group.MapDelete(RemoveRouteSegment, "{id:guid}/segments/{segmentId:guid}")
-            .RequireAuthorization()
-            .WithSummary("Xoa doan chay khoi tuyen")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
-                null,
-                "Tra ve 204 khi xoa thanh cong.",
-                "Tra ve 404 neu khong tim thay route segment."));
-
         group.MapDelete(DeleteRoute, "{id:guid}")
             .RequireAuthorization()
             .WithSummary("Xoa tuyen")
@@ -188,17 +168,15 @@ public sealed class Routes : IEndpointGroup
         group.MapPost(ImportGeoJson, "geojson-import")
             .RequireAuthorization()
             .DisableAntiforgery()
-            .WithSummary("Import mang song rach va ben tu file GeoJSON")
+            .Accepts<ImportRouteGeoJsonFormRequest>("multipart/form-data")
+            .WithSummary("Import/cap nhat route va station tu file GeoJSON")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
-                null,
-                "Content-Type: multipart/form-data.",
-                "Form fields: file (.geojson file).",
-                "Nhan LineString/MultiLineString de import duong song/duong nen; neu co waterway=river|canal thi giu loai do, neu khong thi luu waterway_type=custom.",
-                "Point co amenity=ferry_terminal se duoc dung de tao/cap nhat station neu file co chua.",
-                "Neu line co from_station_code, to_station_code va waterbus_route/route_code thi he thong se tao/cap nhat route, route stops va route segments tu dong.",
-                "He thong se cap nhat Station va thay moi toan bo mang WaterwaySegment de API tao route su dung ve sau.",
-                "API tao route co the dung viaWaterway neu muon tao route geometry tu mang duong nen da import."));
+                UpdateGeoJsonExample,
+                "Gui multipart/form-data voi field file (.geojson).",
+                "Point co station_code/public_transport/amenity=ferry_terminal se tao hoac cap nhat station.",
+                "LineString/MultiLineString co from_station_code va to_station_code se tao hoac cap nhat route stops.",
+                "Co the dung waterbus_route hoac route_code tren line feature de chi dinh RouteCode."));
     }
 
     private static async Task<IResult> GetRoutes(ISender sender, CancellationToken ct) =>
@@ -213,6 +191,56 @@ public sealed class Routes : IEndpointGroup
     private static async Task<IResult> UpdateRoute(ISender sender, Guid id, UpdateRouteRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateRouteCommand(
             id, req.RouteName, req.Description, req.BaseDistanceKm, req.EstimatedDurationMin, req.Status), ct));
+
+    private static async Task<IResult> UpdateRouteGeoJson(
+        ISender sender,
+        Guid id,
+        HttpRequest request,
+        CancellationToken ct)
+    {
+        if (!request.HasFormContentType)
+        {
+            return Results.BadRequest(new { message = "Gui multipart/form-data voi field file." });
+        }
+
+        var form = await request.ReadFormAsync(ct);
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file is null || file.Length == 0)
+        {
+            return Results.BadRequest(new { message = "File GeoJSON khong duoc de trong." });
+        }
+
+        await using var fileStream = file.OpenReadStream();
+        using var reader = new StreamReader(fileStream, System.Text.Encoding.UTF8);
+        var geoJsonContent = await reader.ReadToEndAsync(ct);
+        var updateStations = ParseOptionalBool(form["updateStations"].ToString()) ?? true;
+
+        return Results.Ok(await sender.Send(new UpdateRouteGeoJsonCommand(id, geoJsonContent, updateStations), ct));
+    }
+
+    private static async Task<IResult> ImportGeoJson(
+        ISender sender,
+        HttpRequest request,
+        CancellationToken ct)
+    {
+        if (!request.HasFormContentType)
+        {
+            return Results.BadRequest(new { message = "Gui multipart/form-data voi field file." });
+        }
+
+        var form = await request.ReadFormAsync(ct);
+        var file = form.Files.GetFile("file") ?? form.Files.FirstOrDefault();
+        if (file is null || file.Length == 0)
+        {
+            return Results.BadRequest(new { message = "File GeoJSON khong duoc de trong." });
+        }
+
+        await using var fileStream = file.OpenReadStream();
+        using var reader = new StreamReader(fileStream, System.Text.Encoding.UTF8);
+        var geoJsonContent = await reader.ReadToEndAsync(ct);
+
+        return Results.Ok(await sender.Send(new ImportRouteGeoJsonCommand(geoJsonContent), ct));
+    }
 
     private static async Task<IResult> AddRouteStop(ISender sender, Guid id, AddRouteStopRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new AddRouteStopCommand(
@@ -230,46 +258,20 @@ public sealed class Routes : IEndpointGroup
         return Results.NoContent();
     }
 
-    private static async Task<IResult> AddRouteSegment(ISender sender, Guid id, RouteSegmentRequest req, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new AddRouteSegmentCommand(
-            id, req.FromStationCode, req.ToStationCode, req.SegmentOrder,
-            req.DistanceKm, req.EstimatedTravelMinutes, req.Geometry), ct));
-
-    private static async Task<IResult> UpdateRouteSegment(ISender sender, Guid id, Guid segmentId, RouteSegmentRequest req, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new UpdateRouteSegmentCommand(
-            id, segmentId, req.FromStationCode, req.ToStationCode, req.SegmentOrder,
-            req.DistanceKm, req.EstimatedTravelMinutes, req.Geometry), ct));
-
-    private static async Task<IResult> RemoveRouteSegment(ISender sender, Guid id, Guid segmentId, CancellationToken ct)
-    {
-        await sender.Send(new RemoveRouteSegmentCommand(id, segmentId), ct);
-        return Results.NoContent();
-    }
-
     private static async Task<IResult> DeleteRoute(ISender sender, Guid id, CancellationToken ct)
     {
         await sender.Send(new DeleteRouteCommand(id), ct);
         return Results.NoContent();
     }
 
-    private static async Task<IResult> ImportGeoJson(
-        ISender sender,
-        IFormFile file,
-        CancellationToken ct)
-    {
-        using var reader = new System.IO.StreamReader(file.OpenReadStream(), System.Text.Encoding.UTF8);
-        var geoJsonContent = await reader.ReadToEndAsync(ct);
-        return Results.Ok(await sender.Send(new ImportRouteGeoJsonCommand(geoJsonContent), ct));
-    }
-
     public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
     public sealed record AddRouteStopRequest(string StationCode, int StopOrder, int? StandardTravelMin, int? StandardDwellMin, bool IsPickupAllowed, bool IsDropoffAllowed);
     public sealed record UpdateRouteStopRequest(int? StandardTravelMin, int? StandardDwellMin, bool IsPickupAllowed, bool IsDropoffAllowed);
-    public sealed record RouteSegmentRequest(
-        string FromStationCode,
-        string ToStationCode,
-        int SegmentOrder,
-        decimal DistanceKm,
-        int? EstimatedTravelMinutes = null,
-        IReadOnlyList<RouteSegmentCoordinateDto>? Geometry = null);
+
+    private sealed record ImportRouteGeoJsonFormRequest(IFormFile File);
+
+    private sealed record UpdateRouteGeoJsonFormRequest(IFormFile File, bool? UpdateStations = null);
+
+    private static bool? ParseOptionalBool(string? value) =>
+        bool.TryParse(value, out var result) ? result : null;
 }

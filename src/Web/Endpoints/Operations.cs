@@ -49,7 +49,7 @@ public sealed class Operations : IEndpointGroup
                 "Admin, Manager hoặc Staff",
                 RefreshScheduleExample,
                 "Body dùng fromDate, toDate là ngày bắt đầu/kết thúc, không phải bến đi/bến đến.",
-                "Đồng bộ bảng operation_schedule_entries từ trips và custom_booking_requests trong khoảng ngày yêu cầu.",
+                "Đồng bộ bảng operation_schedule_entries từ trips và bookings trong khoảng ngày yêu cầu.",
                 "Nếu bỏ fromDate thì mặc định hôm nay theo giờ Việt Nam; nếu bỏ toDate thì lấy cùng ngày với fromDate.",
                 "Field cũ from/to vẫn được đọc để tương thích, nhưng FE nên dùng fromDate/toDate."));
 

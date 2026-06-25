@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
+using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Application.Vessels;
 using SaigonWaterbus.Domain.Entities;
@@ -53,6 +54,7 @@ public class VesselSeatFlowIntegrationTests
         var vessel = SeatFlowTestData.Vessel(
             SeatSetupType.FullStandard,
             seatsConfigured: true);
+        AddSeats(vessel, vessel.SeatCount);
         context.Add(vessel);
         await context.SaveChangesAsync();
 
@@ -72,22 +74,9 @@ public class VesselSeatFlowIntegrationTests
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        vessel.RentalPrices.Add(new VesselRentalPrice
-        {
-            VesselId = vessel.Id,
-            RentalUnit = VesselRentalUnit.Hour,
-            UnitPrice = 2000000m,
-            Currency = "VND",
-            Note = "Gia gio cu"
-        });
-        vessel.RentalPrices.Add(new VesselRentalPrice
-        {
-            VesselId = vessel.Id,
-            RentalUnit = VesselRentalUnit.Day,
-            UnitPrice = 15000000m,
-            Currency = "VND",
-            Note = "Gia ngay cu"
-        });
+        vessel.HourlyRentalPrice = 2000000m;
+        vessel.DailyRentalPrice = 15000000m;
+        vessel.Currency = "VND";
         context.Add(vessel);
         await context.SaveChangesAsync();
 
@@ -108,12 +97,12 @@ public class VesselSeatFlowIntegrationTests
         var hourlyPrice = result.RentalPrices.Single(x => x.RentalUnit == VesselRentalUnit.Hour);
         hourlyPrice.UnitPrice.ShouldBe(2500000m);
         hourlyPrice.Currency.ShouldBe("USD");
-        hourlyPrice.Note.ShouldBe("Gia gio moi");
+        hourlyPrice.Note.ShouldBeNull();
 
         var dailyPrice = result.RentalPrices.Single(x => x.RentalUnit == VesselRentalUnit.Day);
         dailyPrice.UnitPrice.ShouldBe(15000000m);
-        dailyPrice.Currency.ShouldBe("VND");
-        dailyPrice.Note.ShouldBe("Gia ngay cu");
+        dailyPrice.Currency.ShouldBe("USD");
+        dailyPrice.Note.ShouldBeNull();
     }
 
     [Test]
@@ -141,6 +130,7 @@ public class VesselSeatFlowIntegrationTests
         var vessel = SeatFlowTestData.Vessel(
             SeatSetupType.StandardAndVip,
             seatsConfigured: true);
+        AddSeats(vessel, vessel.SeatCount);
         context.Add(vessel);
         await context.SaveChangesAsync();
 
@@ -169,7 +159,7 @@ public class VesselSeatFlowIntegrationTests
     }
 
     [Test]
-    public async Task CreateVesselStoresMultipleImageUrls()
+    public async Task CreateVesselStoresPrimaryImageUrl()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -190,11 +180,7 @@ public class VesselSeatFlowIntegrationTests
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe("https://example.test/vessels/main.jpg");
-        result.ImageUrls.ShouldBe([
-            "https://example.test/vessels/main.jpg",
-            "https://example.test/vessels/deck.jpg"
-        ]);
-        (await context.VesselImages.CountAsync(x => x.VesselId == result.Id)).ShouldBe(2);
+        result.ImageUrls.ShouldBe(["https://example.test/vessels/main.jpg"]);
     }
 
     [Test]
@@ -203,19 +189,7 @@ public class VesselSeatFlowIntegrationTests
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
         var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        vessel.Images.Add(new VesselImage
-        {
-            VesselId = vessel.Id,
-            Url = "https://example.test/vessels/old-main.jpg",
-            DisplayOrder = 1,
-            IsPrimary = true
-        });
-        vessel.Images.Add(new VesselImage
-        {
-            VesselId = vessel.Id,
-            Url = "https://example.test/vessels/old-deck.jpg",
-            DisplayOrder = 2
-        });
+        vessel.ImageUrl = "https://example.test/vessels/old-main.jpg";
         context.Add(vessel);
         await context.SaveChangesAsync();
 
@@ -227,13 +201,6 @@ public class VesselSeatFlowIntegrationTests
 
         result.ImageUrl.ShouldBe("https://example.test/vessels/new-main.jpg");
         result.ImageUrls.ShouldBe(["https://example.test/vessels/new-main.jpg"]);
-        var images = await context.VesselImages
-            .Where(x => x.VesselId == vessel.Id)
-            .OrderBy(x => x.DisplayOrder)
-            .ToListAsync();
-        images.Count.ShouldBe(1);
-        images[0].Url.ShouldBe("https://example.test/vessels/new-main.jpg");
-        images[0].IsPrimary.ShouldBeTrue();
     }
 
     [Test]
@@ -249,15 +216,9 @@ public class VesselSeatFlowIntegrationTests
             SeatCount = 80,
             NumberOfDecks = 1,
             SeatSetupType = SeatSetupType.FullStandard,
-            RegistrationNumber = "VN-005"
+            RegistrationNumber = "VN-005",
+            ImageUrl = "https://example.test/vessels/old-main.jpg"
         };
-        vessel.Images.Add(new VesselImage
-        {
-            VesselId = vessel.Id,
-            Url = "https://example.test/vessels/old-main.jpg",
-            DisplayOrder = 1,
-            IsPrimary = true
-        });
         context.Add(vessel);
         await context.SaveChangesAsync();
 
@@ -294,7 +255,6 @@ public class VesselSeatFlowIntegrationTests
         result.RentalPrices.Count.ShouldBe(2);
         result.RentalPrices.Single(x => x.RentalUnit == VesselRentalUnit.Hour).UnitPrice.ShouldBe(10m);
         result.RentalPrices.Single(x => x.RentalUnit == VesselRentalUnit.Day).UnitPrice.ShouldBe(20m);
-        (await context.VesselImages.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(1);
     }
 
     private static CreateVesselRequestUseCase CreateVesselUseCase(
@@ -323,4 +283,23 @@ public class VesselSeatFlowIntegrationTests
             4,
             1,
             SeatSetupType: setupType);
+
+    private static void AddSeats(Vessel vessel, int count)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            var row = SeatSupport.RowLabel(index / 10);
+            var column = (index % 10) + 1;
+            vessel.Seats.Add(new Seat
+            {
+                VesselId = vessel.Id,
+                Code = SeatSupport.SeatCode(1, row, column),
+                SeatTypeName = SeatSupport.StandardSeatTypeName,
+                Deck = 1,
+                Row = row,
+                Column = column,
+                IsActive = true
+            });
+        }
+    }
 }

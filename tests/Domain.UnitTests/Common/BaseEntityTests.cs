@@ -24,14 +24,6 @@ public class BaseEntityTests
     }
 
     [Test]
-    public void CustomBookingRequestGeneratesGuidIdWhenCreated()
-    {
-        var request = new CustomBookingRequest();
-
-        request.Id.ShouldNotBe(Guid.Empty);
-    }
-
-    [Test]
     public void AddDomainEventAddsEventToCollection()
     {
         var entity = new TestEntity();

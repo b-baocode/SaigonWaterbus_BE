@@ -8,27 +8,27 @@ public sealed class CustomBookingItineraryStopConfiguration : IEntityTypeConfigu
 {
     public void Configure(EntityTypeBuilder<CustomBookingItineraryStop> builder)
     {
-        builder.ToTable("custom_booking_itinerary_stops");
+        builder.ToTable("itinerary_stops");
         builder.HasKey(x => x.Id);
-        builder.Property(x => x.Id).HasColumnName("custom_booking_itinerary_stop_id");
+        builder.Property(x => x.Id).HasColumnName("itinerary_stop_id");
 
-        builder.Property(x => x.CustomBookingRequestId).HasColumnName("custom_booking_request_id").IsRequired();
-        builder.Property(x => x.StopOrder).HasColumnName("stop_order").IsRequired();
+        builder.Property(x => x.CustomBookingId).HasColumnName("custom_booking_id").IsRequired();
         builder.Property(x => x.StationId).HasColumnName("station_id").IsRequired();
+        builder.Property(x => x.StopOrder).HasColumnName("stop_order").IsRequired();
         builder.Property(x => x.StayDurationMinutes).HasColumnName("stay_duration_minutes").IsRequired();
         builder.Property(x => x.Note).HasColumnName("note").HasMaxLength(500);
-
         builder.Property(x => x.Created).HasColumnName("created_at");
-        builder.Property(x => x.LastModified).HasColumnName("updated_at");
+        builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
         builder.Ignore(x => x.CreatedBy);
+        builder.Ignore(x => x.LastModified);
         builder.Ignore(x => x.LastModifiedBy);
 
-        builder.HasIndex(x => new { x.CustomBookingRequestId, x.StopOrder }).IsUnique();
+        builder.HasIndex(x => new { x.CustomBookingId, x.StopOrder }).IsUnique();
         builder.HasIndex(x => x.StationId);
 
-        builder.HasOne(x => x.CustomBookingRequest)
+        builder.HasOne(x => x.CustomBooking)
             .WithMany(x => x.ItineraryStops)
-            .HasForeignKey(x => x.CustomBookingRequestId)
+            .HasForeignKey(x => x.CustomBookingId)
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
 

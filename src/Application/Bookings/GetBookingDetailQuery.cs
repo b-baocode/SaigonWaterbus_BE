@@ -25,41 +25,41 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
 
         var booking = await _context.Set<Booking>()
             .Include(b => b.Promotion)
-            .Include(b => b.Items)
-                .ThenInclude(i => i.TicketType)
-            .Include(b => b.Items)
-                .ThenInclude(i => i.Trip)
-            .Include(b => b.Items)
-                .ThenInclude(i => i.FromTripStop)
-                    .ThenInclude(ts => ts.RouteStop)
+            .Include(b => b.Passengers)
+            .Include(b => b.Trip)
+                .ThenInclude(t => t!.Route)
+                    .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
-            .Include(b => b.Items)
-                .ThenInclude(i => i.ToTripStop)
-                    .ThenInclude(ts => ts.RouteStop)
-                        .ThenInclude(rs => rs.Station)
-            .SingleOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken)
+            .SingleOrDefaultAsync(
+                b => b.Id == request.BookingId && EF.Property<string>(b, "booking_type") == "SeatBooking",
+                cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
 
         if (booking.UserId != userId)
             throw new NotFoundException("Booking not found.");
 
-        var items = booking.Items.Select(i => new BookingItemDto(
+        var stops = booking.Trip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
+        var fromStop = stops.FirstOrDefault();
+        var toStop = stops.LastOrDefault();
+        var unitPrice = booking.Passengers.Count == 0 ? 0 : booking.SubtotalAmount / booking.Passengers.Count;
+
+        var items = booking.Passengers.Select(i => new BookingItemDto(
             i.Id,
-            i.Trip.TripCode,
-            i.PassengerName,
-            i.PassengerPhone,
-            i.TicketType.TicketTypeName,
+            booking.Trip?.TripCode ?? string.Empty,
+            i.FullName,
+            i.PhoneNumber,
+            i.PassengerType ?? "Passenger",
             null,
-            i.FromTripStop.RouteStop.Station.StationName,
-            i.ToTripStop.RouteStop.Station.StationName,
-            i.FromTripStop.ScheduledDeparture,
-            i.ToTripStop.ScheduledArrival,
-            i.UnitPrice,
-            i.ItemStatus.ToString())).ToList();
+            fromStop?.Station.StationName ?? string.Empty,
+            toStop?.Station.StationName ?? string.Empty,
+            booking.Trip?.DepartureTime,
+            booking.Trip?.ArrivalTime,
+            unitPrice,
+            booking.BookingStatus.ToString())).ToList();
 
         return new BookingDetailDto(
             booking.Id, booking.BookingCode,
-            booking.BookedAt, booking.BookingStatus.ToString(),
+            booking.Created, booking.BookingStatus.ToString(),
             booking.SubtotalAmount, booking.DiscountAmount, booking.TotalAmount,
             booking.PointsUsed, booking.PointsEarned,
             booking.Promotion?.PromotionCode,

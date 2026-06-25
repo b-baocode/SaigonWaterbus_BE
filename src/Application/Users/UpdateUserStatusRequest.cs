@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -47,29 +46,22 @@ public sealed class UpdateUserStatusRequestUseCase
         var actor = await AuthSupport.EnsureCurrentUserCanManageUsersAsync(_context, _userContext, cancellationToken);
         var user = await _context.Set<User>()
             .Include(x => x.Role)
+            .Include(x => x.StationAssignments).ThenInclude(a => a.Station)
             .SingleOrDefaultAsync(x => x.Id == request.UserId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
 
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
 
-        var oldValues = UserAuditSupport.CreateUserSnapshot(user);
         user.Status = request.Status;
 
         if (user.Status == UserStatus.Active
-            && user.NormalizedPhoneNumber is not null
+            && user.PhoneNumber is not null
             && user.PhoneVerifiedAt is null)
         {
             user.PhoneVerifiedAt = _timeProvider.GetUtcNow();
         }
 
         await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, _timeProvider.GetUtcNow(), cancellationToken);
-        _context.AuditLogs.Add(UserAuditSupport.CreateUserAuditLog(
-            actor.Id,
-            AuditActions.UpdateUser,
-            user.Id,
-            oldValues,
-            UserAuditSupport.CreateUserSnapshot(user),
-            _timeProvider.GetUtcNow()));
         await _context.SaveChangesAsync(cancellationToken);
 
         return AuthSupport.CreateUserDto(user);

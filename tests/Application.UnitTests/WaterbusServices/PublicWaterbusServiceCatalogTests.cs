@@ -12,13 +12,9 @@ public class PublicWaterbusServiceCatalogTests
     public async Task ReturnsIdsAndSupportedSeatSetupsForActiveServices()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var standard = SeatFlowTestData.SeatType("STANDARD");
-        var vip = SeatFlowTestData.SeatType("VIP");
-        var service = SeatFlowTestData.Service(
-            "TOURIST",
-            (standard, 1m, true),
-            (vip, 1.5m, true));
-        context.AddRange(standard, vip, service);
+        var service = SeatFlowTestData.Service("TOURIST");
+        service.BookingMode = BookingMode.SeatTypeBased;
+        context.Add(service);
         await context.SaveChangesAsync();
 
         var result = await new GetPublicWaterbusServiceCatalogRequestUseCase(context)
@@ -26,25 +22,20 @@ public class PublicWaterbusServiceCatalogTests
 
         var item = result.ShouldHaveSingleItem();
         item.ServiceId.ShouldBe(service.Id);
-        item.BookingMode.ShouldBe(BookingMode.SeatBased);
+        item.BookingMode.ShouldBe(BookingMode.SeatTypeBased);
         item.SupportedSeatSetupTypes.ShouldBe(
             [SeatSetupType.FullStandard, SeatSetupType.StandardAndVip]);
-        item.SeatTypes.Select(x => x.Code).ShouldBe(["STANDARD", "VIP"]);
+        item.SeatTypes.Select(x => x.Code).ShouldBe(["CABIN", "RIVER", "SKY"]);
     }
 
     [Test]
     public async Task HidesInactiveServicesAndGlobalSeatTypes()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var standard = SeatFlowTestData.SeatType("STANDARD");
-        var inactiveVip = SeatFlowTestData.SeatType("VIP", isActive: false);
-        var activeService = SeatFlowTestData.Service(
-            "PUBLIC",
-            (standard, 1m, true),
-            (inactiveVip, 1.5m, true));
-        var inactiveService = SeatFlowTestData.Service("HIDDEN", (standard, 1m, true));
+        var activeService = SeatFlowTestData.Service("PUBLIC");
+        var inactiveService = SeatFlowTestData.Service("HIDDEN");
         inactiveService.IsActive = false;
-        context.AddRange(standard, inactiveVip, activeService, inactiveService);
+        context.AddRange(activeService, inactiveService);
         await context.SaveChangesAsync();
 
         var result = await new GetPublicWaterbusServiceCatalogRequestUseCase(context)
@@ -60,10 +51,9 @@ public class PublicWaterbusServiceCatalogTests
     public async Task ReturnsActiveServiceWithoutServiceSeatPriceConfiguration()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var standard = SeatFlowTestData.SeatType("STANDARD");
-        var readyService = SeatFlowTestData.Service("READY", (standard, 1m, true));
+        var readyService = SeatFlowTestData.Service("READY");
         var incompleteService = SeatFlowTestData.Service("INCOMPLETE");
-        context.AddRange(standard, readyService, incompleteService);
+        context.AddRange(readyService, incompleteService);
         await context.SaveChangesAsync();
 
         var result = await new GetPublicWaterbusServiceCatalogRequestUseCase(context)

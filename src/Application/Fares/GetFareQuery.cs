@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
@@ -41,14 +42,12 @@ public sealed class GetFareQueryHandler : IRequestHandler<GetFareQuery, IReadOnl
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("No active fare defined for this station pair.");
 
-        var ticketTypes = await _context.Set<TicketType>()
-            .Where(tt => tt.IsActive)
-            .OrderBy(tt => tt.TicketTypeCode)
-            .ToListAsync(cancellationToken);
-
-        return ticketTypes.Select(tt => new FareByTicketTypeDto(
-            tt.Id, tt.TicketTypeName,
-            basePrice, tt.PriceModifier,
+        return TicketTypeCatalog.ActiveDefinitions.Select(tt => new FareByTicketTypeDto(
+            tt.TicketTypeId,
+            tt.TicketTypeCode,
+            tt.TicketTypeName,
+            basePrice,
+            tt.PriceModifier,
             basePrice * tt.PriceModifier)).ToList();
     }
 }

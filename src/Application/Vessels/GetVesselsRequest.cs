@@ -40,7 +40,6 @@ public sealed record VesselDto(
     string ImageUrl,
     IReadOnlyCollection<string> ImageUrls,
     string? Description,
-    VesselRentalPriceDto? RentalPrice,
     IReadOnlyCollection<VesselRentalPriceDto> RentalPrices,
     SeatSetupType SeatSetupType);
 
@@ -80,8 +79,7 @@ public sealed class GetVesselsRequestUseCase
         var query = VesselSupport.ApplyVisibilityFilter(
             _context.Vessels
                 .AsNoTracking()
-                .Include(x => x.Images)
-                .Include(x => x.RentalPrices)
+                .Include(x => x.Seats)
                 .AsQueryable(),
             actor);
 

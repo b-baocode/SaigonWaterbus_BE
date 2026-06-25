@@ -28,17 +28,13 @@ public class Vessel : BaseAuditableEntity
 
     public string? ImagePublicId { get; set; }
 
+    public decimal? HourlyRentalPrice { get; set; }
+
+    public decimal? DailyRentalPrice { get; set; }
+
+    public string Currency { get; set; } = "VND";
+
     public string? Description { get; set; }
 
-    public ICollection<VesselImage> Images { get; set; } = new List<VesselImage>();
-
     public ICollection<Seat> Seats { get; set; } = new List<Seat>();
-
-    public ICollection<VesselDeckLayout> DeckLayouts { get; set; } = new List<VesselDeckLayout>();
-
-    public ICollection<VesselFacility> Facilities { get; set; } = new List<VesselFacility>();
-
-    public ICollection<VesselLayoutCell> LayoutCells { get; set; } = new List<VesselLayoutCell>();
-
-    public ICollection<VesselRentalPrice> RentalPrices { get; set; } = new List<VesselRentalPrice>();
 }

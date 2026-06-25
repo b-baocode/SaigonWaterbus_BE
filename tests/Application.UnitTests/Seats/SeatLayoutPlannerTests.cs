@@ -1,6 +1,6 @@
 using NUnit.Framework;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Seats;
-using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
 
@@ -8,78 +8,31 @@ namespace SaigonWaterbus.Application.UnitTests.Seats;
 
 public class SeatLayoutPlannerTests
 {
-    [Test]
-    public void EnsureDefaultSeatTypeCreatesStandardWhenMissing()
-    {
-        var seatTypes = new List<SeatType>();
-
-        var result = SeatLayoutPlanner.EnsureSeatType(
-            null,
-            seatTypes,
-            "STANDARD",
-            "Standard Seat",
-            1);
-
-        result.Code.ShouldBe("STANDARD");
-        result.IsActive.ShouldBeTrue();
-        seatTypes.ShouldContain(result);
-    }
-
-    [Test]
-    public void EnsureDefaultSeatTypeReactivatesExistingStandard()
-    {
-        var standard = new SeatType
-        {
-            Code = "standard",
-            Name = "Standard Seat",
-            DisplayOrder = 1,
-            IsActive = false
-        };
-        var seatTypes = new List<SeatType> { standard };
-
-        var result = SeatLayoutPlanner.EnsureSeatType(
-            null,
-            seatTypes,
-            "STANDARD",
-            "Standard Seat",
-            1);
-
-        result.ShouldBeSameAs(standard);
-        result.IsActive.ShouldBeTrue();
-        seatTypes.Count.ShouldBe(1);
-    }
-
-    [Test]
-    public void EnsureSeatTypeCreatesSeededNonStandardTypeWhenMissing()
-    {
-        var seatTypes = new List<SeatType>();
-
-        var result = SeatLayoutPlanner.EnsureSeatType(
-            null,
-            seatTypes,
-            "RIVER",
-            "River Seat",
-            2);
-
-        result.Code.ShouldBe("RIVER");
-        result.IsActive.ShouldBeTrue();
-        seatTypes.ShouldContain(result);
-    }
-
-    [TestCase(SeatSetupType.FullStandard, "STANDARD", true)]
-    [TestCase(SeatSetupType.FullStandard, "VIP", false)]
-    [TestCase(SeatSetupType.FullStandard, "CABIN", false)]
-    [TestCase(SeatSetupType.FullStandard, "RIVER", false)]
-    [TestCase(SeatSetupType.FullStandard, "SKY", false)]
-    [TestCase(SeatSetupType.StandardAndVip, "STANDARD", true)]
-    [TestCase(SeatSetupType.StandardAndVip, "CABIN", true)]
-    [TestCase(SeatSetupType.StandardAndVip, "RIVER", true)]
-    [TestCase(SeatSetupType.StandardAndVip, "SKY", true)]
-    public void IsAllowedSeatTypeFollowsVesselSetup(
+    [TestCase(SeatSetupType.FullStandard, null, "Standard")]
+    [TestCase(SeatSetupType.FullStandard, "STANDARD", "Standard")]
+    [TestCase(SeatSetupType.StandardAndVip, null, "Cabin")]
+    [TestCase(SeatSetupType.StandardAndVip, "CABIN", "Cabin")]
+    [TestCase(SeatSetupType.StandardAndVip, "RIVER", "River")]
+    [TestCase(SeatSetupType.StandardAndVip, "SKY", "Sky")]
+    public void NormalizeSeatTypeNameUsesCompactSeatTypeColumn(
         SeatSetupType setupType,
-        string code,
-        bool expected)
+        string? code,
+        string expected)
     {
-        SeatLayoutPlanner.IsAllowedSeatType(setupType, code).ShouldBe(expected);
+        SeatSupport.NormalizeSeatTypeName(code, setupType).ShouldBe(expected);
+    }
+
+    [Test]
+    public void NormalizeSeatTypeNameRejectsCabinForFullStandardVessel()
+    {
+        Should.Throw<ValidationException>(() =>
+            SeatSupport.NormalizeSeatTypeName("CABIN", SeatSetupType.FullStandard));
+    }
+
+    [Test]
+    public void NormalizeSeatTypeNameRejectsStandardForSightseeingVessel()
+    {
+        Should.Throw<ValidationException>(() =>
+            SeatSupport.NormalizeSeatTypeName("STANDARD", SeatSetupType.StandardAndVip));
     }
 }

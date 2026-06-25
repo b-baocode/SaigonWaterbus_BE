@@ -41,73 +41,28 @@ public class WaterbusServiceSupportTests
     }
 
     [Test]
-    public void CreateSeatTypesDtoReturnsGlobalSeatTypes()
+    public void CreateSeatTypesDtoReturnsSeatBasedDefaults()
     {
         var service = WaterbusService(Guid.NewGuid(), "WB", true);
-        var standard = SeatType("STANDARD", 1);
-        var vip = SeatType("VIP", 2);
 
         var dto = WaterbusServiceSupport.CreateSeatTypesDto(
             service,
-            includeInactive: false,
-            [vip, standard]);
-
-        dto.SeatTypes.Select(x => x.Code).ShouldBe(["STANDARD", "VIP"]);
-    }
-
-    [Test]
-    public void CreateSeatTypesDtoHidesInactiveSeatTypesForNonAdmin()
-    {
-        var service = WaterbusService(Guid.NewGuid(), "WS", true);
-        var standard = SeatType("STANDARD", 1);
-        var vip = SeatType("VIP", 2, isActive: false);
-
-        var dto = WaterbusServiceSupport.CreateSeatTypesDto(
-            service,
-            includeInactive: false,
-            [standard, vip]);
+            includeInactive: false);
 
         dto.SeatTypes.Select(x => x.Code).ShouldBe(["STANDARD"]);
     }
 
     [Test]
-    public void CreateSeatTypesDtoIncludesInactiveSeatTypesForAdmin()
+    public void CreateSeatTypesDtoReturnsSeatTypeBasedDefaults()
     {
-        var service = WaterbusService(Guid.NewGuid(), "WB", true);
-        var vip = SeatType("VIP", 2, isActive: false);
+        var service = WaterbusService(Guid.NewGuid(), "WS", true);
+        service.BookingMode = BookingMode.SeatTypeBased;
 
         var dto = WaterbusServiceSupport.CreateSeatTypesDto(
             service,
-            includeInactive: true,
-            [vip]);
+            includeInactive: false);
 
-        dto.SeatTypes.Single().Code.ShouldBe("VIP");
-        dto.SeatTypes.Single().IsActive.ShouldBeFalse();
-    }
-
-    [Test]
-    public void CreateSeatTypesDtoShowsGlobalTypesForAdmin()
-    {
-        var service = WaterbusService(Guid.NewGuid(), "WB", true);
-        var standard = SeatType("STANDARD", 1);
-        var vip = SeatType("VIP", 2);
-
-        var dto = WaterbusServiceSupport.CreateSeatTypesDto(
-            service,
-            includeInactive: true,
-            [standard, vip]);
-
-        dto.SeatTypes.Select(x => x.Code).ShouldBe(["STANDARD", "VIP"]);
-        dto.SeatTypes.Single(x => x.Code == "VIP").IsActive.ShouldBeTrue();
-    }
-
-    [Test]
-    public void CreateSeatTypeCreatesGlobalDefinition()
-    {
-        var seatType = WaterbusServiceSupport.CreateSeatType("STANDARD", "Standard", 1);
-
-        seatType.Code.ShouldBe("STANDARD");
-        seatType.IsActive.ShouldBeTrue();
+        dto.SeatTypes.Select(x => x.Code).ShouldBe(["CABIN", "RIVER", "SKY"]);
     }
 
     [Test]
@@ -176,19 +131,6 @@ public class WaterbusServiceSupportTests
             Id = id,
             Code = code,
             Name = code,
-            IsActive = isActive
-        };
-
-    private static SeatType SeatType(
-        string code,
-        int displayOrder,
-        bool isActive = true) =>
-        new()
-        {
-            Id = Guid.NewGuid(),
-            Code = code,
-            Name = code,
-            DisplayOrder = displayOrder,
             IsActive = isActive
         };
 

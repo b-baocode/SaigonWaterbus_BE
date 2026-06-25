@@ -53,21 +53,15 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
 
         try
         {
-            var client = _httpClientFactory.CreateClient(HttpClientName);
-            using var httpRequest = new HttpRequestMessage(
+            using var httpRequest = CreatePayOsRequest(
                 HttpMethod.Post,
-                $"{options.ApiBaseUrl.TrimEnd('/')}/v2/payment-requests");
-            httpRequest.Headers.TryAddWithoutValidation("x-client-id", options.ClientId);
-            httpRequest.Headers.TryAddWithoutValidation("x-api-key", options.ApiKey);
-            if (!string.IsNullOrWhiteSpace(options.PartnerCode))
-            {
-                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", options.PartnerCode);
-            }
-
-            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                $"{options.ApiBaseUrl.TrimEnd('/')}/v2/payment-requests",
+                options);
             httpRequest.Content = JsonContent.Create(payload);
 
-            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            using var response = await _httpClientFactory
+                .CreateClient(HttpClientName)
+                .SendAsync(httpRequest, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -75,11 +69,13 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                     "PayOS create payment failed. Status: {StatusCode}, Body: {Body}",
                     (int)response.StatusCode,
                     Truncate(body, 500));
-                throw new PaymentGatewayException("Không tạo được link thanh toán PayOS.");
+                throw new PaymentGatewayException(CreatePayOsErrorMessage(
+                    "Không tạo được link thanh toán PayOS",
+                    response.StatusCode,
+                    body));
             }
 
-            var result = await response.Content.ReadFromJsonAsync<PayOsApiResponse<PayOsCreatePaymentData>>(
-                cancellationToken);
+            var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsCreatePaymentData>>(body);
             if (result?.Code != "00" || result.Data is null)
             {
                 _logger.LogWarning(
@@ -105,131 +101,6 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         }
     }
 
-    public async Task<CustomBookingRefundPayoutResult> CreateRefundPayoutAsync(
-        CustomBookingRefundPayoutRequest request,
-        CancellationToken cancellationToken)
-    {
-        ValidateRefundPayoutRequest(request);
-
-        var options = GetEnabledOptions();
-        var payoutCredentials = GetPayoutCredentials(options);
-        var category = new[] { "refund", "custom-booking" };
-        var signature = PayOsSignature.CreatePayoutRequestSignature(
-            request.ReferenceId,
-            request.Amount,
-            request.Description,
-            request.ToBin,
-            request.ToAccountNumber,
-            category,
-            payoutCredentials.ChecksumKey);
-        _logger.LogDebug(
-            "PayOS payout signature string. ReferenceId: {ReferenceId}, Data: {SignatureData}",
-            request.ReferenceId,
-            PayOsSignature.CreatePayoutRequestSignatureData(
-                request.ReferenceId,
-                request.Amount,
-                request.Description,
-                request.ToBin,
-                request.ToAccountNumber,
-                category));
-
-        var payload = new PayOsCreatePayoutRequest(
-            request.ReferenceId,
-            request.Amount,
-            request.Description,
-            request.ToBin,
-            request.ToAccountNumber,
-            category);
-
-        try
-        {
-            var client = _httpClientFactory.CreateClient(HttpClientName);
-            using var httpRequest = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"{options.ApiBaseUrl.TrimEnd('/')}/v1/payouts");
-            httpRequest.Headers.TryAddWithoutValidation("x-client-id", payoutCredentials.ClientId);
-            httpRequest.Headers.TryAddWithoutValidation("x-api-key", payoutCredentials.ApiKey);
-            httpRequest.Headers.TryAddWithoutValidation("x-idempotency-key", request.IdempotencyKey);
-            httpRequest.Headers.TryAddWithoutValidation("x-signature", signature);
-            if (!string.IsNullOrWhiteSpace(payoutCredentials.PartnerCode))
-            {
-                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", payoutCredentials.PartnerCode);
-            }
-
-            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            httpRequest.Content = JsonContent.Create(payload);
-
-            using var response = await client.SendAsync(httpRequest, cancellationToken);
-            var body = await response.Content.ReadAsStringAsync(cancellationToken);
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning(
-                    "PayOS refund payout failed. ReferenceId: {ReferenceId}, Status: {StatusCode}, Body: {Body}",
-                    request.ReferenceId,
-                    (int)response.StatusCode,
-                    Truncate(body, 500));
-                throw new PaymentGatewayException(CreatePayOsErrorMessage(
-                    "Không tạo được lệnh hoàn tiền PayOS",
-                    response.StatusCode,
-                    body));
-            }
-
-            var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsCreatePayoutData>>(body);
-            if (result?.Code != "00" || result.Data is null)
-            {
-                _logger.LogWarning(
-                    "PayOS refund payout returned business error. ReferenceId: {ReferenceId}, Code: {Code}, Desc: {Desc}",
-                    request.ReferenceId,
-                    result?.Code,
-                    result?.Desc);
-                throw new PaymentGatewayException(result?.Desc ?? "Không tạo được lệnh hoàn tiền PayOS.");
-            }
-
-            return ToRefundPayoutResult(result.Data, result.Desc);
-        }
-        catch (PaymentGatewayException)
-        {
-            var reconciled = await TryGetRefundPayoutByReferenceIdAsync(
-                options,
-                payoutCredentials,
-                request.ReferenceId,
-                cancellationToken);
-            if (reconciled is not null)
-            {
-                return reconciled;
-            }
-
-            throw;
-        }
-        catch (Exception ex)
-        {
-            var reconciled = await TryGetRefundPayoutByReferenceIdAsync(
-                options,
-                payoutCredentials,
-                request.ReferenceId,
-                cancellationToken);
-            if (reconciled is not null)
-            {
-                return reconciled;
-            }
-
-            throw new PaymentGatewayException("Không tạo được lệnh hoàn tiền PayOS.", ex);
-        }
-    }
-
-    public async Task<CustomBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdAsync(
-        string referenceId,
-        CancellationToken cancellationToken)
-    {
-        var options = GetEnabledOptions();
-        var payoutCredentials = GetPayoutCredentials(options);
-        return await GetRefundPayoutByReferenceIdCoreAsync(
-            options,
-            payoutCredentials,
-            referenceId,
-            cancellationToken);
-    }
-
     public async Task<CustomBookingPaymentCancellationResult> CancelPaymentAsync(
         long orderCode,
         string reason,
@@ -240,21 +111,15 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
 
         try
         {
-            var client = _httpClientFactory.CreateClient(HttpClientName);
-            using var httpRequest = new HttpRequestMessage(
+            using var httpRequest = CreatePayOsRequest(
                 HttpMethod.Post,
-                $"{options.ApiBaseUrl.TrimEnd('/')}/v2/payment-requests/{orderCode}/cancel");
-            httpRequest.Headers.TryAddWithoutValidation("x-client-id", options.ClientId);
-            httpRequest.Headers.TryAddWithoutValidation("x-api-key", options.ApiKey);
-            if (!string.IsNullOrWhiteSpace(options.PartnerCode))
-            {
-                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", options.PartnerCode);
-            }
-
-            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+                $"{options.ApiBaseUrl.TrimEnd('/')}/v2/payment-requests/{orderCode}/cancel",
+                options);
             httpRequest.Content = JsonContent.Create(payload);
 
-            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            using var response = await _httpClientFactory
+                .CreateClient(HttpClientName)
+                .SendAsync(httpRequest, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -266,15 +131,9 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                 throw new PaymentGatewayException("Không hủy được link thanh toán PayOS.");
             }
 
-            var result = await response.Content.ReadFromJsonAsync<PayOsApiResponse<PayOsPaymentRequestData>>(
-                cancellationToken);
+            var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsPaymentRequestData>>(body);
             if (result?.Code != "00" || result.Data is null)
             {
-                _logger.LogWarning(
-                    "PayOS cancel payment returned business error. OrderCode: {OrderCode}, Code: {Code}, Desc: {Desc}",
-                    orderCode,
-                    result?.Code,
-                    result?.Desc);
                 throw new PaymentGatewayException(result?.Desc ?? "Không hủy được link thanh toán PayOS.");
             }
 
@@ -301,20 +160,14 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
 
         try
         {
-            var client = _httpClientFactory.CreateClient(HttpClientName);
-            using var httpRequest = new HttpRequestMessage(
+            using var httpRequest = CreatePayOsRequest(
                 HttpMethod.Get,
-                $"{options.ApiBaseUrl.TrimEnd('/')}/v2/payment-requests/{orderCode}");
-            httpRequest.Headers.TryAddWithoutValidation("x-client-id", options.ClientId);
-            httpRequest.Headers.TryAddWithoutValidation("x-api-key", options.ApiKey);
-            if (!string.IsNullOrWhiteSpace(options.PartnerCode))
-            {
-                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", options.PartnerCode);
-            }
+                $"{options.ApiBaseUrl.TrimEnd('/')}/v2/payment-requests/{orderCode}",
+                options);
 
-            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-
-            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            using var response = await _httpClientFactory
+                .CreateClient(HttpClientName)
+                .SendAsync(httpRequest, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
@@ -326,15 +179,9 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
                 throw new PaymentGatewayException("Không kiểm tra được trạng thái thanh toán PayOS.");
             }
 
-            var result = await response.Content.ReadFromJsonAsync<PayOsApiResponse<PayOsPaymentRequestData>>(
-                cancellationToken);
+            var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsPaymentRequestData>>(body);
             if (result?.Code != "00" || result.Data is null)
             {
-                _logger.LogWarning(
-                    "PayOS get payment returned business error. OrderCode: {OrderCode}, Code: {Code}, Desc: {Desc}",
-                    orderCode,
-                    result?.Code,
-                    result?.Desc);
                 throw new PaymentGatewayException(result?.Desc ?? "Không kiểm tra được trạng thái thanh toán PayOS.");
             }
 
@@ -353,6 +200,26 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         {
             throw new PaymentGatewayException("Không kiểm tra được trạng thái thanh toán PayOS.", ex);
         }
+    }
+
+    public Task<CustomBookingRefundPayoutResult> CreateRefundPayoutAsync(
+        CustomBookingRefundPayoutRequest request,
+        CancellationToken cancellationToken)
+    {
+        return CreateRefundPayoutCoreAsync(request, cancellationToken);
+    }
+
+    public Task<CustomBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdAsync(
+        string referenceId,
+        CancellationToken cancellationToken)
+    {
+        var options = GetEnabledOptions();
+        var payoutCredentials = GetPayoutCredentials(options);
+        return GetRefundPayoutByReferenceIdCoreAsync(
+            options,
+            payoutCredentials,
+            referenceId,
+            cancellationToken);
     }
 
     public bool IsValidWebhook(CustomBookingDepositPaymentWebhook webhook)
@@ -383,7 +250,28 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             ["virtualAccountNumber"] = webhook.Data.VirtualAccountNumber
         };
         var expectedSignature = PayOsSignature.CreateSignatureFromData(data, options.ChecksumKey);
-        return string.Equals(expectedSignature, webhook.Signature, StringComparison.OrdinalIgnoreCase);
+        if (string.IsNullOrEmpty(webhook.Signature))
+        {
+            return false;
+        }
+
+        var expectedBytes = System.Text.Encoding.UTF8.GetBytes(expectedSignature);
+        var providedBytes = System.Text.Encoding.UTF8.GetBytes(webhook.Signature.ToLowerInvariant());
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(expectedBytes, providedBytes);
+    }
+
+    private HttpRequestMessage CreatePayOsRequest(HttpMethod method, string uri, PayOsOptions options)
+    {
+        var request = new HttpRequestMessage(method, uri);
+        request.Headers.TryAddWithoutValidation("x-client-id", options.ClientId);
+        request.Headers.TryAddWithoutValidation("x-api-key", options.ApiKey);
+        if (!string.IsNullOrWhiteSpace(options.PartnerCode))
+        {
+            request.Headers.TryAddWithoutValidation("x-partner-code", options.PartnerCode);
+        }
+
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        return request;
     }
 
     private PayOsOptions GetEnabledOptions()
@@ -407,26 +295,103 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
         return options;
     }
 
-    private static PayOsCredentials GetPayoutCredentials(PayOsOptions options)
+    private async Task<CustomBookingRefundPayoutResult> CreateRefundPayoutCoreAsync(
+        CustomBookingRefundPayoutRequest request,
+        CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(options.PayoutClientId)
-            || string.IsNullOrWhiteSpace(options.PayoutApiKey)
-            || string.IsNullOrWhiteSpace(options.PayoutChecksumKey))
+        ValidateRefundPayoutRequest(request);
+
+        var options = GetEnabledOptions();
+        var payoutCredentials = GetPayoutCredentials(options);
+        var category = new[] { "refund", "booking" };
+        var signature = PayOsSignature.CreatePayoutRequestSignature(
+            request.ReferenceId,
+            request.Amount,
+            request.Description,
+            request.ToBin,
+            request.ToAccountNumber,
+            category,
+            payoutCredentials.ChecksumKey);
+
+        var payload = new PayOsCreatePayoutRequest(
+            request.ReferenceId,
+            request.Amount,
+            request.Description,
+            request.ToBin,
+            request.ToAccountNumber,
+            category);
+
+        try
         {
-            throw new PaymentGatewayException("PayOS chưa cấu hình đủ PayoutClientId, PayoutApiKey và PayoutChecksumKey để hoàn tiền.");
+            using var httpRequest = new HttpRequestMessage(
+                HttpMethod.Post,
+                $"{options.ApiBaseUrl.TrimEnd('/')}/v1/payouts");
+            httpRequest.Headers.TryAddWithoutValidation("x-client-id", payoutCredentials.ClientId);
+            httpRequest.Headers.TryAddWithoutValidation("x-api-key", payoutCredentials.ApiKey);
+            httpRequest.Headers.TryAddWithoutValidation("x-idempotency-key", request.IdempotencyKey);
+            httpRequest.Headers.TryAddWithoutValidation("x-signature", signature);
+            if (!string.IsNullOrWhiteSpace(payoutCredentials.PartnerCode))
+            {
+                httpRequest.Headers.TryAddWithoutValidation("x-partner-code", payoutCredentials.PartnerCode);
+            }
+
+            httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+            httpRequest.Content = JsonContent.Create(payload);
+
+            using var response = await _httpClientFactory
+                .CreateClient(HttpClientName)
+                .SendAsync(httpRequest, cancellationToken);
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning(
+                    "PayOS refund payout failed. ReferenceId: {ReferenceId}, Status: {StatusCode}, Body: {Body}",
+                    request.ReferenceId,
+                    (int)response.StatusCode,
+                    Truncate(body, 500));
+                throw new PaymentGatewayException(CreatePayOsErrorMessage(
+                    "Không tạo được lệnh hoàn tiền PayOS",
+                    response.StatusCode,
+                    body));
+            }
+
+            var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsCreatePayoutData>>(body);
+            if (result?.Code != "00" || result.Data is null)
+            {
+                throw new PaymentGatewayException(result?.Desc ?? "Không tạo được lệnh hoàn tiền PayOS.");
+            }
+
+            return ToRefundPayoutResult(result.Data, result.Desc);
         }
+        catch (PaymentGatewayException)
+        {
+            var recovered = await TryGetRefundPayoutByReferenceIdAsync(
+                options,
+                payoutCredentials,
+                request.ReferenceId,
+                cancellationToken);
+            if (recovered is not null)
+            {
+                return recovered;
+            }
 
-        return new PayOsCredentials(
-            options.PayoutClientId,
-            options.PayoutApiKey,
-            options.PayoutChecksumKey,
-            options.PayoutPartnerCode);
+            throw;
+        }
+        catch (Exception ex)
+        {
+            var recovered = await TryGetRefundPayoutByReferenceIdAsync(
+                options,
+                payoutCredentials,
+                request.ReferenceId,
+                cancellationToken);
+            if (recovered is not null)
+            {
+                return recovered;
+            }
+
+            throw new PaymentGatewayException("Không tạo được lệnh hoàn tiền PayOS.", ex);
+        }
     }
-
-    private static string Truncate(string value, int maxLength) =>
-        string.IsNullOrEmpty(value) || value.Length <= maxLength
-            ? value
-            : value[..maxLength];
 
     private async Task<CustomBookingRefundPayoutResult?> TryGetRefundPayoutByReferenceIdAsync(
         PayOsOptions options,
@@ -460,7 +425,6 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
     {
         try
         {
-            var client = _httpClientFactory.CreateClient(HttpClientName);
             var query = $"limit=1&offset=0&referenceId={Uri.EscapeDataString(referenceId)}";
             using var httpRequest = new HttpRequestMessage(
                 HttpMethod.Get,
@@ -474,15 +438,12 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
 
             httpRequest.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
 
-            using var response = await client.SendAsync(httpRequest, cancellationToken);
+            using var response = await _httpClientFactory
+                .CreateClient(HttpClientName)
+                .SendAsync(httpRequest, cancellationToken);
             var body = await response.Content.ReadAsStringAsync(cancellationToken);
             if (!response.IsSuccessStatusCode)
             {
-                _logger.LogWarning(
-                    "PayOS get refund payout failed. ReferenceId: {ReferenceId}, Status: {StatusCode}, Body: {Body}",
-                    referenceId,
-                    (int)response.StatusCode,
-                    Truncate(body, 500));
                 throw new PaymentGatewayException(CreatePayOsErrorMessage(
                     "Không kiểm tra được trạng thái hoàn tiền PayOS",
                     response.StatusCode,
@@ -492,11 +453,6 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             var result = JsonSerializer.Deserialize<PayOsApiResponse<PayOsPayoutListData>>(body);
             if (result?.Code != "00" || result.Data is null)
             {
-                _logger.LogWarning(
-                    "PayOS get refund payout returned business error. ReferenceId: {ReferenceId}, Code: {Code}, Desc: {Desc}",
-                    referenceId,
-                    result?.Code,
-                    result?.Desc);
                 throw new PaymentGatewayException(result?.Desc ?? "Không kiểm tra được trạng thái hoàn tiền PayOS.");
             }
 
@@ -530,6 +486,22 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             description,
             data.ReferenceId ?? transaction?.ReferenceId,
             transaction?.Amount);
+    }
+
+    private static PayOsCredentials GetPayoutCredentials(PayOsOptions options)
+    {
+        if (string.IsNullOrWhiteSpace(options.PayoutClientId)
+            || string.IsNullOrWhiteSpace(options.PayoutApiKey)
+            || string.IsNullOrWhiteSpace(options.PayoutChecksumKey))
+        {
+            throw new PaymentGatewayException("PayOS chưa cấu hình đủ PayoutClientId, PayoutApiKey và PayoutChecksumKey để hoàn tiền.");
+        }
+
+        return new PayOsCredentials(
+            options.PayoutClientId,
+            options.PayoutApiKey,
+            options.PayoutChecksumKey,
+            options.PayoutPartnerCode);
     }
 
     private static void ValidateRefundPayoutRequest(CustomBookingRefundPayoutRequest request)
@@ -612,6 +584,11 @@ public sealed class PayOsCustomBookingPaymentGateway : ICustomBookingPaymentGate
             return null;
         }
     }
+
+    private static string Truncate(string value, int maxLength) =>
+        string.IsNullOrEmpty(value) || value.Length <= maxLength
+            ? value
+            : value[..maxLength];
 
     private sealed record PayOsCredentials(
         string ClientId,

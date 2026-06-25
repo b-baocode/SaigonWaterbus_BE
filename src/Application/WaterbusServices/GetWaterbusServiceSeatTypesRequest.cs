@@ -61,17 +61,8 @@ public sealed class GetWaterbusServiceSeatTypesRequestUseCase
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException(
                 "Không tìm thấy dịch vụ WaterBus.");
 
-        var includeInactive = WaterbusServiceSupport.CanManageWaterbusServices(actor);
-        var availableSeatTypes = await _context.SeatTypes
-            .AsNoTracking()
-            .Where(x => includeInactive || x.IsActive)
-            .OrderBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Code)
-            .ToArrayAsync(cancellationToken);
-
         return WaterbusServiceSupport.CreateSeatTypesDto(
             service,
-            includeInactive,
-            availableSeatTypes);
+            includeInactive: WaterbusServiceSupport.CanManageWaterbusServices(actor));
     }
 }

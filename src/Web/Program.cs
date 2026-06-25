@@ -7,15 +7,14 @@ var builder = WebApplication.CreateBuilder(args);
 if (builder.Environment.IsDevelopment())
 {
     builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+    builder.Configuration.AddEnvironmentVariables();
 }
 
-// Add services to the container.
 builder.AddKeyVaultIfConfigured();
 builder.AddApplicationServices();
 builder.AddInfrastructureServices();
 builder.AddWebServices();
 
-// Cho phép upload nhiều ảnh tàu trong một request multipart (mặc định Kestrel ~30MB là quá sát với 5 ảnh × 5MB).
 builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 60 * 1024 * 1024);
 builder.Services.Configure<FormOptions>(options =>
@@ -34,13 +33,9 @@ if (args.Contains("db:migrate-seed", StringComparer.OrdinalIgnoreCase))
 
     var rolesCount = await dbContext.Roles.CountAsync();
     var usersCount = await dbContext.Users.CountAsync();
-    var otpCount = await dbContext.OtpChallenges.CountAsync();
-    var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
-    var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
-    var auditLogCount = await dbContext.AuditLogs.CountAsync();
 
     Console.WriteLine(
-        $"db:migrate-seed completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}, audit_logs={auditLogCount}");
+        $"db:migrate-seed completed. roles={rolesCount}, users={usersCount}");
 
     return;
 }
@@ -78,13 +73,9 @@ if (args.Contains("db:reset-seed", StringComparer.OrdinalIgnoreCase))
 
     var rolesCount = await dbContext.Roles.CountAsync();
     var usersCount = await dbContext.Users.CountAsync();
-    var otpCount = await dbContext.OtpChallenges.CountAsync();
-    var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
-    var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
-    var auditLogCount = await dbContext.AuditLogs.CountAsync();
 
     Console.WriteLine(
-        $"db:reset-seed completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}, audit_logs={auditLogCount}");
+        $"db:reset-seed completed. roles={rolesCount}, users={usersCount}");
 
     return;
 }
@@ -100,13 +91,9 @@ if (args.Contains("db:clear", StringComparer.OrdinalIgnoreCase))
 
     var rolesCount = await dbContext.Roles.CountAsync();
     var usersCount = await dbContext.Users.CountAsync();
-    var otpCount = await dbContext.OtpChallenges.CountAsync();
-    var refreshTokenCount = await dbContext.RefreshTokens.CountAsync();
-    var externalLoginCount = await dbContext.ExternalLogins.CountAsync();
-    var auditLogCount = await dbContext.AuditLogs.CountAsync();
 
     Console.WriteLine(
-        $"db:clear completed. roles={rolesCount}, users={usersCount}, otp_challenges={otpCount}, refresh_tokens={refreshTokenCount}, external_logins={externalLoginCount}, audit_logs={auditLogCount}");
+        $"db:clear completed. roles={rolesCount}, users={usersCount}");
 
     return;
 }
@@ -167,7 +154,6 @@ if (args.Contains("db:cleanup-expired-pending-now", StringComparer.OrdinalIgnore
     return;
 }
 
-// Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
     await app.InitialiseDatabaseAsync();

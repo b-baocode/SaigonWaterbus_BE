@@ -10,49 +10,15 @@ public interface IApplicationDbContext
 
     DbSet<User> Users { get; }
 
-    DbSet<UserStationAssignment> UserStationAssignments { get; }
-
-    DbSet<AuditLog> AuditLogs { get; }
+    DbSet<RefreshToken> RefreshTokens { get; }
 
     DbSet<WaterbusService> WaterbusServices { get; }
 
     DbSet<Vessel> Vessels { get; }
 
-    DbSet<VesselImage> VesselImages { get; }
-
-    DbSet<VesselRentalPrice> VesselRentalPrices { get; }
-
-    DbSet<VesselReservation> VesselReservations { get; }
-
     DbSet<Seat> Seats { get; }
 
-    DbSet<SeatType> SeatTypes { get; }
-
-    DbSet<VesselDeckLayout> VesselDeckLayouts { get; }
-
-    DbSet<VesselFacility> VesselFacilities { get; }
-
-    DbSet<VesselLayoutCell> VesselLayoutCells { get; }
-
-    DbSet<StationImage> StationImages { get; }
-
-    DbSet<CustomBookingRequest> CustomBookingRequests { get; }
-
-    DbSet<CustomBookingQuote> CustomBookingQuotes { get; }
-
-    DbSet<CustomBookingItineraryStop> CustomBookingItineraryStops { get; }
-
-    DbSet<CustomBookingStaffAssignment> CustomBookingStaffAssignments { get; }
-
-    DbSet<CustomBookingOperationService> CustomBookingOperationServices { get; }
-
-    DbSet<CustomBookingTicket> CustomBookingTickets { get; }
-
-    DbSet<CustomBookingPassenger> CustomBookingPassengers { get; }
-
-    DbSet<OperationScheduleEntry> OperationScheduleEntries { get; }
-
-    DbSet<RouteSegment> RouteSegments { get; }
+    DbSet<BookingTicket> Tickets { get; }
 
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;

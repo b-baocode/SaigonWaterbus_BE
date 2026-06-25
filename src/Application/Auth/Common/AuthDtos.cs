@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Auth.Common;
@@ -25,13 +26,14 @@ public sealed record AuthUserDto(
     AvatarSource AvatarSource,
     UserStatus Status,
     IReadOnlyCollection<AuthRoleDto> Roles,
-    IReadOnlyCollection<AuthStationAssignmentDto> StationAssignments);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyCollection<AuthStationAssignmentDto>? StationAssignments);
 
 public sealed record AuthTokensDto(
     string AccessToken,
     DateTimeOffset AccessTokenExpiresAt,
-    string RefreshToken,
-    DateTimeOffset RefreshTokenExpiresAt);
+    string? RefreshToken,
+    DateTimeOffset? RefreshTokenExpiresAt);
 
 public sealed record AuthSessionDto(AuthUserDto User, AuthTokensDto Tokens);
 

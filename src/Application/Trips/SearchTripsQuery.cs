@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -41,7 +42,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var trips = await _context.Set<Trip>()
             .Include(t => t.Route)
-            .Include(t => t.TripStops)
+                .ThenInclude(r => r.RouteStops)
             .Where(t => routeIds.Contains(t.RouteId)
                      && t.OperatingDate == request.OperatingDate
                      && t.TripStatus == TripStatus.Scheduled
@@ -50,10 +51,13 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var tripIds = trips.Select(t => t.Id).ToList();
 
-        var bookedCounts = await _context.Set<BookingItem>()
-            .Where(bi => tripIds.Contains(bi.TripId) && bi.ItemStatus != BookingItemStatus.Cancelled)
-            .GroupBy(bi => bi.TripId)
-            .Select(g => new { TripId = g.Key, Count = g.Count() })
+        var bookedCounts = await _context.Set<Booking>()
+            .Where(b => b.TripId.HasValue
+                     && tripIds.Contains(b.TripId.Value)
+                     && b.BookingStatus != BookingStatus.Cancelled)
+            .Select(b => new { TripId = b.TripId!.Value, Count = b.Passengers.Count })
+            .GroupBy(x => x.TripId)
+            .Select(g => new { TripId = g.Key, Count = g.Sum(x => x.Count) })
             .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
 
         var routeFromTo = validRouteIds.ToDictionary(x => x.RouteId, x => x);
@@ -65,20 +69,10 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                      && f.IsActive)
             .ToDictionaryAsync(f => f.RouteId, f => f.BasePrice, cancellationToken);
 
-        var minModifier = await _context.Set<TicketType>()
-            .Where(tt => tt.IsActive)
-            .MinAsync(tt => (decimal?)tt.PriceModifier, cancellationToken) ?? 1m;
+        var minModifier = TicketTypeCatalog.ActiveDefinitions.Min(x => x.PriceModifier);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
-            var routeStops = routeFromTo.TryGetValue(t.RouteId, out var rs) ? rs : null;
-            var fromTripStop = routeStops != null
-                ? t.TripStops.FirstOrDefault(ts => ts.RouteStopId == routeStops.FromStop.Id)
-                : null;
-            var toTripStop = routeStops != null
-                ? t.TripStops.FirstOrDefault(ts => ts.RouteStopId == routeStops.ToStop.Id)
-                : null;
-
             var booked = bookedCounts.GetValueOrDefault(t.Id, 0);
             var available = t.CapacitySnapshot - booked;
 
@@ -88,7 +82,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             return new TripSummaryDto(
                 t.Id, t.TripCode, t.Route.RouteName,
                 t.DepartureTime, t.ArrivalTime,
-                fromTripStop?.ScheduledDeparture, toTripStop?.ScheduledArrival,
+                t.DepartureTime, t.ArrivalTime,
                 Math.Max(0, available), t.CapacitySnapshot,
                 minPrice, t.TripStatus.ToString());
         }).ToList();

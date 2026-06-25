@@ -12,7 +12,7 @@ public sealed record StationImageFileRequest(
 
 internal static class StationImageSupport
 {
-    public const int MaxStationImages = 6;
+    public const int MaxStationImages = 1;
 
     public static IReadOnlyCollection<string> NormalizeImageUrls(
         string? imageUrl,
@@ -28,35 +28,37 @@ internal static class StationImageSupport
 
         return urls
             .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxStationImages)
             .ToArray();
     }
 
-    public static IReadOnlyCollection<string> CreateImageUrls(Station station)
-    {
-        var urls = station.Images
-            .Where(x => !string.IsNullOrWhiteSpace(x.Url))
-            .OrderByDescending(x => x.IsPrimary)
-            .ThenBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Id)
-            .Select(x => x.Url.Trim())
-            .ToList();
-
-        if (!string.IsNullOrWhiteSpace(station.ImageUrl)
-            && !urls.Contains(station.ImageUrl.Trim(), StringComparer.OrdinalIgnoreCase))
-        {
-            urls.Insert(0, station.ImageUrl.Trim());
-        }
-
-        return urls
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-    }
+    public static IReadOnlyCollection<string> CreateImageUrls(Station station) =>
+        string.IsNullOrWhiteSpace(station.ImageUrl)
+            ? []
+            : [station.ImageUrl.Trim()];
 
     public static bool HasValidRequestedImageCount(
         string? imageUrl,
         IReadOnlyCollection<string>? imageUrls,
         IReadOnlyCollection<StationImageFileRequest>? imageFiles = null) =>
-        NormalizeImageUrls(imageUrl, imageUrls).Count + (imageFiles?.Count ?? 0) <= MaxStationImages;
+        CountRequestedImages(imageUrl, imageUrls) + (imageFiles?.Count ?? 0) <= MaxStationImages;
+
+    private static int CountRequestedImages(
+        string? imageUrl,
+        IReadOnlyCollection<string>? imageUrls)
+    {
+        var urls = new List<string>();
+        AddImageUrl(urls, imageUrl);
+
+        foreach (var url in imageUrls ?? [])
+        {
+            AddImageUrl(urls, url);
+        }
+
+        return urls
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
+    }
 
     public static void EnsureValidImage(
         string propertyPrefix,
@@ -95,61 +97,10 @@ internal static class StationImageSupport
         string.IsNullOrWhiteSpace(imageUrl)
         || Uri.TryCreate(imageUrl, UriKind.Absolute, out _);
 
-    public static StationImage CreateImage(
-        Guid stationId,
-        string url,
-        int displayOrder,
-        bool isPrimary) =>
-        new()
-        {
-            StationId = stationId,
-            Url = url,
-            DisplayOrder = displayOrder,
-            IsPrimary = isPrimary
-        };
-
     public static void ReplaceImages(Station station, IReadOnlyCollection<string> imageUrls)
     {
-        station.Images = new List<StationImage>();
-        station.ImageUrl = null;
+        station.ImageUrl = imageUrls.FirstOrDefault();
         station.ImagePublicId = null;
-
-        var displayOrder = 1;
-        foreach (var imageUrl in imageUrls)
-        {
-            station.Images.Add(CreateImage(
-                station.Id,
-                imageUrl,
-                displayOrder++,
-                isPrimary: station.Images.Count == 0));
-        }
-
-        SyncPrimaryImage(station);
-    }
-
-    public static void SyncPrimaryImage(Station station)
-    {
-        var orderedImages = station.Images
-            .Where(x => !string.IsNullOrWhiteSpace(x.Url))
-            .OrderBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Id)
-            .ToArray();
-
-        if (orderedImages.Length == 0)
-        {
-            station.ImageUrl = null;
-            station.ImagePublicId = null;
-            return;
-        }
-
-        var primary = orderedImages.FirstOrDefault(x => x.IsPrimary) ?? orderedImages[0];
-        foreach (var image in orderedImages)
-        {
-            image.IsPrimary = image.Id == primary.Id;
-        }
-
-        station.ImageUrl = primary.Url;
-        station.ImagePublicId = primary.PublicId;
     }
 
     private static void AddImageUrl(List<string> urls, string? imageUrl)

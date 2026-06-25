@@ -94,9 +94,11 @@ public sealed class ForgotPasswordOtpRequestUseCase
 
         var challengeResult = await _context.ExecuteInTransactionAsync(async ct =>
         {
-            var user = isEmailInput
-                ? await _context.Set<User>().SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, ct)
-                : await _context.Set<User>().SingleOrDefaultAsync(x => x.NormalizedPhoneNumber == normalizedPhone, ct);
+            var user = await AuthSupport.WhereUserIdentityMatches(
+                    _context.Set<User>(),
+                    normalizedPhone,
+                    normalizedEmail)
+                .SingleOrDefaultAsync(ct);
 
             if (user is null)
             {
@@ -117,7 +119,8 @@ public sealed class ForgotPasswordOtpRequestUseCase
                          && x.Purpose == OtpPurpose.ForgotPassword
                          && x.ConsumedAt == null
                          && x.ExpiresAt > now)
-                .OrderByDescending(x => x.Id)
+                .OrderByDescending(x => x.Created)
+                .ThenByDescending(x => x.Id)
                 .FirstOrDefaultAsync(ct);
 
             if (existingActiveChallenge is not null && existingActiveChallenge.ResendAvailableAt > now)
@@ -130,11 +133,12 @@ public sealed class ForgotPasswordOtpRequestUseCase
             var otpCode = _otpCodeService.GenerateCode();
             var destination = otpChannel == OtpChannel.Email
                 ? user.Email!.Trim()
-                : user.NormalizedPhoneNumber!;
+                : user.PhoneNumber!;
             var challenge = new OtpChallenge
             {
                 UserId = user.Id,
                 Purpose = OtpPurpose.ForgotPassword,
+                Channel = otpChannel,
                 Email = destination,
                 CodeHash = _secretHasher.Hash(otpCode),
                 ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),

@@ -62,14 +62,6 @@ public class ApplicationDbContextInitialiser
             3)
     ];
 
-    private static readonly SeatTypeSeed[] SeatTypeSeeds =
-    [
-        new("STANDARD", "Standard Seat", 1),
-        new("CABIN", "Cabin Seat", 2),
-        new("RIVER", "River Seat", 3),
-        new("SKY", "Sky Seat", 4)
-    ];
-
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;
     private readonly ApplicationDbContext _context;
     private readonly DatabaseStartupSettings _databaseStartupSettings;
@@ -107,8 +99,12 @@ public class ApplicationDbContextInitialiser
                 }
             }
 
-            // Apply migrations when available. For initial setup without migrations,
-            // create schema without destroying existing data.
+            if (!_databaseStartupSettings.ApplyMigrationsOnStartup)
+            {
+                await _context.Database.CanConnectAsync();
+                return;
+            }
+
             if (_context.Database.GetMigrations().Any())
             {
                 await _context.Database.MigrateAsync();
@@ -142,17 +138,14 @@ public class ApplicationDbContextInitialiser
     {
         var roles = await _context.Roles.ToListAsync();
         var roleByCode = roles.ToDictionary(x => x.Code);
-        var roleBySystemName = roles.ToDictionary(x => x.SystemName);
 
         foreach (var definition in Roles.BuiltIn)
         {
-            if (!roleBySystemName.TryGetValue(definition.SystemName, out var existingRole)
-                && !roleByCode.TryGetValue(definition.Code, out existingRole))
+            if (!roleByCode.TryGetValue(definition.Code, out var existingRole))
             {
                 existingRole = new Role
                 {
                     Code = definition.Code,
-                    SystemName = definition.SystemName,
                     DisplayName = definition.DisplayName
                 };
 
@@ -165,11 +158,6 @@ public class ApplicationDbContextInitialiser
                     existingRole.Code = definition.Code;
                 }
 
-                if (!string.Equals(existingRole.SystemName, definition.SystemName, StringComparison.Ordinal))
-                {
-                    existingRole.SystemName = definition.SystemName;
-                }
-
                 if (!string.Equals(existingRole.DisplayName, definition.DisplayName, StringComparison.Ordinal))
                 {
                     existingRole.DisplayName = definition.DisplayName;
@@ -177,16 +165,10 @@ public class ApplicationDbContextInitialiser
             }
 
             roleByCode[definition.Code] = existingRole;
-            roleBySystemName[definition.SystemName] = existingRole;
         }
 
         await _context.SaveChangesAsync();
-        if (_databaseStartupSettings.SeedSampleData)
-        {
-            await WaterbusSeedData.SeedAsync(_context);
-        }
-
-        await SeedServicesAndSeatTypesAsync();
+        await SeedServicesAsync();
         await _context.SaveChangesAsync();
 
         if (!_databaseStartupSettings.SeedInternalUsers)
@@ -202,10 +184,9 @@ public class ApplicationDbContextInitialiser
         }
 
         await _context.SaveChangesAsync();
-        await SyncUserCodeSequencesAsync();
     }
 
-    private async Task SeedServicesAndSeatTypesAsync()
+    private async Task SeedServicesAsync()
     {
         var serviceByCode = await _context.WaterbusServices
             .ToDictionaryAsync(x => x.Code);
@@ -236,51 +217,11 @@ public class ApplicationDbContextInitialiser
                 service.IsActive = true;
             }
         }
-
-        var seatTypeByCode = await _context.SeatTypes
-            .ToDictionaryAsync(x => x.Code);
-
-        foreach (var definition in SeatTypeSeeds)
-        {
-            if (!seatTypeByCode.TryGetValue(definition.Code, out var seatType))
-            {
-                seatType = new SeatType
-                {
-                    Code = definition.Code,
-                    Name = definition.Name,
-                    DisplayOrder = definition.DisplayOrder,
-                    IsActive = true
-                };
-                _context.SeatTypes.Add(seatType);
-                seatTypeByCode[definition.Code] = seatType;
-            }
-            else
-            {
-                seatType.Name = definition.Name;
-                seatType.DisplayOrder = definition.DisplayOrder;
-                seatType.IsActive = true;
-            }
-        }
-
     }
 
     public async Task ResetAndSeedSampleDataAsync()
     {
-        if (await _context.Database.CanConnectAsync())
-        {
-            await _context.Database.EnsureDeletedAsync();
-        }
-
-        if (_context.Database.GetMigrations().Any())
-        {
-            await _context.Database.MigrateAsync();
-        }
-        else
-        {
-            await _context.Database.EnsureCreatedAsync();
-        }
-
-        await SeedAsync();
+        await ClearDataForRetestAsync();
     }
 
     public async Task BaselineExistingSchemaMigrationsAsync(CancellationToken cancellationToken = default)
@@ -322,13 +263,12 @@ public class ApplicationDbContextInitialiser
     {
         var columnChecks = new (string Table, string Column)[]
         {
-            ("roles", "Id"),
-            ("roles", "Code"),
-            ("users", "Id"),
-            ("users", "RoleId"),
+            ("roles", "role_id"),
+            ("roles", "role_code"),
+            ("users", "user_id"),
+            ("users", "role_id"),
             ("stations", "station_id"),
-            ("bookings", "booking_id"),
-            ("custom_booking_requests", "custom_booking_request_id")
+            ("bookings", "booking_id")
         };
 
         foreach (var (table, column) in columnChecks)
@@ -343,26 +283,16 @@ public class ApplicationDbContextInitialiser
 
     public async Task ClearDataForRetestAsync()
     {
-        await _context.ExternalLogins.ExecuteDeleteAsync();
-        await _context.OtpChallenges.ExecuteDeleteAsync();
-        await _context.RefreshTokens.ExecuteDeleteAsync();
-        await _context.AuditLogs.ExecuteDeleteAsync();
         await _context.Users.ExecuteDeleteAsync();
 
         await SeedAsync();
     }
 
-    public Task<int> CountExpiredPendingRegistrationUsersAsync(CancellationToken cancellationToken = default)
-    {
-        var now = DateTimeOffset.UtcNow;
-        return GetExpiredPendingRegistrationUsersQuery(now).CountAsync(cancellationToken);
-    }
+    public Task<int> CountExpiredPendingRegistrationUsersAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(0);
 
-    public async Task<int> CleanupExpiredPendingRegistrationUsersAsync(CancellationToken cancellationToken = default)
-    {
-        var now = DateTimeOffset.UtcNow;
-        return await GetExpiredPendingRegistrationUsersQuery(now).ExecuteDeleteAsync(cancellationToken);
-    }
+    public Task<int> CleanupExpiredPendingRegistrationUsersAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(0);
 
     public Task ConfigurePendingRegistrationCleanupCronAsync(
         string cronExpression,
@@ -370,37 +300,7 @@ public class ApplicationDbContextInitialiser
     {
         Guard.Against.NullOrWhiteSpace(cronExpression);
 
-        const string cleanupCommand =
-            """
-            DELETE FROM users u
-            WHERE u."Status" = 0
-              AND EXISTS (
-                    SELECT 1
-                    FROM otp_challenges oc
-                    WHERE oc."UserId" = u."Id"
-                      AND oc."Purpose" = 1)
-              AND NOT EXISTS (
-                    SELECT 1
-                    FROM otp_challenges oc
-                    WHERE oc."UserId" = u."Id"
-                      AND oc."Purpose" = 1
-                      AND oc."ExpiresAt" > now());
-            """;
-
-        return _context.Database.ExecuteSqlInterpolatedAsync(
-            $"""
-             CREATE EXTENSION IF NOT EXISTS pg_cron;
-
-             SELECT cron.unschedule(jobid)
-             FROM cron.job
-             WHERE jobname = {PendingRegistrationCleanupCronJobName};
-
-             SELECT cron.schedule(
-                 {PendingRegistrationCleanupCronJobName},
-                 {cronExpression},
-                 {cleanupCommand});
-             """,
-            cancellationToken);
+        return Task.CompletedTask;
     }
 
     private async Task SeedInternalUserAsync(SeedUser definition, Role role)
@@ -409,7 +309,8 @@ public class ApplicationDbContextInitialiser
         var normalizedPhone = _identityNormalizer.NormalizePhone(definition.PhoneNumber);
 
         var user = await _context.Users
-            .SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail || x.UserCode == definition.UserCode);
+            .SingleOrDefaultAsync(x => (x.Email != null && x.Email.ToUpper() == normalizedEmail)
+                                    || x.UserCode == definition.UserCode);
 
         if (user is null)
         {
@@ -419,10 +320,11 @@ public class ApplicationDbContextInitialiser
                 FullName = definition.FullName,
                 Email = definition.Email,
                 NormalizedEmail = normalizedEmail,
-                PhoneNumber = definition.PhoneNumber,
+                PhoneNumber = normalizedPhone,
                 NormalizedPhoneNumber = normalizedPhone,
                 PasswordHash = _secretHasher.Hash(definition.Password),
                 RoleId = role.Id,
+                Role = role,
                 Status = UserStatus.Active,
                 PhoneVerifiedAt = DateTimeOffset.UtcNow
             };
@@ -442,7 +344,7 @@ public class ApplicationDbContextInitialiser
 
         if (string.IsNullOrWhiteSpace(user.PhoneNumber))
         {
-            user.PhoneNumber = definition.PhoneNumber;
+            user.PhoneNumber = normalizedPhone;
         }
 
         if (string.IsNullOrWhiteSpace(user.NormalizedPhoneNumber))
@@ -473,30 +375,13 @@ public class ApplicationDbContextInitialiser
 
     private async Task SyncUserCodeSequencesAsync()
     {
-        await _context.Database.ExecuteSqlRawAsync(
-            """
-            SELECT setval('user_code_ad_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'AD%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'AD%'), 0) > 0);
-
-            SELECT setval('user_code_mg_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'MG%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'MG%'), 0) > 0);
-
-            SELECT setval('user_code_cu_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'CU%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'CU%'), 0) > 0);
-
-            SELECT setval('user_code_st_seq',
-                GREATEST(COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0), 1),
-                COALESCE((SELECT MAX(SUBSTRING("Code" FROM 3)::integer) FROM users WHERE "Code" LIKE 'ST%'), 0) > 0);
-            """);
+        await Task.CompletedTask;
     }
 
     private async Task<bool> HasInitialSchemaAsync(CancellationToken cancellationToken) =>
         await HasTableAsync("roles", cancellationToken)
         && await HasTableAsync("users", cancellationToken)
-        && await HasTableAsync("waterbus_services", cancellationToken)
+        && await HasTableAsync("services", cancellationToken)
         && await HasSequenceAsync("user_code_ad_seq", cancellationToken)
         && await HasSequenceAsync("user_code_mg_seq", cancellationToken)
         && await HasSequenceAsync("user_code_cu_seq", cancellationToken)
@@ -506,8 +391,7 @@ public class ApplicationDbContextInitialiser
         await HasTableAsync("stations", cancellationToken)
         && await HasTableAsync("routes", cancellationToken)
         && await HasTableAsync("trips", cancellationToken)
-        && await HasTableAsync("bookings", cancellationToken)
-        && await HasTableAsync("ticket_types", cancellationToken);
+        && await HasTableAsync("bookings", cancellationToken);
 
     private Task<int> MarkMigrationAppliedAsync(string migrationId, CancellationToken cancellationToken) =>
         _context.Database.ExecuteSqlInterpolatedAsync(
@@ -674,11 +558,7 @@ public class ApplicationDbContextInitialiser
 
     private IQueryable<User> GetExpiredPendingRegistrationUsersQuery(DateTimeOffset now)
     {
-        return _context.Users
-            .Where(x => x.Status == UserStatus.PendingVerification
-                     && x.OtpChallenges.Any(otp => otp.Purpose == OtpPurpose.Register)
-                     && !x.OtpChallenges.Any(otp => otp.Purpose == OtpPurpose.Register
-                                                 && otp.ExpiresAt > now));
+        return _context.Users.Where(x => false);
     }
 
     private sealed record SeedUser(
@@ -694,11 +574,6 @@ public class ApplicationDbContextInitialiser
         string Name,
         string Description,
         BookingMode BookingMode,
-        int DisplayOrder);
-
-    private sealed record SeatTypeSeed(
-        string Code,
-        string Name,
         int DisplayOrder);
 
 }

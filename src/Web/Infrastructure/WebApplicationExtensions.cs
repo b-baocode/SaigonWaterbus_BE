@@ -4,11 +4,7 @@ namespace SaigonWaterbus.Web.Infrastructure;
 
 public static class WebApplicationExtensions
 {
-    /// <summary>
-    /// Discovers all <see cref="IEndpointGroup"/> implementations in <paramref name="assembly"/>
-    /// and registers each as a route group with a matching OpenAPI tag. The route prefix defaults
-    /// to <c>/api/{ClassName}</c> but can be overridden via <see cref="IEndpointGroup.RoutePrefix"/>.
-    /// </summary>
+    ///
     public static WebApplication MapEndpoints(this WebApplication app, Assembly assembly)
     {
         var endpointGroupTypes = assembly.GetExportedTypes()

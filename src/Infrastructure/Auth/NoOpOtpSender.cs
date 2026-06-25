@@ -4,9 +4,6 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Infrastructure.Auth;
 
-/// <summary>
-/// A no-op OTP sender that does nothing. Used for development/testing.
-/// </summary>
 public sealed class NoOpOtpSender : IOtpSender
 {
     private readonly ILogger<NoOpOtpSender> _logger;

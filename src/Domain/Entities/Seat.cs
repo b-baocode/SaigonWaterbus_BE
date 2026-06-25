@@ -6,9 +6,9 @@ public class Seat : BaseAuditableEntity
 
     public Vessel Vessel { get; set; } = null!;
 
-    public Guid? SeatTypeId { get; set; }
+    public string SeatTypeCode { get; set; } = "STANDARD";
 
-    public SeatType? SeatType { get; set; }
+    public string SeatTypeName { get; set; } = "Standard";
 
     public string Code { get; set; } = null!;
 

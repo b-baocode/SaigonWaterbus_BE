@@ -24,22 +24,23 @@ public class Auth : IEndpointGroup
           "phone": "+84901234567",
           "email": "vana@gmail.com",
           "otpChannel": "phone",
-          "password": "P@ssword123"
+          "password": "P@ssword123",
+          "images:"url"
         }
         """;
 
     private const string VerifyRegisterOtpExample =
         """
         {
-          "challengeId": "019ecf65-3496-7c9c-8792-4e9fbc31cb5b",
-          "code": "123456"
+          "challengeId": "nhap challengeId",
+          "code": "ma otp"
         }
         """;
 
     private const string ResendOtpExample =
         """
         {
-          "challengeId": "019ecf65-3496-7c9c-8792-4e9fbc31cb5b"
+          "challengeId": "nhap challengeId",
         }
         """;
 
@@ -199,7 +200,7 @@ public class Auth : IEndpointGroup
                 ResetPasswordExample,
                 "Dùng challengeId trả về từ /api/auth/forgot-password.",
                 "Nếu đã gửi lại OTP, ưu tiên challengeId mới nhất trả về từ /api/auth/resend-otp.",
-                "Thành công sẽ revoke refresh token đang còn hiệu lực."));
+                "Thành công sẽ cập nhật mật khẩu mới và revoke refresh token đang còn hiệu lực."));
 
         groupBuilder.MapPost(Logout, "logout")
             .RequireAuthorization()

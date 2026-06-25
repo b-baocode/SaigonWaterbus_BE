@@ -50,15 +50,25 @@ public static class DependencyInjection
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddScoped<IBookingCodeGenerator, BookingCodeGenerator>();
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
+        builder.Services.AddScoped<ICustomBookingPaymentGateway, PayOsCustomBookingPaymentGateway>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IVesselImageStorageService, CloudinaryVesselImageStorageService>();
         builder.Services.AddScoped<IStationImageStorageService, CloudinaryStationImageStorageService>();
-        builder.Services.AddScoped<ICustomBookingPaymentGateway, PayOsCustomBookingPaymentGateway>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddHttpClient(PayOsHttpClientName);
         builder.Services.AddScoped<EsmsSmsSender>();
-        builder.Services.AddScoped<ISmsOtpSender, EsmsOtpSender>();
+        builder.Services.AddScoped<ISmsOtpSender>(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var esmsEnabled = configuration.GetValue<bool>($"{EsmsOptions.SectionName}:Enabled");
+            if (esmsEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<EsmsOtpSender>(provider);
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpSmsOtpSender>(provider);
+        });
         builder.Services.AddScoped<ILoginNotificationSender>(provider =>
         {
             var configuration = provider.GetRequiredService<IConfiguration>();
@@ -75,28 +85,6 @@ public static class DependencyInjection
             }
 
             return ActivatorUtilities.CreateInstance<NoOpLoginNotificationSender>(provider);
-        });
-        builder.Services.AddScoped<ICustomBookingQuoteEmailSender>(provider =>
-        {
-            var configuration = provider.GetRequiredService<IConfiguration>();
-            var brevoEnabled = configuration.GetValue<bool>($"{BrevoOptions.SectionName}:Enabled");
-            if (brevoEnabled)
-            {
-                return ActivatorUtilities.CreateInstance<BrevoCustomBookingQuoteEmailSender>(provider);
-            }
-
-            return ActivatorUtilities.CreateInstance<NoOpCustomBookingQuoteEmailSender>(provider);
-        });
-        builder.Services.AddScoped<ICustomBookingConfirmationEmailSender>(provider =>
-        {
-            var configuration = provider.GetRequiredService<IConfiguration>();
-            var brevoEnabled = configuration.GetValue<bool>($"{BrevoOptions.SectionName}:Enabled");
-            if (brevoEnabled)
-            {
-                return ActivatorUtilities.CreateInstance<BrevoCustomBookingConfirmationEmailSender>(provider);
-            }
-
-            return ActivatorUtilities.CreateInstance<NoOpCustomBookingConfirmationEmailSender>(provider);
         });
         builder.Services.AddScoped<IOtpSender>(provider =>
         {
@@ -117,11 +105,11 @@ public static class DependencyInjection
         });
 
         builder.Services.AddScoped<ApplicationDbContextInitialiser>();
-        builder.Services.AddHostedService<PendingRegistrationCleanupService>();
-        builder.Services.AddHostedService<OperationScheduleSyncService>();
-        builder.Services.AddHostedService<VesselReservationExpiryService>();
         builder.Services.Configure<DatabaseStartupSettings>(options =>
         {
+            options.ApplyMigrationsOnStartup =
+                builder.Configuration.GetValue<bool?>("Database:ApplyMigrationsOnStartup")
+                ?? builder.Environment.IsDevelopment();
             options.ResetOnStartup = builder.Environment.IsDevelopment() &&
                 builder.Configuration.GetValue<bool>("Database:ResetOnStartup");
             options.SeedSampleData =

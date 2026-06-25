@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Bookings;
@@ -25,15 +24,16 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
             ?? throw new ValidationException([]);
 
         return await _context.Set<Booking>()
+            .Where(b => EF.Property<string>(b, "booking_type") == "SeatBooking")
             .Where(b => b.UserId == userId)
-            .OrderByDescending(b => b.BookedAt)
+            .OrderByDescending(b => b.Created)
             .Select(b => new BookingListItemDto(
                 b.Id,
                 b.BookingCode,
-                b.BookedAt,
+                b.Created,
                 b.BookingStatus.ToString(),
                 b.TotalAmount,
-                b.Items.Count(i => i.ItemStatus != BookingItemStatus.Cancelled)))
+                b.Passengers.Count))
             .ToListAsync(cancellationToken);
     }
 }

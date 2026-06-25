@@ -4,19 +4,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Infrastructure.Data;
 
-/// <summary>
-/// Seeds all operational data from the real Saigon Waterbus timetable (Route 01).
-/// Timetable source: Bach Dang – Linh Dong bidirectional schedule.
-/// </summary>
+///
 public static class WaterbusSeedData
 {
     public static async Task SeedAsync(ApplicationDbContext context)
     {
-        // Chỉ skip khi CẢ stations VÀ trips đều đã có (tránh partial seed)
         if (await context.Set<Station>().AnyAsync() && await context.Set<Trip>().AnyAsync())
             return;
 
-        // ─── STATIONS ────────────────────────────────────
         var sBD = S("BD", "Bến Bạch Đằng", "Bến Bạch Đằng, Quận 1, TP.HCM", 10.776760m, 106.703500m);
         var sTT = S("TT", "Bến Thủ Thiêm", "Thủ Thiêm, TP. Thủ Đức, TP.HCM", 10.788100m, 106.719500m);
         var sBS = S("BS", "Bến Ba Sơn", "Ba Sơn, Quận 1, TP.HCM", 10.793000m, 106.708300m);
@@ -29,7 +24,6 @@ public static class WaterbusSeedData
         context.Set<Station>().AddRange(sBD, sTT, sBS, sBA, sTD, sTADA, sHBC, sLD);
         await context.SaveChangesAsync();
 
-        // ─── ROUTES ──────────────────────────────────────
         var rFwd = new Route
         {
             RouteCode = "R01-BD-LD",
@@ -52,10 +46,6 @@ public static class WaterbusSeedData
         context.Set<Route>().AddRange(rFwd, rBwd);
         await context.SaveChangesAsync();
 
-        // ─── ROUTE STOPS ─────────────────────────────────
-        // Forward: BD→TT→BS→BA→TD→TADA→HBC→LD
-        // travel_min = travel time from PREVIOUS stop to THIS stop
-        // dwell_min  = minutes waiting at this stop
         var rsF = new[]
         {
             RS(rFwd, sBD,   1, travelMin:  0, dwellMin: 2),
@@ -68,7 +58,6 @@ public static class WaterbusSeedData
             RS(rFwd, sLD,   8, travelMin: 10, dwellMin: 0, pickup: false),
         };
 
-        // Backward: LD→HBC→TADA→TD→BA→BS→TT→BD
         var rsB = new[]
         {
             RS(rBwd, sLD,   1, travelMin:  0, dwellMin: 2),
@@ -85,38 +74,8 @@ public static class WaterbusSeedData
         context.Set<RouteStop>().AddRange(rsB);
         await context.SaveChangesAsync();
 
-        // ─── LANDMARKS ───────────────────────────────────
-        var landmarks = new[]
-        {
-            LM(sBD,   "Nhà hát Thành phố",       "Công trình kiến trúc Pháp cổ điển, biểu tượng của Sài Gòn.", 10.77704m, 106.70302m),
-            LM(sBD,   "Phố đi bộ Nguyễn Huệ",    "Con phố đi bộ sầm uất bậc nhất TP.HCM.", 10.77436m, 106.70307m),
-            LM(sTT,   "Khu đô thị mới Thủ Thiêm", "Khu đô thị hiện đại bên bờ sông Sài Gòn.", 10.78900m, 106.72000m),
-            LM(sBS,   "Xưởng Ba Son lịch sử",     "Cơ sở đóng tàu lâu đời nhất Sài Gòn, nay được bảo tồn.", 10.79300m, 106.70600m),
-            LM(sBA,   "Cầu Sài Gòn",              "Cây cầu huyết mạch nối quận 1 và TP.Thủ Đức.", 10.80000m, 106.72500m),
-            LM(sTD,   "Làng biệt thự Thảo Điền",  "Khu dân cư cao cấp dọc sông, nơi sinh sống của nhiều người nước ngoài.", 10.80600m, 106.74000m),
-            LM(sTADA, "Đảo Thanh Đa",             "Bán đảo xanh tươi giữa lòng thành phố, không gian yên bình.", 10.82400m, 106.71800m),
-            LM(sHBC,  "Chùa Huê Nghiêm",          "Ngôi chùa Phật giáo cổ kính tọa lạc gần bến HBC.", 10.83100m, 106.70900m),
-            LM(sLD,   "Khu du lịch Linh Đông",    "Điểm cuối tuyến, cổng vào khu vực sinh thái TP.Thủ Đức.", 10.84200m, 106.71600m),
-        };
-
-        context.Set<Landmark>().AddRange(landmarks);
-        await context.SaveChangesAsync();
-
-        // Capacity per trip type (b1/b2 = 80, b3 = 60)
         const int b1 = 80, b2 = 80, b3 = 60;
 
-        // ─── TICKET TYPES ────────────────────────────────
-        var ttAdult = TT("ADULT", "Vé người lớn", "Hành khách từ 12 tuổi trở lên", 1.0m, pointsRate: 10);
-        var ttChild = TT("CHILD", "Vé trẻ em", "Trẻ em dưới 12 tuổi", 0.5m, pointsRate: 0);
-        var ttSenior = TT("SENIOR", "Vé người cao tuổi", "Hành khách từ 60 tuổi trở lên", 0.5m, pointsRate: 5);
-        var ttStudent = TT("STUDENT", "Vé học sinh / sinh viên", "Học sinh, sinh viên có xuất trình thẻ", 0.8m, pointsRate: 8);
-
-        context.Set<TicketType>().AddRange(ttAdult, ttChild, ttSenior, ttStudent);
-        await context.SaveChangesAsync();
-
-        // ─── FARE MATRIX ─────────────────────────────────
-        // Price based on number of stops apart (flat-distance model)
-        // Prices (VND base — multiplied by TicketType.PriceModifier at booking)
         static decimal FarePrice(int stopsApart) => stopsApart switch
         {
             1 => 7_000m,
@@ -125,7 +84,7 @@ public static class WaterbusSeedData
             4 => 15_000m,
             5 => 17_000m,
             6 => 19_000m,
-            _ => 20_000m  // 7 stops = full route
+            _ => 20_000m
         };
 
         var fwdOrder = new[] { sBD, sTT, sBS, sBA, sTD, sTADA, sHBC, sLD };
@@ -149,7 +108,6 @@ public static class WaterbusSeedData
         context.Set<FareMatrix>().AddRange(fareEntries);
         await context.SaveChangesAsync();
 
-        // ─── PROMOTIONS ──────────────────────────────────
         var promos = new[]
         {
             new Promotion
@@ -173,26 +131,19 @@ public static class WaterbusSeedData
         context.Set<Promotion>().AddRange(promos);
         await context.SaveChangesAsync();
 
-        // ─── TRIPS & TRIP STOPS ──────────────────────────
-        // Reference operating date: 2026-06-01
         var refDate = new DateOnly(2026, 6, 1);
-        var vn = TimeSpan.FromHours(7); // UTC+7
+        var vn = TimeSpan.FromHours(7);
 
-        // Npgsql requires timestamptz to be UTC — convert VN local time to UTC
         DateTimeOffset T(int h, int m) =>
             new DateTimeOffset(refDate.Year, refDate.Month, refDate.Day, h, m, 0, vn).ToUniversalTime();
 
-        // ---- Forward trips (Bach Dang → Linh Dong) ----
-        // Full route (all 8 stops)
         var fwdFull = new[]
         {
-            // (tripCode, boat, departTimesForEachStop)
             ("D1",  b1, new[]{T( 8,30),T( 8,35),T( 8,40),T( 8,52),T( 8,57),T( 9,10),T( 9,20),T( 9,30)}),
             ("S1",  b3, new[]{T( 9,30),T( 9,35),T( 9,40),T( 9,52),T( 9,57),T(10,10),T(10,20),T(10,30)}),
             ("D7",  b2, new[]{T(11, 0),T(11, 5),T(11,10),T(11,22),T(11,27),T(11,40),T(11,50),T(12, 0)}),
         };
 
-        // Short route (stops 1-5: Bach Dang → Thao Dien)
         var fwdShort = new[]
         {
             ("D3",  b2, new[]{T( 9, 0),T( 9, 5),T( 9,10),T( 9,22),T( 9,27)}),
@@ -218,7 +169,6 @@ public static class WaterbusSeedData
 
         var tripsToAdd = new List<Trip>();
 
-        // Create full-route forward trips
         foreach (var (code, cap, times) in fwdFull)
         {
             var trip = new Trip
@@ -231,13 +181,9 @@ public static class WaterbusSeedData
                 CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
-            trip.TripStops = rsF.Select((rs, i) =>
-                new TripStop { Trip = trip, RouteStop = rs, StopOrder = rs.StopOrder, ScheduledArrival = times[i], ScheduledDeparture = times[i], StopStatus = "Scheduled" }
-            ).ToList();
             tripsToAdd.Add(trip);
         }
 
-        // Create short-route forward trips (stops 1-5 only)
         foreach (var (code, cap, times) in fwdShort)
         {
             var trip = new Trip
@@ -250,9 +196,6 @@ public static class WaterbusSeedData
                 CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
-            trip.TripStops = rsF.Take(5).Select((rs, i) =>
-                new TripStop { Trip = trip, RouteStop = rs, StopOrder = rs.StopOrder, ScheduledArrival = times[i], ScheduledDeparture = times[i], StopStatus = "Scheduled" }
-            ).ToList();
             tripsToAdd.Add(trip);
         }
 
@@ -260,8 +203,6 @@ public static class WaterbusSeedData
         await context.SaveChangesAsync();
         tripsToAdd.Clear();
 
-        // ---- Backward trips (Linh Dong → Bach Dang) ----
-        // Full route (all 8 stops)
         var bwdFull = new[]
         {
             ("D4",  b1, new[]{T( 9,45),T( 9,55),T(10, 5),T(10,18),T(10,23),T(10,35),T(10,40),T(10,45)}),
@@ -269,9 +210,6 @@ public static class WaterbusSeedData
             ("S6",  b3, new[]{T(16, 0),T(16,10),T(16,20),T(16,33),T(16,38),T(16,50),T(16,55),T(17, 0)}),
         };
 
-        // Short route backward:
-        // "Short from Thao Dien" → rsB[3..7] (stops 4-8: TD→BA→BS→TT→BD)
-        // "Short from Binh An"   → rsB[4..7] (stops 5-8: BA→BS→TT→BD)
         var bwdShortFromTD = new[]
         {
             ("D2",  b2, new[]{T( 9,40),T( 9,45),T( 9,57),T(10, 2),T(10, 7)}),
@@ -292,13 +230,11 @@ public static class WaterbusSeedData
             ("D32", b1, new[]{T(22,20),T(22,25),T(22,37),T(22,42),T(22,47)}),
         };
 
-        // S2 starts from Binh An (rsB[4..7] = stops 5-8)
         var bwdShortFromBA = new[]
         {
             ("S2", b3, new[]{T(8,30),T(8,42),T(8,47),T(8,52)}),
         };
 
-        // Full backward
         foreach (var (code, cap, times) in bwdFull)
         {
             var trip = new Trip
@@ -311,13 +247,9 @@ public static class WaterbusSeedData
                 CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
-            trip.TripStops = rsB.Select((rs, i) =>
-                new TripStop { Trip = trip, RouteStop = rs, StopOrder = rs.StopOrder, ScheduledArrival = times[i], ScheduledDeparture = times[i], StopStatus = "Scheduled" }
-            ).ToList();
             tripsToAdd.Add(trip);
         }
 
-        // Short from Thao Dien (rsB[3] = stop 4 = Thao Dien in backward route)
         foreach (var (code, cap, times) in bwdShortFromTD)
         {
             var trip = new Trip
@@ -330,14 +262,9 @@ public static class WaterbusSeedData
                 CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
-            // Stops 4-8 (index 3-7 in rsB array)
-            trip.TripStops = rsB.Skip(3).Select((rs, i) =>
-                new TripStop { Trip = trip, RouteStop = rs, StopOrder = rs.StopOrder, ScheduledArrival = times[i], ScheduledDeparture = times[i], StopStatus = "Scheduled" }
-            ).ToList();
             tripsToAdd.Add(trip);
         }
 
-        // Short from Binh An (rsB[4] = stop 5 = Binh An in backward route)
         foreach (var (code, cap, times) in bwdShortFromBA)
         {
             var trip = new Trip
@@ -350,10 +277,6 @@ public static class WaterbusSeedData
                 CapacitySnapshot = cap,
                 TripStatus = TripStatus.Scheduled
             };
-            // Stops 5-8 (index 4-7 in rsB array)
-            trip.TripStops = rsB.Skip(4).Select((rs, i) =>
-                new TripStop { Trip = trip, RouteStop = rs, StopOrder = rs.StopOrder, ScheduledArrival = times[i], ScheduledDeparture = times[i], StopStatus = "Scheduled" }
-            ).ToList();
             tripsToAdd.Add(trip);
         }
 
@@ -361,7 +284,6 @@ public static class WaterbusSeedData
         await context.SaveChangesAsync();
     }
 
-    // ─── Helpers ─────────────────────────────────────────
 
     private static Station S(string code, string name, string? address, decimal lat, decimal lng) => new()
     {
@@ -385,23 +307,4 @@ public static class WaterbusSeedData
             IsDropoffAllowed = true
         };
 
-    private static TicketType TT(string code, string name, string? desc, decimal modifier, int pointsRate) => new()
-    {
-        TicketTypeCode = code,
-        TicketTypeName = name,
-        Description = desc,
-        PriceModifier = modifier,
-        PointsEarnedRate = pointsRate,
-        IsActive = true
-    };
-
-    private static Landmark LM(Station station, string name, string? desc, decimal lat, decimal lng) => new()
-    {
-        Station = station,
-        LandmarkName = name,
-        Description = desc,
-        Latitude = lat,
-        Longitude = lng,
-        IsActive = true
-    };
 }

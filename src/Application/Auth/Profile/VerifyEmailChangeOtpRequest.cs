@@ -53,8 +53,8 @@ public sealed class VerifyEmailChangeOtpRequestUseCase
         }
 
         var challenge = await _context.Set<OtpChallenge>()
-            .Include(x => x.User)
-            .ThenInclude(x => x.Role)
+            .Include(x => x.User).ThenInclude(x => x.Role)
+            .Include(x => x.User).ThenInclude(u => u.StationAssignments).ThenInclude(a => a.Station)
             .SingleOrDefaultAsync(
                 x => x.Id == request.ChallengeId
                   && x.Purpose == OtpPurpose.EmailChange
@@ -100,18 +100,8 @@ public sealed class VerifyEmailChangeOtpRequestUseCase
         return await _context.ExecuteInTransactionAsync(async ct =>
         {
             var normalizedEmail = _identityNormalizer.NormalizeEmail(challenge.Email);
-            if (await _context.Set<ExternalLogin>().AnyAsync(
-                    x => x.UserId == user.Id && x.Provider == AuthSupport.GoogleProvider,
-                    ct))
-            {
-                challenge.ConsumedAt = now;
-                await _context.SaveChangesAsync(ct);
-                throw AuthSupport.CreateValidationException(
-                    nameof(request.ChallengeId),
-                    "Tài khoản đăng nhập Google không được đổi email.");
-            }
-
-            if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, ct))
+            if (await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), null, normalizedEmail)
+                    .AnyAsync(x => x.Id != user.Id, ct))
             {
                 challenge.ConsumedAt = now;
                 await _context.SaveChangesAsync(ct);

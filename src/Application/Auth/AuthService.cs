@@ -70,7 +70,9 @@ public sealed class AuthService : IAuthService
         return await _register.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> VerifyRegisterOtpAsync(VerifyRegisterOtpRequest request, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> VerifyRegisterOtpAsync(
+        VerifyRegisterOtpRequest request,
+        CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _verifyRegisterOtp.ExecuteAsync(request, cancellationToken);
@@ -108,7 +110,9 @@ public sealed class AuthService : IAuthService
     public async Task<AuthUserDto> GetCurrentUserProfileAsync(CancellationToken cancellationToken) =>
         await _getCurrentUserProfile.ExecuteAsync(new GetCurrentUserProfileRequest(), cancellationToken);
 
-    public async Task<UpdateProfileResultDto> UpdateCurrentUserProfileAsync(UpdateCurrentUserProfileRequest request, CancellationToken cancellationToken)
+    public async Task<UpdateProfileResultDto> UpdateCurrentUserProfileAsync(
+        UpdateCurrentUserProfileRequest request,
+        CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _updateCurrentUserProfile.ExecuteAsync(request, cancellationToken);
@@ -117,31 +121,41 @@ public sealed class AuthService : IAuthService
     public async Task<AuthActionResultDto> DeleteCurrentUserAccountAsync(CancellationToken cancellationToken) =>
         await _deleteCurrentUserAccount.ExecuteAsync(new DeleteCurrentUserAccountRequest(), cancellationToken);
 
-    public async Task<AuthUserDto> VerifyEmailChangeOtpAsync(VerifyEmailChangeOtpRequest request, CancellationToken cancellationToken)
+    public async Task<AuthUserDto> VerifyEmailChangeOtpAsync(
+        VerifyEmailChangeOtpRequest request,
+        CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _verifyEmailChangeOtp.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthUserDto> VerifyPhoneChangeOtpAsync(VerifyPhoneChangeOtpRequest request, CancellationToken cancellationToken)
+    public async Task<AuthUserDto> VerifyPhoneChangeOtpAsync(
+        VerifyPhoneChangeOtpRequest request,
+        CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _verifyPhoneChangeOtp.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<OtpChallengeDto> ForgotPasswordAsync(ForgotPasswordOtpRequest request, CancellationToken cancellationToken)
+    public async Task<OtpChallengeDto> ForgotPasswordAsync(
+        ForgotPasswordOtpRequest request,
+        CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _forgotPassword.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> ResetPasswordAsync(ResetPasswordRequest request, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> ResetPasswordAsync(
+        ResetPasswordRequest request,
+        CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _resetPassword.ExecuteAsync(request, cancellationToken);
     }
 
-    public async Task<AuthActionResultDto> ChangePasswordAsync(ChangePasswordRequest request, CancellationToken cancellationToken)
+    public async Task<AuthActionResultDto> ChangePasswordAsync(
+        ChangePasswordRequest request,
+        CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _changePassword.ExecuteAsync(request, cancellationToken);

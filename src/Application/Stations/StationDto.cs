@@ -39,18 +39,5 @@ public sealed record StationDto(
     private static IReadOnlyCollection<StationUserAssignmentDto> CreateAssignedUserDtos(
         Station station,
         string roleSystemName) =>
-        station.UserAssignments
-            .Where(x => x.IsActive
-                        && x.User is { Status: UserStatus.Active, Role: not null }
-                        && x.User.Role.SystemName == roleSystemName)
-            .OrderByDescending(x => x.IsPrimary)
-            .ThenBy(x => x.User.FullName)
-            .Select(x => new StationUserAssignmentDto(
-                x.UserId,
-                x.User.UserCode,
-                x.User.FullName,
-                x.User.PhoneNumber,
-                x.User.Email,
-                x.IsPrimary))
-            .ToArray();
+        Array.Empty<StationUserAssignmentDto>();
 }

@@ -73,24 +73,16 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
                 || string.Equals(x, "sdt", StringComparison.OrdinalIgnoreCase))
             .WithMessage("Kênh OTP chỉ được là email hoặc phone.");
 
-        RuleFor(x => x)
-            .Must(x => string.IsNullOrWhiteSpace(x.Phone)
-                || string.IsNullOrWhiteSpace(x.Email)
-                || !string.IsNullOrWhiteSpace(x.OtpChannel))
-            .WithMessage("Vui lòng chọn kênh nhận OTP trước khi đăng ký.")
-            .OverridePropertyName(nameof(RegisterRequest.OtpChannel));
+        RuleFor(x => x.OtpChannel)
+            .Must(x => !string.IsNullOrWhiteSpace(x))
+            .When(x => !string.IsNullOrWhiteSpace(x.Phone) && !string.IsNullOrWhiteSpace(x.Email))
+            .WithMessage("Vui lòng chọn kênh nhận OTP trước khi đăng ký.");
 
         RuleFor(x => x)
-            .Must(x => !string.Equals(x.OtpChannel, "email", StringComparison.OrdinalIgnoreCase)
-                || !string.IsNullOrWhiteSpace(x.Email))
-            .WithMessage("Email là bắt buộc khi chọn nhận OTP qua email.")
-            .OverridePropertyName(nameof(RegisterRequest.OtpChannel));
-
-        RuleFor(x => x)
-            .Must(x => !IsPhoneOtpChannel(x.OtpChannel)
-                || !string.IsNullOrWhiteSpace(x.Phone))
+            .Must(x => !string.IsNullOrWhiteSpace(x.Phone))
+            .When(x => IsPhoneOtpChannel(x.OtpChannel))
             .WithMessage("Số điện thoại là bắt buộc khi chọn nhận OTP qua phone.")
-            .OverridePropertyName(nameof(RegisterRequest.OtpChannel));
+            .OverridePropertyName(nameof(RegisterRequest.Phone));
     }
 
     private static bool IsPhoneOtpChannel(string? otpChannel) =>
@@ -166,10 +158,10 @@ public sealed class RegisterRequestUseCase
                 Domain.Constants.Roles.CustomerCode,
                 ct);
 
-            var matchingUsers = await _context.Set<User>()
-                .Include(x => x.OtpChallenges)
-                .Where(x => (normalizedPhone != null && x.NormalizedPhoneNumber == normalizedPhone)
-                         || (normalizedEmail != null && x.NormalizedEmail == normalizedEmail))
+            var matchingUsers = await AuthSupport.WhereUserIdentityMatches(
+                    _context.Set<User>().Include(x => x.OtpChallenges),
+                    normalizedPhone,
+                    normalizedEmail)
                 .ToListAsync(ct);
 
             var pendingUser = matchingUsers.SingleOrDefault(x =>
@@ -183,12 +175,12 @@ public sealed class RegisterRequestUseCase
                     continue;
                 }
 
-                if (normalizedPhone is not null && matchingUser.NormalizedPhoneNumber == normalizedPhone)
+                if (normalizedPhone is not null && AuthSupport.UserPhoneMatches(matchingUser, normalizedPhone))
                 {
                     throw AuthSupport.CreateValidationException(nameof(request.Phone), "Số điện thoại đã được đăng ký.");
                 }
 
-                if (normalizedEmail is not null && matchingUser.NormalizedEmail == normalizedEmail)
+                if (normalizedEmail is not null && AuthSupport.UserEmailMatches(matchingUser, normalizedEmail))
                 {
                     throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
                 }
@@ -198,7 +190,8 @@ public sealed class RegisterRequestUseCase
             {
                 var latestPendingChallenge = pendingUser.OtpChallenges
                     .Where(x => x.Purpose == OtpPurpose.Register && x.ConsumedAt == null)
-                    .OrderByDescending(x => x.Id)
+                    .OrderByDescending(x => x.Created)
+                    .ThenByDescending(x => x.Id)
                     .FirstOrDefault();
 
                 if (latestPendingChallenge is not null && latestPendingChallenge.ResendAvailableAt > now)
@@ -243,6 +236,7 @@ public sealed class RegisterRequestUseCase
             {
                 User = user,
                 Purpose = OtpPurpose.Register,
+                Channel = otpChannel,
                 Email = otpDestination,
                 CodeHash = _secretHasher.Hash(otpCode),
                 ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
@@ -324,8 +318,7 @@ public sealed class RegisterRequestUseCase
     }
 
     private static bool RegistrationIdentityMatches(User user, string? normalizedPhone, string? normalizedEmail) =>
-        (normalizedPhone is null ? user.NormalizedPhoneNumber is null : user.NormalizedPhoneNumber == normalizedPhone)
-        && (normalizedEmail is null ? user.NormalizedEmail is null : user.NormalizedEmail == normalizedEmail);
+        AuthSupport.UserIdentityMatches(user, normalizedPhone, normalizedEmail);
 
     private static string GetRegisterIdentifierProperty(string? normalizedPhone) =>
         normalizedPhone is null ? nameof(RegisterRequest.Email) : nameof(RegisterRequest.Phone);

@@ -35,18 +35,12 @@ public sealed class DeleteAllSeatsRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        var hasAny = await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
-            || await _context.VesselDeckLayouts.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
-            || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken)
-            || await _context.VesselLayoutCells.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
+        var hasAny = await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
 
         if (!hasAny)
-            throw AuthSupport.CreateValidationException("Seats", "Tàu chưa có sơ đồ ghế nào.");
+            throw AuthSupport.CreateValidationException("Seats", "Tàu chưa có ghế nào.");
 
         await _context.Seats.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
-        await _context.VesselDeckLayouts.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
-        await _context.VesselFacilities.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
-        await _context.VesselLayoutCells.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
         vessel.SeatsConfigured = false;
         vessel.Status = VesselStatus.Inactive;
         await _context.SaveChangesAsync(cancellationToken);

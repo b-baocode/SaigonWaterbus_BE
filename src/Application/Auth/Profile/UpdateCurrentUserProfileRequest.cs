@@ -121,11 +121,13 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
 
         var hasEmailUpdate = request.Email is not null;
         var email = hasEmailUpdate ? request.Email!.Trim() : user.Email;
-        var normalizedEmail = hasEmailUpdate ? _identityNormalizer.NormalizeEmail(email!) : user.NormalizedEmail;
-        var emailChanged = hasEmailUpdate && normalizedEmail != user.NormalizedEmail;
+        var currentNormalizedEmail = user.Email is null ? null : _identityNormalizer.NormalizeEmail(user.Email);
+        var normalizedEmail = hasEmailUpdate ? _identityNormalizer.NormalizeEmail(email!) : currentNormalizedEmail;
+        var emailChanged = hasEmailUpdate && normalizedEmail != currentNormalizedEmail;
         var hasPhoneUpdate = request.PhoneNumber is not null;
-        var normalizedPhone = hasPhoneUpdate ? _identityNormalizer.NormalizePhone(request.PhoneNumber!) : user.NormalizedPhoneNumber;
-        var phoneChanged = hasPhoneUpdate && normalizedPhone != user.NormalizedPhoneNumber;
+        var currentNormalizedPhone = user.PhoneNumber is null ? null : _identityNormalizer.NormalizePhone(user.PhoneNumber);
+        var normalizedPhone = hasPhoneUpdate ? _identityNormalizer.NormalizePhone(request.PhoneNumber!) : currentNormalizedPhone;
+        var phoneChanged = hasPhoneUpdate && normalizedPhone != currentNormalizedPhone;
         var now = _timeProvider.GetUtcNow();
         var hasAvatarUpdate = request.AvatarContent is not null;
 
@@ -134,16 +136,8 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
         StoredProfileImage? uploadedAvatar = null;
         if (emailChanged)
         {
-            if (await _context.Set<ExternalLogin>().AnyAsync(
-                    x => x.UserId == user.Id && x.Provider == AuthSupport.GoogleProvider,
-                    cancellationToken))
-            {
-                throw AuthSupport.CreateValidationException(
-                    nameof(request.Email),
-                    "Tài khoản đăng nhập Google không được đổi email.");
-            }
-
-            if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, cancellationToken))
+            if (await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), null, normalizedEmail)
+                    .AnyAsync(x => x.Id != user.Id, cancellationToken))
             {
                 throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
             }
@@ -152,7 +146,8 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
                 .Where(x => x.UserId == user.Id
                          && x.Purpose == OtpPurpose.EmailChange
                          && x.ConsumedAt == null)
-                .OrderByDescending(x => x.Id)
+                .OrderByDescending(x => x.Created)
+                .ThenByDescending(x => x.Id)
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (latestPendingChallenge is not null
@@ -165,7 +160,7 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
 
         if (phoneChanged)
         {
-            if (user.NormalizedPhoneNumber is not null)
+            if (currentNormalizedPhone is not null)
             {
                 throw AuthSupport.CreateValidationException(
                     nameof(request.PhoneNumber),
@@ -179,9 +174,8 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
                     "Vui lòng xác thực đổi email trước khi cập nhật số điện thoại.");
             }
 
-            if (await _context.Set<User>().AnyAsync(
-                    x => x.NormalizedPhoneNumber == normalizedPhone && x.Id != user.Id,
-                    cancellationToken))
+            if (await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), normalizedPhone, null)
+                    .AnyAsync(x => x.Id != user.Id, cancellationToken))
             {
                 throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
             }
@@ -190,7 +184,8 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
                 .Where(x => x.UserId == user.Id
                          && x.Purpose == OtpPurpose.PhoneChange
                          && x.ConsumedAt == null)
-                .OrderByDescending(x => x.Id)
+                .OrderByDescending(x => x.Created)
+                .ThenByDescending(x => x.Id)
                 .FirstOrDefaultAsync(cancellationToken);
 
             if (latestPendingChallenge is not null
@@ -227,6 +222,7 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
                 {
                     UserId = user.Id,
                     Purpose = OtpPurpose.EmailChange,
+                    Channel = OtpChannel.Email,
                     Email = email!,
                     CodeHash = _secretHasher.Hash(otpCode),
                     ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
@@ -246,6 +242,7 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
                 {
                     UserId = user.Id,
                     Purpose = OtpPurpose.PhoneChange,
+                    Channel = OtpChannel.Phone,
                     Email = normalizedPhone!,
                     PendingPhoneNumber = normalizedPhone,
                     CodeHash = _secretHasher.Hash(otpCode),
@@ -358,6 +355,7 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
 
         var updatedUser = await _context.Set<User>()
             .Include(x => x.Role)
+            .Include(x => x.StationAssignments).ThenInclude(a => a.Station)
             .SingleAsync(x => x.Id == user.Id, cancellationToken);
 
         return new UpdateProfileResultDto(

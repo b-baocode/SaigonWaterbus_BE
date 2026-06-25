@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
@@ -44,12 +45,9 @@ public sealed class FareCalculator : IFareCalculator
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException($"No active fare defined for this station pair on route {routeId}.");
 
-        var modifier = await _context.Set<TicketType>()
-            .Where(tt => tt.Id == ticketTypeId && tt.IsActive)
-            .Select(tt => (decimal?)tt.PriceModifier)
-            .SingleOrDefaultAsync(cancellationToken)
+        var ticketType = TicketTypeCatalog.FindActiveById(ticketTypeId)
             ?? throw new NotFoundException($"Ticket type {ticketTypeId} not found or inactive.");
 
-        return (basePrice, modifier);
+        return (basePrice, ticketType.PriceModifier);
     }
 }

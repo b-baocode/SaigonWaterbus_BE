@@ -36,7 +36,7 @@ public class SeatSupportTests
     }
 
     [Test]
-    public void CreateVesselSeatsDtoReturnsLayoutAndFacilitiesWithoutChangingSeatCounts()
+    public void CreateVesselSeatsDtoReturnsCompactLayoutWithoutChangingSeatCounts()
     {
         var vesselId = Guid.NewGuid();
         var vessel = new Vessel
@@ -47,46 +47,22 @@ public class SeatSupportTests
             SeatCount = 80,
             SeatsConfigured = true
         };
-        var deckLayouts = new List<VesselDeckLayout>
+        var deckLayouts = new List<SeatDeckLayout>
         {
-            new()
-            {
-                VesselId = vesselId,
-                DeckNumber = 1,
-                RowCount = 20,
-                ColumnCount = 8
-            }
-        };
-        var facilities = new List<VesselFacility>
-        {
-            new()
-            {
-                Id = Guid.NewGuid(),
-                VesselId = vesselId,
-                Type = VesselFacilityType.Toilet,
-                Deck = 1,
-                Row = "O",
-                Column = 1,
-                RowSpan = 1,
-                ColumnSpan = 2,
-                IsActive = true
-            }
+            new(1, 20, 8)
         };
         var seats = Enumerable.Range(1, 80)
             .Select(id => Seat(vesselId, id, $"1-A{id}", isActive: true))
             .ToList();
 
-        var dto = SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts, facilities);
+        var dto = SeatSupport.CreateVesselSeatsDto(vessel, seats, deckLayouts);
 
         dto.TotalSeats.ShouldBe(80);
         dto.ConfiguredSeats.ShouldBe(80);
         dto.ActiveSeats.ShouldBe(80);
         dto.Decks.Single().RowCount.ShouldBe(20);
         dto.Decks.Single().ColumnCount.ShouldBe(8);
-        dto.Facilities.Single().Type.ShouldBe(VesselFacilityType.Toilet);
         dto.Decks.Single().Cells.Count.ShouldBe(160);
-        dto.Decks.Single().Cells.Count(x => x.Type == SeatLayoutCellType.Toilet).ShouldBe(2);
-        dto.Decks.Single().Cells.ShouldContain(x => x.Row == 15 && x.Column == 1 && x.Facility != null);
     }
 
     private static Seat Seat(Guid vesselId, int column, string code, bool isActive) =>

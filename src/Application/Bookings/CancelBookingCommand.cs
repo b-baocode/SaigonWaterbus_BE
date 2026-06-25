@@ -37,9 +37,10 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
             ?? throw new ValidationException([]);
 
         var booking = await _context.Set<Booking>()
-            .Include(b => b.Items)
             .Include(b => b.Promotion)
-            .SingleOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken)
+            .SingleOrDefaultAsync(
+                b => b.Id == request.BookingId && EF.Property<string>(b, "booking_type") == "SeatBooking",
+                cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
 
         if (booking.UserId != userId)
@@ -48,12 +49,10 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
         if (booking.BookingStatus == BookingStatus.Cancelled)
             throw new ValidationException([new ValidationFailure(nameof(request.BookingId), "Booking is already cancelled.")]);
 
-        // Lấy tripId từ booking items để kiểm tra tau chưa khởi hành
-        var tripId = booking.Items.Select(i => i.TripId).FirstOrDefault();
-        if (tripId != default)
+        if (booking.TripId.HasValue)
         {
             var trip = await _context.Set<Trip>()
-                .SingleOrDefaultAsync(t => t.Id == tripId, cancellationToken);
+                .SingleOrDefaultAsync(t => t.Id == booking.TripId.Value, cancellationToken);
 
             var now = _timeProvider.GetUtcNow();
             if (trip is not null && trip.DepartureTime <= now)
@@ -62,10 +61,7 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
         }
 
         booking.BookingStatus = BookingStatus.Cancelled;
-        foreach (var item in booking.Items)
-            item.ItemStatus = BookingItemStatus.Cancelled;
 
-        // Hoàn lại usage count nếu có dùng promotion
         if (booking.PromotionId.HasValue && booking.Promotion is not null)
             booking.Promotion.UsageCount = Math.Max(0, booking.Promotion.UsageCount - 1);
 

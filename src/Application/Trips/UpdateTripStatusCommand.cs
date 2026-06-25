@@ -28,8 +28,7 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
     {
         var trip = await _context.Set<Trip>()
             .Include(t => t.Route)
-            .Include(t => t.TripStops)
-                .ThenInclude(ts => ts.RouteStop)
+                .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
@@ -47,9 +46,30 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         trip.Route.Id, trip.Route.RouteName,
         trip.DepartureTime, trip.ArrivalTime,
         trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
-        trip.TripStops.OrderBy(ts => ts.StopOrder).Select(ts => new TripStopDto(
-            ts.Id, ts.RouteStop.Station.Id, ts.RouteStop.Station.StationName,
-            ts.RouteStop.Station.StationCode, ts.StopOrder,
-            ts.ScheduledArrival, ts.ScheduledDeparture,
-            ts.ActualArrival, ts.ActualDeparture, ts.StopStatus)).ToList());
+        BuildStopDtos(trip).ToList());
+
+    private static IEnumerable<TripStopDto> BuildStopDtos(Trip trip)
+    {
+        var current = trip.DepartureTime;
+        foreach (var routeStop in trip.Route.RouteStops.OrderBy(x => x.StopOrder))
+        {
+            var arrival = routeStop.StopOrder == trip.Route.RouteStops.Min(x => x.StopOrder)
+                ? trip.DepartureTime
+                : current;
+            var departure = arrival.AddMinutes(routeStop.StandardDwellMin ?? 2);
+            current = departure.AddMinutes(routeStop.StandardTravelMin ?? 15);
+
+            yield return new TripStopDto(
+                routeStop.Id,
+                routeStop.Station.Id,
+                routeStop.Station.StationName,
+                routeStop.Station.StationCode,
+                routeStop.StopOrder,
+                arrival,
+                departure,
+                null,
+                null,
+                trip.TripStatus.ToString());
+        }
+    }
 }

@@ -15,10 +15,6 @@ public sealed class GetStationDetailQueryHandler : IRequestHandler<GetStationDet
     public async Task<StationDto> Handle(GetStationDetailQuery request, CancellationToken cancellationToken)
     {
         var station = await _context.Set<Station>()
-            .Include(s => s.Images)
-            .Include(s => s.UserAssignments.Where(a => a.IsActive))
-                .ThenInclude(a => a.User)
-                    .ThenInclude(u => u.Role)
             .SingleOrDefaultAsync(s => s.Id == request.StationId, cancellationToken)
             ?? throw new NotFoundException("Station not found.");
 

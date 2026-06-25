@@ -412,8 +412,6 @@ public sealed class Vessels : IEndpointGroup
 
     private static IReadOnlyCollection<VesselRentalPriceRequest>? CreateRentalPricesFromForm(IFormCollection form)
     {
-        // FE gửi multipart theo dạng mảng có chỉ số: rentalPrices[i].rentalUnit/unitPrice/currency/note
-        // (giống shape JSON). Ưu tiên đọc dạng này; nếu không có thì fallback key phẳng hourly*/daily*.
         var indexedRentalPrices = CreateIndexedRentalPricesFromForm(form);
         if (indexedRentalPrices is not null)
         {
@@ -447,8 +445,6 @@ public sealed class Vessels : IEndpointGroup
         return rentalPrices.Count == 0 ? null : rentalPrices;
     }
 
-    // Đọc mảng giá thuê dạng có chỉ số trong multipart: rentalPrices[i].rentalUnit / unitPrice / currency / note.
-    // Đây là convention FE dùng (khớp với shape JSON). Trả về null nếu form không chứa dạng này.
     private static IReadOnlyCollection<VesselRentalPriceRequest>? CreateIndexedRentalPricesFromForm(IFormCollection form)
     {
         const string prefix = "rentalPrices[";
@@ -486,7 +482,6 @@ public sealed class Vessels : IEndpointGroup
             var unitPrice = ParseOptionalDecimal(
                 GetFormValue(form, $"rentalPrices[{index}].unitPrice"));
 
-            // Bỏ qua phần tử thiếu dữ liệu bắt buộc thay vì lưu giá rác.
             if (rentalUnit is null || unitPrice is null)
             {
                 continue;

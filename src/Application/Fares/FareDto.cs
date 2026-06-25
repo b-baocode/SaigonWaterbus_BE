@@ -12,6 +12,7 @@ public sealed record FareMatrixDto(
 
 public sealed record FareByTicketTypeDto(
     Guid TicketTypeId,
+    string TicketTypeCode,
     string TicketTypeName,
     decimal BasePrice,
     decimal PriceModifier,

@@ -8,8 +8,7 @@ public sealed record DemoScheduleSeedResult(
     DateTimeOffset NowUtc,
     DateTimeOffset SyncFromUtc,
     DateTimeOffset SyncToUtc,
-    IReadOnlyCollection<Guid> TripIds,
-    IReadOnlyCollection<Guid> CustomBookingRequestIds);
+    IReadOnlyCollection<Guid> TripIds);
 
 public static class DemoScheduleSeedData
 {
@@ -35,24 +34,15 @@ public static class DemoScheduleSeedData
             .OrderBy(x => x.StopOrder)
             .ToArrayAsync(cancellationToken);
 
-        var service = await EnsureWaterTaxiServiceAsync(context, cancellationToken);
-        var vessels = await EnsureVesselsAsync(context, cancellationToken);
+        await EnsureVesselsAsync(context, cancellationToken);
 
         var tripIds = await SeedTripsAsync(context, route, routeStops, nowUtc, cancellationToken);
-        var customBookingIds = await SeedCustomBookingsAsync(
-            context,
-            service,
-            vessels,
-            stations,
-            nowUtc,
-            cancellationToken);
 
         return new DemoScheduleSeedResult(
             nowUtc,
             syncFrom,
             syncTo,
-            tripIds,
-            customBookingIds);
+            tripIds);
     }
 
     private static async Task RemovePreviousDemoDataAsync(
@@ -66,30 +56,8 @@ public static class DemoScheduleSeedData
 
         if (demoTripIds.Length > 0)
         {
-            await context.OperationScheduleEntries
-                .Where(x => x.SourceType == OperationScheduleSourceType.RegularTrip
-                            && demoTripIds.Contains(x.SourceId))
-                .ExecuteDeleteAsync(cancellationToken);
-
             await context.Trips
                 .Where(x => demoTripIds.Contains(x.Id))
-                .ExecuteDeleteAsync(cancellationToken);
-        }
-
-        var demoCustomBookingIds = await context.CustomBookingRequests
-            .Where(x => x.ContactName.StartsWith("DEMO "))
-            .Select(x => x.Id)
-            .ToArrayAsync(cancellationToken);
-
-        if (demoCustomBookingIds.Length > 0)
-        {
-            await context.OperationScheduleEntries
-                .Where(x => x.SourceType == OperationScheduleSourceType.CustomBooking
-                            && demoCustomBookingIds.Contains(x.SourceId))
-                .ExecuteDeleteAsync(cancellationToken);
-
-            await context.CustomBookingRequests
-                .Where(x => demoCustomBookingIds.Contains(x.Id))
                 .ExecuteDeleteAsync(cancellationToken);
         }
     }
@@ -187,32 +155,6 @@ public static class DemoScheduleSeedData
         return route;
     }
 
-    private static async Task<WaterbusService> EnsureWaterTaxiServiceAsync(
-        ApplicationDbContext context,
-        CancellationToken cancellationToken)
-    {
-        var service = await context.WaterbusServices
-            .SingleOrDefaultAsync(x => x.Code == "WT", cancellationToken);
-
-        if (service is not null)
-        {
-            return service;
-        }
-
-        service = new WaterbusService
-        {
-            Code = "WT",
-            Name = "WaterTaxi",
-            Description = "Dịch vụ taxi đường thủy theo nhu cầu.",
-            BookingMode = BookingMode.VesselRental,
-            DisplayOrder = 3,
-            IsActive = true
-        };
-        context.WaterbusServices.Add(service);
-        await context.SaveChangesAsync(cancellationToken);
-        return service;
-    }
-
     private static async Task<IReadOnlyList<Vessel>> EnsureVesselsAsync(
         ApplicationDbContext context,
         CancellationToken cancellationToken)
@@ -287,7 +229,7 @@ public static class DemoScheduleSeedData
     {
         var startAt = nowUtc.AddMinutes(definition.StartOffsetMinutes).ToUniversalTime();
         var runningArrival = startAt;
-        var tripStops = new List<TripStop>();
+        var firstDeparture = startAt;
 
         for (var i = 0; i < routeStops.Count; i++)
         {
@@ -299,14 +241,10 @@ public static class DemoScheduleSeedData
 
             var dwellMinutes = routeStop.StandardDwellMin ?? 0;
             var departure = runningArrival.AddMinutes(dwellMinutes);
-            tripStops.Add(new TripStop
+            if (i == 0)
             {
-                RouteStopId = routeStop.Id,
-                StopOrder = routeStop.StopOrder,
-                ScheduledArrival = runningArrival,
-                ScheduledDeparture = departure,
-                StopStatus = definition.Status == TripStatus.Cancelled ? "Cancelled" : "Scheduled"
-            });
+                firstDeparture = departure;
+            }
         }
 
         return new Trip
@@ -314,104 +252,12 @@ public static class DemoScheduleSeedData
             RouteId = route.Id,
             TripCode = definition.Code,
             OperatingDate = DateOnly.FromDateTime(startAt.ToOffset(VietnamUtcOffset).DateTime),
-            DepartureTime = tripStops.First().ScheduledDeparture!.Value,
-            ArrivalTime = tripStops.Last().ScheduledArrival!.Value,
+            DepartureTime = firstDeparture,
+            ArrivalTime = runningArrival,
             CapacitySnapshot = definition.Capacity,
             TripStatus = definition.Status,
-            StatusNote = definition.Status == TripStatus.Delayed ? "Demo delay 10 phút" : null,
-            TripStops = tripStops
+            StatusNote = definition.Status == TripStatus.Delayed ? "Demo delay 10 phút" : null
         };
-    }
-
-    private static async Task<IReadOnlyCollection<Guid>> SeedCustomBookingsAsync(
-        ApplicationDbContext context,
-        WaterbusService service,
-        IReadOnlyList<Vessel> vessels,
-        IReadOnlyList<Station> stations,
-        DateTimeOffset nowUtc,
-        CancellationToken cancellationToken)
-    {
-        var definitions = new[]
-        {
-            new CustomBookingDefinition("DEMO Custom fully paid", 75, 120, 18_000_000m, 0m),
-            new CustomBookingDefinition("DEMO Custom deposit paid", 150, 90, 12_000_000m, 0m),
-            new CustomBookingDefinition("DEMO Custom tomorrow", 1_620, 180, 25_000_000m, 0m)
-        };
-
-        var requests = new List<CustomBookingRequest>();
-        for (var i = 0; i < definitions.Length; i++)
-        {
-            var definition = definitions[i];
-            var startUtc = nowUtc.AddMinutes(definition.StartOffsetMinutes).ToUniversalTime();
-            var endUtc = startUtc.AddMinutes(definition.DurationMinutes).ToUniversalTime();
-            var startVn = startUtc.ToOffset(VietnamUtcOffset);
-            var endVn = endUtc.ToOffset(VietnamUtcOffset);
-            var fromStation = stations[i % stations.Count];
-            var toStation = stations[(i + 3) % stations.Count];
-            var vessel = vessels[i % vessels.Count];
-
-            var request = new CustomBookingRequest
-            {
-                ContactName = definition.ContactName,
-                ContactPhone = $"09000009{i + 1}",
-                ContactEmail = $"demo.custom{i + 1}@saigonwaterbus.local",
-                WaterbusServiceId = service.Id,
-                RequestedNumberOfDecks = vessel.NumberOfDecks,
-                RequestedSeatSetupType = vessel.SeatSetupType,
-                RentalUnit = VesselRentalUnit.Hour,
-                AssignedVesselId = vessel.Id,
-                AssignedAt = nowUtc,
-                DepartureDate = DateOnly.FromDateTime(startVn.DateTime),
-                PreferredStartTime = TimeOnly.FromDateTime(startVn.DateTime),
-                PreferredEndTime = TimeOnly.FromDateTime(endVn.DateTime),
-                EstimatedEndDate = DateOnly.FromDateTime(endVn.DateTime),
-                EstimatedTravelMinutes = Math.Max(1, definition.DurationMinutes - 30),
-                EstimatedStayMinutes = 20,
-                BufferMinutes = 10,
-                EstimatedDurationMinutes = definition.DurationMinutes,
-                FromStationId = fromStation.Id,
-                FromStationCode = fromStation.StationCode,
-                FromLocation = fromStation.StationName,
-                ToStationId = toStation.Id,
-                ToStationCode = toStation.StationCode,
-                ToLocation = toStation.StationName,
-                PassengerCount = 35 + (i * 10),
-                AdultCount = 30 + (i * 10),
-                ChildCount = 5,
-                SpecialRequests = "Demo booking dùng để kiểm tra lịch vận hành nội bộ.",
-                Status = CustomBookingRequestStatus.Confirmed,
-                QuotedAt = nowUtc.AddMinutes(-30),
-                QuoteAcceptedAt = nowUtc.AddMinutes(-20)
-            };
-
-            request.Quote = new CustomBookingQuote
-            {
-                CustomBookingRequest = request,
-                QuotedPrice = definition.QuotedPrice,
-                ServiceFeeAmount = 0,
-                DiscountAmount = 0,
-                DepositPercent = 50,
-                DepositAmount = definition.QuotedPrice / 2,
-                RemainingAmount = definition.RemainingAmount,
-                Currency = "VND",
-                PriceNote = "Demo quote đã thanh toán cọc.",
-                ValidUntil = nowUtc.AddDays(1),
-                DepositPaymentStatus = CustomBookingDepositPaymentStatus.Paid,
-                DepositPaymentPaidAt = nowUtc.AddMinutes(-15),
-                RemainingPaymentStatus = definition.RemainingAmount <= 0
-                    ? CustomBookingDepositPaymentStatus.Paid
-                    : CustomBookingDepositPaymentStatus.Pending,
-                RemainingPaymentPaidAt = definition.RemainingAmount <= 0
-                    ? nowUtc.AddMinutes(-10)
-                    : null
-            };
-
-            requests.Add(request);
-        }
-
-        context.CustomBookingRequests.AddRange(requests);
-        await context.SaveChangesAsync(cancellationToken);
-        return requests.Select(x => x.Id).ToArray();
     }
 
     private sealed record StationDefinition(
@@ -428,11 +274,4 @@ public static class DemoScheduleSeedData
         int StartOffsetMinutes,
         TripStatus Status,
         int Capacity);
-
-    private sealed record CustomBookingDefinition(
-        string ContactName,
-        int StartOffsetMinutes,
-        int DurationMinutes,
-        decimal QuotedPrice,
-        decimal RemainingAmount);
 }

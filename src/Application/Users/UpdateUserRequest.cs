@@ -101,7 +101,6 @@ public sealed class UpdateUserRequestUseCase
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
 
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
-        var oldValues = UserAuditSupport.CreateUserSnapshot(user);
 
         var targetRole = request.RoleId.HasValue
             ? await AuthSupport.GetRoleByIdAsync(_context, request.RoleId.Value, nameof(request.RoleId), cancellationToken)
@@ -116,17 +115,8 @@ public sealed class UpdateUserRequestUseCase
         if (request.Email is not null)
         {
             var normalizedEmail = _identityNormalizer.NormalizeEmail(request.Email);
-            if (normalizedEmail != user.NormalizedEmail
-                && await _context.Set<ExternalLogin>().AnyAsync(
-                    x => x.UserId == user.Id && x.Provider == AuthSupport.GoogleProvider,
-                    cancellationToken))
-            {
-                throw AuthSupport.CreateValidationException(
-                    nameof(request.Email),
-                    "Tài khoản đăng nhập Google không được đổi email.");
-            }
-
-            if (await _context.Set<User>().AnyAsync(x => x.NormalizedEmail == normalizedEmail && x.Id != user.Id, cancellationToken))
+            if (await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), null, normalizedEmail)
+                    .AnyAsync(x => x.Id != user.Id, cancellationToken))
             {
                 throw AuthSupport.CreateValidationException(nameof(request.Email), "Email đã được đăng ký.");
             }
@@ -147,11 +137,11 @@ public sealed class UpdateUserRequestUseCase
             }
 
             var normalizedPhone = _identityNormalizer.NormalizePhone(request.PhoneNumber);
-            var phoneChanged = normalizedPhone != user.NormalizedPhoneNumber;
+            var currentNormalizedPhone = user.PhoneNumber is null ? null : _identityNormalizer.NormalizePhone(user.PhoneNumber);
+            var phoneChanged = normalizedPhone != currentNormalizedPhone;
 
-            if (await _context.Set<User>().AnyAsync(
-                    x => x.NormalizedPhoneNumber == normalizedPhone && x.Id != user.Id,
-                    cancellationToken))
+            if (await AuthSupport.WhereUserIdentityMatches(_context.Set<User>(), normalizedPhone, null)
+                    .AnyAsync(x => x.Id != user.Id, cancellationToken))
             {
                 throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
             }
@@ -195,17 +185,11 @@ public sealed class UpdateUserRequestUseCase
         }
 
         await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, _timeProvider.GetUtcNow(), cancellationToken);
-        _context.AuditLogs.Add(UserAuditSupport.CreateUserAuditLog(
-            actor.Id,
-            AuditActions.UpdateUser,
-            user.Id,
-            oldValues,
-            UserAuditSupport.CreateUserSnapshot(user, targetRole),
-            _timeProvider.GetUtcNow()));
         await _context.SaveChangesAsync(cancellationToken);
 
         var updatedUser = await _context.Set<User>()
             .Include(x => x.Role)
+            .Include(x => x.StationAssignments).ThenInclude(a => a.Station)
             .SingleAsync(x => x.Id == user.Id, cancellationToken);
 
         return AuthSupport.CreateUserDto(updatedUser);

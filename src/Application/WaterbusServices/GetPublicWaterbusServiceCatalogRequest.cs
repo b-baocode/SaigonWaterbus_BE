@@ -36,33 +36,6 @@ public sealed class GetPublicWaterbusServiceCatalogRequestUseCase
             .ThenBy(x => x.Code)
             .ToArrayAsync(cancellationToken);
 
-        var seatTypes = await _context.SeatTypes
-            .AsNoTracking()
-            .Where(x => x.IsActive)
-            .OrderBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Code)
-            .Select(x => new PublicWaterbusServiceSeatTypeDto(
-                x.Id,
-                x.Code,
-                x.Name))
-            .ToArrayAsync(cancellationToken);
-
-        var seatTypeCodes = seatTypes
-            .Select(x => x.Code)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        var supportedSeatSetupTypes = new List<SeatSetupType>();
-
-        if (seatTypeCodes.Contains("STANDARD"))
-        {
-            supportedSeatSetupTypes.Add(SeatSetupType.FullStandard);
-        }
-
-        if (seatTypeCodes.Contains("STANDARD")
-            && seatTypeCodes.Any(code => !string.Equals(code, "STANDARD", StringComparison.OrdinalIgnoreCase)))
-        {
-            supportedSeatSetupTypes.Add(SeatSetupType.StandardAndVip);
-        }
-
         return services
             .Select(service => new PublicWaterbusServiceCatalogDto(
                 service.Id,
@@ -70,8 +43,13 @@ public sealed class GetPublicWaterbusServiceCatalogRequestUseCase
                 service.Name,
                 service.Description,
                 service.BookingMode,
-                supportedSeatSetupTypes,
-                seatTypes))
+                WaterbusServiceSupport.GetSupportedSeatSetupTypes(service.BookingMode),
+                WaterbusServiceSupport.GetSeatTypesForBookingMode(service.BookingMode)
+                    .Select(x => new PublicWaterbusServiceSeatTypeDto(
+                        x.SeatTypeId,
+                        x.Code,
+                        x.Name))
+                    .ToArray()))
             .ToArray();
     }
 }

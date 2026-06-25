@@ -10,13 +10,47 @@ public sealed class SeatConfiguration : IEntityTypeConfiguration<Seat>
     {
         builder.ToTable("seats");
 
+        builder.HasKey(x => x.Id);
+
+        builder.Property(x => x.Id)
+            .HasColumnName("seat_id");
+
+        builder.Property(x => x.VesselId)
+            .HasColumnName("vessel_id");
+
         builder.Property(x => x.Code)
-            .HasMaxLength(20)
+            .HasColumnName("seat_code")
+            .HasMaxLength(30)
             .IsRequired();
 
-        builder.Property(x => x.Row)
-            .HasMaxLength(5)
+        builder.Property(x => x.SeatTypeCode)
+            .HasColumnName("seat_type_code")
+            .HasMaxLength(30)
             .IsRequired();
+
+        builder.Property(x => x.SeatTypeName)
+            .HasColumnName("seat_type")
+            .HasMaxLength(30)
+            .IsRequired();
+
+        builder.Property(x => x.Deck)
+            .HasColumnName("deck_number");
+
+        builder.Property(x => x.Row)
+            .HasColumnName("seat_row")
+            .HasMaxLength(10)
+            .IsRequired();
+
+        builder.Property(x => x.Column)
+            .HasColumnName("seat_column");
+
+        builder.Property(x => x.IsActive)
+            .HasColumnName("is_active");
+
+        builder.Ignore(x => x.Created);
+        builder.Ignore(x => x.CreatedBy);
+        builder.Ignore(x => x.LastModified);
+        builder.Ignore(x => x.LastModifiedBy);
 
         builder.HasIndex(x => new { x.VesselId, x.Code })
             .IsUnique();
@@ -29,10 +63,5 @@ public sealed class SeatConfiguration : IEntityTypeConfiguration<Seat>
             .HasForeignKey(x => x.VesselId)
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
-
-        builder.HasOne(x => x.SeatType)
-            .WithMany(x => x.Seats)
-            .HasForeignKey(x => x.SeatTypeId)
-            .OnDelete(DeleteBehavior.Restrict);
     }
 }

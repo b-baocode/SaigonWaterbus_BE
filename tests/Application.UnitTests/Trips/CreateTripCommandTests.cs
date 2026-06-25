@@ -11,19 +11,18 @@ namespace SaigonWaterbus.Application.UnitTests.Trips;
 public class CreateTripCommandTests
 {
     [Test]
-    public async Task CreateTripRejectsSameStationDepartureAtSameTime()
+    public async Task CreateTripRejectsSameRouteDepartureAtSameTime()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var stationA = Station("A", "Ben A");
         var stationB = Station("B", "Ben B");
-        var stationC = Station("C", "Ben C");
-        var existingRoute = Route("R1", stationA, stationB);
-        var newRoute = Route("R2", stationA, stationC);
+        var route = Route("R1", stationA, stationB);
+        var service = SeatFlowTestData.Service("SVC1");
         var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
         var existingTrip = new Trip
         {
-            Route = existingRoute,
-            RouteId = existingRoute.Id,
+            Route = route,
+            RouteId = route.Id,
             TripCode = "TR-EXISTING",
             OperatingDate = DateOnly.FromDateTime(departureTime.Date),
             DepartureTime = departureTime,
@@ -31,55 +30,31 @@ public class CreateTripCommandTests
             CapacitySnapshot = 50,
             TripStatus = TripStatus.Scheduled
         };
-        existingTrip.TripStops =
-        [
-            new TripStop
-            {
-                Trip = existingTrip,
-                RouteStop = existingRoute.RouteStops.Single(x => x.StopOrder == 1),
-                RouteStopId = existingRoute.RouteStops.Single(x => x.StopOrder == 1).Id,
-                StopOrder = 1,
-                ScheduledArrival = departureTime,
-                ScheduledDeparture = departureTime.AddMinutes(2),
-                StopStatus = "Scheduled"
-            },
-            new TripStop
-            {
-                Trip = existingTrip,
-                RouteStop = existingRoute.RouteStops.Single(x => x.StopOrder == 2),
-                RouteStopId = existingRoute.RouteStops.Single(x => x.StopOrder == 2).Id,
-                StopOrder = 2,
-                ScheduledArrival = departureTime.AddMinutes(20),
-                ScheduledDeparture = departureTime.AddMinutes(22),
-                StopStatus = "Scheduled"
-            }
-        ];
 
-        context.AddRange(existingRoute, newRoute, existingTrip);
+        context.AddRange(route, service, existingTrip);
         await context.SaveChangesAsync();
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             new CreateTripCommandHandler(context)
-                .Handle(new CreateTripCommand("R2", 40, DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None));
+                .Handle(new CreateTripCommand("R1", 40, DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None));
 
         exception.Errors["departureTime"]
-            .ShouldContain("Bến đã có chuyến tàu xuất phát trong cùng thời điểm.");
+            .ShouldContain("Tuyến đã có chuyến tàu xuất phát trong cùng thời điểm.");
     }
 
     [Test]
-    public async Task CreateTripAllowsSameStationDepartureWhenExistingTripIsCancelled()
+    public async Task CreateTripAllowsSameRouteDepartureWhenExistingTripIsCancelled()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var stationA = Station("A", "Ben A");
         var stationB = Station("B", "Ben B");
-        var stationC = Station("C", "Ben C");
-        var existingRoute = Route("R1", stationA, stationB);
-        var newRoute = Route("R2", stationA, stationC);
+        var route = Route("R1", stationA, stationB);
+        var service = SeatFlowTestData.Service("SVC1");
         var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
         var existingTrip = new Trip
         {
-            Route = existingRoute,
-            RouteId = existingRoute.Id,
+            Route = route,
+            RouteId = route.Id,
             TripCode = "TR-CANCELLED",
             OperatingDate = DateOnly.FromDateTime(departureTime.Date),
             DepartureTime = departureTime,
@@ -87,27 +62,14 @@ public class CreateTripCommandTests
             CapacitySnapshot = 50,
             TripStatus = TripStatus.Cancelled
         };
-        existingTrip.TripStops =
-        [
-            new TripStop
-            {
-                Trip = existingTrip,
-                RouteStop = existingRoute.RouteStops.Single(x => x.StopOrder == 1),
-                RouteStopId = existingRoute.RouteStops.Single(x => x.StopOrder == 1).Id,
-                StopOrder = 1,
-                ScheduledArrival = departureTime,
-                ScheduledDeparture = departureTime.AddMinutes(2),
-                StopStatus = "Scheduled"
-            }
-        ];
 
-        context.AddRange(existingRoute, newRoute, existingTrip);
+        context.AddRange(route, service, existingTrip);
         await context.SaveChangesAsync();
 
         var result = await new CreateTripCommandHandler(context)
-            .Handle(new CreateTripCommand("R2", 40, DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
+            .Handle(new CreateTripCommand("R1", 40, DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
 
-        result.RouteName.ShouldBe("R2");
+        result.RouteName.ShouldBe("R1");
     }
 
     private static Station Station(string code, string name) =>

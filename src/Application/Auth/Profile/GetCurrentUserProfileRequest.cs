@@ -28,8 +28,7 @@ public sealed class GetCurrentUserProfileRequestUseCase
 
         var user = await _context.Set<User>()
             .Include(x => x.Role)
-            .Include(x => x.StationAssignments)
-            .ThenInclude(x => x.Station)
+            .Include(x => x.StationAssignments).ThenInclude(a => a.Station)
             .SingleOrDefaultAsync(x => x.Id == _userContext.UserId.Value, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Current user was not found.");
 

@@ -100,33 +100,12 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
 
         var hasViaWaterway = request.Waypoints.Any(waypoint =>
             string.Equals(waypoint.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase));
-        var buildGeometry = hasViaWaterway || request.AutoRouteGeometry;
 
-        var waterwaySegments = buildGeometry
-            ? await _context.Set<WaterwaySegment>()
-                .AsNoTracking()
-                .OrderBy(segment => segment.OsmId)
-                .ThenBy(segment => segment.SegmentOrder)
-                .ToListAsync(cancellationToken)
-            : [];
-
-        if (buildGeometry)
+        if (hasViaWaterway || request.AutoRouteGeometry)
         {
-            var filtered = string.IsNullOrWhiteSpace(request.PreferWaterwayType)
-                ? waterwaySegments
-                : waterwaySegments
-                    .Where(s => string.Equals(s.WaterwayType, request.PreferWaterwayType.Trim().ToLowerInvariant(), StringComparison.Ordinal))
-                    .ToList();
-
-            if (filtered.Count == 0)
-            {
-                var detail = string.IsNullOrWhiteSpace(request.PreferWaterwayType)
-                    ? "No waterway network has been imported yet. Import GeoJSON map data first or create the route with station waypoints only."
-                    : $"No waterway segments of type '{request.PreferWaterwayType}' found. Import GeoJSON map data with the correct waterway type first.";
-                throw new ValidationException([new ValidationFailure(nameof(request.Waypoints), detail)]);
-            }
-
-            waterwaySegments = filtered;
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.Waypoints),
+                "Waterway network routing is not available. Create the route with station waypoints only.")]);
         }
 
         var stationCodes = request.Waypoints
@@ -143,68 +122,30 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             .Any(w => string.Equals(w.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase) && w.StopOrder.HasValue);
 
         var routeStationPairs = new List<(Station Station, int StopOrder)>();
-        var waypointPoints = new List<Point>();
         var autoStopOrderCounter = 0;
 
         foreach (var waypoint in request.Waypoints)
         {
-            if (string.Equals(waypoint.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(waypoint.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase))
             {
-                var stationCode = waypoint.StationCode!.Trim().ToUpperInvariant();
-                if (!stationsByCode.TryGetValue(stationCode, out var station))
-                {
-                    throw new ValidationException([new ValidationFailure(
-                        nameof(request.Waypoints),
-                        $"Station '{stationCode}' was not found. Import the ferry terminal first or choose another station.")]);
-                }
-
-                autoStopOrderCounter++;
-                var assignedStopOrder = useExplicitStopOrder ? waypoint.StopOrder!.Value : autoStopOrderCounter;
-                routeStationPairs.Add((station, assignedStopOrder));
-
-                if (buildGeometry)
-                {
-                    waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
-                }
-
                 continue;
             }
 
-            var waterwayRef = waypoint.WaterwayOsmId!.Trim();
-            var viaGeometries = waterwaySegments
-                .Where(segment => string.Equals(segment.OsmId, waterwayRef, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(segment => segment.SegmentOrder)
-                .Select(segment => segment.Geometry)
-                .ToList();
-
-            if (viaGeometries.Count == 0)
-            {
-                // Fallback: match by waterway name when OSM IDs are absent
-                viaGeometries = waterwaySegments
-                    .Where(segment => string.Equals(segment.WaterwayName, waterwayRef, StringComparison.OrdinalIgnoreCase))
-                    .OrderBy(segment => segment.SegmentOrder)
-                    .Select(segment => segment.Geometry)
-                    .ToList();
-            }
-
-            if (viaGeometries.Count == 0)
+            var stationCode = waypoint.StationCode!.Trim().ToUpperInvariant();
+            if (!stationsByCode.TryGetValue(stationCode, out var station))
             {
                 throw new ValidationException([new ValidationFailure(
                     nameof(request.Waypoints),
-                    $"Waterway '{waterwayRef}' was not found by OSM ID or name. Import the latest GeoJSON map or choose another via.")]);
+                    $"Station '{stationCode}' was not found. Import the ferry terminal first or choose another station.")]);
             }
 
-            waypointPoints.Add(RouteGeoJsonImportSupport.CreateRepresentativePoint(viaGeometries));
+            autoStopOrderCounter++;
+            var assignedStopOrder = useExplicitStopOrder ? waypoint.StopOrder!.Value : autoStopOrderCounter;
+            routeStationPairs.Add((station, assignedStopOrder));
         }
 
-        var routeGeometry = buildGeometry
-            ? RouteGeoJsonImportSupport.BuildRouteGeometry(
-                waterwaySegments.Select(segment => segment.Geometry).ToList(),
-                waypointPoints)
-            : null;
-        var distanceKm = routeGeometry is null
-            ? (decimal?)null
-            : (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2);
+        LineString? routeGeometry = null;
+        decimal? distanceKm = null;
 
         var route = new Route
         {
@@ -244,22 +185,6 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             route.Status);
     }
 
-    private static Point GetStationPoint(Station station, string propertyName)
-    {
-        if (station.Location is not null)
-        {
-            return new Point(station.Location.X, station.Location.Y) { SRID = 4326 };
-        }
-
-        if (station.Latitude.HasValue && station.Longitude.HasValue)
-        {
-            return new Point((double)station.Longitude.Value, (double)station.Latitude.Value) { SRID = 4326 };
-        }
-
-        throw new ValidationException([new ValidationFailure(
-            propertyName,
-            $"Station '{station.StationCode}' does not have a valid location.")]);
-    }
 }
 
 internal static class WaypointTypes

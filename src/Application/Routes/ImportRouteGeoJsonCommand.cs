@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using FluentValidation.Results;
+using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -17,8 +18,8 @@ public sealed record GeoJsonImportResultDto(
     int StationsUpdated,
     int RoutesCreated,
     int RoutesUpdated,
-    int RouteSegmentsCreated,
-    int RouteSegmentsUpdated);
+    int RouteStopsCreated,
+    int RouteStopsUpdated);
 
 public sealed class ImportRouteGeoJsonCommandValidator : AbstractValidator<ImportRouteGeoJsonCommand>
 {
@@ -31,6 +32,7 @@ public sealed class ImportRouteGeoJsonCommandValidator : AbstractValidator<Impor
 public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRouteGeoJsonCommand, GeoJsonImportResultDto>
 {
     private const double ProximityThresholdMeters = 100;
+    private const int DefaultRouteSpeedKmh = 15;
     private readonly IApplicationDbContext _context;
 
     public ImportRouteGeoJsonCommandHandler(IApplicationDbContext context) => _context = context;
@@ -41,11 +43,11 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
     {
         var parsedGeoJson = RouteGeoJsonImportSupport.Parse(request.GeoJsonContent);
 
-        if (parsedGeoJson.WaterwaySegments.Count == 0)
+        if (parsedGeoJson.WaterwaySegments.Count == 0 && parsedGeoJson.StationCandidates.Count == 0)
         {
             throw new ValidationException([new ValidationFailure(
                 nameof(request.GeoJsonContent),
-                "GeoJSON must contain at least one LineString or MultiLineString feature.")]);
+                "GeoJSON must contain at least one LineString/MultiLineString or one Point with amenity=ferry_terminal.")]);
         }
 
         var existingStations = await _context.Set<Station>().ToListAsync(cancellationToken);
@@ -83,8 +85,7 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             }
         }
 
-        await MergeWaterwaySegments(parsedGeoJson.WaterwaySegments, cancellationToken);
-        var routeImportResult = await UpsertRoutesAndSegmentsAsync(
+        var routeImportResult = await UpsertRoutesAsync(
             parsedGeoJson.WaterwaySegments,
             existingStations,
             cancellationToken);
@@ -97,11 +98,11 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             stationsUpdated,
             routeImportResult.RoutesCreated,
             routeImportResult.RoutesUpdated,
-            routeImportResult.RouteSegmentsCreated,
-            routeImportResult.RouteSegmentsUpdated);
+            routeImportResult.RouteStopsCreated,
+            routeImportResult.RouteStopsUpdated);
     }
 
-    private async Task<RouteImportResult> UpsertRoutesAndSegmentsAsync(
+    private async Task<RouteImportResult> UpsertRoutesAsync(
         IReadOnlyList<GeoJsonWaterwaySegmentCandidate> incoming,
         IReadOnlyList<Station> stations,
         CancellationToken cancellationToken)
@@ -118,97 +119,145 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
 
         var routesCreated = 0;
         var routesUpdated = 0;
-        var routeSegmentsCreated = 0;
-        var routeSegmentsUpdated = 0;
+        var routeStopsCreated = 0;
+        var routeStopsUpdated = 0;
 
-        foreach (var candidate in routableSegments)
+        var routeGroups = routableSegments
+            .GroupBy(candidate => ResolveRouteCode(candidate, stations), StringComparer.OrdinalIgnoreCase);
+
+        foreach (var routeGroup in routeGroups)
         {
-            var fromStation = ResolveStationByCode(stations, candidate.FromStationCode!);
-            var toStation = ResolveStationByCode(stations, candidate.ToStationCode!);
-            if (fromStation is null || toStation is null)
+            var resolvedSegments = ResolveRouteSegments(routeGroup, stations);
+            var orderedStations = BuildOrderedStations(resolvedSegments);
+            if (orderedStations.Count < 2)
             {
-                throw new ValidationException([new ValidationFailure(
-                    nameof(ImportRouteGeoJsonCommand.GeoJsonContent),
-                    $"Feature #{candidate.FeatureIndex} co from_station_code/to_station_code nhung khong tim thay ben tuong ung.")]);
+                continue;
             }
-
-            if (fromStation.Id == toStation.Id)
-            {
-                throw new ValidationException([new ValidationFailure(
-                    nameof(ImportRouteGeoJsonCommand.GeoJsonContent),
-                    $"Feature #{candidate.FeatureIndex} co from_station_code va to_station_code trung nhau.")]);
-            }
-
-            var routeCode = NormalizeRouteCode(
-                candidate.RouteCode
-                ?? candidate.Name
-                ?? candidate.OsmId
-                ?? $"{fromStation.StationCode}-{toStation.StationCode}");
 
             var route = await _context.Set<Route>()
                 .Include(x => x.RouteStops)
-                .Include(x => x.RouteSegments)
-                .SingleOrDefaultAsync(x => x.RouteCode == routeCode, cancellationToken);
+                .SingleOrDefaultAsync(x => x.RouteCode == routeGroup.Key, cancellationToken);
 
-            var distanceKm = (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(candidate.Geometry), 2);
-            var estimatedTravelMinutes = CustomBookingRequests.CustomBookingRouteEstimator.EstimateTravelMinutes(distanceKm);
+            var distanceKm = (decimal)Math.Round(
+                resolvedSegments.Sum(x => RouteGeoJsonImportSupport.CalculateLengthKm(x.Candidate.Geometry)),
+                2);
+            var estimatedDurationMin = ResolveEstimatedDurationMinutes(resolvedSegments, distanceKm);
+            var routeGeometry = BuildRouteGeometry(resolvedSegments);
+            var firstSegment = resolvedSegments[0].Candidate;
 
             if (route is null)
             {
                 route = new Route
                 {
-                    RouteCode = routeCode,
-                    RouteName = candidate.Name?.Trim() ?? routeCode,
+                    RouteCode = routeGroup.Key,
+                    RouteName = firstSegment.Name?.Trim() ?? routeGroup.Key,
                     Description = "Imported from GeoJSON",
-                    BaseDistanceKm = distanceKm,
-                    EstimatedDurationMin = estimatedTravelMinutes,
-                    Status = "Active",
-                    RouteGeometry = candidate.Geometry,
-                    OsmId = candidate.OsmId
+                    Status = "Active"
                 };
                 _context.Set<Route>().Add(route);
                 routesCreated++;
             }
             else
             {
-                route.RouteName = string.IsNullOrWhiteSpace(candidate.Name) ? route.RouteName : candidate.Name.Trim();
-                route.BaseDistanceKm = distanceKm;
-                route.EstimatedDurationMin = estimatedTravelMinutes;
-                route.RouteGeometry = candidate.Geometry;
-                route.OsmId = string.IsNullOrWhiteSpace(candidate.OsmId) ? route.OsmId : candidate.OsmId;
+                route.RouteName = string.IsNullOrWhiteSpace(firstSegment.Name)
+                    ? route.RouteName
+                    : firstSegment.Name.Trim();
                 routesUpdated++;
             }
 
-            EnsureRouteStop(route, fromStation, isFirstStop: true);
-            EnsureRouteStop(route, toStation, isFirstStop: false);
-
-            var routeSegment = route.RouteSegments.FirstOrDefault(x =>
-                x.FromStationId == fromStation.Id && x.ToStationId == toStation.Id);
-            if (routeSegment is null)
+            route.BaseDistanceKm = distanceKm;
+            route.EstimatedDurationMin = estimatedDurationMin;
+            route.RouteGeometry = routeGeometry;
+            if (!string.IsNullOrWhiteSpace(firstSegment.OsmId))
             {
-                routeSegment = new RouteSegment
-                {
-                    Route = route,
-                    FromStationId = fromStation.Id,
-                    ToStationId = toStation.Id,
-                    SegmentOrder = NextSegmentOrder(route),
-                    DistanceKm = distanceKm,
-                    EstimatedTravelMinutes = estimatedTravelMinutes,
-                    Geometry = candidate.Geometry
-                };
-                route.RouteSegments.Add(routeSegment);
-                routeSegmentsCreated++;
+                route.OsmId = firstSegment.OsmId;
             }
-            else
+
+            var existingStops = route.RouteStops.ToList();
+            routeStopsUpdated += existingStops.Count;
+            foreach (var stop in existingStops)
             {
-                routeSegment.DistanceKm = distanceKm;
-                routeSegment.EstimatedTravelMinutes = estimatedTravelMinutes;
-                routeSegment.Geometry = candidate.Geometry;
-                routeSegmentsUpdated++;
+                _context.Set<RouteStop>().Remove(stop);
+            }
+
+            route.RouteStops.Clear();
+            for (var i = 0; i < orderedStations.Count; i++)
+            {
+                _context.Set<RouteStop>().Add(new RouteStop
+                {
+                    RouteId = route.Id,
+                    StationId = orderedStations[i].Id,
+                    StopOrder = i + 1,
+                    IsPickupAllowed = i < orderedStations.Count - 1,
+                    IsDropoffAllowed = i > 0
+                });
+                routeStopsCreated++;
             }
         }
 
-        return new RouteImportResult(routesCreated, routesUpdated, routeSegmentsCreated, routeSegmentsUpdated);
+        return new RouteImportResult(routesCreated, routesUpdated, routeStopsCreated, routeStopsUpdated);
+    }
+
+    private static IReadOnlyList<ResolvedRouteSegment> ResolveRouteSegments(
+        IEnumerable<GeoJsonWaterwaySegmentCandidate> candidates,
+        IReadOnlyList<Station> stations) =>
+        candidates
+            .OrderBy(x => x.FeatureIndex)
+            .ThenBy(x => x.SegmentOrder)
+            .Select(candidate =>
+            {
+                var fromStation = ResolveStationByCode(stations, candidate.FromStationCode!);
+                var toStation = ResolveStationByCode(stations, candidate.ToStationCode!);
+                if (fromStation is null || toStation is null)
+                {
+                    throw new ValidationException([new ValidationFailure(
+                        nameof(ImportRouteGeoJsonCommand.GeoJsonContent),
+                        $"Feature #{candidate.FeatureIndex} has from_station_code/to_station_code but station was not found.")]);
+                }
+
+                if (fromStation.Id == toStation.Id)
+                {
+                    throw new ValidationException([new ValidationFailure(
+                        nameof(ImportRouteGeoJsonCommand.GeoJsonContent),
+                        $"Feature #{candidate.FeatureIndex} has identical from_station_code and to_station_code.")]);
+                }
+
+                return new ResolvedRouteSegment(candidate, fromStation, toStation);
+            })
+            .ToArray();
+
+    private static List<Station> BuildOrderedStations(IReadOnlyList<ResolvedRouteSegment> segments)
+    {
+        var orderedStations = new List<Station>();
+        foreach (var segment in segments)
+        {
+            AddStationIfNeeded(orderedStations, segment.FromStation);
+            AddStationIfNeeded(orderedStations, segment.ToStation);
+        }
+
+        return orderedStations;
+    }
+
+    private static void AddStationIfNeeded(List<Station> stations, Station station)
+    {
+        if (stations.Count == 0 || stations[^1].Id != station.Id)
+        {
+            stations.Add(station);
+        }
+    }
+
+    private static string ResolveRouteCode(
+        GeoJsonWaterwaySegmentCandidate candidate,
+        IReadOnlyList<Station> stations)
+    {
+        var fromStation = ResolveStationByCode(stations, candidate.FromStationCode!);
+        var toStation = ResolveStationByCode(stations, candidate.ToStationCode!);
+
+        return NormalizeRouteCode(
+            candidate.RouteCode
+            ?? candidate.Name
+            ?? candidate.OsmId
+            ?? $"{fromStation?.StationCode ?? candidate.FromStationCode}-{toStation?.StationCode ?? candidate.ToStationCode}");
     }
 
     private static Station? ResolveStationByCode(IReadOnlyList<Station> stations, string stationCode)
@@ -220,30 +269,90 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
                 : null);
     }
 
-    private static void EnsureRouteStop(Route route, Station station, bool isFirstStop)
+    private static int ResolveEstimatedDurationMinutes(
+        IReadOnlyList<ResolvedRouteSegment> segments,
+        decimal distanceKm)
     {
-        if (route.RouteStops.Any(x => x.StationId == station.Id))
+        var explicitDurations = segments
+            .Select(x => x.Candidate.EstimatedTravelMinutes)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .ToArray();
+
+        if (explicitDurations.Length > 0)
         {
-            return;
+            return explicitDurations.Sum();
         }
 
-        var stopOrder = route.RouteStops.Count == 0
-            ? 1
-            : route.RouteStops.Max(x => x.StopOrder) + 1;
-        route.RouteStops.Add(new RouteStop
-        {
-            Route = route,
-            StationId = station.Id,
-            StopOrder = stopOrder,
-            IsPickupAllowed = isFirstStop,
-            IsDropoffAllowed = !isFirstStop
-        });
+        return Math.Max(1, (int)Math.Round((double)distanceKm / DefaultRouteSpeedKmh * 60));
     }
 
-    private static int NextSegmentOrder(Route route) =>
-        route.RouteSegments.Count == 0
-            ? 1
-            : route.RouteSegments.Max(x => x.SegmentOrder) + 1;
+    private static LineString BuildRouteGeometry(IReadOnlyList<ResolvedRouteSegment> segments)
+    {
+        var coordinates = new List<Coordinate>();
+        foreach (var segment in segments)
+        {
+            var oriented = OrientCoordinates(
+                segment.Candidate.Geometry.Coordinates,
+                segment.FromStation,
+                segment.ToStation);
+            AppendCoordinates(coordinates, oriented);
+        }
+
+        if (coordinates.Count < 2)
+        {
+            return segments[0].Candidate.Geometry;
+        }
+
+        return new LineString(coordinates.ToArray()) { SRID = 4326 };
+    }
+
+    private static Coordinate[] OrientCoordinates(
+        Coordinate[] coordinates,
+        Station fromStation,
+        Station toStation)
+    {
+        if (coordinates.Length < 2
+            || !fromStation.Latitude.HasValue
+            || !fromStation.Longitude.HasValue
+            || !toStation.Latitude.HasValue
+            || !toStation.Longitude.HasValue)
+        {
+            return coordinates;
+        }
+
+        var start = coordinates[0];
+        var end = coordinates[^1];
+        var normalDistance =
+            DistanceToStationMeters(start, fromStation) + DistanceToStationMeters(end, toStation);
+        var reverseDistance =
+            DistanceToStationMeters(start, toStation) + DistanceToStationMeters(end, fromStation);
+
+        return reverseDistance < normalDistance
+            ? coordinates.Reverse().ToArray()
+            : coordinates;
+    }
+
+    private static double DistanceToStationMeters(Coordinate coordinate, Station station) =>
+        RouteGeoJsonImportSupport.HaversineMeters(
+            coordinate.Y,
+            coordinate.X,
+            (double)station.Latitude!.Value,
+            (double)station.Longitude!.Value);
+
+    private static void AppendCoordinates(List<Coordinate> destination, IReadOnlyList<Coordinate> coordinates)
+    {
+        foreach (var coordinate in coordinates)
+        {
+            if (destination.Count == 0 || !CoordinatesEqual(destination[^1], coordinate))
+            {
+                destination.Add(new Coordinate(coordinate.X, coordinate.Y));
+            }
+        }
+    }
+
+    private static bool CoordinatesEqual(Coordinate a, Coordinate b) =>
+        RouteGeoJsonImportSupport.HaversineMeters(a.Y, a.X, b.Y, b.X) <= 1;
 
     private static string NormalizeRouteCode(string value)
     {
@@ -251,48 +360,6 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             .ToUpperInvariant()
             .Replace(" ", "-");
         return normalized.Length <= 50 ? normalized : normalized[..50];
-    }
-
-    private async Task MergeWaterwaySegments(
-        IReadOnlyList<GeoJsonWaterwaySegmentCandidate> incoming,
-        CancellationToken cancellationToken)
-    {
-        // Collect the two keys used for matching: OsmId and WaterwayName (for no-OsmId segments).
-        var incomingOsmIds = incoming
-            .Where(s => !string.IsNullOrWhiteSpace(s.OsmId))
-            .Select(s => s.OsmId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        var incomingNameOnlyWaterways = incoming
-            .Where(s => string.IsNullOrWhiteSpace(s.OsmId) && !string.IsNullOrWhiteSpace(s.Name))
-            .Select(s => s.Name)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // Remove only segments that will be replaced by this import:
-        //   • segments whose OsmId is in the incoming set
-        //   • segments with no OsmId whose WaterwayName is covered by this import
-        // Segments from other files (different OsmId / different name) are left untouched.
-        var toRemove = await _context.Set<WaterwaySegment>()
-            .Where(seg =>
-                (seg.OsmId != null && incomingOsmIds.Contains(seg.OsmId)) ||
-                (seg.OsmId == null && seg.WaterwayName != null && incomingNameOnlyWaterways.Contains(seg.WaterwayName)))
-            .ToListAsync(cancellationToken);
-
-        foreach (var seg in toRemove)
-            _context.Set<WaterwaySegment>().Remove(seg);
-
-        foreach (var candidate in incoming)
-        {
-            _context.Set<WaterwaySegment>().Add(new WaterwaySegment
-            {
-                OsmId = candidate.OsmId,
-                WaterwayName = candidate.Name?.Trim(),
-                WaterwayType = candidate.WaterwayType,
-                SegmentOrder = candidate.SegmentOrder,
-                LengthKm = (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(candidate.Geometry), 2),
-                Geometry = candidate.Geometry
-            });
-        }
     }
 
     private static Station? MatchExistingStation(
@@ -305,10 +372,6 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             if (byOsmId is not null)
                 return byOsmId;
 
-            // Candidate has an OsmId but no DB match yet — the existing station may have been
-            // imported from an older file that lacked @id. Upgrade it by matching on name,
-            // but only if the DB station has no OsmId (to avoid stealing a station that already
-            // belongs to a different OSM node).
             if (!string.IsNullOrWhiteSpace(candidate.Name))
             {
                 var byNameNoOsmId = existingStations.FirstOrDefault(existing =>
@@ -319,8 +382,6 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             }
         }
 
-        // Only fall back to name match when the candidate has no OsmId.
-        // Two features with different OsmIds are distinct stations even if they share a name.
         if (string.IsNullOrWhiteSpace(candidate.OsmId) && !string.IsNullOrWhiteSpace(candidate.Name))
         {
             var byName = existingStations.FirstOrDefault(existing =>
@@ -346,7 +407,6 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             ?.Station;
     }
 
-    // Words to skip when building the station abbreviation (matched after removing diacritics)
     private static readonly HashSet<string> AbbrevSkipWords =
         new(["ben", "cang", "do"], StringComparer.OrdinalIgnoreCase);
 
@@ -393,7 +453,7 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
 
     private static string BuildAbbreviationCode(string name)
     {
-        var words = name.Split([' ', '-', '–', '\t'], StringSplitOptions.RemoveEmptyEntries);
+        var words = name.Split([' ', '-', '\t'], StringSplitOptions.RemoveEmptyEntries);
         var initials = words
             .Where(w => w.Length > 0 && char.IsLetter(w[0]))
             .Where(w => !AbbrevSkipWords.Contains(RemoveDiacritics(w)))
@@ -407,7 +467,6 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
 
     private static string RemoveDiacritics(string text)
     {
-        // "Đ/đ" has a stroke (not a combining mark) — NFD won't strip it; map explicitly
         var replaced = text.Replace('Đ', 'D').Replace('đ', 'd');
         var normalized = replaced.Normalize(NormalizationForm.FormD);
         var sb = new StringBuilder(normalized.Length);
@@ -422,9 +481,14 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
         return sb.ToString().Normalize(NormalizationForm.FormC);
     }
 
+    private sealed record ResolvedRouteSegment(
+        GeoJsonWaterwaySegmentCandidate Candidate,
+        Station FromStation,
+        Station ToStation);
+
     private sealed record RouteImportResult(
         int RoutesCreated,
         int RoutesUpdated,
-        int RouteSegmentsCreated,
-        int RouteSegmentsUpdated);
+        int RouteStopsCreated,
+        int RouteStopsUpdated);
 }

@@ -1,8 +1,9 @@
+using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
+using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Users;
 
@@ -43,24 +44,27 @@ public sealed class GetUserStationAssignmentsRequestUseCase
         GetUserStationAssignmentsRequest request,
         CancellationToken cancellationToken)
     {
-        var actor = await AuthSupport.EnsureCurrentUserCanManageUsersAsync(_context, _userContext, cancellationToken);
-        var user = await UserManagementSupport.GetVisibleUserByIdAsync(_context, actor, request.UserId, cancellationToken);
-        UserManagementSupport.EnsureCanViewStationAssignments(actor, user);
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+
+        var target = await _context.Set<User>()
+            .Include(u => u.Role)
+            .SingleOrDefaultAsync(u => u.Id == request.UserId, cancellationToken)
+            ?? throw new NotFoundException("Không tìm thấy người dùng.");
+
+        UserManagementSupport.EnsureCanViewStationAssignments(actor, target);
 
         return await _context.Set<UserStationAssignment>()
-            .AsNoTracking()
-            .Include(x => x.Station)
-            .Where(x => x.UserId == request.UserId && x.IsActive)
-            .OrderByDescending(x => x.IsPrimary)
-            .ThenBy(x => x.Station.StationName)
-            .Select(x => new UserStationAssignmentDto(
-                x.StationId,
-                x.Station.StationCode,
-                x.Station.StationName,
-                x.IsPrimary,
-                x.IsActive,
-                x.AssignedAt))
-            .ToArrayAsync(cancellationToken);
+            .Where(a => a.UserId == request.UserId)
+            .OrderByDescending(a => a.IsPrimary)
+            .ThenBy(a => a.Station.StationName)
+            .Select(a => new UserStationAssignmentDto(
+                a.StationId,
+                a.Station.StationCode,
+                a.Station.StationName,
+                a.IsPrimary,
+                a.IsActive,
+                a.AssignedAt))
+            .ToListAsync(cancellationToken);
     }
 }
 
@@ -120,81 +124,73 @@ public sealed class AssignUserStationsRequestUseCase
         CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
-        UserManagementSupport.EnsureCanManageStationAssignments(actor);
 
         var target = await _context.Set<User>()
-            .Include(x => x.Role)
-            .SingleOrDefaultAsync(x => x.Id == request.UserId, cancellationToken)
-            ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy user.");
+            .Include(u => u.Role)
+            .SingleOrDefaultAsync(u => u.Id == request.UserId, cancellationToken)
+            ?? throw new NotFoundException("Không tìm thấy người dùng.");
 
         UserManagementSupport.EnsureCanAssignStationsToUser(actor, target);
 
-        var stationIds = request.StationIds.Distinct().ToArray();
-        var stations = await _context.Set<Station>()
-            .Where(x => stationIds.Contains(x.Id))
+        var stationIds = request.StationIds.Distinct().ToList();
+        var existingStationIds = await _context.Set<Station>()
+            .Where(s => stationIds.Contains(s.Id))
+            .Select(s => s.Id)
             .ToListAsync(cancellationToken);
 
-        if (stations.Count != stationIds.Length)
+        var missing = stationIds.Except(existingStationIds).ToList();
+        if (missing.Count > 0)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.StationIds), "Một hoặc nhiều bến không tồn tại.");
-        }
-
-        var inactiveStation = stations.FirstOrDefault(x => x.Status != StationStatus.Active);
-        if (inactiveStation is not null)
-        {
-            throw AuthSupport.CreateValidationException(
-                nameof(request.StationIds),
-                $"Bến '{inactiveStation.StationCode}' không ở trạng thái Active.");
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.StationIds), "Có bến không tồn tại.")]);
         }
 
         var primaryStationId = request.PrimaryStationId ?? stationIds[0];
         var now = _timeProvider.GetUtcNow();
 
-        var assignments = await _context.Set<UserStationAssignment>()
-            .Include(x => x.Station)
-            .Where(x => x.UserId == target.Id)
+        var existing = await _context.Set<UserStationAssignment>()
+            .Where(a => a.UserId == request.UserId)
             .ToListAsync(cancellationToken);
 
-        foreach (var assignment in assignments)
-        {
-            assignment.IsActive = stationIds.Contains(assignment.StationId);
-            assignment.IsPrimary = assignment.IsActive && assignment.StationId == primaryStationId;
-            if (assignment.IsActive)
-            {
-                assignment.AssignedAt = now;
-                assignment.AssignedByUserId = actor.Id;
-            }
-        }
+        var toRemove = existing.Where(a => !stationIds.Contains(a.StationId)).ToList();
+        _context.Set<UserStationAssignment>().RemoveRange(toRemove);
 
-        var existingStationIds = assignments.Select(x => x.StationId).ToHashSet();
-        foreach (var stationId in stationIds.Where(id => !existingStationIds.Contains(id)))
+        foreach (var stationId in stationIds)
         {
-            _context.Set<UserStationAssignment>().Add(new UserStationAssignment
+            var isPrimary = stationId == primaryStationId;
+            var current = existing.FirstOrDefault(a => a.StationId == stationId);
+            if (current is null)
             {
-                UserId = target.Id,
-                StationId = stationId,
-                IsPrimary = stationId == primaryStationId,
-                IsActive = true,
-                AssignedAt = now,
-                AssignedByUserId = actor.Id
-            });
+                _context.Set<UserStationAssignment>().Add(new UserStationAssignment
+                {
+                    UserId = request.UserId,
+                    StationId = stationId,
+                    IsPrimary = isPrimary,
+                    IsActive = true,
+                    AssignedAt = now,
+                    AssignedByUserId = actor.Id
+                });
+            }
+            else
+            {
+                current.IsPrimary = isPrimary;
+                current.IsActive = true;
+            }
         }
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return await _context.Set<UserStationAssignment>()
-            .AsNoTracking()
-            .Include(x => x.Station)
-            .Where(x => x.UserId == target.Id && x.IsActive)
-            .OrderByDescending(x => x.IsPrimary)
-            .ThenBy(x => x.Station.StationName)
-            .Select(x => new UserStationAssignmentDto(
-                x.StationId,
-                x.Station.StationCode,
-                x.Station.StationName,
-                x.IsPrimary,
-                x.IsActive,
-                x.AssignedAt))
-            .ToArrayAsync(cancellationToken);
+            .Where(a => a.UserId == request.UserId)
+            .OrderByDescending(a => a.IsPrimary)
+            .ThenBy(a => a.Station.StationName)
+            .Select(a => new UserStationAssignmentDto(
+                a.StationId,
+                a.Station.StationCode,
+                a.Station.StationName,
+                a.IsPrimary,
+                a.IsActive,
+                a.AssignedAt))
+            .ToListAsync(cancellationToken);
     }
 }

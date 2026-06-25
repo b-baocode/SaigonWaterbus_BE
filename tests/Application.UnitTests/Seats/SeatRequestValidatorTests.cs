@@ -1,6 +1,5 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Seats;
-using SaigonWaterbus.Domain.Enums;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Seats;
@@ -50,31 +49,7 @@ public class SeatRequestValidatorTests
     }
 
     [Test]
-    public void GenerateAcceptsLayoutWithSeatBlocksAndToilet()
-    {
-        var validator = new GenerateSeatsRequestValidator();
-
-        var result = validator.Validate(new GenerateSeatsRequest(
-            Guid.NewGuid(),
-            [
-                new DeckConfigDto(
-                    1,
-                    20,
-                    8,
-                    [
-                        new SeatBlockDto(1, 1, 10, 4),
-                        new SeatBlockDto(1, 5, 10, 4)
-                    ],
-                    [
-                        new FacilityConfigDto(VesselFacilityType.Toilet, 15, 1, 1, 2)
-                    ])
-            ]));
-
-        result.IsValid.ShouldBeTrue();
-    }
-
-    [Test]
-    public void GenerateAcceptsCellsAsOverridesWithoutListingEverySeat()
+    public void GenerateAcceptsLayoutCellsForSpecialPositions()
     {
         var validator = new GenerateSeatsRequestValidator();
 
@@ -90,8 +65,7 @@ public class SeatRequestValidatorTests
                         new LayoutCellConfigDto(1, 3, SeatLayoutCellType.Aisle),
                         new LayoutCellConfigDto(2, 3, SeatLayoutCellType.Aisle),
                         new LayoutCellConfigDto(3, 1, SeatLayoutCellType.Empty),
-                        new LayoutCellConfigDto(4, 1, SeatLayoutCellType.Toilet, RowSpan: 1, ColumnSpan: 2),
-                        new LayoutCellConfigDto(5, 4, SeatLayoutCellType.Seat, SeatTypeCode: "VIP")
+                        new LayoutCellConfigDto(5, 4, SeatLayoutCellType.Seat, SeatTypeCode: "CABIN")
                     ])
             ]));
 
@@ -99,7 +73,7 @@ public class SeatRequestValidatorTests
     }
 
     [Test]
-    public void GenerateRejectsMixedCellsAndSeatBlocks()
+    public void GenerateRejectsDuplicateLayoutCells()
     {
         var validator = new GenerateSeatsRequestValidator();
 
@@ -108,21 +82,21 @@ public class SeatRequestValidatorTests
             [
                 new DeckConfigDto(
                     1,
-                    5,
-                    6,
-                    [new SeatBlockDto(1, 1, 5, 6)],
+                    2,
+                    2,
                     Cells:
                     [
-                        new LayoutCellConfigDto(1, 3, SeatLayoutCellType.Aisle)
+                        new LayoutCellConfigDto(1, 1, SeatLayoutCellType.Aisle),
+                        new LayoutCellConfigDto(1, 1, SeatLayoutCellType.Empty)
                     ])
             ]));
 
         result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "Khi dùng cells thì không gửi seatBlocks/facilities để tránh cấu hình bị lẫn logic.");
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Các ô layout trong cùng tầng không được trùng vị trí.");
     }
 
     [Test]
-    public void GenerateRejectsToiletThatDoesNotUseExactlyTwoCells()
+    public void GenerateRejectsLayoutCellsOutsideDeckSize()
     {
         var validator = new GenerateSeatsRequestValidator();
 
@@ -131,14 +105,16 @@ public class SeatRequestValidatorTests
             [
                 new DeckConfigDto(
                     1,
-                    20,
-                    8,
-                    [new SeatBlockDto(1, 1, 10, 8)],
-                    [new FacilityConfigDto(VesselFacilityType.Toilet, 15, 1, 2, 2)])
+                    2,
+                    2,
+                    Cells:
+                    [
+                        new LayoutCellConfigDto(3, 1, SeatLayoutCellType.Aisle)
+                    ])
             ]));
 
         result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "WC phải chiếm đúng 2 ô, theo chiều ngang hoặc chiều dọc.");
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Ô layout không được vượt quá kích thước tầng.");
     }
 
     [Test]

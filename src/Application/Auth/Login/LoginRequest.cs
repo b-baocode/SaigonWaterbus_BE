@@ -130,13 +130,16 @@ public sealed class LoginRequestUseCase
         if (IsEmailInput(trimmedEmailOrPhone))
         {
             var normalizedEmail = _identityNormalizer.NormalizeEmail(trimmedEmailOrPhone);
-            return await query.SingleOrDefaultAsync(x => x.NormalizedEmail == normalizedEmail, cancellationToken)
+            return await AuthSupport.WhereUserIdentityMatches(query, null, normalizedEmail)
+                .Include(u => u.StationAssignments).ThenInclude(a => a.Station)
+                .SingleOrDefaultAsync(cancellationToken)
                 ?? throw new NotFoundException("Không tìm thấy tài khoản.");
         }
 
         var normalizedPhone = _identityNormalizer.NormalizePhone(trimmedEmailOrPhone);
-        return await query
-            .SingleOrDefaultAsync(x => x.NormalizedPhoneNumber == normalizedPhone, cancellationToken)
+        return await AuthSupport.WhereUserIdentityMatches(query, normalizedPhone, null)
+            .Include(u => u.StationAssignments).ThenInclude(a => a.Station)
+            .SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy tài khoản.");
     }
 

@@ -26,7 +26,5 @@ public sealed class BrevoOptions
 
     public int EmailChangeTemplateId { get; set; }
 
-    public int CustomBookingQuoteTemplateId { get; set; }
 
-    public int CustomBookingConfirmationTemplateId { get; set; }
 }

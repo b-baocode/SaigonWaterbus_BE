@@ -67,50 +67,27 @@ public sealed class GenerateSeatMatrixRequestUseCase
 
         await EnsureVesselHasNoLayoutAsync(vessel.Id, cancellationToken);
         EnsureDecksMatchVessel(vessel, request.Decks);
-        var seatTypes = await _context.SeatTypes
-            .ToListAsync(cancellationToken);
-        var previewSeatTypeDefinition = SeatLayoutPlanner.DefaultSeatTypeDefinition(vessel.SeatSetupType);
-        var previewSeatType = SeatLayoutPlanner.EnsureSeatType(
-            _context,
-            seatTypes,
-            previewSeatTypeDefinition.Code,
-            previewSeatTypeDefinition.Name,
-            previewSeatTypeDefinition.DisplayOrder);
-
         var deckLayouts = request.Decks
             .OrderBy(x => x.DeckNumber)
-            .Select(deck => new VesselDeckLayout
-            {
-                VesselId = vessel.Id,
-                DeckNumber = deck.DeckNumber,
-                RowCount = deck.RowCount,
-                ColumnCount = deck.ColumnCount
-            })
+            .Select(deck => new SeatDeckLayout(deck.DeckNumber, deck.RowCount, deck.ColumnCount))
             .ToArray();
 
-        _context.VesselDeckLayouts.AddRange(deckLayouts);
         vessel.SeatsConfigured = false;
         vessel.Status = VesselStatus.Inactive;
-        await _context.SaveChangesAsync(cancellationToken);
 
         return SeatSupport.CreateVesselSeatsDto(
             vessel,
             [],
             deckLayouts,
-            [],
-            previewEmptyCellsAsSeats: true,
-            previewSeatType: previewSeatType);
+            previewEmptyCellsAsSeats: true);
     }
 
     private async Task EnsureVesselHasNoLayoutAsync(Guid vesselId, CancellationToken cancellationToken)
     {
-        var hasExistingLayout = await _context.Seats.AnyAsync(x => x.VesselId == vesselId, cancellationToken)
-            || await _context.VesselDeckLayouts.AnyAsync(x => x.VesselId == vesselId, cancellationToken)
-            || await _context.VesselFacilities.AnyAsync(x => x.VesselId == vesselId, cancellationToken)
-            || await _context.VesselLayoutCells.AnyAsync(x => x.VesselId == vesselId, cancellationToken);
+        var hasExistingLayout = await _context.Seats.AnyAsync(x => x.VesselId == vesselId, cancellationToken);
 
         if (hasExistingLayout)
-            throw AuthSupport.CreateValidationException("Seats", "Tàu đã có ma trận hoặc sơ đồ ghế. Xóa toàn bộ trước khi generate lại.");
+            throw AuthSupport.CreateValidationException("Seats", "Tàu đã có sơ đồ ghế. Xóa toàn bộ trước khi generate lại.");
     }
 
     internal static void EnsureDecksMatchVessel(

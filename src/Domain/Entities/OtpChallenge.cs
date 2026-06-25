@@ -8,6 +8,8 @@ public class OtpChallenge : BaseAuditableEntity
 
     public OtpPurpose Purpose { get; set; }
 
+    public OtpChannel Channel { get; set; } = OtpChannel.Email;
+
     public string Email { get; set; } = null!;
 
     public string? PendingPhoneNumber { get; set; }

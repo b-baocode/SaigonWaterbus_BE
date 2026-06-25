@@ -5,12 +5,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 
 namespace SaigonWaterbus.Web.Infrastructure;
 
-/// <summary>
-/// Converts well-known application exceptions into RFC 9110-compliant <see cref="ProblemDetails"/> responses,
-/// mapping <see cref="ValidationException"/> → 400, <see cref="SaigonWaterbus.Application.Common.Exceptions.NotFoundException"/> → 404,
-/// <see cref="UnauthorizedAccessException"/> → 401, and <see cref="ForbiddenAccessException"/> → 403.
-/// Unrecognised exceptions are not handled and fall through to the default middleware.
-/// </summary>
+///
 public class ProblemDetailsExceptionHandler : IExceptionHandler
 {
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)

@@ -12,6 +12,7 @@ internal static class UserManagementSupport
     {
         var query = context.Set<User>()
             .Include(x => x.Role)
+            .Include(x => x.StationAssignments).ThenInclude(a => a.Station)
             .AsQueryable();
 
         if (AuthSupport.IsAdmin(actor))
@@ -20,8 +21,8 @@ internal static class UserManagementSupport
         }
 
         return query.Where(x =>
-            x.Role.SystemName == Roles.CustomerSystemName
-            || x.Role.SystemName == Roles.StaffSystemName);
+            x.Role.Code == Roles.CustomerCode
+            || x.Role.Code == Roles.StaffCode);
     }
 
     public static void EnsureCanCreateRole(User actor, Role targetRole, string propertyName)

@@ -60,7 +60,7 @@ public sealed class GmailOtpSender : IOtpSender
             DeliveryMethod = SmtpDeliveryMethod.Network,
             UseDefaultCredentials = false,
             Credentials = new NetworkCredential(options.Username, options.Password),
-            Timeout = 10000 // 10 seconds timeout
+            Timeout = 10000
         };
 
         try
@@ -81,7 +81,6 @@ public sealed class GmailOtpSender : IOtpSender
                 ex.Message,
                 purpose,
                 email);
-            // Don't throw - just log and continue. This allows development without valid Gmail credentials.
         }
     }
 

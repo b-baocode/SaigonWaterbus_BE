@@ -1,0 +1,25 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SaigonWaterbus.Domain.Entities;
+
+namespace SaigonWaterbus.Infrastructure.Data.Configurations;
+
+public sealed class BookingPassengerConfiguration : IEntityTypeConfiguration<BookingPassenger>
+{
+    public void Configure(EntityTypeBuilder<BookingPassenger> builder)
+    {
+        builder.ToTable("booking_passengers");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Id).HasColumnName("booking_passenger_id");
+
+        builder.Property(x => x.BookingId).HasColumnName("booking_id").IsRequired();
+        builder.Property(x => x.FullName).HasColumnName("full_name").HasMaxLength(150).IsRequired();
+        builder.Property(x => x.PhoneNumber).HasColumnName("phone_number").HasMaxLength(30);
+        builder.Property(x => x.Email).HasColumnName("email").HasMaxLength(255);
+        builder.Property(x => x.DateOfBirth).HasColumnName("date_of_birth");
+        builder.Property(x => x.PassengerType).HasColumnName("passenger_type").HasMaxLength(30);
+        builder.Property(x => x.IdentityNumber).HasColumnName("identity_number").HasMaxLength(50);
+
+        builder.HasOne(x => x.Booking).WithMany(x => x.Passengers).HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
+    }
+}

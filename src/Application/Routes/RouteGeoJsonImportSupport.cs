@@ -9,6 +9,7 @@ namespace SaigonWaterbus.Application.Routes;
 internal sealed record GeoJsonStationCandidate(
     int FeatureIndex,
     string? OsmId,
+    string? StationCode,
     string? Name,
     string? PublicTransport,
     double Latitude,
@@ -77,6 +78,7 @@ internal static class RouteGeoJsonImportSupport
                 var waterway = GetPropString(feature, "waterway");
                 var route = GetPropString(feature, "route");
                 var routeCode = GetPropString(feature, "waterbus_route") ?? GetPropString(feature, "route_code");
+                var stationCode = GetPropString(feature, "station_code") ?? GetPropString(feature, "stationCode");
                 var fromStationCode = GetPropString(feature, "from_station_code");
                 var toStationCode = GetPropString(feature, "to_station_code");
                 var estimatedTravelMinutes = GetPropInt(feature, "estimated_travel_minutes")
@@ -106,7 +108,7 @@ internal static class RouteGeoJsonImportSupport
                             line));
                     }
                 }
-                else if (type == "Point" && string.Equals(amenity, "ferry_terminal", StringComparison.OrdinalIgnoreCase))
+                else if (type == "Point" && IsStationPointFeature(amenity, publicTransport, stationCode))
                 {
                     if (!geom.TryGetProperty("coordinates", out var coordinates)
                         || coordinates.ValueKind != JsonValueKind.Array
@@ -120,6 +122,7 @@ internal static class RouteGeoJsonImportSupport
                     stationCandidates.Add(new GeoJsonStationCandidate(
                         featureIndex,
                         osmId,
+                        stationCode,
                         name,
                         publicTransport,
                         coordinates[1].GetDouble(),
@@ -227,6 +230,13 @@ internal static class RouteGeoJsonImportSupport
 
     private static bool IsLineFeature(string? geometryType) =>
         geometryType == "LineString" || geometryType == "MultiLineString";
+
+    private static bool IsStationPointFeature(string? amenity, string? publicTransport, string? stationCode) =>
+        !string.IsNullOrWhiteSpace(stationCode)
+        || string.Equals(amenity, "ferry_terminal", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(publicTransport, "station", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(publicTransport, "stop_position", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(publicTransport, "platform", StringComparison.OrdinalIgnoreCase);
 
     private static string NormalizeWaterwayType(string? waterway)
     {

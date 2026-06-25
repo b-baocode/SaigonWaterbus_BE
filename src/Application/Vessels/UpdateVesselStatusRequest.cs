@@ -41,14 +41,19 @@ public sealed class UpdateVesselStatusRequestUseCase
         await VesselSupport.EnsureCurrentUserCanManageVesselsAsync(_context, _userContext, cancellationToken);
 
         var vessel = await _context.Vessels
-            .Include(x => x.Images)
-            .Include(x => x.RentalPrices)
+            .Include(x => x.Seats)
             .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
         if (request.Status == VesselStatus.Active)
         {
-            VesselSupport.EnsureCanActivate(vessel, nameof(request.Status));
+            var configuredSeats = vessel.Seats.Count;
+            if (vessel.SeatCount <= 0 || configuredSeats != vessel.SeatCount)
+            {
+                throw SaigonWaterbus.Application.Auth.Common.AuthSupport.CreateValidationException(
+                    nameof(request.Status),
+                    $"Tàu cần cấu hình đủ {vessel.SeatCount} ghế trước khi chuyển Active. Hiện có {configuredSeats} ghế.");
+            }
         }
 
         vessel.Status = request.Status;

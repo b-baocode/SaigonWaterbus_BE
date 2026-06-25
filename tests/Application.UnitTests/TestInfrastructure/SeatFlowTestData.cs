@@ -70,18 +70,7 @@ internal static class SeatFlowTestData
         return new TestUserContext(user.Id);
     }
 
-    public static SeatType SeatType(string code, bool isActive = true) =>
-        new()
-        {
-            Code = code,
-            Name = code,
-            DisplayOrder = code == "STANDARD" ? 1 : 2,
-            IsActive = isActive
-        };
-
-    public static WaterbusService Service(
-        string code,
-        params (SeatType SeatType, decimal Modifier, bool IsActive)[] prices)
+    public static WaterbusService Service(string code)
     {
         return new WaterbusService
         {

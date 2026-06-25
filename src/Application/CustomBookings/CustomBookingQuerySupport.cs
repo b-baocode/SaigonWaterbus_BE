@@ -1,0 +1,98 @@
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Entities;
+
+namespace SaigonWaterbus.Application.CustomBookings;
+
+internal static class CustomBookingQuerySupport
+{
+    public static IQueryable<CustomBooking> BuildDetailQuery(IApplicationDbContext context) =>
+        context.Set<CustomBooking>()
+            .Include(b => b.Vessel)
+            .Include(b => b.FromStation)
+            .Include(b => b.ToStation)
+            .Include(b => b.Promotion)
+            .Include(b => b.ItineraryStops)
+                .ThenInclude(s => s.Station)
+            .Include(b => b.Passengers)
+            .Include(b => b.Payments)
+            .Include(b => b.Tickets);
+
+    public static CustomBookingDetailDto ToDetailDto(
+        CustomBooking booking,
+        IReadOnlyCollection<Route>? relatedRoutes = null)
+    {
+        var routeEstimate = CustomBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
+
+        return new CustomBookingDetailDto(
+            booking.Id,
+            booking.BookingCode,
+            booking.Created,
+            booking.BookingStatus.ToString(),
+            booking.PaymentStatus,
+            booking.Vessel?.Name,
+            booking.PassengerCount,
+            booking.AdultCount,
+            booking.ChildCount,
+            booking.PreferredNumberOfDecks,
+            booking.PreferredSeatSetupType?.ToString(),
+            booking.DepartureDate,
+            booking.StartTime,
+            booking.RentalUnit.ToString(),
+            booking.DurationValue,
+            CustomBookingRoutePricingSupport.ToDto(
+                routeEstimate,
+                booking.RentalUnit,
+                booking.DurationValue),
+            booking.FromStation?.StationName,
+            booking.ToStation?.StationName,
+            booking.ItineraryStops
+                .OrderBy(x => x.StopOrder)
+                .Select(x => new CustomBookingItineraryStopDto(
+                    x.StationId,
+                    x.Station.StationName,
+                    x.StopOrder,
+                    x.StayDurationMinutes,
+                    x.Note))
+                .ToList(),
+            booking.VesselRequirements,
+            booking.SpecialRequests,
+            booking.SubtotalAmount,
+            booking.DiscountAmount,
+            booking.Promotion?.PromotionCode,
+            booking.TotalAmount,
+            booking.ContactName,
+            booking.ContactPhone,
+            booking.ContactEmail,
+            booking.Passengers
+                .OrderBy(x => x.FullName)
+                .Select(CustomBookingPassengerSupport.ToDto)
+                .ToList(),
+            booking.Payments
+                .OrderByDescending(x => x.Created)
+                .Select(x => new CustomBookingPaymentDto(
+                    x.Id,
+                    x.PaymentCode,
+                    x.Provider,
+                    x.ProviderTransactionId,
+                    x.Amount,
+                    x.Currency,
+                    x.PaymentMethod,
+                    x.PaymentPurpose,
+                    x.PaymentStatus,
+                    x.CheckoutUrl,
+                    x.QrCode,
+                    x.PaidAt,
+                    x.RefundAmount,
+                    x.RefundReferenceId,
+                    x.RefundPayoutId,
+                    x.RefundStatus,
+                    x.RefundFailureReason,
+                    x.RefundedAt))
+                .ToList(),
+            booking.Tickets
+                .Where(x => x.BookingPassengerId == null)
+                .OrderByDescending(x => x.IssuedAt)
+                .Select(CustomBookingTicketSupport.ToDto)
+                .FirstOrDefault());
+    }
+}

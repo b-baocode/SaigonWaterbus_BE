@@ -7,4 +7,6 @@ public sealed record TicketTypeDto(
     string? Description,
     decimal PriceModifier,
     int PointsEarnedRate,
-    bool IsActive);
+    bool IsActive,
+    int DisplayOrder,
+    string Category);
