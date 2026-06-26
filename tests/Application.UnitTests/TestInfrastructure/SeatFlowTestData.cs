@@ -70,24 +70,14 @@ internal static class SeatFlowTestData
         return new TestUserContext(user.Id);
     }
 
-    public static WaterbusService Service(string code)
-    {
-        return new WaterbusService
-        {
-            Code = code,
-            Name = code,
-            IsActive = true
-        };
-    }
-
-    public static Vessel Vessel(
+    public static Boat Boat(
         SeatSetupType setupType,
         bool seatsConfigured = false,
-        VesselStatus status = VesselStatus.Inactive) =>
+        BoatStatus status = BoatStatus.Inactive) =>
         new()
         {
             Code = $"VESSEL_{Guid.NewGuid():N}"[..20],
-            Name = "Validation vessel",
+            Name = "Validation boat",
             Status = status,
             SeatCount = 4,
             NumberOfDecks = 1,
@@ -110,20 +100,20 @@ internal sealed class TestDatabaseExceptionClassifier : IDatabaseExceptionClassi
     public bool IsExclusionConstraintViolation(Exception exception) => false;
 }
 
-internal sealed class TestVesselImageStorageService : IVesselImageStorageService
+internal sealed class TestBoatImageStorageService : IBoatImageStorageService
 {
     public long MaxImageBytes => 5 * 1024 * 1024;
 
     public IReadOnlyCollection<string> AllowedImageContentTypes { get; } =
         ["image/jpeg", "image/png", "image/webp"];
 
-    public Task<StoredVesselImage> UploadImageAsync(
-        VesselImageUpload upload,
+    public Task<StoredBoatImage> UploadImageAsync(
+        BoatImageUpload upload,
         CancellationToken cancellationToken)
     {
-        var imageId = upload.ImageId ?? upload.VesselId;
-        return Task.FromResult(new StoredVesselImage(
-            $"https://example.test/vessels/{upload.VesselId}/{imageId:N}",
+        var imageId = upload.ImageId ?? upload.BoatId;
+        return Task.FromResult(new StoredBoatImage(
+            $"https://example.test/boats/{upload.BoatId}/{imageId:N}",
             imageId.ToString("N")));
     }
 }

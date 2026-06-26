@@ -16,9 +16,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
 
-    public DbSet<WaterbusService> WaterbusServices => Set<WaterbusService>();
-
-    public DbSet<Vessel> Vessels => Set<Vessel>();
+    public DbSet<Boat> Boats => Set<Boat>();
 
     public DbSet<Seat> Seats => Set<Seat>();
 
@@ -29,8 +27,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<RouteStop> RouteStops => Set<RouteStop>();
 
     public DbSet<Trip> Trips => Set<Trip>();
-
-    public DbSet<FareMatrix> FareMatrices => Set<FareMatrix>();
 
     public DbSet<Promotion> Promotions => Set<Promotion>();
 

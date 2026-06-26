@@ -41,7 +41,6 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
         var stops = booking.Trip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
         var fromStop = stops.FirstOrDefault();
         var toStop = stops.LastOrDefault();
-        var unitPrice = booking.Passengers.Count == 0 ? 0 : booking.SubtotalAmount / booking.Passengers.Count;
 
         var items = booking.Passengers.Select(i => new BookingItemDto(
             i.Id,
@@ -49,12 +48,12 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             i.FullName,
             i.PhoneNumber,
             i.PassengerType ?? "Passenger",
-            null,
+            i.SeatCode,
             fromStop?.Station.StationName ?? string.Empty,
             toStop?.Station.StationName ?? string.Empty,
             booking.Trip?.DepartureTime,
             booking.Trip?.ArrivalTime,
-            unitPrice,
+            i.UnitPrice,
             booking.BookingStatus.ToString())).ToList();
 
         return new BookingDetailDto(

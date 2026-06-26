@@ -13,9 +13,8 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("trip_id");
 
-        builder.Property(x => x.WaterbusServiceId).HasColumnName("service_id");
         builder.Property(x => x.RouteId).HasColumnName("route_id").IsRequired();
-        builder.Property(x => x.VesselId).HasColumnName("vessel_id");
+        builder.Property(x => x.BoatId).HasColumnName("boat_id");
         builder.Property(x => x.TripCode).HasColumnName("trip_code").HasMaxLength(50).IsRequired();
         builder.HasIndex(x => x.TripCode).IsUnique();
 
@@ -35,9 +34,8 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
 
         builder.HasIndex(x => new { x.RouteId, x.OperatingDate });
 
-        builder.HasOne(x => x.WaterbusService).WithMany().HasForeignKey(x => x.WaterbusServiceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Route).WithMany(r => r.Trips).HasForeignKey(x => x.RouteId).OnDelete(DeleteBehavior.Restrict);
-        builder.HasOne(x => x.Vessel).WithMany().HasForeignKey(x => x.VesselId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.Boat).WithMany().HasForeignKey(x => x.BoatId).OnDelete(DeleteBehavior.SetNull);
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");

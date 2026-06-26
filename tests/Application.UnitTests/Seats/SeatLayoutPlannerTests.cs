@@ -23,14 +23,14 @@ public class SeatLayoutPlannerTests
     }
 
     [Test]
-    public void NormalizeSeatTypeNameRejectsCabinForFullStandardVessel()
+    public void NormalizeSeatTypeNameRejectsCabinForFullStandardBoat()
     {
         Should.Throw<ValidationException>(() =>
             SeatSupport.NormalizeSeatTypeName("CABIN", SeatSetupType.FullStandard));
     }
 
     [Test]
-    public void NormalizeSeatTypeNameRejectsStandardForSightseeingVessel()
+    public void NormalizeSeatTypeNameRejectsStandardForSightseeingBoat()
     {
         Should.Throw<ValidationException>(() =>
             SeatSupport.NormalizeSeatTypeName("STANDARD", SeatSetupType.StandardAndVip));

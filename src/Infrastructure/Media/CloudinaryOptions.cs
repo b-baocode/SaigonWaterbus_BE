@@ -12,13 +12,13 @@ public sealed class CloudinaryOptions
 
     public string AvatarFolder { get; set; } = "saigon-waterbus/avatars";
 
-    public string VesselFolder { get; set; } = "saigon-waterbus/vessels";
+    public string BoatFolder { get; set; } = "saigon-waterbus/boats";
 
     public string StationFolder { get; set; } = "saigon-waterbus/stations";
 
     public long MaxAvatarBytes { get; set; } = 5 * 1024 * 1024;
 
-    public long MaxVesselImageBytes { get; set; } = 5 * 1024 * 1024;
+    public long MaxBoatImageBytes { get; set; } = 5 * 1024 * 1024;
 
     public long MaxStationImageBytes { get; set; } = 5 * 1024 * 1024;
 
@@ -29,7 +29,7 @@ public sealed class CloudinaryOptions
         "image/webp"
     ];
 
-    public string[] AllowedVesselImageContentTypes { get; set; } =
+    public string[] AllowedBoatImageContentTypes { get; set; } =
     [
         "image/jpeg",
         "image/png",

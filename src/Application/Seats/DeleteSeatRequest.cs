@@ -4,15 +4,15 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record DeleteSeatRequest(Guid VesselId, Guid SeatId);
+public sealed record DeleteSeatRequest(Guid BoatId, Guid SeatId);
 
 public sealed class DeleteSeatRequestValidator : AbstractValidator<DeleteSeatRequest>
 {
     public DeleteSeatRequestValidator()
     {
-        RuleFor(x => x.VesselId)
+        RuleFor(x => x.BoatId)
             .NotEmpty()
-            .WithMessage("VesselId không hợp lệ.");
+            .WithMessage("BoatId không hợp lệ.");
 
         RuleFor(x => x.SeatId)
             .NotEmpty()
@@ -35,21 +35,21 @@ public sealed class DeleteSeatRequestUseCase
     {
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
-        var vessel = await _context.Vessels
-            .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
+        var boat = await _context.Boats
+            .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
         var seat = await _context.Seats
-            .SingleOrDefaultAsync(x => x.Id == request.SeatId && x.VesselId == vessel.Id, cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == request.SeatId && x.BoatId == boat.Id, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy ghế.");
 
         _context.Seats.Remove(seat);
         var remainingCount = await _context.Seats
-            .CountAsync(x => x.VesselId == vessel.Id && x.Id != seat.Id, cancellationToken);
-        vessel.SeatsConfigured = remainingCount == vessel.SeatCount;
-        if (!vessel.SeatsConfigured)
+            .CountAsync(x => x.BoatId == boat.Id && x.Id != seat.Id, cancellationToken);
+        boat.SeatsConfigured = remainingCount == boat.SeatCount;
+        if (!boat.SeatsConfigured)
         {
-            vessel.Status = VesselStatus.Inactive;
+            boat.Status = BoatStatus.Inactive;
         }
         await _context.SaveChangesAsync(cancellationToken);
 

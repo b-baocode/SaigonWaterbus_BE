@@ -26,6 +26,8 @@ public sealed class BookingTicketConfiguration : IEntityTypeConfiguration<Bookin
         builder.Property(x => x.IssuedAt).HasColumnName("issued_at").IsRequired();
         builder.Property(x => x.CheckedInAt).HasColumnName("checked_in_at");
         builder.Property(x => x.CheckedInByUserId).HasColumnName("checked_in_by_user_id");
+        builder.Property(x => x.CheckedOutAt).HasColumnName("checked_out_at");
+        builder.Property(x => x.CheckedOutByUserId).HasColumnName("checked_out_by_user_id");
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
         builder.Ignore(x => x.CreatedBy);
@@ -54,6 +56,11 @@ public sealed class BookingTicketConfiguration : IEntityTypeConfiguration<Bookin
         builder.HasOne(x => x.CheckedInByUser)
             .WithMany()
             .HasForeignKey(x => x.CheckedInByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.CheckedOutByUser)
+            .WithMany()
+            .HasForeignKey(x => x.CheckedOutByUserId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

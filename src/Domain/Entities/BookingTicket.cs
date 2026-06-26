@@ -14,8 +14,11 @@ public class BookingTicket : BaseGuidAuditableEntity
     public DateTimeOffset IssuedAt { get; set; }
     public DateTimeOffset? CheckedInAt { get; set; }
     public Guid? CheckedInByUserId { get; set; }
+    public DateTimeOffset? CheckedOutAt { get; set; }
+    public Guid? CheckedOutByUserId { get; set; }
 
     public Booking Booking { get; set; } = null!;
     public BookingPassenger? BookingPassenger { get; set; }
     public User? CheckedInByUser { get; set; }
+    public User? CheckedOutByUser { get; set; }
 }

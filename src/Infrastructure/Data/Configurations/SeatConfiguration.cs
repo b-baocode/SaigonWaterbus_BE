@@ -15,8 +15,8 @@ public sealed class SeatConfiguration : IEntityTypeConfiguration<Seat>
         builder.Property(x => x.Id)
             .HasColumnName("seat_id");
 
-        builder.Property(x => x.VesselId)
-            .HasColumnName("vessel_id");
+        builder.Property(x => x.BoatId)
+            .HasColumnName("boat_id");
 
         builder.Property(x => x.Code)
             .HasColumnName("seat_code")
@@ -52,15 +52,15 @@ public sealed class SeatConfiguration : IEntityTypeConfiguration<Seat>
         builder.Ignore(x => x.LastModified);
         builder.Ignore(x => x.LastModifiedBy);
 
-        builder.HasIndex(x => new { x.VesselId, x.Code })
+        builder.HasIndex(x => new { x.BoatId, x.Code })
             .IsUnique();
 
-        builder.HasIndex(x => new { x.VesselId, x.Deck, x.Row, x.Column })
+        builder.HasIndex(x => new { x.BoatId, x.Deck, x.Row, x.Column })
             .IsUnique();
 
-        builder.HasOne(x => x.Vessel)
+        builder.HasOne(x => x.Boat)
             .WithMany(x => x.Seats)
-            .HasForeignKey(x => x.VesselId)
+            .HasForeignKey(x => x.BoatId)
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
     }

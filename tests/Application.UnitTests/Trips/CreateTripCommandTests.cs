@@ -17,7 +17,6 @@ public class CreateTripCommandTests
         var stationA = Station("A", "Ben A");
         var stationB = Station("B", "Ben B");
         var route = Route("R1", stationA, stationB);
-        var service = SeatFlowTestData.Service("SVC1");
         var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
         var existingTrip = new Trip
         {
@@ -31,7 +30,7 @@ public class CreateTripCommandTests
             TripStatus = TripStatus.Scheduled
         };
 
-        context.AddRange(route, service, existingTrip);
+        context.AddRange(route, existingTrip);
         await context.SaveChangesAsync();
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
@@ -49,7 +48,6 @@ public class CreateTripCommandTests
         var stationA = Station("A", "Ben A");
         var stationB = Station("B", "Ben B");
         var route = Route("R1", stationA, stationB);
-        var service = SeatFlowTestData.Service("SVC1");
         var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
         var existingTrip = new Trip
         {
@@ -63,7 +61,7 @@ public class CreateTripCommandTests
             TripStatus = TripStatus.Cancelled
         };
 
-        context.AddRange(route, service, existingTrip);
+        context.AddRange(route, existingTrip);
         await context.SaveChangesAsync();
 
         var result = await new CreateTripCommandHandler(context)

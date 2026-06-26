@@ -67,7 +67,7 @@ public sealed class Bookings : IEndpointGroup
                 "fromStationCode / toStationCode: lay tu GET /api/trips/{id} → stops[].stationCode.",
                 "fromStationCode phai co stop_order nho hon toStationCode.",
                 "Toi da 10 ghe trong 1 lan dat.",
-                "Gia tu dong tinh: FareMatrix.BasePrice x ticket type modifier.",
+                "Gia tu dong tinh theo gia cua seatTypeCode cua ghe x ticket type modifier.",
                 "bookingStatus sau khi tao: PendingPayment.",
                 "Tra ve 400 neu ghe da bi dat hoac giu truoc do (race condition)."));
     }

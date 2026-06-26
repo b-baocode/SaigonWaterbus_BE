@@ -3,15 +3,15 @@ using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record UpdateSeatRequest(Guid VesselId, Guid SeatId, string? Code);
+public sealed record UpdateSeatRequest(Guid BoatId, Guid SeatId, string? Code);
 
 public sealed class UpdateSeatRequestValidator : AbstractValidator<UpdateSeatRequest>
 {
     public UpdateSeatRequestValidator()
     {
-        RuleFor(x => x.VesselId)
+        RuleFor(x => x.BoatId)
             .NotEmpty()
-            .WithMessage("VesselId không hợp lệ.");
+            .WithMessage("BoatId không hợp lệ.");
 
         RuleFor(x => x.SeatId)
             .NotEmpty()
@@ -23,6 +23,7 @@ public sealed class UpdateSeatRequestValidator : AbstractValidator<UpdateSeatReq
             .MaximumLength(20)
             .WithMessage("Mã ghế không được vượt quá 20 ký tự.")
             .When(x => x.Code is not null);
+
     }
 }
 
@@ -42,14 +43,14 @@ public sealed class UpdateSeatRequestUseCase
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
         var seat = await _context.Seats
-            .SingleOrDefaultAsync(x => x.Id == request.SeatId && x.VesselId == request.VesselId, cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == request.SeatId && x.BoatId == request.BoatId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy ghế.");
 
         if (request.Code is not null)
         {
             var normalizedCode = request.Code.Trim().ToUpperInvariant();
             var codeExists = await _context.Seats
-                .AnyAsync(x => x.VesselId == request.VesselId && x.Code == normalizedCode && x.Id != request.SeatId, cancellationToken);
+                .AnyAsync(x => x.BoatId == request.BoatId && x.Code == normalizedCode && x.Id != request.SeatId, cancellationToken);
             if (codeExists)
                 throw AuthSupport.CreateValidationException(nameof(request.Code), "Mã ghế đã tồn tại trên tàu này.");
 

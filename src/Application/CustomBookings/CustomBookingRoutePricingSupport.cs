@@ -125,13 +125,13 @@ internal static class CustomBookingRoutePricingSupport
 
     public static CustomBookingRoutePricingEstimate EstimatePrice(
         CustomBooking booking,
-        Vessel vessel,
-        VesselRentalUnit rentalUnit,
+        Boat boat,
+        BoatRentalUnit rentalUnit,
         int requestedDurationValue,
         IReadOnlyCollection<Route>? relatedRoutes = null)
     {
         var routeEstimate = EstimateRoute(booking, relatedRoutes);
-        var unitPrice = ResolveUnitPrice(vessel, rentalUnit);
+        var unitPrice = ResolveUnitPrice(boat, rentalUnit);
         var chargeableDurationValue = ResolveChargeableDurationValue(
             rentalUnit,
             requestedDurationValue,
@@ -145,7 +145,7 @@ internal static class CustomBookingRoutePricingSupport
     }
 
     public static int ResolveChargeableDurationValue(
-        VesselRentalUnit rentalUnit,
+        BoatRentalUnit rentalUnit,
         int requestedDurationValue,
         CustomBookingRouteEstimate routeEstimate)
     {
@@ -155,7 +155,7 @@ internal static class CustomBookingRoutePricingSupport
             return requested;
         }
 
-        var requiredUnits = rentalUnit == VesselRentalUnit.Day
+        var requiredUnits = rentalUnit == BoatRentalUnit.Day
             ? (int)Math.Ceiling(routeEstimate.EstimatedDurationMinutes / (double)MinutesPerChargeableDay)
             : (int)Math.Ceiling(routeEstimate.EstimatedDurationMinutes / 60d);
 
@@ -163,10 +163,10 @@ internal static class CustomBookingRoutePricingSupport
     }
 
     public static void EnsureCanAutoPrice(
-        VesselRentalUnit rentalUnit,
+        BoatRentalUnit rentalUnit,
         CustomBookingRouteEstimate routeEstimate)
     {
-        if (rentalUnit == VesselRentalUnit.Day)
+        if (rentalUnit == BoatRentalUnit.Day)
         {
             return;
         }
@@ -184,7 +184,7 @@ internal static class CustomBookingRoutePricingSupport
 
     public static CustomBookingRouteEstimateDto ToDto(
         CustomBookingRouteEstimate estimate,
-        VesselRentalUnit rentalUnit,
+        BoatRentalUnit rentalUnit,
         int requestedDurationValue)
     {
         return new CustomBookingRouteEstimateDto(
@@ -207,15 +207,15 @@ internal static class CustomBookingRoutePricingSupport
             estimate.HasCompleteTravelTimeEstimate);
     }
 
-    private static decimal ResolveUnitPrice(Vessel vessel, VesselRentalUnit rentalUnit)
+    private static decimal ResolveUnitPrice(Boat boat, BoatRentalUnit rentalUnit)
     {
-        var unitPrice = rentalUnit == VesselRentalUnit.Day
-            ? vessel.DailyRentalPrice
-            : vessel.HourlyRentalPrice;
+        var unitPrice = rentalUnit == BoatRentalUnit.Day
+            ? boat.DailyRentalPrice
+            : boat.HourlyRentalPrice;
 
         if (!unitPrice.HasValue || unitPrice <= 0)
         {
-            var unitName = rentalUnit == VesselRentalUnit.Day ? "ngày" : "giờ";
+            var unitName = rentalUnit == BoatRentalUnit.Day ? "ngày" : "giờ";
             throw new ValidationException([new ValidationFailure(nameof(rentalUnit),
                 $"Tàu chưa cấu hình giá thuê theo {unitName}.")]);
         }

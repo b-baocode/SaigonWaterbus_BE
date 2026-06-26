@@ -12,8 +12,7 @@ using SaigonWaterbus.Application.Common.Validation;
 using SaigonWaterbus.Application.Operations;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.Users;
-using SaigonWaterbus.Application.Vessels;
-using SaigonWaterbus.Application.WaterbusServices;
+using SaigonWaterbus.Application.Boats;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -59,13 +58,13 @@ public static class DependencyInjection
         builder.Services.AddScoped<AssignUserStationsRequestUseCase>();
         builder.Services.AddScoped<DeleteUserRequestUseCase>();
 
-        builder.Services.AddScoped<IVesselManagementService, VesselManagementService>();
-        builder.Services.AddScoped<GetVesselsRequestUseCase>();
-        builder.Services.AddScoped<GetVesselByIdRequestUseCase>();
-        builder.Services.AddScoped<CreateVesselRequestUseCase>();
-        builder.Services.AddScoped<UpdateVesselRequestUseCase>();
-        builder.Services.AddScoped<UpdateVesselStatusRequestUseCase>();
-        builder.Services.AddScoped<DeleteVesselRequestUseCase>();
+        builder.Services.AddScoped<IBoatManagementService, BoatManagementService>();
+        builder.Services.AddScoped<GetBoatsRequestUseCase>();
+        builder.Services.AddScoped<GetBoatByIdRequestUseCase>();
+        builder.Services.AddScoped<CreateBoatRequestUseCase>();
+        builder.Services.AddScoped<UpdateBoatRequestUseCase>();
+        builder.Services.AddScoped<UpdateBoatStatusRequestUseCase>();
+        builder.Services.AddScoped<DeleteBoatRequestUseCase>();
 
         builder.Services.AddScoped<ISeatManagementService, SeatManagementService>();
         builder.Services.AddScoped<GetSeatsRequestUseCase>();
@@ -76,13 +75,5 @@ public static class DependencyInjection
         builder.Services.AddScoped<DeleteSeatRequestUseCase>();
         builder.Services.AddScoped<DeleteAllSeatsRequestUseCase>();
 
-        builder.Services.AddScoped<IWaterbusServiceManagementService, WaterbusServiceManagementService>();
-        builder.Services.AddScoped<GetWaterbusServicesRequestUseCase>();
-        builder.Services.AddScoped<GetWaterbusServiceByIdRequestUseCase>();
-        builder.Services.AddScoped<GetWaterbusServiceSeatTypesRequestUseCase>();
-        builder.Services.AddScoped<CreateWaterbusServiceRequestUseCase>();
-        builder.Services.AddScoped<UpdateWaterbusServiceRequestUseCase>();
-        builder.Services.AddScoped<UpdateWaterbusServiceStatusRequestUseCase>();
-        builder.Services.AddScoped<DeleteWaterbusServiceRequestUseCase>();
     }
 }

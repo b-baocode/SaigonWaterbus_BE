@@ -25,7 +25,7 @@ public class CreatePaymentCommandTests
             BookingStatus = BookingStatus.Quoted,
             PaymentStatus = "Unpaid",
             DepartureDate = new DateOnly(2030, 1, 1),
-            RentalUnit = VesselRentalUnit.Day,
+            RentalUnit = BoatRentalUnit.Day,
             DurationValue = 1,
             AdultCount = 1,
             PassengerCount = 1,
@@ -40,6 +40,7 @@ public class CreatePaymentCommandTests
             context,
             new TestUserContext(userId),
             new TestPaymentGateway(),
+            new TestPaymentNotificationSender(),
             TimeProvider.System);
 
         var result = await handler.Handle(
@@ -67,7 +68,7 @@ public class CreatePaymentCommandTests
             BookingStatus = BookingStatus.Quoted,
             PaymentStatus = "Unpaid",
             DepartureDate = new DateOnly(2030, 1, 1),
-            RentalUnit = VesselRentalUnit.Day,
+            RentalUnit = BoatRentalUnit.Day,
             DurationValue = 1,
             AdultCount = 1,
             PassengerCount = 1,
@@ -83,6 +84,7 @@ public class CreatePaymentCommandTests
             context,
             new TestUserContext(userId),
             new TestPaymentGateway(gatewayFailure, gatewayFailure),
+            new TestPaymentNotificationSender(),
             TimeProvider.System);
 
         await Should.ThrowAsync<ValidationException>(() =>
@@ -96,6 +98,190 @@ public class CreatePaymentCommandTests
         context.Set<Payment>().Count().ShouldBe(1);
         context.Set<Payment>().Single().PaymentStatus.ShouldBe("Failed");
     }
+
+    [Test]
+    public async Task WebhookPaidDepositSendsPaymentNotification()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var booking = new CustomBooking
+        {
+            UserId = Guid.NewGuid(),
+            BookingCode = "CB-DEPOSIT",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@gmail.com",
+            BookingStatus = BookingStatus.Quoted,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 5000,
+            RemainingAmount = 5000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000001",
+            Provider = "PayOS",
+            Amount = 5000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Deposit",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var sender = new TestPaymentNotificationSender();
+        var handler = new HandlePaymentWebhookCommandHandler(
+            context,
+            new TestPaymentGateway(),
+            sender,
+            TimeProvider.System);
+
+        await handler.Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(1000001, 5000)), CancellationToken.None);
+
+        sender.Notifications.Count.ShouldBe(1);
+        sender.Notifications.Single().BookingCode.ShouldBe("CB-DEPOSIT");
+        sender.Notifications.Single().IsFullyPaid.ShouldBeFalse();
+        sender.Notifications.Single().PaymentPurpose.ShouldBe("Deposit");
+    }
+
+    [Test]
+    public async Task WebhookPaidFullSendsPaymentNotification()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var booking = new CustomBooking
+        {
+            UserId = Guid.NewGuid(),
+            BookingCode = "CB-FULL",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@gmail.com",
+            BookingStatus = BookingStatus.Quoted,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000002",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var sender = new TestPaymentNotificationSender();
+        var handler = new HandlePaymentWebhookCommandHandler(
+            context,
+            new TestPaymentGateway(),
+            sender,
+            TimeProvider.System);
+
+        await handler.Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(1000002, 10000)), CancellationToken.None);
+
+        sender.Notifications.Count.ShouldBe(1);
+        sender.Notifications.Single().BookingCode.ShouldBe("CB-FULL");
+        sender.Notifications.Single().IsFullyPaid.ShouldBeTrue();
+        sender.Notifications.Single().PaymentPurpose.ShouldBe("Full");
+        sender.Notifications.Single().DepositAmount.ShouldBe(10000);
+        sender.Notifications.Single().RemainingAmount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task WebhookPaidRegularBookingCreatesPassengerTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var booking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            BookingCode = "BK-FULL",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@gmail.com",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            FullName = "Nguyen Van A",
+            PassengerType = "ADULT",
+            SeatCode = "A1",
+            UnitPrice = 10000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000003",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(booking, passenger, payment);
+        await context.SaveChangesAsync();
+        var sender = new TestPaymentNotificationSender();
+        var handler = new HandlePaymentWebhookCommandHandler(
+            context,
+            new TestPaymentGateway(),
+            sender,
+            TimeProvider.System);
+
+        await handler.Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(1000003, 10000)), CancellationToken.None);
+
+        var ticket = context.Tickets.Single();
+        ticket.BookingId.ShouldBe(booking.Id);
+        ticket.BookingPassengerId.ShouldBe(passenger.Id);
+        ticket.TicketTypeCode.ShouldBe("ADULT");
+        ticket.TicketTypeName.ShouldBe("Vé người lớn");
+        ticket.TicketStatus.ShouldBe(BookingTicketStatus.Active);
+        ticket.TicketCode.ShouldNotBeNullOrWhiteSpace();
+        ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    private static CustomBookingDepositPaymentWebhook CreatePaidWebhook(long orderCode, long amount) =>
+        new(
+            "00",
+            "success",
+            true,
+            new CustomBookingDepositPaymentWebhookData(
+                orderCode,
+                amount,
+                null,
+                null,
+                null,
+                null,
+                "VND",
+                "payment-link-id",
+                "00",
+                "success",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null),
+            "signature");
 
     private sealed class TestPaymentGateway(
         PaymentGatewayException? createPaymentException = null,
@@ -159,5 +345,27 @@ public class CreatePaymentCommandTests
             Task.FromResult<CustomBookingRefundPayoutResult?>(null);
 
         public bool IsValidWebhook(CustomBookingDepositPaymentWebhook webhook) => true;
+    }
+
+    private sealed class TestPaymentNotificationSender : IPaymentNotificationSender
+    {
+        public List<PaymentSucceededNotification> Notifications { get; } = [];
+        public List<BoardingPassNotification> BoardingPasses { get; } = [];
+
+        public Task SendPaymentSucceededAsync(
+            PaymentSucceededNotification notification,
+            CancellationToken cancellationToken)
+        {
+            Notifications.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task SendBoardingPassAsync(
+            BoardingPassNotification notification,
+            CancellationToken cancellationToken)
+        {
+            BoardingPasses.Add(notification);
+            return Task.CompletedTask;
+        }
     }
 }

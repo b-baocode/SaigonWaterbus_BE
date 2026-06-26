@@ -4,15 +4,15 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record DeleteAllSeatsRequest(Guid VesselId);
+public sealed record DeleteAllSeatsRequest(Guid BoatId);
 
 public sealed class DeleteAllSeatsRequestValidator : AbstractValidator<DeleteAllSeatsRequest>
 {
     public DeleteAllSeatsRequestValidator()
     {
-        RuleFor(x => x.VesselId)
+        RuleFor(x => x.BoatId)
             .NotEmpty()
-            .WithMessage("VesselId không hợp lệ.");
+            .WithMessage("BoatId không hợp lệ.");
     }
 }
 
@@ -31,18 +31,18 @@ public sealed class DeleteAllSeatsRequestUseCase
     {
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
-        var vessel = await _context.Vessels
-            .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
+        var boat = await _context.Boats
+            .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        var hasAny = await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
+        var hasAny = await _context.Seats.AnyAsync(x => x.BoatId == boat.Id, cancellationToken);
 
         if (!hasAny)
             throw AuthSupport.CreateValidationException("Seats", "Tàu chưa có ghế nào.");
 
-        await _context.Seats.Where(x => x.VesselId == vessel.Id).ExecuteDeleteAsync(cancellationToken);
-        vessel.SeatsConfigured = false;
-        vessel.Status = VesselStatus.Inactive;
+        await _context.Seats.Where(x => x.BoatId == boat.Id).ExecuteDeleteAsync(cancellationToken);
+        boat.SeatsConfigured = false;
+        boat.Status = BoatStatus.Inactive;
         await _context.SaveChangesAsync(cancellationToken);
 
         return new AuthActionResultDto("Xóa toàn bộ sơ đồ ghế thành công.");

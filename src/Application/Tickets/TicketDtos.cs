@@ -12,6 +12,16 @@ public sealed record TicketScanDto(
     DateTimeOffset IssuedAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? CheckedInAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? CheckedInByUserId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CheckedInByName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? CheckedOutAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? CheckedOutByUserId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CheckedOutByName,
     Guid BookingId,
     string BookingCode,
     string BookingType,
@@ -32,16 +42,35 @@ public sealed record TicketScanDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     TimeOnly? StartTime,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TripCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? ScheduledDeparture,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? ScheduledArrival,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? BoatName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? VesselName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? FromStationName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? ToStationName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    TicketScanPassengerDto? TicketPassenger,
     IReadOnlyList<TicketScanPassengerDto> Passengers);
 
 public sealed record TicketScanPassengerDto(
+    Guid PassengerId,
     string FullName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PhoneNumber,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Email,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateOnly? DateOfBirth,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? PassengerType);
+    string? PassengerType,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatCode);

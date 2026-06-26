@@ -7,7 +7,7 @@ public sealed record CreateCustomBookingResult(
     Guid BookingId,
     string BookingCode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? VesselName,
+    string? BoatName,
     decimal SubtotalAmount,
     decimal DiscountAmount,
     decimal TotalAmount,
@@ -16,19 +16,19 @@ public sealed record CreateCustomBookingResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PromotionCode);
 
-public sealed record RentalVesselEstimateListDto(
+public sealed record RentalBoatEstimateListDto(
     int PassengerCount,
     int AdultCount,
     int ChildCount,
     string RentalUnit,
     int DurationValue,
-    int VesselCount,
+    int BoatCount,
     decimal? MinEstimatedPrice,
     decimal? MaxEstimatedPrice,
-    IReadOnlyList<RentalVesselEstimateDto> Vessels);
+    IReadOnlyList<RentalBoatEstimateDto> Boats);
 
-public sealed record RentalVesselEstimateDto(
-    string VesselName,
+public sealed record RentalBoatEstimateDto(
+    string BoatName,
     int SeatCount,
     int NumberOfDecks,
     string SeatSetupType,
@@ -77,7 +77,7 @@ public sealed record AdminCustomBookingListItemDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? ContactEmail,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? VesselName);
+    string? BoatName);
 
 public sealed record CustomBookingListItemDto(
     Guid BookingId,
@@ -87,7 +87,7 @@ public sealed record CustomBookingListItemDto(
     string BookingStatus,
     decimal TotalAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? VesselName);
+    string? BoatName);
 
 public sealed record CustomBookingDetailDto(
     Guid BookingId,
@@ -96,7 +96,7 @@ public sealed record CustomBookingDetailDto(
     string BookingStatus,
     string PaymentStatus,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? VesselName,
+    string? BoatName,
     int PassengerCount,
     int AdultCount,
     int ChildCount,
@@ -116,7 +116,7 @@ public sealed record CustomBookingDetailDto(
     string? ToStationName,
     IReadOnlyList<CustomBookingItineraryStopDto> ItineraryStops,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? VesselRequirements,
+    string? BoatRequirements,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? SpecialRequests,
     decimal SubtotalAmount,
@@ -262,9 +262,9 @@ public sealed record ImportCustomBookingPassengersResult(
     CustomBookingTicketDto? Ticket);
 
 public sealed record QuoteCustomBookingRequest(
-    Guid VesselId,
+    Guid BoatId,
     decimal? SubtotalAmount = null,
-    VesselRentalUnit? RentalUnit = null,
+    BoatRentalUnit? RentalUnit = null,
     int? DurationValue = null,
     string? PromotionCode = null);
 
@@ -274,8 +274,8 @@ public sealed record UpdateCustomBookingStatusRequest(
 public sealed record QuoteCustomBookingResult(
     Guid BookingId,
     string BookingCode,
-    Guid VesselId,
-    string VesselName,
+    Guid BoatId,
+    string BoatName,
     decimal SubtotalAmount,
     decimal DiscountAmount,
     decimal TotalAmount,

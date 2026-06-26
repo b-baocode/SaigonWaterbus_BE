@@ -4,9 +4,7 @@ public interface IFareCalculator
 {
     ///
     Task<decimal> CalculateAsync(
-        Guid routeId,
-        Guid fromStationId,
-        Guid toStationId,
+        Guid seatId,
         Guid ticketTypeId,
         CancellationToken cancellationToken);
 

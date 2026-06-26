@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.BookingHistory;
@@ -8,7 +7,6 @@ namespace SaigonWaterbus.Application.BookingHistory;
 public sealed record BookingHistoryItemDto(
     Guid Id,
     string Type,
-    BookingMode BookingMode,
     string Code,
     DateTimeOffset CreatedAt,
     DateOnly? DepartureDate,
@@ -72,7 +70,6 @@ public sealed class GetMyBookingHistoryQueryHandler
         return new BookingHistoryItemDto(
             booking.Id,
             StandardBookingType,
-            BookingMode.SeatBased,
             booking.BookingCode,
             booking.Created,
             departure.HasValue ? DateOnly.FromDateTime(departure.Value.LocalDateTime) : null,

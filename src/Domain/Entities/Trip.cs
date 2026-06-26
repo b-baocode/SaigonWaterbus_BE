@@ -5,9 +5,8 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class Trip : BaseGuidAuditableEntity
 {
-    public Guid? WaterbusServiceId { get; set; }
     public Guid RouteId { get; set; }
-    public Guid? VesselId { get; set; }
+    public Guid? BoatId { get; set; }
     public string TripCode { get; set; } = null!;
     public DateOnly OperatingDate { get; set; }
     public string? ServicePeriod { get; set; }
@@ -17,7 +16,6 @@ public class Trip : BaseGuidAuditableEntity
     public TripStatus TripStatus { get; set; } = TripStatus.Scheduled;
     public string? StatusNote { get; set; }
 
-    public WaterbusService? WaterbusService { get; set; }
     public Route Route { get; set; } = null!;
-    public Vessel? Vessel { get; set; }
+    public Boat? Boat { get; set; }
 }

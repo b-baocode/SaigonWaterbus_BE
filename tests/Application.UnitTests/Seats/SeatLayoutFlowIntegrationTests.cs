@@ -9,9 +9,9 @@ namespace SaigonWaterbus.Application.UnitTests.Seats;
 public class SeatLayoutFlowIntegrationTests
 {
     [Test]
-    public void VesselSeatsDtoReportsConfiguredWhenSeatCountMatches()
+    public void BoatSeatsDtoReportsConfiguredWhenSeatCountMatches()
     {
-        var vessel = new Vessel
+        var boat = new Boat
         {
             Id = Guid.NewGuid(),
             SeatCount = 4,
@@ -20,13 +20,13 @@ public class SeatLayoutFlowIntegrationTests
         };
         var seats = new List<Seat>
         {
-            Seat(vessel.Id, "1-A1", 1, "A", 1),
-            Seat(vessel.Id, "1-A2", 1, "A", 2),
-            Seat(vessel.Id, "1-B1", 1, "B", 1),
-            Seat(vessel.Id, "1-B2", 1, "B", 2)
+            Seat(boat.Id, "1-A1", 1, "A", 1),
+            Seat(boat.Id, "1-A2", 1, "A", 2),
+            Seat(boat.Id, "1-B1", 1, "B", 1),
+            Seat(boat.Id, "1-B2", 1, "B", 2)
         };
 
-        var dto = SeatSupport.CreateVesselSeatsDto(vessel, seats);
+        var dto = SeatSupport.CreateBoatSeatsDto(boat, seats);
 
         dto.ConfiguredSeats.ShouldBe(4);
         dto.ActiveSeats.ShouldBe(4);
@@ -35,9 +35,9 @@ public class SeatLayoutFlowIntegrationTests
     }
 
     [Test]
-    public void VesselSeatsDtoMapsSeatTypeFromSeatTypeColumn()
+    public void BoatSeatsDtoMapsSeatTypeFromSeatTypeColumn()
     {
-        var vessel = new Vessel
+        var boat = new Boat
         {
             Id = Guid.NewGuid(),
             SeatCount = 1,
@@ -46,16 +46,16 @@ public class SeatLayoutFlowIntegrationTests
         };
         var seats = new List<Seat>
         {
-            Seat(vessel.Id, "1-A1", 1, "A", 1, "CABIN", "Cabin")
+            Seat(boat.Id, "1-A1", 1, "A", 1, "CABIN", "Cabin")
         };
 
-        var dto = SeatSupport.CreateVesselSeatsDto(vessel, seats);
+        var dto = SeatSupport.CreateBoatSeatsDto(boat, seats);
 
         dto.Decks.Single().Rows.Single().Seats.Single().SeatType!.SeatTypeCode.ShouldBe("CABIN");
     }
 
     private static Seat Seat(
-        Guid vesselId,
+        Guid boatId,
         string code,
         int deck,
         string row,
@@ -65,7 +65,7 @@ public class SeatLayoutFlowIntegrationTests
         new()
         {
             Id = Guid.NewGuid(),
-            VesselId = vesselId,
+            BoatId = boatId,
             Code = code,
             Deck = deck,
             Row = row,

@@ -18,7 +18,7 @@ public sealed class CustomBookings : IEndpointGroup
           "childCount": 5,
           "preferredNumberOfDecks": 2,
           "preferredSeatSetupType": "StandardAndVip",
-          "vesselRequirements": "Muốn tàu có khu VIP và không gian tổ chức sinh nhật",
+          "boatRequirements": "Muốn tàu có khu VIP và không gian tổ chức sinh nhật",
           "promotionCode": "SUMMER10",
           "startTime": "08:00:00",
           "fromStationId": null,
@@ -44,7 +44,7 @@ public sealed class CustomBookings : IEndpointGroup
     private const string QuoteCustomBookingExample =
         """
         {
-          "vesselId": "00000000-0000-0000-0000-000000000000",
+          "boatId": "00000000-0000-0000-0000-000000000000",
           "subtotalAmount": null,
           "rentalUnit": "Day",
           "durationValue": 1,
@@ -77,7 +77,7 @@ public sealed class CustomBookings : IEndpointGroup
 
     public static void Map(RouteGroupBuilder group)
     {
-        group.MapGet(GetRentalVessels, "rental-vessels")
+        group.MapGet(GetRentalBoats, "rental-boats")
             .WithSummary("Xem gia tau tham khao cho custom booking")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Public",
@@ -86,7 +86,7 @@ public sealed class CustomBookings : IEndpointGroup
                 "Khong giu tau, khong lock lich, khong phai gia cuoi cung.",
                 "Chi tra ve tau Active, co gia theo rentalUnit, va du suc chua theo adultCount + childCount.",
                 "Khach khong chon tau trong booking; admin van la nguoi chot tau/gia bang API quote.",
-                "Vi du: /api/custom-bookings/rental-vessels?adultCount=15&childCount=5&rentalUnit=Day&durationValue=1&preferredNumberOfDecks=2"));
+                "Vi du: /api/custom-bookings/rental-boats?adultCount=15&childCount=5&rentalUnit=Day&durationValue=1&preferredNumberOfDecks=2"));
 
         group.MapGet(GetAdminCustomBookings, "admin")
             .RequireAuthorization()
@@ -124,7 +124,7 @@ public sealed class CustomBookings : IEndpointGroup
                 "Admin",
                 QuoteCustomBookingExample,
                 "Dung khi customer da gui yeu cau custom booking nhung chua co tau/gia.",
-                "vesselId: tau duoc admin chon, tau phai Active va du suc chua theo adultCount + childCount customer da nhap.",
+                "boatId: tau duoc admin chon, tau phai Active va du suc chua theo adultCount + childCount customer da nhap.",
                 "subtotalAmount: optional; bo trong/null de backend tu tinh theo gia tau, thoi gian/quang duong; gui so tien neu admin muon override gia chot.",
                 "Hour: backend can co du lieu km/thoi gian tu GeoJSON/toa do ben; neu thieu thi tra 400 hoac admin phai nhap subtotalAmount thu cong.",
                 "Hour: so gio tinh tien = max(durationValue, thoi gian hanh trinh lam tron len gio).",
@@ -196,7 +196,7 @@ public sealed class CustomBookings : IEndpointGroup
                 "rentalUnit: Hour hoac Day, la don vi thue khach mong muon.",
                 "durationValue: so gio hoac so ngay thue (1-60).",
                 "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
-                "preferredNumberOfDecks / preferredSeatSetupType / vesselRequirements: yeu cau tham khao de admin chon tau.",
+                "preferredNumberOfDecks / preferredSeatSetupType / boatRequirements: yeu cau tham khao de admin chon tau.",
                 "fromStationId / toStationId: tuy chon, lay tu GET /api/stations → id.",
                 "itineraryStops: tuy chon, danh sach diem dung trung gian; stationId lay tu GET /api/stations → id.",
                 "promotionCode: tuy chon, dung chung bang promotions voi booking thuong.",
@@ -204,16 +204,16 @@ public sealed class CustomBookings : IEndpointGroup
                 "bookingStatus sau khi tao: PendingQuote."));
     }
 
-    private static async Task<IResult> GetRentalVessels(
+    private static async Task<IResult> GetRentalBoats(
         ISender sender,
         [FromQuery] int adultCount,
         [FromQuery] int childCount,
-        [FromQuery] VesselRentalUnit rentalUnit = VesselRentalUnit.Day,
+        [FromQuery] BoatRentalUnit rentalUnit = BoatRentalUnit.Day,
         [FromQuery] int durationValue = 1,
         [FromQuery] int? preferredNumberOfDecks = null,
         [FromQuery] SeatSetupType? preferredSeatSetupType = null,
         CancellationToken ct = default) =>
-        Results.Ok(await sender.Send(new GetRentalVesselEstimatesQuery(
+        Results.Ok(await sender.Send(new GetRentalBoatEstimatesQuery(
             adultCount,
             childCount,
             rentalUnit,
@@ -241,7 +241,7 @@ public sealed class CustomBookings : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new QuoteCustomBookingCommand(
             id,
-            request.VesselId,
+            request.BoatId,
             request.SubtotalAmount,
             request.RentalUnit,
             request.DurationValue,

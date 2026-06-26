@@ -2,9 +2,9 @@ namespace SaigonWaterbus.Domain.Entities;
 
 public class Seat : BaseAuditableEntity
 {
-    public Guid VesselId { get; set; }
+    public Guid BoatId { get; set; }
 
-    public Vessel Vessel { get; set; } = null!;
+    public Boat Boat { get; set; } = null!;
 
     public string SeatTypeCode { get; set; } = "STANDARD";
 

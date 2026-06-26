@@ -9,7 +9,7 @@ public sealed class CustomBookingConfiguration : IEntityTypeConfiguration<Custom
 {
     public void Configure(EntityTypeBuilder<CustomBooking> builder)
     {
-        builder.Property(x => x.VesselId).HasColumnName("vessel_id");
+        builder.Property(x => x.BoatId).HasColumnName("boat_id");
         builder.Property(x => x.FromStationId).HasColumnName("custom_from_station_id");
         builder.Property(x => x.ToStationId).HasColumnName("custom_to_station_id");
         builder.Property(x => x.DepartureDate).HasColumnName("departure_date");
@@ -27,16 +27,16 @@ public sealed class CustomBookingConfiguration : IEntityTypeConfiguration<Custom
             .HasColumnName("preferred_seat_setup_type")
             .HasConversion<string>()
             .HasMaxLength(30);
-        builder.Property(x => x.VesselRequirements).HasColumnName("vessel_requirements").HasMaxLength(1000);
+        builder.Property(x => x.BoatRequirements).HasColumnName("boat_requirements").HasMaxLength(1000);
         builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
         builder.Property(x => x.HoldExpiresAt).HasColumnName("hold_expires_at");
 
-        builder.HasIndex(x => new { x.VesselId, x.DepartureDate })
-            .HasDatabaseName("ux_bookings_vessel_date_active")
+        builder.HasIndex(x => new { x.BoatId, x.DepartureDate })
+            .HasDatabaseName("ux_bookings_boat_date_active")
             .IsUnique()
             .HasFilter("booking_type = 'CustomBooking' AND status IN ('Quoted', 'Confirmed')");
 
-        builder.HasOne(x => x.Vessel).WithMany().HasForeignKey(x => x.VesselId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.Boat).WithMany().HasForeignKey(x => x.BoatId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.FromStation).WithMany().HasForeignKey(x => x.FromStationId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.ToStation).WithMany().HasForeignKey(x => x.ToStationId).OnDelete(DeleteBehavior.SetNull);
     }

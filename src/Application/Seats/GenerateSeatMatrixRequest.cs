@@ -10,15 +10,15 @@ public sealed record DeckMatrixConfigDto(
     int RowCount,
     int ColumnCount);
 
-public sealed record GenerateSeatMatrixRequest(Guid VesselId, IReadOnlyCollection<DeckMatrixConfigDto> Decks);
+public sealed record GenerateSeatMatrixRequest(Guid BoatId, IReadOnlyCollection<DeckMatrixConfigDto> Decks);
 
 public sealed class GenerateSeatMatrixRequestValidator : AbstractValidator<GenerateSeatMatrixRequest>
 {
     public GenerateSeatMatrixRequestValidator()
     {
-        RuleFor(x => x.VesselId)
+        RuleFor(x => x.BoatId)
             .NotEmpty()
-            .WithMessage("VesselId không hợp lệ.");
+            .WithMessage("BoatId không hợp lệ.");
 
         RuleFor(x => x.Decks)
             .NotEmpty()
@@ -57,57 +57,57 @@ public sealed class GenerateSeatMatrixRequestUseCase
         _userContext = userContext;
     }
 
-    public async Task<VesselSeatsDto> ExecuteAsync(GenerateSeatMatrixRequest request, CancellationToken cancellationToken)
+    public async Task<BoatSeatsDto> ExecuteAsync(GenerateSeatMatrixRequest request, CancellationToken cancellationToken)
     {
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
-        var vessel = await _context.Vessels
-            .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
+        var boat = await _context.Boats
+            .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        await EnsureVesselHasNoLayoutAsync(vessel.Id, cancellationToken);
-        EnsureDecksMatchVessel(vessel, request.Decks);
+        await EnsureBoatHasNoLayoutAsync(boat.Id, cancellationToken);
+        EnsureDecksMatchBoat(boat, request.Decks);
         var deckLayouts = request.Decks
             .OrderBy(x => x.DeckNumber)
             .Select(deck => new SeatDeckLayout(deck.DeckNumber, deck.RowCount, deck.ColumnCount))
             .ToArray();
 
-        vessel.SeatsConfigured = false;
-        vessel.Status = VesselStatus.Inactive;
+        boat.SeatsConfigured = false;
+        boat.Status = BoatStatus.Inactive;
 
-        return SeatSupport.CreateVesselSeatsDto(
-            vessel,
+        return SeatSupport.CreateBoatSeatsDto(
+            boat,
             [],
             deckLayouts,
             previewEmptyCellsAsSeats: true);
     }
 
-    private async Task EnsureVesselHasNoLayoutAsync(Guid vesselId, CancellationToken cancellationToken)
+    private async Task EnsureBoatHasNoLayoutAsync(Guid boatId, CancellationToken cancellationToken)
     {
-        var hasExistingLayout = await _context.Seats.AnyAsync(x => x.VesselId == vesselId, cancellationToken);
+        var hasExistingLayout = await _context.Seats.AnyAsync(x => x.BoatId == boatId, cancellationToken);
 
         if (hasExistingLayout)
             throw AuthSupport.CreateValidationException("Seats", "Tàu đã có sơ đồ ghế. Xóa toàn bộ trước khi generate lại.");
     }
 
-    internal static void EnsureDecksMatchVessel(
-        Vessel vessel,
+    internal static void EnsureDecksMatchBoat(
+        Boat boat,
         IReadOnlyCollection<DeckMatrixConfigDto> decks)
     {
-        if (decks.Count != vessel.NumberOfDecks)
+        if (decks.Count != boat.NumberOfDecks)
             throw AuthSupport.CreateValidationException(
                 "Decks",
-                $"Số tầng cấu hình ({decks.Count}) không khớp với NumberOfDecks của tàu ({vessel.NumberOfDecks}).");
+                $"Số tầng cấu hình ({decks.Count}) không khớp với NumberOfDecks của tàu ({boat.NumberOfDecks}).");
 
         var deckNumbers = decks
             .Select(d => d.DeckNumber)
             .OrderBy(deckNumber => deckNumber)
             .ToArray();
-        var expectedDeckNumbers = Enumerable.Range(1, vessel.NumberOfDecks).ToArray();
+        var expectedDeckNumbers = Enumerable.Range(1, boat.NumberOfDecks).ToArray();
 
         if (!deckNumbers.SequenceEqual(expectedDeckNumbers))
             throw AuthSupport.CreateValidationException(
                 "Decks",
-                $"Số tầng cấu hình phải liên tục từ 1 đến {vessel.NumberOfDecks}.");
+                $"Số tầng cấu hình phải liên tục từ 1 đến {boat.NumberOfDecks}.");
     }
 }

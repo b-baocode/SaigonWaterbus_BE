@@ -16,5 +16,4 @@ public class Route : BaseGuidAuditableEntity
 
     public ICollection<RouteStop> RouteStops { get; set; } = new List<RouteStop>();
     public ICollection<Trip> Trips { get; set; } = new List<Trip>();
-    public ICollection<FareMatrix> FareMatrices { get; set; } = new List<FareMatrix>();
 }

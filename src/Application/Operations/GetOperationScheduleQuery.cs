@@ -3,7 +3,6 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Operations;
 
@@ -13,13 +12,9 @@ public sealed record OperationScheduleItemDto(
     Guid SourceId,
     string SourceCode,
     string Title,
-    Guid? ServiceId,
-    string? ServiceCode,
-    string? ServiceName,
-    BookingMode? BookingMode,
-    Guid? VesselId,
-    string? VesselCode,
-    string? VesselName,
+    Guid? BoatId,
+    string? BoatCode,
+    string? BoatName,
     Guid? RouteId,
     string? RouteCode,
     string? RouteName,

@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -13,41 +14,24 @@ public sealed class FareCalculator : IFareCalculator
     public FareCalculator(IApplicationDbContext context) => _context = context;
 
     public async Task<decimal> CalculateAsync(
-        Guid routeId,
-        Guid fromStationId,
-        Guid toStationId,
+        Guid seatId,
         Guid ticketTypeId,
         CancellationToken cancellationToken)
     {
-        var (basePrice, ticketModifier) = await GetBaseComponentsAsync(
-            routeId,
-            fromStationId,
-            toStationId,
-            ticketTypeId,
-            cancellationToken);
+        var seat = await _context.Set<Seat>()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == seatId, cancellationToken)
+            ?? throw new NotFoundException($"Seat {seatId} not found.");
 
-        return basePrice * ticketModifier;
-    }
-
-    private async Task<(decimal BasePrice, decimal TicketModifier)> GetBaseComponentsAsync(
-        Guid routeId,
-        Guid fromStationId,
-        Guid toStationId,
-        Guid ticketTypeId,
-        CancellationToken cancellationToken)
-    {
-        var basePrice = await _context.Set<FareMatrix>()
-            .Where(f => f.RouteId == routeId
-                     && f.FromStationId == fromStationId
-                     && f.ToStationId == toStationId
-                     && f.IsActive)
-            .Select(f => (decimal?)f.BasePrice)
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException($"No active fare defined for this station pair on route {routeId}.");
+        if (!seat.IsActive)
+            throw new NotFoundException($"Seat {seat.Code} is not active.");
 
         var ticketType = TicketTypeCatalog.FindActiveById(ticketTypeId)
             ?? throw new NotFoundException($"Ticket type {ticketTypeId} not found or inactive.");
 
-        return (basePrice, ticketType.PriceModifier);
+        if (!SeatTypePricing.TryGetBasePrice(seat.SeatTypeCode, out var basePrice))
+            throw new NotFoundException($"Seat type {seat.SeatTypeCode} does not have a valid price.");
+
+        return basePrice * ticketType.PriceModifier;
     }
 }

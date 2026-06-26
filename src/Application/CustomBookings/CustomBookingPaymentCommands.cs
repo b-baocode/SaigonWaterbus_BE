@@ -2,6 +2,7 @@ using System.Globalization;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -36,17 +37,20 @@ public sealed class CreateCustomBookingPaymentCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
 
     public CreateCustomBookingPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICustomBookingPaymentGateway paymentGateway,
+        IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
+        _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
     }
 
@@ -145,11 +149,24 @@ public sealed class CreateCustomBookingPaymentCommandHandler
             throw new ValidationException([new ValidationFailure("payment", ex.Message)]);
         }
 
-        payment.ProviderTransactionId = paymentResult.PaymentLinkId;
-        payment.CheckoutUrl = paymentResult.CheckoutUrl;
         payment.QrCode = paymentResult.QrCode;
-        payment.PaymentStatus = CustomBookingPaymentSupport.ResolvePaymentStatus(paymentResult.Status);
+        var wasPaid = CustomBookingPaymentSupport.IsPaid(payment.PaymentStatus);
+        CustomBookingPaymentSupport.ApplyPaymentStatus(
+            booking,
+            payment,
+            paymentResult.Status,
+            paymentResult.PaymentLinkId,
+            paymentResult.CheckoutUrl,
+            now);
         await _context.SaveChangesAsync(cancellationToken);
+        await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+            _context,
+            _timeProvider,
+            _paymentNotificationSender,
+            booking,
+            payment,
+            wasPaid,
+            cancellationToken);
 
         return CustomBookingPaymentSupport.ToCreatePaymentResult(booking, payment);
     }
@@ -171,6 +188,7 @@ public sealed class CreateCustomBookingPaymentCommandHandler
                 return false;
             }
 
+            var wasPaid = CustomBookingPaymentSupport.IsPaid(payment.PaymentStatus);
             CustomBookingPaymentSupport.ApplyPaymentStatus(
                 booking,
                 payment,
@@ -179,6 +197,14 @@ public sealed class CreateCustomBookingPaymentCommandHandler
                 paymentStatus.CheckoutUrl,
                 _timeProvider.GetUtcNow());
             await _context.SaveChangesAsync(cancellationToken);
+            await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+                _context,
+                _timeProvider,
+                _paymentNotificationSender,
+                booking,
+                payment,
+                wasPaid,
+                cancellationToken);
             return true;
         }
         catch (PaymentGatewayException)
@@ -206,17 +232,20 @@ public sealed class SyncCustomBookingPaymentCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
 
     public SyncCustomBookingPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICustomBookingPaymentGateway paymentGateway,
+        IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
+        _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
     }
 
@@ -262,6 +291,7 @@ public sealed class SyncCustomBookingPaymentCommandHandler
                 "Số tiền thanh toán PayOS không khớp booking.")]);
         }
 
+        var wasPaid = CustomBookingPaymentSupport.IsPaid(payment.PaymentStatus);
         CustomBookingPaymentSupport.ApplyPaymentStatus(
             booking,
             payment,
@@ -270,6 +300,14 @@ public sealed class SyncCustomBookingPaymentCommandHandler
             paymentStatus.CheckoutUrl,
             _timeProvider.GetUtcNow());
         await _context.SaveChangesAsync(cancellationToken);
+        await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+            _context,
+            _timeProvider,
+            _paymentNotificationSender,
+            booking,
+            payment,
+            wasPaid,
+            cancellationToken);
 
         return CustomBookingPaymentSupport.ToSyncPaymentResult(booking, payment);
     }
@@ -284,15 +322,18 @@ public sealed class HandleCustomBookingPaymentWebhookCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
 
     public HandleCustomBookingPaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICustomBookingPaymentGateway paymentGateway,
+        IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider)
     {
         _context = context;
         _paymentGateway = paymentGateway;
+        _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
     }
 
@@ -334,6 +375,16 @@ public sealed class HandleCustomBookingPaymentWebhookCommandHandler
                 "OrderCode không thuộc custom booking.");
         }
 
+        booking = await _context.Set<CustomBooking>()
+            .Include(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
+            .Include(x => x.Payments)
+            .SingleAsync(x => x.Id == booking.Id, cancellationToken);
+        payment = booking.Payments.Single(x => x.Id == payment.Id);
+
         var expectedAmount = CustomBookingPaymentSupport.ToPayOsAmount(
             payment.Amount,
             nameof(payment.Amount),
@@ -352,6 +403,7 @@ public sealed class HandleCustomBookingPaymentWebhookCommandHandler
 
         if (isPaid)
         {
+            var wasPaid = CustomBookingPaymentSupport.IsPaid(payment.PaymentStatus);
             CustomBookingPaymentSupport.ApplyPaymentStatus(
                 booking,
                 payment,
@@ -360,6 +412,14 @@ public sealed class HandleCustomBookingPaymentWebhookCommandHandler
                 payment.CheckoutUrl,
                 _timeProvider.GetUtcNow());
             await _context.SaveChangesAsync(cancellationToken);
+            await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+                _context,
+                _timeProvider,
+                _paymentNotificationSender,
+                booking,
+                payment,
+                wasPaid,
+                cancellationToken);
 
             return new CustomBookingPaymentWebhookResult(
                 true,
@@ -408,7 +468,12 @@ internal static class CustomBookingPaymentSupport
         var userId = userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
-        IQueryable<CustomBooking> query = context.Set<CustomBooking>();
+        IQueryable<CustomBooking> query = context.Set<CustomBooking>()
+            .Include(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station);
         if (includePayments)
         {
             query = query.Include(x => x.Payments);
@@ -624,6 +689,7 @@ internal static class CustomBookingPaymentSupport
             if (paidAmount >= booking.TotalAmount)
             {
                 booking.PaymentStatus = PaidBookingPaymentStatus;
+                booking.DepositAmount = Math.Min(paidAmount, booking.TotalAmount);
                 booking.RemainingAmount = 0;
             }
             else

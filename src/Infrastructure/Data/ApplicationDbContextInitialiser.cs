@@ -28,38 +28,17 @@ public class ApplicationDbContextInitialiser
 {
     public const string PendingRegistrationCleanupCronJobName = "cleanup-expired-pending-users";
     private const string EfMigrationsProductVersion = "9.0.14";
+    private const string LegacyAdminFullName = "System Administrator";
 
     private static readonly SeedUser[] InternalUsers =
     [
         new(
             Roles.AdminCode,
             "AD0000001",
-            "System Administrator",
+            "Admin",
             "admin@saigonwaterbus.local",
             "0900000001",
             "Admin@123")
-    ];
-
-    private static readonly ServiceSeed[] ServiceSeeds =
-    [
-        new(
-            "WB",
-            "Waterbus",
-            "Dịch vụ tuyến cố định trên sông, phù hợp di chuyển hằng ngày giữa các bến.",
-            BookingMode.SeatBased,
-            1),
-        new(
-            "WS",
-            "WaterSightseeing",
-            "Dịch vụ tham quan, ngắm cảnh bằng tàu theo tour hoặc khung giờ cố định.",
-            BookingMode.SeatTypeBased,
-            2),
-        new(
-            "WT",
-            "WaterTaxi",
-            "Dịch vụ taxi đường thủy theo nhu cầu, linh hoạt điểm đón và điểm trả.",
-            BookingMode.VesselRental,
-            3)
     ];
 
     private readonly ILogger<ApplicationDbContextInitialiser> _logger;
@@ -168,8 +147,6 @@ public class ApplicationDbContextInitialiser
         }
 
         await _context.SaveChangesAsync();
-        await SeedServicesAsync();
-        await _context.SaveChangesAsync();
 
         if (!_databaseStartupSettings.SeedInternalUsers)
         {
@@ -184,39 +161,6 @@ public class ApplicationDbContextInitialiser
         }
 
         await _context.SaveChangesAsync();
-    }
-
-    private async Task SeedServicesAsync()
-    {
-        var serviceByCode = await _context.WaterbusServices
-            .ToDictionaryAsync(x => x.Code);
-
-        foreach (var definition in ServiceSeeds)
-        {
-            if (!serviceByCode.TryGetValue(definition.Code, out var service))
-            {
-                service = new WaterbusService
-                {
-                    Code = definition.Code,
-                    Name = definition.Name,
-                    Description = definition.Description,
-                    BookingMode = definition.BookingMode,
-                    DisplayOrder = definition.DisplayOrder,
-                    IsActive = true
-                };
-
-                _context.WaterbusServices.Add(service);
-                serviceByCode[definition.Code] = service;
-            }
-            else
-            {
-                service.Name = definition.Name;
-                service.Description = definition.Description;
-                service.BookingMode = definition.BookingMode;
-                service.DisplayOrder = definition.DisplayOrder;
-                service.IsActive = true;
-            }
-        }
     }
 
     public async Task ResetAndSeedSampleDataAsync()
@@ -337,7 +281,9 @@ public class ApplicationDbContextInitialiser
             user.UserCode = definition.UserCode;
         }
 
-        if (string.IsNullOrWhiteSpace(user.FullName))
+        if (string.IsNullOrWhiteSpace(user.FullName)
+            || (string.Equals(user.UserCode, definition.UserCode, StringComparison.Ordinal)
+                && string.Equals(user.FullName, LegacyAdminFullName, StringComparison.Ordinal)))
         {
             user.FullName = definition.FullName;
         }
@@ -381,7 +327,6 @@ public class ApplicationDbContextInitialiser
     private async Task<bool> HasInitialSchemaAsync(CancellationToken cancellationToken) =>
         await HasTableAsync("roles", cancellationToken)
         && await HasTableAsync("users", cancellationToken)
-        && await HasTableAsync("services", cancellationToken)
         && await HasSequenceAsync("user_code_ad_seq", cancellationToken)
         && await HasSequenceAsync("user_code_mg_seq", cancellationToken)
         && await HasSequenceAsync("user_code_cu_seq", cancellationToken)
@@ -568,12 +513,5 @@ public class ApplicationDbContextInitialiser
         string Email,
         string PhoneNumber,
         string Password);
-
-    private sealed record ServiceSeed(
-        string Code,
-        string Name,
-        string Description,
-        BookingMode BookingMode,
-        int DisplayOrder);
 
 }

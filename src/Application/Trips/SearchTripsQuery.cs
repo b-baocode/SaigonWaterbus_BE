@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -54,36 +55,52 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         var bookedCounts = await _context.Set<Booking>()
             .Where(b => b.TripId.HasValue
                      && tripIds.Contains(b.TripId.Value)
-                     && b.BookingStatus != BookingStatus.Cancelled)
+                     && b.BookingStatus != BookingStatus.Cancelled
+                     && b.BookingStatus != BookingStatus.Expired
+                     && b.BookingStatus != BookingStatus.Refunded)
             .Select(b => new { TripId = b.TripId!.Value, Count = b.Passengers.Count })
             .GroupBy(x => x.TripId)
             .Select(g => new { TripId = g.Key, Count = g.Sum(x => x.Count) })
             .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
 
-        var routeFromTo = validRouteIds.ToDictionary(x => x.RouteId, x => x);
-
-        var farePrices = await _context.Set<FareMatrix>()
-            .Where(f => routeIds.Contains(f.RouteId)
-                     && f.FromStationId == request.FromStationId
-                     && f.ToStationId == request.ToStationId
-                     && f.IsActive)
-            .ToDictionaryAsync(f => f.RouteId, f => f.BasePrice, cancellationToken);
-
+        var boatIds = trips
+            .Where(x => x.BoatId.HasValue)
+            .Select(x => x.BoatId!.Value)
+            .Distinct()
+            .ToList();
+        var seatRows = await _context.Set<Seat>()
+            .Where(x => boatIds.Contains(x.BoatId))
+            .Select(x => new { x.BoatId, x.IsActive, x.SeatTypeCode })
+            .ToListAsync(cancellationToken);
+        var seatStats = seatRows
+            .GroupBy(x => x.BoatId)
+            .ToDictionary(
+                g => g.Key,
+                g => new
+                {
+                    ActiveSeatCount = g.Count(x => x.IsActive),
+                    MinSeatPrice = g
+                        .Where(x => x.IsActive && SeatTypePricing.TryGetBasePrice(x.SeatTypeCode, out _))
+                        .Select(x => (decimal?)SeatTypePricing.GetBasePrice(x.SeatTypeCode))
+                        .Min()
+                });
         var minModifier = TicketTypeCatalog.ActiveDefinitions.Min(x => x.PriceModifier);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
             var booked = bookedCounts.GetValueOrDefault(t.Id, 0);
-            var available = t.CapacitySnapshot - booked;
-
-            farePrices.TryGetValue(t.RouteId, out var basePrice);
-            var minPrice = basePrice > 0 ? (decimal?)(basePrice * minModifier) : null;
+            seatStats.TryGetValue(t.BoatId ?? Guid.Empty, out var stats);
+            var capacity = stats?.ActiveSeatCount ?? t.CapacitySnapshot;
+            var available = capacity - booked;
+            var minPrice = stats?.MinSeatPrice is > 0
+                ? stats.MinSeatPrice.Value * minModifier
+                : (decimal?)null;
 
             return new TripSummaryDto(
                 t.Id, t.TripCode, t.Route.RouteName,
                 t.DepartureTime, t.ArrivalTime,
                 t.DepartureTime, t.ArrivalTime,
-                Math.Max(0, available), t.CapacitySnapshot,
+                Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString());
         }).ToList();
     }

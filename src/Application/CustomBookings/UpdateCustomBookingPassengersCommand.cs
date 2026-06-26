@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -30,15 +31,18 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
 
     public UpdateCustomBookingPassengersCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
+        IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
+        _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
     }
 
@@ -51,6 +55,12 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
 
         var booking = await _context.Set<CustomBooking>()
             .Include(x => x.Passengers)
+            .Include(x => x.Payments)
+            .Include(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Custom booking not found.");
 
@@ -88,13 +98,14 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
             passengers,
             nameof(request.Passengers));
         booking.Passengers = passengers;
-        var ticket = await CustomBookingTicketSupport.EnsureBookingLevelTicketAsync(
+        var ticketResult = await CustomBookingTicketSupport.EnsureBookingLevelTicketAsync(
             _context,
             booking,
             _timeProvider,
             cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
+        await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
 
         var adultCount = CustomBookingPassengerSupport.CountAdults(booking.Passengers);
         var childCount = CustomBookingPassengerSupport.CountChildren(booking.Passengers);
@@ -109,6 +120,35 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
                 .OrderBy(x => x.FullName)
                 .Select(CustomBookingPassengerSupport.ToDto)
                 .ToList(),
-            ticket is null ? null : CustomBookingTicketSupport.ToDto(ticket));
+            ticketResult is null ? null : CustomBookingTicketSupport.ToDto(ticketResult.Ticket));
+    }
+
+    private async Task SendBoardingPassIfNeededAsync(
+        CustomBooking booking,
+        BookingLevelTicketEnsureResult? ticketResult,
+        CancellationToken cancellationToken)
+    {
+        if (ticketResult is not { Created: true } || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        {
+            return;
+        }
+
+        var paidPayment = booking.Payments
+            .Where(x => PaymentSupport.IsPaid(x.PaymentStatus))
+            .OrderByDescending(x => x.PaidAt ?? x.Created)
+            .FirstOrDefault();
+        if (paidPayment?.PaidAt is null)
+        {
+            return;
+        }
+
+        var bookingNotification = PaymentSupport.CreatePaymentSucceededNotification(booking, paidPayment);
+        await _paymentNotificationSender.SendBoardingPassAsync(
+            new BoardingPassNotification(
+                bookingNotification,
+                ticketResult.Ticket.TicketCode,
+                ticketResult.Ticket.QrToken,
+                null),
+            cancellationToken);
     }
 }

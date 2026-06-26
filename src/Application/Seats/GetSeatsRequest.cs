@@ -1,17 +1,17 @@
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.Vessels;
+using SaigonWaterbus.Application.Boats;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record GetSeatsRequest(Guid VesselId);
+public sealed record GetSeatsRequest(Guid BoatId);
 
 public sealed class GetSeatsRequestValidator : AbstractValidator<GetSeatsRequest>
 {
     public GetSeatsRequestValidator()
     {
-        RuleFor(x => x.VesselId)
+        RuleFor(x => x.BoatId)
             .NotEmpty()
-            .WithMessage("VesselId không hợp lệ.");
+            .WithMessage("BoatId không hợp lệ.");
     }
 }
 
@@ -26,26 +26,26 @@ public sealed class GetSeatsRequestUseCase
         _userContext = userContext;
     }
 
-    public async Task<VesselSeatsDto> ExecuteAsync(GetSeatsRequest request, CancellationToken cancellationToken)
+    public async Task<BoatSeatsDto> ExecuteAsync(GetSeatsRequest request, CancellationToken cancellationToken)
     {
         var actor = await SeatSupport.EnsureCurrentUserCanViewSeatsAsync(_context, _userContext, cancellationToken);
 
-        var vessel = await VesselSupport.ApplyVisibilityFilter(
-                _context.Vessels
+        var boat = await BoatSupport.ApplyVisibilityFilter(
+                _context.Boats
                     .AsNoTracking()
                     .AsQueryable(),
                 actor)
-            .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
         var seats = await _context.Seats
             .AsNoTracking()
-            .Where(x => x.VesselId == request.VesselId)
+            .Where(x => x.BoatId == request.BoatId)
             .OrderBy(x => x.Deck)
             .ThenBy(x => x.Row)
             .ThenBy(x => x.Column)
             .ToListAsync(cancellationToken);
 
-        return SeatSupport.CreateVesselSeatsDto(vessel, seats);
+        return SeatSupport.CreateBoatSeatsDto(boat, seats);
     }
 }

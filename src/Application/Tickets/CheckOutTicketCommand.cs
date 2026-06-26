@@ -1,0 +1,77 @@
+using FluentValidation.Results;
+using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
+
+namespace SaigonWaterbus.Application.Tickets;
+
+public sealed record CheckOutTicketCommand(string CodeOrToken) : IRequest<TicketScanDto>;
+
+public sealed class CheckOutTicketCommandValidator : AbstractValidator<CheckOutTicketCommand>
+{
+    public CheckOutTicketCommandValidator()
+    {
+        RuleFor(x => x.CodeOrToken).NotEmpty().MaximumLength(100);
+    }
+}
+
+public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicketCommand, TicketScanDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public CheckOutTicketCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<TicketScanDto> Handle(CheckOutTicketCommand request, CancellationToken cancellationToken)
+    {
+        var currentUser = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        if (!AuthSupport.IsAdmin(currentUser)
+            && !AuthSupport.IsManager(currentUser)
+            && !AuthSupport.IsStaff(currentUser))
+        {
+            throw new ForbiddenAccessException();
+        }
+
+        var ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
+        EnsureTicketCanBeCheckedOut(ticket);
+
+        var now = _timeProvider.GetUtcNow();
+        ticket.TicketStatus = BookingTicketStatus.CheckedOut;
+        ticket.CheckedOutAt = now;
+        ticket.CheckedOutByUserId = currentUser.Id;
+        ticket.CheckedOutByUser = currentUser;
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken);
+    }
+
+    private static void EnsureTicketCanBeCheckedOut(Domain.Entities.BookingTicket ticket)
+    {
+        if (ticket.TicketStatus == BookingTicketStatus.CheckedOut || ticket.CheckedOutAt.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure("ticket", "Ve nay da duoc check-out.")]);
+        }
+
+        if (ticket.TicketStatus != BookingTicketStatus.CheckedIn || !ticket.CheckedInAt.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure("ticket", "Ve chua check-in nen chua the check-out.")]);
+        }
+
+        if (ticket.Booking.BookingStatus != BookingStatus.Confirmed)
+        {
+            throw new ValidationException([new ValidationFailure("booking", "Booking khong san sang de check-out.")]);
+        }
+    }
+}

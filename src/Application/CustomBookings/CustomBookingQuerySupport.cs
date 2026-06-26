@@ -7,7 +7,7 @@ internal static class CustomBookingQuerySupport
 {
     public static IQueryable<CustomBooking> BuildDetailQuery(IApplicationDbContext context) =>
         context.Set<CustomBooking>()
-            .Include(b => b.Vessel)
+            .Include(b => b.Boat)
             .Include(b => b.FromStation)
             .Include(b => b.ToStation)
             .Include(b => b.Promotion)
@@ -29,7 +29,7 @@ internal static class CustomBookingQuerySupport
             booking.Created,
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
-            booking.Vessel?.Name,
+            booking.Boat?.Name,
             booking.PassengerCount,
             booking.AdultCount,
             booking.ChildCount,
@@ -54,7 +54,7 @@ internal static class CustomBookingQuerySupport
                     x.StayDurationMinutes,
                     x.Note))
                 .ToList(),
-            booking.VesselRequirements,
+            booking.BoatRequirements,
             booking.SpecialRequests,
             booking.SubtotalAmount,
             booking.DiscountAmount,

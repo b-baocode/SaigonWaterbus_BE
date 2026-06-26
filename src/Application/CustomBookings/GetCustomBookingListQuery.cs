@@ -34,7 +34,7 @@ public sealed class GetCustomBookingListQueryHandler
                 b.DepartureDate,
                 b.BookingStatus.ToString(),
                 b.TotalAmount,
-                b.Vessel != null ? b.Vessel.Name : null))
+                b.Boat != null ? b.Boat.Name : null))
             .ToListAsync(cancellationToken);
     }
 }

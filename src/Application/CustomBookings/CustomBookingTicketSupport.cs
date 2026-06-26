@@ -1,6 +1,5 @@
-using System.Globalization;
-using System.Security.Cryptography;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -11,7 +10,7 @@ internal static class CustomBookingTicketSupport
 {
     private const string PaidBookingPaymentStatus = "Paid";
 
-    public static async Task<BookingTicket?> EnsureBookingLevelTicketAsync(
+    public static async Task<BookingLevelTicketEnsureResult?> EnsureBookingLevelTicketAsync(
         IApplicationDbContext context,
         CustomBooking booking,
         TimeProvider timeProvider,
@@ -26,15 +25,15 @@ internal static class CustomBookingTicketSupport
             .SingleOrDefaultAsync(x => x.BookingId == booking.Id && x.BookingPassengerId == null, cancellationToken);
         if (existingTicket is not null)
         {
-            return existingTicket;
+            return new BookingLevelTicketEnsureResult(existingTicket, false);
         }
 
         var now = timeProvider.GetUtcNow();
         var ticket = new BookingTicket
         {
             BookingId = booking.Id,
-            TicketCode = await GenerateTicketCodeAsync(context, now, cancellationToken),
-            QrToken = await GenerateQrTokenAsync(context, cancellationToken),
+            TicketCode = await TicketIssueSupport.GenerateTicketCodeAsync(context, now, cancellationToken),
+            QrToken = await TicketIssueSupport.GenerateQrTokenAsync(context, cancellationToken),
             TicketTypeCode = TicketTypeCatalog.CustomBookingTicketTypeCode,
             TicketTypeName = TicketTypeCatalog.CustomBookingTicketTypeName,
             TicketStatus = BookingTicketStatus.Active,
@@ -42,7 +41,7 @@ internal static class CustomBookingTicketSupport
         };
 
         context.Tickets.Add(ticket);
-        return ticket;
+        return new BookingLevelTicketEnsureResult(ticket, true);
     }
 
     public static CustomBookingTicketDto ToDto(BookingTicket ticket) =>
@@ -56,43 +55,8 @@ internal static class CustomBookingTicketSupport
             ticket.IssuedAt,
             ticket.CheckedInAt);
 
-    private static async Task<string> GenerateTicketCodeAsync(
-        IApplicationDbContext context,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        var prefix = $"TK{now:yyMMdd}";
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            var code = prefix + Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
-            if (!await context.Tickets.AnyAsync(x => x.TicketCode == code, cancellationToken))
-            {
-                return code;
-            }
-        }
-
-        var fallbackCode = prefix + now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture);
-        if (!await context.Tickets.AnyAsync(x => x.TicketCode == fallbackCode, cancellationToken))
-        {
-            return fallbackCode;
-        }
-
-        throw new InvalidOperationException("Could not generate a unique ticket code.");
-    }
-
-    private static async Task<string> GenerateQrTokenAsync(
-        IApplicationDbContext context,
-        CancellationToken cancellationToken)
-    {
-        for (var attempt = 0; attempt < 50; attempt++)
-        {
-            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-            if (!await context.Tickets.AnyAsync(x => x.QrToken == token, cancellationToken))
-            {
-                return token;
-            }
-        }
-
-        throw new InvalidOperationException("Could not generate a unique QR token.");
-    }
 }
+
+internal sealed record BookingLevelTicketEnsureResult(
+    BookingTicket Ticket,
+    bool Created);

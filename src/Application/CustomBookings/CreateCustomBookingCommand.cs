@@ -10,7 +10,7 @@ namespace SaigonWaterbus.Application.CustomBookings;
 
 public sealed record CreateCustomBookingCommand(
     DateOnly DepartureDate,
-    VesselRentalUnit RentalUnit,
+    BoatRentalUnit RentalUnit,
     int DurationValue,
     int AdultCount,
     int ChildCount,
@@ -20,7 +20,7 @@ public sealed record CreateCustomBookingCommand(
     IReadOnlyList<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null,
     int? PreferredNumberOfDecks = null,
     SeatSetupType? PreferredSeatSetupType = null,
-    string? VesselRequirements = null,
+    string? BoatRequirements = null,
     string? PromotionCode = null,
     string? SpecialRequests = null) : IRequest<CreateCustomBookingResult>;
 
@@ -53,7 +53,7 @@ public sealed class CreateCustomBookingCommandValidator : AbstractValidator<Crea
             .When(x => x.PreferredNumberOfDecks.HasValue)
             .WithMessage("Số tầng mong muốn phải từ 1 đến 10.");
         RuleFor(x => x.PreferredSeatSetupType).IsInEnum().When(x => x.PreferredSeatSetupType.HasValue);
-        RuleFor(x => x.VesselRequirements).MaximumLength(1000).When(x => x.VesselRequirements is not null);
+        RuleFor(x => x.BoatRequirements).MaximumLength(1000).When(x => x.BoatRequirements is not null);
         RuleFor(x => x.PromotionCode).MaximumLength(50).When(x => x.PromotionCode is not null);
         RuleFor(x => x.SpecialRequests).MaximumLength(1000).When(x => x.SpecialRequests is not null);
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
@@ -151,7 +151,7 @@ public sealed class CreateCustomBookingCommandHandler
             ChildCount = request.ChildCount,
             PreferredNumberOfDecks = request.PreferredNumberOfDecks,
             PreferredSeatSetupType = request.PreferredSeatSetupType,
-            VesselRequirements = request.VesselRequirements?.Trim(),
+            BoatRequirements = request.BoatRequirements?.Trim(),
             SpecialRequests = request.SpecialRequests?.Trim(),
             PromotionId = promotion?.Id,
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),

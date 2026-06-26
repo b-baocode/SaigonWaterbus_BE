@@ -34,7 +34,7 @@ public static class DemoScheduleSeedData
             .OrderBy(x => x.StopOrder)
             .ToArrayAsync(cancellationToken);
 
-        await EnsureVesselsAsync(context, cancellationToken);
+        await EnsureBoatsAsync(context, cancellationToken);
 
         var tripIds = await SeedTripsAsync(context, route, routeStops, nowUtc, cancellationToken);
 
@@ -155,42 +155,42 @@ public static class DemoScheduleSeedData
         return route;
     }
 
-    private static async Task<IReadOnlyList<Vessel>> EnsureVesselsAsync(
+    private static async Task<IReadOnlyList<Boat>> EnsureBoatsAsync(
         ApplicationDbContext context,
         CancellationToken cancellationToken)
     {
         var definitions = new[]
         {
-            new VesselDefinition("DEMO-V01", "Demo Waterbus 01", 80, 1),
-            new VesselDefinition("DEMO-V02", "Demo Waterbus 02", 60, 2)
+            new BoatDefinition("DEMO-V01", "Demo Waterbus 01", 80, 1),
+            new BoatDefinition("DEMO-V02", "Demo Waterbus 02", 60, 2)
         };
 
-        var vessels = new List<Vessel>();
+        var boats = new List<Boat>();
         foreach (var definition in definitions)
         {
-            var vessel = await context.Vessels
+            var boat = await context.Boats
                 .SingleOrDefaultAsync(x => x.Code == definition.Code, cancellationToken);
 
-            if (vessel is null)
+            if (boat is null)
             {
-                vessel = new Vessel { Code = definition.Code };
-                context.Vessels.Add(vessel);
+                boat = new Boat { Code = definition.Code };
+                context.Boats.Add(boat);
             }
 
-            vessel.Name = definition.Name;
-            vessel.RegistrationNumber = $"{definition.Code}-REG";
-            vessel.Status = VesselStatus.Active;
-            vessel.SeatCount = definition.SeatCount;
-            vessel.NumberOfDecks = definition.Decks;
-            vessel.SeatSetupType = SeatSetupType.FullStandard;
-            vessel.MaxSpeedKmh = 25;
-            vessel.YearBuilt = 2024;
-            vessel.Description = "Tàu demo dùng cho lịch vận hành.";
-            vessels.Add(vessel);
+            boat.Name = definition.Name;
+            boat.RegistrationNumber = $"{definition.Code}-REG";
+            boat.Status = BoatStatus.Active;
+            boat.SeatCount = definition.SeatCount;
+            boat.NumberOfDecks = definition.Decks;
+            boat.SeatSetupType = SeatSetupType.FullStandard;
+            boat.MaxSpeedKmh = 25;
+            boat.YearBuilt = 2024;
+            boat.Description = "Tàu demo dùng cho lịch vận hành.";
+            boats.Add(boat);
         }
 
         await context.SaveChangesAsync(cancellationToken);
-        return vessels;
+        return boats;
     }
 
     private static async Task<IReadOnlyCollection<Guid>> SeedTripsAsync(
@@ -267,7 +267,7 @@ public static class DemoScheduleSeedData
         decimal Latitude,
         decimal Longitude);
 
-    private sealed record VesselDefinition(string Code, string Name, int SeatCount, int Decks);
+    private sealed record BoatDefinition(string Code, string Name, int SeatCount, int Decks);
 
     private sealed record TripDefinition(
         string Code,

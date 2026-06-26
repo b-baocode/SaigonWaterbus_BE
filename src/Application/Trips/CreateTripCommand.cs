@@ -11,7 +11,8 @@ public sealed record CreateTripCommand(
     string RouteCode,
     int Capacity,
     DateOnly OperatingDate,
-    DateTimeOffset DepartureTime) : IRequest<TripDetailDto>;
+    DateTimeOffset DepartureTime,
+    string? BoatCode = null) : IRequest<TripDetailDto>;
 
 public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCommand>
 {
@@ -20,6 +21,7 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Capacity).GreaterThan(0);
         RuleFor(x => x.DepartureTime).GreaterThan(DateTimeOffset.UtcNow);
+        RuleFor(x => x.BoatCode).MaximumLength(50).When(x => x.BoatCode is not null);
     }
 }
 
@@ -41,19 +43,6 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route must have at least 2 stops.")]);
-
-        var service = await _context.Set<WaterbusService>()
-            .Where(x => x.IsActive
-                && (x.BookingMode == BookingMode.SeatBased || x.BookingMode == BookingMode.SeatTypeBased))
-            .OrderBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Code)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new ValidationException(
-            [
-                new ValidationFailure(
-                    nameof(request.RouteCode),
-                    "Chưa có waterbus service đang active để tạo chuyến.")
-            ]);
 
         var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
 
@@ -87,15 +76,36 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         await EnsureNoRouteDepartureConflictAsync(route.Id, request.DepartureTime, cancellationToken);
 
+        Boat? boat = null;
+        var capacity = request.Capacity;
+        if (!string.IsNullOrWhiteSpace(request.BoatCode))
+        {
+            var boatCode = request.BoatCode.Trim().ToUpperInvariant();
+            boat = await _context.Set<Boat>()
+                .SingleOrDefaultAsync(x => x.Code == boatCode, cancellationToken)
+                ?? throw new NotFoundException($"Boat '{boatCode}' not found.");
+
+            if (boat.Status != BoatStatus.Active || !boat.SeatsConfigured)
+                throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
+                    "Boat must be active and have configured seats.")]);
+
+            capacity = await _context.Set<Seat>()
+                .CountAsync(x => x.BoatId == boat.Id && x.IsActive, cancellationToken);
+
+            if (capacity <= 0)
+                throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
+                    "Boat has no active seats.")]);
+        }
+
         var trip = new Trip
         {
-            WaterbusServiceId = service.Id,
             RouteId = route.Id,
+            BoatId = boat?.Id,
             TripCode = tripCode,
             OperatingDate = request.OperatingDate,
             DepartureTime = request.DepartureTime,
             ArrivalTime = arrivalTime,
-            CapacitySnapshot = request.Capacity,
+            CapacitySnapshot = capacity,
             TripStatus = TripStatus.Scheduled
         };
 

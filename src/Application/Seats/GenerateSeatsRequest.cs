@@ -1,6 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.Vessels;
+using SaigonWaterbus.Application.Boats;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -25,15 +25,15 @@ public sealed record DeckConfigDto(
     int ColumnCount,
     IReadOnlyCollection<LayoutCellConfigDto>? Cells = null);
 
-public sealed record GenerateSeatsRequest(Guid VesselId, IReadOnlyCollection<DeckConfigDto> Decks);
+public sealed record GenerateSeatsRequest(Guid BoatId, IReadOnlyCollection<DeckConfigDto> Decks);
 
 public sealed class GenerateSeatsRequestValidator : AbstractValidator<GenerateSeatsRequest>
 {
     public GenerateSeatsRequestValidator()
     {
-        RuleFor(x => x.VesselId)
+        RuleFor(x => x.BoatId)
             .NotEmpty()
-            .WithMessage("VesselId không hợp lệ.");
+            .WithMessage("BoatId không hợp lệ.");
 
         RuleFor(x => x.Decks)
             .NotEmpty()
@@ -87,6 +87,7 @@ public sealed class GenerateSeatsRequestValidator : AbstractValidator<GenerateSe
                 cell.RuleFor(c => c)
                     .Must(c => c.Type == SeatLayoutCellType.Seat || string.IsNullOrWhiteSpace(c.SeatTypeCode))
                     .WithMessage("Chỉ ô Seat mới được gửi SeatTypeCode.");
+
             }).When(d => d.Cells is not null);
         }).When(x => x.Decks is not null);
     }
@@ -103,44 +104,44 @@ public sealed class GenerateSeatsRequestUseCase
         _userContext = userContext;
     }
 
-    public async Task<VesselSeatsDto> ExecuteAsync(GenerateSeatsRequest request, CancellationToken cancellationToken)
+    public async Task<BoatSeatsDto> ExecuteAsync(GenerateSeatsRequest request, CancellationToken cancellationToken)
     {
         await SeatSupport.EnsureCurrentUserCanManageSeatsAsync(_context, _userContext, cancellationToken);
 
-        var vessel = await _context.Vessels
-            .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
+        var boat = await _context.Boats
+            .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        var hasExistingSeats = await _context.Seats.AnyAsync(x => x.VesselId == vessel.Id, cancellationToken);
+        var hasExistingSeats = await _context.Seats.AnyAsync(x => x.BoatId == boat.Id, cancellationToken);
         if (hasExistingSeats)
         {
             throw AuthSupport.CreateValidationException("Seats", "Tàu đã có ghế. Xóa toàn bộ trước khi configure lại.");
         }
 
-        GenerateSeatMatrixRequestUseCase.EnsureDecksMatchVessel(
-            vessel,
+        GenerateSeatMatrixRequestUseCase.EnsureDecksMatchBoat(
+            boat,
             request.Decks.Select(x => new DeckMatrixConfigDto(x.DeckNumber, x.RowCount, x.ColumnCount)).ToArray());
 
-        var seats = CreateSeats(vessel, request.Decks);
-        if (seats.Count != vessel.SeatCount)
+        var seats = CreateSeats(boat, request.Decks);
+        if (seats.Count != boat.SeatCount)
         {
             throw AuthSupport.CreateValidationException(
                 "Seats",
-                $"Số ghế tạo ra ({seats.Count}) không khớp SeatCount của tàu ({vessel.SeatCount}).");
+                $"Số ghế tạo ra ({seats.Count}) không khớp SeatCount của tàu ({boat.SeatCount}).");
         }
 
         _context.Seats.AddRange(seats);
-        vessel.SeatsConfigured = true;
-        vessel.Status = VesselStatus.Active;
+        boat.SeatsConfigured = true;
+        boat.Status = BoatStatus.Active;
         await _context.SaveChangesAsync(cancellationToken);
 
-        return SeatSupport.CreateVesselSeatsDto(
-            vessel,
+        return SeatSupport.CreateBoatSeatsDto(
+            boat,
             seats,
-            CreateDeckLayouts(vessel, request.Decks));
+            CreateDeckLayouts(boat, request.Decks));
     }
 
-    private static List<Seat> CreateSeats(Vessel vessel, IReadOnlyCollection<DeckConfigDto> decks)
+    private static List<Seat> CreateSeats(Boat boat, IReadOnlyCollection<DeckConfigDto> decks)
     {
         var seats = new List<Seat>();
         var occupiedCells = new HashSet<(int Deck, int Row, int Column)>();
@@ -173,11 +174,11 @@ public sealed class GenerateSeatsRequestUseCase
                             continue;
                         }
 
-                        AddSeat(vessel, deck.DeckNumber, row, column, cell.SeatTypeCode, seats, occupiedCells);
+                        AddSeat(boat, deck.DeckNumber, row, column, cell.SeatTypeCode, seats, occupiedCells);
                         continue;
                     }
 
-                    AddSeat(vessel, deck.DeckNumber, row, column, null, seats, occupiedCells);
+                    AddSeat(boat, deck.DeckNumber, row, column, null, seats, occupiedCells);
                 }
             }
         }
@@ -185,14 +186,14 @@ public sealed class GenerateSeatsRequestUseCase
         return seats;
     }
 
-    private static SeatDeckLayout[] CreateDeckLayouts(Vessel vessel, IReadOnlyCollection<DeckConfigDto> decks) =>
+    private static SeatDeckLayout[] CreateDeckLayouts(Boat boat, IReadOnlyCollection<DeckConfigDto> decks) =>
         decks
             .OrderBy(x => x.DeckNumber)
             .Select(x => new SeatDeckLayout(x.DeckNumber, x.RowCount, x.ColumnCount))
             .ToArray();
 
     private static void AddSeat(
-        Vessel vessel,
+        Boat boat,
         int deckNumber,
         int row,
         int column,
@@ -208,10 +209,10 @@ public sealed class GenerateSeatsRequestUseCase
         var rowLabel = SeatSupport.RowLabel(row - 1);
         seats.Add(new Seat
         {
-            VesselId = vessel.Id,
+            BoatId = boat.Id,
             Code = SeatSupport.SeatCode(deckNumber, rowLabel, column),
-            SeatTypeCode = SeatSupport.NormalizeSeatTypeCode(seatTypeCode, vessel.SeatSetupType),
-            SeatTypeName = SeatSupport.NormalizeSeatTypeName(seatTypeCode, vessel.SeatSetupType),
+            SeatTypeCode = SeatSupport.NormalizeSeatTypeCode(seatTypeCode, boat.SeatSetupType),
+            SeatTypeName = SeatSupport.NormalizeSeatTypeName(seatTypeCode, boat.SeatSetupType),
             Deck = deckNumber,
             Row = rowLabel,
             Column = column,

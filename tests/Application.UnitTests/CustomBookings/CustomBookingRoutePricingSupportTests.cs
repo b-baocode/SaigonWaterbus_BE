@@ -14,7 +14,7 @@ public class CustomBookingRoutePricingSupportTests
         var estimate = RouteEstimate(125);
 
         var chargeableHours = CustomBookingRoutePricingSupport.ResolveChargeableDurationValue(
-            VesselRentalUnit.Hour,
+            BoatRentalUnit.Hour,
             requestedDurationValue: 1,
             estimate);
 
@@ -27,7 +27,7 @@ public class CustomBookingRoutePricingSupportTests
         var estimate = RouteEstimate(125);
 
         var chargeableHours = CustomBookingRoutePricingSupport.ResolveChargeableDurationValue(
-            VesselRentalUnit.Hour,
+            BoatRentalUnit.Hour,
             requestedDurationValue: 4,
             estimate);
 
@@ -40,7 +40,7 @@ public class CustomBookingRoutePricingSupportTests
         var estimate = RouteEstimate(720);
 
         var chargeableDays = CustomBookingRoutePricingSupport.ResolveChargeableDurationValue(
-            VesselRentalUnit.Day,
+            BoatRentalUnit.Day,
             requestedDurationValue: 1,
             estimate);
 
@@ -53,7 +53,7 @@ public class CustomBookingRoutePricingSupportTests
         var estimate = RouteEstimate(721);
 
         var chargeableDays = CustomBookingRoutePricingSupport.ResolveChargeableDurationValue(
-            VesselRentalUnit.Day,
+            BoatRentalUnit.Day,
             requestedDurationValue: 1,
             estimate);
 
@@ -74,7 +74,7 @@ public class CustomBookingRoutePricingSupportTests
             HasCompleteTravelTimeEstimate: false);
 
         var chargeableHours = CustomBookingRoutePricingSupport.ResolveChargeableDurationValue(
-            VesselRentalUnit.Hour,
+            BoatRentalUnit.Hour,
             requestedDurationValue: 2,
             estimate);
 
@@ -95,7 +95,7 @@ public class CustomBookingRoutePricingSupportTests
             HasCompleteTravelTimeEstimate: false);
 
         var exception = Should.Throw<ValidationException>(() =>
-            CustomBookingRoutePricingSupport.EnsureCanAutoPrice(VesselRentalUnit.Hour, estimate));
+            CustomBookingRoutePricingSupport.EnsureCanAutoPrice(BoatRentalUnit.Hour, estimate));
 
         exception.Errors["subtotalAmount"].Single()
             .ShouldContain("chưa có đủ dữ liệu quãng đường");
@@ -115,7 +115,7 @@ public class CustomBookingRoutePricingSupportTests
             HasCompleteTravelTimeEstimate: false);
 
         Should.NotThrow(() =>
-            CustomBookingRoutePricingSupport.EnsureCanAutoPrice(VesselRentalUnit.Day, estimate));
+            CustomBookingRoutePricingSupport.EnsureCanAutoPrice(BoatRentalUnit.Day, estimate));
     }
 
     private static CustomBookingRouteEstimate RouteEstimate(int estimatedDurationMinutes) =>

@@ -1,0 +1,243 @@
+using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
+
+namespace SaigonWaterbus.Application.Boats;
+
+internal static class BoatSupport
+{
+    public const int MaxBoatImages = 1;
+
+    public static async Task<User> EnsureCurrentUserCanViewBoatsAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(
+            context,
+            userContext,
+            cancellationToken);
+
+        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor) || AuthSupport.IsStaff(actor))
+        {
+            return actor;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
+    public static async Task EnsureCurrentUserCanManageBoatsAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        await AuthSupport.EnsureCurrentUserIsAdminAsync(context, userContext, cancellationToken);
+    }
+
+    public static bool CanManageBoats(User actor) =>
+        AuthSupport.IsAdmin(actor);
+
+    public static IQueryable<Boat> ApplyVisibilityFilter(
+        IQueryable<Boat> query,
+        User actor)
+    {
+        return CanManageBoats(actor)
+            ? query
+            : query.Where(x => x.Status == BoatStatus.Active);
+    }
+
+    public static string NormalizeCode(string code) =>
+        code.Trim().ToUpperInvariant();
+
+    public static string? NormalizeRegistrationNumber(string? registrationNumber) =>
+        string.IsNullOrWhiteSpace(registrationNumber)
+            ? null
+            : registrationNumber.Trim().ToUpperInvariant();
+
+    public static BoatDto CreateDto(Boat boat)
+    {
+        var rentalPrices = CreateRentalPriceDtos(boat);
+        var imageUrls = CreateImageUrls(boat);
+
+        return new BoatDto(
+            boat.Id,
+            boat.Code,
+            boat.RegistrationNumber,
+            boat.Name,
+            boat.Status,
+            boat.SeatCount,
+            boat.NumberOfDecks,
+            IsSeatsConfigured(boat),
+            IsReadyForOperation(boat),
+            boat.MaxSpeedKmh,
+            boat.YearBuilt,
+            imageUrls.FirstOrDefault() ?? string.Empty,
+            imageUrls,
+            boat.Description,
+            rentalPrices,
+            boat.SeatSetupType);
+    }
+
+    public static IReadOnlyCollection<string> CreateImageUrls(Boat boat) =>
+        string.IsNullOrWhiteSpace(boat.ImageUrl)
+            ? []
+            : [boat.ImageUrl.Trim()];
+
+    public static IReadOnlyCollection<string> NormalizeImageUrls(
+        string? imageUrl,
+        IReadOnlyCollection<string>? imageUrls)
+    {
+        var urls = new List<string>();
+        AddImageUrl(urls, imageUrl);
+
+        foreach (var url in imageUrls ?? [])
+        {
+            AddImageUrl(urls, url);
+        }
+
+        return urls
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxBoatImages)
+            .ToArray();
+    }
+
+    public static IReadOnlyCollection<BoatImageFileRequest> CreateImageFiles(
+        string? imageFileName,
+        string? imageContentType,
+        long? imageLength,
+        Stream? imageContent,
+        IReadOnlyCollection<BoatImageFileRequest>? imageFiles)
+    {
+        var files = new List<BoatImageFileRequest>();
+        if (imageContent is not null)
+        {
+            files.Add(new BoatImageFileRequest(
+                imageFileName ?? string.Empty,
+                imageContentType,
+                imageLength ?? 0,
+                imageContent));
+        }
+
+        files.AddRange(imageFiles ?? []);
+        return files;
+    }
+
+    public static bool IsValidImageUrl(string? imageUrl) =>
+        string.IsNullOrWhiteSpace(imageUrl)
+        || Uri.TryCreate(imageUrl, UriKind.Absolute, out _);
+
+    public static bool HasValidRequestedImageCount(
+        string? imageUrl,
+        IReadOnlyCollection<string>? imageUrls,
+        Stream? imageContent,
+        IReadOnlyCollection<BoatImageFileRequest>? imageFiles)
+    {
+        var count = NormalizeImageUrls(imageUrl, imageUrls).Count
+            + CreateImageFiles(null, null, null, imageContent, imageFiles).Count;
+
+        return count <= MaxBoatImages;
+    }
+
+    public static void ApplyRentalPrices(
+        Boat boat,
+        IReadOnlyCollection<BoatRentalPriceRequest>? rentalPrices)
+    {
+        foreach (var request in rentalPrices ?? [])
+        {
+            boat.Currency = NormalizeCurrency(request.Currency);
+            if (request.RentalUnit == BoatRentalUnit.Hour)
+            {
+                boat.HourlyRentalPrice = request.UnitPrice;
+            }
+            else if (request.RentalUnit == BoatRentalUnit.Day)
+            {
+                boat.DailyRentalPrice = request.UnitPrice;
+            }
+        }
+    }
+
+    public static IReadOnlyCollection<BoatRentalPriceDto> CreateRentalPriceDtos(Boat boat)
+    {
+        var prices = new List<BoatRentalPriceDto>();
+        if (boat.HourlyRentalPrice.HasValue)
+        {
+            prices.Add(new BoatRentalPriceDto(
+                BoatRentalUnit.Hour,
+                boat.HourlyRentalPrice.Value,
+                boat.Currency,
+                null));
+        }
+
+        if (boat.DailyRentalPrice.HasValue)
+        {
+            prices.Add(new BoatRentalPriceDto(
+                BoatRentalUnit.Day,
+                boat.DailyRentalPrice.Value,
+                boat.Currency,
+                null));
+        }
+
+        return prices;
+    }
+
+    public static string? NormalizeOptionalNote(string? note) =>
+        string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+
+    public static bool HasDistinctRentalUnits(IEnumerable<BoatRentalPriceRequest>? rentalPrices) =>
+        rentalPrices is null
+        || rentalPrices
+            .Select(x => x.RentalUnit)
+            .Distinct()
+            .Count() == rentalPrices.Count();
+
+    public static string NormalizeCurrency(string? currency) =>
+        string.IsNullOrWhiteSpace(currency) ? "VND" : currency.Trim().ToUpperInvariant();
+
+    public static int RentalUnitDisplayOrder(BoatRentalUnit rentalUnit) =>
+        rentalUnit switch
+        {
+            BoatRentalUnit.Hour => 1,
+            BoatRentalUnit.Day => 2,
+            _ => 99
+        };
+
+    public static bool IsValidCurrencyCode(string? currency)
+    {
+        if (string.IsNullOrWhiteSpace(currency))
+        {
+            return true;
+        }
+
+        var normalizedCurrency = NormalizeCurrency(currency);
+        return normalizedCurrency.Length == 3 && normalizedCurrency.All(char.IsAsciiLetterUpper);
+    }
+
+    public static bool IsSeatsConfigured(Boat boat) =>
+        boat.SeatsConfigured
+        || (boat.SeatCount > 0 && boat.Seats.Count == boat.SeatCount);
+
+    public static bool IsReadyForOperation(Boat boat) =>
+        boat.Status == BoatStatus.Active
+        && boat.SeatCount > 0
+        && IsSeatsConfigured(boat);
+
+    public static void EnsureCanActivate(Boat boat, string propertyName)
+    {
+        if (boat.SeatCount <= 0 || !IsSeatsConfigured(boat))
+        {
+            throw AuthSupport.CreateValidationException(
+                propertyName,
+                $"Tàu cần cấu hình đủ {boat.SeatCount} ghế trước khi chuyển Active.");
+        }
+    }
+
+    private static void AddImageUrl(List<string> urls, string? imageUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(imageUrl))
+        {
+            urls.Add(imageUrl.Trim());
+        }
+    }
+}

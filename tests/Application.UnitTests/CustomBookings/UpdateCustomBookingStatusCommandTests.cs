@@ -50,7 +50,7 @@ public class UpdateCustomBookingStatusCommandTests
     }
 
     [Test]
-    public async Task QuotedStatusRequiresVesselAndPrice()
+    public async Task QuotedStatusRequiresBoatAndPrice()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
@@ -76,7 +76,7 @@ public class UpdateCustomBookingStatusCommandTests
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",
             DepartureDate = new DateOnly(2030, 1, 1),
-            RentalUnit = VesselRentalUnit.Day,
+            RentalUnit = BoatRentalUnit.Day,
             DurationValue = 1,
             AdultCount = 1,
             PassengerCount = 1,

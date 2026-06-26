@@ -52,7 +52,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<ICustomBookingPaymentGateway, PayOsCustomBookingPaymentGateway>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
-        builder.Services.AddScoped<IVesselImageStorageService, CloudinaryVesselImageStorageService>();
+        builder.Services.AddScoped<IBoatImageStorageService, CloudinaryBoatImageStorageService>();
         builder.Services.AddScoped<IStationImageStorageService, CloudinaryStationImageStorageService>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
@@ -85,6 +85,23 @@ public static class DependencyInjection
             }
 
             return ActivatorUtilities.CreateInstance<NoOpLoginNotificationSender>(provider);
+        });
+        builder.Services.AddScoped<IPaymentNotificationSender>(provider =>
+        {
+            var configuration = provider.GetRequiredService<IConfiguration>();
+            var brevoEnabled = configuration.GetValue<bool>($"{BrevoOptions.SectionName}:Enabled");
+            if (brevoEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<BrevoPaymentNotificationSender>(provider);
+            }
+
+            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
+            if (gmailEnabled)
+            {
+                return ActivatorUtilities.CreateInstance<GmailPaymentNotificationSender>(provider);
+            }
+
+            return ActivatorUtilities.CreateInstance<NoOpPaymentNotificationSender>(provider);
         });
         builder.Services.AddScoped<IOtpSender>(provider =>
         {

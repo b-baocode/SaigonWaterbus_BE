@@ -76,38 +76,6 @@ public static class WaterbusSeedData
 
         const int b1 = 80, b2 = 80, b3 = 60;
 
-        static decimal FarePrice(int stopsApart) => stopsApart switch
-        {
-            1 => 7_000m,
-            2 => 10_000m,
-            3 => 12_000m,
-            4 => 15_000m,
-            5 => 17_000m,
-            6 => 19_000m,
-            _ => 20_000m
-        };
-
-        var fwdOrder = new[] { sBD, sTT, sBS, sBA, sTD, sTADA, sHBC, sLD };
-        var bwdOrder = new[] { sLD, sHBC, sTADA, sTD, sBA, sBS, sTT, sBD };
-        var fareEntries = new List<FareMatrix>();
-
-        foreach (var (stations, route) in new[] { (fwdOrder, rFwd), (bwdOrder, rBwd) })
-        {
-            for (var i = 0; i < stations.Length; i++)
-                for (var j = i + 1; j < stations.Length; j++)
-                    fareEntries.Add(new FareMatrix
-                    {
-                        Route = route,
-                        FromStation = stations[i],
-                        ToStation = stations[j],
-                        BasePrice = FarePrice(j - i),
-                        IsActive = true
-                    });
-        }
-
-        context.Set<FareMatrix>().AddRange(fareEntries);
-        await context.SaveChangesAsync();
-
         var promos = new[]
         {
             new Promotion

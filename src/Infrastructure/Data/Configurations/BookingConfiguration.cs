@@ -21,7 +21,6 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .IsRequired();
 
         builder.Property(x => x.UserId).HasColumnName("customer_user_id");
-        builder.Property(x => x.ServiceId).HasColumnName("service_id");
         builder.Property(x => x.PromotionId).HasColumnName("promotion_id");
         builder.Property(x => x.TripId).HasColumnName("trip_id");
         builder.Property(x => x.BookingCode).HasColumnName("booking_code").HasMaxLength(50).IsRequired();
@@ -53,7 +52,6 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Ignore(x => x.LastModifiedBy);
 
         builder.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
-        builder.HasOne(x => x.Service).WithMany().HasForeignKey(x => x.ServiceId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Promotion).WithMany(p => p.Bookings).HasForeignKey(x => x.PromotionId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId).OnDelete(DeleteBehavior.SetNull);
     }

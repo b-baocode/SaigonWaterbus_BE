@@ -6,7 +6,7 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record SeatTypeDto(Guid SeatTypeId, string SeatTypeCode, string SeatTypeName);
+public sealed record SeatTypeDto(Guid SeatTypeId, string SeatTypeCode, string SeatTypeName, decimal BasePrice);
 
 public sealed record SeatDto(
     Guid SeatId,
@@ -35,8 +35,8 @@ public sealed record SeatDeckDto(
     IReadOnlyCollection<SeatRowDto> Rows,
     IReadOnlyCollection<SeatLayoutCellDto> Cells);
 
-public sealed record VesselSeatsDto(
-    Guid VesselId,
+public sealed record BoatSeatsDto(
+    Guid BoatId,
     int TotalSeats,
     int ConfiguredSeats,
     int ActiveSeats,
@@ -82,14 +82,14 @@ internal static class SeatSupport
         new(
             seat.Id,
             seat.Code,
-            new SeatTypeDto(Guid.Empty, seat.SeatTypeCode, seat.SeatTypeName),
+            BuildSeatTypeDto(seat.SeatTypeCode),
             seat.Deck,
             seat.Row,
             seat.Column,
             seat.IsActive);
 
-    public static VesselSeatsDto CreateVesselSeatsDto(
-        Vessel vessel,
+    public static BoatSeatsDto CreateBoatSeatsDto(
+        Boat boat,
         IList<Seat> seats,
         IReadOnlyCollection<SeatDeckLayout>? deckLayouts = null,
         bool previewEmptyCellsAsSeats = false)
@@ -98,7 +98,7 @@ internal static class SeatSupport
             .ToDictionary(x => x.DeckNumber);
 
         var previewSeatType = previewEmptyCellsAsSeats
-            ? BuildSeatTypeDto(DefaultSeatTypeCode(vessel.SeatSetupType))
+            ? BuildSeatTypeDto(DefaultSeatTypeCode(boat.SeatSetupType))
             : null;
 
         var seatsByDeck = seats
@@ -140,12 +140,12 @@ internal static class SeatSupport
 
         var activeSeats = seats.Count(s => s.IsActive);
 
-        return new VesselSeatsDto(
-            vessel.Id,
-            vessel.SeatCount,
+        return new BoatSeatsDto(
+            boat.Id,
+            boat.SeatCount,
             seats.Count,
             activeSeats,
-            vessel.SeatsConfigured || (vessel.SeatCount > 0 && seats.Count == vessel.SeatCount),
+            boat.SeatsConfigured || (boat.SeatCount > 0 && seats.Count == boat.SeatCount),
             decks);
     }
 
@@ -252,7 +252,7 @@ internal static class SeatSupport
     }
 
     private static SeatTypeDto BuildSeatTypeDto(string seatTypeCode) =>
-        new(Guid.Empty, seatTypeCode, SeatTypeNameFromCode(seatTypeCode));
+        new(Guid.Empty, seatTypeCode, SeatTypeNameFromCode(seatTypeCode), SeatTypePricing.GetBasePrice(seatTypeCode));
 
     private static int RowIndex(string row) =>
         string.IsNullOrWhiteSpace(row)

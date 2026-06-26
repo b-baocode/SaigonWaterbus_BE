@@ -2,6 +2,7 @@ using System.Globalization;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -34,17 +35,20 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
 
     public CreatePaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICustomBookingPaymentGateway paymentGateway,
+        IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
+        _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
     }
 
@@ -138,11 +142,24 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             throw new ValidationException([new ValidationFailure("payment", ex.Message)]);
         }
 
-        payment.ProviderTransactionId = paymentResult.PaymentLinkId;
-        payment.CheckoutUrl = paymentResult.CheckoutUrl;
         payment.QrCode = paymentResult.QrCode;
-        payment.PaymentStatus = PaymentSupport.ResolvePaymentStatus(paymentResult.Status);
+        var wasPaid = PaymentSupport.IsPaid(payment.PaymentStatus);
+        PaymentSupport.ApplyPaymentStatus(
+            booking,
+            payment,
+            paymentResult.Status,
+            paymentResult.PaymentLinkId,
+            paymentResult.CheckoutUrl,
+            now);
         await _context.SaveChangesAsync(cancellationToken);
+        await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+            _context,
+            _timeProvider,
+            _paymentNotificationSender,
+            booking,
+            payment,
+            wasPaid,
+            cancellationToken);
 
         return PaymentSupport.ToDto(booking, payment);
     }
@@ -164,6 +181,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                 return false;
             }
 
+            var wasPaid = PaymentSupport.IsPaid(payment.PaymentStatus);
             PaymentSupport.ApplyPaymentStatus(
                 booking,
                 payment,
@@ -172,6 +190,14 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                 paymentStatus.CheckoutUrl,
                 _timeProvider.GetUtcNow());
             await _context.SaveChangesAsync(cancellationToken);
+            await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+                _context,
+                _timeProvider,
+                _paymentNotificationSender,
+                booking,
+                payment,
+                wasPaid,
+                cancellationToken);
             return true;
         }
         catch (PaymentGatewayException)
@@ -196,17 +222,20 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
 
     public SyncPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICustomBookingPaymentGateway paymentGateway,
+        IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
+        _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
     }
 
@@ -247,6 +276,7 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
                 "Số tiền thanh toán PayOS không khớp booking.")]);
         }
 
+        var wasPaid = PaymentSupport.IsPaid(payment.PaymentStatus);
         PaymentSupport.ApplyPaymentStatus(
             payment.Booking,
             payment,
@@ -255,6 +285,14 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
             paymentStatus.CheckoutUrl,
             _timeProvider.GetUtcNow());
         await _context.SaveChangesAsync(cancellationToken);
+        await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+            _context,
+            _timeProvider,
+            _paymentNotificationSender,
+            payment.Booking,
+            payment,
+            wasPaid,
+            cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
     }
@@ -268,15 +306,18 @@ public sealed class HandlePaymentWebhookCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
 
     public HandlePaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICustomBookingPaymentGateway paymentGateway,
+        IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider)
     {
         _context = context;
         _paymentGateway = paymentGateway;
+        _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
     }
 
@@ -323,6 +364,7 @@ public sealed class HandlePaymentWebhookCommandHandler
 
         if (isPaid)
         {
+            var wasPaid = PaymentSupport.IsPaid(payment.PaymentStatus);
             PaymentSupport.ApplyPaymentStatus(
                 payment.Booking,
                 payment,
@@ -331,6 +373,14 @@ public sealed class HandlePaymentWebhookCommandHandler
                 payment.CheckoutUrl,
                 _timeProvider.GetUtcNow());
             await _context.SaveChangesAsync(cancellationToken);
+            await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+                _context,
+                _timeProvider,
+                _paymentNotificationSender,
+                payment.Booking,
+                payment,
+                wasPaid,
+                cancellationToken);
             return new PaymentWebhookResult(true, webhook.Data.OrderCode, payment.PaymentStatus, "Đã ghi nhận thanh toán.");
         }
 
@@ -524,6 +574,8 @@ internal static class PaymentSupport
             query = query.Include(x => x.Payments);
         }
 
+        query = IncludeCustomBookingNotificationDetails(query);
+
         var booking = await query.SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
         if (booking.UserId != userId)
@@ -549,6 +601,13 @@ internal static class PaymentSupport
         {
             query = query.Include(x => x.Booking).ThenInclude(x => x.Payments);
         }
+
+        query = query
+            .Include(x => ((CustomBooking)x.Booking).Boat)
+            .Include(x => ((CustomBooking)x.Booking).FromStation)
+            .Include(x => ((CustomBooking)x.Booking).ToStation)
+            .Include(x => ((CustomBooking)x.Booking).ItineraryStops)
+                .ThenInclude(x => x.Station);
 
         var payment = await query.SingleOrDefaultAsync(x => x.Id == paymentId, cancellationToken)
             ?? throw new NotFoundException("Payment not found.");
@@ -763,6 +822,7 @@ internal static class PaymentSupport
         if (paidAmount >= booking.TotalAmount)
         {
             booking.PaymentStatus = PaidBookingPaymentStatus;
+            booking.DepositAmount = Math.Min(paidAmount, booking.TotalAmount);
             booking.RemainingAmount = 0;
         }
         else
@@ -803,6 +863,115 @@ internal static class PaymentSupport
 
         booking.PaymentStatus = PartiallyRefundedStatus;
     }
+
+    public static async Task SendPaymentNotificationIfPaidAsync(
+        IApplicationDbContext context,
+        TimeProvider timeProvider,
+        IPaymentNotificationSender paymentNotificationSender,
+        Booking booking,
+        Payment payment,
+        bool wasPaid,
+        CancellationToken cancellationToken)
+    {
+        var isPaid = IsPaid(payment.PaymentStatus);
+        if (isPaid)
+        {
+            await TicketIssueSupport.EnsureRegularBookingPassengerTicketsAsync(
+                context,
+                booking,
+                timeProvider,
+                cancellationToken);
+        }
+
+        if (wasPaid || !isPaid || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        {
+            return;
+        }
+
+        if (!payment.PaidAt.HasValue)
+        {
+            return;
+        }
+
+        var notification = CreatePaymentSucceededNotification(booking, payment);
+
+        await paymentNotificationSender.SendPaymentSucceededAsync(notification, cancellationToken);
+    }
+
+    public static PaymentSucceededNotification CreatePaymentSucceededNotification(
+        Booking booking,
+        Payment payment)
+    {
+        if (string.IsNullOrWhiteSpace(booking.ContactEmail))
+        {
+            throw new InvalidOperationException("Booking contact email is required to create a payment notification.");
+        }
+
+        if (!payment.PaidAt.HasValue)
+        {
+            throw new InvalidOperationException("Payment paid time is required to create a payment notification.");
+        }
+
+        var contactName = string.IsNullOrWhiteSpace(booking.ContactName)
+            ? "Quy khach"
+            : booking.ContactName.Trim();
+        var isFullyPaid = string.Equals(
+                booking.PaymentStatus,
+                PaidBookingPaymentStatus,
+                StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount <= 0;
+        var customBooking = booking as CustomBooking;
+        var stops = customBooking?.ItineraryStops
+            .OrderBy(x => x.StopOrder)
+            .Select(x => new PaymentNotificationStop(
+                x.Station.StationName,
+                x.Note,
+                x.StayDurationMinutes))
+            .ToList()
+            ?? [];
+
+        return new PaymentSucceededNotification(
+            booking.ContactEmail.Trim(),
+            contactName,
+            booking.ContactPhone,
+            booking.BookingCode,
+            customBooking is null ? "Booking" : "CustomBooking",
+            booking.Created == default ? payment.PaidAt.Value : booking.Created,
+            payment.PaymentCode,
+            payment.PaymentPurpose,
+            payment.Amount,
+            booking.Currency,
+            booking.TotalAmount,
+            booking.PaymentStatus,
+            booking.DepositAmount,
+            booking.RemainingAmount,
+            payment.PaidAt.Value,
+            isFullyPaid,
+            customBooking?.DepartureDate,
+            customBooking?.StartTime,
+            customBooking?.RentalUnit.ToString(),
+            customBooking?.DurationValue ?? 0,
+            customBooking?.PassengerCount ?? booking.Passengers.Count,
+            customBooking?.Boat?.Name,
+            customBooking?.FromStation?.StationName,
+            ResolveStationAddress(customBooking?.FromStation),
+            customBooking?.ToStation?.StationName,
+            ResolveStationAddress(customBooking?.ToStation),
+            stops);
+    }
+
+    private static IQueryable<Booking> IncludeCustomBookingNotificationDetails(IQueryable<Booking> query) =>
+        query
+            .Include(x => ((CustomBooking)x).Boat)
+            .Include(x => ((CustomBooking)x).FromStation)
+            .Include(x => ((CustomBooking)x).ToStation)
+            .Include(x => ((CustomBooking)x).ItineraryStops)
+                .ThenInclude(x => x.Station);
+
+    private static string? ResolveStationAddress(Station? station) =>
+        string.IsNullOrWhiteSpace(station?.Address)
+            ? station?.StationName
+            : station.Address;
 
     public static PaymentDto ToDto(Booking booking, Payment payment) =>
         new(

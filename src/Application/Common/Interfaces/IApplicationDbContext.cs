@@ -12,9 +12,7 @@ public interface IApplicationDbContext
 
     DbSet<RefreshToken> RefreshTokens { get; }
 
-    DbSet<WaterbusService> WaterbusServices { get; }
-
-    DbSet<Vessel> Vessels { get; }
+    DbSet<Boat> Boats { get; }
 
     DbSet<Seat> Seats { get; }
 

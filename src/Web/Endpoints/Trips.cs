@@ -12,6 +12,7 @@ public sealed class Trips : IEndpointGroup
         """
         {
           "routeCode": "R01-BD-TD",
+          "boatCode": "BOAT-01",
           "capacity": 50,
           "operatingDate": "10/06/2026",
           "departureTime": "2026-06-10T08:30:00+07:00"
@@ -63,6 +64,8 @@ public sealed class Trips : IEndpointGroup
                 "Bearer token",
                 CreateTripExample,
                 "Route phai Active va co it nhat 2 ben dung.",
+                "boatCode optional nhung nen gui de trip gan voi tau va co the dat ghe.",
+                "Neu co boatCode, capacitySnapshot lay theo so ghe active cua tau.",
                 "departureTime phai lon hon thoi diem hien tai.",
                 "capacity: so hanh khach toi da cua chuyen.",
                 "tripCode tu sinh: TR-{yyyyMMdd}-{routeCode}-{4 so ngau nhien}."));

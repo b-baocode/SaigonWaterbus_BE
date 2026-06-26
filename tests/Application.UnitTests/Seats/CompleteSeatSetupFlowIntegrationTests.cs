@@ -15,12 +15,12 @@ public class CompleteSeatSetupFlowIntegrationTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        vessel.SeatCount = 80;
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        boat.SeatCount = 80;
+        context.Add(boat);
         await context.SaveChangesAsync();
 
-        await GenerateMatrix(context, userContext, vessel.Id, 11, 8);
+        await GenerateMatrix(context, userContext, boat.Id, 11, 8);
 
         var cells = new List<LayoutCellConfigDto>();
         for (var row = 1; row <= 11; row++)
@@ -37,18 +37,18 @@ public class CompleteSeatSetupFlowIntegrationTests
         var configured = await Configure(
             context,
             userContext,
-            vessel.Id,
+            boat.Id,
             [new DeckConfigDto(1, 11, 8, Cells: cells)]);
 
         configured.ConfiguredSeats.ShouldBe(80);
         configured.SeatsConfigured.ShouldBeTrue();
         configured.Decks.Single().Cells.Count.ShouldBe(88);
         configured.Decks.Single().Cells.Count(x => x.Type == SeatLayoutCellType.Aisle).ShouldBe(8);
-        vessel.Status.ShouldBe(VesselStatus.Active);
-        (await context.Seats.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(80);
+        boat.Status.ShouldBe(BoatStatus.Active);
+        (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(80);
 
         var fetched = await new GetSeatsRequestUseCase(context, userContext)
-            .ExecuteAsync(new GetSeatsRequest(vessel.Id), CancellationToken.None);
+            .ExecuteAsync(new GetSeatsRequest(boat.Id), CancellationToken.None);
 
         fetched.Decks.Single().Cells.Count.ShouldBe(88);
         fetched.Decks.Single().Cells
@@ -65,9 +65,9 @@ public class CompleteSeatSetupFlowIntegrationTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        vessel.SeatCount = 80;
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        boat.SeatCount = 80;
+        context.Add(boat);
         await context.SaveChangesAsync();
 
         var cells = Enumerable.Range(1, 14)
@@ -84,24 +84,24 @@ public class CompleteSeatSetupFlowIntegrationTests
         var configured = await Configure(
             context,
             userContext,
-            vessel.Id,
+            boat.Id,
             [new DeckConfigDto(1, 14, 7, Cells: cells)]);
 
         configured.ConfiguredSeats.ShouldBe(80);
         configured.Decks.Single().Cells.Count(x => x.Type == SeatLayoutCellType.Seat).ShouldBe(80);
-        (await context.Seats.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(80);
+        (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(80);
     }
 
     [Test]
-    public async Task FullStandardFlowGeneratesMatrixConfiguresSeatsAndActivatesVessel()
+    public async Task FullStandardFlowGeneratesMatrixConfiguresSeatsAndActivatesBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        context.Add(boat);
         await context.SaveChangesAsync();
 
-        var matrix = await GenerateMatrix(context, userContext, vessel.Id, 2, 2);
+        var matrix = await GenerateMatrix(context, userContext, boat.Id, 2, 2);
 
         matrix.ConfiguredSeats.ShouldBe(0);
         matrix.Decks.Single().RowCount.ShouldBe(2);
@@ -109,42 +109,42 @@ public class CompleteSeatSetupFlowIntegrationTests
         matrix.Decks.Single().Cells.ShouldAllBe(x => x.Type == SeatLayoutCellType.Seat);
         matrix.Decks.Single().Cells.ShouldAllBe(x =>
             x.SeatType != null && x.SeatType.SeatTypeCode == "STANDARD");
-        (await context.Seats.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(0);
-        vessel.Status.ShouldBe(VesselStatus.Inactive);
+        (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(0);
+        boat.Status.ShouldBe(BoatStatus.Inactive);
 
         var configured = await Configure(
             context,
             userContext,
-            vessel.Id,
+            boat.Id,
             [new DeckConfigDto(1, 2, 2)]);
 
         configured.ConfiguredSeats.ShouldBe(4);
         configured.SeatsConfigured.ShouldBeTrue();
-        vessel.Status.ShouldBe(VesselStatus.Active);
+        boat.Status.ShouldBe(BoatStatus.Active);
         (await context.Seats
-                .Where(x => x.VesselId == vessel.Id)
+                .Where(x => x.BoatId == boat.Id)
                 .ToListAsync())
             .ShouldAllBe(x => x.SeatTypeName == "Standard");
     }
 
     [Test]
-    public async Task SightseeingFlowPersistsMixedSeatTypesAndActivatesVessel()
+    public async Task SightseeingFlowPersistsMixedSeatTypesAndActivatesBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
-        vessel.SeatCount = 3;
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.StandardAndVip);
+        boat.SeatCount = 3;
+        context.Add(boat);
         await context.SaveChangesAsync();
 
-        var matrix = await GenerateMatrix(context, userContext, vessel.Id, 2, 2);
+        var matrix = await GenerateMatrix(context, userContext, boat.Id, 2, 2);
         matrix.Decks.Single().Cells.ShouldAllBe(x =>
             x.SeatType != null && x.SeatType.SeatTypeCode == "CABIN");
 
         var configured = await Configure(
             context,
             userContext,
-            vessel.Id,
+            boat.Id,
             [
                 new DeckConfigDto(
                     1,
@@ -161,10 +161,10 @@ public class CompleteSeatSetupFlowIntegrationTests
 
         configured.ConfiguredSeats.ShouldBe(3);
         configured.SeatsConfigured.ShouldBeTrue();
-        vessel.Status.ShouldBe(VesselStatus.Active);
+        boat.Status.ShouldBe(BoatStatus.Active);
 
         var seats = await context.Seats
-            .Where(x => x.VesselId == vessel.Id)
+            .Where(x => x.BoatId == boat.Id)
             .ToListAsync();
         seats.Count(x => x.SeatTypeName == "River").ShouldBe(1);
         seats.Count(x => x.SeatTypeName == "Sky").ShouldBe(1);
@@ -172,21 +172,21 @@ public class CompleteSeatSetupFlowIntegrationTests
     }
 
     [Test]
-    public async Task GetSeatsReturnsConfiguredSeatTypesForSightseeingVessel()
+    public async Task GetSeatsReturnsConfiguredSeatTypesForSightseeingBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.StandardAndVip);
-        vessel.SeatCount = 6;
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.StandardAndVip);
+        boat.SeatCount = 6;
+        context.Add(boat);
         await context.SaveChangesAsync();
 
-        await GenerateMatrix(context, userContext, vessel.Id, 3, 4);
+        await GenerateMatrix(context, userContext, boat.Id, 3, 4);
 
         await Configure(
             context,
             userContext,
-            vessel.Id,
+            boat.Id,
             [
                 new DeckConfigDto(
                     1,
@@ -210,7 +210,7 @@ public class CompleteSeatSetupFlowIntegrationTests
             ]);
 
         var fetched = await new GetSeatsRequestUseCase(context, userContext)
-            .ExecuteAsync(new GetSeatsRequest(vessel.Id), CancellationToken.None);
+            .ExecuteAsync(new GetSeatsRequest(boat.Id), CancellationToken.None);
 
         var cells = fetched.Decks.Single().Cells;
         cells.Count.ShouldBe(12);
@@ -227,75 +227,75 @@ public class CompleteSeatSetupFlowIntegrationTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        context.Add(boat);
         await context.SaveChangesAsync();
 
         var configured = await Configure(
             context,
             userContext,
-            vessel.Id,
+            boat.Id,
             [new DeckConfigDto(1, 2, 2)]);
 
         configured.ConfiguredSeats.ShouldBe(4);
         configured.SeatsConfigured.ShouldBeTrue();
-        vessel.SeatsConfigured.ShouldBeTrue();
-        vessel.Status.ShouldBe(VesselStatus.Active);
-        (await context.Seats.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(4);
+        boat.SeatsConfigured.ShouldBeTrue();
+        boat.Status.ShouldBe(BoatStatus.Active);
+        (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(4);
     }
 
     [Test]
-    public async Task ConfigureRejectsSeatCountDifferentFromVessel()
+    public async Task ConfigureRejectsSeatCountDifferentFromBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        context.Add(boat);
         await context.SaveChangesAsync();
-        await GenerateMatrix(context, userContext, vessel.Id, 2, 2);
+        await GenerateMatrix(context, userContext, boat.Id, 2, 2);
 
         await Should.ThrowAsync<ValidationException>(() =>
             Configure(
                 context,
                 userContext,
-                vessel.Id,
+                boat.Id,
                 [new DeckConfigDto(1, 1, 2)]));
 
         context.Seats.ShouldBeEmpty();
-        vessel.SeatsConfigured.ShouldBeFalse();
+        boat.SeatsConfigured.ShouldBeFalse();
     }
 
     [Test]
-    public async Task GenerateMatrixRejectsDeckCountDifferentFromVessel()
+    public async Task GenerateMatrixRejectsDeckCountDifferentFromBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        vessel.NumberOfDecks = 2;
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        boat.NumberOfDecks = 2;
+        context.Add(boat);
         await context.SaveChangesAsync();
 
         await Should.ThrowAsync<ValidationException>(() =>
-            GenerateMatrix(context, userContext, vessel.Id, 2, 2));
+            GenerateMatrix(context, userContext, boat.Id, 2, 2));
 
         context.Seats.ShouldBeEmpty();
     }
 
     [Test]
-    public async Task GenerateMatrixRejectsVesselThatAlreadyHasSeats()
+    public async Task GenerateMatrixRejectsBoatThatAlreadyHasSeats()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        context.Add(boat);
         await context.SaveChangesAsync();
-        await GenerateMatrix(context, userContext, vessel.Id, 2, 2);
-        await Configure(context, userContext, vessel.Id, [new DeckConfigDto(1, 2, 2)]);
+        await GenerateMatrix(context, userContext, boat.Id, 2, 2);
+        await Configure(context, userContext, boat.Id, [new DeckConfigDto(1, 2, 2)]);
 
         await Should.ThrowAsync<ValidationException>(() =>
-            GenerateMatrix(context, userContext, vessel.Id, 2, 2));
+            GenerateMatrix(context, userContext, boat.Id, 2, 2));
 
-        (await context.Seats.CountAsync(x => x.VesselId == vessel.Id)).ShouldBe(4);
+        (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(4);
     }
 
     [Test]
@@ -303,19 +303,19 @@ public class CompleteSeatSetupFlowIntegrationTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        context.Add(boat);
         await context.SaveChangesAsync();
-        await GenerateMatrix(context, userContext, vessel.Id, 2, 2);
+        await GenerateMatrix(context, userContext, boat.Id, 2, 2);
 
         var configured = await Configure(
             context,
             userContext,
-            vessel.Id,
+            boat.Id,
             [new DeckConfigDto(1, 2, 2)]);
 
         configured.SeatsConfigured.ShouldBeTrue();
-        vessel.Status.ShouldBe(VesselStatus.Active);
+        boat.Status.ShouldBe(BoatStatus.Active);
     }
 
     [Test]
@@ -323,34 +323,34 @@ public class CompleteSeatSetupFlowIntegrationTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedManagerAsync(context);
-        var vessel = SeatFlowTestData.Vessel(SeatSetupType.FullStandard);
-        context.Add(vessel);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        context.Add(boat);
         await context.SaveChangesAsync();
 
         await Should.ThrowAsync<ForbiddenAccessException>(() =>
-            GenerateMatrix(context, userContext, vessel.Id, 2, 2));
+            GenerateMatrix(context, userContext, boat.Id, 2, 2));
 
         context.Seats.ShouldBeEmpty();
     }
 
-    private static Task<VesselSeatsDto> GenerateMatrix(
+    private static Task<BoatSeatsDto> GenerateMatrix(
         Infrastructure.Data.ApplicationDbContext context,
         TestUserContext userContext,
-        Guid vesselId,
+        Guid boatId,
         int rows,
         int columns) =>
         new GenerateSeatMatrixRequestUseCase(context, userContext).ExecuteAsync(
             new GenerateSeatMatrixRequest(
-                vesselId,
+                boatId,
                 [new DeckMatrixConfigDto(1, rows, columns)]),
             CancellationToken.None);
 
-    private static Task<VesselSeatsDto> Configure(
+    private static Task<BoatSeatsDto> Configure(
         Infrastructure.Data.ApplicationDbContext context,
         TestUserContext userContext,
-        Guid vesselId,
+        Guid boatId,
         IReadOnlyCollection<DeckConfigDto> decks) =>
         new GenerateSeatsRequestUseCase(context, userContext).ExecuteAsync(
-            new GenerateSeatsRequest(vesselId, decks),
+            new GenerateSeatsRequest(boatId, decks),
             CancellationToken.None);
 }

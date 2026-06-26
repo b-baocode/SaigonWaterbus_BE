@@ -16,11 +16,11 @@ public class BaseEntityTests
     }
 
     [Test]
-    public void VesselGeneratesGuidIdWhenCreated()
+    public void BoatGeneratesGuidIdWhenCreated()
     {
-        var vessel = new Vessel();
+        var boat = new Boat();
 
-        vessel.Id.ShouldNotBe(Guid.Empty);
+        boat.Id.ShouldNotBe(Guid.Empty);
     }
 
     [Test]

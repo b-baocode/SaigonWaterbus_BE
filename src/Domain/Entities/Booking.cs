@@ -5,7 +5,6 @@ namespace SaigonWaterbus.Domain.Entities;
 public class Booking : BaseGuidAuditableEntity
 {
     public Guid? UserId { get; set; }
-    public Guid? ServiceId { get; set; }
     public Guid? PromotionId { get; set; }
     public Guid? TripId { get; set; }
     public string BookingCode { get; set; } = null!;
@@ -24,7 +23,6 @@ public class Booking : BaseGuidAuditableEntity
     public int PointsEarned { get; set; } = 0;
 
     public User? User { get; set; }
-    public WaterbusService? Service { get; set; }
     public Promotion? Promotion { get; set; }
     public Trip? Trip { get; set; }
     public ICollection<BookingPassenger> Passengers { get; set; } = new List<BookingPassenger>();

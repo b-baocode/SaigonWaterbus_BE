@@ -44,7 +44,7 @@ public sealed class GetAdminCustomBookingListQueryHandler
                 x.ContactName,
                 x.ContactPhone,
                 x.ContactEmail,
-                x.Vessel != null ? x.Vessel.Name : null))
+                x.Boat != null ? x.Boat.Name : null))
             .ToListAsync(cancellationToken);
     }
 }
@@ -194,7 +194,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
     {
         EnsureNoPendingOrPaidPayments(booking, targetStatus);
 
-        if (!booking.VesselId.HasValue || booking.TotalAmount <= 0)
+        if (!booking.BoatId.HasValue || booking.TotalAmount <= 0)
         {
             throw CreateStatusValidation(targetStatus,
                 "Không thể chuyển sang Quoted khi booking chưa có tàu hoặc chưa có giá. Hãy dùng API quote để chọn tàu và chốt giá.");
@@ -280,9 +280,9 @@ public sealed class UpdateCustomBookingStatusCommandHandler
 
 public sealed record QuoteCustomBookingCommand(
     Guid BookingId,
-    Guid VesselId,
+    Guid BoatId,
     decimal? SubtotalAmount = null,
-    VesselRentalUnit? RentalUnit = null,
+    BoatRentalUnit? RentalUnit = null,
     int? DurationValue = null,
     string? PromotionCode = null) : IRequest<QuoteCustomBookingResult>;
 
@@ -291,7 +291,7 @@ public sealed class QuoteCustomBookingCommandValidator : AbstractValidator<Quote
     public QuoteCustomBookingCommandValidator()
     {
         RuleFor(x => x.BookingId).NotEmpty();
-        RuleFor(x => x.VesselId).NotEmpty();
+        RuleFor(x => x.BoatId).NotEmpty();
         RuleFor(x => x.SubtotalAmount)
             .GreaterThan(0)
             .When(x => x.SubtotalAmount.HasValue)
@@ -347,27 +347,27 @@ public sealed class QuoteCustomBookingCommandHandler
 
         EnsureCanQuote(booking);
 
-        var vessel = await _context.Set<Vessel>()
-            .SingleOrDefaultAsync(x => x.Id == request.VesselId, cancellationToken)
-            ?? throw new NotFoundException("Vessel not found.");
+        var boat = await _context.Set<Boat>()
+            .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
+            ?? throw new NotFoundException("Boat not found.");
 
-        if (vessel.Status != VesselStatus.Active)
+        if (boat.Status != BoatStatus.Active)
         {
-            throw new ValidationException([new ValidationFailure(nameof(request.VesselId),
+            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
                 "Tàu hiện không khả dụng để thuê.")]);
         }
 
-        if (booking.PassengerCount > vessel.SeatCount)
+        if (booking.PassengerCount > boat.SeatCount)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.PassengerCount),
-                $"Số khách vượt quá sức chứa của tàu ({vessel.SeatCount}).")]);
+                $"Số khách vượt quá sức chứa của tàu ({boat.SeatCount}).")]);
         }
 
         var now = _timeProvider.GetUtcNow();
 
         var conflicts = await _context.Set<CustomBooking>()
             .Where(x => x.Id != booking.Id
-                && x.VesselId == vessel.Id
+                && x.BoatId == boat.Id
                 && x.DepartureDate == booking.DepartureDate
                 && (x.BookingStatus == BookingStatus.Quoted || x.BookingStatus == BookingStatus.Confirmed))
             .ToListAsync(cancellationToken);
@@ -377,7 +377,7 @@ public sealed class QuoteCustomBookingCommandHandler
             if (conflict.BookingStatus == BookingStatus.Confirmed
                 || (conflict.HoldExpiresAt.HasValue && conflict.HoldExpiresAt.Value > now))
             {
-                throw new ValidationException([new ValidationFailure(nameof(request.VesselId),
+                throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
                     "Tàu đã được giữ cho một booking khác trong ngày này.")]);
             }
 
@@ -395,7 +395,7 @@ public sealed class QuoteCustomBookingCommandHandler
             cancellationToken);
         var automaticPricing = CustomBookingRoutePricingSupport.EstimatePrice(
             booking,
-            vessel,
+            boat,
             rentalUnit,
             requestedDurationValue,
             relatedRoutes);
@@ -410,7 +410,7 @@ public sealed class QuoteCustomBookingCommandHandler
         var discount = CustomBookingPricingSupport.CalculateDiscount(promotion, subtotal);
         var total = subtotal - discount;
 
-        booking.VesselId = vessel.Id;
+        booking.BoatId = boat.Id;
         booking.RentalUnit = rentalUnit;
         booking.DurationValue = chargeableDurationValue;
         booking.PromotionId = promotion?.Id;
@@ -434,15 +434,15 @@ public sealed class QuoteCustomBookingCommandHandler
         }
         catch (DbUpdateException)
         {
-            throw new ValidationException([new ValidationFailure(nameof(request.VesselId),
+            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
                 "Tàu vừa được giữ cho booking khác. Vui lòng chọn tàu khác hoặc thử lại.")]);
         }
 
         return new QuoteCustomBookingResult(
             booking.Id,
             booking.BookingCode,
-            vessel.Id,
-            vessel.Name,
+            boat.Id,
+            boat.Name,
             booking.SubtotalAmount,
             booking.DiscountAmount,
             booking.TotalAmount,
