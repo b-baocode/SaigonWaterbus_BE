@@ -88,6 +88,7 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
     private readonly ISmsOtpSender _smsOtpSender;
     private readonly IOtpPolicy _otpPolicy;
     private readonly IUserContext _userContext;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public UpdateCurrentUserProfileRequestUseCase(
@@ -100,7 +101,8 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
         ISmsOtpSender smsOtpSender,
         IOtpPolicy otpPolicy,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
@@ -111,6 +113,7 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
         _smsOtpSender = smsOtpSender;
         _otpPolicy = otpPolicy;
         _userContext = userContext;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -300,6 +303,8 @@ public sealed class UpdateCurrentUserProfileRequestUseCase
 
             if (challenge is not null && otpCode is not null)
             {
+                await _otpCache.StoreAsync(challenge, challenge.CodeHash, ct);
+
                 if (phoneChanged)
                 {
                     pendingPhoneVerification = new PendingPhoneVerification(

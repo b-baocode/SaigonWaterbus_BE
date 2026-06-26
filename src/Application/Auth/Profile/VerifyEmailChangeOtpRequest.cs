@@ -29,6 +29,7 @@ public sealed class VerifyEmailChangeOtpRequestUseCase
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserContext _userContext;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public VerifyEmailChangeOtpRequestUseCase(
@@ -36,12 +37,14 @@ public sealed class VerifyEmailChangeOtpRequestUseCase
         IIdentityNormalizer identityNormalizer,
         ISecretHasher secretHasher,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
         _secretHasher = secretHasher;
         _userContext = userContext;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -80,17 +83,20 @@ public sealed class VerifyEmailChangeOtpRequestUseCase
         if (challenge.ExpiresAt <= now)
         {
             challenge.ConsumedAt = now;
+            await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
             throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã hết hạn, vui lòng yêu cầu xác thực email lại.");
         }
 
-        if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
+        var codeHash = await _otpCache.GetCodeHashAsync(challenge.Id, cancellationToken) ?? challenge.CodeHash;
+        if (!_secretHasher.Verify(request.Code, codeHash))
         {
             challenge.AttemptCount += 1;
 
             if (challenge.AttemptCount >= challenge.MaxAttempts)
             {
                 challenge.ConsumedAt = now;
+                await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             }
 
             await _context.SaveChangesAsync(cancellationToken);
@@ -122,6 +128,7 @@ public sealed class VerifyEmailChangeOtpRequestUseCase
 
             challenge.AttemptCount += 1;
             challenge.ConsumedAt = now;
+            await _otpCache.RemoveAsync(challenge.Id, ct);
 
             user.Email = challenge.Email.Trim();
             user.NormalizedEmail = normalizedEmail;

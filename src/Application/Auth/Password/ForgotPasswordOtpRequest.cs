@@ -62,6 +62,7 @@ public sealed class ForgotPasswordOtpRequestUseCase
     private readonly IOtpSender _otpSender;
     private readonly ISmsOtpSender _smsOtpSender;
     private readonly IOtpPolicy _otpPolicy;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public ForgotPasswordOtpRequestUseCase(
@@ -72,7 +73,8 @@ public sealed class ForgotPasswordOtpRequestUseCase
         IOtpSender otpSender,
         ISmsOtpSender smsOtpSender,
         IOtpPolicy otpPolicy,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
     {
         _context = context;
         _identityNormalizer = identityNormalizer;
@@ -81,6 +83,7 @@ public sealed class ForgotPasswordOtpRequestUseCase
         _otpSender = otpSender;
         _smsOtpSender = smsOtpSender;
         _otpPolicy = otpPolicy;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -148,6 +151,7 @@ public sealed class ForgotPasswordOtpRequestUseCase
 
             _context.Set<OtpChallenge>().Add(challenge);
             await _context.SaveChangesAsync(ct);
+            await _otpCache.StoreAsync(challenge, challenge.CodeHash, ct);
 
             return (
                 Id: challenge.Id,

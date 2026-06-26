@@ -29,17 +29,20 @@ public sealed class VerifyRegisterOtpRequestUseCase
     private readonly IApplicationDbContext _context;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserCodeGenerator _userCodeGenerator;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public VerifyRegisterOtpRequestUseCase(
         IApplicationDbContext context,
         ISecretHasher secretHasher,
         IUserCodeGenerator userCodeGenerator,
+        IOtpCache otpCache,
         TimeProvider timeProvider)
     {
         _context = context;
         _secretHasher = secretHasher;
         _userCodeGenerator = userCodeGenerator;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -66,6 +69,7 @@ public sealed class VerifyRegisterOtpRequestUseCase
 
         if (challenge.ExpiresAt <= now)
         {
+            await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             if (await AuthSupport.RemovePendingRegistrationUserIfExpiredAsync(
                     _context,
                     challenge.UserId,
@@ -80,13 +84,15 @@ public sealed class VerifyRegisterOtpRequestUseCase
                 "OTP đã hết hạn, đăng ký đã bị hủy. Vui lòng đăng ký lại.");
         }
 
-        if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
+        var codeHash = await _otpCache.GetCodeHashAsync(challenge.Id, cancellationToken) ?? challenge.CodeHash;
+        if (!_secretHasher.Verify(request.Code, codeHash))
         {
             challenge.AttemptCount += 1;
 
             if (challenge.AttemptCount >= challenge.MaxAttempts)
             {
                 challenge.ConsumedAt = now;
+                await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             }
 
             await _context.SaveChangesAsync(cancellationToken);
@@ -97,6 +103,7 @@ public sealed class VerifyRegisterOtpRequestUseCase
         {
             challenge.AttemptCount += 1;
             challenge.ConsumedAt = now;
+            await _otpCache.RemoveAsync(challenge.Id, ct);
 
             var user = challenge.User;
             user.Status = UserStatus.Active;

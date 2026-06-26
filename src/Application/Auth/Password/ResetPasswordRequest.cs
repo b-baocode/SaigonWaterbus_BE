@@ -34,15 +34,18 @@ public sealed class ResetPasswordRequestUseCase
 {
     private readonly IApplicationDbContext _context;
     private readonly ISecretHasher _secretHasher;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public ResetPasswordRequestUseCase(
         IApplicationDbContext context,
         ISecretHasher secretHasher,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
     {
         _context = context;
         _secretHasher = secretHasher;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -69,16 +72,19 @@ public sealed class ResetPasswordRequestUseCase
 
         if (challenge.ExpiresAt <= now)
         {
+            await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã hết hạn.");
         }
 
-        if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
+        var codeHash = await _otpCache.GetCodeHashAsync(challenge.Id, cancellationToken) ?? challenge.CodeHash;
+        if (!_secretHasher.Verify(request.Code, codeHash))
         {
             challenge.AttemptCount += 1;
 
             if (challenge.AttemptCount >= challenge.MaxAttempts)
             {
                 challenge.ConsumedAt = now;
+                await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             }
 
             await _context.SaveChangesAsync(cancellationToken);
@@ -87,6 +93,7 @@ public sealed class ResetPasswordRequestUseCase
 
         challenge.AttemptCount += 1;
         challenge.ConsumedAt = now;
+        await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
 
         var user = challenge.User;
         AuthSupport.EnsureUserCanLogin(user);

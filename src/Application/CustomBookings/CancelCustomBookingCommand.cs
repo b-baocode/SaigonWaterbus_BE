@@ -21,11 +21,16 @@ public sealed class CancelCustomBookingCommandHandler : IRequestHandler<CancelCu
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly IBoatHoldService _boatHoldService;
 
-    public CancelCustomBookingCommandHandler(IApplicationDbContext context, IUserContext userContext)
+    public CancelCustomBookingCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        IBoatHoldService? boatHoldService = null)
     {
         _context = context;
         _userContext = userContext;
+        _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
     }
 
     public async Task Handle(CancelCustomBookingCommand request, CancellationToken cancellationToken)
@@ -56,5 +61,13 @@ public sealed class CancelCustomBookingCommandHandler : IRequestHandler<CancelCu
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _boatHoldService.ReleaseAsync(
+            booking.Id,
+            booking.BoatId,
+            booking.DepartureDate,
+            booking.StartTime,
+            booking.RentalUnit,
+            booking.DurationValue,
+            cancellationToken);
     }
 }

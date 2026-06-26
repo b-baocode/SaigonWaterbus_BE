@@ -106,13 +106,16 @@ public sealed class UpdateCustomBookingStatusCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly IBoatHoldService _boatHoldService;
 
     public UpdateCustomBookingStatusCommandHandler(
         IApplicationDbContext context,
-        IUserContext userContext)
+        IUserContext userContext,
+        IBoatHoldService? boatHoldService = null)
     {
         _context = context;
         _userContext = userContext;
+        _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
     }
 
     public async Task<CustomBookingDetailDto> Handle(
@@ -124,10 +127,26 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         var booking = await CustomBookingQuerySupport.BuildDetailQuery(_context)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Custom booking not found.");
+        var previousBoatId = booking.BoatId;
+        var previousDepartureDate = booking.DepartureDate;
+        var previousStartTime = booking.StartTime;
+        var previousRentalUnit = booking.RentalUnit;
+        var previousDurationValue = booking.DurationValue;
 
         ApplyStatusUpdate(booking, request.BookingStatus);
 
         await _context.SaveChangesAsync(cancellationToken);
+        if (request.BookingStatus is BookingStatus.PendingQuote or BookingStatus.Cancelled or BookingStatus.Expired)
+        {
+            await _boatHoldService.ReleaseAsync(
+                booking.Id,
+                previousBoatId,
+                previousDepartureDate,
+                previousStartTime,
+                previousRentalUnit,
+                previousDurationValue,
+                cancellationToken);
+        }
 
         var relatedRoutes = await CustomBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
@@ -317,15 +336,18 @@ public sealed class QuoteCustomBookingCommandHandler
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly IBoatHoldService _boatHoldService;
     private readonly TimeProvider _timeProvider;
 
     public QuoteCustomBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IBoatHoldService? boatHoldService = null)
     {
         _context = context;
         _userContext = userContext;
+        _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -385,6 +407,11 @@ public sealed class QuoteCustomBookingCommandHandler
             conflict.HoldExpiresAt = null;
         }
 
+        var previousBoatId = booking.BoatId;
+        var previousDepartureDate = booking.DepartureDate;
+        var previousStartTime = booking.StartTime;
+        var previousRentalUnit = booking.RentalUnit;
+        var previousDurationValue = booking.DurationValue;
         var wasAlreadyPriced = booking.TotalAmount > 0;
         var previousPromotionId = booking.PromotionId;
         var rentalUnit = request.RentalUnit ?? booking.RentalUnit;
@@ -409,6 +436,21 @@ public sealed class QuoteCustomBookingCommandHandler
         var promotion = await ResolvePromotionForQuoteAsync(booking, request, subtotal, now, cancellationToken);
         var discount = CustomBookingPricingSupport.CalculateDiscount(promotion, subtotal);
         var total = subtotal - discount;
+        var holdExpiresAt = now + HoldDuration;
+
+        if (!await _boatHoldService.TryHoldAsync(
+                booking.Id,
+                boat.Id,
+                booking.DepartureDate,
+                booking.StartTime,
+                rentalUnit,
+                chargeableDurationValue,
+                holdExpiresAt,
+                cancellationToken))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
+                "Tàu đang được giữ tạm thời cho booking khác. Vui lòng chọn tàu khác hoặc thử lại sau.")]);
+        }
 
         booking.BoatId = boat.Id;
         booking.RentalUnit = rentalUnit;
@@ -421,7 +463,7 @@ public sealed class QuoteCustomBookingCommandHandler
         booking.RemainingAmount = total;
         booking.PaymentStatus = UnpaidBookingPaymentStatus;
         booking.BookingStatus = BookingStatus.Quoted;
-        booking.HoldExpiresAt = now + HoldDuration;
+        booking.HoldExpiresAt = holdExpiresAt;
 
         if (promotion is not null && (!wasAlreadyPriced || previousPromotionId != promotion.Id))
         {
@@ -434,8 +476,29 @@ public sealed class QuoteCustomBookingCommandHandler
         }
         catch (DbUpdateException)
         {
+            await _boatHoldService.ReleaseAsync(
+                booking.Id,
+                boat.Id,
+                booking.DepartureDate,
+                booking.StartTime,
+                rentalUnit,
+                chargeableDurationValue,
+                cancellationToken);
             throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
                 "Tàu vừa được giữ cho booking khác. Vui lòng chọn tàu khác hoặc thử lại.")]);
+        }
+
+        if (previousBoatId.HasValue
+            && previousBoatId.Value != boat.Id)
+        {
+            await _boatHoldService.ReleaseAsync(
+                booking.Id,
+                previousBoatId,
+                previousDepartureDate,
+                previousStartTime,
+                previousRentalUnit,
+                previousDurationValue,
+                cancellationToken);
         }
 
         return new QuoteCustomBookingResult(

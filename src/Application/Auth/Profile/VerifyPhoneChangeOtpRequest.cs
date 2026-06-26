@@ -29,17 +29,20 @@ public sealed class VerifyPhoneChangeOtpRequestUseCase
     private readonly IApplicationDbContext _context;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserContext _userContext;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public VerifyPhoneChangeOtpRequestUseCase(
         IApplicationDbContext context,
         ISecretHasher secretHasher,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
     {
         _context = context;
         _secretHasher = secretHasher;
         _userContext = userContext;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -78,17 +81,20 @@ public sealed class VerifyPhoneChangeOtpRequestUseCase
         if (challenge.ExpiresAt <= now)
         {
             challenge.ConsumedAt = now;
+            await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             await _context.SaveChangesAsync(cancellationToken);
             throw AuthSupport.CreateValidationException(nameof(request.Code), "OTP đã hết hạn, vui lòng yêu cầu xác thực số điện thoại lại.");
         }
 
-        if (!_secretHasher.Verify(request.Code, challenge.CodeHash))
+        var codeHash = await _otpCache.GetCodeHashAsync(challenge.Id, cancellationToken) ?? challenge.CodeHash;
+        if (!_secretHasher.Verify(request.Code, codeHash))
         {
             challenge.AttemptCount += 1;
 
             if (challenge.AttemptCount >= challenge.MaxAttempts)
             {
                 challenge.ConsumedAt = now;
+                await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
             }
 
             await _context.SaveChangesAsync(cancellationToken);
@@ -134,6 +140,7 @@ public sealed class VerifyPhoneChangeOtpRequestUseCase
 
             challenge.AttemptCount += 1;
             challenge.ConsumedAt = now;
+            await _otpCache.RemoveAsync(challenge.Id, ct);
 
             user.PhoneNumber = PhoneRules.ToInternationalFormat(challenge.PendingPhoneNumber);
             user.NormalizedPhoneNumber = challenge.PendingPhoneNumber;

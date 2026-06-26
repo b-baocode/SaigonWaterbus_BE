@@ -36,6 +36,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly IUserContext _userContext;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
+    private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
 
     public CreatePaymentCommandHandler(
@@ -43,17 +44,28 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         IUserContext userContext,
         ICustomBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IPaymentProcessingLock? paymentProcessingLock = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
+        _paymentProcessingLock = paymentProcessingLock ?? NullPaymentProcessingLock.Instance;
         _timeProvider = timeProvider;
     }
 
     public async Task<PaymentDto> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
     {
+        await using var paymentLock = await _paymentProcessingLock.TryAcquireAsync(
+            $"booking:{request.BookingId:N}",
+            cancellationToken);
+        if (!paymentLock.Acquired)
+        {
+            throw new ValidationException([new ValidationFailure("payment",
+                "Booking đang được xử lý thanh toán. Vui lòng thử lại sau.")]);
+        }
+
         var booking = await PaymentSupport.GetOwnedBookingAsync(
             _context,
             _userContext,
@@ -223,6 +235,7 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
     private readonly IUserContext _userContext;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
+    private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
 
     public SyncPaymentCommandHandler(
@@ -230,12 +243,14 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
         IUserContext userContext,
         ICustomBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IPaymentProcessingLock? paymentProcessingLock = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
+        _paymentProcessingLock = paymentProcessingLock ?? NullPaymentProcessingLock.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -252,6 +267,15 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
         {
             throw new ValidationException([new ValidationFailure(nameof(payment.PaymentCode),
                 "Mã thanh toán PayOS không hợp lệ.")]);
+        }
+
+        await using var paymentLock = await _paymentProcessingLock.TryAcquireAsync(
+            payment.PaymentCode,
+            cancellationToken);
+        if (!paymentLock.Acquired)
+        {
+            throw new ValidationException([new ValidationFailure("payment",
+                "Payment đang được đồng bộ. Vui lòng thử lại sau.")]);
         }
 
         CustomBookingPaymentStatusResult paymentStatus;
@@ -307,17 +331,20 @@ public sealed class HandlePaymentWebhookCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly ICustomBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
+    private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
 
     public HandlePaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICustomBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IPaymentProcessingLock? paymentProcessingLock = null)
     {
         _context = context;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
+        _paymentProcessingLock = paymentProcessingLock ?? NullPaymentProcessingLock.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -333,6 +360,14 @@ public sealed class HandlePaymentWebhookCommandHandler
         }
 
         var paymentCode = webhook.Data.OrderCode.ToString(CultureInfo.InvariantCulture);
+        await using var paymentLock = await _paymentProcessingLock.TryAcquireAsync(
+            paymentCode,
+            cancellationToken);
+        if (!paymentLock.Acquired)
+        {
+            return new PaymentWebhookResult(true, webhook.Data.OrderCode, null, "Payment đang được xử lý.");
+        }
+
         var payment = await _context.Set<Payment>()
             .Include(x => x.Booking)
                 .ThenInclude(x => x.Payments)

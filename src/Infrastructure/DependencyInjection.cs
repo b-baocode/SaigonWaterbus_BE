@@ -9,7 +9,9 @@ using SaigonWaterbus.Infrastructure.Data.Interceptors;
 using SaigonWaterbus.Infrastructure.Media;
 using SaigonWaterbus.Infrastructure.Options;
 using SaigonWaterbus.Infrastructure.Payments;
+using SaigonWaterbus.Infrastructure.Redis;
 using SaigonWaterbus.Infrastructure.Security;
+using StackExchange.Redis;
 
 namespace Microsoft.Extensions.DependencyInjection;
 
@@ -57,6 +59,8 @@ public static class DependencyInjection
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddHttpClient(PayOsHttpClientName);
+        AddRedis(builder);
+        AddRedisBackedServices(builder);
         builder.Services.AddScoped<EsmsSmsSender>();
         builder.Services.AddScoped<ISmsOtpSender>(provider =>
         {
@@ -144,8 +148,49 @@ public static class DependencyInjection
         builder.Services.Configure<EsmsOptions>(builder.Configuration.GetSection(EsmsOptions.SectionName));
         builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection(CloudinaryOptions.SectionName));
         builder.Services.Configure<PayOsOptions>(builder.Configuration.GetSection(PayOsOptions.SectionName));
+        builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection(RedisOptions.SectionName));
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
+    }
+
+    private static void AddRedis(IHostApplicationBuilder builder)
+    {
+        var redisOptions = builder.Configuration.GetSection(RedisOptions.SectionName).Get<RedisOptions>() ?? new RedisOptions();
+        if (!redisOptions.Enabled)
+        {
+            return;
+        }
+
+        Guard.Against.NullOrWhiteSpace(
+            redisOptions.ConnectionString,
+            message: "Redis connection string not found while Redis is enabled.");
+
+        builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+        {
+            var configurationOptions = ConfigurationOptions.Parse(redisOptions.ConnectionString);
+            configurationOptions.AbortOnConnectFail = false;
+            configurationOptions.ClientName = string.IsNullOrWhiteSpace(configurationOptions.ClientName)
+                ? "saigon-waterbus-api"
+                : configurationOptions.ClientName;
+
+            return ConnectionMultiplexer.Connect(configurationOptions);
+        });
+    }
+
+    private static void AddRedisBackedServices(IHostApplicationBuilder builder)
+    {
+        var redisEnabled = builder.Configuration.GetValue<bool>($"{RedisOptions.SectionName}:Enabled");
+        if (redisEnabled)
+        {
+            builder.Services.AddScoped<IOtpCache, RedisOtpCache>();
+            builder.Services.AddScoped<IBoatHoldService, RedisBoatHoldService>();
+            builder.Services.AddScoped<IPaymentProcessingLock, RedisPaymentProcessingLock>();
+            return;
+        }
+
+        builder.Services.AddScoped<IOtpCache, NoOpOtpCache>();
+        builder.Services.AddScoped<IBoatHoldService, NoOpBoatHoldService>();
+        builder.Services.AddScoped<IPaymentProcessingLock, NoOpPaymentProcessingLock>();
     }
 }

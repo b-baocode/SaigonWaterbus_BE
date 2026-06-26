@@ -27,6 +27,7 @@ public sealed class ResendOtpRequestUseCase
     private readonly ISmsOtpSender _smsOtpSender;
     private readonly IOtpPolicy _otpPolicy;
     private readonly IUserContext _userContext;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public ResendOtpRequestUseCase(
@@ -37,7 +38,8 @@ public sealed class ResendOtpRequestUseCase
         ISmsOtpSender smsOtpSender,
         IOtpPolicy otpPolicy,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
     {
         _context = context;
         _secretHasher = secretHasher;
@@ -46,6 +48,7 @@ public sealed class ResendOtpRequestUseCase
         _smsOtpSender = smsOtpSender;
         _otpPolicy = otpPolicy;
         _userContext = userContext;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -139,6 +142,7 @@ public sealed class ResendOtpRequestUseCase
 
             _context.Set<OtpChallenge>().Add(newChallenge);
             await _context.SaveChangesAsync(ct);
+            await _otpCache.StoreAsync(newChallenge, newChallenge.CodeHash, ct);
 
             return (
                 Id: newChallenge.Id,
