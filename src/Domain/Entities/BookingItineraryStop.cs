@@ -1,8 +1,8 @@
 namespace SaigonWaterbus.Domain.Entities;
 
-public class CustomBookingItineraryStop : BaseGuidAuditableEntity
+public class BookingItineraryStop : BaseGuidAuditableEntity
 {
-    public Guid CustomBookingId { get; set; }
+    public Guid BookingId { get; set; }
 
     public Guid StationId { get; set; }
 
@@ -12,7 +12,7 @@ public class CustomBookingItineraryStop : BaseGuidAuditableEntity
 
     public string? Note { get; set; }
 
-    public CustomBooking CustomBooking { get; set; } = null!;
+    public Booking Booking { get; set; } = null!;
 
     public Station Station { get; set; } = null!;
 }

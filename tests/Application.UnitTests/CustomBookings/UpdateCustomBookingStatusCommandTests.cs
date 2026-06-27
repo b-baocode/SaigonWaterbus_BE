@@ -69,9 +69,10 @@ public class UpdateCustomBookingStatusCommandTests
             .ShouldContain("chưa có tàu hoặc chưa có giá");
     }
 
-    private static CustomBooking CustomBooking(BookingStatus status, string paymentStatus) =>
+    private static Booking CustomBooking(BookingStatus status, string paymentStatus) =>
         new()
         {
+            BookingType = Booking.CustomBookingType,
             BookingCode = $"CB{Guid.NewGuid():N}"[..12].ToUpperInvariant(),
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",

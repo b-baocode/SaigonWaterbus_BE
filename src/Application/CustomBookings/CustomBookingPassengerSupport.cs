@@ -63,11 +63,11 @@ internal static class CustomBookingPassengerSupport
             StringComparison.OrdinalIgnoreCase));
 
     public static void EnsurePassengerTypeCountsMatchRequest(
-        CustomBooking booking,
+        Booking booking,
         IReadOnlyCollection<BookingPassenger> passengers,
         string propertyName)
     {
-        if (booking.AdultCount + booking.ChildCount <= 0)
+        if (booking.AdultCount.GetValueOrDefault() + booking.ChildCount.GetValueOrDefault() <= 0)
         {
             return;
         }
@@ -75,13 +75,13 @@ internal static class CustomBookingPassengerSupport
         var adultCount = CountAdults(passengers);
         var childCount = CountChildren(passengers);
 
-        if (adultCount <= booking.AdultCount && childCount <= booking.ChildCount)
+        if (adultCount <= booking.AdultCount.GetValueOrDefault() && childCount <= booking.ChildCount.GetValueOrDefault())
         {
             return;
         }
 
         throw new ValidationException([new ValidationFailure(propertyName,
-            $"Danh sách hành khách không được vượt quá yêu cầu: tối đa {booking.AdultCount} người lớn và {booking.ChildCount} trẻ em.")]);
+            $"Danh sách hành khách không được vượt quá yêu cầu: tối đa {booking.AdultCount.GetValueOrDefault()} người lớn và {booking.ChildCount.GetValueOrDefault()} trẻ em.")]);
     }
 
     public static string ResolvePassengerType(DateOnly dateOfBirth, DateOnly today) =>

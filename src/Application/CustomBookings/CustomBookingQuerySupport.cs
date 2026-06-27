@@ -5,8 +5,12 @@ namespace SaigonWaterbus.Application.CustomBookings;
 
 internal static class CustomBookingQuerySupport
 {
-    public static IQueryable<CustomBooking> BuildDetailQuery(IApplicationDbContext context) =>
-        context.Set<CustomBooking>()
+    public static IQueryable<Booking> BuildBaseQuery(IApplicationDbContext context) =>
+        context.Set<Booking>()
+            .Where(b => b.BookingType == Booking.CustomBookingType);
+
+    public static IQueryable<Booking> BuildDetailQuery(IApplicationDbContext context) =>
+        BuildBaseQuery(context)
             .Include(b => b.Boat)
             .Include(b => b.FromStation)
             .Include(b => b.ToStation)
@@ -18,7 +22,7 @@ internal static class CustomBookingQuerySupport
             .Include(b => b.Tickets);
 
     public static CustomBookingDetailDto ToDetailDto(
-        CustomBooking booking,
+        Booking booking,
         IReadOnlyCollection<Route>? relatedRoutes = null)
     {
         var routeEstimate = CustomBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
@@ -30,19 +34,19 @@ internal static class CustomBookingQuerySupport
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
             booking.Boat?.Name,
-            booking.PassengerCount,
-            booking.AdultCount,
-            booking.ChildCount,
+            booking.PassengerCount.GetValueOrDefault(),
+            booking.AdultCount.GetValueOrDefault(),
+            booking.ChildCount.GetValueOrDefault(),
             booking.PreferredNumberOfDecks,
             booking.PreferredSeatSetupType?.ToString(),
-            booking.DepartureDate,
+            booking.DepartureDate.GetValueOrDefault(),
             booking.StartTime,
-            booking.RentalUnit.ToString(),
-            booking.DurationValue,
+            booking.RentalUnit.GetValueOrDefault().ToString(),
+            booking.DurationValue.GetValueOrDefault(),
             CustomBookingRoutePricingSupport.ToDto(
                 routeEstimate,
-                booking.RentalUnit,
-                booking.DurationValue),
+                booking.RentalUnit.GetValueOrDefault(),
+                booking.DurationValue.GetValueOrDefault()),
             booking.FromStation?.StationName,
             booking.ToStation?.StationName,
             booking.ItineraryStops

@@ -50,7 +50,7 @@ public sealed class GetMyBookingHistoryQueryHandler
                 .ThenInclude(x => x!.Route)
                     .ThenInclude(x => x.RouteStops)
                         .ThenInclude(x => x.Station)
-            .Where(x => EF.Property<string>(x, "booking_type") == "SeatBooking")
+            .Where(x => x.BookingType == Booking.SeatBookingType)
             .Where(x => x.UserId == userId)
             .ToListAsync(cancellationToken);
 

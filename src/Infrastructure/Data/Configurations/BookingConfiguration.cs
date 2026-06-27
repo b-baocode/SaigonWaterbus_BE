@@ -12,10 +12,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.ToTable("bookings");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("booking_id");
-        builder.HasDiscriminator<string>("booking_type")
-            .HasValue<Booking>("SeatBooking")
-            .HasValue<CustomBooking>("CustomBooking");
-        builder.Property<string>("booking_type")
+        builder.Property(x => x.BookingType)
             .HasColumnName("booking_type")
             .HasMaxLength(30)
             .IsRequired();
@@ -45,15 +42,44 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
         builder.Ignore(x => x.PointsUsed);
         builder.Ignore(x => x.PointsEarned);
+        builder.Property(x => x.BoatId).HasColumnName("boat_id");
+        builder.Property(x => x.FromStationId).HasColumnName("custom_from_station_id");
+        builder.Property(x => x.ToStationId).HasColumnName("custom_to_station_id");
+        builder.Property(x => x.DepartureDate).HasColumnName("departure_date");
+        builder.Property(x => x.StartTime).HasColumnName("start_time");
+        builder.Property(x => x.RentalUnit)
+            .HasColumnName("rental_unit")
+            .HasConversion<string>()
+            .HasMaxLength(10);
+        builder.Property(x => x.DurationValue).HasColumnName("duration_value").IsRequired(false);
+        builder.Property(x => x.PassengerCount).HasColumnName("passenger_count").IsRequired(false);
+        builder.Property(x => x.AdultCount).HasColumnName("adult_count").IsRequired(false);
+        builder.Property(x => x.ChildCount).HasColumnName("child_count").IsRequired(false);
+        builder.Property(x => x.PreferredNumberOfDecks).HasColumnName("preferred_number_of_decks");
+        builder.Property(x => x.PreferredSeatSetupType)
+            .HasColumnName("preferred_seat_setup_type")
+            .HasConversion<string>()
+            .HasMaxLength(30);
+        builder.Property(x => x.BoatRequirements).HasColumnName("boat_requirements").HasMaxLength(1000);
+        builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
+        builder.Property(x => x.HoldExpiresAt).HasColumnName("hold_expires_at");
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
         builder.Ignore(x => x.CreatedBy);
         builder.Ignore(x => x.LastModified);
         builder.Ignore(x => x.LastModifiedBy);
 
+        builder.HasIndex(x => new { x.BoatId, x.DepartureDate })
+            .HasDatabaseName("ux_bookings_boat_date_active")
+            .IsUnique()
+            .HasFilter("booking_type = 'CustomBooking' AND status IN ('Quoted', 'Confirmed')");
+
         builder.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Promotion).WithMany(p => p.Bookings).HasForeignKey(x => x.PromotionId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.Boat).WithMany().HasForeignKey(x => x.BoatId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.FromStation).WithMany().HasForeignKey(x => x.FromStationId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.ToStation).WithMany().HasForeignKey(x => x.ToStationId).OnDelete(DeleteBehavior.SetNull);
     }
 
     private static string ToDatabaseBookingStatus(BookingStatus status) =>

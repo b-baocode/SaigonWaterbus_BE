@@ -63,7 +63,7 @@ public sealed class ImportCustomBookingPassengersCommandHandler
         var userId = _userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
-        var booking = await _context.Set<CustomBooking>()
+        var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Passengers)
             .Include(x => x.Payments)
             .Include(x => x.Boat)
@@ -94,7 +94,7 @@ public sealed class ImportCustomBookingPassengersCommandHandler
         var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
         var passengers = PassengerManifestParser.Parse(request.FileName, request.Content, today);
 
-        if (passengers.Count > booking.PassengerCount)
+        if (passengers.Count > booking.PassengerCount.GetValueOrDefault())
         {
             throw new ValidationException([new ValidationFailure(nameof(request.Content),
                 "Danh sách hành khách không được vượt quá số khách đã đăng ký.")]);
@@ -124,7 +124,7 @@ public sealed class ImportCustomBookingPassengersCommandHandler
 
         return new ImportCustomBookingPassengersResult(
             booking.Id,
-            booking.PassengerCount,
+            booking.PassengerCount.GetValueOrDefault(),
             booking.Passengers.Count,
             adultCount,
             childCount,
@@ -136,7 +136,7 @@ public sealed class ImportCustomBookingPassengersCommandHandler
     }
 
     private async Task SendBoardingPassIfNeededAsync(
-        CustomBooking booking,
+        Booking booking,
         BookingLevelTicketEnsureResult? ticketResult,
         CancellationToken cancellationToken)
     {

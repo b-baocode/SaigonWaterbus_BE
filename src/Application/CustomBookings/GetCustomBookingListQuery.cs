@@ -24,14 +24,14 @@ public sealed class GetCustomBookingListQueryHandler
         var userId = _userContext.UserId
             ?? throw new ValidationException([]);
 
-        return await _context.Set<CustomBooking>()
+        return await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.Created)
             .Select(b => new CustomBookingListItemDto(
                 b.Id,
                 b.BookingCode,
                 b.Created,
-                b.DepartureDate,
+                b.DepartureDate.GetValueOrDefault(),
                 b.BookingStatus.ToString(),
                 b.TotalAmount,
                 b.Boat != null ? b.Boat.Name : null))

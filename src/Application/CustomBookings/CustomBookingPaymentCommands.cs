@@ -172,7 +172,7 @@ public sealed class CreateCustomBookingPaymentCommandHandler
     }
 
     private async Task<bool> TryRecoverCreatedPaymentAsync(
-        CustomBooking booking,
+        Booking booking,
         Payment payment,
         long orderCode,
         long expectedAmount,
@@ -366,7 +366,7 @@ public sealed class HandleCustomBookingPaymentWebhookCommandHandler
                 "Không tìm thấy orderCode trong hệ thống.");
         }
 
-        if (payment.Booking is not CustomBooking booking)
+        if (payment.Booking.BookingType != Booking.CustomBookingType)
         {
             return new CustomBookingPaymentWebhookResult(
                 false,
@@ -375,14 +375,14 @@ public sealed class HandleCustomBookingPaymentWebhookCommandHandler
                 "OrderCode không thuộc custom booking.");
         }
 
-        booking = await _context.Set<CustomBooking>()
+        var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station)
             .Include(x => x.Payments)
-            .SingleAsync(x => x.Id == booking.Id, cancellationToken);
+            .SingleAsync(x => x.Id == payment.BookingId, cancellationToken);
         payment = booking.Payments.Single(x => x.Id == payment.Id);
 
         var expectedAmount = CustomBookingPaymentSupport.ToPayOsAmount(
@@ -458,7 +458,7 @@ internal static class CustomBookingPaymentSupport
     public const string RemainingPurpose = "Remaining";
     private const decimal DefaultDepositPercent = 50m;
 
-    public static async Task<CustomBooking> GetOwnedCustomBookingAsync(
+    public static async Task<Booking> GetOwnedCustomBookingAsync(
         IApplicationDbContext context,
         IUserContext userContext,
         Guid bookingId,
@@ -468,7 +468,7 @@ internal static class CustomBookingPaymentSupport
         var userId = userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
-        IQueryable<CustomBooking> query = context.Set<CustomBooking>()
+        IQueryable<Booking> query = CustomBookingQuerySupport.BuildBaseQuery(context)
             .Include(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
@@ -490,7 +490,7 @@ internal static class CustomBookingPaymentSupport
         return booking;
     }
 
-    public static void EnsureCanCreatePayment(CustomBooking booking)
+    public static void EnsureCanCreatePayment(Booking booking)
     {
         if (booking.BookingStatus == BookingStatus.Cancelled)
         {
@@ -518,7 +518,7 @@ internal static class CustomBookingPaymentSupport
     }
 
     public static CustomBookingPaymentPlan ResolvePaymentPlan(
-        CustomBooking booking,
+        Booking booking,
         CustomBookingPaymentOption paymentOption,
         decimal? requestedDepositPercent,
         decimal paidAmount)
@@ -605,10 +605,10 @@ internal static class CustomBookingPaymentSupport
         return (long)amount;
     }
 
-    public static string CreatePaymentDescription(CustomBooking booking) =>
-        $"{booking.DepartureDate:yyMMdd}{booking.Id.ToString("N")[^6..].ToUpperInvariant()}";
+    public static string CreatePaymentDescription(Booking booking) =>
+        $"{booking.DepartureDate.GetValueOrDefault():yyMMdd}{booking.Id.ToString("N")[^6..].ToUpperInvariant()}";
 
-    public static DateTimeOffset? ResolvePaymentExpiredAt(CustomBooking booking) => null;
+    public static DateTimeOffset? ResolvePaymentExpiredAt(Booking booking) => null;
 
     public static bool IsPayOsPayment(Payment payment) =>
         string.Equals(payment.Provider, PayOsProvider, StringComparison.OrdinalIgnoreCase);
@@ -619,12 +619,12 @@ internal static class CustomBookingPaymentSupport
     public static bool IsPaid(string status) =>
         string.Equals(status, PaidStatus, StringComparison.OrdinalIgnoreCase);
 
-    public static decimal GetPaidAmount(CustomBooking booking) =>
+    public static decimal GetPaidAmount(Booking booking) =>
         booking.Payments
             .Where(x => IsPayOsPayment(x) && IsPaid(x.PaymentStatus))
             .Sum(x => x.Amount);
 
-    public static void RestorePaymentSummaryFromPaidPayments(CustomBooking booking)
+    public static void RestorePaymentSummaryFromPaidPayments(Booking booking)
     {
         var paidAmount = GetPaidAmount(booking);
         booking.DepositAmount = Math.Min(paidAmount, booking.TotalAmount);
@@ -636,7 +636,7 @@ internal static class CustomBookingPaymentSupport
                 : DepositPaidBookingPaymentStatus;
     }
 
-    public static Payment? GetLatestPayOsPayment(CustomBooking booking) =>
+    public static Payment? GetLatestPayOsPayment(Booking booking) =>
         booking.Payments
             .Where(IsPayOsPayment)
             .OrderByDescending(x => x.Created)
@@ -671,7 +671,7 @@ internal static class CustomBookingPaymentSupport
     }
 
     public static void ApplyPaymentStatus(
-        CustomBooking booking,
+        Booking booking,
         Payment payment,
         string providerStatus,
         string? paymentLinkId,
@@ -704,7 +704,7 @@ internal static class CustomBookingPaymentSupport
     }
 
     public static CreateCustomBookingPaymentResult ToCreatePaymentResult(
-        CustomBooking booking,
+        Booking booking,
         Payment payment) =>
         new(
             booking.Id,
@@ -723,7 +723,7 @@ internal static class CustomBookingPaymentSupport
             payment.QrCode);
 
     public static SyncCustomBookingPaymentResult ToSyncPaymentResult(
-        CustomBooking booking,
+        Booking booking,
         Payment payment) =>
         new(
             booking.Id,

@@ -549,10 +549,10 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
 
     private async Task<DateTimeOffset?> ResolveDepartureAsync(Booking booking, CancellationToken cancellationToken)
     {
-        if (booking is CustomBooking customBooking)
+        if (booking.BookingType == Booking.CustomBookingType)
         {
-            var startTime = customBooking.StartTime ?? new TimeOnly(0, 0);
-            return new DateTimeOffset(customBooking.DepartureDate.ToDateTime(startTime), TimeSpan.Zero);
+            var startTime = booking.StartTime ?? new TimeOnly(0, 0);
+            return new DateTimeOffset(booking.DepartureDate.GetValueOrDefault().ToDateTime(startTime), TimeSpan.Zero);
         }
 
         if (booking.TripId is Guid tripId)
@@ -638,10 +638,10 @@ internal static class PaymentSupport
         }
 
         query = query
-            .Include(x => ((CustomBooking)x.Booking).Boat)
-            .Include(x => ((CustomBooking)x.Booking).FromStation)
-            .Include(x => ((CustomBooking)x.Booking).ToStation)
-            .Include(x => ((CustomBooking)x.Booking).ItineraryStops)
+            .Include(x => x.Booking.Boat)
+            .Include(x => x.Booking.FromStation)
+            .Include(x => x.Booking.ToStation)
+            .Include(x => x.Booking.ItineraryStops)
                 .ThenInclude(x => x.Station);
 
         var payment = await query.SingleOrDefaultAsync(x => x.Id == paymentId, cancellationToken)
@@ -662,7 +662,7 @@ internal static class PaymentSupport
                 "Không thể thanh toán booking đã hủy.")]);
         }
 
-        if (booking is CustomBooking && booking.BookingStatus == BookingStatus.PendingQuote)
+        if (booking.BookingType == Booking.CustomBookingType && booking.BookingStatus == BookingStatus.PendingQuote)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Custom booking chưa được admin nhập tàu và chốt giá.")]);
@@ -693,7 +693,7 @@ internal static class PaymentSupport
             throw new ValidationException([new ValidationFailure("payment", "Booking này đã thanh toán đủ.")]);
         }
 
-        if (booking is not CustomBooking)
+        if (booking.BookingType != Booking.CustomBookingType)
         {
             if (paymentOption is BookingPaymentOption.Deposit or BookingPaymentOption.Remaining)
             {
@@ -955,22 +955,23 @@ internal static class PaymentSupport
                 PaidBookingPaymentStatus,
                 StringComparison.OrdinalIgnoreCase)
             || booking.RemainingAmount <= 0;
-        var customBooking = booking as CustomBooking;
-        var stops = customBooking?.ItineraryStops
-            .OrderBy(x => x.StopOrder)
-            .Select(x => new PaymentNotificationStop(
-                x.Station.StationName,
-                x.Note,
-                x.StayDurationMinutes))
-            .ToList()
-            ?? [];
+        var isCustomBooking = booking.BookingType == Booking.CustomBookingType;
+        var stops = isCustomBooking
+            ? booking.ItineraryStops
+                .OrderBy(x => x.StopOrder)
+                .Select(x => new PaymentNotificationStop(
+                    x.Station.StationName,
+                    x.Note,
+                    x.StayDurationMinutes))
+                .ToList()
+            : [];
 
         return new PaymentSucceededNotification(
             booking.ContactEmail.Trim(),
             contactName,
             booking.ContactPhone,
             booking.BookingCode,
-            customBooking is null ? "Booking" : "CustomBooking",
+            isCustomBooking ? "CustomBooking" : "Booking",
             booking.Created == default ? payment.PaidAt.Value : booking.Created,
             payment.PaymentCode,
             payment.PaymentPurpose,
@@ -982,25 +983,25 @@ internal static class PaymentSupport
             booking.RemainingAmount,
             payment.PaidAt.Value,
             isFullyPaid,
-            customBooking?.DepartureDate,
-            customBooking?.StartTime,
-            customBooking?.RentalUnit.ToString(),
-            customBooking?.DurationValue ?? 0,
-            customBooking?.PassengerCount ?? booking.Passengers.Count,
-            customBooking?.Boat?.Name,
-            customBooking?.FromStation?.StationName,
-            ResolveStationAddress(customBooking?.FromStation),
-            customBooking?.ToStation?.StationName,
-            ResolveStationAddress(customBooking?.ToStation),
+            isCustomBooking ? booking.DepartureDate : null,
+            isCustomBooking ? booking.StartTime : null,
+            isCustomBooking ? booking.RentalUnit?.ToString() : null,
+            isCustomBooking ? booking.DurationValue.GetValueOrDefault() : 0,
+            isCustomBooking ? booking.PassengerCount.GetValueOrDefault() : booking.Passengers.Count,
+            isCustomBooking ? booking.Boat?.Name : null,
+            isCustomBooking ? booking.FromStation?.StationName : null,
+            ResolveStationAddress(isCustomBooking ? booking.FromStation : null),
+            isCustomBooking ? booking.ToStation?.StationName : null,
+            ResolveStationAddress(isCustomBooking ? booking.ToStation : null),
             stops);
     }
 
     private static IQueryable<Booking> IncludeCustomBookingNotificationDetails(IQueryable<Booking> query) =>
         query
-            .Include(x => ((CustomBooking)x).Boat)
-            .Include(x => ((CustomBooking)x).FromStation)
-            .Include(x => ((CustomBooking)x).ToStation)
-            .Include(x => ((CustomBooking)x).ItineraryStops)
+            .Include(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station);
 
     private static string? ResolveStationAddress(Station? station) =>

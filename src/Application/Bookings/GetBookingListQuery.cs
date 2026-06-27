@@ -24,7 +24,7 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
             ?? throw new ValidationException([]);
 
         return await _context.Set<Booking>()
-            .Where(b => EF.Property<string>(b, "booking_type") == "SeatBooking")
+            .Where(b => b.BookingType == Booking.SeatBookingType)
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.Created)
             .Select(b => new BookingListItemDto(

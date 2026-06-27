@@ -16,6 +16,28 @@ public sealed record CreateCustomBookingResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PromotionCode);
 
+public sealed record CreateCustomBookingRequest(
+    DateOnly DepartureDate,
+    BoatRentalUnit RentalUnit,
+    int DurationValue,
+    int AdultCount,
+    int ChildCount,
+    TimeOnly? StartTime = null,
+    Guid? FromStationId = null,
+    Guid? ToStationId = null,
+    IReadOnlyList<CreateCustomBookingItineraryStopRequest>? ItineraryStops = null,
+    int? PreferredNumberOfDecks = null,
+    SeatSetupType? PreferredSeatSetupType = null,
+    string? BoatRequirements = null,
+    string? PromotionCode = null,
+    string? SpecialRequests = null);
+
+public sealed record CreateCustomBookingItineraryStopRequest(
+    Guid StationId,
+    int StopOrder,
+    int StayDurationMinutes,
+    string? Note = null);
+
 public sealed record RentalBoatEstimateListDto(
     int PassengerCount,
     int AdultCount,

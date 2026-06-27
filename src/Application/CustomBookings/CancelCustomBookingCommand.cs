@@ -38,7 +38,7 @@ public sealed class CancelCustomBookingCommandHandler : IRequestHandler<CancelCu
         var userId = _userContext.UserId
             ?? throw new ValidationException([]);
 
-        var booking = await _context.Set<CustomBooking>()
+        var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Tickets)
             .SingleOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Custom booking not found.");
@@ -64,10 +64,10 @@ public sealed class CancelCustomBookingCommandHandler : IRequestHandler<CancelCu
         await _boatHoldService.ReleaseAsync(
             booking.Id,
             booking.BoatId,
-            booking.DepartureDate,
+            booking.DepartureDate.GetValueOrDefault(),
             booking.StartTime,
-            booking.RentalUnit,
-            booking.DurationValue,
+            booking.RentalUnit.GetValueOrDefault(),
+            booking.DurationValue.GetValueOrDefault(),
             cancellationToken);
     }
 }

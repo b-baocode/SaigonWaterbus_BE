@@ -4,15 +4,15 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Infrastructure.Data.Configurations;
 
-public sealed class CustomBookingItineraryStopConfiguration : IEntityTypeConfiguration<CustomBookingItineraryStop>
+public sealed class BookingItineraryStopConfiguration : IEntityTypeConfiguration<BookingItineraryStop>
 {
-    public void Configure(EntityTypeBuilder<CustomBookingItineraryStop> builder)
+    public void Configure(EntityTypeBuilder<BookingItineraryStop> builder)
     {
         builder.ToTable("itinerary_stops");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Id).HasColumnName("itinerary_stop_id");
 
-        builder.Property(x => x.CustomBookingId).HasColumnName("custom_booking_id").IsRequired();
+        builder.Property(x => x.BookingId).HasColumnName("booking_id").IsRequired();
         builder.Property(x => x.StationId).HasColumnName("station_id").IsRequired();
         builder.Property(x => x.StopOrder).HasColumnName("stop_order").IsRequired();
         builder.Property(x => x.StayDurationMinutes).HasColumnName("stay_duration_minutes").IsRequired();
@@ -23,12 +23,12 @@ public sealed class CustomBookingItineraryStopConfiguration : IEntityTypeConfigu
         builder.Ignore(x => x.LastModified);
         builder.Ignore(x => x.LastModifiedBy);
 
-        builder.HasIndex(x => new { x.CustomBookingId, x.StopOrder }).IsUnique();
+        builder.HasIndex(x => new { x.BookingId, x.StopOrder }).IsUnique();
         builder.HasIndex(x => x.StationId);
 
-        builder.HasOne(x => x.CustomBooking)
+        builder.HasOne(x => x.Booking)
             .WithMany(x => x.ItineraryStops)
-            .HasForeignKey(x => x.CustomBookingId)
+            .HasForeignKey(x => x.BookingId)
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
 

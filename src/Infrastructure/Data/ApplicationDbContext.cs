@@ -32,8 +32,6 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Booking> Bookings => Set<Booking>();
 
-    public DbSet<CustomBooking> CustomBookings => Set<CustomBooking>();
-
     public DbSet<BookingPassenger> BookingPassengers => Set<BookingPassenger>();
 
     public DbSet<Payment> Payments => Set<Payment>();

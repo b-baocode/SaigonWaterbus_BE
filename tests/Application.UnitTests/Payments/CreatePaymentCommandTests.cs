@@ -16,8 +16,9 @@ public class CreatePaymentCommandTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
-        var booking = new CustomBooking
+        var booking = new Booking
         {
+            BookingType = Booking.CustomBookingType,
             UserId = userId,
             BookingCode = "CB-PAYMENT",
             ContactName = "Nguyen Van A",
@@ -59,8 +60,9 @@ public class CreatePaymentCommandTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
-        var booking = new CustomBooking
+        var booking = new Booking
         {
+            BookingType = Booking.CustomBookingType,
             UserId = userId,
             BookingCode = "CB-PAYMENT-FAIL",
             ContactName = "Nguyen Van A",
@@ -103,8 +105,9 @@ public class CreatePaymentCommandTests
     public async Task WebhookPaidDepositSendsPaymentNotification()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var booking = new CustomBooking
+        var booking = new Booking
         {
+            BookingType = Booking.CustomBookingType,
             UserId = Guid.NewGuid(),
             BookingCode = "CB-DEPOSIT",
             ContactName = "Nguyen Van A",
@@ -154,8 +157,9 @@ public class CreatePaymentCommandTests
     public async Task WebhookPaidFullSendsPaymentNotification()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var booking = new CustomBooking
+        var booking = new Booking
         {
+            BookingType = Booking.CustomBookingType,
             UserId = Guid.NewGuid(),
             BookingCode = "CB-FULL",
             ContactName = "Nguyen Van A",

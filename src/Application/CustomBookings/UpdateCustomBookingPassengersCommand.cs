@@ -53,7 +53,7 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
         var userId = _userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
-        var booking = await _context.Set<CustomBooking>()
+        var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Passengers)
             .Include(x => x.Payments)
             .Include(x => x.Boat)
@@ -81,7 +81,7 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
                 "Chỉ nhập danh sách hành khách sau khi custom booking đã thanh toán đủ.")]);
         }
 
-        if (request.Passengers.Count > booking.PassengerCount)
+        if (request.Passengers.Count > booking.PassengerCount.GetValueOrDefault())
         {
             throw new ValidationException([new ValidationFailure(nameof(request.Passengers),
                 "Danh sách hành khách không được vượt quá số khách đã đăng ký.")]);
@@ -112,7 +112,7 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
 
         return new UpdateCustomBookingPassengersResult(
             booking.Id,
-            booking.PassengerCount,
+            booking.PassengerCount.GetValueOrDefault(),
             booking.Passengers.Count,
             adultCount,
             childCount,
@@ -124,7 +124,7 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
     }
 
     private async Task SendBoardingPassIfNeededAsync(
-        CustomBooking booking,
+        Booking booking,
         BookingLevelTicketEnsureResult? ticketResult,
         CancellationToken cancellationToken)
     {

@@ -28,18 +28,18 @@ public sealed class GetAdminCustomBookingListQueryHandler
     {
         await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
 
-        return await _context.Set<CustomBooking>()
+        return await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .OrderByDescending(x => x.Created)
             .Select(x => new AdminCustomBookingListItemDto(
                 x.Id,
                 x.BookingCode,
                 x.Created,
-                x.DepartureDate,
+                x.DepartureDate.GetValueOrDefault(),
                 x.BookingStatus.ToString(),
                 x.PaymentStatus,
-                x.PassengerCount,
-                x.AdultCount,
-                x.ChildCount,
+                x.PassengerCount.GetValueOrDefault(),
+                x.AdultCount.GetValueOrDefault(),
+                x.ChildCount.GetValueOrDefault(),
                 x.TotalAmount,
                 x.ContactName,
                 x.ContactPhone,
@@ -131,7 +131,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         var previousDepartureDate = booking.DepartureDate;
         var previousStartTime = booking.StartTime;
         var previousRentalUnit = booking.RentalUnit;
-        var previousDurationValue = booking.DurationValue;
+        var previousDurationValue = booking.DurationValue.GetValueOrDefault();
 
         ApplyStatusUpdate(booking, request.BookingStatus);
 
@@ -141,9 +141,9 @@ public sealed class UpdateCustomBookingStatusCommandHandler
             await _boatHoldService.ReleaseAsync(
                 booking.Id,
                 previousBoatId,
-                previousDepartureDate,
+                previousDepartureDate.GetValueOrDefault(),
                 previousStartTime,
-                previousRentalUnit,
+                previousRentalUnit.GetValueOrDefault(),
                 previousDurationValue,
                 cancellationToken);
         }
@@ -156,7 +156,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         return CustomBookingQuerySupport.ToDetailDto(booking, relatedRoutes);
     }
 
-    private static void ApplyStatusUpdate(CustomBooking booking, BookingStatus targetStatus)
+    private static void ApplyStatusUpdate(Booking booking, BookingStatus targetStatus)
     {
         if (booking.BookingStatus == targetStatus)
         {
@@ -209,7 +209,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         booking.BookingStatus = targetStatus;
     }
 
-    private static void EnsureCanMarkQuoted(CustomBooking booking, BookingStatus targetStatus)
+    private static void EnsureCanMarkQuoted(Booking booking, BookingStatus targetStatus)
     {
         EnsureNoPendingOrPaidPayments(booking, targetStatus);
 
@@ -220,7 +220,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         }
     }
 
-    private static void EnsureCanMarkConfirmed(CustomBooking booking, BookingStatus targetStatus)
+    private static void EnsureCanMarkConfirmed(Booking booking, BookingStatus targetStatus)
     {
         if (IsBookingPaymentStatus(booking, DepositPaidBookingPaymentStatus, PaidPaymentStatus)
             || booking.Payments.Any(x => IsPaymentStatus(x.PaymentStatus, PaidPaymentStatus)))
@@ -232,7 +232,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
             "Không thể chuyển sang Confirmed khi booking chưa có thanh toán đặt cọc hoặc thanh toán đủ.");
     }
 
-    private static void EnsureCanCancel(CustomBooking booking, BookingStatus targetStatus)
+    private static void EnsureCanCancel(Booking booking, BookingStatus targetStatus)
     {
         if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded)
         {
@@ -241,7 +241,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         }
     }
 
-    private static void EnsureCanExpire(CustomBooking booking, BookingStatus targetStatus)
+    private static void EnsureCanExpire(Booking booking, BookingStatus targetStatus)
     {
         if (booking.BookingStatus is BookingStatus.Confirmed or BookingStatus.Completed or BookingStatus.Refunded)
         {
@@ -252,7 +252,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         EnsureNoPendingOrPaidPayments(booking, targetStatus);
     }
 
-    private static void EnsureCanComplete(CustomBooking booking, BookingStatus targetStatus)
+    private static void EnsureCanComplete(Booking booking, BookingStatus targetStatus)
     {
         if (!IsBookingPaymentStatus(booking, PaidPaymentStatus))
         {
@@ -261,7 +261,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         }
     }
 
-    private static void EnsureCanMarkRefunded(CustomBooking booking, BookingStatus targetStatus)
+    private static void EnsureCanMarkRefunded(Booking booking, BookingStatus targetStatus)
     {
         if (!IsBookingPaymentStatus(booking, RefundedBookingPaymentStatus))
         {
@@ -270,7 +270,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         }
     }
 
-    private static void EnsureNoPendingOrPaidPayments(CustomBooking booking, BookingStatus targetStatus)
+    private static void EnsureNoPendingOrPaidPayments(Booking booking, BookingStatus targetStatus)
     {
         if (booking.Payments.Any(x => IsPaymentStatus(x.PaymentStatus, PendingPaymentStatus, PaidPaymentStatus)))
         {
@@ -279,7 +279,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         }
     }
 
-    private static void UpdateTickets(CustomBooking booking, BookingTicketStatus ticketStatus)
+    private static void UpdateTickets(Booking booking, BookingTicketStatus ticketStatus)
     {
         foreach (var ticket in booking.Tickets)
         {
@@ -357,7 +357,7 @@ public sealed class QuoteCustomBookingCommandHandler
     {
         await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
 
-        var booking = await _context.Set<CustomBooking>()
+        var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Payments)
             .Include(x => x.Promotion)
             .Include(x => x.FromStation)
@@ -379,7 +379,7 @@ public sealed class QuoteCustomBookingCommandHandler
                 "Tàu hiện không khả dụng để thuê.")]);
         }
 
-        if (booking.PassengerCount > boat.SeatCount)
+        if (booking.PassengerCount.GetValueOrDefault() > boat.SeatCount)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.PassengerCount),
                 $"Số khách vượt quá sức chứa của tàu ({boat.SeatCount}).")]);
@@ -387,7 +387,7 @@ public sealed class QuoteCustomBookingCommandHandler
 
         var now = _timeProvider.GetUtcNow();
 
-        var conflicts = await _context.Set<CustomBooking>()
+        var conflicts = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Where(x => x.Id != booking.Id
                 && x.BoatId == boat.Id
                 && x.DepartureDate == booking.DepartureDate
@@ -411,11 +411,11 @@ public sealed class QuoteCustomBookingCommandHandler
         var previousDepartureDate = booking.DepartureDate;
         var previousStartTime = booking.StartTime;
         var previousRentalUnit = booking.RentalUnit;
-        var previousDurationValue = booking.DurationValue;
+        var previousDurationValue = booking.DurationValue.GetValueOrDefault();
         var wasAlreadyPriced = booking.TotalAmount > 0;
         var previousPromotionId = booking.PromotionId;
-        var rentalUnit = request.RentalUnit ?? booking.RentalUnit;
-        var requestedDurationValue = request.DurationValue ?? booking.DurationValue;
+        var rentalUnit = request.RentalUnit ?? booking.RentalUnit.GetValueOrDefault();
+        var requestedDurationValue = request.DurationValue ?? booking.DurationValue.GetValueOrDefault();
         var relatedRoutes = await CustomBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
             booking,
@@ -441,7 +441,7 @@ public sealed class QuoteCustomBookingCommandHandler
         if (!await _boatHoldService.TryHoldAsync(
                 booking.Id,
                 boat.Id,
-                booking.DepartureDate,
+                booking.DepartureDate.GetValueOrDefault(),
                 booking.StartTime,
                 rentalUnit,
                 chargeableDurationValue,
@@ -479,7 +479,7 @@ public sealed class QuoteCustomBookingCommandHandler
             await _boatHoldService.ReleaseAsync(
                 booking.Id,
                 boat.Id,
-                booking.DepartureDate,
+                booking.DepartureDate.GetValueOrDefault(),
                 booking.StartTime,
                 rentalUnit,
                 chargeableDurationValue,
@@ -494,9 +494,9 @@ public sealed class QuoteCustomBookingCommandHandler
             await _boatHoldService.ReleaseAsync(
                 booking.Id,
                 previousBoatId,
-                previousDepartureDate,
+                previousDepartureDate.GetValueOrDefault(),
                 previousStartTime,
-                previousRentalUnit,
+                previousRentalUnit.GetValueOrDefault(),
                 previousDurationValue,
                 cancellationToken);
         }
@@ -522,7 +522,7 @@ public sealed class QuoteCustomBookingCommandHandler
     }
 
     private async Task<Promotion?> ResolvePromotionForQuoteAsync(
-        CustomBooking booking,
+        Booking booking,
         QuoteCustomBookingCommand request,
         decimal subtotalAmount,
         DateTimeOffset now,
@@ -564,7 +564,7 @@ public sealed class QuoteCustomBookingCommandHandler
         return promotion;
     }
 
-    private static void EnsureCanQuote(CustomBooking booking)
+    private static void EnsureCanQuote(Booking booking)
     {
         if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed
             or BookingStatus.Refunded or BookingStatus.Confirmed)

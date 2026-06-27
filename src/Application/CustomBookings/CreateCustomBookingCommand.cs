@@ -24,12 +24,6 @@ public sealed record CreateCustomBookingCommand(
     string? PromotionCode = null,
     string? SpecialRequests = null) : IRequest<CreateCustomBookingResult>;
 
-public sealed record CreateCustomBookingItineraryStopRequest(
-    Guid StationId,
-    int StopOrder,
-    int StayDurationMinutes,
-    string? Note = null);
-
 public sealed class CreateCustomBookingCommandValidator : AbstractValidator<CreateCustomBookingCommand>
 {
     public CreateCustomBookingCommandValidator()
@@ -137,8 +131,9 @@ public sealed class CreateCustomBookingCommandHandler
             .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
             ?? throw new ValidationException([new ValidationFailure("userId", "User không tồn tại.")]);
 
-        var booking = new CustomBooking
+        var booking = new Booking
         {
+            BookingType = Booking.CustomBookingType,
             UserId = userId,
             FromStationId = request.FromStationId,
             ToStationId = request.ToStationId,
@@ -165,7 +160,7 @@ public sealed class CreateCustomBookingCommandHandler
             RemainingAmount = total,
             ItineraryStops = request.ItineraryStops?
                 .OrderBy(x => x.StopOrder)
-                .Select(x => new CustomBookingItineraryStop
+                .Select(x => new BookingItineraryStop
                 {
                     StationId = x.StationId,
                     StopOrder = x.StopOrder,
@@ -175,7 +170,7 @@ public sealed class CreateCustomBookingCommandHandler
                 .ToList() ?? []
         };
 
-        _context.Set<CustomBooking>().Add(booking);
+        _context.Set<Booking>().Add(booking);
 
         try
         {

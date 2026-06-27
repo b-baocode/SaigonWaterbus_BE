@@ -39,7 +39,7 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
         var booking = await _context.Set<Booking>()
             .Include(b => b.Promotion)
             .SingleOrDefaultAsync(
-                b => b.Id == request.BookingId && EF.Property<string>(b, "booking_type") == "SeatBooking",
+                b => b.Id == request.BookingId && b.BookingType == Booking.SeatBookingType,
                 cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
 

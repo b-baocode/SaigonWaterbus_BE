@@ -12,7 +12,7 @@ internal static class CustomBookingTicketSupport
 
     public static async Task<BookingLevelTicketEnsureResult?> EnsureBookingLevelTicketAsync(
         IApplicationDbContext context,
-        CustomBooking booking,
+        Booking booking,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {

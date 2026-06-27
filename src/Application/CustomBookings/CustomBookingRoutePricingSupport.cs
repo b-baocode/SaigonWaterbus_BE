@@ -39,7 +39,7 @@ internal static class CustomBookingRoutePricingSupport
 
     public static async Task<IReadOnlyList<Route>> LoadRelatedRoutesAsync(
         IApplicationDbContext context,
-        CustomBooking booking,
+        Booking booking,
         CancellationToken cancellationToken)
     {
         var stationIds = BuildRoutePoints(booking)
@@ -61,7 +61,7 @@ internal static class CustomBookingRoutePricingSupport
     }
 
     public static CustomBookingRouteEstimate EstimateRoute(
-        CustomBooking booking,
+        Booking booking,
         IReadOnlyCollection<Route>? relatedRoutes = null)
     {
         var points = BuildRoutePoints(booking).ToArray();
@@ -124,7 +124,7 @@ internal static class CustomBookingRoutePricingSupport
     }
 
     public static CustomBookingRoutePricingEstimate EstimatePrice(
-        CustomBooking booking,
+        Booking booking,
         Boat boat,
         BoatRentalUnit rentalUnit,
         int requestedDurationValue,
@@ -223,7 +223,7 @@ internal static class CustomBookingRoutePricingSupport
         return unitPrice.Value;
     }
 
-    private static IEnumerable<RoutePoint> BuildRoutePoints(CustomBooking booking)
+    private static IEnumerable<RoutePoint> BuildRoutePoints(Booking booking)
     {
         if (booking.FromStation is not null)
         {
@@ -244,7 +244,7 @@ internal static class CustomBookingRoutePricingSupport
         }
     }
 
-    private static int EstimateStayMinutes(CustomBooking booking) =>
+    private static int EstimateStayMinutes(Booking booking) =>
         booking.ItineraryStops.Sum(x => x.StayDurationMinutes);
 
     private static int EstimateTravelMinutes(decimal distanceKm) =>

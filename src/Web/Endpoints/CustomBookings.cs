@@ -294,6 +294,20 @@ public sealed class CustomBookings : IEndpointGroup
     }
 
     private static async Task<IResult> CreateCustomBooking(
-        ISender sender, CreateCustomBookingCommand command, CancellationToken ct) =>
-        Results.Ok(await sender.Send(command, ct));
+        ISender sender, CreateCustomBookingRequest request, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CreateCustomBookingCommand(
+            request.DepartureDate,
+            request.RentalUnit,
+            request.DurationValue,
+            request.AdultCount,
+            request.ChildCount,
+            request.StartTime,
+            request.FromStationId,
+            request.ToStationId,
+            request.ItineraryStops,
+            request.PreferredNumberOfDecks,
+            request.PreferredSeatSetupType,
+            request.BoatRequirements,
+            request.PromotionCode,
+            request.SpecialRequests), ct));
 }

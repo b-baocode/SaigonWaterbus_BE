@@ -53,14 +53,16 @@ internal static class TicketScanSupport
         BookingTicket ticket,
         CancellationToken cancellationToken)
     {
-        if (ticket.Booking is CustomBooking)
+        if (ticket.Booking.BookingType == Booking.CustomBookingType)
         {
-            var customBooking = await context.Set<CustomBooking>()
+            var customBooking = await context.Set<Booking>()
                 .Include(x => x.Boat)
                 .Include(x => x.FromStation)
                 .Include(x => x.ToStation)
                 .Include(x => x.Passengers)
-                .SingleAsync(x => x.Id == ticket.BookingId, cancellationToken);
+                .SingleAsync(
+                    x => x.Id == ticket.BookingId && x.BookingType == Booking.CustomBookingType,
+                    cancellationToken);
 
             return ToCustomBookingScanDto(ticket, customBooking);
         }
@@ -68,7 +70,7 @@ internal static class TicketScanSupport
         return ToBookingScanDto(ticket, ticket.Booking);
     }
 
-    private static TicketScanDto ToCustomBookingScanDto(BookingTicket ticket, CustomBooking booking)
+    private static TicketScanDto ToCustomBookingScanDto(BookingTicket ticket, Booking booking)
     {
         var ticketPassenger = ResolveTicketPassenger(ticket, booking.Passengers);
 
@@ -88,17 +90,17 @@ internal static class TicketScanSupport
             ticket.CheckedOutByUser?.FullName,
             booking.Id,
             booking.BookingCode,
-            nameof(CustomBooking),
+            Booking.CustomBookingType,
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
             booking.ContactName,
             booking.ContactPhone,
             booking.ContactEmail,
-            booking.PassengerCount,
+            booking.PassengerCount.GetValueOrDefault(),
             booking.Passengers.Count,
-            booking.AdultCount,
-            booking.ChildCount,
-            booking.DepartureDate,
+            booking.AdultCount.GetValueOrDefault(),
+            booking.ChildCount.GetValueOrDefault(),
+            booking.DepartureDate.GetValueOrDefault(),
             booking.StartTime,
             null,
             null,
