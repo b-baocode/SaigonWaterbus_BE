@@ -47,7 +47,7 @@ public sealed class CheckInTicketCommandHandler : IRequestHandler<CheckInTicketC
         EnsureTicketCanBeCheckedIn(ticket);
 
         var now = _timeProvider.GetUtcNow();
-        ticket.TicketStatus = BookingTicketStatus.CheckedIn;
+        ticket.TicketStatus = TicketStatus.CheckedIn;
         ticket.CheckedInAt = now;
         ticket.CheckedInByUserId = currentUser.Id;
         ticket.CheckedInByUser = currentUser;
@@ -57,14 +57,14 @@ public sealed class CheckInTicketCommandHandler : IRequestHandler<CheckInTicketC
         return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken);
     }
 
-    private static void EnsureTicketCanBeCheckedIn(Domain.Entities.BookingTicket ticket)
+    private static void EnsureTicketCanBeCheckedIn(Domain.Entities.Ticket ticket)
     {
-        if (ticket.TicketStatus == BookingTicketStatus.CheckedIn)
+        if (ticket.TicketStatus == TicketStatus.CheckedIn)
         {
             throw new ValidationException([new ValidationFailure("ticket", "Ve nay da duoc check-in.")]);
         }
 
-        if (ticket.TicketStatus != BookingTicketStatus.Active)
+        if (ticket.TicketStatus != TicketStatus.Active)
         {
             throw new ValidationException([new ValidationFailure("ticket", "Ve khong con hieu luc de check-in.")]);
         }

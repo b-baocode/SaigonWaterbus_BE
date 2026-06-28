@@ -185,13 +185,13 @@ public sealed class UpdateCustomBookingStatusCommandHandler
             case BookingStatus.Cancelled:
                 EnsureCanCancel(booking, targetStatus);
                 booking.HoldExpiresAt = null;
-                UpdateTickets(booking, BookingTicketStatus.Cancelled);
+                UpdateTickets(booking, TicketStatus.Cancelled);
                 break;
 
             case BookingStatus.Expired:
                 EnsureCanExpire(booking, targetStatus);
                 booking.HoldExpiresAt = null;
-                UpdateTickets(booking, BookingTicketStatus.Expired);
+                UpdateTickets(booking, TicketStatus.Expired);
                 break;
 
             case BookingStatus.Completed:
@@ -279,7 +279,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         }
     }
 
-    private static void UpdateTickets(Booking booking, BookingTicketStatus ticketStatus)
+    private static void UpdateTickets(Booking booking, TicketStatus ticketStatus)
     {
         foreach (var ticket in booking.Tickets)
         {

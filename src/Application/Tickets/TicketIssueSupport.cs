@@ -14,7 +14,7 @@ internal static class TicketIssueSupport
     private const string PassengerTicketTypeCode = "PASSENGER";
     private const string PassengerTicketTypeName = "Ve hanh khach";
 
-    public static async Task<IReadOnlyList<BookingTicket>> EnsureRegularBookingPassengerTicketsAsync(
+    public static async Task<IReadOnlyList<Ticket>> EnsureRegularBookingPassengerTicketsAsync(
         IApplicationDbContext context,
         Booking booking,
         TimeProvider timeProvider,
@@ -51,11 +51,11 @@ internal static class TicketIssueSupport
             .ToHashSet();
 
         var now = timeProvider.GetUtcNow();
-        var createdTickets = new List<BookingTicket>();
+        var createdTickets = new List<Ticket>();
         foreach (var passenger in passengers.Where(x => !ticketedPassengerIds.Contains(x.Id)))
         {
             var (ticketTypeCode, ticketTypeName) = ResolveTicketType(passenger.PassengerType);
-            var ticket = new BookingTicket
+            var ticket = new Ticket
             {
                 BookingId = booking.Id,
                 BookingPassengerId = passenger.Id,
@@ -63,7 +63,7 @@ internal static class TicketIssueSupport
                 QrToken = await GenerateQrTokenAsync(context, cancellationToken),
                 TicketTypeCode = ticketTypeCode,
                 TicketTypeName = ticketTypeName,
-                TicketStatus = BookingTicketStatus.Active,
+                TicketStatus = TicketStatus.Active,
                 IssuedAt = now
             };
 

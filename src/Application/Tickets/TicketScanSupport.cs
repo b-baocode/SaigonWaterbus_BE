@@ -7,7 +7,7 @@ namespace SaigonWaterbus.Application.Tickets;
 
 internal static class TicketScanSupport
 {
-    public static async Task<BookingTicket> GetTicketAsync(
+    public static async Task<Ticket> GetTicketAsync(
         IApplicationDbContext context,
         string codeOrToken,
         CancellationToken cancellationToken)
@@ -33,7 +33,7 @@ internal static class TicketScanSupport
             ?? throw new NotFoundException("Ticket not found.");
     }
 
-    public static void EnsureCanViewTicket(User currentUser, BookingTicket ticket)
+    public static void EnsureCanViewTicket(User currentUser, Ticket ticket)
     {
         if (AuthSupport.IsAdmin(currentUser)
             || AuthSupport.IsManager(currentUser)
@@ -50,7 +50,7 @@ internal static class TicketScanSupport
 
     public static async Task<TicketScanDto> ToDtoAsync(
         IApplicationDbContext context,
-        BookingTicket ticket,
+        Ticket ticket,
         CancellationToken cancellationToken)
     {
         if (ticket.Booking.BookingType == Booking.CustomBookingType)
@@ -70,7 +70,7 @@ internal static class TicketScanSupport
         return ToBookingScanDto(ticket, ticket.Booking);
     }
 
-    private static TicketScanDto ToCustomBookingScanDto(BookingTicket ticket, Booking booking)
+    private static TicketScanDto ToCustomBookingScanDto(Ticket ticket, Booking booking)
     {
         var ticketPassenger = ResolveTicketPassenger(ticket, booking.Passengers);
 
@@ -117,7 +117,7 @@ internal static class TicketScanSupport
                 .ToList());
     }
 
-    private static TicketScanDto ToBookingScanDto(BookingTicket ticket, Booking booking)
+    private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking)
     {
         var stops = booking.Trip?.Route.RouteStops
             .OrderBy(x => x.StopOrder)
@@ -170,7 +170,7 @@ internal static class TicketScanSupport
     }
 
     private static BookingPassenger? ResolveTicketPassenger(
-        BookingTicket ticket,
+        Ticket ticket,
         IEnumerable<BookingPassenger> passengers) =>
         ticket.BookingPassenger
         ?? (ticket.BookingPassengerId.HasValue

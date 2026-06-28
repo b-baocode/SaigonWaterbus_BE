@@ -18,4 +18,5 @@ public class Trip : BaseGuidAuditableEntity
 
     public Route Route { get; set; } = null!;
     public Boat? Boat { get; set; }
+    public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
 }

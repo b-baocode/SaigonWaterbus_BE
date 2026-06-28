@@ -42,6 +42,21 @@ public sealed class Tickets : IEndpointGroup
                 "Ticket phai da CheckedIn truoc do.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedOutAt/checkedOutBy."));
 
+        group.MapPost(ReissueTicket, "reissue/{codeOrToken}")
+            .RequireAuthorization()
+            .WithSummary("Cap lai ve")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "reason": "QR bi loi, khach co booking hop le"
+                }
+                """,
+                "Nhan ticketCode hoac qrToken.",
+                "Chi Admin/Manager/Staff duoc cap lai ve.",
+                "Bat buoc nhap reason.",
+                "Ve cu chuyen Cancelled, ve moi Active va duoc gan reissue metadata."));
+
         group.MapGet(QrImage, "qr-image/{codeOrToken}")
             .AllowAnonymous()
             .WithSummary("Tao anh QR ve")
@@ -65,6 +80,13 @@ public sealed class Tickets : IEndpointGroup
         string codeOrToken,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new CheckOutTicketCommand(codeOrToken), ct));
+
+    private static async Task<IResult> ReissueTicket(
+        ISender sender,
+        string codeOrToken,
+        ReissueTicketRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ReissueTicketCommand(codeOrToken, request.Reason), ct));
 
     private static IResult QrImage(string codeOrToken)
     {

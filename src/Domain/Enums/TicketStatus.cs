@@ -1,6 +1,6 @@
 namespace SaigonWaterbus.Domain.Enums;
 
-public enum BookingTicketStatus
+public enum TicketStatus
 {
     Active = 1,
     CheckedIn = 2,

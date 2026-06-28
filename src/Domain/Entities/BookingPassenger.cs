@@ -17,5 +17,5 @@ public class BookingPassenger : BaseGuidEntity
 
     public Booking Booking { get; set; } = null!;
     public Seat? Seat { get; set; }
-    public ICollection<BookingTicket> Tickets { get; set; } = new List<BookingTicket>();
+    public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
 }

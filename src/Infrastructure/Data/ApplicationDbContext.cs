@@ -36,7 +36,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Payment> Payments => Set<Payment>();
 
-    public DbSet<BookingTicket> Tickets => Set<BookingTicket>();
+    public DbSet<Ticket> Tickets => Set<Ticket>();
+
+    public DbSet<Incident> Incidents => Set<Incident>();
+
+    public DbSet<BoatStaffAssignment> BoatStaffAssignments => Set<BoatStaffAssignment>();
 
     public DbSet<Review> Reviews => Set<Review>();
 

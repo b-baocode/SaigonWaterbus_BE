@@ -57,7 +57,7 @@ public sealed class CancelCustomBookingCommandHandler : IRequestHandler<CancelCu
         booking.BookingStatus = BookingStatus.Cancelled;
         foreach (var ticket in booking.Tickets)
         {
-            ticket.TicketStatus = BookingTicketStatus.Cancelled;
+            ticket.TicketStatus = TicketStatus.Cancelled;
         }
 
         await _context.SaveChangesAsync(cancellationToken);

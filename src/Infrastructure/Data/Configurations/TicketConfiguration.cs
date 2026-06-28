@@ -4,9 +4,9 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Infrastructure.Data.Configurations;
 
-public sealed class BookingTicketConfiguration : IEntityTypeConfiguration<BookingTicket>
+public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
 {
-    public void Configure(EntityTypeBuilder<BookingTicket> builder)
+    public void Configure(EntityTypeBuilder<Ticket> builder)
     {
         builder.ToTable("tickets");
         builder.HasKey(x => x.Id);
@@ -28,6 +28,10 @@ public sealed class BookingTicketConfiguration : IEntityTypeConfiguration<Bookin
         builder.Property(x => x.CheckedInByUserId).HasColumnName("checked_in_by_user_id");
         builder.Property(x => x.CheckedOutAt).HasColumnName("checked_out_at");
         builder.Property(x => x.CheckedOutByUserId).HasColumnName("checked_out_by_user_id");
+        builder.Property(x => x.ReissuedFromTicketId).HasColumnName("reissued_from_ticket_id");
+        builder.Property(x => x.ReissueReason).HasColumnName("reissue_reason").HasMaxLength(500);
+        builder.Property(x => x.ReissuedAt).HasColumnName("reissued_at");
+        builder.Property(x => x.ReissuedByUserId).HasColumnName("reissued_by_user_id");
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
         builder.Ignore(x => x.CreatedBy);
@@ -38,10 +42,11 @@ public sealed class BookingTicketConfiguration : IEntityTypeConfiguration<Bookin
         builder.HasIndex(x => x.QrToken).IsUnique();
         builder.HasIndex(x => x.BookingId)
             .IsUnique()
-            .HasFilter("\"booking_passenger_id\" IS NULL");
+            .HasFilter("\"booking_passenger_id\" IS NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
         builder.HasIndex(x => x.BookingPassengerId)
             .IsUnique()
-            .HasFilter("\"booking_passenger_id\" IS NOT NULL");
+            .HasFilter("\"booking_passenger_id\" IS NOT NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
+        builder.HasIndex(x => x.ReissuedFromTicketId);
 
         builder.HasOne(x => x.Booking)
             .WithMany(x => x.Tickets)
@@ -61,6 +66,11 @@ public sealed class BookingTicketConfiguration : IEntityTypeConfiguration<Bookin
         builder.HasOne(x => x.CheckedOutByUser)
             .WithMany()
             .HasForeignKey(x => x.CheckedOutByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.ReissuedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.ReissuedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

@@ -47,7 +47,7 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
         EnsureTicketCanBeCheckedOut(ticket);
 
         var now = _timeProvider.GetUtcNow();
-        ticket.TicketStatus = BookingTicketStatus.CheckedOut;
+        ticket.TicketStatus = TicketStatus.CheckedOut;
         ticket.CheckedOutAt = now;
         ticket.CheckedOutByUserId = currentUser.Id;
         ticket.CheckedOutByUser = currentUser;
@@ -57,14 +57,14 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
         return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken);
     }
 
-    private static void EnsureTicketCanBeCheckedOut(Domain.Entities.BookingTicket ticket)
+    private static void EnsureTicketCanBeCheckedOut(Domain.Entities.Ticket ticket)
     {
-        if (ticket.TicketStatus == BookingTicketStatus.CheckedOut || ticket.CheckedOutAt.HasValue)
+        if (ticket.TicketStatus == TicketStatus.CheckedOut || ticket.CheckedOutAt.HasValue)
         {
             throw new ValidationException([new ValidationFailure("ticket", "Ve nay da duoc check-out.")]);
         }
 
-        if (ticket.TicketStatus != BookingTicketStatus.CheckedIn || !ticket.CheckedInAt.HasValue)
+        if (ticket.TicketStatus != TicketStatus.CheckedIn || !ticket.CheckedInAt.HasValue)
         {
             throw new ValidationException([new ValidationFailure("ticket", "Ve chua check-in nen chua the check-out.")]);
         }

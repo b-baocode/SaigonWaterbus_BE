@@ -16,7 +16,11 @@ public interface IApplicationDbContext
 
     DbSet<Seat> Seats { get; }
 
-    DbSet<BookingTicket> Tickets { get; }
+    DbSet<Ticket> Tickets { get; }
+
+    DbSet<Incident> Incidents { get; }
+
+    DbSet<BoatStaffAssignment> BoatStaffAssignments { get; }
 
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;

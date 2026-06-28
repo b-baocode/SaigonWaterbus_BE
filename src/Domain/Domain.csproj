@@ -10,8 +10,4 @@
     <PackageReference Include="NetTopologySuite" />
   </ItemGroup>
 
-  <ItemGroup>
-    <Compile Remove="Entities\Incident.cs" />
-  </ItemGroup>
-
 </Project>

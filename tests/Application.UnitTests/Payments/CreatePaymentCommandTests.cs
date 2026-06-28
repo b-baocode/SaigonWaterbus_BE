@@ -258,7 +258,7 @@ public class CreatePaymentCommandTests
         ticket.BookingPassengerId.ShouldBe(passenger.Id);
         ticket.TicketTypeCode.ShouldBe("ADULT");
         ticket.TicketTypeName.ShouldBe("Vé người lớn");
-        ticket.TicketStatus.ShouldBe(BookingTicketStatus.Active);
+        ticket.TicketStatus.ShouldBe(TicketStatus.Active);
         ticket.TicketCode.ShouldNotBeNullOrWhiteSpace();
         ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
     }

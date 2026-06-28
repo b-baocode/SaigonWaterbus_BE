@@ -192,6 +192,202 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("boats", (string)null);
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.BoatStaffAssignment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("boat_staff_assignment_id");
+
+                    b.Property<DateTimeOffset>("AssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<Guid>("AssignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_by_user_id");
+
+                    b.Property<Guid>("BoatId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("boat_id");
+
+                    b.Property<DateTimeOffset>("Created")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("created_at");
+
+                    b.Property<string>("DutyRole")
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("duty_role");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
+                    b.Property<Guid?>("ReplacedByAssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replaced_by_assignment_id");
+
+                    b.Property<Guid?>("ReplacedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replaced_by_user_id");
+
+                    b.Property<DateTimeOffset?>("ReplacedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replaced_at");
+
+                    b.Property<Guid?>("ReplacesAssignmentId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replaces_assignment_id");
+
+                    b.Property<string>("ReplacementReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("replacement_reason");
+
+                    b.Property<string>("ShiftCode")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("shift_code");
+
+                    b.Property<Guid>("StaffUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("staff_user_id");
+
+                    b.Property<DateTimeOffset>("LastModified")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("updated_at");
+
+                    b.Property<DateOnly>("WorkingDate")
+                        .HasColumnType("date")
+                        .HasColumnName("working_date");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("BoatId", "WorkingDate", "ShiftCode", "IsActive");
+
+                    b.HasIndex("ReplacedByAssignmentId");
+
+                    b.HasIndex("ReplacedByUserId");
+
+                    b.HasIndex("ReplacesAssignmentId");
+
+                    b.HasIndex("StaffUserId", "WorkingDate", "ShiftCode", "IsActive");
+
+                    b.ToTable("boat_staff_assignments", (string)null);
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Incident", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid")
+                        .HasColumnName("incident_id");
+
+                    b.Property<Guid>("BoatId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("boat_id");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("description");
+
+                    b.Property<string>("IncidentType")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)")
+                        .HasColumnName("incident_type");
+
+                    b.Property<DateTimeOffset>("OccurredAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("occurred_at");
+
+                    b.Property<DateTimeOffset?>("AssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("assigned_at");
+
+                    b.Property<Guid?>("AssignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_by_user_id");
+
+                    b.Property<Guid?>("AssignedManagerId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("assigned_manager_id");
+
+                    b.Property<Guid?>("ReportedBy")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reported_by_user_id");
+
+                    b.Property<DateTimeOffset?>("ReplacementAssignedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("replacement_assigned_at");
+
+                    b.Property<Guid?>("ReplacementAssignedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replacement_assigned_by_user_id");
+
+                    b.Property<Guid?>("ReplacementBoatId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("replacement_boat_id");
+
+                    b.Property<string>("ReplacementNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("replacement_note");
+
+                    b.Property<DateTimeOffset?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("resolved_at");
+
+                    b.Property<Guid?>("ResolvedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("resolved_by_user_id");
+
+                    b.Property<string>("ResolutionNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("resolution_note");
+
+                    b.Property<string>("ResolutionStatus")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("resolution_status");
+
+                    b.Property<string>("Severity")
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasColumnName("severity");
+
+                    b.Property<Guid?>("TripId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("trip_id");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BoatId", "ResolutionStatus");
+
+                    b.HasIndex("AssignedByUserId");
+
+                    b.HasIndex("AssignedManagerId");
+
+                    b.HasIndex("ReportedBy");
+
+                    b.HasIndex("ReplacementAssignedByUserId");
+
+                    b.HasIndex("ReplacementBoatId");
+
+                    b.HasIndex("ResolvedByUserId");
+
+                    b.HasIndex("TripId");
+
+                    b.ToTable("incidents", (string)null);
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Booking", b =>
                 {
                     b.Property<Guid>("Id")
@@ -482,7 +678,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("booking_passengers", (string)null);
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.BookingTicket", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Ticket", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -527,6 +723,23 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("qr_token");
 
+                    b.Property<DateTimeOffset?>("ReissuedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("reissued_at");
+
+                    b.Property<Guid?>("ReissuedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reissued_by_user_id");
+
+                    b.Property<Guid?>("ReissuedFromTicketId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("reissued_from_ticket_id");
+
+                    b.Property<string>("ReissueReason")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)")
+                        .HasColumnName("reissue_reason");
+
                     b.Property<string>("TicketCode")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -559,11 +772,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("BookingId")
                         .IsUnique()
-                        .HasFilter("\"booking_passenger_id\" IS NULL");
+                        .HasFilter("\"booking_passenger_id\" IS NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
 
                     b.HasIndex("BookingPassengerId")
                         .IsUnique()
-                        .HasFilter("\"booking_passenger_id\" IS NOT NULL");
+                        .HasFilter("\"booking_passenger_id\" IS NOT NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
 
                     b.HasIndex("CheckedInByUserId");
 
@@ -571,6 +784,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("QrToken")
                         .IsUnique();
+
+                    b.HasIndex("ReissuedByUserId");
+
+                    b.HasIndex("ReissuedFromTicketId");
 
                     b.HasIndex("TicketCode")
                         .IsUnique();
@@ -1610,7 +1827,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Seat");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.BookingTicket", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Ticket", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Booking", "Booking")
                         .WithMany("Tickets")
@@ -1633,6 +1850,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasForeignKey("CheckedOutByUserId")
                         .OnDelete(DeleteBehavior.SetNull);
 
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "ReissuedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReissuedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.Navigation("Booking");
 
                     b.Navigation("BookingPassenger");
@@ -1640,6 +1862,116 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("CheckedInByUser");
 
                     b.Navigation("CheckedOutByUser");
+
+                    b.Navigation("ReissuedByUser");
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.BoatStaffAssignment", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "AssignedByUser")
+                        .WithMany("AssignedBoatStaffAssignments")
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Boat", "Boat")
+                        .WithMany("StaffAssignments")
+                        .HasForeignKey("BoatId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.BoatStaffAssignment", "ReplacedByAssignment")
+                        .WithMany()
+                        .HasForeignKey("ReplacedByAssignmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "ReplacedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReplacedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.BoatStaffAssignment", "ReplacesAssignment")
+                        .WithMany()
+                        .HasForeignKey("ReplacesAssignmentId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "StaffUser")
+                        .WithMany("BoatStaffAssignments")
+                        .HasForeignKey("StaffUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("AssignedByUser");
+
+                    b.Navigation("Boat");
+
+                    b.Navigation("ReplacedByAssignment");
+
+                    b.Navigation("ReplacedByUser");
+
+                    b.Navigation("ReplacesAssignment");
+
+                    b.Navigation("StaffUser");
+                });
+
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Incident", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Boat", "Boat")
+                        .WithMany("Incidents")
+                        .HasForeignKey("BoatId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "AssignedByUser")
+                        .WithMany()
+                        .HasForeignKey("AssignedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "AssignedManager")
+                        .WithMany()
+                        .HasForeignKey("AssignedManagerId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Trip", "Trip")
+                        .WithMany("Incidents")
+                        .HasForeignKey("TripId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "Reporter")
+                        .WithMany()
+                        .HasForeignKey("ReportedBy")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "ReplacementAssignedByUser")
+                        .WithMany()
+                        .HasForeignKey("ReplacementAssignedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Boat", "ReplacementBoat")
+                        .WithMany()
+                        .HasForeignKey("ReplacementBoatId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "Resolver")
+                        .WithMany()
+                        .HasForeignKey("ResolvedByUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("AssignedByUser");
+
+                    b.Navigation("AssignedManager");
+
+                    b.Navigation("Boat");
+
+                    b.Navigation("Reporter");
+
+                    b.Navigation("ReplacementAssignedByUser");
+
+                    b.Navigation("ReplacementBoat");
+
+                    b.Navigation("Resolver");
+
+                    b.Navigation("Trip");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Landmark", b =>
@@ -1799,7 +2131,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Boat", b =>
                 {
+                    b.Navigation("Incidents");
+
                     b.Navigation("Seats");
+
+                    b.Navigation("StaffAssignments");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Booking", b =>
@@ -1835,6 +2171,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Trips");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Trip", b =>
+                {
+                    b.Navigation("Incidents");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Station", b =>
                 {
                     b.Navigation("Landmarks");
@@ -1846,7 +2187,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.User", b =>
                 {
+                    b.Navigation("AssignedBoatStaffAssignments");
+
                     b.Navigation("AssignedStationAssignments");
+
+                    b.Navigation("BoatStaffAssignments");
 
                     b.Navigation("OtpChallenges");
 

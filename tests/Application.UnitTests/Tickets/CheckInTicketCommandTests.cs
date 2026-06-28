@@ -27,7 +27,7 @@ public class CheckInTicketCommandTests
 
         var result = await handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None);
 
-        result.TicketStatus.ShouldBe(nameof(BookingTicketStatus.CheckedIn));
+        result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedIn));
         result.CheckedInAt.ShouldBe(now);
         result.CheckedInByUserId.ShouldBe(staffContext.UserId!.Value);
         result.TicketPassenger.ShouldNotBeNull();
@@ -35,7 +35,7 @@ public class CheckInTicketCommandTests
         result.SeatCode.ShouldBe("A1");
 
         var savedTicket = context.Tickets.Single();
-        savedTicket.TicketStatus.ShouldBe(BookingTicketStatus.CheckedIn);
+        savedTicket.TicketStatus.ShouldBe(TicketStatus.CheckedIn);
         savedTicket.CheckedInAt.ShouldBe(now);
         savedTicket.CheckedInByUserId.ShouldBe(staffContext.UserId!.Value);
     }
@@ -47,7 +47,7 @@ public class CheckInTicketCommandTests
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var ticket = await SeedRegularBookingTicketAsync(
             context,
-            BookingTicketStatus.CheckedIn,
+            TicketStatus.CheckedIn,
             new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero));
         var handler = new CheckInTicketCommandHandler(
             context,
@@ -84,7 +84,7 @@ public class CheckInTicketCommandTests
         var checkedOutAt = new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero);
         var ticket = await SeedRegularBookingTicketAsync(
             context,
-            BookingTicketStatus.CheckedIn,
+            TicketStatus.CheckedIn,
             checkedInAt);
         var handler = new CheckOutTicketCommandHandler(
             context,
@@ -93,13 +93,13 @@ public class CheckInTicketCommandTests
 
         var result = await handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None);
 
-        result.TicketStatus.ShouldBe(nameof(BookingTicketStatus.CheckedOut));
+        result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedOut));
         result.CheckedInAt.ShouldBe(checkedInAt);
         result.CheckedOutAt.ShouldBe(checkedOutAt);
         result.CheckedOutByUserId.ShouldBe(staffContext.UserId!.Value);
 
         var savedTicket = context.Tickets.Single();
-        savedTicket.TicketStatus.ShouldBe(BookingTicketStatus.CheckedOut);
+        savedTicket.TicketStatus.ShouldBe(TicketStatus.CheckedOut);
         savedTicket.CheckedOutAt.ShouldBe(checkedOutAt);
         savedTicket.CheckedOutByUserId.ShouldBe(staffContext.UserId!.Value);
     }
@@ -128,7 +128,7 @@ public class CheckInTicketCommandTests
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var ticket = await SeedRegularBookingTicketAsync(
             context,
-            BookingTicketStatus.CheckedOut,
+            TicketStatus.CheckedOut,
             new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero),
             new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero));
         var handler = new CheckOutTicketCommandHandler(
@@ -142,9 +142,92 @@ public class CheckInTicketCommandTests
         ex.Errors["ticket"].Single().ShouldBe("Ve nay da duoc check-out.");
     }
 
-    private static async Task<BookingTicket> SeedRegularBookingTicketAsync(
+    [Test]
+    public async Task StaffCanReissueActiveTicketWithReason()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero);
+        var oldTicket = await SeedRegularBookingTicketAsync(context);
+        var handler = new ReissueTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new ReissueTicketCommand(oldTicket.QrToken, " QR bi loi, khach co booking hop le "),
+            CancellationToken.None);
+
+        result.TicketStatus.ShouldBe(nameof(TicketStatus.Active));
+        result.TicketId.ShouldNotBe(oldTicket.Id);
+        result.TicketCode.ShouldNotBe(oldTicket.TicketCode);
+        result.QrToken.ShouldNotBe(oldTicket.QrToken);
+        result.TicketPassenger.ShouldNotBeNull();
+        result.TicketPassenger.PassengerId.ShouldBe(oldTicket.BookingPassengerId!.Value);
+
+        var tickets = context.Tickets.OrderBy(x => x.IssuedAt).ToArray();
+        tickets.Length.ShouldBe(2);
+        tickets[0].TicketStatus.ShouldBe(TicketStatus.Cancelled);
+        tickets[1].TicketStatus.ShouldBe(TicketStatus.Active);
+        tickets[1].ReissuedFromTicketId.ShouldBe(oldTicket.Id);
+        tickets[1].ReissueReason.ShouldBe("QR bi loi, khach co booking hop le");
+        tickets[1].ReissuedAt.ShouldBe(now);
+        tickets[1].ReissuedByUserId.ShouldBe(staffContext.UserId!.Value);
+    }
+
+    [Test]
+    public async Task ManagerCanReissueActiveTicketWithReason()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var ticket = await SeedRegularBookingTicketAsync(context);
+        var handler = new ReissueTicketCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new ReissueTicketCommand(ticket.TicketCode, "Khach doi ve vi QR mo"),
+            CancellationToken.None);
+
+        result.TicketStatus.ShouldBe(nameof(TicketStatus.Active));
+        context.Tickets.Count().ShouldBe(2);
+    }
+
+    [Test]
+    public async Task CheckedInTicketCannotBeReissued()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var ticket = await SeedRegularBookingTicketAsync(
+            context,
+            TicketStatus.CheckedIn,
+            new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero));
+        var handler = new ReissueTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero)));
+
+        var ex = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new ReissueTicketCommand(ticket.TicketCode, "QR loi"), CancellationToken.None));
+
+        ex.Errors["ticket"].Single().ShouldBe("Chi co the cap lai ve dang Active.");
+    }
+
+    [Test]
+    public void ReissueReasonIsRequired()
+    {
+        var validator = new ReissueTicketCommandValidator();
+
+        var result = validator.Validate(new ReissueTicketCommand("TK0001", ""));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.PropertyName == nameof(ReissueTicketCommand.Reason));
+    }
+
+    private static async Task<Ticket> SeedRegularBookingTicketAsync(
         DbContext context,
-        BookingTicketStatus ticketStatus = BookingTicketStatus.Active,
+        TicketStatus ticketStatus = TicketStatus.Active,
         DateTimeOffset? checkedInAt = null,
         DateTimeOffset? checkedOutAt = null)
     {
@@ -170,7 +253,7 @@ public class CheckInTicketCommandTests
             SeatCode = "A1",
             UnitPrice = 10000
         };
-        var ticket = new BookingTicket
+        var ticket = new Ticket
         {
             Booking = booking,
             BookingPassenger = passenger,

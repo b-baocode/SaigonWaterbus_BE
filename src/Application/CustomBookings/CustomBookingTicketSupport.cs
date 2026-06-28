@@ -29,14 +29,14 @@ internal static class CustomBookingTicketSupport
         }
 
         var now = timeProvider.GetUtcNow();
-        var ticket = new BookingTicket
+        var ticket = new Ticket
         {
             BookingId = booking.Id,
             TicketCode = await TicketIssueSupport.GenerateTicketCodeAsync(context, now, cancellationToken),
             QrToken = await TicketIssueSupport.GenerateQrTokenAsync(context, cancellationToken),
             TicketTypeCode = TicketTypeCatalog.CustomBookingTicketTypeCode,
             TicketTypeName = TicketTypeCatalog.CustomBookingTicketTypeName,
-            TicketStatus = BookingTicketStatus.Active,
+            TicketStatus = TicketStatus.Active,
             IssuedAt = now
         };
 
@@ -44,7 +44,7 @@ internal static class CustomBookingTicketSupport
         return new BookingLevelTicketEnsureResult(ticket, true);
     }
 
-    public static CustomBookingTicketDto ToDto(BookingTicket ticket) =>
+    public static CustomBookingTicketDto ToDto(Ticket ticket) =>
         new(
             ticket.Id,
             ticket.TicketCode,
@@ -58,5 +58,5 @@ internal static class CustomBookingTicketSupport
 }
 
 internal sealed record BookingLevelTicketEnsureResult(
-    BookingTicket Ticket,
+    Ticket Ticket,
     bool Created);

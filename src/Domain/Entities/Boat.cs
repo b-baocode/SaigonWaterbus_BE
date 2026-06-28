@@ -37,4 +37,8 @@ public class Boat : BaseAuditableEntity
     public string? Description { get; set; }
 
     public ICollection<Seat> Seats { get; set; } = new List<Seat>();
+
+    public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
+
+    public ICollection<BoatStaffAssignment> StaffAssignments { get; set; } = new List<BoatStaffAssignment>();
 }
