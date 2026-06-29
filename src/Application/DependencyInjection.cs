@@ -54,6 +54,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<CreateUserRequestUseCase>();
         builder.Services.AddScoped<UpdateUserRequestUseCase>();
         builder.Services.AddScoped<UpdateUserStatusRequestUseCase>();
+        builder.Services.AddScoped<ResetManagedUserPasswordRequestUseCase>();
         builder.Services.AddScoped<GetUserStationAssignmentsRequestUseCase>();
         builder.Services.AddScoped<AssignUserStationsRequestUseCase>();
         builder.Services.AddScoped<DeleteUserRequestUseCase>();

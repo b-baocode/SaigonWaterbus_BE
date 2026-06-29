@@ -42,6 +42,10 @@ public class User : BaseAuditableEntity
 
     public DateTimeOffset? LastLoginAt { get; set; }
 
+    public int FailedLoginAttemptCount { get; set; }
+
+    public DateTimeOffset? FailedLoginWindowStartedAt { get; set; }
+
     public ICollection<OtpChallenge> OtpChallenges { get; set; } = new List<OtpChallenge>();
 
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();

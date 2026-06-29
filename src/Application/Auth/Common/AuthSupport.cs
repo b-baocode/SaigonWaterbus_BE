@@ -23,8 +23,8 @@ internal static class AuthSupport
 
         return value.Trim().ToLowerInvariant() switch
         {
-            "email" or "mail" or "e-mail" => OtpChannel.Email,
-            "phone" or "sms" or "sdt" or "so-dien-thoai" => OtpChannel.Phone,
+            "email" => OtpChannel.Email,
+            "phone" => OtpChannel.Phone,
             _ => throw CreateValidationException(propertyName, "Kênh OTP phải là email hoặc phone.")
         };
     }
@@ -175,7 +175,7 @@ internal static class AuthSupport
 
         if (user.Status == UserStatus.Suspended)
         {
-            throw CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa.");
+            throw CreateValidationException(propertyName, "Tài khoản đã bị tạm khóa. Vui lòng liên hệ Admin để mở lại.");
         }
 
         if (user.Status == UserStatus.Deleted)

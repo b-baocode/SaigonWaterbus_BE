@@ -11,10 +11,13 @@ public sealed record CreateUserRequest(
     DateOnly? DateOfBirth,
     string? PhoneNumber,
     string Email,
-    string Password,
     Guid RoleId,
     string? Gender = null,
     string? Nationality = null);
+
+public sealed record ManagedUserPasswordResultDto(
+    AuthUserDto User,
+    string GeneratedPassword);
 
 public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserRequest>
 {
@@ -54,12 +57,6 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
             .Must(EmailRules.HasAllowedRegistrationDomain)
             .WithMessage(EmailRules.AllowedEmailDomainMessage);
 
-        RuleFor(x => x.Password)
-            .NotEmpty()
-            .WithMessage("Mật khẩu là bắt buộc.")
-            .Must(PasswordRules.IsStrong)
-            .WithMessage(PasswordRules.StrongPasswordMessage);
-
         RuleFor(x => x.RoleId)
             .NotEmpty()
             .WithMessage("Vai trò là bắt buộc.");
@@ -92,7 +89,7 @@ public sealed class CreateUserRequestUseCase
         _timeProvider = timeProvider;
     }
 
-    public async Task<AuthUserDto> ExecuteAsync(CreateUserRequest request, CancellationToken cancellationToken)
+    public async Task<ManagedUserPasswordResultDto> ExecuteAsync(CreateUserRequest request, CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.EnsureCurrentUserCanManageUsersAsync(_context, _userContext, cancellationToken);
         var role = await AuthSupport.GetRoleByIdAsync(_context, request.RoleId, nameof(request.RoleId), cancellationToken);
@@ -117,6 +114,7 @@ public sealed class CreateUserRequestUseCase
             throw AuthSupport.CreateValidationException(nameof(request.PhoneNumber), "Số điện thoại đã được đăng ký.");
         }
 
+        var generatedPassword = ManagedUserPasswordSupport.GeneratePassword();
         var user = new User
         {
             FullName = request.FullName.Trim(),
@@ -129,7 +127,7 @@ public sealed class CreateUserRequestUseCase
             NormalizedPhoneNumber = normalizedPhone,
             Email = request.Email.Trim(),
             NormalizedEmail = normalizedEmail,
-            PasswordHash = _secretHasher.Hash(request.Password),
+            PasswordHash = _secretHasher.Hash(generatedPassword),
             RoleId = role.Id,
             Status = UserStatus.Active
         };
@@ -153,6 +151,6 @@ public sealed class CreateUserRequestUseCase
             .Include(x => x.StationAssignments).ThenInclude(a => a.Station)
             .SingleAsync(x => x.Id == user.Id, cancellationToken);
 
-        return AuthSupport.CreateUserDto(createdUser);
+        return new ManagedUserPasswordResultDto(AuthSupport.CreateUserDto(createdUser), generatedPassword);
     }
 }

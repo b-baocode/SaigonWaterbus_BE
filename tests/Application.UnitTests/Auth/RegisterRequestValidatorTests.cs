@@ -113,6 +113,25 @@ public class RegisterRequestValidatorTests
         result.IsValid.ShouldBeTrue();
     }
 
+    [TestCase("sms")]
+    [TestCase("sdt")]
+    [TestCase("mail")]
+    [TestCase("e-mail")]
+    [TestCase("so-dien-thoai")]
+    public void ValidateRejectsOtpChannelAliases(string otpChannel)
+    {
+        var result = _validator.Validate(new RegisterRequest(
+            FullName: "Nguyen Van A",
+            DateOfBirth: new DateOnly(2003, 9, 2),
+            Password: "P@ssword123",
+            Phone: "0901234567",
+            Email: "customer@gmail.com",
+            OtpChannel: otpChannel));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.ErrorMessage == "Kênh OTP chỉ được là email hoặc phone.");
+    }
+
     [Test]
     public void ValidateRejectsTooLongGenderAndNationality()
     {

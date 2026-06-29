@@ -12,6 +12,7 @@ public sealed class UserManagementService : IUserManagementService
     private readonly CreateUserRequestUseCase _createUser;
     private readonly UpdateUserRequestUseCase _updateUser;
     private readonly UpdateUserStatusRequestUseCase _updateUserStatus;
+    private readonly ResetManagedUserPasswordRequestUseCase _resetManagedUserPassword;
     private readonly GetUserStationAssignmentsRequestUseCase _getUserStationAssignments;
     private readonly AssignUserStationsRequestUseCase _assignUserStations;
     private readonly DeleteUserRequestUseCase _deleteUser;
@@ -24,6 +25,7 @@ public sealed class UserManagementService : IUserManagementService
         CreateUserRequestUseCase createUser,
         UpdateUserRequestUseCase updateUser,
         UpdateUserStatusRequestUseCase updateUserStatus,
+        ResetManagedUserPasswordRequestUseCase resetManagedUserPassword,
         GetUserStationAssignmentsRequestUseCase getUserStationAssignments,
         AssignUserStationsRequestUseCase assignUserStations,
         DeleteUserRequestUseCase deleteUser)
@@ -35,6 +37,7 @@ public sealed class UserManagementService : IUserManagementService
         _createUser = createUser;
         _updateUser = updateUser;
         _updateUserStatus = updateUserStatus;
+        _resetManagedUserPassword = resetManagedUserPassword;
         _getUserStationAssignments = getUserStationAssignments;
         _assignUserStations = assignUserStations;
         _deleteUser = deleteUser;
@@ -53,7 +56,7 @@ public sealed class UserManagementService : IUserManagementService
     public async Task<IReadOnlyCollection<UserRoleDto>> GetManageableRolesAsync(CancellationToken cancellationToken) =>
         await _getManageableRoles.ExecuteAsync(new GetManageableRolesRequest(), cancellationToken);
 
-    public async Task<AuthUserDto> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken)
+    public async Task<ManagedUserPasswordResultDto> CreateUserAsync(CreateUserRequest request, CancellationToken cancellationToken)
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _createUser.ExecuteAsync(request, cancellationToken);
@@ -69,6 +72,15 @@ public sealed class UserManagementService : IUserManagementService
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _updateUserStatus.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<ManagedUserPasswordResultDto> ResetManagedUserPasswordAsync(
+        Guid userId,
+        CancellationToken cancellationToken)
+    {
+        var request = new ResetManagedUserPasswordRequest(userId);
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _resetManagedUserPassword.ExecuteAsync(request, cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<UserStationAssignmentDto>> GetUserStationAssignmentsAsync(

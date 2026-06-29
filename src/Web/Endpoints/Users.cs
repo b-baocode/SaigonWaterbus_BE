@@ -9,13 +9,12 @@ public sealed class Users : IEndpointGroup
         """
         {
           "fullName": "Tran Thi B",
-          "dateOfBirth": "10/05/1998",
+          "dateOfBirth": "1998-05-10",
           "gender": "Female",
           "nationality": "Vietnamese",
           "phoneNumber": "0912345678",
           "email": "thib@gmail.com",
-          "password": "P@ssword123",
-          "roleId": 3
+          "roleId": "00000000-0000-0000-0000-000000000003"
         }
         """;
 
@@ -96,6 +95,7 @@ public sealed class Users : IEndpointGroup
                 "Admin chỉ tạo được Manager.",
                 "Manager chỉ tạo được Staff. Customer dùng flow /api/auth/register để tự đăng ký và xác thực OTP.",
                 "Không cần truyền status khi tạo user; hệ thống mặc định tạo user Active.",
+                "Không truyền password; hệ thống tự sinh mật khẩu ban đầu và trả về generatedPassword.",
                 "RoleId không cố định theo code. Gọi GET /api/users/roles để xem id hiện tại."));
 
         groupBuilder.MapPut(Update, "update/{userId:guid}")
@@ -115,6 +115,17 @@ public sealed class Users : IEndpointGroup
                 UpdateStatusExample,
                 "Status hợp lệ: Active, Suspended.",
                 "Đổi status sẽ revoke refresh token đang hoạt động của user."));
+
+        groupBuilder.MapPost(ResetManagedPassword, "managed/{userId:guid}/reset-password")
+            .RequireAuthorization()
+            .WithSummary("Sinh lại mật khẩu cho user quản lý")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Manager hoặc Admin",
+                null,
+                "Tạo mật khẩu mới do hệ thống sinh, thay thế mật khẩu cũ và trả về generatedPassword.",
+                "Admin reset được tài khoản Manager hoặc Staff. Manager reset được tài khoản Staff.",
+                "Reset mật khẩu sẽ revoke refresh token đang hoạt động của user.",
+                "API này không tự đổi trạng thái Suspended sang Active; dùng API cập nhật trạng thái để mở khóa."));
 
         groupBuilder.MapGet(GetUserStationAssignments, "{userId:guid}/stations")
             .RequireAuthorization()
@@ -191,7 +202,6 @@ public sealed class Users : IEndpointGroup
                 request.DateOfBirth,
                 request.PhoneNumber,
                 request.Email,
-                request.Password,
                 request.RoleId,
                 request.Gender,
                 request.Nationality),
@@ -225,6 +235,12 @@ public sealed class Users : IEndpointGroup
                 request.Status),
             cancellationToken));
 
+    private static async Task<IResult> ResetManagedPassword(
+        IUserManagementService userManagementService,
+        Guid userId,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await userManagementService.ResetManagedUserPasswordAsync(userId, cancellationToken));
+
     private static async Task<IResult> GetUserStationAssignments(
         IUserManagementService userManagementService,
         Guid userId,
@@ -251,7 +267,6 @@ public sealed class Users : IEndpointGroup
         DateOnly? DateOfBirth,
         string? PhoneNumber,
         string Email,
-        string Password,
         Guid RoleId,
         string? Gender = null,
         string? Nationality = null);

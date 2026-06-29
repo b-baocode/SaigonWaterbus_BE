@@ -9,6 +9,37 @@ namespace SaigonWaterbus.Application.UnitTests.BoatStaffAssignments;
 
 public class AssignBoatStaffCommandTests
 {
+    [TestCase(null, true)]
+    [TestCase("", true)]
+    [TestCase("Day", true)]
+    [TestCase("day", true)]
+    [TestCase("Evening", true)]
+    [TestCase("evening", true)]
+    [TestCase("Night", false)]
+    [TestCase("Morning", false)]
+    public void ValidatorOnlyAllowsDayAndEveningShiftCodes(string? shiftCode, bool expectedValid)
+    {
+        var validator = new AssignBoatStaffCommandValidator();
+
+        var result = validator.Validate(new AssignBoatStaffCommand(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            new DateOnly(2030, 1, 2),
+            shiftCode,
+            "Captain"));
+
+        result.IsValid.ShouldBe(expectedValid);
+    }
+
+    [TestCase(null, BoatStaffAssignmentSupport.DayShiftCode)]
+    [TestCase("", BoatStaffAssignmentSupport.DayShiftCode)]
+    [TestCase("day", BoatStaffAssignmentSupport.DayShiftCode)]
+    [TestCase("EVENING", BoatStaffAssignmentSupport.EveningShiftCode)]
+    public void NormalizeShiftCodeReturnsSupportedShiftCodeCasing(string? shiftCode, string expected)
+    {
+        BoatStaffAssignmentSupport.NormalizeShiftCode(shiftCode).ShouldBe(expected);
+    }
+
     [Test]
     public async Task ManagerCanAssignStaffToBoatForWorkingDate()
     {

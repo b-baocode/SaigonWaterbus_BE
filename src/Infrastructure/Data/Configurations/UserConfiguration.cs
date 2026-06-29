@@ -106,6 +106,14 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
 
         builder.Property(x => x.LastLoginAt)
             .HasColumnName("last_login_at");
+
+        builder.Property(x => x.FailedLoginAttemptCount)
+            .HasColumnName("failed_login_attempt_count")
+            .IsRequired();
+
+        builder.Property(x => x.FailedLoginWindowStartedAt)
+            .HasColumnName("failed_login_window_started_at");
+
         builder.Property(x => x.Created)
             .HasColumnName("created_at");
 

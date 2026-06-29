@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.Auth.Login;
@@ -51,6 +52,9 @@ public sealed class LoginRequestValidator : AbstractValidator<LoginRequest>
 
 public sealed class LoginRequestUseCase
 {
+    private const int MaxFailedLoginAttempts = 5;
+    private static readonly TimeSpan FailedLoginWindow = TimeSpan.FromMinutes(15);
+
     private readonly IApplicationDbContext _context;
     private readonly IIdentityNormalizer _identityNormalizer;
     private readonly ISecretHasher _secretHasher;
@@ -74,6 +78,7 @@ public sealed class LoginRequestUseCase
     public async Task<AuthSessionDto> ExecuteAsync(LoginRequest request, CancellationToken cancellationToken)
     {
         var user = await GetUserByEmailOrPhoneAsync(request.EmailOrPhone, cancellationToken);
+        var now = _timeProvider.GetUtcNow();
 
         AuthSupport.EnsureUserCanLogin(user, nameof(request.EmailOrPhone));
 
@@ -86,6 +91,14 @@ public sealed class LoginRequestUseCase
 
         if (!_secretHasher.Verify(request.Password, user.PasswordHash))
         {
+            await RegisterFailedLoginAttemptAsync(user, now, cancellationToken);
+            if (user.Status == UserStatus.Suspended)
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.EmailOrPhone),
+                    "Tài khoản đã bị khóa do đăng nhập sai 5 lần trong 15 phút. Vui lòng liên hệ Admin để mở lại.");
+            }
+
             throw AuthSupport.CreateValidationException(nameof(request.Password), "Mật khẩu không đúng.");
         }
 
@@ -95,7 +108,8 @@ public sealed class LoginRequestUseCase
             throw AuthSupport.CreateValidationException(nameof(request.EmailOrPhone), "Tài khoản chưa có vai trò hoạt động.");
         }
 
-        user.LastLoginAt = _timeProvider.GetUtcNow();
+        ResetFailedLoginTracking(user);
+        user.LastLoginAt = now;
 
         var accessToken = _tokenService.GenerateAccessToken(
             user.Id,
@@ -145,4 +159,31 @@ public sealed class LoginRequestUseCase
 
     private static bool IsEmailInput(string emailOrPhone) =>
         emailOrPhone.Contains('@', StringComparison.Ordinal);
+
+    private async Task RegisterFailedLoginAttemptAsync(User user, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        if (user.FailedLoginWindowStartedAt is null
+            || now - user.FailedLoginWindowStartedAt.Value > FailedLoginWindow)
+        {
+            user.FailedLoginWindowStartedAt = now;
+            user.FailedLoginAttemptCount = 1;
+        }
+        else
+        {
+            user.FailedLoginAttemptCount += 1;
+        }
+
+        if (user.FailedLoginAttemptCount >= MaxFailedLoginAttempts)
+        {
+            user.Status = UserStatus.Suspended;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+
+    private static void ResetFailedLoginTracking(User user)
+    {
+        user.FailedLoginAttemptCount = 0;
+        user.FailedLoginWindowStartedAt = null;
+    }
 }

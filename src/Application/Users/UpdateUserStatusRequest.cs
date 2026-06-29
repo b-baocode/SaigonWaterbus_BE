@@ -53,6 +53,11 @@ public sealed class UpdateUserStatusRequestUseCase
         UserManagementSupport.EnsureCanUpdateUser(actor, user);
 
         user.Status = request.Status;
+        if (user.Status == UserStatus.Active)
+        {
+            user.FailedLoginAttemptCount = 0;
+            user.FailedLoginWindowStartedAt = null;
+        }
 
         if (user.Status == UserStatus.Active
             && user.PhoneNumber is not null

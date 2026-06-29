@@ -68,9 +68,7 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
         RuleFor(x => x.OtpChannel)
             .Must(x => string.IsNullOrWhiteSpace(x)
                 || string.Equals(x, "email", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "phone", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "sms", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x, "sdt", StringComparison.OrdinalIgnoreCase))
+                || string.Equals(x, "phone", StringComparison.OrdinalIgnoreCase))
             .WithMessage("Kênh OTP chỉ được là email hoặc phone.");
 
         RuleFor(x => x.OtpChannel)
@@ -86,9 +84,7 @@ public sealed class RegisterRequestValidator : AbstractValidator<RegisterRequest
     }
 
     private static bool IsPhoneOtpChannel(string? otpChannel) =>
-        string.Equals(otpChannel, "phone", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(otpChannel, "sms", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(otpChannel, "sdt", StringComparison.OrdinalIgnoreCase);
+        string.Equals(otpChannel, "phone", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class RegisterRequestUseCase

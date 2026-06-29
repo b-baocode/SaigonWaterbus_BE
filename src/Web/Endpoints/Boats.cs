@@ -168,7 +168,7 @@ public sealed class Boats : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoặc Manager",
                 AssignStaffExample,
-                "workingDate là ngày làm việc. shiftCode mặc định Day nếu không gửi.",
+                "workingDate là ngày làm việc. shiftCode chỉ được Day hoặc Evening; mặc định Day nếu không gửi.",
                 "Không cho phân cùng một staff active ở hai tàu trong cùng ngày/ca."));
 
         groupBuilder.MapPost(ReplaceBoatStaff, "{boatId:guid}/staff-assignments/{assignmentId:guid}/replace")

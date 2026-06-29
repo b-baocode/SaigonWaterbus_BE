@@ -19,7 +19,10 @@ public sealed class AssignBoatStaffCommandValidator : AbstractValidator<AssignBo
         RuleFor(x => x.BoatId).NotEmpty();
         RuleFor(x => x.StaffUserId).NotEmpty();
         RuleFor(x => x.WorkingDate).NotEmpty();
-        RuleFor(x => x.ShiftCode).MaximumLength(30);
+        RuleFor(x => x.ShiftCode)
+            .MaximumLength(30)
+            .Must(BoatStaffAssignmentSupport.IsValidShiftCode)
+            .WithMessage("Ca làm việc chỉ được là Day hoặc Evening.");
         RuleFor(x => x.DutyRole).MaximumLength(50);
     }
 }

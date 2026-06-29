@@ -12,6 +12,14 @@ namespace SaigonWaterbus.Application.BoatStaffAssignments;
 internal static class BoatStaffAssignmentSupport
 {
     public const string DefaultShiftCode = "Day";
+    public const string DayShiftCode = "Day";
+    public const string EveningShiftCode = "Evening";
+
+    public static readonly IReadOnlyCollection<string> AllowedShiftCodes =
+    [
+        DayShiftCode,
+        EveningShiftCode
+    ];
 
     public static async Task<User> EnsureCurrentUserCanManageBoatStaffAsync(
         IApplicationDbContext context,
@@ -41,10 +49,23 @@ internal static class BoatStaffAssignmentSupport
         throw new ForbiddenAccessException();
     }
 
-    public static string NormalizeShiftCode(string? shiftCode) =>
+    public static string NormalizeShiftCode(string? shiftCode)
+    {
+        if (string.IsNullOrWhiteSpace(shiftCode))
+        {
+            return DefaultShiftCode;
+        }
+
+        var normalizedShiftCode = shiftCode.Trim();
+        return AllowedShiftCodes.FirstOrDefault(
+                   allowed => string.Equals(allowed, normalizedShiftCode, StringComparison.OrdinalIgnoreCase))
+               ?? normalizedShiftCode;
+    }
+
+    public static bool IsValidShiftCode(string? shiftCode) =>
         string.IsNullOrWhiteSpace(shiftCode)
-            ? DefaultShiftCode
-            : shiftCode.Trim();
+        || AllowedShiftCodes.Any(allowed =>
+            string.Equals(allowed, shiftCode.Trim(), StringComparison.OrdinalIgnoreCase));
 
     public static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

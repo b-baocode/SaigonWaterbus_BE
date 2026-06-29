@@ -161,6 +161,59 @@ public class UserManagementSupportTests
         Should.Throw<ValidationException>(() => UserManagementSupport.EnsureCanDeleteUser(actor, target));
     }
 
+    [TestCase(Roles.ManagerSystemName)]
+    [TestCase(Roles.StaffSystemName)]
+    public void AdminCanResetManagerAndStaffPassword(string targetSystemName)
+    {
+        var actor = UserWithRole(1, Roles.AdminName);
+        var target = UserWithRole(2, targetSystemName);
+
+        Should.NotThrow(() => UserManagementSupport.EnsureCanResetManagedPassword(actor, target));
+    }
+
+    [Test]
+    public void ManagerCanResetStaffPassword()
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var target = UserWithRole(2, Roles.StaffSystemName);
+
+        Should.NotThrow(() => UserManagementSupport.EnsureCanResetManagedPassword(actor, target));
+    }
+
+    [TestCase(Roles.CustomerSystemName)]
+    [TestCase(Roles.AdminName)]
+    public void AdminCannotResetUnsupportedRolePassword(string targetSystemName)
+    {
+        var actor = UserWithRole(1, Roles.AdminName);
+        var target = UserWithRole(2, targetSystemName);
+
+        Should.Throw<ForbiddenAccessException>(() =>
+            UserManagementSupport.EnsureCanResetManagedPassword(actor, target));
+    }
+
+    [TestCase(Roles.CustomerSystemName)]
+    [TestCase(Roles.ManagerSystemName)]
+    [TestCase(Roles.AdminName)]
+    public void ManagerCannotResetUnsupportedRolePassword(string targetSystemName)
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var target = UserWithRole(2, targetSystemName);
+
+        Should.Throw<ForbiddenAccessException>(() =>
+            UserManagementSupport.EnsureCanResetManagedPassword(actor, target));
+    }
+
+    [Test]
+    public void ActorCannotResetOwnPasswordFromManagementApi()
+    {
+        var userId = Guid.NewGuid();
+        var actor = UserWithRole(userId, Roles.ManagerSystemName);
+        var target = UserWithRole(userId, Roles.StaffSystemName);
+
+        Should.Throw<ValidationException>(() =>
+            UserManagementSupport.EnsureCanResetManagedPassword(actor, target));
+    }
+
     [Test]
     public void AdminCanAssignStationsToManager()
     {

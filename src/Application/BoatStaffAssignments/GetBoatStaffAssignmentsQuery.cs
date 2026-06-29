@@ -44,6 +44,13 @@ public sealed class GetBoatStaffAssignmentsQueryHandler
 
         if (!string.IsNullOrWhiteSpace(request.ShiftCode))
         {
+            if (!BoatStaffAssignmentSupport.IsValidShiftCode(request.ShiftCode))
+            {
+                throw SaigonWaterbus.Application.Auth.Common.AuthSupport.CreateValidationException(
+                    nameof(request.ShiftCode),
+                    "Ca làm việc chỉ được là Day hoặc Evening.");
+            }
+
             var shiftCode = BoatStaffAssignmentSupport.NormalizeShiftCode(request.ShiftCode);
             query = query.Where(x => x.ShiftCode == shiftCode);
         }

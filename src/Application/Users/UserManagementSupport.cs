@@ -104,6 +104,27 @@ internal static class UserManagementSupport
         throw new ForbiddenAccessException();
     }
 
+    public static void EnsureCanResetManagedPassword(User actor, User target)
+    {
+        if (actor.Id == target.Id)
+        {
+            throw AuthSupport.CreateValidationException(nameof(target.Id), "Không thể sinh lại mật khẩu cho tài khoản hiện tại bằng API quản lý. Vui lòng dùng API đổi mật khẩu hoặc quên mật khẩu.");
+        }
+
+        if (AuthSupport.IsAdmin(actor)
+            && (AuthSupport.IsManager(target) || AuthSupport.IsStaff(target)))
+        {
+            return;
+        }
+
+        if (AuthSupport.IsManager(actor) && AuthSupport.IsStaff(target))
+        {
+            return;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
     public static void EnsureCanAssignRole(User actor, User target, Role targetRole, string propertyName)
     {
         if (AuthSupport.IsAdmin(actor))
