@@ -29,12 +29,16 @@ public sealed record StationDto(
     IReadOnlyCollection<StationUserAssignmentDto> Managers,
     IReadOnlyCollection<StationUserAssignmentDto> Staff)
 {
-    public static StationDto From(Station s) => new(
-        s.Id, s.StationCode, s.StationName,
-        s.Address, s.Description, s.Latitude, s.Longitude, s.Status.ToString(),
-        s.ImageUrl, StationImageSupport.CreateImageUrls(s), s.HasWaitingArea, s.HasParking, s.HasTicketCounter,
-        CreateAssignedUserDtos(s, Roles.ManagerSystemName),
-        CreateAssignedUserDtos(s, Roles.StaffSystemName));
+    public static StationDto From(Station s)
+    {
+        var imageUrls = StationImageSupport.CreateImageUrls(s);
+        return new StationDto(
+            s.Id, s.StationCode, s.StationName,
+            s.Address, s.Description, s.Latitude, s.Longitude, s.Status.ToString(),
+            imageUrls.FirstOrDefault(), imageUrls, s.HasWaitingArea, s.HasParking, s.HasTicketCounter,
+            CreateAssignedUserDtos(s, Roles.ManagerSystemName),
+            CreateAssignedUserDtos(s, Roles.StaffSystemName));
+    }
 
     private static IReadOnlyCollection<StationUserAssignmentDto> CreateAssignedUserDtos(
         Station station,

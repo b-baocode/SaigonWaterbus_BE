@@ -12,7 +12,7 @@ public sealed record StationImageFileRequest(
 
 internal static class StationImageSupport
 {
-    public const int MaxStationImages = 1;
+    public const int MaxStationImages = 6;
 
     public static IReadOnlyCollection<string> NormalizeImageUrls(
         string? imageUrl,
@@ -33,9 +33,16 @@ internal static class StationImageSupport
     }
 
     public static IReadOnlyCollection<string> CreateImageUrls(Station station) =>
-        string.IsNullOrWhiteSpace(station.ImageUrl)
-            ? []
-            : [station.ImageUrl.Trim()];
+        station.ImageUrls.Length > 0
+            ? station.ImageUrls
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Select(url => url.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxStationImages)
+                .ToArray()
+            : string.IsNullOrWhiteSpace(station.ImageUrl)
+                ? []
+                : [station.ImageUrl.Trim()];
 
     public static bool HasValidRequestedImageCount(
         string? imageUrl,
@@ -99,8 +106,56 @@ internal static class StationImageSupport
 
     public static void ReplaceImages(Station station, IReadOnlyCollection<string> imageUrls)
     {
-        station.ImageUrl = imageUrls.FirstOrDefault();
+        var normalizedImageUrls = imageUrls
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Select(url => url.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxStationImages)
+            .ToArray();
+
+        station.ImageUrls = normalizedImageUrls;
+        station.ImageUrl = normalizedImageUrls.FirstOrDefault();
         station.ImagePublicId = null;
+    }
+
+    public static async Task<IReadOnlyCollection<StoredStationImage>> UploadImagesAsync(
+        Guid stationId,
+        IReadOnlyCollection<StationImageFileRequest>? imageFiles,
+        IStationImageStorageService? stationImageStorage,
+        string propertyName,
+        CancellationToken cancellationToken)
+    {
+        if (imageFiles is null || imageFiles.Count == 0)
+        {
+            return [];
+        }
+
+        if (stationImageStorage is null)
+        {
+            throw AuthSupport.CreateValidationException(propertyName, "Dịch vụ lưu ảnh bến chưa được cấu hình.");
+        }
+
+        var uploadedImages = new List<StoredStationImage>(imageFiles.Count);
+        foreach (var file in imageFiles)
+        {
+            EnsureValidImage(
+                propertyName,
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                stationImageStorage);
+
+            if (file.Content.CanSeek)
+            {
+                file.Content.Position = 0;
+            }
+
+            uploadedImages.Add(await stationImageStorage.UploadImageAsync(
+                new StationImageUpload(stationId, file.Content, file.FileName, file.ContentType, Guid.NewGuid()),
+                cancellationToken));
+        }
+
+        return uploadedImages;
     }
 
     private static void AddImageUrl(List<string> urls, string? imageUrl)

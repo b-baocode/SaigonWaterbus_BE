@@ -184,6 +184,54 @@ public class BoatSeatFlowIntegrationTests
     }
 
     [Test]
+    public async Task CreateBoatUploadsImageFileAndStoresReturnedUrl()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        await using var file = CreateImageFile();
+
+        var result = await CreateBoatUseCase(context, userContext).ExecuteAsync(
+            new CreateBoatRequest(
+                $"UPL_{Guid.NewGuid():N}"[..20],
+                "Upload image boat",
+                BoatStatus.Inactive,
+                4,
+                1,
+                SeatSetupType: SeatSetupType.FullStandard,
+                ImageFiles: [new BoatImageFileRequest("boat.jpg", "image/jpeg", file.Length, file)]),
+            CancellationToken.None);
+
+        var expectedUrl = $"https://example.test/boats/{result.Id}/{result.Id:N}";
+        result.ImageUrl.ShouldBe(expectedUrl);
+        result.ImageUrls.ShouldBe([expectedUrl]);
+
+        var boat = await context.Boats.SingleAsync(x => x.Id == result.Id);
+        boat.ImageUrl.ShouldBe(expectedUrl);
+        boat.ImagePublicId.ShouldBe(result.Id.ToString("N"));
+    }
+
+    [Test]
+    public async Task CreateBoatRejectsUnsupportedImageContentType()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        await using var file = CreateImageFile();
+
+        var act = async () => await CreateBoatUseCase(context, userContext).ExecuteAsync(
+            new CreateBoatRequest(
+                $"BAD_{Guid.NewGuid():N}"[..20],
+                "Invalid image boat",
+                BoatStatus.Inactive,
+                4,
+                1,
+                SeatSetupType: SeatSetupType.FullStandard,
+                ImageFiles: [new BoatImageFileRequest("boat.pdf", "application/pdf", file.Length, file)]),
+            CancellationToken.None);
+
+        await act.ShouldThrowAsync<ValidationException>();
+    }
+
+    [Test]
     public async Task UpdateBoatReplacesImageUrls()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -201,6 +249,32 @@ public class BoatSeatFlowIntegrationTests
 
         result.ImageUrl.ShouldBe("https://example.test/boats/new-main.jpg");
         result.ImageUrls.ShouldBe(["https://example.test/boats/new-main.jpg"]);
+    }
+
+    [Test]
+    public async Task UpdateBoatUploadsImageFileAndStoresReturnedUrl()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        boat.ImageUrl = "https://example.test/boats/old-main.jpg";
+        context.Add(boat);
+        await context.SaveChangesAsync();
+        await using var file = CreateImageFile();
+
+        var result = await UpdateBoatUseCase(context, userContext).ExecuteAsync(
+            new UpdateBoatRequest(
+                boat.Id,
+                ImageFiles: [new BoatImageFileRequest("new-boat.png", "image/png", file.Length, file)]),
+            CancellationToken.None);
+
+        var expectedUrl = $"https://example.test/boats/{boat.Id}/{boat.Id:N}";
+        result.ImageUrl.ShouldBe(expectedUrl);
+        result.ImageUrls.ShouldBe([expectedUrl]);
+
+        var updatedBoat = await context.Boats.SingleAsync(x => x.Id == boat.Id);
+        updatedBoat.ImageUrl.ShouldBe(expectedUrl);
+        updatedBoat.ImagePublicId.ShouldBe(boat.Id.ToString("N"));
     }
 
     [Test]
@@ -302,4 +376,6 @@ public class BoatSeatFlowIntegrationTests
             });
         }
     }
+
+    private static MemoryStream CreateImageFile() => new([0x1, 0x2, 0x3, 0x4]);
 }

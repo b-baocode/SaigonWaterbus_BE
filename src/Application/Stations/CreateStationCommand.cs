@@ -37,19 +37,21 @@ public sealed class CreateStationCommandValidator : AbstractValidator<CreateStat
 
         RuleFor(x => x)
             .Must(x => StationImageSupport.HasValidRequestedImageCount(x.ImageUrl, x.ImageUrls, x.ImageFiles))
-            .WithMessage("Schema gọn chỉ lưu 1 ảnh chính cho mỗi bến.");
+            .WithMessage($"Mỗi bến chỉ được lưu tối đa {StationImageSupport.MaxStationImages} ảnh.");
     }
 }
 
 public sealed class CreateStationCommandHandler : IRequestHandler<CreateStationCommand, StationDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly IStationImageStorageService? _stationImageStorage;
 
     public CreateStationCommandHandler(
         IApplicationDbContext context,
         IStationImageStorageService? stationImageStorage = null)
     {
         _context = context;
+        _stationImageStorage = stationImageStorage;
     }
 
     public async Task<StationDto> Handle(CreateStationCommand request, CancellationToken cancellationToken)
@@ -59,12 +61,6 @@ public sealed class CreateStationCommandHandler : IRequestHandler<CreateStationC
         if (await _context.Set<Station>().AnyAsync(s => s.StationCode == code, cancellationToken))
             throw new ValidationException([new ValidationFailure(nameof(request.StationCode), "Station code already exists.")]);
 
-        if (request.ImageFiles is { Count: > 0 })
-        {
-            throw AuthSupport.CreateValidationException(nameof(request.ImageFiles), "Schema gọn chỉ hỗ trợ imageUrl, không lưu nhiều ảnh bến.");
-        }
-
-        var imageUrl = StationImageSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls).FirstOrDefault();
         var station = new Station
         {
             StationCode = code,
@@ -72,9 +68,18 @@ public sealed class CreateStationCommandHandler : IRequestHandler<CreateStationC
             Address = request.Address?.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
-            Status = StationStatus.Active,
-            ImageUrl = imageUrl
+            Status = StationStatus.Active
         };
+
+        var imageUrls = StationImageSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls).ToList();
+        var uploadedImages = await StationImageSupport.UploadImagesAsync(
+            station.Id,
+            request.ImageFiles,
+            _stationImageStorage,
+            nameof(request.ImageFiles),
+            cancellationToken);
+        imageUrls.AddRange(uploadedImages.Select(image => image.Url));
+        StationImageSupport.ReplaceImages(station, imageUrls);
 
         _context.Set<Station>().Add(station);
         await _context.SaveChangesAsync(cancellationToken);

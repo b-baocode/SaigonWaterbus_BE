@@ -74,6 +74,20 @@ public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatReq
             .WithMessage("Đường dẫn ảnh không hợp lệ.")
             .When(x => !string.IsNullOrWhiteSpace(x.ImageUrl));
 
+        RuleForEach(x => x.ImageUrls)
+            .MaximumLength(1000)
+            .WithMessage("Đường dẫn ảnh không được vượt quá 1000 ký tự.")
+            .Must(BoatSupport.IsValidImageUrl)
+            .WithMessage("Đường dẫn ảnh không hợp lệ.");
+
+        RuleFor(x => x)
+            .Must(x => BoatSupport.HasValidRequestedImageCount(
+                x.ImageUrl,
+                x.ImageUrls,
+                x.ImageContent,
+                x.ImageFiles))
+            .WithMessage("Schema gọn chỉ lưu 1 ảnh chính cho mỗi tàu.");
+
         RuleFor(x => x.RentalPrices)
             .Must(BoatSupport.HasDistinctRentalUnits)
             .WithMessage("Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
@@ -85,6 +99,7 @@ public sealed class UpdateBoatRequestUseCase
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly IDatabaseExceptionClassifier _databaseExceptionClassifier;
+    private readonly IBoatImageStorageService? _boatImageStorageService;
 
     public UpdateBoatRequestUseCase(
         IApplicationDbContext context,
@@ -95,6 +110,7 @@ public sealed class UpdateBoatRequestUseCase
         _context = context;
         _userContext = userContext;
         _databaseExceptionClassifier = databaseExceptionClassifier;
+        _boatImageStorageService = boatImageStorageService;
     }
 
     public async Task<BoatDto> ExecuteAsync(
@@ -102,11 +118,6 @@ public sealed class UpdateBoatRequestUseCase
         CancellationToken cancellationToken)
     {
         await BoatSupport.EnsureCurrentUserCanManageBoatsAsync(_context, _userContext, cancellationToken);
-
-        if (request.ImageContent is not null || request.ImageFiles is { Count: > 0 })
-        {
-            throw AuthSupport.CreateValidationException(nameof(request.ImageContent), "Schema gọn chỉ hỗ trợ imageUrl, không lưu nhiều ảnh tàu.");
-        }
 
         var boat = await _context.Boats
             .Include(x => x.Seats)
@@ -187,6 +198,14 @@ public sealed class UpdateBoatRequestUseCase
         if (imageUrl is not null)
         {
             boat.ImageUrl = imageUrl;
+            boat.ImagePublicId = null;
+        }
+
+        var uploadedImage = await UploadPrimaryImageAsync(boat.Id, request, cancellationToken);
+        if (uploadedImage is not null)
+        {
+            boat.ImageUrl = uploadedImage.Url;
+            boat.ImagePublicId = uploadedImage.PublicId;
         }
 
         if (request.RentalPrices is not null)
@@ -204,5 +223,44 @@ public sealed class UpdateBoatRequestUseCase
         }
 
         return BoatSupport.CreateDto(boat);
+    }
+
+    private async Task<StoredBoatImage?> UploadPrimaryImageAsync(
+        Guid boatId,
+        UpdateBoatRequest request,
+        CancellationToken cancellationToken)
+    {
+        var files = BoatSupport.CreateImageFiles(
+                request.ImageFileName,
+                request.ImageContentType,
+                request.ImageLength,
+                request.ImageContent,
+                request.ImageFiles)
+            .ToArray();
+
+        if (files.Length == 0)
+        {
+            return null;
+        }
+
+        var boatImageStorage = _boatImageStorageService
+            ?? throw AuthSupport.CreateValidationException(nameof(request.ImageContent), "Dịch vụ lưu ảnh tàu chưa được cấu hình.");
+
+        var file = files[0];
+        BoatSupport.EnsureValidImage(
+            nameof(request.ImageContent),
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            boatImageStorage);
+
+        if (file.Content.CanSeek)
+        {
+            file.Content.Position = 0;
+        }
+
+        return await boatImageStorage.UploadImageAsync(
+            new BoatImageUpload(boatId, file.Content, file.FileName, file.ContentType),
+            cancellationToken);
     }
 }

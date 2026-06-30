@@ -16,6 +16,7 @@ public class Station : BaseGuidAuditableEntity
     public Point? Location { get; set; }
     public string? OsmId { get; set; }
     public string? ImageUrl { get; set; }
+    public string[] ImageUrls { get; set; } = [];
     public string? ImagePublicId { get; set; }
     public bool HasWaitingArea { get; set; }
     public bool HasParking { get; set; }

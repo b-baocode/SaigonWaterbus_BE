@@ -24,7 +24,11 @@ public sealed class StationConfiguration : IEntityTypeConfiguration<Station>
             .HasConversion<string>();
         builder.Ignore(x => x.Location);
         builder.Ignore(x => x.OsmId);
-        builder.Property(x => x.ImageUrl).HasColumnName("image_url").HasMaxLength(1000);
+        builder.Property(x => x.ImageUrl).HasColumnName("image_url").HasMaxLength(2048);
+        builder.Property(x => x.ImageUrls)
+            .HasColumnName("image_urls")
+            .HasColumnType("text[]")
+            .HasDefaultValueSql("ARRAY[]::text[]");
         builder.Ignore(x => x.ImagePublicId);
         builder.Property(x => x.HasWaitingArea).HasColumnName("has_waiting_area");
         builder.Property(x => x.HasParking).HasColumnName("has_parking");

@@ -140,6 +140,39 @@ internal static class BoatSupport
         return count <= MaxBoatImages;
     }
 
+    public static void EnsureValidImage(
+        string propertyPrefix,
+        string? fileName,
+        string? contentType,
+        long? length,
+        IBoatImageStorageService boatImageStorage)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            throw AuthSupport.CreateValidationException($"{propertyPrefix}FileName", "Tên file ảnh tàu là bắt buộc.");
+        }
+
+        if (!length.HasValue || length <= 0)
+        {
+            throw AuthSupport.CreateValidationException($"{propertyPrefix}Length", "Ảnh tàu là bắt buộc.");
+        }
+
+        if (length > boatImageStorage.MaxImageBytes)
+        {
+            throw AuthSupport.CreateValidationException(
+                $"{propertyPrefix}Length",
+                $"Ảnh tàu không được vượt quá {boatImageStorage.MaxImageBytes / 1024 / 1024} MB.");
+        }
+
+        if (string.IsNullOrWhiteSpace(contentType)
+            || !boatImageStorage.AllowedImageContentTypes.Contains(contentType, StringComparer.OrdinalIgnoreCase))
+        {
+            throw AuthSupport.CreateValidationException(
+                $"{propertyPrefix}ContentType",
+                "Ảnh tàu chỉ hỗ trợ JPEG, PNG hoặc WebP.");
+        }
+    }
+
     public static void ApplyRentalPrices(
         Boat boat,
         IReadOnlyCollection<BoatRentalPriceRequest>? rentalPrices)

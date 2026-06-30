@@ -116,6 +116,7 @@ public sealed class CreateBoatRequestUseCase
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly IDatabaseExceptionClassifier _databaseExceptionClassifier;
+    private readonly IBoatImageStorageService? _boatImageStorageService;
 
     public CreateBoatRequestUseCase(
         IApplicationDbContext context,
@@ -126,6 +127,7 @@ public sealed class CreateBoatRequestUseCase
         _context = context;
         _userContext = userContext;
         _databaseExceptionClassifier = databaseExceptionClassifier;
+        _boatImageStorageService = boatImageStorageService;
     }
 
     public async Task<BoatDto> ExecuteAsync(
@@ -139,11 +141,6 @@ public sealed class CreateBoatRequestUseCase
             throw AuthSupport.CreateValidationException(
                 nameof(request.Status),
                 "Tạo tàu mới cần để Inactive, cấu hình đủ ghế xong mới chuyển Active.");
-        }
-
-        if (request.ImageContent is not null || request.ImageFiles is { Count: > 0 })
-        {
-            throw AuthSupport.CreateValidationException(nameof(request.ImageContent), "Schema gọn chỉ hỗ trợ imageUrl, không lưu nhiều ảnh tàu.");
         }
 
         var normalizedCode = BoatSupport.NormalizeCode(request.Code);
@@ -176,6 +173,13 @@ public sealed class CreateBoatRequestUseCase
         };
         BoatSupport.ApplyRentalPrices(boat, request.RentalPrices);
 
+        var uploadedImage = await UploadPrimaryImageAsync(boat.Id, request, cancellationToken);
+        if (uploadedImage is not null)
+        {
+            boat.ImageUrl = uploadedImage.Url;
+            boat.ImagePublicId = uploadedImage.PublicId;
+        }
+
         try
         {
             _context.Boats.Add(boat);
@@ -187,5 +191,44 @@ public sealed class CreateBoatRequestUseCase
         }
 
         return BoatSupport.CreateDto(boat);
+    }
+
+    private async Task<StoredBoatImage?> UploadPrimaryImageAsync(
+        Guid boatId,
+        CreateBoatRequest request,
+        CancellationToken cancellationToken)
+    {
+        var files = BoatSupport.CreateImageFiles(
+                request.ImageFileName,
+                request.ImageContentType,
+                request.ImageLength,
+                request.ImageContent,
+                request.ImageFiles)
+            .ToArray();
+
+        if (files.Length == 0)
+        {
+            return null;
+        }
+
+        var boatImageStorage = _boatImageStorageService
+            ?? throw AuthSupport.CreateValidationException(nameof(request.ImageContent), "Dịch vụ lưu ảnh tàu chưa được cấu hình.");
+
+        var file = files[0];
+        BoatSupport.EnsureValidImage(
+            nameof(request.ImageContent),
+            file.FileName,
+            file.ContentType,
+            file.Length,
+            boatImageStorage);
+
+        if (file.Content.CanSeek)
+        {
+            file.Content.Position = 0;
+        }
+
+        return await boatImageStorage.UploadImageAsync(
+            new BoatImageUpload(boatId, file.Content, file.FileName, file.ContentType),
+            cancellationToken);
     }
 }

@@ -42,7 +42,7 @@ public sealed class UpdateStationCommandValidator : AbstractValidator<UpdateStat
 
         RuleFor(x => x)
             .Must(x => StationImageSupport.HasValidRequestedImageCount(x.ImageUrl, x.ImageUrls, x.ImageFiles))
-            .WithMessage("Schema gọn chỉ lưu 1 ảnh chính cho mỗi bến.");
+            .WithMessage($"Mỗi bến chỉ được lưu tối đa {StationImageSupport.MaxStationImages} ảnh.");
 
         RuleFor(x => x.Status).IsInEnum();
     }
@@ -51,12 +51,14 @@ public sealed class UpdateStationCommandValidator : AbstractValidator<UpdateStat
 public sealed class UpdateStationCommandHandler : IRequestHandler<UpdateStationCommand, StationDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly IStationImageStorageService? _stationImageStorage;
 
     public UpdateStationCommandHandler(
         IApplicationDbContext context,
         IStationImageStorageService? stationImageStorage = null)
     {
         _context = context;
+        _stationImageStorage = stationImageStorage;
     }
 
     public async Task<StationDto> Handle(UpdateStationCommand request, CancellationToken cancellationToken)
@@ -72,16 +74,17 @@ public sealed class UpdateStationCommandHandler : IRequestHandler<UpdateStationC
         station.Longitude = request.Longitude ?? station.Longitude;
         station.Status = request.Status;
 
-        if (request.ImageFiles is { Count: > 0 })
+        var imageUrls = StationImageSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls).ToList();
+        var uploadedImages = await StationImageSupport.UploadImagesAsync(
+            station.Id,
+            request.ImageFiles,
+            _stationImageStorage,
+            nameof(request.ImageFiles),
+            cancellationToken);
+        imageUrls.AddRange(uploadedImages.Select(image => image.Url));
+        if (imageUrls.Count > 0)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.ImageFiles), "Schema gọn chỉ hỗ trợ imageUrl, không lưu nhiều ảnh bến.");
-        }
-
-        var imageUrl = StationImageSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls).FirstOrDefault();
-        if (imageUrl is not null)
-        {
-            station.ImageUrl = imageUrl;
-            station.ImagePublicId = null;
+            StationImageSupport.ReplaceImages(station, imageUrls);
         }
 
         station.HasWaitingArea = request.HasWaitingArea ?? station.HasWaitingArea;
