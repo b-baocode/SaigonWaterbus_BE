@@ -45,4 +45,11 @@ public sealed record BoardingPassNotification(
     PaymentSucceededNotification Booking,
     string TicketCode,
     string QrToken,
-    string? QrImageUrl);
+    string? QrImageUrl = null,
+    string? PdfUrl = null,
+    IReadOnlyList<EmailAttachment>? Attachments = null);
+
+public sealed record EmailAttachment(
+    string Name,
+    string ContentType,
+    byte[] Content);

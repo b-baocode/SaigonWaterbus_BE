@@ -42,17 +42,20 @@ public sealed class ImportCustomBookingPassengersCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
+    private readonly ICustomBookingTicketPdfRenderer _ticketPdfRenderer;
     private readonly TimeProvider _timeProvider;
 
     public ImportCustomBookingPassengersCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IPaymentNotificationSender paymentNotificationSender,
+        ICustomBookingTicketPdfRenderer ticketPdfRenderer,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
         _paymentNotificationSender = paymentNotificationSender;
+        _ticketPdfRenderer = ticketPdfRenderer;
         _timeProvider = timeProvider;
     }
 
@@ -163,13 +166,37 @@ public sealed class ImportCustomBookingPassengersCommandHandler
         }
 
         var bookingNotification = PaymentSupport.CreatePaymentSucceededNotification(booking, paidPayment);
+        var attachments = CreateBoardingPassAttachments(booking, ticketResult!.Tickets);
         await _paymentNotificationSender.SendBoardingPassAsync(
             new BoardingPassNotification(
                 bookingNotification,
                 ticket.TicketCode,
                 ticket.QrToken,
-                null),
+                Attachments: attachments),
             cancellationToken);
+    }
+
+    private IReadOnlyList<EmailAttachment> CreateBoardingPassAttachments(
+        Booking booking,
+        IReadOnlyList<Ticket> tickets)
+    {
+        var export = CustomBookingTicketExportSupport.ToDto(booking, tickets);
+        var pdfBytes = _ticketPdfRenderer.Render(export);
+
+        return
+        [
+            new EmailAttachment(
+                $"{SanitizeFileName(booking.BookingCode)}-boarding-pass.pdf",
+                "application/pdf",
+                pdfBytes)
+        ];
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var safeValue = new string(value.Select(x => invalidChars.Contains(x) ? '-' : x).ToArray());
+        return string.IsNullOrWhiteSpace(safeValue) ? "boarding-pass" : safeValue;
     }
 }
 

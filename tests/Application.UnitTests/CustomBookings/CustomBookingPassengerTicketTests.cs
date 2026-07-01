@@ -18,10 +18,22 @@ public class CustomBookingPassengerTicketTests
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
         var booking = PaidCustomBooking(userId, adultCount: 2);
+        booking.ContactEmail = "customer@example.test";
+        booking.Payments.Add(new Payment
+        {
+            PaymentCode = $"PAY{Guid.NewGuid():N}"[..20],
+            Amount = booking.TotalAmount,
+            Currency = booking.Currency,
+            PaymentMethod = "Cash",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = DateTimeOffset.UtcNow
+        });
         context.Add(booking);
         await context.SaveChangesAsync();
 
-        var handler = CreateUpdateHandler(context, userId);
+        var notificationSender = new TestPaymentNotificationSender();
+        var handler = CreateUpdateHandler(context, userId, notificationSender);
 
         var result = await handler.Handle(
             new UpdateCustomBookingPassengersCommand(
@@ -41,6 +53,12 @@ public class CustomBookingPassengerTicketTests
         tickets.All(x => x.BookingPassengerId.HasValue).ShouldBeTrue();
         tickets.Select(x => x.QrToken).Distinct().Count().ShouldBe(2);
         tickets.ShouldAllBe(x => x.TicketTypeCode == "CUSTOM_BOOKING");
+
+        var boardingPass = notificationSender.BoardingPasses.Single();
+        var attachment = boardingPass.Attachments.ShouldNotBeNull().Single();
+        attachment.Name.ShouldBe($"{booking.BookingCode}-boarding-pass.pdf");
+        attachment.ContentType.ShouldBe("application/pdf");
+        attachment.Content.ShouldBe([1, 2, 3]);
     }
 
     [Test]
@@ -157,6 +175,40 @@ public class CustomBookingPassengerTicketTests
     }
 
     [Test]
+    public async Task ExportTicketsByQrTokenReturnsTicketsForEmailPdfLink()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var user = Customer();
+        var booking = PaidCustomBooking(user.Id, adultCount: 2);
+        context.AddRange(user.Role, user, booking);
+        await context.SaveChangesAsync();
+
+        var updateHandler = CreateUpdateHandler(context, user.Id);
+        await updateHandler.Handle(
+            new UpdateCustomBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CustomBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
+                    new CustomBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                ]),
+            CancellationToken.None);
+
+        var qrToken = context.Tickets
+            .OrderBy(x => x.TicketCode)
+            .Select(x => x.QrToken)
+            .First();
+        var exportHandler = new ExportCustomBookingTicketsByQrTokenQueryHandler(context);
+
+        var export = await exportHandler.Handle(
+            new ExportCustomBookingTicketsByQrTokenQuery(qrToken),
+            CancellationToken.None);
+
+        export.BookingCode.ShouldBe(booking.BookingCode);
+        export.Tickets.Count.ShouldBe(2);
+        export.Tickets.ShouldAllBe(x => !string.IsNullOrWhiteSpace(x.QrToken));
+    }
+
+    [Test]
     public async Task ExportTicketsRejectsInvalidTicketIds()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -239,11 +291,13 @@ public class CustomBookingPassengerTicketTests
 
     private static UpdateCustomBookingPassengersCommandHandler CreateUpdateHandler(
         IApplicationDbContext context,
-        Guid userId) =>
+        Guid userId,
+        TestPaymentNotificationSender? paymentNotificationSender = null) =>
         new(
             context,
             new TestUserContext(userId),
-            new TestPaymentNotificationSender(),
+            paymentNotificationSender ?? new TestPaymentNotificationSender(),
+            new TestCustomBookingTicketPdfRenderer(),
             TimeProvider.System);
 
     private static Booking PaidCustomBooking(Guid userId, int adultCount) =>
@@ -287,6 +341,8 @@ public class CustomBookingPassengerTicketTests
 
     private sealed class TestPaymentNotificationSender : IPaymentNotificationSender
     {
+        public List<BoardingPassNotification> BoardingPasses { get; } = [];
+
         public Task SendPaymentSucceededAsync(
             PaymentSucceededNotification notification,
             CancellationToken cancellationToken) =>
@@ -294,7 +350,15 @@ public class CustomBookingPassengerTicketTests
 
         public Task SendBoardingPassAsync(
             BoardingPassNotification notification,
-            CancellationToken cancellationToken) =>
-            Task.CompletedTask;
+            CancellationToken cancellationToken)
+        {
+            BoardingPasses.Add(notification);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestCustomBookingTicketPdfRenderer : ICustomBookingTicketPdfRenderer
+    {
+        public byte[] Render(CustomBookingTicketExportDto export) => [1, 2, 3];
     }
 }

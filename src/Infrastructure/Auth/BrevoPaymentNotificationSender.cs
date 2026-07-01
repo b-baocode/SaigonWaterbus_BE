@@ -13,6 +13,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
     private const string HttpClientName = "Brevo";
     private const string CustomBookingType = "CustomBooking";
     private const string TicketQrImagePathPrefix = "/api/tickets/qr-image/";
+    private const string CustomBookingTicketsPdfPathPrefix = "/api/custom-bookings/tickets/pdf/";
     private static readonly CultureInfo ViCulture = CultureInfo.GetCultureInfo("vi-VN");
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<BrevoOptions> _optionsMonitor;
@@ -172,7 +173,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         BoardingPassNotification notification)
     {
         var parameters = BuildTemplateParams(options, notification.Booking, notification);
-        return BuildPayload(
+        var payload = BuildPayload(
             options,
             notification.Booking.Email,
             notification.Booking.ContactName,
@@ -180,6 +181,8 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             parameters,
             $"Saigon Waterbus - Ve len tau {notification.Booking.BookingCode}",
             BuildHtmlContent(notification.Booking));
+        AddAttachments(payload, notification.Attachments);
+        return payload;
     }
 
     private static Dictionary<string, object?> BuildPayload(
@@ -211,6 +214,25 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         payload["subject"] = subject;
         payload["htmlContent"] = htmlContent;
         return payload;
+    }
+
+    private static void AddAttachments(
+        Dictionary<string, object?> payload,
+        IReadOnlyList<EmailAttachment>? attachments)
+    {
+        if (attachments is not { Count: > 0 })
+        {
+            return;
+        }
+
+        payload["attachment"] = attachments
+            .Where(x => x.Content.Length > 0 && !string.IsNullOrWhiteSpace(x.Name))
+            .Select(x => new
+            {
+                name = x.Name,
+                content = Convert.ToBase64String(x.Content)
+            })
+            .ToArray();
     }
 
     private static int ResolvePaymentTemplateId(BrevoOptions options, PaymentSucceededNotification notification)
@@ -266,6 +288,9 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         var qrImageUrl = string.IsNullOrWhiteSpace(boardingPass?.QrImageUrl)
             ? CreateQrImageUrl(options.PublicApiBaseUrl, qrPayload)
             : boardingPass.QrImageUrl;
+        var pdfUrl = string.IsNullOrWhiteSpace(boardingPass?.PdfUrl)
+            ? CreateCustomBookingTicketsPdfUrl(options.PublicApiBaseUrl, qrPayload, notification.BookingType)
+            : boardingPass.PdfUrl;
 
         return new Dictionary<string, object?>
         {
@@ -334,7 +359,8 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             ["ticketCode"] = boardingPass?.TicketCode,
             ["qrPayload"] = qrPayload,
             ["qrImageUrl"] = qrImageUrl,
-            ["qrCodeUrl"] = qrImageUrl
+            ["qrCodeUrl"] = qrImageUrl,
+            ["pdfUrl"] = pdfUrl
         };
     }
 
@@ -473,6 +499,21 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         }
 
         return $"{publicApiBaseUrl.TrimEnd('/')}{TicketQrImagePathPrefix}{Uri.EscapeDataString(qrPayload)}";
+    }
+
+    private static string? CreateCustomBookingTicketsPdfUrl(
+        string? publicApiBaseUrl,
+        string? qrPayload,
+        string bookingType)
+    {
+        if (!string.Equals(bookingType, CustomBookingType, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(publicApiBaseUrl)
+            || string.IsNullOrWhiteSpace(qrPayload))
+        {
+            return null;
+        }
+
+        return $"{publicApiBaseUrl.TrimEnd('/')}{CustomBookingTicketsPdfPathPrefix}{Uri.EscapeDataString(qrPayload)}";
     }
 
     private static string ResolveText(string? value, string fallback = "Chưa xác định") =>

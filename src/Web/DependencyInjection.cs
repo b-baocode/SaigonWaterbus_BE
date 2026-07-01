@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.CustomBookings;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
@@ -29,6 +30,7 @@ public static class DependencyInjection
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddScoped<IUserContext, CurrentUser>();
         builder.Services.AddScoped<IClientInfoProvider, CurrentClientInfo>();
+        builder.Services.AddScoped<ICustomBookingTicketPdfRenderer, QuestPdfCustomBookingTicketPdfRenderer>();
 
         builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
         builder.Services.AddProblemDetails();

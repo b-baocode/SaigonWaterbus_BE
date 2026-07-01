@@ -12,6 +12,9 @@ public sealed record ExportCustomBookingTicketsQuery(
     IReadOnlyCollection<Guid>? TicketIds = null)
     : IRequest<CustomBookingTicketExportDto>;
 
+public sealed record ExportCustomBookingTicketsByQrTokenQuery(string QrToken)
+    : IRequest<CustomBookingTicketExportDto>;
+
 public sealed class ExportCustomBookingTicketsQueryValidator
     : AbstractValidator<ExportCustomBookingTicketsQuery>
 {
@@ -24,11 +27,18 @@ public sealed class ExportCustomBookingTicketsQueryValidator
     }
 }
 
+public sealed class ExportCustomBookingTicketsByQrTokenQueryValidator
+    : AbstractValidator<ExportCustomBookingTicketsByQrTokenQuery>
+{
+    public ExportCustomBookingTicketsByQrTokenQueryValidator()
+    {
+        RuleFor(x => x.QrToken).NotEmpty().MaximumLength(100);
+    }
+}
+
 public sealed class ExportCustomBookingTicketsQueryHandler
     : IRequestHandler<ExportCustomBookingTicketsQuery, CustomBookingTicketExportDto>
 {
-    private const string PaidBookingPaymentStatus = "Paid";
-
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
 
@@ -67,6 +77,56 @@ public sealed class ExportCustomBookingTicketsQueryHandler
             throw new NotFoundException("Custom booking not found.");
         }
 
+        return CustomBookingTicketExportSupport.ToDto(booking, request.TicketIds);
+    }
+}
+
+public sealed class ExportCustomBookingTicketsByQrTokenQueryHandler
+    : IRequestHandler<ExportCustomBookingTicketsByQrTokenQuery, CustomBookingTicketExportDto>
+{
+    private readonly IApplicationDbContext _context;
+
+    public ExportCustomBookingTicketsByQrTokenQueryHandler(IApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task<CustomBookingTicketExportDto> Handle(
+        ExportCustomBookingTicketsByQrTokenQuery request,
+        CancellationToken cancellationToken)
+    {
+        var qrToken = request.QrToken.Trim();
+        var bookingId = await _context.Tickets
+            .AsNoTracking()
+            .Where(x => x.QrToken == qrToken)
+            .Select(x => (Guid?)x.BookingId)
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("Custom booking ticket not found.");
+
+        var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
+            .SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken)
+            ?? throw new NotFoundException("Custom booking not found.");
+
+        return CustomBookingTicketExportSupport.ToDto(booking, ticketIds: null);
+    }
+}
+
+internal static class CustomBookingTicketExportSupport
+{
+    private const string PaidBookingPaymentStatus = "Paid";
+
+    public static CustomBookingTicketExportDto ToDto(
+        Booking booking,
+        IReadOnlyCollection<Guid>? ticketIds)
+    {
         if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase))
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.PaymentStatus),
@@ -75,7 +135,20 @@ public sealed class ExportCustomBookingTicketsQueryHandler
 
         var tickets = ApplyTicketSelection(
             CustomBookingTicketSupport.GetDisplayTickets(booking.Tickets),
-            request.TicketIds);
+            ticketIds);
+        return ToDto(booking, tickets);
+    }
+
+    public static CustomBookingTicketExportDto ToDto(
+        Booking booking,
+        IReadOnlyList<Ticket> tickets)
+    {
+        if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(booking.PaymentStatus),
+                "Chỉ export vé sau khi custom booking đã thanh toán đủ.")]);
+        }
+
         if (tickets.Count == 0)
         {
             throw new ValidationException([new ValidationFailure("tickets",

@@ -26,6 +26,7 @@ public class BrevoPaymentNotificationSenderTests
         root.GetProperty("templateId").GetInt32().ShouldBe(13);
         parameters.GetProperty("ticketCode").ValueKind.ShouldBe(JsonValueKind.Null);
         parameters.GetProperty("qrImageUrl").ValueKind.ShouldBe(JsonValueKind.Null);
+        parameters.GetProperty("pdfUrl").ValueKind.ShouldBe(JsonValueKind.Null);
         parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Còn lại");
     }
 
@@ -37,17 +38,28 @@ public class BrevoPaymentNotificationSenderTests
         var booking = CreateNotification(isFullyPaid: true);
 
         await sender.SendBoardingPassAsync(
-            new BoardingPassNotification(booking, "TK123", "qr-token", null),
+            new BoardingPassNotification(
+                booking,
+                "TK123",
+                "qr-token",
+                Attachments:
+                [
+                    new EmailAttachment("boarding-pass.pdf", "application/pdf", [1, 2, 3])
+                ]),
             CancellationToken.None);
 
         using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
         var root = payload.RootElement;
         var parameters = root.GetProperty("params");
+        var attachment = root.GetProperty("attachment")[0];
         root.GetProperty("templateId").GetInt32().ShouldBe(14);
         parameters.GetProperty("ticketCode").GetString().ShouldBe("TK123");
         parameters.GetProperty("qrPayload").GetString().ShouldBe("qr-token");
         parameters.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/qr-token");
+        parameters.GetProperty("pdfUrl").GetString().ShouldBe("https://api.test/api/custom-bookings/tickets/pdf/qr-token");
         parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Đã thanh toán");
+        attachment.GetProperty("name").GetString().ShouldBe("boarding-pass.pdf");
+        attachment.GetProperty("content").GetString().ShouldBe("AQID");
     }
 
     private static BrevoPaymentNotificationSender CreateSender(CapturingHttpMessageHandler httpHandler) =>
