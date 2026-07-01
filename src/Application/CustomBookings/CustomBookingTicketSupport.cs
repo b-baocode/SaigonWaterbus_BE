@@ -1,8 +1,10 @@
+using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.CustomBookings;
 
@@ -10,7 +12,7 @@ internal static class CustomBookingTicketSupport
 {
     private const string PaidBookingPaymentStatus = "Paid";
 
-    public static async Task<BookingLevelTicketEnsureResult?> EnsureBookingLevelTicketAsync(
+    public static async Task<PassengerTicketEnsureResult?> EnsurePassengerTicketsAsync(
         IApplicationDbContext context,
         Booking booking,
         TimeProvider timeProvider,
@@ -21,31 +23,103 @@ internal static class CustomBookingTicketSupport
             return null;
         }
 
-        var existingTicket = await context.Tickets
-            .SingleOrDefaultAsync(x => x.BookingId == booking.Id && x.BookingPassengerId == null, cancellationToken);
-        if (existingTicket is not null)
+        var passengers = booking.Passengers
+            .OrderBy(x => x.FullName)
+            .ThenBy(x => x.Id)
+            .ToList();
+
+        await CancelBookingLevelTicketsAsync(context, booking.Id, cancellationToken);
+
+        if (passengers.Count == 0)
         {
-            return new BookingLevelTicketEnsureResult(existingTicket, false);
+            return new PassengerTicketEnsureResult([], []);
         }
 
-        var now = timeProvider.GetUtcNow();
-        var ticket = new Ticket
-        {
-            BookingId = booking.Id,
-            TicketCode = await TicketIssueSupport.GenerateTicketCodeAsync(context, now, cancellationToken),
-            QrToken = await TicketIssueSupport.GenerateQrTokenAsync(context, cancellationToken),
-            TicketTypeCode = TicketTypeCatalog.CustomBookingTicketTypeCode,
-            TicketTypeName = TicketTypeCatalog.CustomBookingTicketTypeName,
-            TicketStatus = TicketStatus.Active,
-            IssuedAt = now
-        };
+        var passengerIds = passengers.Select(x => x.Id).ToArray();
+        var existingTickets = await context.Tickets
+            .Include(x => x.BookingPassenger)
+            .Where(x => x.BookingId == booking.Id
+                && x.BookingPassengerId.HasValue
+                && passengerIds.Contains(x.BookingPassengerId.Value)
+                && x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired)
+            .ToListAsync(cancellationToken);
+        var ticketedPassengerIds = existingTickets
+            .Where(x => x.BookingPassengerId.HasValue)
+            .Select(x => x.BookingPassengerId!.Value)
+            .ToHashSet();
 
-        context.Tickets.Add(ticket);
-        return new BookingLevelTicketEnsureResult(ticket, true);
+        var now = timeProvider.GetUtcNow();
+        var createdTickets = new List<Ticket>();
+        foreach (var passenger in passengers.Where(x => !ticketedPassengerIds.Contains(x.Id)))
+        {
+            var ticket = new Ticket
+            {
+                BookingId = booking.Id,
+                BookingPassengerId = passenger.Id,
+                BookingPassenger = passenger,
+                TicketCode = await TicketIssueSupport.GenerateTicketCodeAsync(context, now, cancellationToken),
+                QrToken = await TicketIssueSupport.GenerateQrTokenAsync(context, cancellationToken),
+                TicketTypeCode = TicketTypeCatalog.CustomBookingTicketTypeCode,
+                TicketTypeName = TicketTypeCatalog.CustomBookingTicketTypeName,
+                TicketStatus = TicketStatus.Active,
+                IssuedAt = now
+            };
+
+            context.Tickets.Add(ticket);
+            createdTickets.Add(ticket);
+        }
+
+        return new PassengerTicketEnsureResult(
+            existingTickets.Concat(createdTickets)
+                .OrderBy(x => x.BookingPassenger?.FullName)
+                .ThenBy(x => x.TicketCode)
+                .ToList(),
+            createdTickets);
     }
 
-    public static CustomBookingTicketDto ToDto(Ticket ticket) =>
-        new(
+    public static void CancelTicketsBeforeReplacingPassengers(Booking booking)
+    {
+        if (booking.Tickets.Any(x => x.TicketStatus is TicketStatus.CheckedIn or TicketStatus.CheckedOut))
+        {
+            throw new ValidationException([new ValidationFailure("tickets",
+                "Không thể thay danh sách hành khách khi đã có vé check-in hoặc check-out.")]);
+        }
+
+        foreach (var ticket in booking.Tickets.Where(x =>
+            x.TicketStatus != TicketStatus.Cancelled
+            && x.TicketStatus != TicketStatus.Expired))
+        {
+            ticket.TicketStatus = TicketStatus.Cancelled;
+            ticket.BookingPassengerId = null;
+            ticket.BookingPassenger = null;
+        }
+    }
+
+    public static IReadOnlyList<Ticket> GetDisplayTickets(IEnumerable<Ticket> tickets)
+    {
+        var currentTickets = tickets
+            .Where(x => x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired)
+            .ToList();
+        var passengerTickets = currentTickets
+            .Where(x => x.BookingPassengerId.HasValue)
+            .OrderBy(x => x.BookingPassenger?.FullName)
+            .ThenBy(x => x.TicketCode)
+            .ToList();
+
+        return passengerTickets.Count > 0
+            ? passengerTickets
+            : currentTickets
+                .Where(x => x.BookingPassengerId == null)
+                .OrderByDescending(x => x.IssuedAt)
+                .ToList();
+    }
+
+    public static CustomBookingTicketDto ToDto(Ticket ticket)
+    {
+        var passenger = ticket.BookingPassenger;
+        return new(
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
@@ -53,10 +127,32 @@ internal static class CustomBookingTicketSupport
             ticket.TicketTypeName,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
-            ticket.CheckedInAt);
+            ticket.CheckedInAt,
+            passenger?.Id ?? ticket.BookingPassengerId,
+            passenger?.FullName,
+            passenger?.DateOfBirth,
+            passenger?.PassengerType);
+    }
 
+    private static async Task CancelBookingLevelTicketsAsync(
+        IApplicationDbContext context,
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        var bookingLevelTickets = await context.Tickets
+            .Where(x => x.BookingId == bookingId
+                && x.BookingPassengerId == null
+                && x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired)
+            .ToListAsync(cancellationToken);
+
+        foreach (var ticket in bookingLevelTickets)
+        {
+            ticket.TicketStatus = TicketStatus.Cancelled;
+        }
+    }
 }
 
-internal sealed record BookingLevelTicketEnsureResult(
-    Ticket Ticket,
-    bool Created);
+internal sealed record PassengerTicketEnsureResult(
+    IReadOnlyList<Ticket> Tickets,
+    IReadOnlyList<Ticket> CreatedTickets);

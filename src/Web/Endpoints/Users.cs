@@ -56,7 +56,7 @@ public sealed class Users : IEndpointGroup
                 "Manager hoặc Admin",
                 null,
                 "Dùng API này để biết roleId nào tương ứng role nào trong database.",
-                "Admin thấy role Manager. Manager thấy role Staff."));
+                "Admin thấy role Manager và Staff. Manager thấy role Staff."));
 
         groupBuilder.MapGet(List, "")
             .RequireAuthorization()
@@ -74,7 +74,7 @@ public sealed class Users : IEndpointGroup
                 "Bearer token",
                 null,
                 "Trả về lịch sử chung gồm booking vé thường và custom booking thuê nguyên tàu của user đang đăng nhập.",
-                "Custom booking có ticket chỉ trả ticket.qrPayload khi booking đã thanh toán đủ và backend còn lưu token QR.",
+                "Custom booking có thể có nhiều ticket/QR sau khi booking đã thanh toán đủ và đã nhập danh sách hành khách.",
                 "detailEndpoint cho biết API chi tiết cần gọi tiếp theo cho từng loại booking."));
 
         groupBuilder.MapGet(GetById, "detail/{userId:guid}")
@@ -92,7 +92,7 @@ public sealed class Users : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Manager hoặc Admin",
                 CreateUserExample,
-                "Admin chỉ tạo được Manager.",
+                "Admin tạo được Manager hoặc Staff.",
                 "Manager chỉ tạo được Staff. Customer dùng flow /api/auth/register để tự đăng ký và xác thực OTP.",
                 "Không cần truyền status khi tạo user; hệ thống mặc định tạo user Active.",
                 "Không truyền password; hệ thống tự sinh mật khẩu ban đầu và trả về generatedPassword.",

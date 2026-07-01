@@ -48,11 +48,18 @@ public class UserManagementSupportTests
         Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
     }
 
+    [Test]
+    public void AdminCanCreateStaff()
+    {
+        var actor = UserWithRole(1, Roles.AdminName);
+        var targetRole = Role(Roles.StaffSystemName);
+
+        Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+    }
+
     [TestCase(Roles.AdminName)]
     [TestCase(Roles.CustomerSystemName)]
-    [TestCase(Roles.StaffSystemName)]
-    [TestCase(Roles.CustomerSystemName)]
-    public void AdminCannotCreateNonManagerRoles(string targetSystemName)
+    public void AdminCannotCreateUnsupportedRoles(string targetSystemName)
     {
         var actor = UserWithRole(1, Roles.AdminName);
         var targetRole = Role(targetSystemName);
@@ -129,25 +136,26 @@ public class UserManagementSupportTests
     }
 
     [Test]
-    public void AdminCanAssignManagerRole()
+    [TestCase(Roles.ManagerSystemName)]
+    [TestCase(Roles.StaffSystemName)]
+    public void AdminCanAssignManagerOrStaffRole(string targetRoleSystemName)
     {
         var actor = UserWithRole(1, Roles.AdminName);
         var target = UserWithRole(2, Roles.StaffSystemName);
 
         Should.NotThrow(() =>
-            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.ManagerSystemName), "roleId"));
+            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(targetRoleSystemName), "roleId"));
     }
 
     [TestCase(Roles.AdminName)]
-    [TestCase(Roles.StaffSystemName)]
     [TestCase(Roles.CustomerSystemName)]
-    public void AdminCannotAssignNonManagerRoles(string targetRoleSystemName)
+    public void AdminCannotAssignUnsupportedRoles(string targetRoleSystemName)
     {
         var actor = UserWithRole(1, Roles.AdminName);
         var target = UserWithRole(2, Roles.StaffSystemName);
 
         Should.Throw<ValidationException>(() =>
-            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(Roles.AdminName), "roleId"));
+            UserManagementSupport.EnsureCanAssignRole(actor, target, Role(targetRoleSystemName), "roleId"));
     }
 
     [Test]

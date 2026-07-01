@@ -1,4 +1,12 @@
+using System.Globalization;
+using System.IO.Compression;
+using System.Net;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using QRCoder;
+using QuestPDF.Fluent;
+using QuestPDF.Helpers;
+using QuestPDF.Infrastructure;
 using SaigonWaterbus.Application.CustomBookings;
 using SaigonWaterbus.Domain.Enums;
 
@@ -133,6 +141,17 @@ public sealed class CustomBookings : IEndpointGroup
                 "Sau khi quote thanh cong, bookingStatus = Quoted va customer moi tao payment duoc.",
                 "Khong cho quote neu booking da co payment Pending/Paid."));
 
+        group.MapGet(GetCustomBookingManifestByCode, "manifest/{bookingCode}")
+            .RequireAuthorization()
+            .WithSummary("Tra cuu manifest custom booking bang ma dat cho")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Nhap bookingCode/ma dat cho chung de xem thong tin custom booking, tau, lich trinh, danh sach hanh khach va trang thai tung ve.",
+                "Admin/Manager/Staff tra cuu duoc moi custom booking.",
+                "Customer chi tra cuu duoc custom booking cua minh.",
+                "BookingCode chi dung de tra cuu manifest; check-in/check-out van dung ticketCode hoac qrToken cua tung hanh khach."));
+
         group.MapGet(GetCustomBookings, string.Empty)
             .RequireAuthorization()
             .WithSummary("Danh sach yeu cau thue tau cua toi")
@@ -169,7 +188,8 @@ public sealed class CustomBookings : IEndpointGroup
                 "Thay the toan bo danh sach hanh khach cua custom booking.",
                 "Moi hanh khach chi can fullName va dateOfBirth.",
                 "Backend tu tinh passengerType: Adult tu 12 tuoi tro len, Child duoi 12 tuoi.",
-                "So hanh khach khong duoc vuot qua passengerCount da dang ky."));
+                "So hanh khach khong duoc vuot qua passengerCount da dang ky.",
+                "Sau khi luu thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
 
         group.MapPost(ImportCustomBookingPassengers, "{id:guid}/passengers/import")
             .RequireAuthorization()
@@ -183,7 +203,68 @@ public sealed class CustomBookings : IEndpointGroup
                 "Gui multipart/form-data voi field file.",
                 "Ho tro .xlsx, .csv, .tsv, .txt.",
                 "File chi can cot ten hanh khach va ngay sinh. Header chap nhan: fullName/name/ho ten va dateOfBirth/dob/ngay sinh.",
-                "Backend tu tinh adultCount/childCount theo moc 12 tuoi."));
+                "Backend tu tinh adultCount/childCount theo moc 12 tuoi.",
+                "Sau khi import thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
+
+        group.MapGet(ExportCustomBookingTickets, "{id:guid}/tickets/export")
+            .RequireAuthorization()
+            .Produces(StatusCodes.Status200OK, contentType: "application/zip")
+            .WithSummary("Export tat ca ve/QR custom booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve file ZIP gom tickets.csv va anh PNG QR cho tung ve.",
+                "Chi export sau khi custom booking da thanh toan du va da nhap/upload danh sach hanh khach.",
+                "File export khong duoc luu thanh ban rieng; backend tao lai tu bang tickets moi lan goi API."));
+
+        group.MapPost(ExportSelectedCustomBookingTickets, "{id:guid}/tickets/export")
+            .RequireAuthorization()
+            .Produces(StatusCodes.Status200OK, contentType: "application/zip")
+            .WithSummary("Export ve/QR custom booking theo ticketIds")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "ticketIds": [
+                    "00000000-0000-0000-0000-000000000000"
+                  ]
+                }
+                """,
+                "Tra ve file ZIP gom tickets.csv va anh PNG QR cho cac ve duoc chon.",
+                "Bo trong ticketIds hoac gui mang rong de export tat ca ve hop le."));
+
+        group.MapPost(PrintCustomBookingTickets, "{id:guid}/tickets/print")
+            .RequireAuthorization()
+            .Produces(StatusCodes.Status200OK, contentType: "text/html")
+            .WithSummary("In ve custom booking theo ticketIds")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "ticketIds": [
+                    "00000000-0000-0000-0000-000000000000"
+                  ]
+                }
+                """,
+                "Tra ve trang HTML A4 co QR cho cac ve duoc chon de browser in hoac save as PDF.",
+                "Bo trong ticketIds hoac gui mang rong de in tat ca ve hop le."));
+
+        group.MapPost(ExportCustomBookingTicketsPdf, "{id:guid}/tickets/pdf")
+            .RequireAuthorization()
+            .Produces(StatusCodes.Status200OK, contentType: "application/pdf")
+            .WithSummary("Export PDF ve custom booking theo ticketIds")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "ticketIds": [
+                    "00000000-0000-0000-0000-000000000000"
+                  ]
+                }
+                """,
+                "Tra ve file PDF A4 gom cac ve duoc chon, moi ve co QR rieng.",
+                "Bo trong ticketIds hoac gui mang rong de export tat ca ve hop le.",
+                "File PDF khong duoc luu thanh ban rieng; backend tao lai tu bang tickets moi lan goi API."));
 
         group.MapPost(CreateCustomBooking, string.Empty)
             .RequireAuthorization()
@@ -226,6 +307,12 @@ public sealed class CustomBookings : IEndpointGroup
 
     private static async Task<IResult> GetAdminCustomBookingDetail(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetAdminCustomBookingDetailQuery(id), ct));
+
+    private static async Task<IResult> GetCustomBookingManifestByCode(
+        ISender sender,
+        string bookingCode,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingManifestByCodeQuery(bookingCode), ct));
 
     private static async Task<IResult> UpdateAdminCustomBookingStatus(
         ISender sender,
@@ -293,6 +380,62 @@ public sealed class CustomBookings : IEndpointGroup
             ct));
     }
 
+    private static async Task<IResult> ExportCustomBookingTickets(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        await BuildTicketExportResultAsync(sender, id, ticketIds: null, ct);
+
+    private static async Task<IResult> ExportSelectedCustomBookingTickets(
+        ISender sender,
+        Guid id,
+        CustomBookingTicketSelectionRequest request,
+        CancellationToken ct) =>
+        await BuildTicketExportResultAsync(sender, id, request.TicketIds, ct);
+
+    private static async Task<IResult> PrintCustomBookingTickets(
+        ISender sender,
+        Guid id,
+        CustomBookingTicketSelectionRequest request,
+        CancellationToken ct)
+    {
+        var export = await sender.Send(
+            new ExportCustomBookingTicketsQuery(id, request.TicketIds),
+            ct);
+        return Results.Content(BuildPrintableTicketsHtml(export), "text/html; charset=utf-8");
+    }
+
+    private static async Task<IResult> ExportCustomBookingTicketsPdf(
+        ISender sender,
+        Guid id,
+        CustomBookingTicketSelectionRequest request,
+        CancellationToken ct)
+    {
+        var export = await sender.Send(
+            new ExportCustomBookingTicketsQuery(id, request.TicketIds),
+            ct);
+        var pdfBytes = BuildPrintableTicketsPdf(export);
+
+        return Results.File(
+            pdfBytes,
+            "application/pdf",
+            $"{SanitizeFileName(export.BookingCode)}-tickets.pdf");
+    }
+
+    private static async Task<IResult> BuildTicketExportResultAsync(
+        ISender sender,
+        Guid id,
+        IReadOnlyCollection<Guid>? ticketIds,
+        CancellationToken ct)
+    {
+        var export = await sender.Send(new ExportCustomBookingTicketsQuery(id, ticketIds), ct);
+        var zipBytes = await BuildTicketExportZipAsync(export, ct);
+        return Results.File(
+            zipBytes,
+            "application/zip",
+            $"{SanitizeFileName(export.BookingCode)}-tickets.zip");
+    }
+
     private static async Task<IResult> CreateCustomBooking(
         ISender sender, CreateCustomBookingRequest request, CancellationToken ct) =>
         Results.Ok(await sender.Send(new CreateCustomBookingCommand(
@@ -310,4 +453,340 @@ public sealed class CustomBookings : IEndpointGroup
             request.BoatRequirements,
             request.PromotionCode,
             request.SpecialRequests), ct));
+
+    private static async Task<byte[]> BuildTicketExportZipAsync(
+        CustomBookingTicketExportDto export,
+        CancellationToken ct)
+    {
+        using var memoryStream = new MemoryStream();
+        using (var archive = new ZipArchive(memoryStream, ZipArchiveMode.Create, leaveOpen: true))
+        {
+            var qrFileNames = export.Tickets.ToDictionary(
+                x => x.TicketId,
+                x => $"qr/{SanitizeFileName(x.TicketCode)}.png");
+
+            var csvEntry = archive.CreateEntry("tickets.csv", CompressionLevel.Optimal);
+            await using (var csvStream = csvEntry.Open())
+            {
+                var csv = BuildTicketsCsv(export, qrFileNames);
+                var preamble = Encoding.UTF8.GetPreamble();
+                await csvStream.WriteAsync(preamble, ct);
+                await csvStream.WriteAsync(Encoding.UTF8.GetBytes(csv), ct);
+            }
+
+            using var qrGenerator = new QRCodeGenerator();
+            foreach (var ticket in export.Tickets)
+            {
+                ct.ThrowIfCancellationRequested();
+                using var qrData = qrGenerator.CreateQrCode(ticket.QrToken, QRCodeGenerator.ECCLevel.Q);
+                var qrCode = new PngByteQRCode(qrData);
+                var qrBytes = qrCode.GetGraphic(20);
+
+                var qrEntry = archive.CreateEntry(qrFileNames[ticket.TicketId], CompressionLevel.Optimal);
+                await using var qrStream = qrEntry.Open();
+                await qrStream.WriteAsync(qrBytes, ct);
+            }
+        }
+
+        return memoryStream.ToArray();
+    }
+
+    private static string BuildPrintableTicketsHtml(CustomBookingTicketExportDto export)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("<!doctype html>");
+        builder.AppendLine("<html lang=\"vi\">");
+        builder.AppendLine("<head>");
+        builder.AppendLine("<meta charset=\"utf-8\">");
+        builder.AppendLine("<title>Ve len tau " + Html(export.BookingCode) + "</title>");
+        builder.AppendLine("""
+        <style>
+        @page { size: A4; margin: 12mm; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: #111827; font-family: Arial, Helvetica, sans-serif; }
+        .sheet { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10mm; }
+        .ticket { min-height: 120mm; border: 1px solid #9ca3af; padding: 8mm; break-inside: avoid; page-break-inside: avoid; display: grid; grid-template-rows: auto 1fr auto; gap: 6mm; }
+        .top { display: flex; justify-content: space-between; gap: 8mm; border-bottom: 1px solid #d1d5db; padding-bottom: 5mm; }
+        .brand { font-size: 17px; font-weight: 700; }
+        .code { font-size: 13px; font-weight: 700; text-align: right; }
+        .info { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3mm 8mm; font-size: 12px; line-height: 1.35; }
+        .label { color: #6b7280; font-size: 10px; text-transform: uppercase; letter-spacing: .04em; }
+        .value { font-weight: 700; overflow-wrap: anywhere; }
+        .itinerary { grid-column: 1 / -1; border-top: 1px solid #e5e7eb; margin-top: 2mm; padding-top: 3mm; }
+        .stops { margin: 2mm 0 0; padding-left: 5mm; }
+        .stops li { margin: 1mm 0; }
+        .qr { display: grid; place-items: center; gap: 3mm; border-top: 1px solid #d1d5db; padding-top: 5mm; }
+        .qr img { width: 42mm; height: 42mm; image-rendering: pixelated; }
+        .token { font-size: 8px; color: #4b5563; overflow-wrap: anywhere; text-align: center; }
+        @media print { .ticket { page-break-inside: avoid; } }
+        </style>
+        """);
+        builder.AppendLine("</head>");
+        builder.AppendLine("<body>");
+        builder.AppendLine("<main class=\"sheet\">");
+
+        foreach (var ticket in export.Tickets)
+        {
+            builder.AppendLine("<section class=\"ticket\">");
+            builder.AppendLine("<div class=\"top\">");
+            builder.AppendLine("<div><div class=\"brand\">Saigon Waterbus</div><div class=\"label\">Ve len tau</div></div>");
+            builder.AppendLine("<div class=\"code\">" + Html(ticket.TicketCode) + "</div>");
+            builder.AppendLine("</div>");
+            builder.AppendLine("<div class=\"info\">");
+            AppendInfo(builder, "Booking", export.BookingCode);
+            AppendInfo(builder, "So ve", ticket.TicketCode);
+            AppendInfo(builder, "Hanh khach", ticket.PassengerName ?? "Khach hang");
+            AppendInfo(builder, "Ngay sinh", ticket.PassengerDateOfBirth?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
+            AppendInfo(builder, "Loai khach", ticket.PassengerType ?? string.Empty);
+            AppendInfo(builder, "Tau", export.BoatName ?? string.Empty);
+            AppendInfo(builder, "Ngay di", export.DepartureDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
+            AppendInfo(builder, "Gio di", export.StartTime?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? string.Empty);
+            AppendInfo(builder, "Tu", export.FromStationName ?? string.Empty);
+            AppendInfo(builder, "Den", export.ToStationName ?? string.Empty);
+            AppendInfo(builder, "Trang thai ve", ticket.TicketStatus);
+            AppendItinerary(builder, export);
+            builder.AppendLine("</div>");
+            builder.AppendLine("<div class=\"qr\">");
+            builder.AppendLine("<img alt=\"QR " + Html(ticket.TicketCode) + "\" src=\"" + BuildQrDataUri(ticket.QrToken) + "\">");
+            builder.AppendLine("<div class=\"token\">" + Html(ticket.QrToken) + "</div>");
+            builder.AppendLine("</div>");
+            builder.AppendLine("</section>");
+        }
+
+        builder.AppendLine("</main>");
+        builder.AppendLine("</body>");
+        builder.AppendLine("</html>");
+        return builder.ToString();
+    }
+
+    private static byte[] BuildPrintableTicketsPdf(CustomBookingTicketExportDto export)
+    {
+        QuestPDF.Settings.License = LicenseType.Community;
+
+        return Document.Create(document =>
+        {
+            foreach (var ticket in export.Tickets)
+            {
+                var qrBytes = BuildQrPngBytes(ticket.QrToken);
+
+                document.Page(page =>
+                {
+                    page.Size(PageSizes.A4);
+                    page.Margin(36);
+                    page.DefaultTextStyle(x => x.FontSize(10));
+
+                    page.Content()
+                        .Border(1)
+                        .BorderColor(Colors.Grey.Lighten1)
+                        .Padding(24)
+                        .Column(column =>
+                        {
+                            column.Spacing(12);
+
+                            column.Item().Row(row =>
+                            {
+                                row.RelativeItem().Column(header =>
+                                {
+                                    header.Item().Text("Saigon Waterbus").FontSize(18).Bold();
+                                    header.Item().Text("Ve len tau").FontSize(9).FontColor(Colors.Grey.Darken2);
+                                });
+
+                                row.ConstantItem(190).AlignRight().Column(code =>
+                                {
+                                    code.Item().Text(ticket.TicketCode).FontSize(14).Bold();
+                                    code.Item().Text($"Booking {export.BookingCode}")
+                                        .FontSize(9)
+                                        .FontColor(Colors.Grey.Darken2);
+                                });
+                            });
+
+                            column.Item().LineHorizontal(1).LineColor(Colors.Grey.Lighten1);
+
+                            column.Item().Row(row =>
+                            {
+                                row.RelativeItem().Table(table =>
+                                {
+                                    table.ColumnsDefinition(columns =>
+                                    {
+                                        columns.RelativeColumn();
+                                        columns.RelativeColumn();
+                                    });
+
+                                    AddPdfInfoCell(table.Cell(), "Booking", export.BookingCode);
+                                    AddPdfInfoCell(table.Cell(), "So ve", ticket.TicketCode);
+                                    AddPdfInfoCell(table.Cell(), "Hanh khach", ticket.PassengerName ?? "Khach hang");
+                                    AddPdfInfoCell(
+                                        table.Cell(),
+                                        "Ngay sinh",
+                                        ticket.PassengerDateOfBirth?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
+                                    AddPdfInfoCell(table.Cell(), "Loai khach", ticket.PassengerType ?? string.Empty);
+                                    AddPdfInfoCell(table.Cell(), "Tau", export.BoatName ?? string.Empty);
+                                    AddPdfInfoCell(
+                                        table.Cell(),
+                                        "Ngay di",
+                                        export.DepartureDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
+                                    AddPdfInfoCell(
+                                        table.Cell(),
+                                        "Gio di",
+                                        export.StartTime?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? string.Empty);
+                                    AddPdfInfoCell(table.Cell(), "Tu", export.FromStationName ?? string.Empty);
+                                    AddPdfInfoCell(table.Cell(), "Den", export.ToStationName ?? string.Empty);
+                                    AddPdfInfoCell(table.Cell(), "Trang thai ve", ticket.TicketStatus);
+                                });
+
+                                row.ConstantItem(150).AlignCenter().Column(qr =>
+                                {
+                                    qr.Spacing(6);
+                                    qr.Item().Width(126).Height(126).Image(qrBytes).FitArea();
+                                    qr.Item().Text(ticket.QrToken)
+                                        .FontSize(6)
+                                        .FontColor(Colors.Grey.Darken2)
+                                        .AlignCenter();
+                                });
+                            });
+
+                            if (export.ItineraryStops.Count > 0)
+                            {
+                                column.Item()
+                                    .BorderTop(1)
+                                    .BorderColor(Colors.Grey.Lighten2)
+                                    .PaddingTop(10)
+                                    .Column(stops =>
+                                    {
+                                        stops.Spacing(4);
+                                        stops.Item().Text("Lich trinh chi tiet").FontSize(10).Bold();
+
+                                        foreach (var stop in export.ItineraryStops.OrderBy(x => x.StopOrder))
+                                        {
+                                            var duration = stop.StayDurationMinutes > 0
+                                                ? $" - dung {stop.StayDurationMinutes} phut"
+                                                : string.Empty;
+                                            var note = string.IsNullOrWhiteSpace(stop.Note)
+                                                ? string.Empty
+                                                : $" - {stop.Note.Trim()}";
+
+                                            stops.Item().Text($"{stop.StopOrder}. {stop.StationName}{duration}{note}")
+                                                .FontSize(9);
+                                        }
+                                    });
+                            }
+
+                            column.Item()
+                                .BorderTop(1)
+                                .BorderColor(Colors.Grey.Lighten2)
+                                .PaddingTop(8)
+                                .Text("Quet QR hoac nhap ticketCode de check-in/check-out tung hanh khach.")
+                                .FontSize(8)
+                                .FontColor(Colors.Grey.Darken2);
+                        });
+                });
+            }
+        }).GeneratePdf();
+    }
+
+    private static void AppendItinerary(StringBuilder builder, CustomBookingTicketExportDto export)
+    {
+        if (export.ItineraryStops.Count == 0)
+        {
+            return;
+        }
+
+        builder.AppendLine("<div class=\"itinerary\">");
+        builder.AppendLine("<div class=\"label\">Lich trinh chi tiet</div>");
+        builder.AppendLine("<ol class=\"stops\">");
+        foreach (var stop in export.ItineraryStops)
+        {
+            var duration = stop.StayDurationMinutes > 0
+                ? $" - dung {stop.StayDurationMinutes} phut"
+                : string.Empty;
+            var note = string.IsNullOrWhiteSpace(stop.Note)
+                ? string.Empty
+                : $" - {stop.Note.Trim()}";
+            builder.AppendLine("<li><span class=\"value\">"
+                + Html(stop.StationName)
+                + "</span>"
+                + Html(duration + note)
+                + "</li>");
+        }
+
+        builder.AppendLine("</ol>");
+        builder.AppendLine("</div>");
+    }
+
+    private static void AppendInfo(StringBuilder builder, string label, string value)
+    {
+        builder.AppendLine("<div>");
+        builder.AppendLine("<div class=\"label\">" + Html(label) + "</div>");
+        builder.AppendLine("<div class=\"value\">" + Html(value) + "</div>");
+        builder.AppendLine("</div>");
+    }
+
+    private static string BuildQrDataUri(string qrToken)
+    {
+        return "data:image/png;base64," + Convert.ToBase64String(BuildQrPngBytes(qrToken));
+    }
+
+    private static byte[] BuildQrPngBytes(string qrToken)
+    {
+        using var qrGenerator = new QRCodeGenerator();
+        using var qrData = qrGenerator.CreateQrCode(qrToken, QRCodeGenerator.ECCLevel.Q);
+        var qrCode = new PngByteQRCode(qrData);
+        return qrCode.GetGraphic(20);
+    }
+
+    private static void AddPdfInfoCell(IContainer container, string label, string value)
+    {
+        container.PaddingBottom(8).PaddingRight(10).Column(column =>
+        {
+            column.Item().Text(label).FontSize(7).SemiBold().FontColor(Colors.Grey.Darken2);
+            column.Item().Text(value).FontSize(10).Bold();
+        });
+    }
+
+    private static string BuildTicketsCsv(
+        CustomBookingTicketExportDto export,
+        IReadOnlyDictionary<Guid, string> qrFileNames)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("bookingCode,ticketCode,qrToken,ticketStatus,passengerName,dateOfBirth,passengerType,qrImageFile");
+        foreach (var ticket in export.Tickets)
+        {
+            builder.Append(Csv(export.BookingCode)).Append(',');
+            builder.Append(Csv(ticket.TicketCode)).Append(',');
+            builder.Append(Csv(ticket.QrToken)).Append(',');
+            builder.Append(Csv(ticket.TicketStatus)).Append(',');
+            builder.Append(Csv(ticket.PassengerName)).Append(',');
+            builder.Append(Csv(ticket.PassengerDateOfBirth?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',');
+            builder.Append(Csv(ticket.PassengerType)).Append(',');
+            builder.Append(Csv(qrFileNames[ticket.TicketId])).AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static string Csv(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        return value.IndexOfAny([',', '"', '\r', '\n']) < 0
+            ? value
+            : $"\"{value.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    }
+
+    private static string Html(string value) => WebUtility.HtmlEncode(value);
+
+    private static string SanitizeFileName(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var builder = new StringBuilder(value.Length);
+        foreach (var character in value)
+        {
+            builder.Append(invalidChars.Contains(character) ? '-' : character);
+        }
+
+        return builder.Length == 0 ? "custom-booking" : builder.ToString();
+    }
 }

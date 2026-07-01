@@ -56,6 +56,8 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
         var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Passengers)
             .Include(x => x.Payments)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
             .Include(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
@@ -89,7 +91,6 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
 
         var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
 
-        _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);
         var passengers = request.Passengers
             .Select(x => CustomBookingPassengerSupport.ToEntity(booking.Id, x, today))
             .ToList();
@@ -97,8 +98,10 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
             booking,
             passengers,
             nameof(request.Passengers));
+        CustomBookingTicketSupport.CancelTicketsBeforeReplacingPassengers(booking);
+        _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);
         booking.Passengers = passengers;
-        var ticketResult = await CustomBookingTicketSupport.EnsureBookingLevelTicketAsync(
+        var ticketResult = await CustomBookingTicketSupport.EnsurePassengerTicketsAsync(
             _context,
             booking,
             _timeProvider,
@@ -109,6 +112,9 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
 
         var adultCount = CustomBookingPassengerSupport.CountAdults(booking.Passengers);
         var childCount = CustomBookingPassengerSupport.CountChildren(booking.Passengers);
+        var ticketDtos = ticketResult?.Tickets
+            .Select(CustomBookingTicketSupport.ToDto)
+            .ToList() ?? [];
 
         return new UpdateCustomBookingPassengersResult(
             booking.Id,
@@ -120,15 +126,17 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
                 .OrderBy(x => x.FullName)
                 .Select(CustomBookingPassengerSupport.ToDto)
                 .ToList(),
-            ticketResult is null ? null : CustomBookingTicketSupport.ToDto(ticketResult.Ticket));
+            ticketDtos.Count,
+            ticketDtos);
     }
 
     private async Task SendBoardingPassIfNeededAsync(
         Booking booking,
-        BookingLevelTicketEnsureResult? ticketResult,
+        PassengerTicketEnsureResult? ticketResult,
         CancellationToken cancellationToken)
     {
-        if (ticketResult is not { Created: true } || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        var ticket = ticketResult?.CreatedTickets.FirstOrDefault();
+        if (ticket is null || string.IsNullOrWhiteSpace(booking.ContactEmail))
         {
             return;
         }
@@ -146,8 +154,8 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
         await _paymentNotificationSender.SendBoardingPassAsync(
             new BoardingPassNotification(
                 bookingNotification,
-                ticketResult.Ticket.TicketCode,
-                ticketResult.Ticket.QrToken,
+                ticket.TicketCode,
+                ticket.QrToken,
                 null),
             cancellationToken);
     }

@@ -18,7 +18,7 @@ public sealed class Tickets : IEndpointGroup
                 "Nhan ticketCode hoac qrToken.",
                 "Admin/Manager/Staff xem duoc moi ve.",
                 "Customer chi xem duoc ve thuoc booking cua minh.",
-                "Custom booking chi sinh 1 ve cap booking sau khi da thanh toan du va nhap danh sach hanh khach."));
+                "Custom booking sinh ve theo tung hanh khach sau khi da thanh toan du va nhap danh sach hanh khach."));
 
         group.MapPost(CheckInTicket, "check-in/{codeOrToken}")
             .RequireAuthorization()

@@ -19,13 +19,18 @@ internal static class CustomBookingQuerySupport
                 .ThenInclude(s => s.Station)
             .Include(b => b.Passengers)
             .Include(b => b.Payments)
-            .Include(b => b.Tickets);
+            .Include(b => b.Tickets)
+                .ThenInclude(t => t.BookingPassenger);
 
     public static CustomBookingDetailDto ToDetailDto(
         Booking booking,
         IReadOnlyCollection<Route>? relatedRoutes = null)
     {
         var routeEstimate = CustomBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
+
+        var ticketDtos = CustomBookingTicketSupport.GetDisplayTickets(booking.Tickets)
+            .Select(CustomBookingTicketSupport.ToDto)
+            .ToList();
 
         return new CustomBookingDetailDto(
             booking.Id,
@@ -93,10 +98,7 @@ internal static class CustomBookingQuerySupport
                     x.RefundFailureReason,
                     x.RefundedAt))
                 .ToList(),
-            booking.Tickets
-                .Where(x => x.BookingPassengerId == null)
-                .OrderByDescending(x => x.IssuedAt)
-                .Select(CustomBookingTicketSupport.ToDto)
-                .FirstOrDefault());
+            ticketDtos.Count,
+            ticketDtos);
     }
 }

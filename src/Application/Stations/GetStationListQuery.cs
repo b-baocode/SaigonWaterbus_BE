@@ -15,6 +15,9 @@ public sealed class GetStationListQueryHandler : IRequestHandler<GetStationListQ
     public async Task<IReadOnlyList<StationDto>> Handle(GetStationListQuery request, CancellationToken cancellationToken)
     {
         var stations = await _context.Set<Station>()
+            .Include(s => s.UserAssignments)
+                .ThenInclude(a => a.User)
+                    .ThenInclude(u => u.Role)
             .Where(s => s.Status == StationStatus.Active)
             .OrderBy(s => s.StationName)
             .ToListAsync(cancellationToken);

@@ -34,7 +34,7 @@ public sealed class GetManageableRolesRequestUseCase
         var rolesQuery = _context.Roles.AsQueryable();
         if (AuthSupport.IsAdmin(actor))
         {
-            rolesQuery = rolesQuery.Where(x => x.Code == Roles.ManagerCode);
+            rolesQuery = rolesQuery.Where(x => x.Code == Roles.ManagerCode || x.Code == Roles.StaffCode);
         }
         else
         {

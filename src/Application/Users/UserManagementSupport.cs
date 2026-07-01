@@ -34,7 +34,7 @@ internal static class UserManagementSupport
                 return;
             }
 
-            throw AuthSupport.CreateValidationException(propertyName, "Admin chỉ được tạo tài khoản Manager.");
+            throw AuthSupport.CreateValidationException(propertyName, "Admin chỉ được tạo tài khoản Manager hoặc Staff.");
         }
 
         if (AuthSupport.IsManager(actor) && CanManagerManageRole(targetRole))
@@ -134,7 +134,7 @@ internal static class UserManagementSupport
                 return;
             }
 
-            throw AuthSupport.CreateValidationException(propertyName, "Admin chỉ được gán vai trò Manager.");
+            throw AuthSupport.CreateValidationException(propertyName, "Admin chỉ được gán vai trò Manager hoặc Staff.");
         }
 
         if (AuthSupport.IsManager(actor))
@@ -188,7 +188,7 @@ internal static class UserManagementSupport
     }
 
     private static bool CanAdminManageRole(Role role) =>
-        role.SystemName is Roles.ManagerSystemName;
+        role.SystemName is Roles.ManagerSystemName or Roles.StaffSystemName;
 
     private static bool CanManagerManageRole(Role role) =>
         role.SystemName is Roles.StaffSystemName;

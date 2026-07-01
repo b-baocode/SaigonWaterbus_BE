@@ -66,6 +66,8 @@ public sealed class ImportCustomBookingPassengersCommandHandler
         var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Passengers)
             .Include(x => x.Payments)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
             .Include(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
@@ -108,9 +110,10 @@ public sealed class ImportCustomBookingPassengersCommandHandler
             passengerEntities,
             nameof(request.Content));
 
+        CustomBookingTicketSupport.CancelTicketsBeforeReplacingPassengers(booking);
         _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);
         booking.Passengers = passengerEntities;
-        var ticketResult = await CustomBookingTicketSupport.EnsureBookingLevelTicketAsync(
+        var ticketResult = await CustomBookingTicketSupport.EnsurePassengerTicketsAsync(
             _context,
             booking,
             _timeProvider,
@@ -121,6 +124,9 @@ public sealed class ImportCustomBookingPassengersCommandHandler
 
         var adultCount = CustomBookingPassengerSupport.CountAdults(booking.Passengers);
         var childCount = CustomBookingPassengerSupport.CountChildren(booking.Passengers);
+        var ticketDtos = ticketResult?.Tickets
+            .Select(CustomBookingTicketSupport.ToDto)
+            .ToList() ?? [];
 
         return new ImportCustomBookingPassengersResult(
             booking.Id,
@@ -132,15 +138,17 @@ public sealed class ImportCustomBookingPassengersCommandHandler
                 .OrderBy(x => x.FullName)
                 .Select(CustomBookingPassengerSupport.ToDto)
                 .ToList(),
-            ticketResult is null ? null : CustomBookingTicketSupport.ToDto(ticketResult.Ticket));
+            ticketDtos.Count,
+            ticketDtos);
     }
 
     private async Task SendBoardingPassIfNeededAsync(
         Booking booking,
-        BookingLevelTicketEnsureResult? ticketResult,
+        PassengerTicketEnsureResult? ticketResult,
         CancellationToken cancellationToken)
     {
-        if (ticketResult is not { Created: true } || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        var ticket = ticketResult?.CreatedTickets.FirstOrDefault();
+        if (ticket is null || string.IsNullOrWhiteSpace(booking.ContactEmail))
         {
             return;
         }
@@ -158,8 +166,8 @@ public sealed class ImportCustomBookingPassengersCommandHandler
         await _paymentNotificationSender.SendBoardingPassAsync(
             new BoardingPassNotification(
                 bookingNotification,
-                ticketResult.Ticket.TicketCode,
-                ticketResult.Ticket.QrToken,
+                ticket.TicketCode,
+                ticket.QrToken,
                 null),
             cancellationToken);
     }

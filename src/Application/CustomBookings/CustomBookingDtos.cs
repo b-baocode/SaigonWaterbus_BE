@@ -152,8 +152,8 @@ public sealed record CustomBookingDetailDto(
     string? ContactEmail,
     IReadOnlyList<CustomBookingPassengerDto> Passengers,
     IReadOnlyList<CustomBookingPaymentDto> Payments,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CustomBookingTicketDto? Ticket);
+    int TicketCount,
+    IReadOnlyList<CustomBookingTicketDto> Tickets);
 
 public sealed record CustomBookingItineraryStopDto(
     Guid StationId,
@@ -200,7 +200,15 @@ public sealed record CustomBookingTicketDto(
     string TicketStatus,
     DateTimeOffset IssuedAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateTimeOffset? CheckedInAt);
+    DateTimeOffset? CheckedInAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? PassengerId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PassengerName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateOnly? PassengerDateOfBirth,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PassengerType);
 
 public enum CustomBookingPaymentOption
 {
@@ -270,8 +278,8 @@ public sealed record UpdateCustomBookingPassengersResult(
     int AdultCount,
     int ChildCount,
     IReadOnlyList<CustomBookingPassengerDto> Passengers,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CustomBookingTicketDto? Ticket);
+    int TicketCount,
+    IReadOnlyList<CustomBookingTicketDto> Tickets);
 
 public sealed record ImportCustomBookingPassengersResult(
     Guid BookingId,
@@ -280,8 +288,91 @@ public sealed record ImportCustomBookingPassengersResult(
     int AdultCount,
     int ChildCount,
     IReadOnlyList<CustomBookingPassengerDto> Passengers,
+    int TicketCount,
+    IReadOnlyList<CustomBookingTicketDto> Tickets);
+
+public sealed record CustomBookingTicketExportDto(
+    Guid BookingId,
+    string BookingCode,
+    DateOnly? DepartureDate,
+    TimeOnly? StartTime,
+    string? BoatName,
+    string? FromStationName,
+    string? ToStationName,
+    IReadOnlyList<CustomBookingItineraryStopDto> ItineraryStops,
+    IReadOnlyList<CustomBookingTicketExportItemDto> Tickets);
+
+public sealed record CustomBookingTicketExportItemDto(
+    Guid TicketId,
+    Guid? PassengerId,
+    string? PassengerName,
+    DateOnly? PassengerDateOfBirth,
+    string? PassengerType,
+    string TicketCode,
+    string QrToken,
+    string TicketStatus);
+
+public sealed record CustomBookingTicketSelectionRequest(
+    IReadOnlyList<Guid>? TicketIds = null);
+
+public sealed record CustomBookingManifestDto(
+    Guid BookingId,
+    string BookingCode,
+    string BookingStatus,
+    string PaymentStatus,
+    string ContactName,
+    string ContactPhone,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CustomBookingTicketDto? Ticket);
+    string? ContactEmail,
+    DateOnly? DepartureDate,
+    TimeOnly? StartTime,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? BoatName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? FromStationName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ToStationName,
+    IReadOnlyList<CustomBookingItineraryStopDto> ItineraryStops,
+    int PassengerCount,
+    int RegisteredPassengerCount,
+    int AdultCount,
+    int ChildCount,
+    CustomBookingTicketSummaryDto TicketSummary,
+    IReadOnlyList<CustomBookingManifestPassengerDto> Passengers);
+
+public sealed record CustomBookingTicketSummaryDto(
+    int TotalTickets,
+    int ActiveTickets,
+    int CheckedInTickets,
+    int CheckedOutTickets);
+
+public sealed record CustomBookingManifestPassengerDto(
+    Guid PassengerId,
+    string FullName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateOnly? DateOfBirth,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PassengerType,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TicketId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TicketCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TicketStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? CheckedInAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? CheckedInByUserId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CheckedInByName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? CheckedOutAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? CheckedOutByUserId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CheckedOutByName,
+    bool CanCheckIn,
+    bool CanCheckOut);
 
 public sealed record QuoteCustomBookingRequest(
     Guid BoatId,

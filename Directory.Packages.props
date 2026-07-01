@@ -36,6 +36,7 @@
     <PackageVersion Include="OpenTelemetry.Api.ProviderBuilderExtensions" Version="1.16.0" />
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.16.0" />
     <PackageVersion Include="QRCoder" Version="1.6.0" />
+    <PackageVersion Include="QuestPDF" Version="2026.6.1" />
     <PackageVersion Include="Shouldly" Version="4.3.0" />
     <PackageVersion Include="StackExchange.Redis" Version="3.0.7" />
     <PackageVersion Include="Swashbuckle.AspNetCore" Version="7.3.1" />
