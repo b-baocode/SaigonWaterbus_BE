@@ -9,11 +9,16 @@ public sealed record ValidatePromotionQuery(string Code, decimal SubtotalAmount)
 public sealed class ValidatePromotionQueryHandler : IRequestHandler<ValidatePromotionQuery, PromotionValidationDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
-    public ValidatePromotionQueryHandler(IApplicationDbContext context, TimeProvider timeProvider)
+    public ValidatePromotionQueryHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
     {
         _context = context;
+        _userContext = userContext;
         _timeProvider = timeProvider;
     }
 
@@ -39,6 +44,22 @@ public sealed class ValidatePromotionQueryHandler : IRequestHandler<ValidateProm
 
         if (promotion.MinOrderValue.HasValue && request.SubtotalAmount < promotion.MinOrderValue)
             return new PromotionValidationDto(false, 0, $"Minimum order value is {promotion.MinOrderValue:N0}.");
+
+        if (_userContext.UserId.HasValue)
+        {
+            var alreadyUsed = await _context.Set<Booking>()
+                .AnyAsync(x => x.UserId == _userContext.UserId.Value
+                            && x.PromotionId == promotion.Id
+                            && x.BookingStatus != BookingStatus.Cancelled
+                            && x.BookingStatus != BookingStatus.Expired
+                            && x.BookingStatus != BookingStatus.Refunded,
+                    cancellationToken);
+
+            if (promotion.AccountUsagePolicy == PromotionAccountUsagePolicy.OncePerAccount && alreadyUsed)
+            {
+                return new PromotionValidationDto(false, 0, "Promotion này mỗi tài khoản chỉ được sử dụng 1 lần.");
+            }
+        }
 
         var discount = promotion.PromotionType == PromotionType.Percent
             ? request.SubtotalAmount * promotion.DiscountValue / 100

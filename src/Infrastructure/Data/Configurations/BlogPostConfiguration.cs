@@ -17,6 +17,8 @@ public sealed class BlogPostConfiguration : IEntityTypeConfiguration<BlogPost>
         builder.Property(x => x.Slug).HasColumnName("slug").HasMaxLength(220).IsRequired();
         builder.HasIndex(x => x.Slug).IsUnique();
         builder.Property(x => x.Summary).HasColumnName("summary").HasMaxLength(500);
+        builder.Property(x => x.ImageUrl).HasColumnName("image_url").HasMaxLength(2048);
+        builder.Property(x => x.ImageAltText).HasColumnName("image_alt_text").HasMaxLength(200);
         builder.Property(x => x.Content).HasColumnName("content").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30).IsRequired();
         builder.Property(x => x.PublishedAt).HasColumnName("published_at");

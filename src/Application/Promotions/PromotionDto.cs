@@ -13,6 +13,7 @@ public sealed record PromotionDto(
     DateTimeOffset ValidTo,
     int? UsageLimit,
     int UsageCount,
+    PromotionAccountUsagePolicy AccountUsagePolicy,
     string Status);
 
 public sealed record PromotionValidationDto(

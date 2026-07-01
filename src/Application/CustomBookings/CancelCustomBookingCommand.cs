@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -40,6 +41,7 @@ public sealed class CancelCustomBookingCommandHandler : IRequestHandler<CancelCu
 
         var booking = await CustomBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Tickets)
+            .Include(x => x.Promotion)
             .SingleOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Custom booking not found.");
 
@@ -55,6 +57,7 @@ public sealed class CancelCustomBookingCommandHandler : IRequestHandler<CancelCu
                 "Không thể hủy yêu cầu thuê tàu đã hoàn tất.")]);
 
         booking.BookingStatus = BookingStatus.Cancelled;
+        PromotionUsageSupport.DecrementUsage(booking.Promotion);
         foreach (var ticket in booking.Tickets)
         {
             ticket.TicketStatus = TicketStatus.Cancelled;

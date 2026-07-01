@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -62,8 +63,8 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
 
         booking.BookingStatus = BookingStatus.Cancelled;
 
-        if (booking.PromotionId.HasValue && booking.Promotion is not null)
-            booking.Promotion.UsageCount = Math.Max(0, booking.Promotion.UsageCount - 1);
+        if (booking.PromotionId.HasValue)
+            PromotionUsageSupport.DecrementUsage(booking.Promotion);
 
         await _context.SaveChangesAsync(cancellationToken);
     }

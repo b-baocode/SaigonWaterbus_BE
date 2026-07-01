@@ -18,7 +18,7 @@ public sealed class GetPromotionListQueryHandler : IRequestHandler<GetPromotionL
             .Select(p => new PromotionDto(
                 p.Id, p.PromotionCode, p.PromotionName, p.PromotionType,
                 p.DiscountValue, p.MinOrderValue, p.ValidFrom, p.ValidTo,
-                p.UsageLimit, p.UsageCount, p.Status))
+                p.UsageLimit, p.UsageCount, p.AccountUsagePolicy, p.Status))
             .ToListAsync(cancellationToken);
     }
 }

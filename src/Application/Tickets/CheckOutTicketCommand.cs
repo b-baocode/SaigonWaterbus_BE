@@ -52,9 +52,29 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
         ticket.CheckedOutByUserId = currentUser.Id;
         ticket.CheckedOutByUser = currentUser;
 
+        await CompleteBookingIfAllTicketsCheckedOutAsync(ticket, cancellationToken);
+
         await _context.SaveChangesAsync(cancellationToken);
 
         return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken);
+    }
+
+    private async Task CompleteBookingIfAllTicketsCheckedOutAsync(
+        Domain.Entities.Ticket ticket,
+        CancellationToken cancellationToken)
+    {
+        var hasRemainingUsableTicket = await _context.Tickets.AnyAsync(
+            x => x.BookingId == ticket.BookingId
+                && x.Id != ticket.Id
+                && x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired
+                && x.TicketStatus != TicketStatus.CheckedOut,
+            cancellationToken);
+
+        if (!hasRemainingUsableTicket)
+        {
+            ticket.Booking.BookingStatus = BookingStatus.Completed;
+        }
     }
 
     private static void EnsureTicketCanBeCheckedOut(Domain.Entities.Ticket ticket)

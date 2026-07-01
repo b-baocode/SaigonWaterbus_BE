@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
@@ -184,6 +185,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 toStop));
         }
 
+        var userId = _userContext.UserId
+            ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
+
         Promotion? promotion = null;
         if (!string.IsNullOrWhiteSpace(request.PromotionCode))
         {
@@ -197,6 +201,13 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 || (promotion.UsageLimit.HasValue && promotion.UsageCount >= promotion.UsageLimit))
                 throw new ValidationException([new ValidationFailure(nameof(request.PromotionCode),
                     "Promotion code is not applicable.")]);
+
+            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
+                _context,
+                promotion,
+                userId,
+                nameof(request.PromotionCode),
+                cancellationToken);
         }
 
         var itemPrices = new List<(ResolvedItem Resolved, decimal UnitPrice)>();
@@ -216,7 +227,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         if (promotion is not null)
         {
             discount = promotion.PromotionType == PromotionType.Percent
-                ? subtotal * promotion.DiscountValue / 100
+                ? Math.Min(subtotal * promotion.DiscountValue / 100, subtotal)
                 : Math.Min(promotion.DiscountValue, subtotal);
 
             if (promotion.MinOrderValue.HasValue && subtotal < promotion.MinOrderValue)
@@ -225,9 +236,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         }
 
         var total = subtotal - discount;
-
-        var userId = _userContext.UserId
-            ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
         var user = await _context.Users
             .AsNoTracking()
@@ -262,8 +270,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         _context.Set<Booking>().Add(booking);
 
-        if (promotion is not null)
-            promotion.UsageCount++;
+        PromotionUsageSupport.IncrementUsage(promotion);
 
         try
         {

@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -123,6 +124,15 @@ public sealed class CreateCustomBookingCommandHandler
             nameof(request.PromotionCode),
             validateMinOrder: subtotal > 0,
             cancellationToken);
+        if (promotion is not null)
+        {
+            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
+                _context,
+                promotion,
+                userId,
+                nameof(request.PromotionCode),
+                cancellationToken);
+        }
         var discount = CustomBookingPricingSupport.CalculateDiscount(promotion, subtotal);
         var total = subtotal - discount;
 

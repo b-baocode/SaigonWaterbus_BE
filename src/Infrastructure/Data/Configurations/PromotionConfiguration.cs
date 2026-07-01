@@ -32,6 +32,12 @@ public sealed class PromotionConfiguration : IEntityTypeConfiguration<Promotion>
         builder.Property(x => x.ValidTo).HasColumnName("valid_to").IsRequired();
         builder.Property(x => x.UsageLimit).HasColumnName("usage_limit");
         builder.Property(x => x.UsageCount).HasColumnName("usage_count").IsRequired().HasDefaultValue(0);
+        builder.Property(x => x.AccountUsagePolicy)
+            .HasColumnName("account_usage_policy")
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired()
+            .HasDefaultValue(PromotionAccountUsagePolicy.MultiplePerAccount);
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30).IsRequired();
 
         builder.Ignore(x => x.Created);

@@ -14,7 +14,8 @@ public sealed record CreatePromotionCommand(
     decimal? MinOrderValue,
     DateTimeOffset ValidFrom,
     DateTimeOffset ValidTo,
-    int? UsageLimit) : IRequest<PromotionDto>;
+    int? UsageLimit,
+    PromotionAccountUsagePolicy AccountUsagePolicy = PromotionAccountUsagePolicy.MultiplePerAccount) : IRequest<PromotionDto>;
 
 public sealed class CreatePromotionCommandValidator : AbstractValidator<CreatePromotionCommand>
 {
@@ -23,7 +24,12 @@ public sealed class CreatePromotionCommandValidator : AbstractValidator<CreatePr
         RuleFor(x => x.PromotionCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.PromotionName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.PromotionType).IsInEnum();
+        RuleFor(x => x.AccountUsagePolicy).IsInEnum();
         RuleFor(x => x.DiscountValue).GreaterThan(0);
+        RuleFor(x => x.DiscountValue)
+            .LessThanOrEqualTo(100)
+            .When(x => x.PromotionType == PromotionType.Percent)
+            .WithMessage("Percent discount cannot exceed 100.");
         RuleFor(x => x.ValidTo).GreaterThan(x => x.ValidFrom);
         RuleFor(x => x.UsageLimit).GreaterThan(0).When(x => x.UsageLimit.HasValue);
     }
@@ -38,6 +44,26 @@ public sealed class CreatePromotionCommandHandler : IRequestHandler<CreatePromot
     public async Task<PromotionDto> Handle(CreatePromotionCommand request, CancellationToken cancellationToken)
     {
         var code = request.PromotionCode.Trim().ToUpperInvariant();
+        if (request.PromotionType == PromotionType.Percent && request.DiscountValue > 100)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.DiscountValue),
+                "Percent discount cannot exceed 100.")]);
+        }
+
+        if (request.ValidTo <= request.ValidFrom)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.ValidTo),
+                "ValidTo must be greater than ValidFrom.")]);
+        }
+
+        if (request.UsageLimit.HasValue && request.UsageLimit <= 0)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.UsageLimit),
+                "UsageLimit must be greater than 0.")]);
+        }
 
         if (await _context.Set<Promotion>().AnyAsync(p => p.PromotionCode == code, cancellationToken))
             throw new ValidationException([new ValidationFailure(nameof(request.PromotionCode), "Promotion code already exists.")]);
@@ -53,6 +79,7 @@ public sealed class CreatePromotionCommandHandler : IRequestHandler<CreatePromot
             ValidTo = request.ValidTo,
             UsageLimit = request.UsageLimit,
             UsageCount = 0,
+            AccountUsagePolicy = request.AccountUsagePolicy,
             Status = "Active"
         };
 
@@ -65,5 +92,5 @@ public sealed class CreatePromotionCommandHandler : IRequestHandler<CreatePromot
     private static PromotionDto ToDto(Promotion p) => new(
         p.Id, p.PromotionCode, p.PromotionName, p.PromotionType,
         p.DiscountValue, p.MinOrderValue, p.ValidFrom, p.ValidTo,
-        p.UsageLimit, p.UsageCount, p.Status);
+        p.UsageLimit, p.UsageCount, p.AccountUsagePolicy, p.Status);
 }

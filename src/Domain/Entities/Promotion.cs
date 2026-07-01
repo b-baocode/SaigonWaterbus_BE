@@ -14,6 +14,8 @@ public class Promotion : BaseGuidAuditableEntity
     public DateTimeOffset ValidTo { get; set; }
     public int? UsageLimit { get; set; }
     public int UsageCount { get; set; } = 0;
+    public PromotionAccountUsagePolicy AccountUsagePolicy { get; set; } =
+        PromotionAccountUsagePolicy.MultiplePerAccount;
     public string Status { get; set; } = "Active";
 
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();

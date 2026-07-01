@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -127,6 +128,7 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         var booking = await CustomBookingQuerySupport.BuildDetailQuery(_context)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Custom booking not found.");
+        var previousStatus = booking.BookingStatus;
         var previousBoatId = booking.BoatId;
         var previousDepartureDate = booking.DepartureDate;
         var previousStartTime = booking.StartTime;
@@ -134,6 +136,12 @@ public sealed class UpdateCustomBookingStatusCommandHandler
         var previousDurationValue = booking.DurationValue.GetValueOrDefault();
 
         ApplyStatusUpdate(booking, request.BookingStatus);
+
+        if (!PromotionUsageSupport.ReleasesPromotionUsage(previousStatus)
+            && PromotionUsageSupport.ReleasesPromotionUsage(request.BookingStatus))
+        {
+            PromotionUsageSupport.DecrementUsage(booking.Promotion);
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
         if (request.BookingStatus is BookingStatus.PendingQuote or BookingStatus.Cancelled or BookingStatus.Expired)
@@ -434,6 +442,23 @@ public sealed class QuoteCustomBookingCommandHandler
         var subtotal = request.SubtotalAmount ?? automaticPricing.SubtotalAmount;
         var chargeableDurationValue = automaticPricing.ChargeableDurationValue;
         var promotion = await ResolvePromotionForQuoteAsync(booking, request, subtotal, now, cancellationToken);
+        if (promotion is not null)
+        {
+            if (!booking.UserId.HasValue)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(booking.UserId),
+                    "Booking không có tài khoản để kiểm tra promotion.")]);
+            }
+
+            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
+                _context,
+                promotion,
+                booking.UserId.Value,
+                nameof(request.PromotionCode),
+                cancellationToken,
+                booking.Id);
+        }
         var discount = CustomBookingPricingSupport.CalculateDiscount(promotion, subtotal);
         var total = subtotal - discount;
         var holdExpiresAt = now + HoldDuration;
@@ -465,9 +490,16 @@ public sealed class QuoteCustomBookingCommandHandler
         booking.BookingStatus = BookingStatus.Quoted;
         booking.HoldExpiresAt = holdExpiresAt;
 
+        if (wasAlreadyPriced && previousPromotionId.HasValue && previousPromotionId != promotion?.Id)
+        {
+            var previousPromotion = await _context.Set<Promotion>()
+                .SingleOrDefaultAsync(x => x.Id == previousPromotionId.Value, cancellationToken);
+            PromotionUsageSupport.DecrementUsage(previousPromotion);
+        }
+
         if (promotion is not null && (!wasAlreadyPriced || previousPromotionId != promotion.Id))
         {
-            promotion.UsageCount++;
+            PromotionUsageSupport.IncrementUsage(promotion);
         }
 
         try

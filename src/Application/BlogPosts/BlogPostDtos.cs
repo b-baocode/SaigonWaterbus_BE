@@ -1,0 +1,28 @@
+namespace SaigonWaterbus.Application.BlogPosts;
+
+public sealed record BlogPostSummaryDto(
+    Guid BlogPostId,
+    string Title,
+    string Slug,
+    string? Summary,
+    string? ImageUrl,
+    string? ImageAltText,
+    string Status,
+    DateTimeOffset? PublishedAt,
+    DateTimeOffset CreatedAt,
+    Guid AuthorId,
+    string AuthorName);
+
+public sealed record BlogPostDto(
+    Guid BlogPostId,
+    Guid AuthorId,
+    string AuthorName,
+    string Title,
+    string Slug,
+    string? Summary,
+    string? ImageUrl,
+    string? ImageAltText,
+    string Content,
+    string Status,
+    DateTimeOffset? PublishedAt,
+    DateTimeOffset CreatedAt);

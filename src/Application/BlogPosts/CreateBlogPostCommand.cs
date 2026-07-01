@@ -1,0 +1,96 @@
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Entities;
+
+namespace SaigonWaterbus.Application.BlogPosts;
+
+public sealed record CreateBlogPostCommand(
+    string Title,
+    string? Slug,
+    string? Summary,
+    string Content,
+    string? Status,
+    string? ImageUrl = null,
+    string? ImageAltText = null) : IRequest<BlogPostDto>;
+
+public sealed class CreateBlogPostCommandValidator : AbstractValidator<CreateBlogPostCommand>
+{
+    public CreateBlogPostCommandValidator()
+    {
+        RuleFor(x => x.Title).NotEmpty().MaximumLength(200);
+        RuleFor(x => x.Slug).MaximumLength(220);
+        RuleFor(x => x.Summary).MaximumLength(500);
+        RuleFor(x => x.ImageUrl)
+            .MaximumLength(2048)
+            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
+            .WithMessage("ImageUrl must be an absolute URL.");
+        RuleFor(x => x.ImageAltText).MaximumLength(200);
+        RuleFor(x => x.Content).NotEmpty();
+        RuleFor(x => x.Status)
+            .Must(status => string.IsNullOrWhiteSpace(status)
+                || string.Equals(status, BlogPostSupport.DraftStatus, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(status, BlogPostSupport.PublishedStatus, StringComparison.OrdinalIgnoreCase))
+            .WithMessage("Status khi tao moi hop le: Draft | Published.");
+    }
+}
+
+public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPostCommand, BlogPostDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public CreateBlogPostCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<BlogPostDto> Handle(CreateBlogPostCommand request, CancellationToken cancellationToken)
+    {
+        var actor = await BlogPostSupport.EnsureCurrentUserCanManageBlogPostsAsync(
+            _context,
+            _userContext,
+            cancellationToken);
+
+        var title = BlogPostSupport.NormalizeRequiredText(request.Title, nameof(request.Title), 200);
+        var content = BlogPostSupport.NormalizeRequiredText(request.Content, nameof(request.Content));
+        var imageUrl = BlogPostSupport.NormalizeImageUrl(request.ImageUrl, nameof(request.ImageUrl));
+        var status = string.IsNullOrWhiteSpace(request.Status)
+            ? BlogPostSupport.DraftStatus
+            : BlogPostSupport.NormalizeStatus(request.Status, nameof(request.Status));
+        if (status == BlogPostSupport.ArchivedStatus)
+        {
+            throw new SaigonWaterbus.Application.Common.Exceptions.ValidationException(
+                [new FluentValidation.Results.ValidationFailure(nameof(request.Status), "Status khi tao moi hop le: Draft | Published.")]);
+        }
+
+        var post = new BlogPost
+        {
+            AuthorId = actor.Id,
+            Author = actor,
+            Title = title,
+            Slug = await BlogPostSupport.GenerateUniqueSlugAsync(
+                _context,
+                request.Slug ?? title,
+                null,
+                cancellationToken),
+            Summary = BlogPostSupport.NormalizeOptionalText(request.Summary, nameof(request.Summary), 500),
+            ImageUrl = imageUrl,
+            ImageAltText = BlogPostSupport.NormalizeOptionalText(request.ImageAltText, nameof(request.ImageAltText), 200),
+            Content = content,
+            Status = status,
+            PublishedAt = status == BlogPostSupport.PublishedStatus ? _timeProvider.GetUtcNow() : null
+        };
+
+        BlogPostSupport.EnsurePublishedPostHasImage(post, nameof(request.ImageUrl));
+
+        _context.Set<BlogPost>().Add(post);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return BlogPostSupport.ToDto(post);
+    }
+}

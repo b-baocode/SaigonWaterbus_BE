@@ -94,6 +94,7 @@ public class CheckInTicketCommandTests
         var result = await handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None);
 
         result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedOut));
+        result.BookingStatus.ShouldBe(nameof(BookingStatus.Completed));
         result.CheckedInAt.ShouldBe(checkedInAt);
         result.CheckedOutAt.ShouldBe(checkedOutAt);
         result.CheckedOutByUserId.ShouldBe(staffContext.UserId!.Value);
@@ -102,6 +103,65 @@ public class CheckInTicketCommandTests
         savedTicket.TicketStatus.ShouldBe(TicketStatus.CheckedOut);
         savedTicket.CheckedOutAt.ShouldBe(checkedOutAt);
         savedTicket.CheckedOutByUserId.ShouldBe(staffContext.UserId!.Value);
+        context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Completed);
+    }
+
+    [Test]
+    public async Task BookingIsCompletedOnlyAfterEveryUsableTicketIsCheckedOut()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var firstTicket = await SeedRegularBookingTicketAsync(
+            context,
+            TicketStatus.CheckedIn,
+            checkedInAt);
+        var secondTicket = await AddTicketToBookingAsync(
+            context,
+            firstTicket.Booking,
+            "Tran Thi B",
+            TicketStatus.CheckedIn,
+            checkedInAt);
+        var handler = new CheckOutTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero)));
+
+        var firstResult = await handler.Handle(new CheckOutTicketCommand(firstTicket.QrToken), CancellationToken.None);
+
+        firstResult.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
+        context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Confirmed);
+
+        var secondResult = await handler.Handle(new CheckOutTicketCommand(secondTicket.QrToken), CancellationToken.None);
+
+        secondResult.BookingStatus.ShouldBe(nameof(BookingStatus.Completed));
+        context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Completed);
+    }
+
+    [Test]
+    public async Task CancelledTicketsDoNotBlockBookingCompletionOnCheckout()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var activeTicket = await SeedRegularBookingTicketAsync(
+            context,
+            TicketStatus.CheckedIn,
+            checkedInAt);
+        await AddTicketToBookingAsync(
+            context,
+            activeTicket.Booking,
+            "Tran Thi B",
+            TicketStatus.Cancelled);
+        var handler = new CheckOutTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(new CheckOutTicketCommand(activeTicket.QrToken), CancellationToken.None);
+
+        result.BookingStatus.ShouldBe(nameof(BookingStatus.Completed));
+        context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Completed);
     }
 
     [Test]
@@ -268,6 +328,42 @@ public class CheckInTicketCommandTests
         };
 
         context.AddRange(booking, passenger, ticket);
+        await context.SaveChangesAsync();
+        return ticket;
+    }
+
+    private static async Task<Ticket> AddTicketToBookingAsync(
+        DbContext context,
+        Booking booking,
+        string passengerName,
+        TicketStatus ticketStatus,
+        DateTimeOffset? checkedInAt = null,
+        DateTimeOffset? checkedOutAt = null)
+    {
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            FullName = passengerName,
+            PhoneNumber = "0900000002",
+            PassengerType = "ADULT",
+            SeatCode = "A2",
+            UnitPrice = 10000
+        };
+        var ticket = new Ticket
+        {
+            Booking = booking,
+            BookingPassenger = passenger,
+            TicketCode = $"TK{Guid.NewGuid():N}"[..20],
+            QrToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()),
+            TicketTypeCode = "ADULT",
+            TicketTypeName = "Ve nguoi lon",
+            TicketStatus = ticketStatus,
+            IssuedAt = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
+            CheckedInAt = checkedInAt,
+            CheckedOutAt = checkedOutAt
+        };
+
+        context.AddRange(passenger, ticket);
         await context.SaveChangesAsync();
         return ticket;
     }

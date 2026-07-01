@@ -16,7 +16,8 @@ public sealed class Promotions : IEndpointGroup
           "minOrderValue": 20000,
           "validFrom": "2026-01-01T00:00:00+07:00",
           "validTo": "2026-12-31T23:59:59+07:00",
-          "usageLimit": 1000
+          "usageLimit": 1000,
+          "accountUsagePolicy": "OncePerAccount"
         }
         """;
 
@@ -29,6 +30,7 @@ public sealed class Promotions : IEndpointGroup
           "validFrom": "2026-01-01T00:00:00+07:00",
           "validTo": "2026-12-31T23:59:59+07:00",
           "usageLimit": 2000,
+          "accountUsagePolicy": "MultiplePerAccount",
           "status": "Active"
         }
         """;
@@ -67,6 +69,7 @@ public sealed class Promotions : IEndpointGroup
                 "  Fixed: discountValue=5000 → giam 5.000d, toi da bang subtotal.",
                 "discountValue: neu Percent thi % giam (10 = giam 10%), neu Fixed thi so tien giam.",
                 "usageLimit: null = khong gioi han luot su dung.",
+                "accountUsagePolicy: MultiplePerAccount | OncePerAccount.",
                 "minOrderValue: null = khong yeu cau gia tri don toi thieu."));
 
         group.MapPut(UpdatePromotion, "{id:guid}")
@@ -76,6 +79,7 @@ public sealed class Promotions : IEndpointGroup
                 "Bearer token",
                 UpdateExample,
                 "status hop le: Active | Inactive.",
+                "accountUsagePolicy: MultiplePerAccount | OncePerAccount.",
                 "PromotionCode va PromotionType khong doi duoc sau khi tao."));
 
         group.MapDelete(DeletePromotion, "{id:guid}")
@@ -101,7 +105,7 @@ public sealed class Promotions : IEndpointGroup
     private static async Task<IResult> UpdatePromotion(ISender sender, Guid id, UpdatePromotionRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdatePromotionCommand(
             id, req.PromotionName, req.DiscountValue, req.MinOrderValue,
-            req.ValidFrom, req.ValidTo, req.UsageLimit, req.Status), ct));
+            req.ValidFrom, req.ValidTo, req.UsageLimit, req.AccountUsagePolicy, req.Status), ct));
 
     private static async Task<IResult> DeletePromotion(ISender sender, Guid id, CancellationToken ct)
     {
@@ -116,5 +120,6 @@ public sealed class Promotions : IEndpointGroup
         DateTimeOffset ValidFrom,
         DateTimeOffset ValidTo,
         int? UsageLimit,
+        SaigonWaterbus.Domain.Enums.PromotionAccountUsagePolicy AccountUsagePolicy,
         string Status);
 }
