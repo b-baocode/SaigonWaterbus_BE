@@ -16,8 +16,8 @@ public sealed class Stations : IEndpointGroup
           "address": "Q7, TP.HCM",
           "latitude": 10.7285,
           "longitude": 106.7006,
-          "stationType": "Main",
-          "operatingHours": "06:00-22:00",
+          "openingTime": "06:00",
+          "closingTime": "22:00",
           "isWaterbusStation": true,
           "imageUrls": [
             "https://cdn.example.com/stations/nvl-main.jpg",
@@ -33,8 +33,8 @@ public sealed class Stations : IEndpointGroup
           "address": "Q7, TP.HCM",
           "latitude": 10.7285,
           "longitude": 106.7006,
-          "stationType": "Sub",
-          "operatingHours": "06:30-21:30",
+          "openingTime": "06:30",
+          "closingTime": "21:30",
           "isWaterbusStation": false,
           "status": "Active",
           "imageUrls": [
@@ -82,8 +82,7 @@ public sealed class Stations : IEndpointGroup
                 "Bearer token",
                 CreateExample,
                 "StationCode phai unique (tu dong uppercase).",
-                "StationType hop le: Main | Sub; neu khong gui thi mac dinh Main.",
-                "OperatingHours la chuoi mo ta gio hoat dong, toi da 150 ky tu.",
+                "openingTime va closingTime la gio mo/dong cua ben, dinh dang HH:mm.",
                 "isWaterbusStation mac dinh true; gui false cho ben ngoai dung charter booking.",
                 "Co the gui application/json neu khong upload anh.",
                 "Dung imageUrls de gui danh sach link anh co san; imageUrl cu van duoc ho tro cho 1 anh.",
@@ -100,9 +99,8 @@ public sealed class Stations : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateExample,
-                "StationType hop le: Main | Sub.",
                 "Status hop le: Active | Inactive.",
-                "OperatingHours la chuoi mo ta gio hoat dong, toi da 150 ky tu.",
+                "openingTime va closingTime la gio mo/dong cua ben, dinh dang HH:mm.",
                 "isWaterbusStation=true la ben thuoc he thong/tuyen waterbus; false la ben ngoai dung cho charter booking.",
                 "Co the gui application/json neu khong doi anh.",
                 "Neu gui imageUrl/imageUrls/images thi backend thay bo anh hien tai bang bo anh moi.",
@@ -194,8 +192,8 @@ public sealed class Stations : IEndpointGroup
             body?.Longitude,
             body?.ImageUrl,
             body?.ImageUrls,
-            StationType: body?.StationType,
-            OperatingHours: body?.OperatingHours,
+            OpeningTime: body?.OpeningTime,
+            ClosingTime: body?.ClosingTime,
             IsWaterbusStation: body?.IsWaterbusStation);
     }
 
@@ -213,8 +211,8 @@ public sealed class Stations : IEndpointGroup
             GetFormValue(form, "imageUrl"),
             GetFormValues(form, "imageUrls"),
             await CreateImageFilesFromFormAsync(form, cancellationToken),
-            ParseOptionalEnum<StationType>(GetFormValue(form, "stationType")),
-            GetFormValue(form, "operatingHours"),
+            ParseOptionalTimeOnly(GetFormValue(form, "openingTime")),
+            ParseOptionalTimeOnly(GetFormValue(form, "closingTime")),
             ParseOptionalBool(GetFormValue(form, "isWaterbusStation")));
     }
 
@@ -237,8 +235,8 @@ public sealed class Stations : IEndpointGroup
             body?.HasWaitingArea,
             body?.HasParking,
             body?.HasTicketCounter,
-            StationType: body?.StationType,
-            OperatingHours: body?.OperatingHours,
+            OpeningTime: body?.OpeningTime,
+            ClosingTime: body?.ClosingTime,
             IsWaterbusStation: body?.IsWaterbusStation);
     }
 
@@ -262,8 +260,8 @@ public sealed class Stations : IEndpointGroup
             ParseOptionalBool(GetFormValue(form, "hasParking")),
             ParseOptionalBool(GetFormValue(form, "hasTicketCounter")),
             await CreateImageFilesFromFormAsync(form, cancellationToken),
-            ParseOptionalEnum<StationType>(GetFormValue(form, "stationType")),
-            GetFormValue(form, "operatingHours"),
+            ParseOptionalTimeOnly(GetFormValue(form, "openingTime")),
+            ParseOptionalTimeOnly(GetFormValue(form, "closingTime")),
             ParseOptionalBool(GetFormValue(form, "isWaterbusStation")));
     }
 
@@ -362,14 +360,20 @@ public sealed class Stations : IEndpointGroup
     private static T? ParseOptionalEnum<T>(string? value) where T : struct, Enum =>
         Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : null;
 
+    private static TimeOnly? ParseOptionalTimeOnly(string? value) =>
+        TimeOnly.TryParseExact(value, ["HH:mm", "H:mm", "HH:mm:ss", "H:mm:ss"],
+            CultureInfo.InvariantCulture, DateTimeStyles.None, out var result)
+            ? result
+            : null;
+
     private sealed record CreateStationJsonRequest(
         string StationCode,
         string StationName,
         string? Address = null,
         decimal? Latitude = null,
         decimal? Longitude = null,
-        StationType? StationType = null,
-        string? OperatingHours = null,
+        TimeOnly? OpeningTime = null,
+        TimeOnly? ClosingTime = null,
         bool? IsWaterbusStation = null,
         string? ImageUrl = null,
         IReadOnlyCollection<string>? ImageUrls = null);
@@ -380,8 +384,8 @@ public sealed class Stations : IEndpointGroup
         string? Description = null,
         decimal? Latitude = null,
         decimal? Longitude = null,
-        StationType? StationType = null,
-        string? OperatingHours = null,
+        TimeOnly? OpeningTime = null,
+        TimeOnly? ClosingTime = null,
         bool? IsWaterbusStation = null,
         StationStatus? Status = null,
         string? ImageUrl = null,

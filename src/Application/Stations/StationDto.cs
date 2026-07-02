@@ -16,8 +16,8 @@ public sealed record StationDto(
     Guid StationId,
     string StationCode,
     string StationName,
-    string StationType,
-    string? OperatingHours,
+    TimeOnly? OpeningTime,
+    TimeOnly? ClosingTime,
     bool IsWaterbusStation,
     string? Address,
     string? Description,
@@ -36,7 +36,7 @@ public sealed record StationDto(
     {
         var imageUrls = StationImageSupport.CreateImageUrls(s);
         return new StationDto(
-            s.Id, s.StationCode, s.StationName, s.StationType.ToString(), s.OperatingHours, s.IsWaterbusStation,
+            s.Id, s.StationCode, s.StationName, s.OpeningTime, s.ClosingTime, s.IsWaterbusStation,
             s.Address, s.Description, s.Latitude, s.Longitude, s.Status.ToString(),
             imageUrls.FirstOrDefault(), imageUrls, s.HasWaitingArea, s.HasParking, s.HasTicketCounter,
             CreateAssignedUserDtos(s, Roles.ManagerSystemName),

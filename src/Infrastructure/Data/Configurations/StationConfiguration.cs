@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Infrastructure.Data.Configurations;
 
@@ -21,10 +20,8 @@ public sealed class StationConfiguration : IEntityTypeConfiguration<Station>
         builder.Ignore(x => x.Description);
         builder.Property(x => x.Latitude).HasColumnName("latitude").HasColumnType("numeric(10,7)");
         builder.Property(x => x.Longitude).HasColumnName("longitude").HasColumnType("numeric(10,7)");
-        builder.Property(x => x.StationType).HasColumnName("station_type").HasMaxLength(30).IsRequired()
-            .HasConversion<string>()
-            .HasDefaultValue(StationType.Main);
-        builder.Property(x => x.OperatingHours).HasColumnName("operating_hours").HasMaxLength(150);
+        builder.Property(x => x.OpeningTime).HasColumnName("opening_time");
+        builder.Property(x => x.ClosingTime).HasColumnName("closing_time");
         builder.Property(x => x.IsWaterbusStation).HasColumnName("is_waterbus_station").HasDefaultValue(true);
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30).IsRequired()
             .HasConversion<string>();

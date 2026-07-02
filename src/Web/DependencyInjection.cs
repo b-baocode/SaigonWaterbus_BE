@@ -38,6 +38,8 @@ public static class DependencyInjection
         {
             options.SerializerOptions.Converters.Add(new DateOnlyJsonConverter());
             options.SerializerOptions.Converters.Add(new NullableDateOnlyJsonConverter());
+            options.SerializerOptions.Converters.Add(new TimeOnlyJsonConverter());
+            options.SerializerOptions.Converters.Add(new NullableTimeOnlyJsonConverter());
             options.SerializerOptions.Converters.Add(new JsonStringEnumConverter(allowIntegerValues: false));
         });
 
@@ -103,6 +105,19 @@ public static class DependencyInjection
                 Type = "string",
                 Nullable = true,
                 Example = new Microsoft.OpenApi.Any.OpenApiString("10/06/2026")
+            });
+
+            options.MapType<TimeOnly>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Example = new Microsoft.OpenApi.Any.OpenApiString("06:00")
+            });
+
+            options.MapType<TimeOnly?>(() => new OpenApiSchema
+            {
+                Type = "string",
+                Nullable = true,
+                Example = new Microsoft.OpenApi.Any.OpenApiString("06:00")
             });
 
             options.AddSecurityDefinition(JwtBearerDefaults.AuthenticationScheme, new OpenApiSecurityScheme

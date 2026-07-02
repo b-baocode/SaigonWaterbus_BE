@@ -17,8 +17,8 @@ public class StationDtoTests
             Id = Guid.NewGuid(),
             StationCode = "BD",
             StationName = "Bach Dang",
-            StationType = StationType.Sub,
-            OperatingHours = "06:00-22:00",
+            OpeningTime = new TimeOnly(6, 0),
+            ClosingTime = new TimeOnly(22, 0),
             IsWaterbusStation = false,
             Status = StationStatus.Active
         };
@@ -53,8 +53,8 @@ public class StationDtoTests
 
         var dto = StationDto.From(station);
 
-        dto.StationType.ShouldBe(nameof(StationType.Sub));
-        dto.OperatingHours.ShouldBe("06:00-22:00");
+        dto.OpeningTime.ShouldBe(new TimeOnly(6, 0));
+        dto.ClosingTime.ShouldBe(new TimeOnly(22, 0));
         dto.IsWaterbusStation.ShouldBeFalse();
 
         dto.Managers.Count.ShouldBe(1);

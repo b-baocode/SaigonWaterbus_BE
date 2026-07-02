@@ -20,8 +20,8 @@ public sealed record UpdateStationCommand(
     bool? HasParking,
     bool? HasTicketCounter,
     IReadOnlyCollection<StationImageFileRequest>? ImageFiles = null,
-    StationType? StationType = null,
-    string? OperatingHours = null,
+    TimeOnly? OpeningTime = null,
+    TimeOnly? ClosingTime = null,
     bool? IsWaterbusStation = null) : IRequest<StationDto>;
 
 public sealed class UpdateStationCommandValidator : AbstractValidator<UpdateStationCommand>
@@ -32,8 +32,6 @@ public sealed class UpdateStationCommandValidator : AbstractValidator<UpdateStat
         RuleFor(x => x.StationName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Address).MaximumLength(300).When(x => x.Address is not null);
         RuleFor(x => x.Description).MaximumLength(500).When(x => x.Description is not null);
-        RuleFor(x => x.StationType).IsInEnum().When(x => x.StationType.HasValue);
-        RuleFor(x => x.OperatingHours).MaximumLength(150).When(x => x.OperatingHours is not null);
         RuleFor(x => x.ImageUrl)
             .MaximumLength(2048)
             .Must(StationImageSupport.IsValidImageUrl)
@@ -77,11 +75,8 @@ public sealed class UpdateStationCommandHandler : IRequestHandler<UpdateStationC
         station.Description = request.Description?.Trim() ?? station.Description;
         station.Latitude = request.Latitude ?? station.Latitude;
         station.Longitude = request.Longitude ?? station.Longitude;
-        station.StationType = request.StationType ?? station.StationType;
-        if (request.OperatingHours is not null)
-        {
-            station.OperatingHours = NormalizeOptionalText(request.OperatingHours);
-        }
+        station.OpeningTime = request.OpeningTime ?? station.OpeningTime;
+        station.ClosingTime = request.ClosingTime ?? station.ClosingTime;
         station.IsWaterbusStation = request.IsWaterbusStation ?? station.IsWaterbusStation;
         station.Status = request.Status;
 
@@ -105,7 +100,4 @@ public sealed class UpdateStationCommandHandler : IRequestHandler<UpdateStationC
         await _context.SaveChangesAsync(cancellationToken);
         return StationDto.From(station);
     }
-
-    private static string? NormalizeOptionalText(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

@@ -93,3 +93,69 @@ internal sealed class NullableDateOnlyJsonConverter : JsonConverter<DateOnly?>
         _innerConverter.Write(writer, value.Value, options);
     }
 }
+
+internal sealed class TimeOnlyJsonConverter : JsonConverter<TimeOnly>
+{
+    private static readonly string[] AcceptedFormats =
+    [
+        "HH:mm",
+        "H:mm",
+        "HH:mm:ss",
+        "H:mm:ss"
+    ];
+
+    public override TimeOnly Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType != JsonTokenType.String)
+        {
+            throw new JsonException("Time must be a string in HH:mm format.");
+        }
+
+        var value = reader.GetString();
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new JsonException("Time value is required.");
+        }
+
+        if (TimeOnly.TryParseExact(
+                value,
+                AcceptedFormats,
+                CultureInfo.InvariantCulture,
+                DateTimeStyles.None,
+                out var time))
+        {
+            return time;
+        }
+
+        throw new JsonException("Invalid time format. Use HH:mm.");
+    }
+
+    public override void Write(Utf8JsonWriter writer, TimeOnly value, JsonSerializerOptions options) =>
+        writer.WriteStringValue(value.ToString("HH:mm", CultureInfo.InvariantCulture));
+}
+
+internal sealed class NullableTimeOnlyJsonConverter : JsonConverter<TimeOnly?>
+{
+    private readonly TimeOnlyJsonConverter _innerConverter = new();
+
+    public override TimeOnly? Read(ref Utf8JsonReader reader, Type typeToConvert, JsonSerializerOptions options)
+    {
+        if (reader.TokenType == JsonTokenType.Null)
+        {
+            return null;
+        }
+
+        return _innerConverter.Read(ref reader, typeof(TimeOnly), options);
+    }
+
+    public override void Write(Utf8JsonWriter writer, TimeOnly? value, JsonSerializerOptions options)
+    {
+        if (!value.HasValue)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+
+        _innerConverter.Write(writer, value.Value, options);
+    }
+}
