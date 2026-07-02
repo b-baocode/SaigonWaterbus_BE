@@ -26,6 +26,7 @@ public class BlogPostCommandTests
                 null,
                 "Tom tat",
                 "Noi dung bai viet",
+                "activity",
                 "Published",
                 "https://example.test/waterbus-cover.webp",
                 "Tau waterbus tren song Sai Gon"),
@@ -37,6 +38,7 @@ public class BlogPostCommandTests
                 null,
                 "Tom tat khac",
                 "Noi dung bai viet khac",
+                "News",
                 "Published",
                 "https://example.test/waterbus-cover-2.webp",
                 "Tau waterbus tren song Sai Gon"),
@@ -44,6 +46,8 @@ public class BlogPostCommandTests
 
         first.Slug.ShouldBe("kham-pha-sai-gon-bang-waterbus");
         second.Slug.ShouldBe("kham-pha-sai-gon-bang-waterbus-2");
+        first.Category.ShouldBe("Activity");
+        second.Category.ShouldBe("News");
         first.ImageUrl.ShouldBe("https://example.test/waterbus-cover.webp");
         first.PublishedAt.ShouldBe(now);
         second.PublishedAt.ShouldBe(now);
@@ -67,11 +71,37 @@ public class BlogPostCommandTests
                     null,
                     "Tom tat",
                     "Noi dung bai viet",
+                    "News",
                     "Published"),
                 CancellationToken.None));
 
         exception.Errors["imageUrl"]
             .ShouldContain("Bai viet Published bat buoc co imageUrl.");
+    }
+
+    [Test]
+    public async Task CreateBlogPostRequiresCategory()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var handler = new CreateBlogPostCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new CreateBlogPostCommand(
+                    "Bai viet thieu category",
+                    null,
+                    "Tom tat",
+                    "Noi dung bai viet",
+                    null!,
+                    "Draft"),
+                CancellationToken.None));
+
+        exception.Errors["category"]
+            .ShouldContain("Category bat buoc nhap. Gia tri hop le: Activity | Event | News.");
     }
 
     [Test]
@@ -91,6 +121,7 @@ public class BlogPostCommandTests
                     null,
                     null,
                     "Noi dung bai viet",
+                    "News",
                     "Draft"),
                 CancellationToken.None));
     }
@@ -113,6 +144,7 @@ public class BlogPostCommandTests
 
         result.Count.ShouldBe(1);
         result.Single().Slug.ShouldBe("published-post");
+        result.Single().Category.ShouldBe("News");
         result.Single().ImageUrl.ShouldBe("https://example.test/waterbus-cover.webp");
     }
 
@@ -124,6 +156,7 @@ public class BlogPostCommandTests
             Title = slug,
             Slug = slug,
             Summary = "Tom tat",
+            Category = "News",
             ImageUrl = status == "Published" ? "https://example.test/waterbus-cover.webp" : null,
             ImageAltText = status == "Published" ? "Tau waterbus tren song Sai Gon" : null,
             Content = "Noi dung",

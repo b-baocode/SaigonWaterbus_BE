@@ -12,6 +12,7 @@ public sealed class BlogPosts : IEndpointGroup
           "title": "Kham pha Sai Gon bang waterbus",
           "slug": "kham-pha-sai-gon-bang-waterbus",
           "summary": "Nhung diem nen trai nghiem tren tuyen waterbus Sai Gon.",
+          "category": "Activity",
           "imageUrl": "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp",
           "imageAltText": "Tau waterbus tren song Sai Gon",
           "content": "Noi dung bai viet...",
@@ -25,6 +26,7 @@ public sealed class BlogPosts : IEndpointGroup
           "title": "Kham pha Sai Gon bang waterbus",
           "slug": "kham-pha-sai-gon-bang-waterbus",
           "summary": "Nhung diem nen trai nghiem tren tuyen waterbus Sai Gon.",
+          "category": "News",
           "imageUrl": "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp",
           "imageAltText": "Tau waterbus tren song Sai Gon",
           "content": "Noi dung bai viet da cap nhat...",
@@ -78,6 +80,7 @@ public sealed class BlogPosts : IEndpointGroup
                 CreateExample,
                 "Danh cho Admin, Manager, Staff.",
                 "status optional, mac dinh Draft. Khi tao moi chi hop le: Draft | Published.",
+                "category bat buoc nhap. Gia tri hop le: Activity | Event | News.",
                 "imageUrl la anh cover cua bai viet. Bai Published bat buoc co imageUrl.",
                 "slug optional; neu khong truyen se tu sinh tu title va tu them hau to neu trung."));
 
@@ -89,6 +92,7 @@ public sealed class BlogPosts : IEndpointGroup
                 UpdateExample,
                 "Danh cho Admin, Manager, Staff.",
                 "status hop le: Draft | Published | Archived.",
+                "category hop le: Activity | Event | News.",
                 "Bai Published bat buoc co imageUrl.",
                 "slug optional; neu khong truyen se tu sinh lai tu title."));
 
@@ -146,7 +150,8 @@ public sealed class BlogPosts : IEndpointGroup
             req.Content,
             req.Status,
             req.ImageUrl,
-            req.ImageAltText), ct));
+            req.ImageAltText,
+            req.Category), ct));
 
     private static async Task<IResult> PublishBlogPost(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new PublishBlogPostCommand(id), ct));
@@ -164,5 +169,6 @@ public sealed class BlogPosts : IEndpointGroup
         string Content,
         string Status,
         string? ImageUrl,
-        string? ImageAltText);
+        string? ImageAltText,
+        string Category);
 }

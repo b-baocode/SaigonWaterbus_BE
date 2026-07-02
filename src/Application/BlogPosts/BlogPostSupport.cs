@@ -13,6 +13,9 @@ internal static class BlogPostSupport
     public const string DraftStatus = "Draft";
     public const string PublishedStatus = "Published";
     public const string ArchivedStatus = "Archived";
+    public const string ActivityCategory = "Activity";
+    public const string EventCategory = "Event";
+    public const string NewsCategory = "News";
 
     private const int MaxSlugLength = 220;
 
@@ -43,6 +46,40 @@ internal static class BlogPostSupport
         }
 
         throw CreateValidationException(propertyName, "Status hop le: Draft | Published | Archived.");
+    }
+
+    public static bool IsValidCategory(string? category)
+    {
+        var normalized = category?.Trim();
+        return string.Equals(normalized, ActivityCategory, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, EventCategory, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, NewsCategory, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public static string NormalizeCategory(string? category, string propertyName)
+    {
+        if (string.IsNullOrWhiteSpace(category))
+        {
+            throw CreateValidationException(propertyName, "Category bat buoc nhap. Gia tri hop le: Activity | Event | News.");
+        }
+
+        var normalized = category.Trim();
+        if (string.Equals(normalized, ActivityCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            return ActivityCategory;
+        }
+
+        if (string.Equals(normalized, EventCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            return EventCategory;
+        }
+
+        if (string.Equals(normalized, NewsCategory, StringComparison.OrdinalIgnoreCase))
+        {
+            return NewsCategory;
+        }
+
+        throw CreateValidationException(propertyName, "Category hop le: Activity | Event | News.");
     }
 
     public static async Task<User> EnsureCurrentUserCanManageBlogPostsAsync(
@@ -202,6 +239,7 @@ internal static class BlogPostSupport
             post.Title,
             post.Slug,
             post.Summary,
+            post.Category,
             post.ImageUrl,
             post.ImageAltText,
             post.Content,

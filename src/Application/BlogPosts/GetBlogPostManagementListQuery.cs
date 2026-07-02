@@ -48,6 +48,7 @@ public sealed class GetBlogPostManagementListQueryHandler
                 x.Title,
                 x.Slug,
                 x.Summary,
+                x.Category,
                 x.ImageUrl,
                 x.ImageAltText,
                 x.Status,

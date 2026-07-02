@@ -12,7 +12,8 @@ public sealed record UpdateBlogPostCommand(
     string Content,
     string Status,
     string? ImageUrl,
-    string? ImageAltText) : IRequest<BlogPostDto>;
+    string? ImageAltText,
+    string Category) : IRequest<BlogPostDto>;
 
 public sealed class UpdateBlogPostCommandValidator : AbstractValidator<UpdateBlogPostCommand>
 {
@@ -32,6 +33,12 @@ public sealed class UpdateBlogPostCommandValidator : AbstractValidator<UpdateBlo
             .NotEmpty()
             .Must(BlogPostSupport.IsValidStatus)
             .WithMessage("Status hop le: Draft | Published | Archived.");
+        RuleFor(x => x.Category)
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty()
+            .WithMessage("Category bat buoc nhap. Gia tri hop le: Activity | Event | News.")
+            .Must(BlogPostSupport.IsValidCategory)
+            .WithMessage("Category hop le: Activity | Event | News.");
     }
 }
 
@@ -63,6 +70,7 @@ public sealed class UpdateBlogPostCommandHandler : IRequestHandler<UpdateBlogPos
         var title = BlogPostSupport.NormalizeRequiredText(request.Title, nameof(request.Title), 200);
         var content = BlogPostSupport.NormalizeRequiredText(request.Content, nameof(request.Content));
         var status = BlogPostSupport.NormalizeStatus(request.Status, nameof(request.Status));
+        var category = BlogPostSupport.NormalizeCategory(request.Category, nameof(request.Category));
         var imageUrl = BlogPostSupport.NormalizeImageUrl(request.ImageUrl, nameof(request.ImageUrl));
 
         post.Title = title;
@@ -72,6 +80,7 @@ public sealed class UpdateBlogPostCommandHandler : IRequestHandler<UpdateBlogPos
             post.Id,
             cancellationToken);
         post.Summary = BlogPostSupport.NormalizeOptionalText(request.Summary, nameof(request.Summary), 500);
+        post.Category = category;
         post.ImageUrl = imageUrl;
         post.ImageAltText = BlogPostSupport.NormalizeOptionalText(request.ImageAltText, nameof(request.ImageAltText), 200);
         post.Content = content;

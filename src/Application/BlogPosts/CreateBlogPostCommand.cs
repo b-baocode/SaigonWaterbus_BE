@@ -8,6 +8,7 @@ public sealed record CreateBlogPostCommand(
     string? Slug,
     string? Summary,
     string Content,
+    string Category,
     string? Status,
     string? ImageUrl = null,
     string? ImageAltText = null) : IRequest<BlogPostDto>;
@@ -30,6 +31,12 @@ public sealed class CreateBlogPostCommandValidator : AbstractValidator<CreateBlo
                 || string.Equals(status, BlogPostSupport.DraftStatus, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(status, BlogPostSupport.PublishedStatus, StringComparison.OrdinalIgnoreCase))
             .WithMessage("Status khi tao moi hop le: Draft | Published.");
+        RuleFor(x => x.Category)
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty()
+            .WithMessage("Category bat buoc nhap. Gia tri hop le: Activity | Event | News.")
+            .Must(BlogPostSupport.IsValidCategory)
+            .WithMessage("Category hop le: Activity | Event | News.");
     }
 }
 
@@ -79,6 +86,7 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
                 null,
                 cancellationToken),
             Summary = BlogPostSupport.NormalizeOptionalText(request.Summary, nameof(request.Summary), 500),
+            Category = BlogPostSupport.NormalizeCategory(request.Category, nameof(request.Category)),
             ImageUrl = imageUrl,
             ImageAltText = BlogPostSupport.NormalizeOptionalText(request.ImageAltText, nameof(request.ImageAltText), 200),
             Content = content,

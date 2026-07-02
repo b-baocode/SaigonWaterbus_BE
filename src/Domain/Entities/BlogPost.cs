@@ -8,6 +8,7 @@ public class BlogPost : BaseGuidAuditableEntity
     public string Title { get; set; } = null!;
     public string Slug { get; set; } = null!;
     public string? Summary { get; set; }
+    public string Category { get; set; } = null!;
     public string? ImageUrl { get; set; }
     public string? ImageAltText { get; set; }
     public string Content { get; set; } = null!;
