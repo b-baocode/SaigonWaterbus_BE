@@ -17,6 +17,9 @@ public class StationDtoTests
             Id = Guid.NewGuid(),
             StationCode = "BD",
             StationName = "Bach Dang",
+            StationType = StationType.Sub,
+            OperatingHours = "06:00-22:00",
+            IsWaterbusStation = false,
             Status = StationStatus.Active
         };
         var manager = User("M01", "Manager One", Roles.ManagerCode, Roles.ManagerSystemName);
@@ -49,6 +52,10 @@ public class StationDtoTests
         });
 
         var dto = StationDto.From(station);
+
+        dto.StationType.ShouldBe(nameof(StationType.Sub));
+        dto.OperatingHours.ShouldBe("06:00-22:00");
+        dto.IsWaterbusStation.ShouldBeFalse();
 
         dto.Managers.Count.ShouldBe(1);
         dto.Managers.Single().UserId.ShouldBe(manager.Id);

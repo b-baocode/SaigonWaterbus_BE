@@ -12,6 +12,9 @@ public class Station : BaseGuidAuditableEntity
     public string? Description { get; set; }
     public decimal? Latitude { get; set; }
     public decimal? Longitude { get; set; }
+    public StationType StationType { get; set; } = StationType.Main;
+    public string? OperatingHours { get; set; }
+    public bool IsWaterbusStation { get; set; } = true;
     public StationStatus Status { get; set; } = StationStatus.Active;
     public Point? Location { get; set; }
     public string? OsmId { get; set; }

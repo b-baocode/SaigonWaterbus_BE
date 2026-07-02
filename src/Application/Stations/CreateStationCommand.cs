@@ -15,7 +15,10 @@ public sealed record CreateStationCommand(
     decimal? Longitude,
     string? ImageUrl = null,
     IReadOnlyCollection<string>? ImageUrls = null,
-    IReadOnlyCollection<StationImageFileRequest>? ImageFiles = null) : IRequest<StationDto>;
+    IReadOnlyCollection<StationImageFileRequest>? ImageFiles = null,
+    StationType? StationType = null,
+    string? OperatingHours = null,
+    bool? IsWaterbusStation = null) : IRequest<StationDto>;
 
 public sealed class CreateStationCommandValidator : AbstractValidator<CreateStationCommand>
 {
@@ -24,6 +27,8 @@ public sealed class CreateStationCommandValidator : AbstractValidator<CreateStat
         RuleFor(x => x.StationCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.StationName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.Address).MaximumLength(500).When(x => x.Address is not null);
+        RuleFor(x => x.StationType).IsInEnum().When(x => x.StationType.HasValue);
+        RuleFor(x => x.OperatingHours).MaximumLength(150).When(x => x.OperatingHours is not null);
         RuleFor(x => x.ImageUrl)
             .MaximumLength(2048)
             .Must(StationImageSupport.IsValidImageUrl)
@@ -68,6 +73,9 @@ public sealed class CreateStationCommandHandler : IRequestHandler<CreateStationC
             Address = request.Address?.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
+            StationType = request.StationType ?? StationType.Main,
+            OperatingHours = NormalizeOptionalText(request.OperatingHours),
+            IsWaterbusStation = request.IsWaterbusStation ?? true,
             Status = StationStatus.Active
         };
 
@@ -85,4 +93,7 @@ public sealed class CreateStationCommandHandler : IRequestHandler<CreateStationC
         await _context.SaveChangesAsync(cancellationToken);
         return StationDto.From(station);
     }
+
+    private static string? NormalizeOptionalText(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }

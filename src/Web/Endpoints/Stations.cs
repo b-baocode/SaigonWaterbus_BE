@@ -16,6 +16,9 @@ public sealed class Stations : IEndpointGroup
           "address": "Q7, TP.HCM",
           "latitude": 10.7285,
           "longitude": 106.7006,
+          "stationType": "Main",
+          "operatingHours": "06:00-22:00",
+          "isWaterbusStation": true,
           "imageUrls": [
             "https://cdn.example.com/stations/nvl-main.jpg",
             "https://cdn.example.com/stations/nvl-pier.jpg"
@@ -30,11 +33,21 @@ public sealed class Stations : IEndpointGroup
           "address": "Q7, TP.HCM",
           "latitude": 10.7285,
           "longitude": 106.7006,
+          "stationType": "Sub",
+          "operatingHours": "06:30-21:30",
+          "isWaterbusStation": false,
           "status": "Active",
           "imageUrls": [
             "https://cdn.example.com/stations/nvl-main.jpg",
             "https://cdn.example.com/stations/nvl-pier.jpg"
           ]
+        }
+        """;
+
+    private const string UpdateStatusExample =
+        """
+        {
+          "status": "Inactive"
         }
         """;
 
@@ -46,7 +59,8 @@ public sealed class Stations : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Tra ve tat ca tram co status = Active.",
+                "Tra ve tat ca tram, bao gom Active va Inactive.",
+                "isWaterbusStation=true la ben thuoc he thong/tuyen waterbus; false la ben ngoai dung cho charter booking.",
                 "Sap xep theo StationName.",
                 "Managers va Staff la danh sach user active dang duoc gan voi tram."));
 
@@ -68,6 +82,9 @@ public sealed class Stations : IEndpointGroup
                 "Bearer token",
                 CreateExample,
                 "StationCode phai unique (tu dong uppercase).",
+                "StationType hop le: Main | Sub; neu khong gui thi mac dinh Main.",
+                "OperatingHours la chuoi mo ta gio hoat dong, toi da 150 ky tu.",
+                "isWaterbusStation mac dinh true; gui false cho ben ngoai dung charter booking.",
                 "Co the gui application/json neu khong upload anh.",
                 "Dung imageUrls de gui danh sach link anh co san; imageUrl cu van duoc ho tro cho 1 anh.",
                 "Neu upload anh, gui multipart/form-data voi field 'images' nhieu file; field cu 'image' van duoc ho tro cho 1 anh.",
@@ -83,13 +100,25 @@ public sealed class Stations : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateExample,
+                "StationType hop le: Main | Sub.",
                 "Status hop le: Active | Inactive.",
+                "OperatingHours la chuoi mo ta gio hoat dong, toi da 150 ky tu.",
+                "isWaterbusStation=true la ben thuoc he thong/tuyen waterbus; false la ben ngoai dung cho charter booking.",
                 "Co the gui application/json neu khong doi anh.",
                 "Neu gui imageUrl/imageUrls/images thi backend thay bo anh hien tai bang bo anh moi.",
                 "Neu upload anh, gui multipart/form-data voi field 'images' nhieu file; field cu 'image' van duoc ho tro cho 1 anh.",
                 "Anh chi ho tro JPEG, PNG hoac WebP, toi da 5 MB; anh upload duoc resize ve 2000x1400.",
                 "Moi tram toi da 6 anh, moi URL toi da 2048 ky tu.",
                 "StationCode khong doi duoc sau khi tao."));
+
+        group.MapPatch(UpdateStationStatus, "{id:guid}/status")
+            .RequireAuthorization()
+            .WithSummary("Cap nhat trang thai tram")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                UpdateStatusExample,
+                "Status hop le: Active | Inactive.",
+                "Dung de bat/tat tram ma khong can gui lai toan bo thong tin tram."));
 
         group.MapDelete(DeleteStation, "{id:guid}")
             .RequireAuthorization()
@@ -145,6 +174,13 @@ public sealed class Stations : IEndpointGroup
         return Results.NoContent();
     }
 
+    private static async Task<IResult> UpdateStationStatus(
+        ISender sender,
+        Guid id,
+        UpdateStationStatusRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateStationStatusCommand(id, request.Status), ct));
+
     private static async Task<CreateStationCommand> CreateStationCommandFromJsonAsync(
         HttpRequest request,
         CancellationToken cancellationToken)
@@ -157,7 +193,10 @@ public sealed class Stations : IEndpointGroup
             body?.Latitude,
             body?.Longitude,
             body?.ImageUrl,
-            body?.ImageUrls);
+            body?.ImageUrls,
+            StationType: body?.StationType,
+            OperatingHours: body?.OperatingHours,
+            IsWaterbusStation: body?.IsWaterbusStation);
     }
 
     private static async Task<CreateStationCommand> CreateStationCommandFromFormAsync(
@@ -173,7 +212,10 @@ public sealed class Stations : IEndpointGroup
             ParseOptionalDecimal(GetFormValue(form, "longitude")),
             GetFormValue(form, "imageUrl"),
             GetFormValues(form, "imageUrls"),
-            await CreateImageFilesFromFormAsync(form, cancellationToken));
+            await CreateImageFilesFromFormAsync(form, cancellationToken),
+            ParseOptionalEnum<StationType>(GetFormValue(form, "stationType")),
+            GetFormValue(form, "operatingHours"),
+            ParseOptionalBool(GetFormValue(form, "isWaterbusStation")));
     }
 
     private static async Task<UpdateStationCommand> UpdateStationCommandFromJsonAsync(
@@ -194,7 +236,10 @@ public sealed class Stations : IEndpointGroup
             body?.ImageUrls,
             body?.HasWaitingArea,
             body?.HasParking,
-            body?.HasTicketCounter);
+            body?.HasTicketCounter,
+            StationType: body?.StationType,
+            OperatingHours: body?.OperatingHours,
+            IsWaterbusStation: body?.IsWaterbusStation);
     }
 
     private static async Task<UpdateStationCommand> UpdateStationCommandFromFormAsync(
@@ -216,7 +261,10 @@ public sealed class Stations : IEndpointGroup
             ParseOptionalBool(GetFormValue(form, "hasWaitingArea")),
             ParseOptionalBool(GetFormValue(form, "hasParking")),
             ParseOptionalBool(GetFormValue(form, "hasTicketCounter")),
-            await CreateImageFilesFromFormAsync(form, cancellationToken));
+            await CreateImageFilesFromFormAsync(form, cancellationToken),
+            ParseOptionalEnum<StationType>(GetFormValue(form, "stationType")),
+            GetFormValue(form, "operatingHours"),
+            ParseOptionalBool(GetFormValue(form, "isWaterbusStation")));
     }
 
     private static string? GetFormValue(IFormCollection form, string name)
@@ -320,6 +368,9 @@ public sealed class Stations : IEndpointGroup
         string? Address = null,
         decimal? Latitude = null,
         decimal? Longitude = null,
+        StationType? StationType = null,
+        string? OperatingHours = null,
+        bool? IsWaterbusStation = null,
         string? ImageUrl = null,
         IReadOnlyCollection<string>? ImageUrls = null);
 
@@ -329,10 +380,15 @@ public sealed class Stations : IEndpointGroup
         string? Description = null,
         decimal? Latitude = null,
         decimal? Longitude = null,
+        StationType? StationType = null,
+        string? OperatingHours = null,
+        bool? IsWaterbusStation = null,
         StationStatus? Status = null,
         string? ImageUrl = null,
         IReadOnlyCollection<string>? ImageUrls = null,
         bool? HasWaitingArea = null,
         bool? HasParking = null,
         bool? HasTicketCounter = null);
+
+    private sealed record UpdateStationStatusRequest(StationStatus Status);
 }

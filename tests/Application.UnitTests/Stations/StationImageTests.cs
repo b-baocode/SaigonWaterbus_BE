@@ -29,14 +29,21 @@ public class StationImageTests
                 [
                     "https://cdn.example.com/stations/nvl-main.jpg",
                     "https://cdn.example.com/stations/nvl-pier.jpg"
-                ]),
+                ],
+                OperatingHours: " 06:00-22:00 "),
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe("https://cdn.example.com/stations/nvl-main.jpg");
+        result.StationType.ShouldBe(nameof(StationType.Main));
+        result.OperatingHours.ShouldBe("06:00-22:00");
+        result.IsWaterbusStation.ShouldBeTrue();
         result.ImageUrls.ShouldBe([
             "https://cdn.example.com/stations/nvl-main.jpg",
             "https://cdn.example.com/stations/nvl-pier.jpg"
         ]);
+        context.Stations.Single().StationType.ShouldBe(StationType.Main);
+        context.Stations.Single().OperatingHours.ShouldBe("06:00-22:00");
+        context.Stations.Single().IsWaterbusStation.ShouldBeTrue();
         context.Stations.Single().ImageUrl.ShouldBe("https://cdn.example.com/stations/nvl-main.jpg");
         context.Stations.Single().ImageUrls.ShouldBe([
             "https://cdn.example.com/stations/nvl-main.jpg",
@@ -166,15 +173,24 @@ public class StationImageTests
                 ],
                 true,
                 true,
-                true),
+                true,
+                StationType: StationType.Sub,
+                OperatingHours: " 06:30-21:30 ",
+                IsWaterbusStation: false),
             CancellationToken.None);
 
+        result.StationType.ShouldBe(nameof(StationType.Sub));
+        result.OperatingHours.ShouldBe("06:30-21:30");
+        result.IsWaterbusStation.ShouldBeFalse();
         result.ImageUrl.ShouldBe("https://cdn.example.com/stations/new-main.jpg");
         result.ImageUrls.ShouldBe([
             "https://cdn.example.com/stations/new-main.jpg",
             "https://cdn.example.com/stations/new-ticket-counter.jpg"
         ]);
         var updatedStation = await context.Stations.SingleAsync(x => x.Id == station.Id);
+        updatedStation.StationType.ShouldBe(StationType.Sub);
+        updatedStation.OperatingHours.ShouldBe("06:30-21:30");
+        updatedStation.IsWaterbusStation.ShouldBeFalse();
         updatedStation.ImageUrl.ShouldBe("https://cdn.example.com/stations/new-main.jpg");
         updatedStation.ImageUrls.ShouldBe([
             "https://cdn.example.com/stations/new-main.jpg",

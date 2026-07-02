@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260702063636_AddStationOperatingHours")]
+    partial class AddStationOperatingHours
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1347,12 +1350,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("text[]")
                         .HasColumnName("image_urls")
                         .HasDefaultValueSql("ARRAY[]::text[]");
-
-                    b.Property<bool>("IsWaterbusStation")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("is_waterbus_station");
 
                     b.Property<decimal?>("Latitude")
                         .HasColumnType("numeric(10,7)")

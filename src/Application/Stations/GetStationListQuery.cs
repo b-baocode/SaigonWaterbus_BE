@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Stations;
 
@@ -18,7 +17,6 @@ public sealed class GetStationListQueryHandler : IRequestHandler<GetStationListQ
             .Include(s => s.UserAssignments)
                 .ThenInclude(a => a.User)
                     .ThenInclude(u => u.Role)
-            .Where(s => s.Status == StationStatus.Active)
             .OrderBy(s => s.StationName)
             .ToListAsync(cancellationToken);
 
