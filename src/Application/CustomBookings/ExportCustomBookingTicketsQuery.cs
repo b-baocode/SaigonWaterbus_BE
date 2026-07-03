@@ -163,7 +163,7 @@ internal static class CustomBookingTicketExportSupport
             booking.Boat?.Name,
             booking.FromStation?.StationName,
             booking.ToStation?.StationName,
-            GetCustomBookingManifestByCodeQueryHandler.ToItineraryStopDtos(booking),
+            CustomBookingManifestSupport.ToItineraryStopDtos(booking),
             tickets
                 .Select(x => new CustomBookingTicketExportItemDto(
                     x.Id,

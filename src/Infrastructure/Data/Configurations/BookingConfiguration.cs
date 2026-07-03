@@ -21,10 +21,14 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.PromotionId).HasColumnName("promotion_id");
         builder.Property(x => x.TripId).HasColumnName("trip_id");
         builder.Property(x => x.BookingCode).HasColumnName("booking_code").HasMaxLength(50).IsRequired();
+        builder.Property(x => x.CustomBookingQrToken).HasColumnName("custom_booking_qr_token").HasMaxLength(100);
         builder.Property(x => x.ContactName).HasColumnName("contact_name").HasMaxLength(150).IsRequired();
         builder.Property(x => x.ContactPhone).HasColumnName("contact_phone").HasMaxLength(30).IsRequired();
         builder.Property(x => x.ContactEmail).HasColumnName("contact_email").HasMaxLength(255);
         builder.HasIndex(x => x.BookingCode).IsUnique();
+        builder.HasIndex(x => x.CustomBookingQrToken)
+            .IsUnique()
+            .HasFilter("custom_booking_qr_token IS NOT NULL");
 
         builder.Property(x => x.BookingStatus)
             .HasColumnName("status")

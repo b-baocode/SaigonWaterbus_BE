@@ -12,6 +12,7 @@ public class Booking : BaseGuidAuditableEntity
     public Guid? TripId { get; set; }
     public string BookingType { get; set; } = SeatBookingType;
     public string BookingCode { get; set; } = null!;
+    public string? CustomBookingQrToken { get; set; }
     public string ContactName { get; set; } = null!;
     public string ContactPhone { get; set; } = string.Empty;
     public string? ContactEmail { get; set; }

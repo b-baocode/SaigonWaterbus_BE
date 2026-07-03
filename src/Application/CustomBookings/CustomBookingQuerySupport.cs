@@ -35,6 +35,7 @@ internal static class CustomBookingQuerySupport
         return new CustomBookingDetailDto(
             booking.Id,
             booking.BookingCode,
+            booking.CustomBookingQrToken,
             booking.Created,
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,

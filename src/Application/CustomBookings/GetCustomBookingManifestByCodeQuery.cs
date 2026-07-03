@@ -9,6 +9,9 @@ namespace SaigonWaterbus.Application.CustomBookings;
 public sealed record GetCustomBookingManifestByCodeQuery(string BookingCode)
     : IRequest<CustomBookingManifestDto>;
 
+public sealed record GetCustomBookingManifestByQrTokenQuery(string QrToken)
+    : IRequest<CustomBookingManifestDto>;
+
 public sealed class GetCustomBookingManifestByCodeQueryValidator
     : AbstractValidator<GetCustomBookingManifestByCodeQuery>
 {
@@ -18,11 +21,18 @@ public sealed class GetCustomBookingManifestByCodeQueryValidator
     }
 }
 
+public sealed class GetCustomBookingManifestByQrTokenQueryValidator
+    : AbstractValidator<GetCustomBookingManifestByQrTokenQuery>
+{
+    public GetCustomBookingManifestByQrTokenQueryValidator()
+    {
+        RuleFor(x => x.QrToken).NotEmpty().MaximumLength(100);
+    }
+}
+
 public sealed class GetCustomBookingManifestByCodeQueryHandler
     : IRequestHandler<GetCustomBookingManifestByCodeQuery, CustomBookingManifestDto>
 {
-    private const string PaidBookingPaymentStatus = "Paid";
-
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
 
@@ -63,6 +73,68 @@ public sealed class GetCustomBookingManifestByCodeQueryHandler
                 cancellationToken)
             ?? throw new NotFoundException("Custom booking not found.");
 
+        CustomBookingManifestSupport.EnsureCanView(currentUser, booking);
+        return CustomBookingManifestSupport.ToDto(booking);
+    }
+}
+
+public sealed class GetCustomBookingManifestByQrTokenQueryHandler
+    : IRequestHandler<GetCustomBookingManifestByQrTokenQuery, CustomBookingManifestDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+
+    public GetCustomBookingManifestByQrTokenQueryHandler(
+        IApplicationDbContext context,
+        IUserContext userContext)
+    {
+        _context = context;
+        _userContext = userContext;
+    }
+
+    public async Task<CustomBookingManifestDto> Handle(
+        GetCustomBookingManifestByQrTokenQuery request,
+        CancellationToken cancellationToken)
+    {
+        var currentUser = await AuthSupport.GetCurrentUserWithRoleAsync(
+            _context,
+            _userContext,
+            cancellationToken);
+        var qrToken = request.QrToken.Trim();
+
+        var booking = await CustomBookingManifestSupport.BuildQuery(_context)
+            .SingleOrDefaultAsync(
+                x => x.CustomBookingQrToken == qrToken,
+                cancellationToken)
+            ?? throw new NotFoundException("Custom booking not found.");
+
+        CustomBookingManifestSupport.EnsureCanView(currentUser, booking);
+        return CustomBookingManifestSupport.ToDto(booking);
+    }
+}
+
+internal static class CustomBookingManifestSupport
+{
+    private const string PaidBookingPaymentStatus = "Paid";
+
+    public static IQueryable<Booking> BuildQuery(IApplicationDbContext context) =>
+        CustomBookingQuerySupport.BuildBaseQuery(context)
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
+            .Include(x => x.Passengers)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.CheckedInByUser)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.CheckedOutByUser);
+
+    public static void EnsureCanView(User currentUser, Booking booking)
+    {
         if (booking.UserId != currentUser.Id
             && !AuthSupport.IsAdmin(currentUser)
             && !AuthSupport.IsManager(currentUser)
@@ -70,7 +142,10 @@ public sealed class GetCustomBookingManifestByCodeQueryHandler
         {
             throw new NotFoundException("Custom booking not found.");
         }
+    }
 
+    public static CustomBookingManifestDto ToDto(Booking booking)
+    {
         var currentTickets = CustomBookingTicketSupport.GetDisplayTickets(booking.Tickets);
         var ticketsByPassengerId = currentTickets
             .Where(x => x.BookingPassengerId.HasValue)
@@ -82,6 +157,7 @@ public sealed class GetCustomBookingManifestByCodeQueryHandler
         return new CustomBookingManifestDto(
             booking.Id,
             booking.BookingCode,
+            booking.CustomBookingQrToken,
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
             booking.ContactName,
@@ -113,7 +189,7 @@ public sealed class GetCustomBookingManifestByCodeQueryHandler
                 .ToList());
     }
 
-    internal static IReadOnlyList<CustomBookingItineraryStopDto> ToItineraryStopDtos(Booking booking) =>
+    public static IReadOnlyList<CustomBookingItineraryStopDto> ToItineraryStopDtos(Booking booking) =>
         booking.ItineraryStops
             .OrderBy(x => x.StopOrder)
             .Select(x => new CustomBookingItineraryStopDto(

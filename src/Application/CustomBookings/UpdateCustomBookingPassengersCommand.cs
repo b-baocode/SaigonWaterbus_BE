@@ -121,6 +121,7 @@ public sealed class UpdateCustomBookingPassengersCommandHandler
 
         return new UpdateCustomBookingPassengersResult(
             booking.Id,
+            booking.CustomBookingQrToken,
             booking.PassengerCount.GetValueOrDefault(),
             booking.Passengers.Count,
             adultCount,

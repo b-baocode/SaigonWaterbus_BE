@@ -133,6 +133,7 @@ public sealed class ImportCustomBookingPassengersCommandHandler
 
         return new ImportCustomBookingPassengersResult(
             booking.Id,
+            booking.CustomBookingQrToken,
             booking.PassengerCount.GetValueOrDefault(),
             booking.Passengers.Count,
             adultCount,

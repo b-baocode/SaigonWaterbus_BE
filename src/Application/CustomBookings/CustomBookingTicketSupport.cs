@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Tickets;
@@ -10,6 +11,7 @@ namespace SaigonWaterbus.Application.CustomBookings;
 internal static class CustomBookingTicketSupport
 {
     private const string PaidBookingPaymentStatus = "Paid";
+    private const int CustomBookingQrTokenByteCount = 24;
 
     public static async Task<PassengerTicketEnsureResult?> EnsurePassengerTicketsAsync(
         IApplicationDbContext context,
@@ -21,6 +23,8 @@ internal static class CustomBookingTicketSupport
         {
             return null;
         }
+
+        await EnsureCustomBookingQrTokenAsync(context, booking, cancellationToken);
 
         var passengers = booking.Passengers
             .OrderBy(x => x.FullName)
@@ -127,6 +131,36 @@ internal static class CustomBookingTicketSupport
             passenger?.FullName,
             passenger?.DateOfBirth,
             passenger?.PassengerType);
+    }
+
+    public static async Task EnsureCustomBookingQrTokenAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(booking.CustomBookingQrToken))
+        {
+            return;
+        }
+
+        booking.CustomBookingQrToken = await GenerateCustomBookingQrTokenAsync(context, cancellationToken);
+    }
+
+    private static async Task<string> GenerateCustomBookingQrTokenAsync(
+        IApplicationDbContext context,
+        CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            var token = "CB" + Convert.ToHexString(RandomNumberGenerator.GetBytes(CustomBookingQrTokenByteCount));
+            if (!await context.Set<Booking>().AnyAsync(x => x.CustomBookingQrToken == token, cancellationToken))
+            {
+                return token;
+            }
+        }
+
+        throw new ValidationException([new ValidationFailure("customBookingQrToken",
+            "Khong the tao QR token tong duy nhat.")]);
     }
 
     private static async Task CancelBookingLevelTicketsAsync(

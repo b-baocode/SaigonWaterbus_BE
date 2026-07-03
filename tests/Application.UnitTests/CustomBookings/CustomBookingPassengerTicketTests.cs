@@ -45,8 +45,10 @@ public class CustomBookingPassengerTicketTests
             CancellationToken.None);
 
         result.RegisteredPassengerCount.ShouldBe(2);
+        result.CustomBookingQrToken.ShouldNotBeNullOrWhiteSpace();
         result.TicketCount.ShouldBe(2);
         result.Tickets.Count.ShouldBe(2);
+        booking.CustomBookingQrToken.ShouldBe(result.CustomBookingQrToken);
 
         var tickets = context.Tickets.OrderBy(x => x.TicketCode).ToArray();
         tickets.Length.ShouldBe(2);
@@ -288,6 +290,71 @@ public class CustomBookingPassengerTicketTests
         manifest.Passengers.ShouldAllBe(x => x.CanCheckIn);
     }
 
+    [Test]
+    public async Task StaffCanCheckInAndCheckOutAllTicketsByCustomBookingQrToken()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var user = Customer();
+        var booking = PaidCustomBooking(user.Id, adultCount: 2);
+        context.AddRange(user.Role, user, booking);
+        await context.SaveChangesAsync();
+
+        var updateHandler = CreateUpdateHandler(context, user.Id);
+        await updateHandler.Handle(
+            new UpdateCustomBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CustomBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
+                    new CustomBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                ]),
+            CancellationToken.None);
+
+        var qrToken = booking.CustomBookingQrToken.ShouldNotBeNull();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var checkInHandler = new UpdateCustomBookingAttendanceCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(checkedInAt));
+
+        var checkInResult = await checkInHandler.Handle(
+            new UpdateCustomBookingAttendanceCommand(
+                qrToken,
+                CustomBookingAttendanceAction.CheckIn,
+                CustomBookingAttendanceMode.All,
+                TicketIds: null),
+            CancellationToken.None);
+
+        checkInResult.UpdatedCount.ShouldBe(2);
+        checkInResult.SkippedCount.ShouldBe(0);
+        checkInResult.Manifest.TicketSummary.CheckedInTickets.ShouldBe(2);
+        context.Tickets.ShouldAllBe(x => x.TicketStatus == TicketStatus.CheckedIn);
+        context.Tickets.ShouldAllBe(x => x.CheckedInAt == checkedInAt);
+        context.Tickets.ShouldAllBe(x => x.CheckedInByUserId == staffContext.UserId);
+
+        var checkedOutAt = checkedInAt.AddHours(1);
+        var checkOutHandler = new UpdateCustomBookingAttendanceCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(checkedOutAt));
+
+        var checkOutResult = await checkOutHandler.Handle(
+            new UpdateCustomBookingAttendanceCommand(
+                qrToken,
+                CustomBookingAttendanceAction.CheckOut,
+                CustomBookingAttendanceMode.All,
+                TicketIds: null),
+            CancellationToken.None);
+
+        checkOutResult.UpdatedCount.ShouldBe(2);
+        checkOutResult.SkippedCount.ShouldBe(0);
+        checkOutResult.Manifest.TicketSummary.CheckedOutTickets.ShouldBe(2);
+        context.Tickets.ShouldAllBe(x => x.TicketStatus == TicketStatus.CheckedOut);
+        context.Tickets.ShouldAllBe(x => x.CheckedOutAt == checkedOutAt);
+        context.Tickets.ShouldAllBe(x => x.CheckedOutByUserId == staffContext.UserId);
+        booking.BookingStatus.ShouldBe(BookingStatus.Completed);
+    }
+
     private static UpdateCustomBookingPassengersCommandHandler CreateUpdateHandler(
         IApplicationDbContext context,
         Guid userId,
@@ -359,5 +426,10 @@ public class CustomBookingPassengerTicketTests
     private sealed class TestCustomBookingTicketPdfRenderer : ICustomBookingTicketPdfRenderer
     {
         public byte[] Render(CustomBookingTicketExportDto export) => [1, 2, 3];
+    }
+
+    private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow() => utcNow;
     }
 }

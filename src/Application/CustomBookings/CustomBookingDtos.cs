@@ -114,6 +114,8 @@ public sealed record CustomBookingListItemDto(
 public sealed record CustomBookingDetailDto(
     Guid BookingId,
     string BookingCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CustomBookingQrToken,
     DateTimeOffset CreatedAt,
     string BookingStatus,
     string PaymentStatus,
@@ -271,6 +273,8 @@ public sealed record UpdateCustomBookingPassengersRequest(
 
 public sealed record UpdateCustomBookingPassengersResult(
     Guid BookingId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CustomBookingQrToken,
     int PassengerCount,
     int RegisteredPassengerCount,
     int AdultCount,
@@ -281,6 +285,8 @@ public sealed record UpdateCustomBookingPassengersResult(
 
 public sealed record ImportCustomBookingPassengersResult(
     Guid BookingId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CustomBookingQrToken,
     int PassengerCount,
     int RegisteredPassengerCount,
     int AdultCount,
@@ -316,6 +322,8 @@ public sealed record CustomBookingTicketSelectionRequest(
 public sealed record CustomBookingManifestDto(
     Guid BookingId,
     string BookingCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CustomBookingQrToken,
     string BookingStatus,
     string PaymentStatus,
     string ContactName,
@@ -371,6 +379,42 @@ public sealed record CustomBookingManifestPassengerDto(
     string? CheckedOutByName,
     bool CanCheckIn,
     bool CanCheckOut);
+
+public enum CustomBookingAttendanceAction
+{
+    CheckIn = 0,
+    CheckOut = 1
+}
+
+public enum CustomBookingAttendanceMode
+{
+    All = 0,
+    Selected = 1
+}
+
+public sealed record CustomBookingAttendanceRequest(
+    CustomBookingAttendanceAction Action,
+    CustomBookingAttendanceMode Mode = CustomBookingAttendanceMode.All,
+    IReadOnlyList<Guid>? TicketIds = null);
+
+public sealed record CustomBookingAttendanceResult(
+    CustomBookingAttendanceAction Action,
+    CustomBookingAttendanceMode Mode,
+    int RequestedCount,
+    int UpdatedCount,
+    int SkippedCount,
+    IReadOnlyList<CustomBookingAttendanceSkippedTicketDto> SkippedTickets,
+    CustomBookingManifestDto Manifest);
+
+public sealed record CustomBookingAttendanceSkippedTicketDto(
+    Guid TicketId,
+    string TicketCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? PassengerId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PassengerName,
+    string TicketStatus,
+    string Reason);
 
 public sealed record QuoteCustomBookingRequest(
     Guid BoatId,

@@ -83,6 +83,15 @@ public sealed class CustomBookings : IEndpointGroup
         }
         """;
 
+    private const string AttendanceExample =
+        """
+        {
+          "action": "CheckIn",
+          "mode": "All",
+          "ticketIds": null
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetRentalBoats, "rental-boats")
@@ -151,6 +160,34 @@ public sealed class CustomBookings : IEndpointGroup
                 "Admin/Manager/Staff tra cuu duoc moi custom booking.",
                 "Customer chi tra cuu duoc custom booking cua minh.",
                 "BookingCode chi dung de tra cuu manifest; check-in/check-out van dung ticketCode hoac qrToken cua tung hanh khach."));
+
+        group.MapGet(GetCustomBookingManifestByQrToken, "manifest/qr/{qrToken}")
+            .RequireAuthorization()
+            .WithSummary("Tra cuu manifest custom booking bang QR tong")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Nhan customBookingQrToken cua custom booking.",
+                "Admin/Manager/Staff dung khi quet QR tong de mo manifest doan.",
+                "Customer chi xem duoc custom booking cua minh.",
+                "QR tong chi mo manifest; check-in/check-out van dung ticketCode hoac qrToken cua tung hanh khach."));
+
+        group.MapGet(CustomBookingQrImage, "qr-image/{qrToken}")
+            .AllowAnonymous()
+            .WithSummary("Tao anh QR tong custom booking")
+            .WithDescription("Tra ve anh PNG QR cho customBookingQrToken de hien thi tren UI/email.");
+
+        group.MapPost(UpdateCustomBookingAttendance, "manifest/qr/{qrToken}/attendance")
+            .RequireAuthorization()
+            .WithSummary("Check-in/check-out custom booking bang QR tong")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin/Manager/Staff",
+                AttendanceExample,
+                "Dung sau khi quet QR tong custom booking.",
+                "action: CheckIn hoac CheckOut.",
+                "mode: All de BE tu chon tat ca ve hanh khach; Selected de chi xu ly ticketIds gui len.",
+                "API cap nhat tung ve rieng le va tra ve manifest moi sau khi xu ly.",
+                "Ve sai trang thai duoc tra ve trong skippedTickets, khong lam fail toan bo request."));
 
         group.MapGet(GetCustomBookings, string.Empty)
             .RequireAuthorization()
@@ -324,6 +361,33 @@ public sealed class CustomBookings : IEndpointGroup
         string bookingCode,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCustomBookingManifestByCodeQuery(bookingCode), ct));
+
+    private static async Task<IResult> GetCustomBookingManifestByQrToken(
+        ISender sender,
+        string qrToken,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCustomBookingManifestByQrTokenQuery(qrToken), ct));
+
+    private static IResult CustomBookingQrImage(string qrToken)
+    {
+        if (string.IsNullOrWhiteSpace(qrToken))
+        {
+            return Results.BadRequest(new { message = "qrToken is required." });
+        }
+
+        return Results.File(BuildQrPngBytes(qrToken.Trim()), "image/png");
+    }
+
+    private static async Task<IResult> UpdateCustomBookingAttendance(
+        ISender sender,
+        string qrToken,
+        CustomBookingAttendanceRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateCustomBookingAttendanceCommand(
+            qrToken,
+            request.Action,
+            request.Mode,
+            request.TicketIds), ct));
 
     private static async Task<IResult> UpdateAdminCustomBookingStatus(
         ISender sender,

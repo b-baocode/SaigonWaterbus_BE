@@ -1,0 +1,256 @@
+using FluentValidation.Results;
+using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
+using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
+
+namespace SaigonWaterbus.Application.CustomBookings;
+
+public sealed record UpdateCustomBookingAttendanceCommand(
+    string QrToken,
+    CustomBookingAttendanceAction Action,
+    CustomBookingAttendanceMode Mode,
+    IReadOnlyList<Guid>? TicketIds)
+    : IRequest<CustomBookingAttendanceResult>;
+
+public sealed class UpdateCustomBookingAttendanceCommandValidator
+    : AbstractValidator<UpdateCustomBookingAttendanceCommand>
+{
+    public UpdateCustomBookingAttendanceCommandValidator()
+    {
+        RuleFor(x => x.QrToken).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.Action).IsInEnum();
+        RuleFor(x => x.Mode).IsInEnum();
+        RuleFor(x => x.TicketIds)
+            .NotEmpty()
+            .When(x => x.Mode == CustomBookingAttendanceMode.Selected)
+            .WithMessage("ticketIds is required when mode is Selected.");
+        RuleForEach(x => x.TicketIds)
+            .NotEmpty()
+            .When(x => x.TicketIds is not null);
+    }
+}
+
+public sealed class UpdateCustomBookingAttendanceCommandHandler
+    : IRequestHandler<UpdateCustomBookingAttendanceCommand, CustomBookingAttendanceResult>
+{
+    private const string PaidBookingPaymentStatus = "Paid";
+
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public UpdateCustomBookingAttendanceCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<CustomBookingAttendanceResult> Handle(
+        UpdateCustomBookingAttendanceCommand request,
+        CancellationToken cancellationToken)
+    {
+        var currentUser = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        if (!AuthSupport.IsAdmin(currentUser)
+            && !AuthSupport.IsManager(currentUser)
+            && !AuthSupport.IsStaff(currentUser))
+        {
+            throw new ForbiddenAccessException();
+        }
+
+        var qrToken = request.QrToken.Trim();
+        var booking = await BuildBookingQuery()
+            .SingleOrDefaultAsync(
+                x => x.CustomBookingQrToken == qrToken,
+                cancellationToken)
+            ?? throw new NotFoundException("Custom booking not found.");
+
+        EnsureBookingCanUpdateAttendance(booking, request.Action);
+
+        var tickets = SelectTickets(booking, request);
+        if (tickets.Count == 0)
+        {
+            throw new ValidationException([new ValidationFailure("tickets",
+                "Custom booking chua co ve hanh khach de cap nhat.")]);
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        var skippedTickets = new List<CustomBookingAttendanceSkippedTicketDto>();
+        var updatedCount = 0;
+
+        foreach (var ticket in tickets)
+        {
+            var reason = GetSkipReason(ticket, request.Action);
+            if (reason is not null)
+            {
+                skippedTickets.Add(ToSkippedTicketDto(ticket, reason));
+                continue;
+            }
+
+            if (request.Action == CustomBookingAttendanceAction.CheckIn)
+            {
+                ticket.TicketStatus = TicketStatus.CheckedIn;
+                ticket.CheckedInAt = now;
+                ticket.CheckedInByUserId = currentUser.Id;
+                ticket.CheckedInByUser = currentUser;
+            }
+            else
+            {
+                ticket.TicketStatus = TicketStatus.CheckedOut;
+                ticket.CheckedOutAt = now;
+                ticket.CheckedOutByUserId = currentUser.Id;
+                ticket.CheckedOutByUser = currentUser;
+            }
+
+            updatedCount++;
+        }
+
+        if (request.Action == CustomBookingAttendanceAction.CheckOut)
+        {
+            CompleteBookingIfAllTicketsCheckedOut(booking);
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new CustomBookingAttendanceResult(
+            request.Action,
+            request.Mode,
+            tickets.Count,
+            updatedCount,
+            skippedTickets.Count,
+            skippedTickets,
+            CustomBookingManifestSupport.ToDto(booking));
+    }
+
+    private IQueryable<Booking> BuildBookingQuery() =>
+        CustomBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
+            .Include(x => x.Passengers)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.CheckedInByUser)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.CheckedOutByUser);
+
+    private static void EnsureBookingCanUpdateAttendance(
+        Booking booking,
+        CustomBookingAttendanceAction action)
+    {
+        if (booking.BookingStatus != BookingStatus.Confirmed)
+        {
+            throw new ValidationException([new ValidationFailure("booking",
+                action == CustomBookingAttendanceAction.CheckIn
+                    ? "Booking chua san sang de check-in."
+                    : "Booking khong san sang de check-out.")]);
+        }
+
+        if (action == CustomBookingAttendanceAction.CheckIn
+            && !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            && booking.RemainingAmount > 0)
+        {
+            throw new ValidationException([new ValidationFailure("payment",
+                "Booking chua thanh toan du de check-in.")]);
+        }
+    }
+
+    private static IReadOnlyList<Ticket> SelectTickets(
+        Booking booking,
+        UpdateCustomBookingAttendanceCommand request)
+    {
+        var passengerTickets = booking.Tickets
+            .Where(x => x.BookingPassengerId.HasValue)
+            .OrderBy(x => x.BookingPassenger?.FullName)
+            .ThenBy(x => x.TicketCode)
+            .ToList();
+
+        if (request.Mode == CustomBookingAttendanceMode.All)
+        {
+            return passengerTickets;
+        }
+
+        var selectedTicketIds = request.TicketIds!.Distinct().ToArray();
+        var ticketsById = passengerTickets.ToDictionary(x => x.Id);
+        var missingTicketIds = selectedTicketIds
+            .Where(x => !ticketsById.ContainsKey(x))
+            .ToArray();
+
+        if (missingTicketIds.Length > 0)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.TicketIds),
+                "Danh sach ticketIds co ve khong thuoc custom booking hoac khong phai ve hanh khach.")]);
+        }
+
+        return selectedTicketIds
+            .Select(x => ticketsById[x])
+            .ToList();
+    }
+
+    private static string? GetSkipReason(
+        Ticket ticket,
+        CustomBookingAttendanceAction action)
+    {
+        if (ticket.TicketStatus is TicketStatus.Cancelled or TicketStatus.Expired)
+        {
+            return "Ve khong con hieu luc.";
+        }
+
+        if (action == CustomBookingAttendanceAction.CheckIn)
+        {
+            return ticket.TicketStatus switch
+            {
+                TicketStatus.Active => null,
+                TicketStatus.CheckedIn => "Ve da check-in.",
+                TicketStatus.CheckedOut => "Ve da check-out.",
+                _ => "Ve khong the check-in."
+            };
+        }
+
+        if (ticket.TicketStatus == TicketStatus.CheckedOut || ticket.CheckedOutAt.HasValue)
+        {
+            return "Ve da check-out.";
+        }
+
+        if (ticket.TicketStatus != TicketStatus.CheckedIn || !ticket.CheckedInAt.HasValue)
+        {
+            return "Ve chua check-in nen chua the check-out.";
+        }
+
+        return null;
+    }
+
+    private static void CompleteBookingIfAllTicketsCheckedOut(Booking booking)
+    {
+        var hasRemainingUsableTicket = booking.Tickets.Any(x =>
+            x.TicketStatus != TicketStatus.Cancelled
+            && x.TicketStatus != TicketStatus.Expired
+            && x.TicketStatus != TicketStatus.CheckedOut);
+
+        if (!hasRemainingUsableTicket)
+        {
+            booking.BookingStatus = BookingStatus.Completed;
+        }
+    }
+
+    private static CustomBookingAttendanceSkippedTicketDto ToSkippedTicketDto(
+        Ticket ticket,
+        string reason) =>
+        new(
+            ticket.Id,
+            ticket.TicketCode,
+            ticket.BookingPassengerId,
+            ticket.BookingPassenger?.FullName,
+            ticket.TicketStatus.ToString(),
+            reason);
+}
