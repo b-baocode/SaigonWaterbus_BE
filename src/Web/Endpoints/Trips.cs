@@ -19,6 +19,18 @@ public sealed class Trips : IEndpointGroup
         }
         """;
 
+    private const string GenerateTripsExample =
+        """
+        {
+          "routeCode": "R01-BD-TD",
+          "boatCode": "BOAT-01",
+          "departureTimes": ["06:00:00", "08:00:00", "10:00:00"],
+          "fromDate": "2026-07-01",
+          "toDate": "2026-07-31",
+          "daysOfWeek": [1, 2, 3, 4, 5]
+        }
+        """;
+
     private const string UpdateStatusExample =
         """
         {
@@ -70,6 +82,19 @@ public sealed class Trips : IEndpointGroup
                 "capacity: so hanh khach toi da cua chuyen.",
                 "tripCode tu sinh: TR-{yyyyMMdd}-{routeCode}-{4 so ngau nhien}."));
 
+        group.MapPost(GenerateTrips, "generate")
+            .RequireAuthorization()
+            .WithSummary("Tao hang loat chuyen tau theo lich")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                GenerateTripsExample,
+                "routeCode, boatCode: bat buoc.",
+                "departureTimes: mang gio khoi hanh (gio Vietnam +07:00), dinh dang HH:mm:ss.",
+                "fromDate / toDate: khoang ngay tao chuyen (toi da 365 ngay).",
+                "daysOfWeek (optional): [0=CN, 1=T2, ..., 6=T7]. Bo trong = tat ca cac ngay.",
+                "Neu chuyen da ton tai (cung tuyen + cung gio), tu dong bo qua (skip).",
+                "Tra ve: { created, skipped, createdTripCodes }."));
+
         group.MapPatch(UpdateTripStatus, "{id:guid}/status")
             .RequireAuthorization()
             .WithSummary("Cap nhat trang thai chuyen tau")
@@ -110,6 +135,9 @@ public sealed class Trips : IEndpointGroup
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
 
     private static async Task<IResult> CreateTrip(ISender sender, CreateTripCommand command, CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> GenerateTrips(ISender sender, GenerateTripsCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> UpdateTripStatus(ISender sender, Guid id, UpdateTripStatusRequest req, CancellationToken ct) =>

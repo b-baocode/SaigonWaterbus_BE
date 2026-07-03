@@ -77,6 +77,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         await EnsureNoRouteDepartureConflictAsync(route.Id, request.DepartureTime, cancellationToken);
 
         Boat? boat = null;
+        List<Seat> activeSeats = [];
         var capacity = request.Capacity;
         if (!string.IsNullOrWhiteSpace(request.BoatCode))
         {
@@ -89,9 +90,11 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
                 throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
                     "Boat must be active and have configured seats.")]);
 
-            capacity = await _context.Set<Seat>()
-                .CountAsync(x => x.BoatId == boat.Id && x.IsActive, cancellationToken);
+            activeSeats = await _context.Set<Seat>()
+                .Where(x => x.BoatId == boat.Id && x.IsActive)
+                .ToListAsync(cancellationToken);
 
+            capacity = activeSeats.Count;
             if (capacity <= 0)
                 throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
                     "Boat has no active seats.")]);
@@ -110,6 +113,13 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         };
 
         _context.Set<Trip>().Add(trip);
+
+        if (activeSeats.Count > 0)
+        {
+            var tripSeats = activeSeats.Select(s => new TripSeat { TripId = trip.Id, SeatId = s.Id });
+            _context.Set<TripSeat>().AddRange(tripSeats);
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
         return new TripDetailDto(

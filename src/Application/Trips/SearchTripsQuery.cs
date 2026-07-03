@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Seats;
-using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -70,7 +69,8 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             .ToList();
         var seatRows = await _context.Set<Seat>()
             .Where(x => boatIds.Contains(x.BoatId))
-            .Select(x => new { x.BoatId, x.IsActive, x.SeatTypeCode })
+            .Include(x => x.SeatType)
+            .Select(x => new { x.BoatId, x.IsActive, x.SeatTypeCode, BasePriceFromDb = (decimal?)x.SeatType!.BasePrice })
             .ToListAsync(cancellationToken);
         var seatStats = seatRows
             .GroupBy(x => x.BoatId)
@@ -80,11 +80,14 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 {
                     ActiveSeatCount = g.Count(x => x.IsActive),
                     MinSeatPrice = g
-                        .Where(x => x.IsActive && SeatTypePricing.TryGetBasePrice(x.SeatTypeCode, out _))
-                        .Select(x => (decimal?)SeatTypePricing.GetBasePrice(x.SeatTypeCode))
+                        .Where(x => x.IsActive)
+                        .Select(x => x.BasePriceFromDb ?? (SeatTypePricing.TryGetBasePrice(x.SeatTypeCode, out var p) ? p : (decimal?)null))
+                        .Where(p => p.HasValue)
                         .Min()
                 });
-        var minModifier = TicketTypeCatalog.ActiveDefinitions.Min(x => x.PriceModifier);
+        var minModifier = await _context.Set<TicketType>()
+            .Where(x => x.IsActive)
+            .MinAsync(x => x.PriceModifier, cancellationToken);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
