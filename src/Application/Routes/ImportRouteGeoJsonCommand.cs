@@ -90,6 +90,8 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             existingStations,
             cancellationToken);
 
+        await MergeWaterwaySegments(parsedGeoJson.WaterwaySegments, cancellationToken);
+
         await _context.SaveChangesAsync(cancellationToken);
 
         return new GeoJsonImportResultDto(
@@ -100,6 +102,43 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             routeImportResult.RoutesUpdated,
             routeImportResult.RouteStopsCreated,
             routeImportResult.RouteStopsUpdated);
+    }
+
+    private async Task MergeWaterwaySegments(
+        IReadOnlyList<GeoJsonWaterwaySegmentCandidate> incoming,
+        CancellationToken cancellationToken)
+    {
+        var incomingOsmIds = incoming
+            .Where(s => !string.IsNullOrWhiteSpace(s.OsmId))
+            .Select(s => s.OsmId)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var incomingNameOnlyWaterways = incoming
+            .Where(s => string.IsNullOrWhiteSpace(s.OsmId) && !string.IsNullOrWhiteSpace(s.Name))
+            .Select(s => s.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var toRemove = await _context.Set<WaterwaySegment>()
+            .Where(seg =>
+                (seg.OsmId != null && incomingOsmIds.Contains(seg.OsmId)) ||
+                (seg.OsmId == null && seg.WaterwayName != null && incomingNameOnlyWaterways.Contains(seg.WaterwayName)))
+            .ToListAsync(cancellationToken);
+
+        foreach (var seg in toRemove)
+            _context.Set<WaterwaySegment>().Remove(seg);
+
+        foreach (var candidate in incoming)
+        {
+            _context.Set<WaterwaySegment>().Add(new WaterwaySegment
+            {
+                OsmId = candidate.OsmId,
+                WaterwayName = candidate.Name?.Trim(),
+                WaterwayType = candidate.WaterwayType,
+                SegmentOrder = candidate.SegmentOrder,
+                LengthKm = (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(candidate.Geometry), 2),
+                Geometry = candidate.Geometry
+            });
+        }
     }
 
     private async Task<RouteImportResult> UpsertRoutesAsync(
