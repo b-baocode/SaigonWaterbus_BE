@@ -295,8 +295,47 @@ public class CheckInTicketCommandTests
         DateTimeOffset? checkedInAt = null,
         DateTimeOffset? checkedOutAt = null)
     {
+        var boat = new Boat
+        {
+            Code = $"BOAT-{Guid.NewGuid():N}"[..20],
+            Name = "Waterbus Test",
+            SeatCount = 1,
+            NumberOfDecks = 1,
+            SeatsConfigured = true
+        };
+        var seat = new Seat
+        {
+            Boat = boat,
+            Code = "A1",
+            Deck = 1,
+            Row = "A",
+            Column = 1,
+            IsActive = true
+        };
+        var route = new Route
+        {
+            RouteCode = $"RT-{Guid.NewGuid():N}"[..20],
+            RouteName = "Test Route"
+        };
+        var trip = new Trip
+        {
+            Route = route,
+            Boat = boat,
+            TripCode = $"TR-{Guid.NewGuid():N}"[..20],
+            OperatingDate = new DateOnly(2030, 1, 1),
+            DepartureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
+            ArrivalTime = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero),
+            CapacitySnapshot = 1
+        };
+        var tripSeat = new TripSeat
+        {
+            Trip = trip,
+            Seat = seat,
+            Status = TripSeat.StatusBooked
+        };
         var booking = new Booking
         {
+            Trip = trip,
             BookingCode = $"BK-{Guid.NewGuid():N}"[..20],
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",
@@ -319,12 +358,14 @@ public class CheckInTicketCommandTests
         {
             Booking = booking,
             BookingPassenger = passenger,
+            TripSeat = tripSeat,
             UnitPrice = 10000
         };
         var ticket = new Ticket
         {
             Booking = booking,
             TicketItem = ticketItem,
+            TicketItemId = ticketItem.Id,
             TicketCode = $"TK{Guid.NewGuid():N}"[..20],
             QrToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()),
             TicketStatus = ticketStatus,

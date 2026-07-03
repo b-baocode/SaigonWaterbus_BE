@@ -14,5 +14,5 @@ public class TicketItem : BaseGuidEntity
     public BookingPassenger BookingPassenger { get; set; } = null!;
     public TripSeat? TripSeat { get; set; }
     public TicketType? TicketType { get; set; }
-    public Ticket? Ticket { get; set; }
+    public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
 }

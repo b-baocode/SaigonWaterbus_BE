@@ -31,26 +31,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 name: "IX_booking_passengers_seat_id",
                 table: "booking_passengers");
 
-            migrationBuilder.DropColumn(
-                name: "date_of_birth",
-                table: "booking_passengers");
-
-            migrationBuilder.DropColumn(
-                name: "identity_number",
-                table: "booking_passengers");
-
-            migrationBuilder.DropColumn(
-                name: "seat_code",
-                table: "booking_passengers");
-
-            migrationBuilder.DropColumn(
-                name: "seat_id",
-                table: "booking_passengers");
-
-            migrationBuilder.DropColumn(
-                name: "unit_price",
-                table: "booking_passengers");
-
             migrationBuilder.RenameColumn(
                 name: "booking_passenger_id",
                 table: "tickets",
@@ -186,6 +166,52 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         principalColumn: "ticket_type_id",
                         onDelete: ReferentialAction.SetNull);
                 });
+
+            migrationBuilder.Sql(
+                @"INSERT INTO ticket_items (ticket_item_id, booking_id, booking_passenger_id, seat_id, unit_price, ticket_type_id)
+                  SELECT
+                      bp.booking_passenger_id,
+                      bp.booking_id,
+                      bp.booking_passenger_id,
+                      bp.seat_id,
+                      bp.unit_price,
+                      ticket_type.ticket_type_id
+                  FROM booking_passengers AS bp
+                  LEFT JOIN LATERAL (
+                      SELECT t.ticket_type_id
+                      FROM tickets AS t
+                      WHERE t.ticket_item_id = bp.booking_passenger_id
+                      ORDER BY
+                          CASE WHEN t.status NOT IN ('Cancelled', 'Expired') THEN 0 ELSE 1 END,
+                          t.issued_at DESC
+                      LIMIT 1
+                  ) AS ticket_type ON TRUE
+                  ON CONFLICT (ticket_item_id) DO NOTHING;");
+
+            migrationBuilder.Sql(
+                @"UPDATE booking_passengers
+                  SET birth_year = EXTRACT(YEAR FROM date_of_birth)::integer
+                  WHERE date_of_birth IS NOT NULL;");
+
+            migrationBuilder.DropColumn(
+                name: "date_of_birth",
+                table: "booking_passengers");
+
+            migrationBuilder.DropColumn(
+                name: "identity_number",
+                table: "booking_passengers");
+
+            migrationBuilder.DropColumn(
+                name: "seat_code",
+                table: "booking_passengers");
+
+            migrationBuilder.DropColumn(
+                name: "seat_id",
+                table: "booking_passengers");
+
+            migrationBuilder.DropColumn(
+                name: "unit_price",
+                table: "booking_passengers");
 
             migrationBuilder.CreateIndex(
                 name: "IX_tickets_booking_id",

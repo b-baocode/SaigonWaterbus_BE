@@ -62,8 +62,8 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.TicketItem)
-            .WithOne(x => x.Ticket)
-            .HasForeignKey<Ticket>(x => x.TicketItemId)
+            .WithMany(x => x.Tickets)
+            .HasForeignKey(x => x.TicketItemId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.CheckedInByUser)

@@ -47,6 +47,29 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 table: "trip_seats",
                 columns: new[] { "trip_id", "seat_id" },
                 unique: true);
+
+            migrationBuilder.Sql(
+                @"INSERT INTO trip_seats (trip_seat_id, trip_id, seat_id, status)
+                  SELECT
+                      md5(t.trip_id::text || ':' || s.seat_id::text)::uuid,
+                      t.trip_id,
+                      s.seat_id,
+                      CASE
+                          WHEN EXISTS (
+                              SELECT 1
+                              FROM bookings AS b
+                              INNER JOIN booking_passengers AS bp ON bp.booking_id = b.booking_id
+                              WHERE b.trip_id = t.trip_id
+                                AND bp.seat_id = s.seat_id
+                                AND b.status NOT IN ('Cancelled', 'Expired', 'Refunded')
+                          ) THEN 'Booked'
+                          ELSE 'Available'
+                      END
+                  FROM trips AS t
+                  INNER JOIN seats AS s ON s.boat_id = t.boat_id
+                  WHERE t.boat_id IS NOT NULL
+                    AND s.is_active
+                  ON CONFLICT (trip_id, seat_id) DO NOTHING;");
         }
 
         /// <inheritdoc />
