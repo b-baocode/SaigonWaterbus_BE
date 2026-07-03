@@ -122,7 +122,11 @@ public sealed class GenerateSeatsRequestUseCase
             boat,
             request.Decks.Select(x => new DeckMatrixConfigDto(x.DeckNumber, x.RowCount, x.ColumnCount)).ToArray());
 
-        var seats = CreateSeats(boat, request.Decks);
+        var seatTypeById = await _context.Set<SeatType>()
+            .Where(st => st.IsActive)
+            .ToDictionaryAsync(st => st.Code, cancellationToken);
+
+        var seats = CreateSeats(boat, request.Decks, seatTypeById);
         if (seats.Count != boat.SeatCount)
         {
             throw AuthSupport.CreateValidationException(
@@ -141,7 +145,7 @@ public sealed class GenerateSeatsRequestUseCase
             CreateDeckLayouts(boat, request.Decks));
     }
 
-    private static List<Seat> CreateSeats(Boat boat, IReadOnlyCollection<DeckConfigDto> decks)
+    private static List<Seat> CreateSeats(Boat boat, IReadOnlyCollection<DeckConfigDto> decks, Dictionary<string, SeatType> seatTypeById)
     {
         var seats = new List<Seat>();
         var occupiedCells = new HashSet<(int Deck, int Row, int Column)>();
@@ -174,11 +178,11 @@ public sealed class GenerateSeatsRequestUseCase
                             continue;
                         }
 
-                        AddSeat(boat, deck.DeckNumber, row, column, cell.SeatTypeCode, seats, occupiedCells);
+                        AddSeat(boat, deck.DeckNumber, row, column, cell.SeatTypeCode, seats, occupiedCells, seatTypeById);
                         continue;
                     }
 
-                    AddSeat(boat, deck.DeckNumber, row, column, null, seats, occupiedCells);
+                    AddSeat(boat, deck.DeckNumber, row, column, null, seats, occupiedCells, seatTypeById);
                 }
             }
         }
@@ -199,7 +203,8 @@ public sealed class GenerateSeatsRequestUseCase
         int column,
         string? seatTypeCode,
         List<Seat> seats,
-        HashSet<(int Deck, int Row, int Column)> occupiedCells)
+        HashSet<(int Deck, int Row, int Column)> occupiedCells,
+        Dictionary<string, SeatType> seatTypeByCode)
     {
         if (!occupiedCells.Add((deckNumber, row, column)))
         {
@@ -207,12 +212,15 @@ public sealed class GenerateSeatsRequestUseCase
         }
 
         var rowLabel = SeatSupport.RowLabel(row - 1);
+        var normalizedCode = SeatSupport.NormalizeSeatTypeCode(seatTypeCode, boat.SeatSetupType);
+        seatTypeByCode.TryGetValue(normalizedCode, out var seatType);
+
         seats.Add(new Seat
         {
             BoatId = boat.Id,
             Code = SeatSupport.SeatCode(deckNumber, rowLabel, column),
-            SeatTypeCode = SeatSupport.NormalizeSeatTypeCode(seatTypeCode, boat.SeatSetupType),
-            SeatTypeName = SeatSupport.NormalizeSeatTypeName(seatTypeCode, boat.SeatSetupType),
+            SeatTypeCode = normalizedCode,
+            SeatTypeId = seatType?.Id,
             Deck = deckNumber,
             Row = rowLabel,
             Column = column,

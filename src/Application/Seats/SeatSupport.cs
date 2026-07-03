@@ -82,7 +82,7 @@ internal static class SeatSupport
         new(
             seat.Id,
             seat.Code,
-            BuildSeatTypeDto(seat.SeatTypeCode),
+            BuildSeatTypeDto(seat),
             seat.Deck,
             seat.Row,
             seat.Column,
@@ -98,7 +98,7 @@ internal static class SeatSupport
             .ToDictionary(x => x.DeckNumber);
 
         var previewSeatType = previewEmptyCellsAsSeats
-            ? BuildSeatTypeDto(DefaultSeatTypeCode(boat.SeatSetupType))
+            ? BuildSeatTypeDtoFromCode(DefaultSeatTypeCode(boat.SeatSetupType))
             : null;
 
         var seatsByDeck = seats
@@ -251,8 +251,16 @@ internal static class SeatSupport
         return cells;
     }
 
-    private static SeatTypeDto BuildSeatTypeDto(string seatTypeCode) =>
+    public static SeatTypeDto BuildSeatTypeDto(Seat seat) =>
+        seat.SeatType is { } st
+            ? new(st.Id, st.Code, st.Name, st.BasePrice)
+            : BuildSeatTypeDtoFromCode(seat.SeatTypeCode);
+
+    public static SeatTypeDto BuildSeatTypeDtoFromCode(string seatTypeCode) =>
         new(Guid.Empty, seatTypeCode, SeatTypeNameFromCode(seatTypeCode), SeatTypePricing.GetBasePrice(seatTypeCode));
+
+    public static decimal GetBasePrice(Seat seat) =>
+        seat.SeatType?.BasePrice ?? SeatTypePricing.GetBasePrice(seat.SeatTypeCode);
 
     private static int RowIndex(string row) =>
         string.IsNullOrWhiteSpace(row)

@@ -23,13 +23,10 @@ public sealed class SeatConfiguration : IEntityTypeConfiguration<Seat>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(x => x.SeatTypeId).HasColumnName("seat_type_id");
+
         builder.Property(x => x.SeatTypeCode)
             .HasColumnName("seat_type_code")
-            .HasMaxLength(30)
-            .IsRequired();
-
-        builder.Property(x => x.SeatTypeName)
-            .HasColumnName("seat_type")
             .HasMaxLength(30)
             .IsRequired();
 
@@ -63,5 +60,10 @@ public sealed class SeatConfiguration : IEntityTypeConfiguration<Seat>
             .HasForeignKey(x => x.BoatId)
             .OnDelete(DeleteBehavior.Cascade)
             .IsRequired();
+
+        builder.HasOne(x => x.SeatType)
+            .WithMany(st => st.Seats)
+            .HasForeignKey(x => x.SeatTypeId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 }
