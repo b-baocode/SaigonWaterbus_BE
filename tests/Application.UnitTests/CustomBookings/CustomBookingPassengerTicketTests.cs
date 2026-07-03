@@ -52,7 +52,6 @@ public class CustomBookingPassengerTicketTests
         tickets.Length.ShouldBe(2);
         tickets.All(x => x.BookingPassengerId.HasValue).ShouldBeTrue();
         tickets.Select(x => x.QrToken).Distinct().Count().ShouldBe(2);
-        tickets.ShouldAllBe(x => x.TicketTypeCode == "CUSTOM_BOOKING");
 
         var boardingPass = notificationSender.BoardingPasses.Single();
         var attachment = boardingPass.Attachments.ShouldNotBeNull().Single();

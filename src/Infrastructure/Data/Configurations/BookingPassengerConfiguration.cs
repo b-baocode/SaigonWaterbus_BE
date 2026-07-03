@@ -16,6 +16,7 @@ public sealed class BookingPassengerConfiguration : IEntityTypeConfiguration<Boo
         builder.Property(x => x.FullName).HasColumnName("full_name").HasMaxLength(150).IsRequired();
         builder.Property(x => x.PhoneNumber).HasColumnName("phone_number").HasMaxLength(30);
         builder.Property(x => x.Email).HasColumnName("email").HasMaxLength(255);
+        builder.Property(x => x.DateOfBirth).HasColumnName("date_of_birth");
         builder.Property(x => x.BirthYear).HasColumnName("birth_year");
         builder.Property(x => x.Gender).HasColumnName("gender").HasMaxLength(20);
         builder.Property(x => x.Nationality).HasColumnName("nationality").HasMaxLength(100);

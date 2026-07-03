@@ -351,9 +351,7 @@ public class CheckInTicketCommandTests
             Booking = booking,
             FullName = passengerName,
             PhoneNumber = "0900000002",
-            PassengerType = "ADULT",
-            SeatCode = "A2",
-            UnitPrice = 10000
+            PassengerType = "ADULT"
         };
         var ticket = new Ticket
         {
@@ -361,8 +359,6 @@ public class CheckInTicketCommandTests
             BookingPassenger = passenger,
             TicketCode = $"TK{Guid.NewGuid():N}"[..20],
             QrToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()),
-            TicketTypeCode = "ADULT",
-            TicketTypeName = "Ve nguoi lon",
             TicketStatus = ticketStatus,
             IssuedAt = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
             CheckedInAt = checkedInAt,

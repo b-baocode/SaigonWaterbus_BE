@@ -38,6 +38,7 @@ internal static class CustomBookingPassengerSupport
         {
             BookingId = bookingId,
             FullName = request.FullName.Trim(),
+            DateOfBirth = dateOfBirth,
             BirthYear = dateOfBirth.Year,
             PassengerType = ResolvePassengerType(dateOfBirth, today)
         };
