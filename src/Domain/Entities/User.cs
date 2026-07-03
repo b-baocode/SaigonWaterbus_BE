@@ -46,6 +46,8 @@ public class User : BaseAuditableEntity
 
     public DateTimeOffset? FailedLoginWindowStartedAt { get; set; }
 
+    public int PointBalance { get; set; } = 0;
+
     public ICollection<OtpChallenge> OtpChallenges { get; set; } = new List<OtpChallenge>();
 
     public ICollection<RefreshToken> RefreshTokens { get; set; } = new List<RefreshToken>();

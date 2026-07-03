@@ -114,6 +114,11 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.FailedLoginWindowStartedAt)
             .HasColumnName("failed_login_window_started_at");
 
+        builder.Property(x => x.PointBalance)
+            .HasColumnName("point_balance")
+            .IsRequired();
+
+
         builder.Property(x => x.Created)
             .HasColumnName("created_at");
 

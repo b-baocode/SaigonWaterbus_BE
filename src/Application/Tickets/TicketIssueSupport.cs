@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Security.Cryptography;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -11,9 +10,6 @@ namespace SaigonWaterbus.Application.Tickets;
 
 internal static class TicketIssueSupport
 {
-    private const string PassengerTicketTypeCode = "PASSENGER";
-    private const string PassengerTicketTypeName = "Ve hanh khach";
-
     public static async Task<IReadOnlyList<Ticket>> EnsureRegularBookingPassengerTicketsAsync(
         IApplicationDbContext context,
         Booking booking,
@@ -31,38 +27,35 @@ internal static class TicketIssueSupport
             return [];
         }
 
-        var passengers = await context.Set<BookingPassenger>()
+        var ticketItems = await context.Set<TicketItem>()
             .Where(x => x.BookingId == booking.Id)
             .ToListAsync(cancellationToken);
-        if (passengers.Count == 0)
+        if (ticketItems.Count == 0)
         {
             return [];
         }
 
-        var passengerIds = passengers.Select(x => x.Id).ToArray();
+        var ticketItemIds = ticketItems.Select(x => x.Id).ToArray();
         var existingTickets = await context.Tickets
             .Where(x => x.BookingId == booking.Id
-                     && x.BookingPassengerId.HasValue
-                     && passengerIds.Contains(x.BookingPassengerId.Value))
+                     && x.TicketItemId.HasValue
+                     && ticketItemIds.Contains(x.TicketItemId.Value))
             .ToListAsync(cancellationToken);
-        var ticketedPassengerIds = existingTickets
-            .Where(x => x.BookingPassengerId.HasValue)
-            .Select(x => x.BookingPassengerId!.Value)
+        var ticketedItemIds = existingTickets
+            .Where(x => x.TicketItemId.HasValue)
+            .Select(x => x.TicketItemId!.Value)
             .ToHashSet();
 
         var now = timeProvider.GetUtcNow();
         var createdTickets = new List<Ticket>();
-        foreach (var passenger in passengers.Where(x => !ticketedPassengerIds.Contains(x.Id)))
+        foreach (var item in ticketItems.Where(x => !ticketedItemIds.Contains(x.Id)))
         {
-            var (ticketTypeCode, ticketTypeName) = ResolveTicketType(passenger.PassengerType);
             var ticket = new Ticket
             {
                 BookingId = booking.Id,
-                BookingPassengerId = passenger.Id,
+                TicketItemId = item.Id,
                 TicketCode = await GenerateTicketCodeAsync(context, now, cancellationToken),
                 QrToken = await GenerateQrTokenAsync(context, cancellationToken),
-                TicketTypeCode = ticketTypeCode,
-                TicketTypeName = ticketTypeName,
                 TicketStatus = TicketStatus.Active,
                 IssuedAt = now
             };
@@ -119,20 +112,4 @@ internal static class TicketIssueSupport
         throw new ValidationException([new ValidationFailure("qrToken", "Khong the tao QR token duy nhat.")]);
     }
 
-    private static (string Code, string Name) ResolveTicketType(string? passengerType)
-    {
-        if (string.IsNullOrWhiteSpace(passengerType))
-        {
-            return (PassengerTicketTypeCode, PassengerTicketTypeName);
-        }
-
-        var ticketType = TicketTypeCatalog.FindActiveByCode(passengerType);
-        if (ticketType is not null)
-        {
-            return (ticketType.TicketTypeCode, ticketType.TicketTypeName);
-        }
-
-        var code = TicketTypeCatalog.NormalizeCode(passengerType);
-        return (code, code);
-    }
 }

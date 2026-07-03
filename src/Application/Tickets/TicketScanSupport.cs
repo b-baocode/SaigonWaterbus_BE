@@ -14,7 +14,13 @@ internal static class TicketScanSupport
     {
         var normalizedCodeOrToken = codeOrToken.Trim();
         return await context.Tickets
-            .Include(x => x.BookingPassenger)
+            .Include(x => x.TicketItem)
+                .ThenInclude(x => x!.BookingPassenger)
+            .Include(x => x.TicketItem)
+                .ThenInclude(x => x!.TripSeat)
+                    .ThenInclude(x => x!.Seat)
+            .Include(x => x.TicketItem)
+                .ThenInclude(x => x!.TicketType)
             .Include(x => x.CheckedInByUser)
             .Include(x => x.CheckedOutByUser)
             .Include(x => x.Booking)
@@ -72,14 +78,15 @@ internal static class TicketScanSupport
 
     private static TicketScanDto ToCustomBookingScanDto(Ticket ticket, Booking booking)
     {
-        var ticketPassenger = ResolveTicketPassenger(ticket, booking.Passengers);
+        var ticketPassenger = ticket.TicketItem?.BookingPassenger;
+        var seatCode = ticket.TicketItem?.TripSeat?.Seat?.Code;
 
         return new TicketScanDto(
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
-            ticket.TicketTypeCode,
-            ticket.TicketTypeName,
+            ticket.TicketItem?.TicketType?.Code,
+            ticket.TicketItem?.TicketType?.Name,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
             ticket.CheckedInAt,
@@ -109,11 +116,11 @@ internal static class TicketScanSupport
             booking.Boat?.Name,
             booking.FromStation?.StationName,
             booking.ToStation?.StationName,
-            ticketPassenger?.SeatCode,
+            seatCode,
             ToPassengerDtoOrNull(ticketPassenger),
             booking.Passengers
                 .OrderBy(x => x.FullName)
-                .Select(ToPassengerDto)
+                .Select(p => ToPassengerDto(p))
                 .ToList());
     }
 
@@ -124,14 +131,15 @@ internal static class TicketScanSupport
             .ToArray() ?? [];
         var fromStop = stops.FirstOrDefault();
         var toStop = stops.LastOrDefault();
-        var ticketPassenger = ResolveTicketPassenger(ticket, booking.Passengers);
+        var ticketPassenger = ticket.TicketItem?.BookingPassenger;
+        var seatCode = ticket.TicketItem?.TripSeat?.Seat?.Code;
 
         return new TicketScanDto(
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
-            ticket.TicketTypeCode,
-            ticket.TicketTypeName,
+            ticket.TicketItem?.TicketType?.Code,
+            ticket.TicketItem?.TicketType?.Name,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
             ticket.CheckedInAt,
@@ -161,21 +169,13 @@ internal static class TicketScanSupport
             booking.Trip?.Boat?.Name,
             fromStop?.Station.StationName,
             toStop?.Station.StationName,
-            ticketPassenger?.SeatCode,
+            seatCode,
             ToPassengerDtoOrNull(ticketPassenger),
             booking.Passengers
                 .OrderBy(x => x.FullName)
-                .Select(ToPassengerDto)
+                .Select(p => ToPassengerDto(p))
                 .ToList());
     }
-
-    private static BookingPassenger? ResolveTicketPassenger(
-        Ticket ticket,
-        IEnumerable<BookingPassenger> passengers) =>
-        ticket.BookingPassenger
-        ?? (ticket.BookingPassengerId.HasValue
-            ? passengers.FirstOrDefault(x => x.Id == ticket.BookingPassengerId.Value)
-            : null);
 
     private static TicketScanPassengerDto? ToPassengerDtoOrNull(BookingPassenger? passenger) =>
         passenger is null ? null : ToPassengerDto(passenger);
@@ -186,7 +186,7 @@ internal static class TicketScanSupport
             passenger.FullName,
             passenger.PhoneNumber,
             passenger.Email,
-            passenger.DateOfBirth,
+            passenger.BirthYear,
             passenger.PassengerType,
-            passenger.SeatCode);
+            null);
 }

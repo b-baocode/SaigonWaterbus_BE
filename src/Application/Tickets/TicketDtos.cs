@@ -6,8 +6,10 @@ public sealed record TicketScanDto(
     Guid TicketId,
     string TicketCode,
     string QrToken,
-    string TicketTypeCode,
-    string TicketTypeName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TicketTypeCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TicketTypeName,
     string TicketStatus,
     DateTimeOffset IssuedAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -69,7 +71,7 @@ public sealed record TicketScanPassengerDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? Email,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateOnly? DateOfBirth,
+    int? BirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
