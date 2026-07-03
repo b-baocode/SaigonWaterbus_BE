@@ -262,7 +262,7 @@ public sealed record CustomBookingPassengerDto(
     Guid PassengerId,
     string FullName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    int? BirthYear,
+    DateOnly? DateOfBirth,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType);
 
