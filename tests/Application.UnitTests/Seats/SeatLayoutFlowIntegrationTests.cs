@@ -46,7 +46,7 @@ public class SeatLayoutFlowIntegrationTests
         };
         var seats = new List<Seat>
         {
-            Seat(boat.Id, "1-A1", 1, "A", 1, "CABIN", "Cabin")
+            Seat(boat.Id, "1-A1", 1, "A", 1, "CABIN")
         };
 
         var dto = SeatSupport.CreateBoatSeatsDto(boat, seats);
@@ -60,8 +60,7 @@ public class SeatLayoutFlowIntegrationTests
         int deck,
         string row,
         int column,
-        string seatTypeCode = "STANDARD",
-        string seatTypeName = "Standard") =>
+        string seatTypeCode = "STANDARD") =>
         new()
         {
             Id = Guid.NewGuid(),
@@ -71,7 +70,6 @@ public class SeatLayoutFlowIntegrationTests
             Row = row,
             Column = column,
             SeatTypeCode = seatTypeCode,
-            SeatTypeName = seatTypeName,
             IsActive = true
         };
 }

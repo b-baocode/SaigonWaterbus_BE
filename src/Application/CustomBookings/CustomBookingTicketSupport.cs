@@ -1,7 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Tickets;
-using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -60,8 +59,6 @@ internal static class CustomBookingTicketSupport
                 BookingPassenger = passenger,
                 TicketCode = await TicketIssueSupport.GenerateTicketCodeAsync(context, now, cancellationToken),
                 QrToken = await TicketIssueSupport.GenerateQrTokenAsync(context, cancellationToken),
-                TicketTypeCode = TicketTypeCatalog.CustomBookingTicketTypeCode,
-                TicketTypeName = TicketTypeCatalog.CustomBookingTicketTypeName,
                 TicketStatus = TicketStatus.Active,
                 IssuedAt = now
             };
@@ -123,8 +120,6 @@ internal static class CustomBookingTicketSupport
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
-            ticket.TicketTypeCode,
-            ticket.TicketTypeName,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
             ticket.CheckedInAt,

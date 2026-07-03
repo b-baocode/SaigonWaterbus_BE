@@ -16,14 +16,12 @@ public sealed class BookingPassengerConfiguration : IEntityTypeConfiguration<Boo
         builder.Property(x => x.FullName).HasColumnName("full_name").HasMaxLength(150).IsRequired();
         builder.Property(x => x.PhoneNumber).HasColumnName("phone_number").HasMaxLength(30);
         builder.Property(x => x.Email).HasColumnName("email").HasMaxLength(255);
-        builder.Property(x => x.DateOfBirth).HasColumnName("date_of_birth");
+        builder.Property(x => x.BirthYear).HasColumnName("birth_year");
+        builder.Property(x => x.Gender).HasColumnName("gender").HasMaxLength(20);
+        builder.Property(x => x.Nationality).HasColumnName("nationality").HasMaxLength(100);
         builder.Property(x => x.PassengerType).HasColumnName("passenger_type").HasMaxLength(30);
-        builder.Property(x => x.SeatId).HasColumnName("seat_id");
-        builder.Property(x => x.SeatCode).HasColumnName("seat_code").HasMaxLength(30);
-        builder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(12,2)").IsRequired();
-        builder.Property(x => x.IdentityNumber).HasColumnName("identity_number").HasMaxLength(50);
+        builder.Property(x => x.Note).HasColumnName("note").HasMaxLength(500);
 
         builder.HasOne(x => x.Booking).WithMany(x => x.Passengers).HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
-        builder.HasOne(x => x.Seat).WithMany().HasForeignKey(x => x.SeatId).OnDelete(DeleteBehavior.SetNull);
     }
 }

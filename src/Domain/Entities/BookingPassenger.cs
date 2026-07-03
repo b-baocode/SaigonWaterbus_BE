@@ -8,14 +8,12 @@ public class BookingPassenger : BaseGuidEntity
     public string FullName { get; set; } = null!;
     public string? PhoneNumber { get; set; }
     public string? Email { get; set; }
-    public DateOnly? DateOfBirth { get; set; }
+    public int? BirthYear { get; set; }
+    public string? Gender { get; set; }
+    public string? Nationality { get; set; }
     public string? PassengerType { get; set; }
-    public Guid? SeatId { get; set; }
-    public string? SeatCode { get; set; }
-    public decimal UnitPrice { get; set; }
-    public string? IdentityNumber { get; set; }
+    public string? Note { get; set; }
 
     public Booking Booking { get; set; } = null!;
-    public Seat? Seat { get; set; }
-    public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
+    public ICollection<TicketItem> TicketItems { get; set; } = new List<TicketItem>();
 }

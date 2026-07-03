@@ -38,7 +38,7 @@ internal static class CustomBookingPassengerSupport
         {
             BookingId = bookingId,
             FullName = request.FullName.Trim(),
-            DateOfBirth = dateOfBirth,
+            BirthYear = dateOfBirth.Year,
             PassengerType = ResolvePassengerType(dateOfBirth, today)
         };
     }
@@ -47,7 +47,7 @@ internal static class CustomBookingPassengerSupport
         new(
             passenger.Id,
             passenger.FullName,
-            passenger.DateOfBirth,
+            passenger.BirthYear,
             passenger.PassengerType);
 
     public static int CountAdults(IEnumerable<BookingPassenger> passengers) =>

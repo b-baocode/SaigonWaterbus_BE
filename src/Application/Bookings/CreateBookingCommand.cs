@@ -8,6 +8,7 @@ using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
+using TicketTypeEntity = SaigonWaterbus.Domain.Entities.TicketType;
 
 namespace SaigonWaterbus.Application.Bookings;
 
@@ -17,7 +18,11 @@ public sealed record BookingItemRequest(
     string FromStationCode,
     string ToStationCode,
     string PassengerName,
-    string? PassengerPhone);
+    string? PassengerPhone,
+    int? BirthYear,
+    string? Gender,
+    string? Nationality,
+    string? Note);
 
 public sealed record CreateBookingResult(
     Guid BookingId,
@@ -101,10 +106,10 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             .Distinct()
             .ToList();
 
-        var ticketTypesByCode = requestedTicketCodes
-            .Select(TicketTypeCatalog.FindActiveByCode)
-            .Where(x => x is not null)
-            .ToDictionary(x => x!.TicketTypeCode, x => x!);
+        var ticketTypesByCode = await _context.Set<TicketTypeEntity>()
+            .AsNoTracking()
+            .Where(x => requestedTicketCodes.Contains(x.Code) && x.IsActive)
+            .ToDictionaryAsync(x => x.Code, cancellationToken);
 
         var missingTicket = requestedTicketCodes.FirstOrDefault(c => !ticketTypesByCode.ContainsKey(c));
         if (missingTicket is not null)
@@ -124,32 +129,42 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         var seatsByCode = await _context.Set<Seat>()
             .Where(x => x.BoatId == trip.BoatId.Value && requestedSeatCodes.Contains(x.Code))
+            .Include(x => x.SeatType)
             .ToDictionaryAsync(x => x.Code, cancellationToken);
 
         var missingSeat = requestedSeatCodes.FirstOrDefault(x => !seatsByCode.ContainsKey(x));
         if (missingSeat is not null)
             throw new NotFoundException($"Seat '{missingSeat}' not found on this trip boat.");
 
-        var invalidSeat = seatsByCode.Values.FirstOrDefault(x => !x.IsActive
-            || !SeatTypePricing.TryGetBasePrice(x.SeatTypeCode, out _));
+        var invalidSeat = seatsByCode.Values.FirstOrDefault(x => !x.IsActive);
         if (invalidSeat is not null)
             throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
                 $"Seat '{invalidSeat.Code}' is not available for booking.")]);
 
         var requestedSeatIds = seatsByCode.Values.Select(x => x.Id).ToList();
-        var occupiedSeatIds = await _context.Set<BookingPassenger>()
-            .Where(x => x.SeatId.HasValue
-                     && requestedSeatIds.Contains(x.SeatId.Value)
-                     && x.Booking.TripId == trip.Id
+        var tripSeatsBySeatId = await _context.Set<TripSeat>()
+            .Where(x => x.TripId == trip.Id && requestedSeatIds.Contains(x.SeatId))
+            .ToDictionaryAsync(x => x.SeatId, cancellationToken);
+
+        var missingSeatInTrip = seatsByCode.Values.FirstOrDefault(x => !tripSeatsBySeatId.ContainsKey(x.Id));
+        if (missingSeatInTrip is not null)
+            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                $"Seat '{missingSeatInTrip.Code}' is not available on this trip.")]);
+
+        var requestedTripSeatIds = tripSeatsBySeatId.Values.Select(x => x.Id).ToList();
+        var occupiedTripSeatIds = await _context.Set<TicketItem>()
+            .Where(x => x.TripSeatId.HasValue
+                     && requestedTripSeatIds.Contains(x.TripSeatId.Value)
                      && x.Booking.BookingStatus != BookingStatus.Cancelled
                      && x.Booking.BookingStatus != BookingStatus.Expired
                      && x.Booking.BookingStatus != BookingStatus.Refunded)
-            .Select(x => x.SeatId!.Value)
+            .Select(x => x.TripSeatId!.Value)
             .ToListAsync(cancellationToken);
 
-        if (occupiedSeatIds.Count > 0)
+        if (occupiedTripSeatIds.Count > 0)
         {
-            var occupiedSeat = seatsByCode.Values.First(x => occupiedSeatIds.Contains(x.Id));
+            var occupiedSeat = seatsByCode.Values.First(x =>
+                tripSeatsBySeatId.TryGetValue(x.Id, out var ts) && occupiedTripSeatIds.Contains(ts.Id));
             throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
                 $"Seat '{occupiedSeat.Code}' is already booked.")]);
         }
@@ -177,10 +192,12 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
                     $"Station '{fromCode}' must come before '{toCode}' on the route.")]);
 
+            var seat = seatsByCode[NormalizeSeatCode(item.SeatNumber)];
             resolvedItems.Add(new ResolvedItem(
                 item,
-                ticketTypesByCode[item.TicketTypeCode.Trim().ToUpperInvariant()],
-                seatsByCode[NormalizeSeatCode(item.SeatNumber)],
+                ticketTypesByCode[TicketTypeCatalog.NormalizeCode(item.TicketTypeCode)],
+                seat,
+                tripSeatsBySeatId[seat.Id],
                 fromStop,
                 toStop));
         }
@@ -215,8 +232,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         {
             var unitPrice = await _fareCalculator.CalculateAsync(
                 resolved.Seat.Id,
-                resolved.TicketType.TicketTypeId,
-                cancellationToken);
+                resolved.TicketType.Id,
+                cancellationToken,
+                trip.Id);
 
             itemPrices.Add((resolved, unitPrice));
         }
@@ -257,16 +275,29 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             TotalAmount = total
         };
 
-        booking.Passengers = itemPrices.Select(x => new BookingPassenger
+        foreach (var x in itemPrices)
         {
-            BookingId = booking.Id,
-            FullName = x.Resolved.Item.PassengerName.Trim(),
-            PhoneNumber = x.Resolved.Item.PassengerPhone?.Trim(),
-            PassengerType = x.Resolved.TicketType.TicketTypeCode,
-            SeatId = x.Resolved.Seat.Id,
-            SeatCode = x.Resolved.Seat.Code,
-            UnitPrice = x.UnitPrice
-        }).ToList();
+            var passenger = new BookingPassenger
+            {
+                BookingId = booking.Id,
+                FullName = x.Resolved.Item.PassengerName.Trim(),
+                PhoneNumber = x.Resolved.Item.PassengerPhone?.Trim(),
+                PassengerType = x.Resolved.TicketType.Code,
+                BirthYear = x.Resolved.Item.BirthYear,
+                Gender = x.Resolved.Item.Gender?.Trim(),
+                Nationality = x.Resolved.Item.Nationality?.Trim(),
+                Note = x.Resolved.Item.Note?.Trim()
+            };
+            booking.Passengers.Add(passenger);
+            booking.TicketItems.Add(new TicketItem
+            {
+                BookingId = booking.Id,
+                BookingPassenger = passenger,
+                TripSeatId = x.Resolved.TripSeat.Id,
+                UnitPrice = x.UnitPrice,
+                TicketTypeId = x.Resolved.TicketType.Id
+            });
+        }
 
         _context.Set<Booking>().Add(booking);
 
@@ -295,8 +326,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
     private sealed record ResolvedItem(
         BookingItemRequest Item,
-        TicketTypeDefinition TicketType,
+        TicketTypeEntity TicketType,
         Seat Seat,
+        TripSeat TripSeat,
         RouteStop FromStop,
         RouteStop ToStop);
 

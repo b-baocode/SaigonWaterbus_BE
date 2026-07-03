@@ -124,7 +124,7 @@ public class CompleteSeatSetupFlowIntegrationTests
         (await context.Seats
                 .Where(x => x.BoatId == boat.Id)
                 .ToListAsync())
-            .ShouldAllBe(x => x.SeatTypeName == "Standard");
+            .ShouldAllBe(x => x.SeatTypeCode == "STANDARD");
     }
 
     [Test]
@@ -166,9 +166,9 @@ public class CompleteSeatSetupFlowIntegrationTests
         var seats = await context.Seats
             .Where(x => x.BoatId == boat.Id)
             .ToListAsync();
-        seats.Count(x => x.SeatTypeName == "River").ShouldBe(1);
-        seats.Count(x => x.SeatTypeName == "Sky").ShouldBe(1);
-        seats.Count(x => x.SeatTypeName == "Cabin").ShouldBe(1);
+        seats.Count(x => x.SeatTypeCode == "RIVER").ShouldBe(1);
+        seats.Count(x => x.SeatTypeCode == "SKY").ShouldBe(1);
+        seats.Count(x => x.SeatTypeCode == "CABIN").ShouldBe(1);
     }
 
     [Test]

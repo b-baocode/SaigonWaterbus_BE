@@ -195,8 +195,6 @@ public sealed record CustomBookingTicketDto(
     Guid TicketId,
     string TicketCode,
     string QrToken,
-    string TicketTypeCode,
-    string TicketTypeName,
     string TicketStatus,
     DateTimeOffset IssuedAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -264,7 +262,7 @@ public sealed record CustomBookingPassengerDto(
     Guid PassengerId,
     string FullName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateOnly? DateOfBirth,
+    int? BirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType);
 

@@ -368,7 +368,7 @@ public class BoatSeatFlowIntegrationTests
             {
                 BoatId = boat.Id,
                 Code = SeatSupport.SeatCode(1, row, column),
-                SeatTypeName = SeatSupport.StandardSeatTypeName,
+                SeatTypeCode = "STANDARD",
                 Deck = 1,
                 Row = row,
                 Column = column,
