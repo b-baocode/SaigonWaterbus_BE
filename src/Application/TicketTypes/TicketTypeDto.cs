@@ -6,7 +6,5 @@ public sealed record TicketTypeDto(
     string TicketTypeName,
     string? Description,
     decimal PriceModifier,
-    int PointsEarnedRate,
     bool IsActive,
-    int DisplayOrder,
-    string Category);
+    IReadOnlyList<string>? AllowedSeatTypeCodes);
