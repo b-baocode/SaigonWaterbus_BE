@@ -21,7 +21,7 @@ public sealed class GetPromotionListQueryHandler : IRequestHandler<GetPromotionL
         }
 
         return await query
-            .OrderByDescending(p => p.Created)
+            .OrderByDescending(p => p.ValidFrom)
             .Select(p => new PromotionDto(
                 p.Id, p.PromotionCode, p.PromotionName, p.PromotionType,
                 p.DiscountValue, p.MinOrderValue, p.ValidFrom, p.ValidTo,

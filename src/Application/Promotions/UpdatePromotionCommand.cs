@@ -74,8 +74,8 @@ public sealed class UpdatePromotionCommandHandler : IRequestHandler<UpdatePromot
         promotion.PromotionName = request.PromotionName.Trim();
         promotion.DiscountValue = request.DiscountValue;
         promotion.MinOrderValue = request.MinOrderValue;
-        promotion.ValidFrom = request.ValidFrom;
-        promotion.ValidTo = request.ValidTo;
+        promotion.ValidFrom = request.ValidFrom.ToUniversalTime();
+        promotion.ValidTo = request.ValidTo.ToUniversalTime();
         promotion.UsageLimit = request.UsageLimit;
         promotion.AccountUsagePolicy = request.AccountUsagePolicy;
         promotion.Status = NormalizeStatus(request.Status);

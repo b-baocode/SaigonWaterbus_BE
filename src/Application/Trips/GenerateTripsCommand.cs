@@ -109,7 +109,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                 var departureTime = new DateTimeOffset(
                     date.Year, date.Month, date.Day,
                     time.Hour, time.Minute, 0,
-                    VietnamOffset);
+                    VietnamOffset).ToUniversalTime();
 
                 if (existingDepartures.Contains(departureTime))
                 {

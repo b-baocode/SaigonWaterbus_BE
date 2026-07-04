@@ -47,13 +47,14 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
 
-        var currentTime = request.DepartureTime;
+        var departureTime = request.DepartureTime.ToUniversalTime();
+        var currentTime = departureTime;
         var stopDtos = new List<TripStopDto>();
 
         foreach (var routeStop in route.RouteStops.OrderBy(rs => rs.StopOrder))
         {
             var scheduledArrival = routeStop.StopOrder == route.RouteStops.Min(rs => rs.StopOrder)
-                ? request.DepartureTime
+                ? departureTime
                 : currentTime;
 
             var scheduledDeparture = scheduledArrival.AddMinutes(routeStop.StandardDwellMin ?? 2);
@@ -73,9 +74,9 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             currentTime = scheduledDeparture.AddMinutes(routeStop.StandardTravelMin ?? 15);
         }
 
-        var arrivalTime = stopDtos.Max(ts => ts.ScheduledArrival ?? request.DepartureTime);
+        var arrivalTime = stopDtos.Max(ts => ts.ScheduledArrival ?? departureTime);
 
-        await EnsureNoRouteDepartureConflictAsync(route.Id, request.DepartureTime, cancellationToken);
+        await EnsureNoRouteDepartureConflictAsync(route.Id, departureTime, cancellationToken);
 
         Boat? boat = null;
         List<Seat> activeSeats = [];
@@ -107,7 +108,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             BoatId = boat?.Id,
             TripCode = tripCode,
             OperatingDate = request.OperatingDate,
-            DepartureTime = request.DepartureTime,
+            DepartureTime = departureTime,
             ArrivalTime = arrivalTime,
             CapacitySnapshot = capacity,
             TripStatus = TripStatus.Scheduled

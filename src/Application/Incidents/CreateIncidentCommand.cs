@@ -82,7 +82,7 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
             IncidentType = request.IncidentType.Trim(),
             Description = request.Description.Trim(),
             Severity = severity,
-            OccurredAt = request.OccurredAt ?? now,
+            OccurredAt = request.OccurredAt?.ToUniversalTime() ?? now,
             ResolutionStatus = IncidentSupport.OpenStatus
         };
 

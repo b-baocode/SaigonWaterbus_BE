@@ -24,8 +24,8 @@ public class CreateTripCommandTests
             RouteId = route.Id,
             TripCode = "TR-EXISTING",
             OperatingDate = DateOnly.FromDateTime(departureTime.Date),
-            DepartureTime = departureTime,
-            ArrivalTime = departureTime.AddMinutes(30),
+            DepartureTime = departureTime.ToUniversalTime(),
+            ArrivalTime = departureTime.AddMinutes(30).ToUniversalTime(),
             CapacitySnapshot = 50,
             TripStatus = TripStatus.Scheduled
         };
@@ -55,8 +55,8 @@ public class CreateTripCommandTests
             RouteId = route.Id,
             TripCode = "TR-CANCELLED",
             OperatingDate = DateOnly.FromDateTime(departureTime.Date),
-            DepartureTime = departureTime,
-            ArrivalTime = departureTime.AddMinutes(30),
+            DepartureTime = departureTime.ToUniversalTime(),
+            ArrivalTime = departureTime.AddMinutes(30).ToUniversalTime(),
             CapacitySnapshot = 50,
             TripStatus = TripStatus.Cancelled
         };
