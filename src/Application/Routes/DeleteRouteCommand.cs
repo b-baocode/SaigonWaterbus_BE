@@ -6,6 +6,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Routes;
 
+[Authorize(Roles = "Admin")]
 public sealed record DeleteRouteCommand(Guid RouteId) : IRequest;
 
 public sealed class DeleteRouteCommandValidator : AbstractValidator<DeleteRouteCommand>

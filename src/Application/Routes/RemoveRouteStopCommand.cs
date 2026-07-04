@@ -4,6 +4,7 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.Routes;
 
+[Authorize(Roles = "Admin")]
 public sealed record RemoveRouteStopCommand(Guid RouteId, Guid RouteStopId) : IRequest;
 
 public sealed class RemoveRouteStopCommandValidator : AbstractValidator<RemoveRouteStopCommand>

@@ -45,7 +45,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Danh sach chuyen tau (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin hoac Manager",
                 null,
                 "Query params (tat ca optional): operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeCode (string), status (string).",
                 "status hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
@@ -73,7 +73,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Tao chuyen tau moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin hoac Manager",
                 CreateTripExample,
                 "Route phai Active va co it nhat 2 ben dung.",
                 "boatCode optional nhung nen gui de trip gan voi tau va co the dat ghe.",
@@ -86,7 +86,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Tao hang loat chuyen tau theo lich")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin hoac Manager",
                 GenerateTripsExample,
                 "routeCode, boatCode: bat buoc.",
                 "departureTimes: mang gio khoi hanh (gio Vietnam +07:00), dinh dang HH:mm:ss.",
@@ -99,7 +99,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat trang thai chuyen tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin hoac Manager",
                 UpdateStatusExample,
                 "tripStatus hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
                 "statusNote: ghi chu kem theo (optional)."));

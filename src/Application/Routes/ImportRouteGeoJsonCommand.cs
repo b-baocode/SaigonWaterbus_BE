@@ -9,6 +9,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Routes;
 
+[Authorize(Roles = "Admin")]
 public sealed record ImportRouteGeoJsonCommand(
     string GeoJsonContent) : IRequest<GeoJsonImportResultDto>;
 

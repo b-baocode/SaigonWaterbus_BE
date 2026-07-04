@@ -7,6 +7,7 @@ using SaigonWaterbus.Application.Auth.Password;
 using SaigonWaterbus.Application.Auth.Profile;
 using SaigonWaterbus.Application.Auth.Register;
 using SaigonWaterbus.Application.Auth.Token;
+using SaigonWaterbus.Application.Common.Behaviours;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Common.Validation;
 using SaigonWaterbus.Application.Operations;
@@ -21,7 +22,10 @@ public static class DependencyInjection
     public static void AddApplicationServices(this IHostApplicationBuilder builder)
     {
         builder.Services.AddMediatR(cfg =>
-            cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly()));
+        {
+            cfg.RegisterServicesFromAssembly(Assembly.GetExecutingAssembly());
+            cfg.AddOpenBehavior(typeof(AuthorizationBehaviour<,>));
+        });
 
         builder.Services.AddAutoMapper(cfg =>
             cfg.AddMaps(Assembly.GetExecutingAssembly()));

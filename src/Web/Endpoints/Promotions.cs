@@ -43,7 +43,8 @@ public sealed class Promotions : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Tra ve tat ca promotion (ca Active lan Inactive), sap xep moi nhat truoc.",
+                "Query param status (optional): Active | Inactive. Bo trong de lay tat ca.",
+                "Sap xep moi nhat truoc.",
                 "Dung de quan ly, khong dung de hien thi cho khach hang."));
 
         group.MapGet(ValidatePromotion, "validate")
@@ -61,7 +62,7 @@ public sealed class Promotions : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Tao khuyen mai moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateExample,
                 "promotionCode phai unique (tu dong uppercase).",
                 "promotionType (enum): 0 = Percent (giam theo %), 1 = Fixed (giam so tien co dinh).",
@@ -76,7 +77,7 @@ public sealed class Promotions : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat khuyen mai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateExample,
                 "status hop le: Active | Inactive.",
                 "accountUsagePolicy: MultiplePerAccount | OncePerAccount.",
@@ -86,14 +87,14 @@ public sealed class Promotions : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Vo hieu hoa khuyen mai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Soft delete: dat Status = Inactive.",
                 "Tra ve 204 khi thanh cong."));
     }
 
-    private static async Task<IResult> GetPromotions(ISender sender, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetPromotionListQuery(), ct));
+    private static async Task<IResult> GetPromotions(ISender sender, string? status, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetPromotionListQuery(status), ct));
 
     private static async Task<IResult> ValidatePromotion(
         ISender sender, string code, decimal subtotalAmount, CancellationToken ct) =>

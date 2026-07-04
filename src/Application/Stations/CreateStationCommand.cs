@@ -7,6 +7,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Stations;
 
+[Authorize(Roles = "Admin")]
 public sealed record CreateStationCommand(
     string StationCode,
     string StationName,

@@ -7,6 +7,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Trips;
 
+[Authorize(Roles = "Admin,Manager")]
 public sealed record GenerateTripsCommand(
     string RouteCode,
     string BoatCode,

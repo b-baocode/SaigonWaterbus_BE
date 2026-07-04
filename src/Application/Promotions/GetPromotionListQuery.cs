@@ -3,7 +3,7 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Promotions;
 
-public sealed record GetPromotionListQuery : IRequest<IReadOnlyList<PromotionDto>>;
+public sealed record GetPromotionListQuery(string? Status = null) : IRequest<IReadOnlyList<PromotionDto>>;
 
 public sealed class GetPromotionListQueryHandler : IRequestHandler<GetPromotionListQuery, IReadOnlyList<PromotionDto>>
 {
@@ -13,7 +13,14 @@ public sealed class GetPromotionListQueryHandler : IRequestHandler<GetPromotionL
 
     public async Task<IReadOnlyList<PromotionDto>> Handle(GetPromotionListQuery request, CancellationToken cancellationToken)
     {
-        return await _context.Set<Promotion>()
+        var query = _context.Set<Promotion>().AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(request.Status))
+        {
+            query = query.Where(p => p.Status == request.Status.Trim());
+        }
+
+        return await query
             .OrderByDescending(p => p.Created)
             .Select(p => new PromotionDto(
                 p.Id, p.PromotionCode, p.PromotionName, p.PromotionType,

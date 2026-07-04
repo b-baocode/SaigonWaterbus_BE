@@ -5,6 +5,7 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.Stations;
 
+[Authorize(Roles = "Admin")]
 public sealed record UpdateStationStatusCommand(
     Guid StationId,
     StationStatus Status) : IRequest<StationDto>;

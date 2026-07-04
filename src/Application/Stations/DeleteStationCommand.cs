@@ -7,6 +7,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Stations;
 
+[Authorize(Roles = "Admin")]
 public sealed record DeleteStationCommand(Guid StationId) : IRequest;
 
 public sealed class DeleteStationCommandValidator : AbstractValidator<DeleteStationCommand>

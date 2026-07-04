@@ -86,7 +86,7 @@ public sealed class Routes : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Tao tuyen moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateRouteExample,
                 "RouteCode phai unique (tu dong uppercase).",
                 "Request phai chua it nhat 2 waypoint type=station.",
@@ -98,7 +98,7 @@ public sealed class Routes : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat thong tin tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateRouteExample,
                 "Status hop le: Active | Inactive.",
                 "RouteCode khong doi duoc sau khi tao."));
@@ -107,7 +107,7 @@ public sealed class Routes : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Them ben dung vao tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 AddStopExample,
                 "stopOrder phai unique trong cung mot tuyen.",
                 "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
@@ -119,7 +119,7 @@ public sealed class Routes : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat ben dung")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateStopExample,
                 "Khong doi duoc stationId hay stopOrder sau khi tao.",
                 "Dung API nay de chinh thoi gian di chuyen va quyen len/xuong."));
@@ -128,7 +128,7 @@ public sealed class Routes : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Xoa ben dung khoi tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Tra ve 204 khi xoa thanh cong.",
                 "Tra ve 404 neu khong tim thay tuyen hoac stop."));
@@ -137,7 +137,7 @@ public sealed class Routes : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Xoa tuyen")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Chi xoa duoc tuyen chua co trip nao.",
                 "Neu tuyen da co trip, dung PUT /{id} de doi Status=Inactive thay vi xoa.",
@@ -148,7 +148,7 @@ public sealed class Routes : IEndpointGroup
             .DisableAntiforgery()
             .WithSummary("Import mang song rach va ben tu file GeoJSON")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Content-Type: multipart/form-data.",
                 "Form fields: file (.geojson file).",

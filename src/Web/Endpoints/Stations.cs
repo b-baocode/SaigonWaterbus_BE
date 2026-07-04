@@ -79,7 +79,7 @@ public sealed class Stations : IEndpointGroup
             .Accepts<CreateStationJsonRequest>("application/json", "multipart/form-data")
             .WithSummary("Tao tram moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 CreateExample,
                 "StationCode phai unique (tu dong uppercase).",
                 "openingTime va closingTime la gio mo/dong cua ben, dinh dang HH:mm.",
@@ -97,7 +97,7 @@ public sealed class Stations : IEndpointGroup
             .Accepts<UpdateStationJsonRequest>("application/json", "multipart/form-data")
             .WithSummary("Cap nhat tram")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateExample,
                 "Status hop le: Active | Inactive.",
                 "openingTime va closingTime la gio mo/dong cua ben, dinh dang HH:mm.",
@@ -113,7 +113,7 @@ public sealed class Stations : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat trang thai tram")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 UpdateStatusExample,
                 "Status hop le: Active | Inactive.",
                 "Dung de bat/tat tram ma khong can gui lai toan bo thong tin tram."));
@@ -122,7 +122,7 @@ public sealed class Stations : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Xoa tram")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Admin",
                 null,
                 "Tra ve 204 khi xoa thanh cong.",
                 "Tra ve 404 neu khong tim thay tram."));

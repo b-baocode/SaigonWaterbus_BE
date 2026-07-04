@@ -4,6 +4,7 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.Promotions;
 
+[Authorize(Roles = "Admin")]
 public sealed record DeletePromotionCommand(Guid PromotionId) : IRequest;
 
 public sealed class DeletePromotionCommandValidator : AbstractValidator<DeletePromotionCommand>

@@ -6,6 +6,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Promotions;
 
+[Authorize(Roles = "Admin")]
 public sealed record CreatePromotionCommand(
     string PromotionCode,
     string PromotionName,

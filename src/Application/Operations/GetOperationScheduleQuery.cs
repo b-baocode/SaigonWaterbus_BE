@@ -41,6 +41,7 @@ public sealed record OperationScheduleItemDto(
     DateTimeOffset? ActualEndAt,
     DateTimeOffset SyncedAt);
 
+[Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record GetOperationScheduleQuery(
     DateTimeOffset From,
     DateTimeOffset To,
@@ -49,18 +50,7 @@ public sealed record GetOperationScheduleQuery(
 public sealed class GetOperationScheduleQueryHandler
     : IRequestHandler<GetOperationScheduleQuery, IReadOnlyList<OperationScheduleItemDto>>
 {
-    private readonly IApplicationDbContext _context;
-    private readonly IUserContext _userContext;
-
-    public GetOperationScheduleQueryHandler(
-        IApplicationDbContext context,
-        IUserContext userContext)
-    {
-        _context = context;
-        _userContext = userContext;
-    }
-
-    public async Task<IReadOnlyList<OperationScheduleItemDto>> Handle(
+    public Task<IReadOnlyList<OperationScheduleItemDto>> Handle(
         GetOperationScheduleQuery request,
         CancellationToken cancellationToken)
     {
@@ -71,12 +61,11 @@ public sealed class GetOperationScheduleQueryHandler
             throw AuthSupport.CreateValidationException(nameof(request.To), "Khoảng thời gian lịch không hợp lệ.");
         }
 
-        await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
-
-        return Array.Empty<OperationScheduleItemDto>();
+        return Task.FromResult<IReadOnlyList<OperationScheduleItemDto>>(Array.Empty<OperationScheduleItemDto>());
     }
 }
 
+[Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record DelayOperationScheduleEntryCommand(
     Guid Id,
     int DelayMinutes,
@@ -104,24 +93,10 @@ public sealed class DelayOperationScheduleEntryCommandValidator
 public sealed class DelayOperationScheduleEntryCommandHandler
     : IRequestHandler<DelayOperationScheduleEntryCommand, OperationScheduleItemDto>
 {
-    private readonly IApplicationDbContext _context;
-    private readonly IUserContext _userContext;
-
-    public DelayOperationScheduleEntryCommandHandler(
-        IApplicationDbContext context,
-        IUserContext userContext)
-    {
-        _context = context;
-        _userContext = userContext;
-    }
-
-    public async Task<OperationScheduleItemDto> Handle(
+    public Task<OperationScheduleItemDto> Handle(
         DelayOperationScheduleEntryCommand request,
-        CancellationToken cancellationToken)
-    {
-        await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        CancellationToken cancellationToken) =>
         throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy lịch vận hành.");
-    }
 }
 
 public sealed record RefreshOperationScheduleResultDto(

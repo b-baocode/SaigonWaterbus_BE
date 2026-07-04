@@ -5,6 +5,7 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.Promotions;
 
+[Authorize(Roles = "Admin")]
 public sealed record UpdatePromotionCommand(
     Guid PromotionId,
     string PromotionName,
