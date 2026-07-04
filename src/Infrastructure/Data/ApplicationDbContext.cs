@@ -52,6 +52,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Landmark> Landmarks => Set<Landmark>();
 
+    public DbSet<GpsDevice> GpsDevices => Set<GpsDevice>();
+
+    public DbSet<BoatLatestLocation> BoatLatestLocations => Set<BoatLatestLocation>();
+
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);
 

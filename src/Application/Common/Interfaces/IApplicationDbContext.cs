@@ -22,6 +22,10 @@ public interface IApplicationDbContext
 
     DbSet<BoatStaffAssignment> BoatStaffAssignments { get; }
 
+    DbSet<GpsDevice> GpsDevices { get; }
+
+    DbSet<BoatLatestLocation> BoatLatestLocations { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 
