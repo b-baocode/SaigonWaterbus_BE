@@ -151,7 +151,7 @@ public sealed class CreateCharterBookingCommandHandler
                 ?? CharterBookingBoatSelectionSupport.FirstOrNull(requestedBoatTypes),
             BoatRequirements = request.BoatRequirements?.Trim(),
             SpecialRequests = request.SpecialRequests?.Trim(),
-            BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
+            BookingCode = ToCharterBookingCode(await _bookingCodeGenerator.GenerateAsync(cancellationToken)),
             ContactName = user.FullName,
             ContactPhone = user.PhoneNumber ?? string.Empty,
             ContactEmail = user.Email,
@@ -225,6 +225,26 @@ public sealed class CreateCharterBookingCommandHandler
         if (missingStationId != Guid.Empty)
             throw new ValidationException([new ValidationFailure(nameof(CreateCharterBookingCommand.ItineraryStops),
                 $"Điểm dừng có stationId '{missingStationId}' không tồn tại.")]);
+    }
+
+    private static string ToCharterBookingCode(string bookingCode)
+    {
+        if (bookingCode.StartsWith("CB", StringComparison.OrdinalIgnoreCase))
+        {
+            return bookingCode;
+        }
+
+        if (bookingCode.StartsWith("BK-", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"CB-{bookingCode[3..]}";
+        }
+
+        if (bookingCode.StartsWith("BK", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"CB{bookingCode[2..]}";
+        }
+
+        return $"CB-{bookingCode}";
     }
 }
 

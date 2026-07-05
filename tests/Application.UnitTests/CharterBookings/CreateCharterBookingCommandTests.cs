@@ -73,6 +73,89 @@ public class CreateCharterBookingCommandTests
             .ShouldBe(["StandardAndVip", "FullStandard"]);
     }
 
+    [Test]
+    public async Task ListReturnsCustomerSummaryFieldsAndCharterBookingCodePrefix()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var fromStation = new Station
+        {
+            StationCode = "ST-A",
+            StationName = "Bến A",
+            Status = StationStatus.Active
+        };
+        var toStation = new Station
+        {
+            StationCode = "ST-B",
+            StationName = "Bến B",
+            Status = StationStatus.Active
+        };
+        context.AddRange(role, user, fromStation, toStation);
+        await context.SaveChangesAsync();
+
+        var createHandler = new CreateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedBookingCodeGenerator("BK-20260705-ABCDE"),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await createHandler.Handle(
+            new CreateCharterBookingCommand(
+                new DateOnly(2026, 7, 20),
+                BoatRentalUnit.Day,
+                1,
+                AdultCount: 10,
+                ChildCount: 2,
+                StartTime: new TimeOnly(8, 4),
+                FromStationId: fromStation.Id,
+                ToStationId: toStation.Id,
+                RequestedBoats:
+                [
+                    new CreateCharterBookingBoatRequest(SeatSetupType.FullStandard)
+                ]),
+            CancellationToken.None);
+
+        result.BookingCode.ShouldBe("CB-20260705-ABCDE");
+
+        var list = await new GetCharterBookingListQueryHandler(
+                context,
+                new TestUserContext(user.Id))
+            .Handle(new GetCharterBookingListQuery(), CancellationToken.None);
+
+        var item = list.Single();
+        item.Id.ShouldBe(result.BookingId);
+        item.BookingCode.ShouldBe("CB-20260705-ABCDE");
+        item.BookingStatus.ShouldBe("PendingQuote");
+        item.PaymentStatus.ShouldBe("Unpaid");
+        item.DepartureDate.ShouldBe("2026-07-20");
+        item.StartTime.ShouldBe("08:04:00");
+        item.RentalUnit.ShouldBe("Day");
+        item.DurationValue.ShouldBe(1);
+        item.AdultCount.ShouldBe(10);
+        item.ChildCount.ShouldBe(2);
+        item.PassengerCount.ShouldBe(12);
+        item.FromStationName.ShouldBe("Bến A");
+        item.ToStationName.ShouldBe("Bến B");
+        item.BoatName.ShouldBeNull();
+        item.SubtotalAmount.ShouldBeNull();
+        item.FinalAmount.ShouldBeNull();
+        item.RequestedBoats.Select(x => x.SeatSetupType).ShouldBe(["FullStandard"]);
+    }
+
     private sealed class FixedBookingCodeGenerator(string bookingCode) : IBookingCodeGenerator
     {
         public Task<string> GenerateAsync(CancellationToken cancellationToken) =>

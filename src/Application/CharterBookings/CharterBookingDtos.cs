@@ -82,14 +82,27 @@ public sealed record AdminCharterBookingListItemDto(
     string? BoatName);
 
 public sealed record CharterBookingListItemDto(
-    Guid BookingId,
+    Guid Id,
     string BookingCode,
-    DateTimeOffset CreatedAt,
-    DateOnly DepartureDate,
     string BookingStatus,
-    decimal TotalAmount,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? BoatName);
+    string PaymentStatus,
+    string DepartureDate,
+    string? StartTime,
+    string RentalUnit,
+    int DurationValue,
+    int AdultCount,
+    int ChildCount,
+    int PassengerCount,
+    string? FromStationName,
+    string? ToStationName,
+    string? BoatName,
+    decimal? SubtotalAmount,
+    [property: JsonPropertyName("finalAmount")]
+    decimal? FinalAmount,
+    IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats);
+
+public sealed record CharterBookingListRequestedBoatDto(
+    string SeatSetupType);
 
 public sealed record CharterBookingDetailDto(
     Guid BookingId,
