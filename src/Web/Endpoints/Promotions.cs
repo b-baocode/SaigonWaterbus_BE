@@ -38,14 +38,13 @@ public sealed class Promotions : IEndpointGroup
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetPromotions, string.Empty)
-            .RequireAuthorization()
-            .WithSummary("Danh sach tat ca khuyen mai (admin)")
+            .AllowAnonymous()
+            .WithSummary("Danh sach khuyen mai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
+                "Anonymous",
                 null,
                 "Query param status (optional): Active | Inactive. Bo trong de lay tat ca.",
-                "Sap xep moi nhat truoc.",
-                "Dung de quan ly, khong dung de hien thi cho khach hang."));
+                "Sap xep moi nhat truoc."));
 
         group.MapGet(ValidatePromotion, "validate")
             .AllowAnonymous()
