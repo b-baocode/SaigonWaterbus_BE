@@ -34,7 +34,6 @@ public sealed class CharterBookings : IEndpointGroup
             { "seatSetupType": "FullStandard" }
           ],
           "boatRequirements": "Muốn tàu có khu VIP và không gian tổ chức sinh nhật",
-          "promotionCode": null,
           "specialRequests": "Can trang tri sinh nhat"
         }
         """;
@@ -318,7 +317,6 @@ public sealed class CharterBookings : IEndpointGroup
                 "boatRequirements: yeu cau ghi chu them de admin chon tau.",
                 "fromStationId / toStationId: tuy chon, de null neu chua chon ben; neu dien thi lay id that tu GET /api/stations.",
                 "itineraryStops: tuy chon, de null neu khong co diem dung; neu dien thi stationId phai la id that tu GET /api/stations va stopOrder khong trung.",
-                "promotionCode: tuy chon, dung chung bang promotions voi booking thuong.",
                 "Sau khi thanh toan du, co the upload file danh sach bang POST /api/charter-bookings/{id}/passengers/import.",
                 "bookingStatus sau khi tao: PendingQuote."));
     }
@@ -517,7 +515,6 @@ public sealed class CharterBookings : IEndpointGroup
             request.RequestedBoats,
             request.PreferredSeatSetupType,
             request.BoatRequirements,
-            request.PromotionCode,
             request.SpecialRequests), ct));
 
     private static async Task<byte[]> BuildTicketExportZipAsync(

@@ -61,6 +61,7 @@ public class CreateCharterBookingCommandTests
         booking.RequestedBoatCount.ShouldBe(2);
         booking.RequestedBoatTypes.ShouldBe("StandardAndVip,FullStandard");
         booking.PreferredSeatSetupType.ShouldBe(SeatSetupType.StandardAndVip);
+        booking.PromotionId.ShouldBeNull();
 
         var detail = await new GetCharterBookingDetailQueryHandler(
                 context,

@@ -1,7 +1,6 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -22,7 +21,6 @@ public sealed record CreateCharterBookingCommand(
     IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
     SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
-    string? PromotionCode = null,
     string? SpecialRequests = null) : IRequest<CreateCharterBookingResult>;
 
 public sealed class CreateCharterBookingCommandValidator : AbstractValidator<CreateCharterBookingCommand>
@@ -57,7 +55,6 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
                 .WithMessage("Kiểu tàu không hợp lệ.");
         });
         RuleFor(x => x.BoatRequirements).MaximumLength(1000).When(x => x.BoatRequirements is not null);
-        RuleFor(x => x.PromotionCode).MaximumLength(50).When(x => x.PromotionCode is not null);
         RuleFor(x => x.SpecialRequests).MaximumLength(1000).When(x => x.SpecialRequests is not null);
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
             .When(x => x.FromStationId.HasValue && x.ToStationId.HasValue)
@@ -127,24 +124,7 @@ public sealed class CreateCharterBookingCommandHandler
         await EnsureStationExistsAsync(request.ToStationId, nameof(request.ToStationId), cancellationToken);
         await EnsureItineraryStationsExistAsync(request.ItineraryStops, cancellationToken);
 
-        var promotion = await CharterBookingPricingSupport.ResolvePromotionAsync(
-            _context,
-            request.PromotionCode,
-            subtotal,
-            now,
-            nameof(request.PromotionCode),
-            validateMinOrder: subtotal > 0,
-            cancellationToken);
-        if (promotion is not null)
-        {
-            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
-                _context,
-                promotion,
-                userId,
-                nameof(request.PromotionCode),
-                cancellationToken);
-        }
-        var discount = CharterBookingPricingSupport.CalculateDiscount(promotion, subtotal);
+        const decimal discount = 0;
         var total = subtotal - discount;
 
         var user = await _context.Users
@@ -171,7 +151,6 @@ public sealed class CreateCharterBookingCommandHandler
                 ?? CharterBookingBoatSelectionSupport.FirstOrNull(requestedBoatTypes),
             BoatRequirements = request.BoatRequirements?.Trim(),
             SpecialRequests = request.SpecialRequests?.Trim(),
-            PromotionId = promotion?.Id,
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
             ContactName = user.FullName,
             ContactPhone = user.PhoneNumber ?? string.Empty,
@@ -215,8 +194,7 @@ public sealed class CreateCharterBookingCommandHandler
             booking.BookingStatus.ToString(),
             0,
             requestedBoatTypes.Count,
-            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatTypes),
-            promotion?.PromotionCode);
+            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatTypes));
     }
 
     private async Task EnsureStationExistsAsync(Guid? stationId, string field, CancellationToken cancellationToken)

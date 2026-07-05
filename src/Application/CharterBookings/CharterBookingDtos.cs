@@ -14,9 +14,7 @@ public sealed record CreateCharterBookingResult(
     string BookingStatus,
     int RegisteredPassengerCount,
     int RequestedBoatCount,
-    IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? PromotionCode);
+    IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats);
 
 public sealed record CreateCharterBookingRequest(
     DateOnly DepartureDate,
@@ -31,7 +29,6 @@ public sealed record CreateCharterBookingRequest(
     IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
     SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
-    string? PromotionCode = null,
     string? SpecialRequests = null);
 
 public sealed record CreateCharterBookingItineraryStopRequest(
