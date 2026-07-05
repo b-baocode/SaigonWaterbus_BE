@@ -25,6 +25,7 @@ public sealed class GetMyBookingHistoryQueryHandler
     : IRequestHandler<GetMyBookingHistoryQuery, IReadOnlyList<BookingHistoryItemDto>>
 {
     private const string StandardBookingType = "StandardBooking";
+    private const string CharterBookingType = "CharterBooking";
     private const string DefaultCurrency = "VND";
 
     private readonly IApplicationDbContext _context;
@@ -54,8 +55,17 @@ public sealed class GetMyBookingHistoryQueryHandler
             .Where(x => x.UserId == userId)
             .ToListAsync(cancellationToken);
 
+        var charterBookings = await _context.Set<Booking>()
+            .AsNoTracking()
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Where(x => x.BookingType == Booking.CharterBookingType)
+            .Where(x => x.UserId == userId)
+            .ToListAsync(cancellationToken);
+
         return standardBookings
             .Select(CreateStandardBookingHistoryItem)
+            .Concat(charterBookings.Select(CreateCharterBookingHistoryItem))
             .OrderByDescending(x => x.CreatedAt)
             .ToArray();
     }
@@ -82,4 +92,20 @@ public sealed class GetMyBookingHistoryQueryHandler
             DefaultCurrency,
             $"/api/bookings/{booking.Id}");
     }
+
+    private static BookingHistoryItemDto CreateCharterBookingHistoryItem(Booking booking) =>
+        new(
+            booking.Id,
+            CharterBookingType,
+            booking.BookingCode,
+            booking.Created,
+            booking.DepartureDate,
+            booking.StartTime,
+            booking.FromStation?.StationName,
+            booking.ToStation?.StationName,
+            booking.PassengerCount.GetValueOrDefault(),
+            booking.BookingStatus.ToString(),
+            booking.TotalAmount,
+            booking.Currency,
+            $"/api/charter-bookings/{booking.Id}");
 }

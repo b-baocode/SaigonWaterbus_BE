@@ -460,10 +460,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(3)")
                         .HasColumnName("currency");
 
-                    b.Property<string>("CustomBookingQrToken")
+                    b.Property<string>("CharterBookingQrToken")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
-                        .HasColumnName("custom_booking_qr_token");
+                        .HasColumnName("charter_booking_qr_token");
 
                     b.Property<DateOnly?>("DepartureDate")
                         .HasColumnType("date")
@@ -559,9 +559,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("BookingCode")
                         .IsUnique();
 
-                    b.HasIndex("CustomBookingQrToken")
+                    b.HasIndex("CharterBookingQrToken")
                         .IsUnique()
-                        .HasFilter("custom_booking_qr_token IS NOT NULL");
+                        .HasFilter("charter_booking_qr_token IS NOT NULL");
 
                     b.HasIndex("FromStationId");
 
@@ -576,7 +576,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("BoatId", "DepartureDate")
                         .IsUnique()
                         .HasDatabaseName("ux_bookings_boat_date_active")
-                        .HasFilter("booking_type = 'CustomBooking' AND status IN ('Quoted', 'Confirmed')");
+                        .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
 
                     b.ToTable("bookings", (string)null);
                 });

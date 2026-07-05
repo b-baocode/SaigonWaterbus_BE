@@ -5,14 +5,14 @@ namespace SaigonWaterbus.Domain.Entities;
 public class Booking : BaseGuidAuditableEntity
 {
     public const string SeatBookingType = "SeatBooking";
-    public const string CustomBookingType = "CustomBooking";
+    public const string CharterBookingType = "CharterBooking";
 
     public Guid? UserId { get; set; }
     public Guid? PromotionId { get; set; }
     public Guid? TripId { get; set; }
     public string BookingType { get; set; } = SeatBookingType;
     public string BookingCode { get; set; } = null!;
-    public string? CustomBookingQrToken { get; set; }
+    public string? CharterBookingQrToken { get; set; }
     public string ContactName { get; set; } = null!;
     public string ContactPhone { get; set; } = string.Empty;
     public string? ContactEmail { get; set; }
@@ -37,7 +37,6 @@ public class Booking : BaseGuidAuditableEntity
     public int? PassengerCount { get; set; }
     public int? AdultCount { get; set; }
     public int? ChildCount { get; set; }
-    public int? PreferredNumberOfDecks { get; set; }
     public SeatSetupType? PreferredSeatSetupType { get; set; }
     public string? BoatRequirements { get; set; }
     public string? SpecialRequests { get; set; }
@@ -54,4 +53,7 @@ public class Booking : BaseGuidAuditableEntity
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
     public ICollection<BookingItineraryStop> ItineraryStops { get; set; } = new List<BookingItineraryStop>();
+
+    public static bool IsCharterBookingType(string? bookingType) =>
+        string.Equals(bookingType, CharterBookingType, StringComparison.OrdinalIgnoreCase);
 }

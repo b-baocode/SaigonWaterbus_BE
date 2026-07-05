@@ -86,7 +86,7 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
             ResolutionStatus = IncidentSupport.OpenStatus
         };
 
-        boat.Status = BoatStatus.Maintenance;
+        boat.Status = BoatStatus.UnderMaintenance;
         if (trip is not null && trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
         {
             trip.TripStatus = IsCritical(severity) ? TripStatus.Cancelled : TripStatus.Delayed;

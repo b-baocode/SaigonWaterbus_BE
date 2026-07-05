@@ -2,7 +2,7 @@ namespace SaigonWaterbus.Domain.Enums;
 
 public enum BoatReservationSourceType
 {
-    CustomBooking = 1,
+    CharterBooking = 1,
     RegularTrip = 2,
     Maintenance = 3
 }

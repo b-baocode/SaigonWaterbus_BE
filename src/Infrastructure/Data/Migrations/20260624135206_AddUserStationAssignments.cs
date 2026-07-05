@@ -16,7 +16,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 columns: table => new
                 {
                     itinerary_stop_id = table.Column<Guid>(type: "uuid", nullable: false),
-                    custom_booking_id = table.Column<Guid>(type: "uuid", nullable: false),
+                    charter_booking_id = table.Column<Guid>(type: "uuid", nullable: false),
                     station_id = table.Column<Guid>(type: "uuid", nullable: false),
                     stop_order = table.Column<int>(type: "integer", nullable: false),
                     stay_duration_minutes = table.Column<int>(type: "integer", nullable: false),
@@ -28,8 +28,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 {
                     table.PrimaryKey("PK_itinerary_stops", x => x.itinerary_stop_id);
                     table.ForeignKey(
-                        name: "FK_itinerary_stops_bookings_custom_booking_id",
-                        column: x => x.custom_booking_id,
+                        name: "FK_itinerary_stops_bookings_charter_booking_id",
+                        column: x => x.charter_booking_id,
                         principalTable: "bookings",
                         principalColumn: "booking_id",
                         onDelete: ReferentialAction.Cascade);
@@ -79,9 +79,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 });
 
             migrationBuilder.CreateIndex(
-                name: "IX_itinerary_stops_custom_booking_id_stop_order",
+                name: "IX_itinerary_stops_charter_booking_id_stop_order",
                 table: "itinerary_stops",
-                columns: new[] { "custom_booking_id", "stop_order" },
+                columns: new[] { "charter_booking_id", "stop_order" },
                 unique: true);
 
             migrationBuilder.CreateIndex(

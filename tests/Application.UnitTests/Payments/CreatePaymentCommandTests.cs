@@ -12,13 +12,13 @@ namespace SaigonWaterbus.Application.UnitTests.Payments;
 public class CreatePaymentCommandTests
 {
     [Test]
-    public async Task CustomBookingDepositCreatesNewPayment()
+    public async Task CharterBookingDepositCreatesNewPayment()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
         var booking = new Booking
         {
-            BookingType = Booking.CustomBookingType,
+            BookingType = Booking.CharterBookingType,
             UserId = userId,
             BookingCode = "CB-PAYMENT",
             ContactName = "Nguyen Van A",
@@ -56,13 +56,13 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
-    public async Task CustomBookingPaymentGatewayFailureRestoresUnpaidAmounts()
+    public async Task CharterBookingPaymentGatewayFailureRestoresUnpaidAmounts()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
         var booking = new Booking
         {
-            BookingType = Booking.CustomBookingType,
+            BookingType = Booking.CharterBookingType,
             UserId = userId,
             BookingCode = "CB-PAYMENT-FAIL",
             ContactName = "Nguyen Van A",
@@ -102,12 +102,79 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task CharterBookingRemainingPaymentKeepsDepositPaidSummaryWhilePending()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = userId,
+            BookingCode = "CB-REMAINING",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "DepositPaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 5000,
+            RemainingAmount = 5000
+        };
+        var depositPayment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000000",
+            Provider = "PayOS",
+            Amount = 5000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Deposit",
+            PaymentStatus = "Paid",
+            PaidAt = DateTimeOffset.UtcNow
+        };
+        context.AddRange(booking, depositPayment);
+        await context.SaveChangesAsync();
+
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new TestPaymentNotificationSender(),
+            TimeProvider.System);
+
+        var result = await handler.Handle(
+            new CreatePaymentCommand(booking.Id, BookingPaymentOption.Remaining),
+            CancellationToken.None);
+
+        result.Amount.ShouldBe(5000);
+        result.PaymentPurpose.ShouldBe("Remaining");
+        result.PaymentStatus.ShouldBe("Pending");
+        result.BookingPaymentStatus.ShouldBe("DepositPaid");
+        result.BookingDepositAmount.ShouldBe(5000);
+        result.BookingRemainingAmount.ShouldBe(5000);
+        booking.PaymentStatus.ShouldBe("DepositPaid");
+        booking.DepositAmount.ShouldBe(5000);
+        booking.RemainingAmount.ShouldBe(5000);
+
+        var remainingPayment = context.Set<Payment>()
+            .Where(x => x.PaymentPurpose == "Remaining")
+            .ShouldHaveSingleItem();
+        remainingPayment.Amount.ShouldBe(5000);
+        remainingPayment.PaymentStatus.ShouldBe("Pending");
+    }
+
+    [Test]
     public async Task WebhookPaidDepositSendsPaymentNotification()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var booking = new Booking
         {
-            BookingType = Booking.CustomBookingType,
+            BookingType = Booking.CharterBookingType,
             UserId = Guid.NewGuid(),
             BookingCode = "CB-DEPOSIT",
             ContactName = "Nguyen Van A",
@@ -159,7 +226,7 @@ public class CreatePaymentCommandTests
         await using var context = SeatFlowTestData.CreateContext();
         var booking = new Booking
         {
-            BookingType = Booking.CustomBookingType,
+            BookingType = Booking.CharterBookingType,
             UserId = Guid.NewGuid(),
             BookingCode = "CB-FULL",
             ContactName = "Nguyen Van A",
@@ -265,12 +332,12 @@ public class CreatePaymentCommandTests
         ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
     }
 
-    private static CustomBookingDepositPaymentWebhook CreatePaidWebhook(long orderCode, long amount) =>
+    private static CharterBookingDepositPaymentWebhook CreatePaidWebhook(long orderCode, long amount) =>
         new(
             "00",
             "success",
             true,
-            new CustomBookingDepositPaymentWebhookData(
+            new CharterBookingDepositPaymentWebhookData(
                 orderCode,
                 amount,
                 null,
@@ -292,10 +359,10 @@ public class CreatePaymentCommandTests
     private sealed class TestPaymentGateway(
         PaymentGatewayException? createPaymentException = null,
         PaymentGatewayException? getPaymentException = null)
-        : ICustomBookingPaymentGateway
+        : ICharterBookingPaymentGateway
     {
-        public Task<CustomBookingDepositPaymentResult> CreateDepositPaymentAsync(
-            CustomBookingDepositPaymentRequest request,
+        public Task<CharterBookingDepositPaymentResult> CreateDepositPaymentAsync(
+            CharterBookingDepositPaymentRequest request,
             CancellationToken cancellationToken)
         {
             if (createPaymentException is not null)
@@ -303,14 +370,14 @@ public class CreatePaymentCommandTests
                 throw createPaymentException;
             }
 
-            return Task.FromResult(new CustomBookingDepositPaymentResult(
+            return Task.FromResult(new CharterBookingDepositPaymentResult(
                 "payment-link-id",
                 "https://example.test/checkout",
                 "qr",
                 "PENDING"));
         }
 
-        public Task<CustomBookingPaymentStatusResult> GetPaymentAsync(
+        public Task<CharterBookingPaymentStatusResult> GetPaymentAsync(
             long orderCode,
             CancellationToken cancellationToken)
         {
@@ -319,7 +386,7 @@ public class CreatePaymentCommandTests
                 throw getPaymentException;
             }
 
-            return Task.FromResult(new CustomBookingPaymentStatusResult(
+            return Task.FromResult(new CharterBookingPaymentStatusResult(
                 orderCode,
                 null,
                 "PENDING",
@@ -327,30 +394,30 @@ public class CreatePaymentCommandTests
                 "https://example.test/checkout"));
         }
 
-        public Task<CustomBookingPaymentCancellationResult> CancelPaymentAsync(
+        public Task<CharterBookingPaymentCancellationResult> CancelPaymentAsync(
             long orderCode,
             string reason,
             CancellationToken cancellationToken) =>
-            Task.FromResult(new CustomBookingPaymentCancellationResult(
+            Task.FromResult(new CharterBookingPaymentCancellationResult(
                 "payment-link-id",
                 "CANCELLED",
                 reason));
 
-        public Task<CustomBookingRefundPayoutResult> CreateRefundPayoutAsync(
-            CustomBookingRefundPayoutRequest request,
+        public Task<CharterBookingRefundPayoutResult> CreateRefundPayoutAsync(
+            CharterBookingRefundPayoutRequest request,
             CancellationToken cancellationToken) =>
-            Task.FromResult(new CustomBookingRefundPayoutResult(
+            Task.FromResult(new CharterBookingRefundPayoutResult(
                 "payout-id",
                 request.ReferenceId,
                 "PENDING",
                 null));
 
-        public Task<CustomBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdAsync(
+        public Task<CharterBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdAsync(
             string referenceId,
             CancellationToken cancellationToken) =>
-            Task.FromResult<CustomBookingRefundPayoutResult?>(null);
+            Task.FromResult<CharterBookingRefundPayoutResult?>(null);
 
-        public bool IsValidWebhook(CustomBookingDepositPaymentWebhook webhook) => true;
+        public bool IsValidWebhook(CharterBookingDepositPaymentWebhook webhook) => true;
     }
 
     private sealed class TestPaymentNotificationSender : IPaymentNotificationSender

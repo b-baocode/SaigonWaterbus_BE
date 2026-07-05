@@ -56,7 +56,7 @@ public class BrevoPaymentNotificationSenderTests
         parameters.GetProperty("ticketCode").GetString().ShouldBe("TK123");
         parameters.GetProperty("qrPayload").GetString().ShouldBe("qr-token");
         parameters.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/qr-token");
-        parameters.GetProperty("pdfUrl").GetString().ShouldBe("https://api.test/api/custom-bookings/tickets/pdf/qr-token");
+        parameters.GetProperty("pdfUrl").GetString().ShouldBe("https://api.test/api/charter-bookings/tickets/pdf/qr-token");
         parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Đã thanh toán");
         attachment.GetProperty("name").GetString().ShouldBe("boarding-pass.pdf");
         attachment.GetProperty("content").GetString().ShouldBe("AQID");
@@ -73,8 +73,8 @@ public class BrevoPaymentNotificationSenderTests
                 SenderEmail = "noreply@saigonwaterbus.test",
                 SenderName = "Saigon Waterbus",
                 PublicApiBaseUrl = "https://api.test",
-                CustomBookingQuoteTemplateId = 13,
-                CustomBookingConfirmationTemplateId = 14
+                CharterBookingQuoteTemplateId = 13,
+                CharterBookingConfirmationTemplateId = 14
             }),
             NullLogger<BrevoPaymentNotificationSender>.Instance);
 
@@ -84,7 +84,7 @@ public class BrevoPaymentNotificationSenderTests
             "Nguyen Van A",
             "0900000000",
             isFullyPaid ? "CB-FULL" : "CB-DEPOSIT",
-            "CustomBooking",
+            "CharterBooking",
             new DateTimeOffset(2026, 6, 18, 1, 0, 0, TimeSpan.Zero),
             isFullyPaid ? "1000002" : "1000001",
             isFullyPaid ? "Full" : "Deposit",

@@ -5,15 +5,15 @@ using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Infrastructure.Auth;
 
 public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
 {
     private const string HttpClientName = "Brevo";
-    private const string CustomBookingType = "CustomBooking";
     private const string TicketQrImagePathPrefix = "/api/tickets/qr-image/";
-    private const string CustomBookingTicketsPdfPathPrefix = "/api/custom-bookings/tickets/pdf/";
+    private const string CharterBookingTicketsPdfPathPrefix = "/api/charter-bookings/tickets/pdf/";
     private static readonly CultureInfo ViCulture = CultureInfo.GetCultureInfo("vi-VN");
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<BrevoOptions> _optionsMonitor;
@@ -237,11 +237,11 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
 
     private static int ResolvePaymentTemplateId(BrevoOptions options, PaymentSucceededNotification notification)
     {
-        if (string.Equals(notification.BookingType, CustomBookingType, StringComparison.OrdinalIgnoreCase))
+        if (Booking.IsCharterBookingType(notification.BookingType))
         {
             return FirstPositive(
                 notification.IsFullyPaid ? options.PaymentFullTemplateId : options.PaymentDepositTemplateId,
-                options.CustomBookingQuoteTemplateId,
+                options.CharterBookingQuoteTemplateId,
                 options.BookingPaymentConfirmationTemplateId);
         }
 
@@ -252,7 +252,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
 
     private static int ResolveBoardingPassTemplateId(BrevoOptions options) =>
         FirstPositive(
-            options.CustomBookingConfirmationTemplateId,
+            options.CharterBookingConfirmationTemplateId,
             options.PaymentFullTemplateId,
             options.BookingPaymentConfirmationTemplateId);
 
@@ -289,7 +289,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             ? CreateQrImageUrl(options.PublicApiBaseUrl, qrPayload)
             : boardingPass.QrImageUrl;
         var pdfUrl = string.IsNullOrWhiteSpace(boardingPass?.PdfUrl)
-            ? CreateCustomBookingTicketsPdfUrl(options.PublicApiBaseUrl, qrPayload, notification.BookingType)
+            ? CreateCharterBookingTicketsPdfUrl(options.PublicApiBaseUrl, qrPayload, notification.BookingType)
             : boardingPass.PdfUrl;
 
         return new Dictionary<string, object?>
@@ -501,19 +501,19 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         return $"{publicApiBaseUrl.TrimEnd('/')}{TicketQrImagePathPrefix}{Uri.EscapeDataString(qrPayload)}";
     }
 
-    private static string? CreateCustomBookingTicketsPdfUrl(
+    private static string? CreateCharterBookingTicketsPdfUrl(
         string? publicApiBaseUrl,
         string? qrPayload,
         string bookingType)
     {
-        if (!string.Equals(bookingType, CustomBookingType, StringComparison.OrdinalIgnoreCase)
+        if (!Booking.IsCharterBookingType(bookingType)
             || string.IsNullOrWhiteSpace(publicApiBaseUrl)
             || string.IsNullOrWhiteSpace(qrPayload))
         {
             return null;
         }
 
-        return $"{publicApiBaseUrl.TrimEnd('/')}{CustomBookingTicketsPdfPathPrefix}{Uri.EscapeDataString(qrPayload)}";
+        return $"{publicApiBaseUrl.TrimEnd('/')}{CharterBookingTicketsPdfPathPrefix}{Uri.EscapeDataString(qrPayload)}";
     }
 
     private static string ResolveText(string? value, string fallback = "Chưa xác định") =>

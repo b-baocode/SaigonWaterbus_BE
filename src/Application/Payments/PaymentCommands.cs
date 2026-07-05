@@ -34,7 +34,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
-    private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
@@ -42,7 +42,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     public CreatePaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        ICustomBookingPaymentGateway paymentGateway,
+        ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null)
@@ -121,16 +121,14 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         };
         booking.Payments.Add(payment);
         _context.Set<Payment>().Add(payment);
-        booking.PaymentStatus = PaymentSupport.UnpaidBookingPaymentStatus;
-        booking.DepositAmount = paymentPlan.DepositAmount;
-        booking.RemainingAmount = paymentPlan.RemainingAmount;
+        PaymentSupport.ApplyPendingPaymentPlan(booking, paymentPlan, paidAmount);
         await _context.SaveChangesAsync(cancellationToken);
 
-        CustomBookingDepositPaymentResult paymentResult;
+        CharterBookingDepositPaymentResult paymentResult;
         try
         {
             paymentResult = await _paymentGateway.CreateDepositPaymentAsync(
-                new CustomBookingDepositPaymentRequest(
+                new CharterBookingDepositPaymentRequest(
                     orderCode,
                     amount,
                     PaymentSupport.CreatePaymentDescription(booking),
@@ -233,7 +231,7 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
-    private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
@@ -241,7 +239,7 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
     public SyncPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        ICustomBookingPaymentGateway paymentGateway,
+        ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null)
@@ -278,7 +276,7 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
                 "Payment đang được đồng bộ. Vui lòng thử lại sau.")]);
         }
 
-        CustomBookingPaymentStatusResult paymentStatus;
+        CharterBookingPaymentStatusResult paymentStatus;
         try
         {
             paymentStatus = await _paymentGateway.GetPaymentAsync(orderCode, cancellationToken);
@@ -322,21 +320,21 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
     }
 }
 
-public sealed record HandlePaymentWebhookCommand(CustomBookingDepositPaymentWebhook Webhook)
+public sealed record HandlePaymentWebhookCommand(CharterBookingDepositPaymentWebhook Webhook)
     : IRequest<PaymentWebhookResult>;
 
 public sealed class HandlePaymentWebhookCommandHandler
     : IRequestHandler<HandlePaymentWebhookCommand, PaymentWebhookResult>
 {
     private readonly IApplicationDbContext _context;
-    private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
 
     public HandlePaymentWebhookCommandHandler(
         IApplicationDbContext context,
-        ICustomBookingPaymentGateway paymentGateway,
+        ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null)
@@ -457,13 +455,13 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
-    private readonly ICustomBookingPaymentGateway _paymentGateway;
+    private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly TimeProvider _timeProvider;
 
     public RefundPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        ICustomBookingPaymentGateway paymentGateway,
+        ICharterBookingPaymentGateway paymentGateway,
         TimeProvider timeProvider)
     {
         _context = context;
@@ -512,11 +510,11 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         payment.RefundFailureReason = null;
         await _context.SaveChangesAsync(cancellationToken);
 
-        CustomBookingRefundPayoutResult refundResult;
+        CharterBookingRefundPayoutResult refundResult;
         try
         {
             refundResult = await _paymentGateway.CreateRefundPayoutAsync(
-                new CustomBookingRefundPayoutRequest(
+                new CharterBookingRefundPayoutRequest(
                     referenceId,
                     PaymentSupport.ToPayOsAmount(refundAmount, "refundAmount", "Số tiền hoàn phải là số nguyên VND lớn hơn 0."),
                     request.Reason.Trim(),
@@ -549,7 +547,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
 
     private async Task<DateTimeOffset?> ResolveDepartureAsync(Booking booking, CancellationToken cancellationToken)
     {
-        if (booking.BookingType == Booking.CustomBookingType)
+        if (Booking.IsCharterBookingType(booking.BookingType))
         {
             var startTime = booking.StartTime ?? new TimeOnly(0, 0);
             return new DateTimeOffset(booking.DepartureDate.GetValueOrDefault().ToDateTime(startTime), TimeSpan.Zero);
@@ -609,7 +607,7 @@ internal static class PaymentSupport
             query = query.Include(x => x.Payments);
         }
 
-        query = IncludeCustomBookingNotificationDetails(query);
+        query = IncludeCharterBookingNotificationDetails(query);
 
         var booking = await query.SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
@@ -662,10 +660,10 @@ internal static class PaymentSupport
                 "Không thể thanh toán booking đã hủy.")]);
         }
 
-        if (booking.BookingType == Booking.CustomBookingType && booking.BookingStatus == BookingStatus.PendingQuote)
+        if (Booking.IsCharterBookingType(booking.BookingType) && booking.BookingStatus == BookingStatus.PendingQuote)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
-                "Custom booking chưa được admin nhập tàu và chốt giá.")]);
+                "Charter booking chưa được admin nhập tàu và chốt giá.")]);
         }
 
         if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded or BookingStatus.Expired)
@@ -693,7 +691,7 @@ internal static class PaymentSupport
             throw new ValidationException([new ValidationFailure("payment", "Booking này đã thanh toán đủ.")]);
         }
 
-        if (booking.BookingType != Booking.CustomBookingType)
+        if (!Booking.IsCharterBookingType(booking.BookingType))
         {
             if (paymentOption is BookingPaymentOption.Deposit or BookingPaymentOption.Remaining)
             {
@@ -805,6 +803,21 @@ internal static class PaymentSupport
             : paidAmount >= booking.TotalAmount
                 ? PaidBookingPaymentStatus
                 : DepositPaidBookingPaymentStatus;
+    }
+
+    public static void ApplyPendingPaymentPlan(Booking booking, PaymentPlan paymentPlan, decimal paidAmount)
+    {
+        if (paidAmount <= 0)
+        {
+            booking.PaymentStatus = UnpaidBookingPaymentStatus;
+            booking.DepositAmount = paymentPlan.DepositAmount;
+            booking.RemainingAmount = paymentPlan.RemainingAmount;
+            return;
+        }
+
+        booking.PaymentStatus = DepositPaidBookingPaymentStatus;
+        booking.DepositAmount = Math.Min(paidAmount, booking.TotalAmount);
+        booking.RemainingAmount = Math.Max(booking.TotalAmount - paidAmount, 0);
     }
 
     public static string ResolvePaymentStatus(string status)
@@ -955,8 +968,8 @@ internal static class PaymentSupport
                 PaidBookingPaymentStatus,
                 StringComparison.OrdinalIgnoreCase)
             || booking.RemainingAmount <= 0;
-        var isCustomBooking = booking.BookingType == Booking.CustomBookingType;
-        var stops = isCustomBooking
+        var isCharterBooking = Booking.IsCharterBookingType(booking.BookingType);
+        var stops = isCharterBooking
             ? booking.ItineraryStops
                 .OrderBy(x => x.StopOrder)
                 .Select(x => new PaymentNotificationStop(
@@ -971,7 +984,7 @@ internal static class PaymentSupport
             contactName,
             booking.ContactPhone,
             booking.BookingCode,
-            isCustomBooking ? "CustomBooking" : "Booking",
+            isCharterBooking ? Booking.CharterBookingType : "Booking",
             booking.Created == default ? payment.PaidAt.Value : booking.Created,
             payment.PaymentCode,
             payment.PaymentPurpose,
@@ -983,20 +996,20 @@ internal static class PaymentSupport
             booking.RemainingAmount,
             payment.PaidAt.Value,
             isFullyPaid,
-            isCustomBooking ? booking.DepartureDate : null,
-            isCustomBooking ? booking.StartTime : null,
-            isCustomBooking ? booking.RentalUnit?.ToString() : null,
-            isCustomBooking ? booking.DurationValue.GetValueOrDefault() : 0,
-            isCustomBooking ? booking.PassengerCount.GetValueOrDefault() : booking.Passengers.Count,
-            isCustomBooking ? booking.Boat?.Name : null,
-            isCustomBooking ? booking.FromStation?.StationName : null,
-            ResolveStationAddress(isCustomBooking ? booking.FromStation : null),
-            isCustomBooking ? booking.ToStation?.StationName : null,
-            ResolveStationAddress(isCustomBooking ? booking.ToStation : null),
+            isCharterBooking ? booking.DepartureDate : null,
+            isCharterBooking ? booking.StartTime : null,
+            isCharterBooking ? booking.RentalUnit?.ToString() : null,
+            isCharterBooking ? booking.DurationValue.GetValueOrDefault() : 0,
+            isCharterBooking ? booking.PassengerCount.GetValueOrDefault() : booking.Passengers.Count,
+            isCharterBooking ? booking.Boat?.Name : null,
+            isCharterBooking ? booking.FromStation?.StationName : null,
+            ResolveStationAddress(isCharterBooking ? booking.FromStation : null),
+            isCharterBooking ? booking.ToStation?.StationName : null,
+            ResolveStationAddress(isCharterBooking ? booking.ToStation : null),
             stops);
     }
 
-    private static IQueryable<Booking> IncludeCustomBookingNotificationDetails(IQueryable<Booking> query) =>
+    private static IQueryable<Booking> IncludeCharterBookingNotificationDetails(IQueryable<Booking> query) =>
         query
             .Include(x => x.Boat)
             .Include(x => x.FromStation)

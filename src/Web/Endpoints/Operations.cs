@@ -40,7 +40,7 @@ public sealed class Operations : IEndpointGroup
                 "Định dạng ngày: yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy. Nếu bỏ toDate thì lấy một ngày.",
                 "Query cũ from/to vẫn được đọc để tương thích, nhưng FE nên dùng fromDate/toDate.",
                 "GET chỉ đọc dữ liệu đã được đồng bộ bởi job nền hoặc POST /api/operations/schedule/sync.",
-                "Đây là lịch vận hành nội bộ. Bảng công cộng/khách hàng không dùng API này và không hiển thị custom booking."));
+                "Đây là lịch vận hành nội bộ. Bảng công cộng/khách hàng không dùng API này và không hiển thị charter booking."));
 
         groupBuilder.MapPost(RefreshSchedule, "schedule/sync")
             .RequireAuthorization()

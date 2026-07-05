@@ -30,6 +30,15 @@ public class ApplicationDbContextInitialiser
     private const string EfMigrationsProductVersion = "9.0.14";
     private const string LegacyAdminFullName = "System Administrator";
 
+    private static readonly (string OldMigrationId, string CurrentMigrationId)[] RenamedMigrationIds =
+    [
+        ("20260624113047_AddCustomBookings", "20260624113047_AddCharterBookings"),
+        ("20260624233018_AddCustomBookingCustomerRequirements", "20260624233018_AddCharterBookingCustomerRequirements"),
+        ("20260625023824_AddCustomBookingHold", "20260625023824_AddCharterBookingHold"),
+        ("20260626175903_CollapseCustomBookingIntoBooking", "20260626175903_CollapseCharterBookingIntoBooking"),
+        ("20260703134524_AddCustomBookingQrToken", "20260703134524_AddCharterBookingQrToken")
+    ];
+
     private static readonly SeedUser[] InternalUsers =
     [
         new(
@@ -86,6 +95,7 @@ public class ApplicationDbContextInitialiser
 
             if (_context.Database.GetMigrations().Any())
             {
+                await MarkRenamedMigrationsAppliedAsync();
                 await _context.Database.MigrateAsync();
             }
             else
@@ -196,10 +206,10 @@ public class ApplicationDbContextInitialiser
             await MarkMigrationAppliedAsync("20260610153831_RemoveStationPhoneNumber", cancellationToken);
         }
 
-        if (await HasTableAsync("custom_booking_requests", cancellationToken)
-            && await HasTableAsync("custom_booking_quotes", cancellationToken))
+        if (await HasTableAsync("charter_booking_requests", cancellationToken)
+            && await HasTableAsync("charter_booking_quotes", cancellationToken))
         {
-            await MarkMigrationAppliedAsync("20260610163151_AddCustomBookingRequests", cancellationToken);
+            await MarkMigrationAppliedAsync("20260610163151_AddCharterBookingRequests", cancellationToken);
         }
     }
 
@@ -322,6 +332,35 @@ public class ApplicationDbContextInitialiser
     private async Task SyncUserCodeSequencesAsync()
     {
         await Task.CompletedTask;
+    }
+
+    private async Task MarkRenamedMigrationsAppliedAsync(CancellationToken cancellationToken = default)
+    {
+        if (!await _context.Database.CanConnectAsync(cancellationToken)
+            || !await HasTableAsync("__EFMigrationsHistory", cancellationToken))
+        {
+            return;
+        }
+
+        var appliedMigrations = (await GetAppliedMigrationsAsync(cancellationToken))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var (oldMigrationId, currentMigrationId) in RenamedMigrationIds)
+        {
+            if (!appliedMigrations.Contains(oldMigrationId)
+                || appliedMigrations.Contains(currentMigrationId))
+            {
+                continue;
+            }
+
+            await MarkMigrationAppliedAsync(currentMigrationId, cancellationToken);
+            appliedMigrations.Add(currentMigrationId);
+
+            _logger.LogInformation(
+                "Marked renamed EF migration {CurrentMigrationId} as applied because {OldMigrationId} is already applied.",
+                currentMigrationId,
+                oldMigrationId);
+        }
     }
 
     private async Task<bool> HasInitialSchemaAsync(CancellationToken cancellationToken) =>

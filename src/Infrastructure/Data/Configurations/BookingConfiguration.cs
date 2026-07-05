@@ -21,14 +21,14 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.PromotionId).HasColumnName("promotion_id");
         builder.Property(x => x.TripId).HasColumnName("trip_id");
         builder.Property(x => x.BookingCode).HasColumnName("booking_code").HasMaxLength(50).IsRequired();
-        builder.Property(x => x.CustomBookingQrToken).HasColumnName("custom_booking_qr_token").HasMaxLength(100);
+        builder.Property(x => x.CharterBookingQrToken).HasColumnName("charter_booking_qr_token").HasMaxLength(100);
         builder.Property(x => x.ContactName).HasColumnName("contact_name").HasMaxLength(150).IsRequired();
         builder.Property(x => x.ContactPhone).HasColumnName("contact_phone").HasMaxLength(30).IsRequired();
         builder.Property(x => x.ContactEmail).HasColumnName("contact_email").HasMaxLength(255);
         builder.HasIndex(x => x.BookingCode).IsUnique();
-        builder.HasIndex(x => x.CustomBookingQrToken)
+        builder.HasIndex(x => x.CharterBookingQrToken)
             .IsUnique()
-            .HasFilter("custom_booking_qr_token IS NOT NULL");
+            .HasFilter("charter_booking_qr_token IS NOT NULL");
 
         builder.Property(x => x.BookingStatus)
             .HasColumnName("status")
@@ -59,7 +59,6 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.PassengerCount).HasColumnName("passenger_count").IsRequired(false);
         builder.Property(x => x.AdultCount).HasColumnName("adult_count").IsRequired(false);
         builder.Property(x => x.ChildCount).HasColumnName("child_count").IsRequired(false);
-        builder.Property(x => x.PreferredNumberOfDecks).HasColumnName("preferred_number_of_decks");
         builder.Property(x => x.PreferredSeatSetupType)
             .HasColumnName("preferred_seat_setup_type")
             .HasConversion<string>()
@@ -76,7 +75,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasIndex(x => new { x.BoatId, x.DepartureDate })
             .HasDatabaseName("ux_bookings_boat_date_active")
             .IsUnique()
-            .HasFilter("booking_type = 'CustomBooking' AND status IN ('Quoted', 'Confirmed')");
+            .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
 
         builder.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Promotion).WithMany(p => p.Bookings).HasForeignKey(x => x.PromotionId).OnDelete(DeleteBehavior.SetNull);

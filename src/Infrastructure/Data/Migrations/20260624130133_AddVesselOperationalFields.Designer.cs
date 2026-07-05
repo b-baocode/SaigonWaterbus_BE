@@ -1373,7 +1373,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("services", (string)null);
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBooking", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBooking", b =>
                 {
                     b.HasBaseType("SaigonWaterbus.Domain.Entities.Booking");
 
@@ -1422,7 +1422,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("VesselId");
 
-                    b.HasDiscriminator().HasValue("CustomBooking");
+                    b.HasDiscriminator().HasValue("CharterBooking");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.BlogPost", b =>
@@ -1654,7 +1654,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Role");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBooking", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBooking", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Station", "FromStation")
                         .WithMany()

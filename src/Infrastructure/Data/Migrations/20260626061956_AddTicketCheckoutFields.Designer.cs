@@ -466,7 +466,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("tickets", (string)null);
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingItineraryStop", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBookingItineraryStop", b =>
                 {
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
@@ -477,9 +477,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
-                    b.Property<Guid>("CustomBookingId")
+                    b.Property<Guid>("CharterBookingId")
                         .HasColumnType("uuid")
-                        .HasColumnName("custom_booking_id");
+                        .HasColumnName("charter_booking_id");
 
                     b.Property<string>("Note")
                         .HasMaxLength(500)
@@ -506,7 +506,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasIndex("StationId");
 
-                    b.HasIndex("CustomBookingId", "StopOrder")
+                    b.HasIndex("CharterBookingId", "StopOrder")
                         .IsUnique();
 
                     b.ToTable("itinerary_stops", (string)null);
@@ -1451,7 +1451,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("user_station_assignments", (string)null);
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBooking", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBooking", b =>
                 {
                     b.HasBaseType("SaigonWaterbus.Domain.Entities.Booking");
 
@@ -1527,9 +1527,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("BoatId", "DepartureDate")
                         .IsUnique()
                         .HasDatabaseName("ux_bookings_boat_date_active")
-                        .HasFilter("booking_type = 'CustomBooking' AND status IN ('Quoted', 'Confirmed')");
+                        .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
 
-                    b.HasDiscriminator().HasValue("CustomBooking");
+                    b.HasDiscriminator().HasValue("CharterBooking");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.BlogPost", b =>
@@ -1617,11 +1617,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("CheckedOutByUser");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBookingItineraryStop", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBookingItineraryStop", b =>
                 {
-                    b.HasOne("SaigonWaterbus.Domain.Entities.CustomBooking", "CustomBooking")
+                    b.HasOne("SaigonWaterbus.Domain.Entities.CharterBooking", "CharterBooking")
                         .WithMany("ItineraryStops")
-                        .HasForeignKey("CustomBookingId")
+                        .HasForeignKey("CharterBookingId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
@@ -1631,7 +1631,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("CustomBooking");
+                    b.Navigation("CharterBooking");
 
                     b.Navigation("Station");
                 });
@@ -1791,7 +1791,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("User");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBooking", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBooking", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Boat", "Boat")
                         .WithMany()
@@ -1871,7 +1871,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("StationAssignments");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CustomBooking", b =>
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBooking", b =>
                 {
                     b.Navigation("ItineraryStops");
                 });

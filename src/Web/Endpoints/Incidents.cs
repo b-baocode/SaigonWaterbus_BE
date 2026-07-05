@@ -24,7 +24,7 @@ public sealed class Incidents : IEndpointGroup
         """
         {
           "resolutionNote": "Da dieu tau thay the va dua tau cu ve bao tri.",
-          "boatStatus": "Maintenance",
+          "boatStatus": "UnderMaintenance",
           "tripStatus": "Cancelled"
         }
         """;
@@ -63,7 +63,7 @@ public sealed class Incidents : IEndpointGroup
                 "Admin, Manager hoặc Staff",
                 CreateIncidentExample,
                 "boatId bat buoc. tripId optional neu su co xay ra trong mot chuyen cu the.",
-                "Khi tao su co, tau duoc chuyen sang Maintenance.",
+                "Khi tao su co, tau duoc chuyen sang UnderMaintenance.",
                 "Neu co tripId: severity High/Critical se Cancelled trip; muc khac se Delayed trip."));
 
         group.MapPatch(AssignManager, "{incidentId:guid}/assign-manager")

@@ -34,9 +34,9 @@ public sealed class Payments : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 CreatePaymentExample,
-                "Dung chung cho booking thuong va custom booking.",
+                "Dung chung cho booking thuong va charter booking.",
                 "Booking thuong chi ho tro paymentOption=Full.",
-                "Custom booking ho tro Deposit, Full hoac Remaining.",
+                "Charter booking ho tro Deposit, Full hoac Remaining.",
                 "Sau khi da dat coc, gui paymentOption=Remaining de tao payment phan con lai.",
                 "De tuong thich nguoc, Full sau khi da dat coc cung se thanh toan phan con lai."));
 
@@ -93,7 +93,7 @@ public sealed class Payments : IEndpointGroup
 
     private static async Task<IResult> HandlePaymentWebhook(
         ISender sender,
-        CustomBookingDepositPaymentWebhook webhook,
+        CharterBookingDepositPaymentWebhook webhook,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new HandlePaymentWebhookCommand(webhook), ct));
 }

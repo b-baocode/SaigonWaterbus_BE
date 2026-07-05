@@ -73,8 +73,8 @@ public sealed class Users : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Trả về lịch sử chung gồm booking vé thường và custom booking thuê nguyên tàu của user đang đăng nhập.",
-                "Custom booking có thể có nhiều ticket/QR sau khi booking đã thanh toán đủ và đã nhập danh sách hành khách.",
+                "Trả về lịch sử chung gồm booking vé thường và charter booking thuê nguyên tàu của user đang đăng nhập.",
+                "Charter booking có thể có nhiều ticket/QR sau khi booking đã thanh toán đủ và đã nhập danh sách hành khách.",
                 "detailEndpoint cho biết API chi tiết cần gọi tiếp theo cho từng loại booking."));
 
         groupBuilder.MapGet(GetById, "detail/{userId:guid}")
@@ -165,6 +165,11 @@ public sealed class Users : IEndpointGroup
         groupBuilder.MapPut(Update, "{userId:guid}")
             .RequireAuthorization()
             .WithName("UpdateUserLegacy")
+            .ExcludeFromDescription();
+
+        groupBuilder.MapPatch(UpdateStatus, "{userId:guid}/status")
+            .RequireAuthorization()
+            .WithName("UpdateUserStatusLegacy")
             .ExcludeFromDescription();
 
         groupBuilder.MapDelete(Delete, "{userId:guid}")

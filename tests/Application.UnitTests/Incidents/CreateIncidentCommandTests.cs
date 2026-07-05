@@ -39,7 +39,7 @@ public class CreateIncidentCommandTests
         result.ResolutionStatus.ShouldBe(IncidentSupport.OpenStatus);
         result.OccurredAt.ShouldBe(now);
 
-        context.Boats.Single().Status.ShouldBe(BoatStatus.Maintenance);
+        context.Boats.Single().Status.ShouldBe(BoatStatus.UnderMaintenance);
         context.Incidents.Single().ResolutionStatus.ShouldBe(IncidentSupport.OpenStatus);
     }
 
@@ -86,7 +86,7 @@ public class CreateIncidentCommandTests
         var savedTrip = context.Trips.Single();
         savedTrip.TripStatus.ShouldBe(TripStatus.Cancelled);
         savedTrip.StatusNote.ShouldBe("Incident MechanicalFailure: Tau bi hong dong co tren chuyen.");
-        context.Boats.Single().Status.ShouldBe(BoatStatus.Maintenance);
+        context.Boats.Single().Status.ShouldBe(BoatStatus.UnderMaintenance);
     }
 
     private static Boat Boat(string code) =>

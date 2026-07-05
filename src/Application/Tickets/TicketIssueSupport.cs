@@ -16,7 +16,7 @@ internal static class TicketIssueSupport
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
-        if (booking.BookingType == Booking.CustomBookingType || booking.BookingStatus != BookingStatus.Confirmed)
+        if (Booking.IsCharterBookingType(booking.BookingType) || booking.BookingStatus != BookingStatus.Confirmed)
         {
             return [];
         }

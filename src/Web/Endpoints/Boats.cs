@@ -60,7 +60,7 @@ public sealed class Boats : IEndpointGroup
     private const string UpdateStatusExample =
         """
         {
-          "status": "Maintenance"
+          "status": "UnderMaintenance"
         }
         """;
 
@@ -143,13 +143,13 @@ public sealed class Boats : IEndpointGroup
                 "Mỗi tàu hiện lưu 1 ảnh chính.",
                 "Với multipart/form-data, rentalPrices dùng dạng rentalPrices[0].rentalUnit, rentalPrices[0].unitPrice, rentalPrices[0].currency, rentalPrices[0].note."));
 
-        groupBuilder.MapPatch(UpdateBoatStatus, "status/{boatId:guid}")
+        groupBuilder.MapPatch(UpdateBoatStatus, "{boatId:guid}/status")
             .RequireAuthorization()
             .WithSummary("Cập nhật trạng thái tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 UpdateStatusExample,
-                "Các trạng thái hợp lệ: Active, Maintenance, Inactive, Retired.",
+                "Các trạng thái hợp lệ: Active, UnderMaintenance, Inactive, Retired.",
                 "Muốn chuyển Active thì tàu phải setup đủ ghế.",
                 "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."));
 

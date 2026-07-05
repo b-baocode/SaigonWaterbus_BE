@@ -47,7 +47,7 @@ public class BoatSupportTests
         BoatSupport.IsReadyForOperation(Boat(seatsConfigured: true)).ShouldBeTrue();
         BoatSupport.IsReadyForOperation(Boat(
             seatsConfigured: true,
-            status: BoatStatus.Maintenance)).ShouldBeFalse();
+            status: BoatStatus.UnderMaintenance)).ShouldBeFalse();
     }
 
     [Test]

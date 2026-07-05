@@ -52,7 +52,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IUserCodeGenerator, UserCodeGenerator>();
         builder.Services.AddScoped<IBookingCodeGenerator, BookingCodeGenerator>();
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
-        builder.Services.AddScoped<ICustomBookingPaymentGateway, PayOsCustomBookingPaymentGateway>();
+        builder.Services.AddScoped<ICharterBookingPaymentGateway, PayOsCharterBookingPaymentGateway>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IBoatImageStorageService, CloudinaryBoatImageStorageService>();
         builder.Services.AddScoped<IStationImageStorageService, CloudinaryStationImageStorageService>();

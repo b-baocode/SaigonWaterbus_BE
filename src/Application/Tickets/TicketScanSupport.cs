@@ -59,24 +59,24 @@ internal static class TicketScanSupport
         Ticket ticket,
         CancellationToken cancellationToken)
     {
-        if (ticket.Booking.BookingType == Booking.CustomBookingType)
+        if (Booking.IsCharterBookingType(ticket.Booking.BookingType))
         {
-            var customBooking = await context.Set<Booking>()
+            var charterBooking = await context.Set<Booking>()
                 .Include(x => x.Boat)
                 .Include(x => x.FromStation)
                 .Include(x => x.ToStation)
                 .Include(x => x.Passengers)
                 .SingleAsync(
-                    x => x.Id == ticket.BookingId && x.BookingType == Booking.CustomBookingType,
+                    x => x.Id == ticket.BookingId && x.BookingType == Booking.CharterBookingType,
                     cancellationToken);
 
-            return ToCustomBookingScanDto(ticket, customBooking);
+            return ToCharterBookingScanDto(ticket, charterBooking);
         }
 
         return ToBookingScanDto(ticket, ticket.Booking);
     }
 
-    private static TicketScanDto ToCustomBookingScanDto(Ticket ticket, Booking booking)
+    private static TicketScanDto ToCharterBookingScanDto(Ticket ticket, Booking booking)
     {
         var ticketPassenger = ticket.TicketItem?.BookingPassenger;
         var seatCode = ticket.TicketItem?.TripSeat?.Seat?.Code;
@@ -97,7 +97,7 @@ internal static class TicketScanSupport
             ticket.CheckedOutByUser?.FullName,
             booking.Id,
             booking.BookingCode,
-            Booking.CustomBookingType,
+            Booking.CharterBookingType,
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
             booking.ContactName,

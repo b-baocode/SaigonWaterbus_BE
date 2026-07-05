@@ -426,6 +426,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("booking_type");
 
+                    b.Property<string>("CharterBookingQrToken")
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)")
+                        .HasColumnName("charter_booking_qr_token");
+
                     b.Property<int?>("ChildCount")
                         .HasColumnType("integer")
                         .HasColumnName("child_count");
@@ -456,11 +461,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)")
                         .HasColumnName("currency");
-
-                    b.Property<string>("CustomBookingQrToken")
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("custom_booking_qr_token");
 
                     b.Property<DateOnly?>("DepartureDate")
                         .HasColumnType("date")
@@ -495,10 +495,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("payment_status");
-
-                    b.Property<int?>("PreferredNumberOfDecks")
-                        .HasColumnType("integer")
-                        .HasColumnName("preferred_number_of_decks");
 
                     b.Property<string>("PreferredSeatSetupType")
                         .HasMaxLength(30)
@@ -556,9 +552,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("BookingCode")
                         .IsUnique();
 
-                    b.HasIndex("CustomBookingQrToken")
+                    b.HasIndex("CharterBookingQrToken")
                         .IsUnique()
-                        .HasFilter("custom_booking_qr_token IS NOT NULL");
+                        .HasFilter("charter_booking_qr_token IS NOT NULL");
 
                     b.HasIndex("FromStationId");
 
@@ -573,7 +569,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("BoatId", "DepartureDate")
                         .IsUnique()
                         .HasDatabaseName("ux_bookings_boat_date_active")
-                        .HasFilter("booking_type = 'CustomBooking' AND status IN ('Quoted', 'Confirmed')");
+                        .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
 
                     b.ToTable("bookings", (string)null);
                 });

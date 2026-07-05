@@ -476,7 +476,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("BoatId", "DepartureDate")
                         .IsUnique()
                         .HasDatabaseName("ux_bookings_boat_date_active")
-                        .HasFilter("booking_type = 'CustomBooking' AND status IN ('Quoted', 'Confirmed')");
+                        .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
 
                     b.ToTable("bookings", (string)null);
                 });
