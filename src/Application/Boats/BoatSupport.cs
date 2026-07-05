@@ -8,7 +8,7 @@ namespace SaigonWaterbus.Application.Boats;
 
 internal static class BoatSupport
 {
-    public const int MaxBoatImages = 1;
+    public const int MaxBoatImages = 3;
 
     public static async Task<User> EnsureCurrentUserCanViewBoatsAsync(
         IApplicationDbContext context,
@@ -81,9 +81,16 @@ internal static class BoatSupport
     }
 
     public static IReadOnlyCollection<string> CreateImageUrls(Boat boat) =>
-        string.IsNullOrWhiteSpace(boat.ImageUrl)
-            ? []
-            : [boat.ImageUrl.Trim()];
+        boat.ImageUrls.Length > 0
+            ? boat.ImageUrls
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Select(url => url.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(MaxBoatImages)
+                .ToArray()
+            : string.IsNullOrWhiteSpace(boat.ImageUrl)
+                ? []
+                : [boat.ImageUrl.Trim()];
 
     public static IReadOnlyCollection<string> NormalizeImageUrls(
         string? imageUrl,
@@ -134,10 +141,80 @@ internal static class BoatSupport
         Stream? imageContent,
         IReadOnlyCollection<BoatImageFileRequest>? imageFiles)
     {
-        var count = NormalizeImageUrls(imageUrl, imageUrls).Count
+        var count = CountRequestedImageUrls(imageUrl, imageUrls)
             + CreateImageFiles(null, null, null, imageContent, imageFiles).Count;
 
         return count <= MaxBoatImages;
+    }
+
+    public static void ReplaceImages(
+        Boat boat,
+        IReadOnlyCollection<string> imageUrls,
+        IReadOnlyCollection<StoredBoatImage>? uploadedImages = null)
+    {
+        var normalizedImageUrls = imageUrls
+            .Where(url => !string.IsNullOrWhiteSpace(url))
+            .Select(url => url.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(MaxBoatImages)
+            .ToArray();
+
+        boat.ImageUrls = normalizedImageUrls;
+        boat.ImageUrl = normalizedImageUrls.FirstOrDefault();
+        boat.ImagePublicId = null;
+
+        if (uploadedImages is not null
+            && uploadedImages.Count == 1
+            && normalizedImageUrls.Length == 1
+            && string.Equals(normalizedImageUrls[0], uploadedImages.Single().Url, StringComparison.OrdinalIgnoreCase))
+        {
+            boat.ImagePublicId = uploadedImages.Single().PublicId;
+        }
+    }
+
+    public static async Task<IReadOnlyCollection<StoredBoatImage>> UploadImagesAsync(
+        Guid boatId,
+        IReadOnlyCollection<BoatImageFileRequest>? imageFiles,
+        IBoatImageStorageService? boatImageStorage,
+        string propertyName,
+        CancellationToken cancellationToken)
+    {
+        if (imageFiles is null || imageFiles.Count == 0)
+        {
+            return [];
+        }
+
+        if (boatImageStorage is null)
+        {
+            throw AuthSupport.CreateValidationException(propertyName, "Dịch vụ lưu ảnh tàu chưa được cấu hình.");
+        }
+
+        var uploadedImages = new List<StoredBoatImage>(imageFiles.Count);
+        foreach (var file in imageFiles)
+        {
+            EnsureValidImage(
+                propertyName,
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                boatImageStorage);
+
+            if (file.Content.CanSeek)
+            {
+                file.Content.Position = 0;
+            }
+
+            uploadedImages.Add(await boatImageStorage.UploadImageAsync(
+                new BoatImageUpload(
+                    boatId,
+                    file.Content,
+                    file.FileName,
+                    file.ContentType,
+                    imageFiles.Count == 1 ? null : Guid.NewGuid()),
+                cancellationToken));
+        }
+
+        return uploadedImages;
     }
 
     public static void EnsureValidImage(
@@ -272,5 +349,22 @@ internal static class BoatSupport
         {
             urls.Add(imageUrl.Trim());
         }
+    }
+
+    private static int CountRequestedImageUrls(
+        string? imageUrl,
+        IReadOnlyCollection<string>? imageUrls)
+    {
+        var urls = new List<string>();
+        AddImageUrl(urls, imageUrl);
+
+        foreach (var url in imageUrls ?? [])
+        {
+            AddImageUrl(urls, url);
+        }
+
+        return urls
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Count();
     }
 }

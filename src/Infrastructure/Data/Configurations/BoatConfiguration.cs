@@ -69,6 +69,11 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
             .HasColumnName("image_url")
             .HasMaxLength(1000);
 
+        builder.Property(x => x.ImageUrls)
+            .HasColumnName("image_urls")
+            .HasColumnType("text[]")
+            .HasDefaultValueSql("ARRAY[]::text[]");
+
         builder.Property(x => x.ImagePublicId)
             .HasColumnName("image_public_id")
             .HasMaxLength(500);

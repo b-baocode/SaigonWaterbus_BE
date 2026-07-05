@@ -26,6 +26,8 @@ public class Boat : BaseAuditableEntity
 
     public string? ImageUrl { get; set; }
 
+    public string[] ImageUrls { get; set; } = [];
+
     public string? ImagePublicId { get; set; }
 
     public decimal? HourlyRentalPrice { get; set; }

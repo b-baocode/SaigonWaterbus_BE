@@ -117,7 +117,7 @@ public sealed class Boats : IEndpointGroup
                 "Nếu gửi URL ảnh bằng JSON, dùng imageUrls là danh sách ảnh; imageUrl cũ vẫn được hỗ trợ cho 1 ảnh.",
                 "Nếu upload ảnh, gửi multipart/form-data với các field tương ứng và field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "Mỗi tàu hiện lưu 1 ảnh chính.",
+                "Mỗi tàu lưu tối đa 3 ảnh.",
                 "Code tàu được chuẩn hóa thành chữ in hoa.",
                 "seatSetupType: FullStandard hoặc StandardAndVip, là đặc tính của tàu.",
                 "Không cần nhập seatCount khi tạo tàu; backend tự tính sau khi setup sơ đồ ghế.",
@@ -139,7 +139,7 @@ public sealed class Boats : IEndpointGroup
                 "Nếu gửi ảnh mới bằng imageUrl/imageUrls/images thì backend thay bộ ảnh hiện tại bằng bộ ảnh mới.",
                 "Nếu upload ảnh, gửi multipart/form-data với field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "Mỗi tàu hiện lưu 1 ảnh chính.",
+                "Mỗi tàu lưu tối đa 3 ảnh.",
                 "Với multipart/form-data, rentalPrices dùng dạng rentalPrices[0].rentalUnit, rentalPrices[0].unitPrice, rentalPrices[0].currency, rentalPrices[0].note."));
 
         groupBuilder.MapPatch(UpdateBoatStatus, "{boatId:guid}/status")

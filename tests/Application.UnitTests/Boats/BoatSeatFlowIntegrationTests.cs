@@ -181,7 +181,16 @@ public class BoatSeatFlowIntegrationTests
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe("https://example.test/boats/main.jpg");
-        result.ImageUrls.ShouldBe(["https://example.test/boats/main.jpg"]);
+        result.ImageUrls.ShouldBe([
+            "https://example.test/boats/main.jpg",
+            "https://example.test/boats/deck.jpg"
+        ]);
+
+        var boat = await context.Boats.SingleAsync(x => x.Id == result.Id);
+        boat.ImageUrls.ShouldBe([
+            "https://example.test/boats/main.jpg",
+            "https://example.test/boats/deck.jpg"
+        ]);
     }
 
     [Test]
@@ -209,6 +218,65 @@ public class BoatSeatFlowIntegrationTests
         var boat = await context.Boats.SingleAsync(x => x.Id == result.Id);
         boat.ImageUrl.ShouldBe(expectedUrl);
         boat.ImagePublicId.ShouldBe(result.Id.ToString("N"));
+    }
+
+    [Test]
+    public async Task CreateBoatUploadsThreeImageFilesAndStoresReturnedUrls()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        await using var firstFile = CreateImageFile();
+        await using var secondFile = CreateImageFile();
+        await using var thirdFile = CreateImageFile();
+
+        var result = await CreateBoatUseCase(context, userContext).ExecuteAsync(
+            new CreateBoatRequest(
+                $"UP3_{Guid.NewGuid():N}"[..20],
+                "Upload three image boat",
+                BoatStatus.Inactive,
+                4,
+                1,
+                SeatSetupType: SeatSetupType.FullStandard,
+                ImageFiles:
+                [
+                    new BoatImageFileRequest("boat-1.jpg", "image/jpeg", firstFile.Length, firstFile),
+                    new BoatImageFileRequest("boat-2.png", "image/png", secondFile.Length, secondFile),
+                    new BoatImageFileRequest("boat-3.webp", "image/webp", thirdFile.Length, thirdFile)
+                ]),
+            CancellationToken.None);
+
+        result.ImageUrls.Count.ShouldBe(3);
+        result.ImageUrls.Distinct(StringComparer.OrdinalIgnoreCase).Count().ShouldBe(3);
+        result.ImageUrls.ShouldAllBe(url => url.StartsWith($"https://example.test/boats/{result.Id}/"));
+        result.ImageUrl.ShouldBe(result.ImageUrls.First());
+
+        var boat = await context.Boats.SingleAsync(x => x.Id == result.Id);
+        boat.ImageUrls.Length.ShouldBe(3);
+        boat.ImagePublicId.ShouldBeNull();
+    }
+
+    [Test]
+    public void CreateBoatValidatorRejectsMoreThanThreeImages()
+    {
+        var request = new CreateBoatRequest(
+            $"MAX_{Guid.NewGuid():N}"[..20],
+            "Too many image boat",
+            BoatStatus.Inactive,
+            4,
+            1,
+            SeatSetupType: SeatSetupType.FullStandard,
+            ImageUrls:
+            [
+                "https://example.test/boats/1.jpg",
+                "https://example.test/boats/2.jpg",
+                "https://example.test/boats/3.jpg",
+                "https://example.test/boats/4.jpg"
+            ]);
+
+        var result = new CreateBoatRequestValidator().Validate(request);
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(error => error.ErrorMessage == "Mỗi tàu chỉ được gửi tối đa 3 ảnh.");
     }
 
     [Test]
@@ -245,11 +313,24 @@ public class BoatSeatFlowIntegrationTests
         var result = await UpdateBoatUseCase(context, userContext).ExecuteAsync(
             new UpdateBoatRequest(
                 boat.Id,
-                ImageUrl: "https://example.test/boats/new-main.jpg"),
+                ImageUrls:
+                [
+                    "https://example.test/boats/new-main.jpg",
+                    "https://example.test/boats/new-deck.jpg"
+                ]),
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe("https://example.test/boats/new-main.jpg");
-        result.ImageUrls.ShouldBe(["https://example.test/boats/new-main.jpg"]);
+        result.ImageUrls.ShouldBe([
+            "https://example.test/boats/new-main.jpg",
+            "https://example.test/boats/new-deck.jpg"
+        ]);
+
+        var updatedBoat = await context.Boats.SingleAsync(x => x.Id == boat.Id);
+        updatedBoat.ImageUrls.ShouldBe([
+            "https://example.test/boats/new-main.jpg",
+            "https://example.test/boats/new-deck.jpg"
+        ]);
     }
 
     [Test]

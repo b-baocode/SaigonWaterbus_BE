@@ -80,7 +80,7 @@ public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatReq
                 x.ImageUrls,
                 x.ImageContent,
                 x.ImageFiles))
-            .WithMessage("Schema gọn chỉ lưu 1 ảnh chính cho mỗi tàu.");
+            .WithMessage("Mỗi tàu chỉ được gửi tối đa 3 ảnh.");
 
         RuleFor(x => x.RentalPrices)
             .Must(BoatSupport.HasDistinctRentalUnits)
@@ -182,18 +182,23 @@ public sealed class UpdateBoatRequestUseCase
             boat.YearBuilt = request.YearBuilt;
         }
 
-        var imageUrl = BoatSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls).FirstOrDefault();
-        if (imageUrl is not null)
+        var imageUrls = BoatSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls).ToList();
+        var imageFiles = BoatSupport.CreateImageFiles(
+            request.ImageFileName,
+            request.ImageContentType,
+            request.ImageLength,
+            request.ImageContent,
+            request.ImageFiles);
+        var uploadedImages = await BoatSupport.UploadImagesAsync(
+            boat.Id,
+            imageFiles,
+            _boatImageStorageService,
+            nameof(request.ImageFiles),
+            cancellationToken);
+        imageUrls.AddRange(uploadedImages.Select(image => image.Url));
+        if (imageUrls.Count > 0)
         {
-            boat.ImageUrl = imageUrl;
-            boat.ImagePublicId = null;
-        }
-
-        var uploadedImage = await UploadPrimaryImageAsync(boat.Id, request, cancellationToken);
-        if (uploadedImage is not null)
-        {
-            boat.ImageUrl = uploadedImage.Url;
-            boat.ImagePublicId = uploadedImage.PublicId;
+            BoatSupport.ReplaceImages(boat, imageUrls, uploadedImages);
         }
 
         if (request.RentalPrices is not null)
@@ -211,44 +216,5 @@ public sealed class UpdateBoatRequestUseCase
         }
 
         return BoatSupport.CreateDto(boat);
-    }
-
-    private async Task<StoredBoatImage?> UploadPrimaryImageAsync(
-        Guid boatId,
-        UpdateBoatRequest request,
-        CancellationToken cancellationToken)
-    {
-        var files = BoatSupport.CreateImageFiles(
-                request.ImageFileName,
-                request.ImageContentType,
-                request.ImageLength,
-                request.ImageContent,
-                request.ImageFiles)
-            .ToArray();
-
-        if (files.Length == 0)
-        {
-            return null;
-        }
-
-        var boatImageStorage = _boatImageStorageService
-            ?? throw AuthSupport.CreateValidationException(nameof(request.ImageContent), "Dịch vụ lưu ảnh tàu chưa được cấu hình.");
-
-        var file = files[0];
-        BoatSupport.EnsureValidImage(
-            nameof(request.ImageContent),
-            file.FileName,
-            file.ContentType,
-            file.Length,
-            boatImageStorage);
-
-        if (file.Content.CanSeek)
-        {
-            file.Content.Position = 0;
-        }
-
-        return await boatImageStorage.UploadImageAsync(
-            new BoatImageUpload(boatId, file.Content, file.FileName, file.ContentType),
-            cancellationToken);
     }
 }
