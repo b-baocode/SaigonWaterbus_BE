@@ -41,6 +41,7 @@ public sealed class DeleteAllSeatsRequestUseCase
             throw AuthSupport.CreateValidationException("Seats", "Tàu chưa có ghế nào.");
 
         await _context.Seats.Where(x => x.BoatId == boat.Id).ExecuteDeleteAsync(cancellationToken);
+        boat.SeatCount = 0;
         boat.SeatsConfigured = false;
         boat.Status = BoatStatus.Inactive;
         await _context.SaveChangesAsync(cancellationToken);

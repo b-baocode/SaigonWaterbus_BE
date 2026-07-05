@@ -8,7 +8,6 @@ public sealed record UpdateBoatRequest(
     Guid BoatId,
     string? Code = null,
     string? Name = null,
-    int? SeatCount = null,
     int? NumberOfDecks = null,
     string? RegistrationNumber = null,
     int? MaxSpeedKmh = null,
@@ -47,11 +46,6 @@ public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatReq
             .MaximumLength(150)
             .WithMessage("Tên tàu không được vượt quá 150 ký tự.")
             .When(x => x.Name is not null);
-
-        RuleFor(x => x.SeatCount)
-            .GreaterThan(0)
-            .WithMessage("Số ghế phải lớn hơn 0.")
-            .When(x => x.SeatCount.HasValue);
 
         RuleFor(x => x.NumberOfDecks)
             .GreaterThan(0)
@@ -154,19 +148,13 @@ public sealed class UpdateBoatRequestUseCase
             boat.Name = request.Name.Trim();
         }
 
-        var capacityChanged = (request.SeatCount.HasValue && request.SeatCount.Value != boat.SeatCount)
-            || (request.NumberOfDecks.HasValue && request.NumberOfDecks.Value != boat.NumberOfDecks)
+        var capacityChanged = (request.NumberOfDecks.HasValue && request.NumberOfDecks.Value != boat.NumberOfDecks)
             || (request.SeatSetupType.HasValue && request.SeatSetupType.Value != boat.SeatSetupType);
         if (capacityChanged && boat.Seats.Count > 0)
         {
             throw AuthSupport.CreateValidationException(
-                nameof(request.SeatCount),
-                "Tàu đã có ghế. Xóa toàn bộ ghế trước khi đổi số ghế, số tầng hoặc kiểu ghế.");
-        }
-
-        if (request.SeatCount.HasValue)
-        {
-            boat.SeatCount = request.SeatCount.Value;
+                nameof(request.NumberOfDecks),
+                "Tàu đã có ghế. Xóa toàn bộ ghế trước khi đổi số tầng hoặc kiểu ghế.");
         }
 
         if (request.NumberOfDecks.HasValue)

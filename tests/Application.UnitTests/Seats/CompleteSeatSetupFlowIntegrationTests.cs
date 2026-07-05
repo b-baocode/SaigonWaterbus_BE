@@ -106,9 +106,8 @@ public class CompleteSeatSetupFlowIntegrationTests
         matrix.ConfiguredSeats.ShouldBe(0);
         matrix.Decks.Single().RowCount.ShouldBe(2);
         matrix.Decks.Single().Cells.Count.ShouldBe(4);
-        matrix.Decks.Single().Cells.ShouldAllBe(x => x.Type == SeatLayoutCellType.Seat);
-        matrix.Decks.Single().Cells.ShouldAllBe(x =>
-            x.SeatType != null && x.SeatType.SeatTypeCode == "STANDARD");
+        matrix.Decks.Single().Cells.ShouldAllBe(x => x.Type == SeatLayoutCellType.Empty);
+        matrix.Decks.Single().Cells.ShouldAllBe(x => x.SeatType == null);
         (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(0);
         boat.Status.ShouldBe(BoatStatus.Inactive);
 
@@ -138,8 +137,8 @@ public class CompleteSeatSetupFlowIntegrationTests
         await context.SaveChangesAsync();
 
         var matrix = await GenerateMatrix(context, userContext, boat.Id, 2, 2);
-        matrix.Decks.Single().Cells.ShouldAllBe(x =>
-            x.SeatType != null && x.SeatType.SeatTypeCode == "CABIN");
+        matrix.Decks.Single().Cells.ShouldAllBe(x => x.Type == SeatLayoutCellType.Empty);
+        matrix.Decks.Single().Cells.ShouldAllBe(x => x.SeatType == null);
 
         var configured = await Configure(
             context,
@@ -245,7 +244,7 @@ public class CompleteSeatSetupFlowIntegrationTests
     }
 
     [Test]
-    public async Task ConfigureRejectsSeatCountDifferentFromBoat()
+    public async Task ConfigureUpdatesBoatSeatCountFromGeneratedSeats()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -254,15 +253,16 @@ public class CompleteSeatSetupFlowIntegrationTests
         await context.SaveChangesAsync();
         await GenerateMatrix(context, userContext, boat.Id, 2, 2);
 
-        await Should.ThrowAsync<ValidationException>(() =>
-            Configure(
-                context,
-                userContext,
-                boat.Id,
-                [new DeckConfigDto(1, 1, 2)]));
+        var configured = await Configure(
+            context,
+            userContext,
+            boat.Id,
+            [new DeckConfigDto(1, 1, 2)]);
 
-        context.Seats.ShouldBeEmpty();
-        boat.SeatsConfigured.ShouldBeFalse();
+        configured.TotalSeats.ShouldBe(2);
+        configured.ConfiguredSeats.ShouldBe(2);
+        boat.SeatCount.ShouldBe(2);
+        boat.SeatsConfigured.ShouldBeTrue();
     }
 
     [Test]

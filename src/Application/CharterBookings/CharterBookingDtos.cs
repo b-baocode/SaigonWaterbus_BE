@@ -13,6 +13,8 @@ public sealed record CreateCharterBookingResult(
     decimal TotalAmount,
     string BookingStatus,
     int RegisteredPassengerCount,
+    int RequestedBoatCount,
+    IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PromotionCode);
 
@@ -26,6 +28,7 @@ public sealed record CreateCharterBookingRequest(
     Guid? FromStationId = null,
     Guid? ToStationId = null,
     IReadOnlyList<CreateCharterBookingItineraryStopRequest>? ItineraryStops = null,
+    IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
     SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
     string? PromotionCode = null,
@@ -36,6 +39,13 @@ public sealed record CreateCharterBookingItineraryStopRequest(
     int StopOrder,
     int StayDurationMinutes,
     string? Note = null);
+
+public sealed record CreateCharterBookingBoatRequest(
+    SeatSetupType SeatSetupType);
+
+public sealed record CharterBookingRequestedBoatDto(
+    int BoatOrder,
+    string SeatSetupType);
 
 public sealed record CharterBookingRouteLegEstimateDto(
     int LegOrder,
@@ -98,6 +108,8 @@ public sealed record CharterBookingDetailDto(
     int PassengerCount,
     int AdultCount,
     int ChildCount,
+    int RequestedBoatCount,
+    IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PreferredSeatSetupType,
     DateOnly DepartureDate,

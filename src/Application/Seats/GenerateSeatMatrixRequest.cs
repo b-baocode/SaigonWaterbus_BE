@@ -78,8 +78,7 @@ public sealed class GenerateSeatMatrixRequestUseCase
         return SeatSupport.CreateBoatSeatsDto(
             boat,
             [],
-            deckLayouts,
-            previewEmptyCellsAsSeats: true);
+            deckLayouts);
     }
 
     private async Task EnsureBoatHasNoLayoutAsync(Guid boatId, CancellationToken cancellationToken)

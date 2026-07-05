@@ -37,6 +37,8 @@ public class Booking : BaseGuidAuditableEntity
     public int? PassengerCount { get; set; }
     public int? AdultCount { get; set; }
     public int? ChildCount { get; set; }
+    public int? RequestedBoatCount { get; set; }
+    public string? RequestedBoatTypes { get; set; }
     public SeatSetupType? PreferredSeatSetupType { get; set; }
     public string? BoatRequirements { get; set; }
     public string? SpecialRequests { get; set; }

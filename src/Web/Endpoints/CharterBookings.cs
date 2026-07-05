@@ -29,7 +29,10 @@ public sealed class CharterBookings : IEndpointGroup
           "fromStationId": null,
           "toStationId": null,
           "itineraryStops": null,
-          "preferredSeatSetupType": "StandardAndVip",
+          "requestedBoats": [
+            { "seatSetupType": "StandardAndVip" },
+            { "seatSetupType": "FullStandard" }
+          ],
           "boatRequirements": "Muốn tàu có khu VIP và không gian tổ chức sinh nhật",
           "promotionCode": null,
           "specialRequests": "Can trang tri sinh nhat"
@@ -309,7 +312,9 @@ public sealed class CharterBookings : IEndpointGroup
                 "rentalUnit: Hour hoac Day, la don vi thue khach mong muon.",
                 "durationValue: so gio hoac so ngay thue (1-60).",
                 "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
-                "preferredSeatSetupType: FullStandard = tau thuong, StandardAndVip = tau co khu VIP.",
+                "requestedBoats: danh sach tau customer muon thue; moi item co seatSetupType.",
+                "seatSetupType: FullStandard = tau thuong, StandardAndVip = tau co khu VIP.",
+                "preferredSeatSetupType van duoc ho tro cho client cu va duoc hieu nhu 1 tau.",
                 "boatRequirements: yeu cau ghi chu them de admin chon tau.",
                 "fromStationId / toStationId: tuy chon, de null neu chua chon ben; neu dien thi lay id that tu GET /api/stations.",
                 "itineraryStops: tuy chon, de null neu khong co diem dung; neu dien thi stationId phai la id that tu GET /api/stations va stopOrder khong trung.",
@@ -509,6 +514,7 @@ public sealed class CharterBookings : IEndpointGroup
             request.FromStationId,
             request.ToStationId,
             request.ItineraryStops,
+            request.RequestedBoats,
             request.PreferredSeatSetupType,
             request.BoatRequirements,
             request.PromotionCode,

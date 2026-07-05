@@ -19,6 +19,7 @@ public sealed record CreateCharterBookingCommand(
     Guid? FromStationId = null,
     Guid? ToStationId = null,
     IReadOnlyList<CreateCharterBookingItineraryStopRequest>? ItineraryStops = null,
+    IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
     SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
     string? PromotionCode = null,
@@ -43,6 +44,18 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .Must(x => x.AdultCount + x.ChildCount <= 1000)
             .WithMessage("Tổng số khách không được vượt quá 1000.");
         RuleFor(x => x.PreferredSeatSetupType).IsInEnum().When(x => x.PreferredSeatSetupType.HasValue);
+        RuleFor(x => x.RequestedBoats)
+            .Must(x => x is null || x.Count > 0)
+            .WithMessage("Danh sách tàu yêu cầu không được rỗng nếu được gửi.");
+        RuleFor(x => x.RequestedBoats)
+            .Must(x => x is null || x.Count <= CharterBookingBoatSelectionSupport.MaxRequestedBoatCount)
+            .WithMessage($"Số lượng tàu yêu cầu không được vượt quá {CharterBookingBoatSelectionSupport.MaxRequestedBoatCount}.");
+        RuleForEach(x => x.RequestedBoats).ChildRules(boat =>
+        {
+            boat.RuleFor(x => x.SeatSetupType)
+                .IsInEnum()
+                .WithMessage("Kiểu tàu không hợp lệ.");
+        });
         RuleFor(x => x.BoatRequirements).MaximumLength(1000).When(x => x.BoatRequirements is not null);
         RuleFor(x => x.PromotionCode).MaximumLength(50).When(x => x.PromotionCode is not null);
         RuleFor(x => x.SpecialRequests).MaximumLength(1000).When(x => x.SpecialRequests is not null);
@@ -106,6 +119,9 @@ public sealed class CreateCharterBookingCommandHandler
 
         var passengerCount = request.AdultCount + request.ChildCount;
         const decimal subtotal = 0;
+        var requestedBoatTypes = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatTypes(
+            request.RequestedBoats,
+            request.PreferredSeatSetupType);
 
         await EnsureStationExistsAsync(request.FromStationId, nameof(request.FromStationId), cancellationToken);
         await EnsureStationExistsAsync(request.ToStationId, nameof(request.ToStationId), cancellationToken);
@@ -149,7 +165,10 @@ public sealed class CreateCharterBookingCommandHandler
             PassengerCount = passengerCount,
             AdultCount = request.AdultCount,
             ChildCount = request.ChildCount,
-            PreferredSeatSetupType = request.PreferredSeatSetupType,
+            RequestedBoatCount = requestedBoatTypes.Count == 0 ? null : requestedBoatTypes.Count,
+            RequestedBoatTypes = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatTypes),
+            PreferredSeatSetupType = request.PreferredSeatSetupType
+                ?? CharterBookingBoatSelectionSupport.FirstOrNull(requestedBoatTypes),
             BoatRequirements = request.BoatRequirements?.Trim(),
             SpecialRequests = request.SpecialRequests?.Trim(),
             PromotionId = promotion?.Id,
@@ -195,6 +214,8 @@ public sealed class CreateCharterBookingCommandHandler
             booking.TotalAmount,
             booking.BookingStatus.ToString(),
             0,
+            requestedBoatTypes.Count,
+            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatTypes),
             promotion?.PromotionCode);
     }
 

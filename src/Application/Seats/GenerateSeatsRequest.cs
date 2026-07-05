@@ -127,14 +127,15 @@ public sealed class GenerateSeatsRequestUseCase
             .ToDictionaryAsync(st => st.Code, cancellationToken);
 
         var seats = CreateSeats(boat, request.Decks, seatTypeById);
-        if (seats.Count != boat.SeatCount)
+        if (seats.Count == 0)
         {
             throw AuthSupport.CreateValidationException(
                 "Seats",
-                $"Số ghế tạo ra ({seats.Count}) không khớp SeatCount của tàu ({boat.SeatCount}).");
+                "Cần chọn ít nhất 1 ô ghế.");
         }
 
         _context.Seats.AddRange(seats);
+        boat.SeatCount = seats.Count;
         boat.SeatsConfigured = true;
         boat.Status = BoatStatus.Active;
         await _context.SaveChangesAsync(cancellationToken);

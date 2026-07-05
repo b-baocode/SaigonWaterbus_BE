@@ -13,7 +13,6 @@ public sealed class Boats : IEndpointGroup
         {
           "code": "WB01",
           "name": "Tau Waterbus 01",
-          "seatCount": 80,
           "numberOfDecks": 1,
           "seatSetupType": "FullStandard",
           "rentalPrices": [
@@ -45,7 +44,6 @@ public sealed class Boats : IEndpointGroup
         """
         {
           "name": "Tau Waterbus 01 (moi)",
-          "seatCount": 90,
           "rentalPrices": [
             {
               "rentalUnit": "Hour",
@@ -122,6 +120,7 @@ public sealed class Boats : IEndpointGroup
                 "Mỗi tàu hiện lưu 1 ảnh chính.",
                 "Code tàu được chuẩn hóa thành chữ in hoa.",
                 "seatSetupType: FullStandard hoặc StandardAndVip, là đặc tính của tàu.",
+                "Không cần nhập seatCount khi tạo tàu; backend tự tính sau khi setup sơ đồ ghế.",
                 "Tàu chưa thuộc dịch vụ nào; dịch vụ sẽ được chọn khi phân lịch chạy.",
                 "Không cần gửi status khi tạo tàu. Backend tự tạo Inactive, setup đủ ghế rồi mới chuyển Active.",
                 "Số đăng ký tàu phải là duy nhất nếu cung cấp."));
@@ -305,7 +304,7 @@ public sealed class Boats : IEndpointGroup
             body?.Code ?? string.Empty,
             body?.Name ?? string.Empty,
             BoatStatus.Inactive,
-            body?.SeatCount ?? 0,
+            0,
             body?.NumberOfDecks ?? 0,
             body?.RegistrationNumber,
             body?.MaxSpeedKmh,
@@ -327,7 +326,7 @@ public sealed class Boats : IEndpointGroup
             GetFormValue(form, "code") ?? string.Empty,
             GetFormValue(form, "name") ?? string.Empty,
             BoatStatus.Inactive,
-            ParseOptionalInt(GetFormValue(form, "seatCount")) ?? 0,
+            0,
             ParseOptionalInt(GetFormValue(form, "numberOfDecks")) ?? 0,
             GetFormValue(form, "registrationNumber"),
             ParseOptionalInt(GetFormValue(form, "maxSpeedKmh")),
@@ -351,7 +350,6 @@ public sealed class Boats : IEndpointGroup
             boatId,
             body?.Code,
             body?.Name,
-            body?.SeatCount,
             body?.NumberOfDecks,
             body?.RegistrationNumber,
             body?.MaxSpeedKmh,
@@ -374,7 +372,6 @@ public sealed class Boats : IEndpointGroup
             boatId,
             GetFormValue(form, "code"),
             GetFormValue(form, "name"),
-            ParseOptionalInt(GetFormValue(form, "seatCount")),
             ParseOptionalInt(GetFormValue(form, "numberOfDecks")),
             GetFormValue(form, "registrationNumber"),
             ParseOptionalInt(GetFormValue(form, "maxSpeedKmh")),
@@ -585,8 +582,7 @@ public sealed class Boats : IEndpointGroup
     private sealed record CreateBoatJsonRequest(
         string Code,
         string Name,
-        int SeatCount,
-        int NumberOfDecks,
+        int NumberOfDecks = 0,
         SeatSetupType SeatSetupType = SeatSetupType.FullStandard,
         string? RegistrationNumber = null,
         int? MaxSpeedKmh = null,
@@ -599,7 +595,6 @@ public sealed class Boats : IEndpointGroup
     private sealed record UpdateBoatJsonRequest(
         string? Code = null,
         string? Name = null,
-        int? SeatCount = null,
         int? NumberOfDecks = null,
         SeatSetupType? SeatSetupType = null,
         string? RegistrationNumber = null,

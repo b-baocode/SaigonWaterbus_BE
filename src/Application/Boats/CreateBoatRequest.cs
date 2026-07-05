@@ -52,8 +52,8 @@ public sealed class CreateBoatRequestValidator : AbstractValidator<CreateBoatReq
             .WithMessage("Trạng thái tàu không hợp lệ.");
 
         RuleFor(x => x.SeatCount)
-            .GreaterThan(0)
-            .WithMessage("Số ghế phải lớn hơn 0.");
+            .GreaterThanOrEqualTo(0)
+            .WithMessage("Số ghế không được âm.");
 
         RuleFor(x => x.NumberOfDecks)
             .GreaterThan(0)
@@ -163,7 +163,7 @@ public sealed class CreateBoatRequestUseCase
             RegistrationNumber = normalizedRegistrationNumber,
             Name = request.Name.Trim(),
             Status = request.Status,
-            SeatCount = request.SeatCount,
+            SeatCount = 0,
             NumberOfDecks = request.NumberOfDecks,
             SeatSetupType = request.SeatSetupType,
             ImageUrl = imageUrl,

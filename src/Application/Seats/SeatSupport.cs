@@ -91,15 +91,10 @@ internal static class SeatSupport
     public static BoatSeatsDto CreateBoatSeatsDto(
         Boat boat,
         IList<Seat> seats,
-        IReadOnlyCollection<SeatDeckLayout>? deckLayouts = null,
-        bool previewEmptyCellsAsSeats = false)
+        IReadOnlyCollection<SeatDeckLayout>? deckLayouts = null)
     {
         var layoutsByDeck = (deckLayouts ?? [])
             .ToDictionary(x => x.DeckNumber);
-
-        var previewSeatType = previewEmptyCellsAsSeats
-            ? BuildSeatTypeDtoFromCode(DefaultSeatTypeCode(boat.SeatSetupType))
-            : null;
 
         var seatsByDeck = seats
             .GroupBy(s => s.Deck)
@@ -116,9 +111,7 @@ internal static class SeatSupport
                 deckSeats ??= [];
                 var cells = CreateLayoutCellDtos(
                     layout,
-                    deckSeats,
-                    previewEmptyCellsAsSeats,
-                    previewSeatType);
+                    deckSeats);
 
                 return new SeatDeckDto(
                     deckNumber,
@@ -192,9 +185,7 @@ internal static class SeatSupport
 
     private static IReadOnlyCollection<SeatLayoutCellDto> CreateLayoutCellDtos(
         SeatDeckLayout? layout,
-        IReadOnlyCollection<Seat> seats,
-        bool previewEmptyCellsAsSeats,
-        SeatTypeDto? previewSeatType)
+        IReadOnlyCollection<Seat> seats)
     {
         var seatByCell = seats.ToDictionary(
             seat => (Row: RowIndex(seat.Row), seat.Column));
@@ -215,11 +206,9 @@ internal static class SeatSupport
             return [];
         }
 
-        var defaultOpenCellType = previewEmptyCellsAsSeats
-            ? SeatLayoutCellType.Seat
-            : seats.Count > 0
-                ? SeatLayoutCellType.Aisle
-                : SeatLayoutCellType.Empty;
+        var defaultOpenCellType = seats.Count > 0
+            ? SeatLayoutCellType.Aisle
+            : SeatLayoutCellType.Empty;
         var cells = new List<SeatLayoutCellDto>(rowCount * columnCount);
         for (var row = 1; row <= rowCount; row++)
         {
@@ -243,8 +232,7 @@ internal static class SeatSupport
                     row,
                     column,
                     cellType,
-                    null,
-                    cellType == SeatLayoutCellType.Seat ? previewSeatType : null));
+                    null));
             }
         }
 

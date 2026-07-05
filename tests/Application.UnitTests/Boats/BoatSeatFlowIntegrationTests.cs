@@ -24,6 +24,7 @@ public class BoatSeatFlowIntegrationTests
             CancellationToken.None);
 
         result.SeatSetupType.ShouldBe(setupType);
+        result.SeatCount.ShouldBe(0);
         result.Status.ShouldBe(BoatStatus.Inactive);
         result.SeatsConfigured.ShouldBeFalse();
     }
@@ -301,7 +302,6 @@ public class BoatSeatFlowIntegrationTests
                 boat.Id,
                 Code: "WB_006",
                 Name: "Waterbus 06",
-                SeatCount: 80,
                 NumberOfDecks: 1,
                 RegistrationNumber: "VN-006",
                 MaxSpeedKmh: 50,

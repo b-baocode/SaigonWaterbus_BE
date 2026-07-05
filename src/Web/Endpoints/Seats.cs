@@ -78,11 +78,9 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 GenerateMatrixExample,
                 "API này chỉ sinh ma trận vật lý theo số tầng, số hàng và số cột.",
-                "Response trả cells mặc định type=Seat để frontend hiển thị full ghế theo kiểu tàu.",
-                "FullStandard preview là STANDARD; StandardAndVip preview là CABIN.",
+                "Response trả cells mặc định type=Empty để frontend hiển thị ô trống.",
                 "Loại ghế seed mặc định: STANDARD, CABIN, RIVER, SKY.",
-                "Các cell Seat trong response generate chỉ là preview, chưa có seatId và chưa tạo ghế thật trong database.",
-                "Sau bước này frontend chỉ cần đổi các ô đặc biệt như Aisle, Empty hoặc đổi seatTypeCode nếu tàu hỗ trợ nhiều loại ghế.",
+                "Sau bước này frontend chọn ô nào là ghế bằng cách đổi type=Seat, hoặc chọn Aisle/Empty cho lối đi và ô trống.",
                 "Tàu vẫn SeatsConfigured=false và Status=Inactive.",
                 "Nếu tàu đã có ma trận hoặc sơ đồ ghế, phải xóa toàn bộ trước khi generate lại."));
 
@@ -100,7 +98,8 @@ public sealed class Seats : IEndpointGroup
                 "Chỉ cần gửi Aisle/Empty cho vị trí không phải ghế, hoặc gửi Seat kèm seatTypeCode để đổi loại ghế.",
                 "Kiểu ghế được lưu trực tiếp trên ghế của tàu; giá vé lấy theo seatTypeCode, không theo số trạm.",
                 "Aisle/Empty không lưu thành ghế; frontend dựng lại từ ma trận rowCount × columnCount và danh sách ghế.",
-                "Tổng số ô Seat phải bằng SeatCount của tàu.",
+                "Backend tự cập nhật SeatCount bằng tổng số ô Seat được tạo.",
+                "Cần có ít nhất 1 ô Seat.",
                 "Nếu tàu đã có ghế, phải xóa toàn bộ trước khi configure lại.",
                 "Khi setup hợp lệ, backend lưu ghế vào database, đặt SeatsConfigured=true và chuyển tàu sang Active.",
                 "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."));
@@ -112,6 +111,7 @@ public sealed class Seats : IEndpointGroup
                 "Admin",
                 null,
                 "Dùng khi muốn setup lại sơ đồ ghế từ đầu.",
+                "Backend reset SeatCount về 0; SeatCount mới sẽ được tính lại ở lần configure tiếp theo.",
                 "Sau khi xóa có thể gọi lại API generate với cấu hình mới."));
 
         groupBuilder.MapPut(UpdateSeat, "{boatId:guid}/seats/{seatId:guid}")
