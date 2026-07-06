@@ -60,7 +60,7 @@ public sealed class ReissueTicketCommandHandler : IRequestHandler<ReissueTicketC
         var newTicket = new Ticket
         {
             BookingId = oldTicket.BookingId,
-            TicketItemId = oldTicket.TicketItemId,
+            BookingPassengerId = oldTicket.BookingPassengerId,
             TicketCode = await TicketIssueSupport.GenerateTicketCodeAsync(_context, now, cancellationToken),
             QrToken = await TicketIssueSupport.GenerateQrTokenAsync(_context, cancellationToken),
             TicketStatus = TicketStatus.Active,
@@ -71,7 +71,7 @@ public sealed class ReissueTicketCommandHandler : IRequestHandler<ReissueTicketC
             ReissuedByUserId = currentUser.Id,
             ReissuedByUser = currentUser,
             Booking = oldTicket.Booking,
-            TicketItem = oldTicket.TicketItem
+            BookingPassenger = oldTicket.BookingPassenger
         };
 
         _context.Tickets.Add(newTicket);

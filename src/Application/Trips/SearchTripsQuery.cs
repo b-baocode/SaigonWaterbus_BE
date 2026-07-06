@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Seats;
+using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -85,9 +86,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                         .Where(p => p.HasValue)
                         .Min()
                 });
-        var minModifier = await _context.Set<TicketType>()
-            .Where(x => x.IsActive)
-            .MinAsync(x => x.PriceModifier, cancellationToken);
+        var minModifier = TicketTypePricing.All.Min(x => x.PriceModifier);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {

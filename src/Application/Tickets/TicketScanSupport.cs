@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
@@ -14,13 +15,9 @@ internal static class TicketScanSupport
     {
         var normalizedCodeOrToken = codeOrToken.Trim();
         return await context.Tickets
-            .Include(x => x.TicketItem)
-                .ThenInclude(x => x!.BookingPassenger)
-            .Include(x => x.TicketItem)
+            .Include(x => x.BookingPassenger)
                 .ThenInclude(x => x!.TripSeat)
                     .ThenInclude(x => x!.Seat)
-            .Include(x => x.TicketItem)
-                .ThenInclude(x => x!.TicketType)
             .Include(x => x.CheckedInByUser)
             .Include(x => x.CheckedOutByUser)
             .Include(x => x.Booking)
@@ -78,15 +75,16 @@ internal static class TicketScanSupport
 
     private static TicketScanDto ToCharterBookingScanDto(Ticket ticket, Booking booking)
     {
-        var ticketPassenger = ticket.TicketItem?.BookingPassenger;
-        var seatCode = ticket.TicketItem?.TripSeat?.Seat?.Code;
+        var ticketPassenger = ticket.BookingPassenger;
+        var seatCode = ticket.BookingPassenger?.TripSeat?.Seat?.Code;
+        TicketTypePricing.TryGet(ticket.BookingPassenger?.PassengerType, out var ticketType);
 
         return new TicketScanDto(
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
-            ticket.TicketItem?.TicketType?.Code,
-            ticket.TicketItem?.TicketType?.Name,
+            ticketType.Code,
+            ticketType.Name,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
             ticket.CheckedInAt,
@@ -131,15 +129,16 @@ internal static class TicketScanSupport
             .ToArray() ?? [];
         var fromStop = stops.FirstOrDefault();
         var toStop = stops.LastOrDefault();
-        var ticketPassenger = ticket.TicketItem?.BookingPassenger;
-        var seatCode = ticket.TicketItem?.TripSeat?.Seat?.Code;
+        var ticketPassenger = ticket.BookingPassenger;
+        var seatCode = ticket.BookingPassenger?.TripSeat?.Seat?.Code;
+        TicketTypePricing.TryGet(ticket.BookingPassenger?.PassengerType, out var ticketType);
 
         return new TicketScanDto(
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
-            ticket.TicketItem?.TicketType?.Code,
-            ticket.TicketItem?.TicketType?.Name,
+            ticketType.Code,
+            ticketType.Name,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
             ticket.CheckedInAt,

@@ -14,8 +14,10 @@ public class BookingPassenger : BaseGuidEntity
     public string? Nationality { get; set; }
     public string? PassengerType { get; set; }
     public string? Note { get; set; }
+    public Guid? TripSeatId { get; set; }
+    public decimal? UnitPrice { get; set; }
 
     public Booking Booking { get; set; } = null!;
+    public TripSeat? TripSeat { get; set; }
     public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
-    public ICollection<TicketItem> TicketItems { get; set; } = new List<TicketItem>();
 }

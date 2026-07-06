@@ -10,7 +10,6 @@ public static class WaterbusSeedData
     public static async Task SeedAsync(ApplicationDbContext context)
     {
         await SeedSeatTypesAsync(context);
-        await SeedTicketTypesAsync(context);
 
         if (await context.Set<Station>().AnyAsync() && await context.Set<Trip>().AnyAsync())
             return;
@@ -265,51 +264,6 @@ public static class WaterbusSeedData
             new SeatType { Code = "CABIN",    Name = "Cabin",     BasePrice = 10_000m, Currency = "VND", IsActive = true, DisplayOrder = 2 },
             new SeatType { Code = "RIVER",    Name = "River",     BasePrice = 12_000m, Currency = "VND", IsActive = true, DisplayOrder = 3 },
             new SeatType { Code = "SKY",      Name = "Sky",       BasePrice = 15_000m, Currency = "VND", IsActive = true, DisplayOrder = 4 }
-        );
-        await context.SaveChangesAsync();
-    }
-
-    private static async Task SeedTicketTypesAsync(ApplicationDbContext context)
-    {
-        if (await context.Set<TicketType>().AnyAsync()) return;
-
-        context.Set<TicketType>().AddRange(
-            new TicketType
-            {
-                Id = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-                Code = "ADULT", Name = "Vé người lớn",
-                Description = "Hành khách từ 12 tuổi trở lên",
-                PriceModifier = 1.0m, IsActive = true
-            },
-            new TicketType
-            {
-                Id = Guid.Parse("22222222-2222-2222-2222-222222222222"),
-                Code = "CHILD", Name = "Vé trẻ em",
-                Description = "Trẻ em dưới 12 tuổi",
-                PriceModifier = 0.5m, IsActive = true
-            },
-            new TicketType
-            {
-                Id = Guid.Parse("33333333-3333-3333-3333-333333333333"),
-                Code = "SENIOR", Name = "Vé người cao tuổi",
-                Description = "Hành khách từ 60 tuổi trở lên",
-                PriceModifier = 0.5m, IsActive = true
-            },
-            new TicketType
-            {
-                Id = Guid.Parse("44444444-4444-4444-4444-444444444444"),
-                Code = "STUDENT", Name = "Vé học sinh / sinh viên",
-                Description = "Học sinh, sinh viên có xuất trình thẻ",
-                PriceModifier = 0.8m, IsActive = true
-            },
-            new TicketType
-            {
-                Id = Guid.Parse("55555555-5555-5555-5555-555555555555"),
-                Code = "SPECIAL_POLICY", Name = "Vé miễn phí (đối tượng chính sách)",
-                Description = "Người có công, người khuyết tật và đối tượng chính sách. Chỉ áp dụng dịch vụ waterbus thông thường.",
-                PriceModifier = 0.0m, IsActive = true,
-                AllowedSeatTypeCodes = "STANDARD"
-            }
         );
         await context.SaveChangesAsync();
     }

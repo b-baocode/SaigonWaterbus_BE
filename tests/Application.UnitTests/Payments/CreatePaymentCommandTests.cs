@@ -406,12 +406,7 @@ public class CreatePaymentCommandTests
             FullName = "Nguyen Van A",
             PassengerType = "ADULT"
         };
-        var ticketItem = new TicketItem
-        {
-            Booking = booking,
-            BookingPassenger = passenger,
-            UnitPrice = 10000
-        };
+        passenger.UnitPrice = 10000;
         var payment = new Payment
         {
             Booking = booking,
@@ -423,7 +418,7 @@ public class CreatePaymentCommandTests
             PaymentPurpose = "Full",
             PaymentStatus = "Pending"
         };
-        context.AddRange(booking, passenger, ticketItem, payment);
+        context.AddRange(booking, passenger, payment);
         await context.SaveChangesAsync();
         var sender = new TestPaymentNotificationSender();
         var handler = new HandlePaymentWebhookCommandHandler(
@@ -436,7 +431,7 @@ public class CreatePaymentCommandTests
 
         var ticket = context.Tickets.Single();
         ticket.BookingId.ShouldBe(booking.Id);
-        ticket.TicketItemId.ShouldBe(ticketItem.Id);
+        ticket.BookingPassengerId.ShouldBe(passenger.Id);
         ticket.TicketStatus.ShouldBe(TicketStatus.Active);
         ticket.TicketCode.ShouldNotBeNullOrWhiteSpace();
         ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
