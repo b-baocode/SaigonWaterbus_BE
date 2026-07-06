@@ -30,6 +30,20 @@ internal static class CharterBookingBoatSelectionSupport
             ? null
             : string.Join(",", requestedBoatTypes.Select(x => x.ToString()));
 
+    public static IReadOnlyList<SeatSetupType> FromStorageValue(string? requestedBoatTypes)
+    {
+        if (string.IsNullOrWhiteSpace(requestedBoatTypes))
+        {
+            return [];
+        }
+
+        return requestedBoatTypes
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => Enum.TryParse<SeatSetupType>(x, ignoreCase: true, out _))
+            .Select(x => Enum.Parse<SeatSetupType>(x, ignoreCase: true))
+            .ToArray();
+    }
+
     public static IReadOnlyList<CharterBookingRequestedBoatDto> ToDtos(string? requestedBoatTypes)
     {
         if (string.IsNullOrWhiteSpace(requestedBoatTypes))

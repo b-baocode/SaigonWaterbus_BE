@@ -33,7 +33,7 @@ public sealed class CharterBookings : IEndpointGroup
             { "seatSetupType": "StandardAndVip" },
             { "seatSetupType": "FullStandard" }
           ],
-          "boatRequirements": "Muốn tàu có khu VIP và không gian tổ chức sinh nhật",
+          "boatRequirements": "Muốn tàu StandardAndVip và không gian tổ chức sinh nhật",
           "specialRequests": "Can trang tri sinh nhat"
         }
         """;
@@ -312,7 +312,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "durationValue: so gio hoac so ngay thue (1-60).",
                 "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
                 "requestedBoats: danh sach tau customer muon thue; moi item co seatSetupType.",
-                "seatSetupType: FullStandard = tau thuong, StandardAndVip = tau co khu VIP.",
+                "seatSetupType: FullStandard = tau full ghe STANDARD, StandardAndVip = tau setup sightseeing voi ghe CABIN/RIVER/SKY.",
                 "preferredSeatSetupType van duoc ho tro cho client cu va duoc hieu nhu 1 tau.",
                 "boatRequirements: yeu cau ghi chu them de admin chon tau.",
                 "fromStationId / toStationId: tuy chon, de null neu chua chon ben; neu dien thi lay id that tu GET /api/stations.",

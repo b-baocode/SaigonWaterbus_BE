@@ -393,6 +393,18 @@ public sealed class QuoteCharterBookingCommandHandler
                 $"Số khách vượt quá sức chứa của tàu ({boat.SeatCount}).")]);
         }
 
+        var requestedBoatTypes = CharterBookingBoatSelectionSupport.FromStorageValue(booking.RequestedBoatTypes);
+        if (requestedBoatTypes.Count == 0 && booking.PreferredSeatSetupType.HasValue)
+        {
+            requestedBoatTypes = [booking.PreferredSeatSetupType.Value];
+        }
+
+        if (requestedBoatTypes.Count > 0 && !requestedBoatTypes.Contains(boat.SeatSetupType))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
+                $"Tàu được chọn là {boat.SeatSetupType}, không trùng kiểu tàu khách yêu cầu.")]);
+        }
+
         var now = _timeProvider.GetUtcNow();
 
         var conflicts = await CharterBookingQuerySupport.BuildBaseQuery(_context)

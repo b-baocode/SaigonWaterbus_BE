@@ -92,7 +92,7 @@ public sealed class Seats : IEndpointGroup
                 ConfigureExample,
                 "Dùng sau khi đã sinh ma trận bằng /seats/generate.",
                 "Kiểu FullStandard: toàn bộ ghế là STANDARD.",
-                "Kiểu StandardAndVip: mặc định là CABIN; FE có thể đánh dấu ô Seat bằng seatTypeCode đã seed trong database: STANDARD, CABIN, RIVER hoặc SKY.",
+                "Kiểu StandardAndVip: mặc định là CABIN; FE có thể đánh dấu ô Seat bằng seatTypeCode đã seed trong database: CABIN, RIVER hoặc SKY.",
                 "cells là danh sách override; ô không gửi sẽ mặc định là Seat.",
                 "Mỗi override cell có type=Seat/Aisle/Empty.",
                 "Chỉ cần gửi Aisle/Empty cho vị trí không phải ghế, hoặc gửi Seat kèm seatTypeCode để đổi loại ghế.",

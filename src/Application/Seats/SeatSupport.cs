@@ -174,8 +174,8 @@ internal static class SeatSupport
         if (!allowedCodes.Contains(seatTypeCode))
         {
             var message = seatSetupType == SeatSetupType.FullStandard
-                ? "Tàu dịch vụ thường chỉ được dùng ghế STANDARD."
-                : "Tàu dịch vụ ngắm cảnh chỉ được dùng ghế CABIN, RIVER hoặc SKY.";
+                ? "Tàu FullStandard chỉ được dùng ghế STANDARD."
+                : "Tàu StandardAndVip chỉ được dùng ghế CABIN, RIVER hoặc SKY.";
             throw AuthSupport.CreateValidationException("seatTypeCode", message);
         }
     }
