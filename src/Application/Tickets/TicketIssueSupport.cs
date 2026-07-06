@@ -27,33 +27,33 @@ internal static class TicketIssueSupport
             return [];
         }
 
-        var passengers = await context.Set<BookingPassenger>()
+        var ticketItems = await context.Set<TicketItem>()
             .Where(x => x.BookingId == booking.Id)
             .ToListAsync(cancellationToken);
-        if (passengers.Count == 0)
+        if (ticketItems.Count == 0)
         {
             return [];
         }
 
-        var passengerIds = passengers.Select(x => x.Id).ToArray();
+        var ticketItemIds = ticketItems.Select(x => x.Id).ToArray();
         var existingTickets = await context.Tickets
             .Where(x => x.BookingId == booking.Id
-                     && x.BookingPassengerId.HasValue
-                     && passengerIds.Contains(x.BookingPassengerId.Value))
+                     && x.TicketItemId.HasValue
+                     && ticketItemIds.Contains(x.TicketItemId.Value))
             .ToListAsync(cancellationToken);
-        var ticketedPassengerIds = existingTickets
-            .Where(x => x.BookingPassengerId.HasValue)
-            .Select(x => x.BookingPassengerId!.Value)
+        var ticketedItemIds = existingTickets
+            .Where(x => x.TicketItemId.HasValue)
+            .Select(x => x.TicketItemId!.Value)
             .ToHashSet();
 
         var now = timeProvider.GetUtcNow();
         var createdTickets = new List<Ticket>();
-        foreach (var passenger in passengers.Where(x => !ticketedPassengerIds.Contains(x.Id)))
+        foreach (var item in ticketItems.Where(x => !ticketedItemIds.Contains(x.Id)))
         {
             var ticket = new Ticket
             {
                 BookingId = booking.Id,
-                BookingPassengerId = passenger.Id,
+                TicketItemId = item.Id,
                 TicketCode = await GenerateTicketCodeAsync(context, now, cancellationToken),
                 QrToken = await GenerateQrTokenAsync(context, cancellationToken),
                 TicketStatus = TicketStatus.Active,

@@ -2,7 +2,6 @@ using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Seats;
-using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -17,7 +16,7 @@ public sealed class FareCalculator : IFareCalculator
 
     public async Task<decimal> CalculateAsync(
         Guid seatId,
-        string ticketTypeCode,
+        Guid ticketTypeId,
         CancellationToken cancellationToken,
         Guid? tripId = null)
     {
@@ -30,8 +29,10 @@ public sealed class FareCalculator : IFareCalculator
         if (!seat.IsActive)
             throw new NotFoundException($"Seat {seat.Code} is not active.");
 
-        if (!TicketTypePricing.TryGet(ticketTypeCode, out var ticketType))
-            throw new NotFoundException($"Ticket type '{ticketTypeCode}' not found or inactive.");
+        var ticketType = await _context.Set<TicketType>()
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == ticketTypeId && x.IsActive, cancellationToken)
+            ?? throw new NotFoundException($"Ticket type {ticketTypeId} not found or inactive.");
 
         if (!ticketType.IsApplicableForSeatType(seat.SeatTypeCode))
         {

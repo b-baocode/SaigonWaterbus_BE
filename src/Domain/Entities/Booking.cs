@@ -51,6 +51,7 @@ public class Booking : BaseGuidAuditableEntity
     public Station? FromStation { get; set; }
     public Station? ToStation { get; set; }
     public ICollection<BookingPassenger> Passengers { get; set; } = new List<BookingPassenger>();
+    public ICollection<TicketItem> TicketItems { get; set; } = new List<TicketItem>();
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
     public ICollection<BookingItineraryStop> ItineraryStops { get; set; } = new List<BookingItineraryStop>();
