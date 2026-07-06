@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.CharterBookings;
+using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
 
@@ -9,7 +10,7 @@ namespace SaigonWaterbus.Application.UnitTests.CharterBookings;
 public class CharterBookingRoutePricingSupportTests
 {
     [Test]
-    public void HourlyRentalChargesAtLeastEstimatedRouteHours()
+    public void HourlyRentalChargesByEstimatedRouteMinutes()
     {
         var estimate = RouteEstimate(125);
 
@@ -18,7 +19,51 @@ public class CharterBookingRoutePricingSupportTests
             requestedDurationValue: 1,
             estimate);
 
-        chargeableHours.ShouldBe(3);
+        chargeableHours.ShouldBe(2.083m);
+    }
+
+    [Test]
+    public void HourlyPriceSubtractsFreeStayMinutesAndUsesExactChargeableMinutes()
+    {
+        var station = new Station
+        {
+            StationName = "Bến A",
+            Latitude = 10,
+            Longitude = 106
+        };
+        var booking = new Booking
+        {
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 1,
+            FromStation = station,
+            ItineraryStops =
+            [
+                new BookingItineraryStop
+                {
+                    Station = station,
+                    StayDurationMinutes = 116,
+                    StopOrder = 1
+                }
+            ]
+        };
+        var boat = new Boat
+        {
+            HourlyRentalPrice = 1_000_000m
+        };
+
+        var pricing = CharterBookingRoutePricingSupport.EstimatePrice(
+            booking,
+            boat,
+            BoatRentalUnit.Hour,
+            requestedDurationValue: 1,
+            relatedRoutes: null);
+
+        pricing.RouteEstimate.EstimatedDurationMinutes.ShouldBe(126);
+        pricing.RouteEstimate.FreeStayMinutes.ShouldBe(30);
+        pricing.RouteEstimate.ChargeableStayMinutes.ShouldBe(86);
+        pricing.RouteEstimate.ChargeableDurationMinutes.ShouldBe(96);
+        pricing.ChargeableDurationValue.ShouldBe(1.600m);
+        pricing.SubtotalAmount.ShouldBe(1_600_000m);
     }
 
     [Test]
@@ -31,30 +76,17 @@ public class CharterBookingRoutePricingSupportTests
             requestedDurationValue: 4,
             estimate);
 
-        chargeableHours.ShouldBe(4);
+        chargeableHours.ShouldBe(4m);
     }
 
     [Test]
-    public void DailyRentalTreatsTwelveHoursAsOneDay()
-    {
-        var estimate = RouteEstimate(720);
-
-        var chargeableDays = CharterBookingRoutePricingSupport.ResolveChargeableDurationValue(
-            BoatRentalUnit.Day,
-            requestedDurationValue: 1,
-            estimate);
-
-        chargeableDays.ShouldBe(1);
-    }
-
-    [Test]
-    public void DailyRentalRoundsAboveTwelveHoursToNextDay()
+    public void DailyRentalUsesRequestedDays()
     {
         var estimate = RouteEstimate(721);
 
         var chargeableDays = CharterBookingRoutePricingSupport.ResolveChargeableDurationValue(
             BoatRentalUnit.Day,
-            requestedDurationValue: 1,
+            requestedDurationValue: 2,
             estimate);
 
         chargeableDays.ShouldBe(2);
@@ -68,8 +100,11 @@ public class CharterBookingRoutePricingSupportTests
             null,
             EstimatedTravelMinutes: 0,
             EstimatedStayMinutes: 45,
+            FreeStayMinutes: 30,
+            ChargeableStayMinutes: 15,
             EstimatedBufferMinutes: 0,
             EstimatedDurationMinutes: 45,
+            ChargeableDurationMinutes: 15,
             HasCompleteDistanceEstimate: false,
             HasCompleteTravelTimeEstimate: false);
 
@@ -78,7 +113,7 @@ public class CharterBookingRoutePricingSupportTests
             requestedDurationValue: 2,
             estimate);
 
-        chargeableHours.ShouldBe(2);
+        chargeableHours.ShouldBe(2m);
     }
 
     [Test]
@@ -89,8 +124,11 @@ public class CharterBookingRoutePricingSupportTests
             null,
             EstimatedTravelMinutes: 0,
             EstimatedStayMinutes: 45,
+            FreeStayMinutes: 30,
+            ChargeableStayMinutes: 15,
             EstimatedBufferMinutes: 0,
             EstimatedDurationMinutes: 45,
+            ChargeableDurationMinutes: 15,
             HasCompleteDistanceEstimate: false,
             HasCompleteTravelTimeEstimate: false);
 
@@ -109,8 +147,11 @@ public class CharterBookingRoutePricingSupportTests
             null,
             EstimatedTravelMinutes: 0,
             EstimatedStayMinutes: 45,
+            FreeStayMinutes: 30,
+            ChargeableStayMinutes: 15,
             EstimatedBufferMinutes: 0,
             EstimatedDurationMinutes: 45,
+            ChargeableDurationMinutes: 15,
             HasCompleteDistanceEstimate: false,
             HasCompleteTravelTimeEstimate: false);
 
@@ -124,8 +165,11 @@ public class CharterBookingRoutePricingSupportTests
             TotalDistanceKm: 10,
             EstimatedTravelMinutes: estimatedDurationMinutes,
             EstimatedStayMinutes: 0,
+            FreeStayMinutes: 0,
+            ChargeableStayMinutes: 0,
             EstimatedBufferMinutes: 0,
             EstimatedDurationMinutes: estimatedDurationMinutes,
+            ChargeableDurationMinutes: estimatedDurationMinutes,
             HasCompleteDistanceEstimate: true,
             HasCompleteTravelTimeEstimate: true);
 }

@@ -40,6 +40,7 @@ internal static class CharterBookingQuerySupport
 
         return new CharterBookingDetailDto(
             booking.Id,
+            booking.Id,
             booking.BookingCode,
             booking.CharterBookingQrToken,
             booking.Created,
@@ -60,6 +61,8 @@ internal static class CharterBookingQuerySupport
                 routeEstimate,
                 booking.RentalUnit.GetValueOrDefault(),
                 booking.DurationValue.GetValueOrDefault()),
+            booking.FromStationId,
+            booking.ToStationId,
             booking.FromStation?.StationName,
             booking.ToStation?.StationName,
             booking.ItineraryStops

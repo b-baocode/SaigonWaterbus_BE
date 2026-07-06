@@ -441,6 +441,7 @@ public sealed class QuoteCharterBookingCommandHandler
 
         var subtotal = request.SubtotalAmount ?? automaticPricing.SubtotalAmount;
         var chargeableDurationValue = automaticPricing.ChargeableDurationValue;
+        var holdDurationValue = requestedDurationValue;
         var promotion = await ResolvePromotionForQuoteAsync(booking, request, subtotal, now, cancellationToken);
         if (promotion is not null)
         {
@@ -469,7 +470,7 @@ public sealed class QuoteCharterBookingCommandHandler
                 booking.DepartureDate.GetValueOrDefault(),
                 booking.StartTime,
                 rentalUnit,
-                chargeableDurationValue,
+                holdDurationValue,
                 holdExpiresAt,
                 cancellationToken))
         {
@@ -479,7 +480,7 @@ public sealed class QuoteCharterBookingCommandHandler
 
         booking.BoatId = boat.Id;
         booking.RentalUnit = rentalUnit;
-        booking.DurationValue = chargeableDurationValue;
+        booking.DurationValue = requestedDurationValue;
         booking.PromotionId = promotion?.Id;
         booking.SubtotalAmount = subtotal;
         booking.DiscountAmount = discount;
@@ -514,7 +515,7 @@ public sealed class QuoteCharterBookingCommandHandler
                 booking.DepartureDate.GetValueOrDefault(),
                 booking.StartTime,
                 rentalUnit,
-                chargeableDurationValue,
+                holdDurationValue,
                 cancellationToken);
             throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
                 "Tàu vừa được giữ cho booking khác. Vui lòng chọn tàu khác hoặc thử lại.")]);
@@ -547,7 +548,7 @@ public sealed class QuoteCharterBookingCommandHandler
             CharterBookingRoutePricingSupport.ToDto(
                 automaticPricing.RouteEstimate,
                 rentalUnit,
-                chargeableDurationValue),
+                requestedDurationValue),
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
             promotion?.PromotionCode);

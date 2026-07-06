@@ -9,7 +9,7 @@ namespace SaigonWaterbus.Application.CharterBookings;
 
 internal sealed record CharterBookingRoutePricingEstimate(
     decimal UnitPrice,
-    int ChargeableDurationValue,
+    decimal ChargeableDurationValue,
     decimal SubtotalAmount,
     CharterBookingRouteEstimate RouteEstimate);
 
@@ -18,8 +18,11 @@ internal sealed record CharterBookingRouteEstimate(
     decimal? TotalDistanceKm,
     int EstimatedTravelMinutes,
     int EstimatedStayMinutes,
+    int FreeStayMinutes,
+    int ChargeableStayMinutes,
     int EstimatedBufferMinutes,
     int EstimatedDurationMinutes,
+    int ChargeableDurationMinutes,
     bool HasCompleteDistanceEstimate,
     bool HasCompleteTravelTimeEstimate);
 
@@ -34,7 +37,7 @@ internal static class CharterBookingRoutePricingSupport
 {
     private const decimal AverageSpeedKmh = 13m;
     private const decimal BufferPercent = 0.10m;
-    private const int MinutesPerChargeableDay = 12 * 60;
+    private const int FreeStayMinutesPerBooking = 30;
     private const double RouteProjectionThresholdMeters = 1_000;
 
     public static async Task<IReadOnlyList<Route>> LoadRelatedRoutesAsync(
@@ -67,13 +70,20 @@ internal static class CharterBookingRoutePricingSupport
         var points = BuildRoutePoints(booking).ToArray();
         if (points.Length < 2)
         {
+            var fallbackStayMinutes = EstimateStayMinutes(booking);
+            var fallbackFreeStayMinutes = ResolveFreeStayMinutes(fallbackStayMinutes);
+            var fallbackChargeableStayMinutes = ResolveChargeableStayMinutes(fallbackStayMinutes, fallbackFreeStayMinutes);
+
             return new CharterBookingRouteEstimate(
                 [],
                 null,
                 0,
-                EstimateStayMinutes(booking),
+                fallbackStayMinutes,
+                fallbackFreeStayMinutes,
+                fallbackChargeableStayMinutes,
                 0,
-                EstimateStayMinutes(booking),
+                fallbackStayMinutes,
+                fallbackChargeableStayMinutes,
                 HasCompleteDistanceEstimate: false,
                 HasCompleteTravelTimeEstimate: false);
         }
@@ -107,18 +117,25 @@ internal static class CharterBookingRoutePricingSupport
             ? legs.Sum(x => x.TravelMinutes!.Value)
             : 0;
         var stayMinutes = EstimateStayMinutes(booking);
+        var freeStayMinutes = ResolveFreeStayMinutes(stayMinutes);
+        var chargeableStayMinutes = ResolveChargeableStayMinutes(stayMinutes, freeStayMinutes);
+        var chargeableBaseMinutes = travelMinutes + chargeableStayMinutes;
         var bufferMinutes = hasCompleteTravelTimeEstimate
-            ? (int)Math.Ceiling((travelMinutes + stayMinutes) * (double)BufferPercent)
+            ? (int)Math.Ceiling(chargeableBaseMinutes * (double)BufferPercent)
             : 0;
         var totalMinutes = travelMinutes + stayMinutes + bufferMinutes;
+        var chargeableDurationMinutes = chargeableBaseMinutes + bufferMinutes;
 
         return new CharterBookingRouteEstimate(
             legs,
             totalDistanceKm,
             travelMinutes,
             stayMinutes,
+            freeStayMinutes,
+            chargeableStayMinutes,
             bufferMinutes,
             totalMinutes,
+            chargeableDurationMinutes,
             hasCompleteDistanceEstimate,
             hasCompleteTravelTimeEstimate);
     }
@@ -136,15 +153,22 @@ internal static class CharterBookingRoutePricingSupport
             rentalUnit,
             requestedDurationValue,
             routeEstimate);
+        var chargeableDurationMinutes = ResolveChargeableDurationMinutes(
+            rentalUnit,
+            requestedDurationValue,
+            routeEstimate);
+        var subtotalAmount = rentalUnit == BoatRentalUnit.Hour
+            ? decimal.Round(unitPrice * chargeableDurationMinutes / 60m, 0, MidpointRounding.AwayFromZero)
+            : unitPrice * chargeableDurationValue;
 
         return new CharterBookingRoutePricingEstimate(
             unitPrice,
             chargeableDurationValue,
-            unitPrice * chargeableDurationValue,
+            subtotalAmount,
             routeEstimate);
     }
 
-    public static int ResolveChargeableDurationValue(
+    public static decimal ResolveChargeableDurationValue(
         BoatRentalUnit rentalUnit,
         int requestedDurationValue,
         CharterBookingRouteEstimate routeEstimate)
@@ -155,12 +179,48 @@ internal static class CharterBookingRoutePricingSupport
             return requested;
         }
 
-        var requiredUnits = rentalUnit == BoatRentalUnit.Day
-            ? (int)Math.Ceiling(routeEstimate.EstimatedDurationMinutes / (double)MinutesPerChargeableDay)
-            : (int)Math.Ceiling(routeEstimate.EstimatedDurationMinutes / 60d);
+        if (rentalUnit == BoatRentalUnit.Day)
+        {
+            return requested;
+        }
+
+        var requiredUnits = decimal.Round(
+            ResolveChargeableDurationMinutes(
+                rentalUnit,
+                requestedDurationValue,
+                routeEstimate) / 60m,
+            3,
+            MidpointRounding.AwayFromZero);
 
         return Math.Max(requested, Math.Max(1, requiredUnits));
     }
+
+    private static int ResolveChargeableDurationMinutes(
+        BoatRentalUnit rentalUnit,
+        int requestedDurationValue,
+        CharterBookingRouteEstimate routeEstimate)
+    {
+        var requestedMinutes = Math.Max(1, requestedDurationValue) * 60;
+        if (rentalUnit == BoatRentalUnit.Day)
+        {
+            return requestedMinutes;
+        }
+
+        if (!routeEstimate.HasCompleteTravelTimeEstimate || routeEstimate.ChargeableDurationMinutes <= 0)
+        {
+            return requestedMinutes;
+        }
+
+        return Math.Max(requestedMinutes, routeEstimate.ChargeableDurationMinutes);
+    }
+
+    private static int ResolveFreeStayMinutes(int stayMinutes) =>
+        Math.Min(Math.Max(stayMinutes, 0), FreeStayMinutesPerBooking);
+
+    private static int ResolveChargeableStayMinutes(int stayMinutes, int freeStayMinutes) =>
+        Math.Max(stayMinutes - freeStayMinutes, 0);
+
+    public static int GetFreeStayMinutesPerBooking() => FreeStayMinutesPerBooking;
 
     public static void EnsureCanAutoPrice(
         BoatRentalUnit rentalUnit,
@@ -199,8 +259,11 @@ internal static class CharterBookingRoutePricingSupport
             estimate.TotalDistanceKm,
             estimate.EstimatedTravelMinutes,
             estimate.EstimatedStayMinutes,
+            estimate.FreeStayMinutes,
+            estimate.ChargeableStayMinutes,
             estimate.EstimatedBufferMinutes,
             estimate.EstimatedDurationMinutes,
+            estimate.ChargeableDurationMinutes,
             ResolveChargeableDurationValue(rentalUnit, requestedDurationValue, estimate),
             rentalUnit.ToString(),
             estimate.HasCompleteDistanceEstimate,

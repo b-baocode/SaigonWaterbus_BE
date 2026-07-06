@@ -56,9 +56,12 @@ public sealed record CharterBookingRouteEstimateDto(
     decimal? TotalDistanceKm,
     int EstimatedTravelMinutes,
     int EstimatedStayMinutes,
+    int FreeStayMinutes,
+    int ChargeableStayMinutes,
     int EstimatedBufferMinutes,
     int EstimatedDurationMinutes,
-    int ChargeableDurationValue,
+    int ChargeableDurationMinutes,
+    decimal ChargeableDurationValue,
     string RentalUnit,
     bool HasCompleteDistanceEstimate,
     bool HasCompleteTravelTimeEstimate);
@@ -105,6 +108,7 @@ public sealed record CharterBookingListRequestedBoatDto(
     string SeatSetupType);
 
 public sealed record CharterBookingDetailDto(
+    Guid Id,
     Guid BookingId,
     string BookingCode,
     [property: JsonPropertyName("charterBookingQrToken")]
@@ -120,22 +124,20 @@ public sealed record CharterBookingDetailDto(
     int ChildCount,
     int RequestedBoatCount,
     IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PreferredSeatSetupType,
     DateOnly DepartureDate,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     TimeOnly? StartTime,
     string RentalUnit,
     int DurationValue,
     CharterBookingRouteEstimateDto RouteEstimate,
+    Guid? FromStationId,
+    Guid? ToStationId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? FromStationName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? ToStationName,
     IReadOnlyList<CharterBookingItineraryStopDto> ItineraryStops,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? BoatRequirements,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? SpecialRequests,
     decimal SubtotalAmount,
     decimal DiscountAmount,
@@ -432,7 +434,7 @@ public sealed record QuoteCharterBookingResult(
     decimal DiscountAmount,
     decimal TotalAmount,
     decimal UnitPrice,
-    int ChargeableDurationValue,
+    decimal ChargeableDurationValue,
     string PricingSource,
     CharterBookingRouteEstimateDto RouteEstimate,
     string BookingStatus,
