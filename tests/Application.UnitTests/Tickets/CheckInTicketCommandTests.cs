@@ -223,11 +223,7 @@ public class CheckInTicketCommandTests
         result.TicketCode.ShouldNotBe(oldTicket.TicketCode);
         result.QrToken.ShouldNotBe(oldTicket.QrToken);
         result.TicketPassenger.ShouldNotBeNull();
-        var expectedPassengerId = context.Set<TicketItem>()
-            .Where(x => x.Id == oldTicket.TicketItemId!.Value)
-            .Select(x => x.BookingPassengerId)
-            .Single();
-        result.TicketPassenger.PassengerId.ShouldBe(expectedPassengerId);
+        result.TicketPassenger.PassengerId.ShouldBe(oldTicket.BookingPassengerId!.Value);
 
         var tickets = context.Tickets.OrderBy(x => x.IssuedAt).ToArray();
         tickets.Length.ShouldBe(2);
@@ -352,20 +348,15 @@ public class CheckInTicketCommandTests
             Booking = booking,
             FullName = "Nguyen Van A",
             PhoneNumber = "0900000001",
-            PassengerType = "ADULT"
-        };
-        var ticketItem = new TicketItem
-        {
-            Booking = booking,
-            BookingPassenger = passenger,
+            PassengerType = "ADULT",
             TripSeat = tripSeat,
             UnitPrice = 10000
         };
         var ticket = new Ticket
         {
             Booking = booking,
-            TicketItem = ticketItem,
-            TicketItemId = ticketItem.Id,
+            BookingPassenger = passenger,
+            BookingPassengerId = passenger.Id,
             TicketCode = $"TK{Guid.NewGuid():N}"[..20],
             QrToken = Convert.ToHexString(Guid.NewGuid().ToByteArray()),
             TicketStatus = ticketStatus,
@@ -374,7 +365,7 @@ public class CheckInTicketCommandTests
             CheckedOutAt = checkedOutAt
         };
 
-        context.AddRange(booking, passenger, ticketItem, ticket);
+        context.AddRange(booking, passenger, ticket);
         await context.SaveChangesAsync();
         return ticket;
     }

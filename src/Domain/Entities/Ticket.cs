@@ -6,7 +6,6 @@ public class Ticket : BaseGuidAuditableEntity
 {
     public Guid BookingId { get; set; }
     public Guid? BookingPassengerId { get; set; }
-    public Guid? TicketItemId { get; set; }
     public string TicketCode { get; set; } = null!;
     public string QrToken { get; set; } = null!;
 
@@ -23,7 +22,6 @@ public class Ticket : BaseGuidAuditableEntity
 
     public Booking Booking { get; set; } = null!;
     public BookingPassenger? BookingPassenger { get; set; }
-    public TicketItem? TicketItem { get; set; }
     public User? CheckedInByUser { get; set; }
     public User? CheckedOutByUser { get; set; }
     public User? ReissuedByUser { get; set; }

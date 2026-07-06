@@ -14,7 +14,6 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
 
         builder.Property(x => x.BookingId).HasColumnName("booking_id").IsRequired();
         builder.Property(x => x.BookingPassengerId).HasColumnName("booking_passenger_id");
-        builder.Property(x => x.TicketItemId).HasColumnName("ticket_item_id");
         builder.Property(x => x.TicketCode).HasColumnName("ticket_code").HasMaxLength(50).IsRequired();
         builder.Property(x => x.QrToken).HasColumnName("qr_token").HasMaxLength(100).IsRequired();
 
@@ -42,13 +41,10 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.HasIndex(x => x.QrToken).IsUnique();
         builder.HasIndex(x => x.BookingId)
             .IsUnique()
-            .HasFilter("\"booking_passenger_id\" IS NULL AND \"ticket_item_id\" IS NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
+            .HasFilter("\"booking_passenger_id\" IS NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
         builder.HasIndex(x => x.BookingPassengerId)
             .IsUnique()
             .HasFilter("\"booking_passenger_id\" IS NOT NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
-        builder.HasIndex(x => x.TicketItemId)
-            .IsUnique()
-            .HasFilter("\"ticket_item_id\" IS NOT NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
         builder.HasIndex(x => x.ReissuedFromTicketId);
 
         builder.HasOne(x => x.Booking)
@@ -59,11 +55,6 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
         builder.HasOne(x => x.BookingPassenger)
             .WithMany(x => x.Tickets)
             .HasForeignKey(x => x.BookingPassengerId)
-            .OnDelete(DeleteBehavior.SetNull);
-
-        builder.HasOne(x => x.TicketItem)
-            .WithMany(x => x.Tickets)
-            .HasForeignKey(x => x.TicketItemId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.CheckedInByUser)

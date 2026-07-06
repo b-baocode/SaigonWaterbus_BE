@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260705131640_RemoveTicketItemAndTicketType")]
+    partial class RemoveTicketItemAndTicketType
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -146,13 +149,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("image_url");
-
-                    b.PrimitiveCollection<string[]>("ImageUrls")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text[]")
-                        .HasColumnName("image_urls")
-                        .HasDefaultValueSql("ARRAY[]::text[]");
 
                     b.Property<int?>("MaxSpeedKmh")
                         .HasColumnType("integer")
@@ -521,15 +517,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(10)")
                         .HasColumnName("rental_unit");
 
-                    b.Property<int?>("RequestedBoatCount")
-                        .HasColumnType("integer")
-                        .HasColumnName("requested_boat_count");
-
-                    b.Property<string>("RequestedBoatTypes")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("requested_boat_types");
-
                     b.Property<string>("SpecialRequests")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
@@ -706,64 +693,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("TripSeatId");
 
                     b.ToTable("booking_passengers", (string)null);
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBookingBoat", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("charter_booking_boat_id");
-
-                    b.Property<Guid>("BoatId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("boat_id");
-
-                    b.Property<int>("BoatOrder")
-                        .HasColumnType("integer")
-                        .HasColumnName("boat_order");
-
-                    b.Property<Guid>("BookingId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("booking_id");
-
-                    b.Property<decimal>("ChargeableDurationValue")
-                        .HasColumnType("numeric(12,3)")
-                        .HasColumnName("chargeable_duration_value");
-
-                    b.Property<DateTimeOffset>("Created")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<string>("SeatSetupType")
-                        .IsRequired()
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("seat_setup_type");
-
-                    b.Property<decimal>("SubtotalAmount")
-                        .HasColumnType("numeric(12,2)")
-                        .HasColumnName("subtotal_amount");
-
-                    b.Property<decimal>("UnitPrice")
-                        .HasColumnType("numeric(12,2)")
-                        .HasColumnName("unit_price");
-
-                    b.Property<DateTimeOffset?>("UpdatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("BoatId");
-
-                    b.HasIndex("BookingId", "BoatId")
-                        .IsUnique();
-
-                    b.HasIndex("BookingId", "BoatOrder")
-                        .IsUnique();
-
-                    b.ToTable("charter_booking_boats", (string)null);
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.GpsDevice", b =>
@@ -2440,25 +2369,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("TripSeat");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterBookingBoat", b =>
-                {
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Boat", "Boat")
-                        .WithMany()
-                        .HasForeignKey("BoatId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Booking", "Booking")
-                        .WithMany("CharterBoats")
-                        .HasForeignKey("BookingId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Boat");
-
-                    b.Navigation("Booking");
-                });
-
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.GpsDevice", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Boat", "Boat")
@@ -2790,8 +2700,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Booking", b =>
                 {
-                    b.Navigation("CharterBoats");
-
                     b.Navigation("ItineraryStops");
 
                     b.Navigation("Passengers");
