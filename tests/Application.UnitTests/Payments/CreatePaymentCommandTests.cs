@@ -442,6 +442,51 @@ public class CreatePaymentCommandTests
         ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
     }
 
+    [Test]
+    public async Task SyncPaymentByOrderCodeUsesPayOsOrderCode()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingCode = "BK-SYNC-ORDER",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "123456",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new SyncPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new TestPaymentNotificationSender(),
+            TimeProvider.System);
+
+        var result = await handler.Handle(new SyncPaymentByOrderCodeCommand(123456), CancellationToken.None);
+
+        result.PaymentId.ShouldBe(payment.Id);
+        result.PaymentCode.ShouldBe("123456");
+        result.CheckoutUrl.ShouldBe("https://example.test/checkout");
+    }
+
     private static CharterBookingDepositPaymentWebhook CreatePaidWebhook(long orderCode, long amount) =>
         new(
             "00",

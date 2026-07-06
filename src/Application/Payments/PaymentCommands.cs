@@ -232,6 +232,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 
 public sealed record SyncPaymentCommand(Guid PaymentId) : IRequest<PaymentDto>;
 
+public sealed record SyncPaymentByOrderCodeCommand(long OrderCode) : IRequest<PaymentDto>;
+
 public sealed class SyncPaymentCommandValidator : AbstractValidator<SyncPaymentCommand>
 {
     public SyncPaymentCommandValidator()
@@ -240,7 +242,17 @@ public sealed class SyncPaymentCommandValidator : AbstractValidator<SyncPaymentC
     }
 }
 
-public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentCommand, PaymentDto>
+public sealed class SyncPaymentByOrderCodeCommandValidator : AbstractValidator<SyncPaymentByOrderCodeCommand>
+{
+    public SyncPaymentByOrderCodeCommandValidator()
+    {
+        RuleFor(x => x.OrderCode).GreaterThan(0);
+    }
+}
+
+public sealed class SyncPaymentCommandHandler :
+    IRequestHandler<SyncPaymentCommand, PaymentDto>,
+    IRequestHandler<SyncPaymentByOrderCodeCommand, PaymentDto>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
@@ -280,6 +292,27 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
                 "Mã thanh toán PayOS không hợp lệ.")]);
         }
 
+        await SyncPaymentAsync(payment, orderCode, cancellationToken);
+
+        return PaymentSupport.ToDto(payment.Booking, payment);
+    }
+
+    public async Task<PaymentDto> Handle(SyncPaymentByOrderCodeCommand request, CancellationToken cancellationToken)
+    {
+        var payment = await PaymentSupport.GetOwnedPaymentByOrderCodeAsync(
+            _context,
+            _userContext,
+            request.OrderCode,
+            includeBookingPayments: true,
+            cancellationToken);
+
+        await SyncPaymentAsync(payment, request.OrderCode, cancellationToken);
+
+        return PaymentSupport.ToDto(payment.Booking, payment);
+    }
+
+    private async Task SyncPaymentAsync(Payment payment, long orderCode, CancellationToken cancellationToken)
+    {
         await using var paymentLock = await _paymentProcessingLock.TryAcquireAsync(
             payment.PaymentCode,
             cancellationToken);
@@ -328,8 +361,6 @@ public sealed class SyncPaymentCommandHandler : IRequestHandler<SyncPaymentComma
             payment,
             wasPaid,
             cancellationToken);
-
-        return PaymentSupport.ToDto(payment.Booking, payment);
     }
 }
 
@@ -656,6 +687,43 @@ internal static class PaymentSupport
                 .ThenInclude(x => x.Station);
 
         var payment = await query.SingleOrDefaultAsync(x => x.Id == paymentId, cancellationToken)
+            ?? throw new NotFoundException("Payment not found.");
+        if (payment.Booking.UserId != userId)
+        {
+            throw new NotFoundException("Payment not found.");
+        }
+
+        return payment;
+    }
+
+    public static async Task<Payment> GetOwnedPaymentByOrderCodeAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        long orderCode,
+        bool includeBookingPayments,
+        CancellationToken cancellationToken)
+    {
+        var userId = userContext.UserId
+            ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
+        var paymentCode = orderCode.ToString(CultureInfo.InvariantCulture);
+
+        IQueryable<Payment> query = context.Set<Payment>().Include(x => x.Booking);
+        if (includeBookingPayments)
+        {
+            query = query.Include(x => x.Booking).ThenInclude(x => x.Payments);
+        }
+
+        query = query
+            .Include(x => x.Booking.Boat)
+            .Include(x => x.Booking.FromStation)
+            .Include(x => x.Booking.ToStation)
+            .Include(x => x.Booking.ItineraryStops)
+                .ThenInclude(x => x.Station);
+
+        var payment = await query.SingleOrDefaultAsync(x =>
+                x.PaymentCode == paymentCode
+                && x.Provider == PayOsProvider,
+                cancellationToken)
             ?? throw new NotFoundException("Payment not found.");
         if (payment.Booking.UserId != userId)
         {

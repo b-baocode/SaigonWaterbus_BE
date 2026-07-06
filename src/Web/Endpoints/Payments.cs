@@ -52,6 +52,16 @@ public sealed class Payments : IEndpointGroup
                 "Goi PayOS de lay trang thai payment moi nhat.",
                 "Neu PayOS tra ve Paid, backend cap nhat booking/payment."));
 
+        group.MapPost(SyncPaymentByOrderCode, "order-code/{orderCode:long}/sync")
+            .RequireAuthorization()
+            .WithSummary("Dong bo trang thai thanh toan bang PayOS orderCode")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Dung sau khi PayOS redirect ve FE voi query orderCode.",
+                "Vi du: POST /api/payments/order-code/123456/sync.",
+                "Endpoint cu POST /api/payments/{paymentId}/sync van dung paymentId noi bo trong database."));
+
         group.MapPost(RefundPayment, "{paymentId:guid}/refund")
             .RequireAuthorization()
             .WithSummary("Hoan tien payment")
@@ -82,6 +92,9 @@ public sealed class Payments : IEndpointGroup
 
     private static async Task<IResult> SyncPayment(ISender sender, Guid paymentId, CancellationToken ct) =>
         Results.Ok(await sender.Send(new SyncPaymentCommand(paymentId), ct));
+
+    private static async Task<IResult> SyncPaymentByOrderCode(ISender sender, long orderCode, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new SyncPaymentByOrderCodeCommand(orderCode), ct));
 
     private static async Task<IResult> RefundPayment(
         ISender sender,
