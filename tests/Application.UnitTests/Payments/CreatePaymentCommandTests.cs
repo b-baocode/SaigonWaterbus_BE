@@ -56,6 +56,116 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task RegularBookingAppliesPromotionWhenCreatingPayment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var promotion = new Promotion
+        {
+            PromotionCode = "WELCOME10",
+            PromotionName = "Welcome",
+            PromotionType = PromotionType.Percent,
+            DiscountValue = 10,
+            ValidFrom = DateTimeOffset.UtcNow.AddDays(-1),
+            ValidTo = DateTimeOffset.UtcNow.AddDays(1),
+            Status = "Active"
+        };
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingCode = "BK-CHECKOUT-PROMO",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        context.AddRange(promotion, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new TestPaymentNotificationSender(),
+            TimeProvider.System);
+
+        var result = await handler.Handle(
+            new CreatePaymentCommand(booking.Id, PromotionCode: "welcome10"),
+            CancellationToken.None);
+
+        result.Amount.ShouldBe(9000);
+        booking.PromotionId.ShouldBe(promotion.Id);
+        booking.DiscountAmount.ShouldBe(1000);
+        booking.TotalAmount.ShouldBe(9000);
+        booking.RemainingAmount.ShouldBe(0);
+        promotion.UsageCount.ShouldBe(1);
+        context.Set<Payment>().Single().Amount.ShouldBe(9000);
+    }
+
+    [Test]
+    public async Task CreatingPaymentRejectsPromotionChangeWhenPendingPaymentExists()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var promotion = new Promotion
+        {
+            PromotionCode = "WELCOME10",
+            PromotionName = "Welcome",
+            PromotionType = PromotionType.Percent,
+            DiscountValue = 10,
+            ValidFrom = DateTimeOffset.UtcNow.AddDays(-1),
+            ValidTo = DateTimeOffset.UtcNow.AddDays(1),
+            Status = "Active"
+        };
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingCode = "BK-PENDING-PROMO",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000004",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending",
+            CheckoutUrl = "https://example.test/checkout"
+        };
+        context.AddRange(promotion, booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new TestPaymentNotificationSender(),
+            TimeProvider.System);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new CreatePaymentCommand(booking.Id, PromotionCode: "WELCOME10"),
+                CancellationToken.None));
+
+        exception.Errors["promotionCode"]
+            .ShouldContain("Không thể đổi mã giảm giá khi booking đã có payment đang chờ hoặc đã thanh toán.");
+        booking.TotalAmount.ShouldBe(10000);
+        promotion.UsageCount.ShouldBe(0);
+    }
+
+    [Test]
     public async Task CharterBookingPaymentGatewayFailureRestoresUnpaidAmounts()
     {
         await using var context = SeatFlowTestData.CreateContext();

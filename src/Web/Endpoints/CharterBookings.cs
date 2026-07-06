@@ -34,7 +34,8 @@ public sealed class CharterBookings : IEndpointGroup
             { "seatSetupType": "FullStandard" }
           ],
           "boatRequirements": "Muốn tàu StandardAndVip và không gian tổ chức sinh nhật",
-          "specialRequests": "Can trang tri sinh nhat"
+          "specialRequests": "Can trang tri sinh nhat",
+          "contactEmail": "customer@example.com"
         }
         """;
 
@@ -223,6 +224,18 @@ public sealed class CharterBookings : IEndpointGroup
                 "Huy mot yeu cau thue tau con hieu luc.",
                 "Khong the huy khi da Completed/Refunded.",
                 "Tra ve 204 khi huy thanh cong."));
+
+        group.MapPut(UpdateCharterBooking, "{id:guid}")
+            .RequireAuthorization()
+            .Accepts<UpdateCharterBookingRequest>("application/json")
+            .WithSummary("Chinh sua yeu cau thue tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                CreateCharterBookingExample,
+                "Customer chinh sua yeu cau thue tau khi bookingStatus = PendingQuote.",
+                "contactEmail: email nhan thong tin charter booking; neu khong gui hoac gui rong thi backend giu email cu.",
+                "departureDate: neu khong doi ngay thi khong bi validate lai rule dat truoc 7 ngay; neu doi ngay moi thi ngay moi phai cach hien tai it nhat 7 ngay.",
+                "Khong cho chinh sua khi booking da duoc quote/xac nhan/huy/hoan tat hoac da co payment Pending/Paid."));
 
         group.MapPut(UpdateCharterBookingPassengers, "{id:guid}/passengers")
             .RequireAuthorization()
@@ -557,7 +570,30 @@ public sealed class CharterBookings : IEndpointGroup
             request.RequestedBoats,
             request.PreferredSeatSetupType,
             request.BoatRequirements,
-            request.SpecialRequests), ct));
+            request.SpecialRequests,
+            request.ContactEmail), ct));
+
+    private static async Task<IResult> UpdateCharterBooking(
+        ISender sender,
+        Guid id,
+        UpdateCharterBookingRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateCharterBookingCommand(
+            id,
+            request.DepartureDate,
+            request.RentalUnit,
+            request.DurationValue,
+            request.AdultCount,
+            request.ChildCount,
+            request.StartTime,
+            request.FromStationId,
+            request.ToStationId,
+            request.ItineraryStops,
+            request.RequestedBoats,
+            request.PreferredSeatSetupType,
+            request.BoatRequirements,
+            request.SpecialRequests,
+            request.ContactEmail), ct));
 
     private static async Task<byte[]> BuildTicketExportZipAsync(
         CharterBookingTicketExportDto export,

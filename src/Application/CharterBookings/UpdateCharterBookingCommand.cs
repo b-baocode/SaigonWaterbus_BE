@@ -1,5 +1,4 @@
 using FluentValidation.Results;
-using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -8,7 +7,8 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.CharterBookings;
 
-public sealed record CreateCharterBookingCommand(
+public sealed record UpdateCharterBookingCommand(
+    Guid BookingId,
     DateOnly DepartureDate,
     BoatRentalUnit RentalUnit,
     int DurationValue,
@@ -22,12 +22,13 @@ public sealed record CreateCharterBookingCommand(
     SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
     string? SpecialRequests = null,
-    string? ContactEmail = null) : IRequest<CreateCharterBookingResult>;
+    string? ContactEmail = null) : IRequest<CharterBookingDetailDto>;
 
-public sealed class CreateCharterBookingCommandValidator : AbstractValidator<CreateCharterBookingCommand>
+public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<UpdateCharterBookingCommand>
 {
-    public CreateCharterBookingCommandValidator()
+    public UpdateCharterBookingCommandValidator()
     {
+        RuleFor(x => x.BookingId).NotEmpty();
         RuleFor(x => x.DepartureDate).NotEqual(default(DateOnly)).WithMessage("Ngày khởi hành là bắt buộc.");
         RuleFor(x => x.RentalUnit).IsInEnum().WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
         RuleFor(x => x.DurationValue).GreaterThan(0).LessThanOrEqualTo(60)
@@ -87,131 +88,146 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
         stops is null || stops.Select(x => x.StopOrder).Distinct().Count() == stops.Count;
 }
 
-public sealed class CreateCharterBookingCommandHandler
-    : IRequestHandler<CreateCharterBookingCommand, CreateCharterBookingResult>
+public sealed class UpdateCharterBookingCommandHandler
+    : IRequestHandler<UpdateCharterBookingCommand, CharterBookingDetailDto>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
-    private readonly IBookingCodeGenerator _bookingCodeGenerator;
     private readonly TimeProvider _timeProvider;
 
-    public CreateCharterBookingCommandHandler(
+    public UpdateCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        IBookingCodeGenerator bookingCodeGenerator,
         TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
-        _bookingCodeGenerator = bookingCodeGenerator;
         _timeProvider = timeProvider;
     }
 
-    public async Task<CreateCharterBookingResult> Handle(
-        CreateCharterBookingCommand request, CancellationToken cancellationToken)
+    public async Task<CharterBookingDetailDto> Handle(
+        UpdateCharterBookingCommand request,
+        CancellationToken cancellationToken)
     {
         var userId = _userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
-        var now = _timeProvider.GetUtcNow();
-        var today = DateOnly.FromDateTime(now.UtcDateTime);
-        var minimumDepartureDate = today.AddDays(7);
-        if (request.DepartureDate < minimumDepartureDate)
-            throw new ValidationException([new ValidationFailure(nameof(request.DepartureDate),
-                $"Charter booking phải được đặt trước ít nhất 7 ngày. Ngày khởi hành sớm nhất là {minimumDepartureDate:dd/MM/yyyy}.")]);
+        var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.ItineraryStops)
+            .Include(x => x.Payments)
+            .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
+            ?? throw new NotFoundException("Charter booking not found.");
 
-        var passengerCount = request.AdultCount + request.ChildCount;
-        const decimal subtotal = 0;
-        var requestedBoatTypes = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatTypes(
-            request.RequestedBoats,
-            request.PreferredSeatSetupType);
+        if (booking.UserId != userId)
+        {
+            throw new NotFoundException("Charter booking not found.");
+        }
 
+        EnsureCanUpdate(booking);
+        EnsureDepartureDateCanBeUpdated(booking, request.DepartureDate);
         await EnsureStationExistsAsync(request.FromStationId, nameof(request.FromStationId), cancellationToken);
         await EnsureStationExistsAsync(request.ToStationId, nameof(request.ToStationId), cancellationToken);
         await EnsureItineraryStationsExistAsync(request.ItineraryStops, cancellationToken);
 
-        const decimal discount = 0;
-        var total = subtotal - discount;
+        var requestedBoatTypes = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatTypes(
+            request.RequestedBoats,
+            request.PreferredSeatSetupType);
 
-        var user = await _context.Users
+        booking.FromStationId = request.FromStationId;
+        booking.ToStationId = request.ToStationId;
+        booking.DepartureDate = request.DepartureDate;
+        booking.StartTime = request.StartTime;
+        booking.RentalUnit = request.RentalUnit;
+        booking.DurationValue = request.DurationValue;
+        booking.AdultCount = request.AdultCount;
+        booking.ChildCount = request.ChildCount;
+        booking.PassengerCount = request.AdultCount + request.ChildCount;
+        booking.RequestedBoatCount = requestedBoatTypes.Count == 0 ? null : requestedBoatTypes.Count;
+        booking.RequestedBoatTypes = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatTypes);
+        booking.PreferredSeatSetupType = request.PreferredSeatSetupType
+            ?? CharterBookingBoatSelectionSupport.FirstOrNull(requestedBoatTypes);
+        booking.BoatRequirements = request.BoatRequirements?.Trim();
+        booking.SpecialRequests = request.SpecialRequests?.Trim();
+
+        var contactEmail = NormalizeContactEmail(request.ContactEmail);
+        if (contactEmail is not null)
+        {
+            booking.ContactEmail = contactEmail;
+        }
+
+        _context.Set<BookingItineraryStop>().RemoveRange(booking.ItineraryStops);
+        booking.ItineraryStops = request.ItineraryStops?
+            .OrderBy(x => x.StopOrder)
+            .Select(x => new BookingItineraryStop
+            {
+                BookingId = booking.Id,
+                StationId = x.StationId,
+                StopOrder = x.StopOrder,
+                StayDurationMinutes = x.StayDurationMinutes,
+                Note = x.Note?.Trim()
+            })
+            .ToList() ?? [];
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var updatedBooking = await CharterBookingQuerySupport.BuildDetailQuery(_context)
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
-            ?? throw new ValidationException([new ValidationFailure("userId", "User không tồn tại.")]);
+            .SingleAsync(x => x.Id == booking.Id, cancellationToken);
+        var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+            _context,
+            updatedBooking,
+            cancellationToken);
 
-        var booking = new Booking
-        {
-            BookingType = Booking.CharterBookingType,
-            UserId = userId,
-            FromStationId = request.FromStationId,
-            ToStationId = request.ToStationId,
-            DepartureDate = request.DepartureDate,
-            StartTime = request.StartTime,
-            RentalUnit = request.RentalUnit,
-            DurationValue = request.DurationValue,
-            PassengerCount = passengerCount,
-            AdultCount = request.AdultCount,
-            ChildCount = request.ChildCount,
-            RequestedBoatCount = requestedBoatTypes.Count == 0 ? null : requestedBoatTypes.Count,
-            RequestedBoatTypes = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatTypes),
-            PreferredSeatSetupType = request.PreferredSeatSetupType
-                ?? CharterBookingBoatSelectionSupport.FirstOrNull(requestedBoatTypes),
-            BoatRequirements = request.BoatRequirements?.Trim(),
-            SpecialRequests = request.SpecialRequests?.Trim(),
-            BookingCode = ToCharterBookingCode(await _bookingCodeGenerator.GenerateAsync(cancellationToken)),
-            ContactName = user.FullName,
-            ContactPhone = user.PhoneNumber ?? string.Empty,
-            ContactEmail = NormalizeContactEmail(request.ContactEmail) ?? user.Email,
-            BookingStatus = BookingStatus.PendingQuote,
-            SubtotalAmount = subtotal,
-            DiscountAmount = discount,
-            TotalAmount = total,
-            RemainingAmount = total,
-            ItineraryStops = request.ItineraryStops?
-                .OrderBy(x => x.StopOrder)
-                .Select(x => new BookingItineraryStop
-                {
-                    StationId = x.StationId,
-                    StopOrder = x.StopOrder,
-                    StayDurationMinutes = x.StayDurationMinutes,
-                    Note = x.Note?.Trim()
-                })
-                .ToList() ?? []
-        };
+        return CharterBookingQuerySupport.ToDetailDto(updatedBooking, relatedRoutes);
+    }
 
-        _context.Set<Booking>().Add(booking);
-
-        try
+    private void EnsureDepartureDateCanBeUpdated(Booking booking, DateOnly requestedDepartureDate)
+    {
+        if (booking.DepartureDate == requestedDepartureDate)
         {
-            await _context.SaveChangesAsync(cancellationToken);
-        }
-        catch (DbUpdateException)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(request.DepartureDate),
-                "Tạo yêu cầu thuê tàu thất bại. Vui lòng thử lại.")]);
+            return;
         }
 
-        return new CreateCharterBookingResult(
-            booking.Id,
-            booking.BookingCode,
-            null,
-            booking.SubtotalAmount,
-            booking.DiscountAmount,
-            booking.TotalAmount,
-            booking.BookingStatus.ToString(),
-            0,
-            requestedBoatTypes.Count,
-            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatTypes));
+        var now = _timeProvider.GetUtcNow();
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var minimumDepartureDate = today.AddDays(7);
+        if (requestedDepartureDate < minimumDepartureDate)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(requestedDepartureDate),
+                $"Charter booking phải được đặt trước ít nhất 7 ngày. Ngày khởi hành sớm nhất là {minimumDepartureDate:dd/MM/yyyy}.")]);
+        }
+    }
+
+    private static void EnsureCanUpdate(Booking booking)
+    {
+        if (booking.BookingStatus != BookingStatus.PendingQuote)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
+                "Chỉ có thể chỉnh sửa yêu cầu thuê tàu khi booking đang chờ báo giá.")]);
+        }
+
+        if (booking.Payments.Any(x =>
+                string.Equals(x.PaymentStatus, "Pending", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(x.PaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(booking.Payments),
+                "Booking đã có payment đang chờ hoặc đã thanh toán nên không thể chỉnh sửa.")]);
+        }
     }
 
     private async Task EnsureStationExistsAsync(Guid? stationId, string field, CancellationToken cancellationToken)
     {
         if (stationId is null)
+        {
             return;
+        }
 
         var exists = await _context.Set<Station>()
             .AnyAsync(s => s.Id == stationId.Value, cancellationToken);
         if (!exists)
+        {
             throw new ValidationException([new ValidationFailure(field, "Bến không tồn tại.")]);
+        }
     }
 
     private async Task EnsureItineraryStationsExistAsync(
@@ -219,7 +235,9 @@ public sealed class CreateCharterBookingCommandHandler
         CancellationToken cancellationToken)
     {
         if (stops is null || stops.Count == 0)
+        {
             return;
+        }
 
         var stationIds = stops.Select(x => x.StationId).Distinct().ToArray();
         var existingStationIds = await _context.Set<Station>()
@@ -229,46 +247,12 @@ public sealed class CreateCharterBookingCommandHandler
 
         var missingStationId = stationIds.Except(existingStationIds).FirstOrDefault();
         if (missingStationId != Guid.Empty)
-            throw new ValidationException([new ValidationFailure(nameof(CreateCharterBookingCommand.ItineraryStops),
+        {
+            throw new ValidationException([new ValidationFailure(nameof(UpdateCharterBookingCommand.ItineraryStops),
                 $"Điểm dừng có stationId '{missingStationId}' không tồn tại.")]);
-    }
-
-    private static string ToCharterBookingCode(string bookingCode)
-    {
-        if (bookingCode.StartsWith("CB", StringComparison.OrdinalIgnoreCase))
-        {
-            return bookingCode;
         }
-
-        if (bookingCode.StartsWith("BK-", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"CB-{bookingCode[3..]}";
-        }
-
-        if (bookingCode.StartsWith("BK", StringComparison.OrdinalIgnoreCase))
-        {
-            return $"CB{bookingCode[2..]}";
-        }
-
-        return $"CB-{bookingCode}";
     }
 
     private static string? NormalizeContactEmail(string? contactEmail) =>
         string.IsNullOrWhiteSpace(contactEmail) ? null : contactEmail.Trim();
-}
-
-public sealed class CharterBookingPassengerRequestValidator : AbstractValidator<CharterBookingPassengerRequest>
-{
-    public CharterBookingPassengerRequestValidator()
-    {
-        RuleFor(x => x.FullName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.DateOfBirth)
-            .NotEmpty()
-            .Must(x => CharterBookingPassengerSupport.TryParseDateOfBirth(x, out _))
-            .WithMessage("Ngày sinh không hợp lệ. Dùng định dạng yyyy-MM-dd hoặc dd/MM/yyyy.");
-        RuleFor(x => x.DateOfBirth)
-            .Must(x => !CharterBookingPassengerSupport.TryParseDateOfBirth(x, out var dateOfBirth)
-                || dateOfBirth <= DateOnly.FromDateTime(DateTime.UtcNow))
-            .WithMessage("Ngày sinh không được ở tương lai.");
-    }
 }

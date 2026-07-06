@@ -2,6 +2,7 @@ using System.Globalization;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -13,7 +14,8 @@ namespace SaigonWaterbus.Application.Payments;
 public sealed record CreatePaymentCommand(
     Guid BookingId,
     BookingPaymentOption PaymentOption = BookingPaymentOption.Full,
-    decimal? DepositPercent = null)
+    decimal? DepositPercent = null,
+    string? PromotionCode = null)
     : IRequest<PaymentDto>;
 
 public sealed class CreatePaymentCommandValidator : AbstractValidator<CreatePaymentCommand>
@@ -27,6 +29,9 @@ public sealed class CreatePaymentCommandValidator : AbstractValidator<CreatePaym
             .LessThan(100)
             .When(x => x.PaymentOption == BookingPaymentOption.Deposit && x.DepositPercent.HasValue)
             .WithMessage("Phần trăm đặt cọc phải lớn hơn 0 và nhỏ hơn 100.");
+        RuleFor(x => x.PromotionCode)
+            .MaximumLength(50)
+            .When(x => x.PromotionCode is not null);
     }
 }
 
@@ -74,6 +79,14 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             cancellationToken);
 
         PaymentSupport.EnsureCanCreatePayment(booking);
+
+        await PaymentSupport.ApplyPromotionForCheckoutAsync(
+            _context,
+            _userContext,
+            booking,
+            request.PromotionCode,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
 
         var existingPendingPayment = booking.Payments
             .Where(PaymentSupport.IsPayOsPayment)
@@ -677,6 +690,124 @@ internal static class PaymentSupport
             throw new ValidationException([new ValidationFailure(nameof(booking.TotalAmount),
                 "Booking chưa có số tiền cần thanh toán.")]);
         }
+    }
+
+    public static async Task ApplyPromotionForCheckoutAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        Booking booking,
+        string? promotionCode,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (promotionCode is null)
+        {
+            return;
+        }
+
+        var normalizedCode = promotionCode.Trim().ToUpperInvariant();
+        var hasLockedPayment = booking.Payments.Any(x =>
+            IsPayOsPayment(x) && (IsPending(x.PaymentStatus) || IsPaid(x.PaymentStatus)));
+        if (hasLockedPayment && string.IsNullOrWhiteSpace(normalizedCode))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(promotionCode),
+                "Không thể đổi mã giảm giá khi booking đã có payment đang chờ hoặc đã thanh toán.")]);
+        }
+
+        if (string.IsNullOrWhiteSpace(normalizedCode))
+        {
+            await ReplaceBookingPromotionAsync(
+                context,
+                booking,
+                promotion: null,
+                cancellationToken);
+            return;
+        }
+
+        var promotion = await context.Set<Promotion>()
+            .SingleOrDefaultAsync(p => p.PromotionCode == normalizedCode, cancellationToken)
+            ?? throw new ValidationException([new ValidationFailure(nameof(promotionCode),
+                "Promotion code not found.")]);
+
+        if (booking.PromotionId == promotion.Id)
+        {
+            return;
+        }
+
+        if (hasLockedPayment)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(promotionCode),
+                "Không thể đổi mã giảm giá khi booking đã có payment đang chờ hoặc đã thanh toán.")]);
+        }
+
+        EnsurePromotionCanApplyAtCheckout(promotion, booking.SubtotalAmount, now, nameof(promotionCode));
+
+        var userId = userContext.UserId
+            ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
+
+        await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
+            context,
+            promotion,
+            userId,
+            nameof(promotionCode),
+            cancellationToken,
+            booking.Id);
+
+        await ReplaceBookingPromotionAsync(context, booking, promotion, cancellationToken);
+    }
+
+    private static void EnsurePromotionCanApplyAtCheckout(
+        Promotion promotion,
+        decimal subtotalAmount,
+        DateTimeOffset now,
+        string propertyName)
+    {
+        if (promotion.Status != "Active" || promotion.ValidFrom > now || promotion.ValidTo < now
+            || (promotion.UsageLimit.HasValue && promotion.UsageCount >= promotion.UsageLimit))
+        {
+            throw new ValidationException([new ValidationFailure(propertyName,
+                "Promotion code is not applicable.")]);
+        }
+
+        if (promotion.MinOrderValue.HasValue && subtotalAmount < promotion.MinOrderValue)
+        {
+            throw new ValidationException([new ValidationFailure(propertyName,
+                $"Minimum order value is {promotion.MinOrderValue:N0}.")]);
+        }
+    }
+
+    private static async Task ReplaceBookingPromotionAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        Promotion? promotion,
+        CancellationToken cancellationToken)
+    {
+        if (booking.PromotionId == promotion?.Id)
+        {
+            return;
+        }
+
+        if (booking.PromotionId.HasValue)
+        {
+            var previousPromotion = await context.Set<Promotion>()
+                .SingleOrDefaultAsync(x => x.Id == booking.PromotionId.Value, cancellationToken);
+            PromotionUsageSupport.DecrementUsage(previousPromotion);
+        }
+
+        booking.PromotionId = promotion?.Id;
+        booking.Promotion = promotion;
+        booking.DiscountAmount = promotion is null
+            ? 0
+            : promotion.PromotionType == PromotionType.Percent
+                ? Math.Min(booking.SubtotalAmount * promotion.DiscountValue / 100, booking.SubtotalAmount)
+                : Math.Min(promotion.DiscountValue, booking.SubtotalAmount);
+        booking.TotalAmount = booking.SubtotalAmount - booking.DiscountAmount;
+        booking.DepositAmount = 0;
+        booking.RemainingAmount = booking.TotalAmount;
+        booking.PaymentStatus = UnpaidBookingPaymentStatus;
+
+        PromotionUsageSupport.IncrementUsage(promotion);
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     public static PaymentPlan ResolvePaymentPlan(

@@ -29,7 +29,24 @@ public sealed record CreateCharterBookingRequest(
     IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
     SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
-    string? SpecialRequests = null);
+    string? SpecialRequests = null,
+    string? ContactEmail = null);
+
+public sealed record UpdateCharterBookingRequest(
+    DateOnly DepartureDate,
+    BoatRentalUnit RentalUnit,
+    int DurationValue,
+    int AdultCount,
+    int ChildCount,
+    TimeOnly? StartTime = null,
+    Guid? FromStationId = null,
+    Guid? ToStationId = null,
+    IReadOnlyList<CreateCharterBookingItineraryStopRequest>? ItineraryStops = null,
+    IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
+    SeatSetupType? PreferredSeatSetupType = null,
+    string? BoatRequirements = null,
+    string? SpecialRequests = null,
+    string? ContactEmail = null);
 
 public sealed record CreateCharterBookingItineraryStopRequest(
     Guid StationId,

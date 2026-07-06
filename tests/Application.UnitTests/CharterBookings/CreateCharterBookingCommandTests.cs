@@ -156,6 +156,78 @@ public class CreateCharterBookingCommandTests
         item.RequestedBoats.Select(x => x.SeatSetupType).ShouldBe(["FullStandard"]);
     }
 
+    [Test]
+    public async Task UpdatePreservesContactEmailAndDoesNotRevalidateUnchangedDepartureDate()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "account@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-EDIT-001",
+            User = user,
+            UserId = user.Id,
+            ContactName = user.FullName,
+            ContactPhone = user.PhoneNumber!,
+            ContactEmail = "receive@example.test",
+            DepartureDate = new DateOnly(2026, 7, 10),
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            ChildCount = 1,
+            PassengerCount = 2,
+            RequestedBoatCount = 1,
+            RequestedBoatTypes = "FullStandard",
+            PreferredSeatSetupType = SeatSetupType.FullStandard,
+            BookingStatus = BookingStatus.PendingQuote,
+            PaymentStatus = "Unpaid"
+        };
+        context.AddRange(role, user, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var detail = await handler.Handle(
+            new UpdateCharterBookingCommand(
+                booking.Id,
+                new DateOnly(2026, 7, 10),
+                BoatRentalUnit.Day,
+                2,
+                AdultCount: 2,
+                ChildCount: 1,
+                StartTime: new TimeOnly(9, 30),
+                RequestedBoats: [new CreateCharterBookingBoatRequest(SeatSetupType.FullStandard)],
+                ContactEmail: null),
+            CancellationToken.None);
+
+        detail.ContactEmail.ShouldBe("receive@example.test");
+        detail.DepartureDate.ShouldBe(new DateOnly(2026, 7, 10));
+        detail.StartTime.ShouldBe(new TimeOnly(9, 30));
+        detail.DurationValue.ShouldBe(2);
+        detail.PassengerCount.ShouldBe(3);
+
+        var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
+        savedBooking.ContactEmail.ShouldBe("receive@example.test");
+    }
+
     private sealed class FixedBookingCodeGenerator(string bookingCode) : IBookingCodeGenerator
     {
         public Task<string> GenerateAsync(CancellationToken cancellationToken) =>
