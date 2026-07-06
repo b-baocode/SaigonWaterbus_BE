@@ -44,6 +44,15 @@ public sealed record CharterBookingRequestedBoatDto(
     int BoatOrder,
     string SeatSetupType);
 
+public sealed record CharterBookingSelectedBoatDto(
+    int BoatOrder,
+    Guid BoatId,
+    string BoatName,
+    string SeatSetupType,
+    decimal UnitPrice,
+    decimal ChargeableDurationValue,
+    decimal SubtotalAmount);
+
 public sealed record CharterBookingRouteLegEstimateDto(
     int LegOrder,
     string FromStationName,
@@ -124,6 +133,7 @@ public sealed record CharterBookingDetailDto(
     int ChildCount,
     int RequestedBoatCount,
     IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats,
+    IReadOnlyList<CharterBookingSelectedBoatDto> SelectedBoats,
     string? PreferredSeatSetupType,
     DateOnly DepartureDate,
     TimeOnly? StartTime,
@@ -415,8 +425,13 @@ public sealed record CharterBookingAttendanceSkippedTicketDto(
     string TicketStatus,
     string Reason);
 
+public sealed record QuoteCharterBookingBoatRequest(
+    int BoatOrder,
+    Guid BoatId);
+
 public sealed record QuoteCharterBookingRequest(
-    Guid BoatId,
+    Guid? BoatId = null,
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
     decimal? SubtotalAmount = null,
     BoatRentalUnit? RentalUnit = null,
     int? DurationValue = null,
@@ -425,11 +440,24 @@ public sealed record QuoteCharterBookingRequest(
 public sealed record UpdateCharterBookingStatusRequest(
     BookingStatus BookingStatus);
 
+public sealed record PreviewCharterBookingQuoteResult(
+    Guid BookingId,
+    string BookingCode,
+    IReadOnlyList<CharterBookingSelectedBoatDto> Boats,
+    decimal SubtotalAmount,
+    decimal DiscountAmount,
+    decimal TotalAmount,
+    string PricingSource,
+    CharterBookingRouteEstimateDto RouteEstimate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PromotionCode);
+
 public sealed record QuoteCharterBookingResult(
     Guid BookingId,
     string BookingCode,
     Guid BoatId,
     string BoatName,
+    IReadOnlyList<CharterBookingSelectedBoatDto> Boats,
     decimal SubtotalAmount,
     decimal DiscountAmount,
     decimal TotalAmount,

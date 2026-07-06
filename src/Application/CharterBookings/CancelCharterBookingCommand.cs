@@ -40,6 +40,7 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
             ?? throw new ValidationException([]);
 
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.CharterBoats)
             .Include(x => x.Tickets)
             .Include(x => x.Promotion)
             .SingleOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken)
@@ -64,13 +65,16 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
         }
 
         await _context.SaveChangesAsync(cancellationToken);
-        await _boatHoldService.ReleaseAsync(
-            booking.Id,
-            booking.BoatId,
-            booking.DepartureDate.GetValueOrDefault(),
-            booking.StartTime,
-            booking.RentalUnit.GetValueOrDefault(),
-            booking.DurationValue.GetValueOrDefault(),
-            cancellationToken);
+        foreach (var boatId in CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking))
+        {
+            await _boatHoldService.ReleaseAsync(
+                booking.Id,
+                boatId,
+                booking.DepartureDate.GetValueOrDefault(),
+                booking.StartTime,
+                booking.RentalUnit.GetValueOrDefault(),
+                booking.DurationValue.GetValueOrDefault(),
+                cancellationToken);
+        }
     }
 }

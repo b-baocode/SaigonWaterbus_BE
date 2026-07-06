@@ -18,6 +18,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Boat> Boats => Set<Boat>();
 
+    public DbSet<CharterBookingBoat> CharterBookingBoats => Set<CharterBookingBoat>();
+
     public DbSet<Seat> Seats => Set<Seat>();
 
     public DbSet<Station> Stations => Set<Station>();

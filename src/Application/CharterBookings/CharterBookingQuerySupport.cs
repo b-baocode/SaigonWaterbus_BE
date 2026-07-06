@@ -12,6 +12,8 @@ internal static class CharterBookingQuerySupport
     public static IQueryable<Booking> BuildDetailQuery(IApplicationDbContext context) =>
         BuildBaseQuery(context)
             .Include(b => b.Boat)
+            .Include(b => b.CharterBoats)
+                .ThenInclude(cb => cb.Boat)
             .Include(b => b.FromStation)
             .Include(b => b.ToStation)
             .Include(b => b.Promotion)
@@ -52,6 +54,7 @@ internal static class CharterBookingQuerySupport
             booking.ChildCount.GetValueOrDefault(),
             requestedBoatCount,
             requestedBoatDtos,
+            CharterBookingBoatSelectionSupport.ToSelectedBoatDtos(booking.CharterBoats),
             booking.PreferredSeatSetupType?.ToString(),
             booking.DepartureDate.GetValueOrDefault(),
             booking.StartTime,

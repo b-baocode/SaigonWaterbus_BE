@@ -41,13 +41,24 @@ public sealed class CharterBookings : IEndpointGroup
     private const string QuoteCharterBookingExample =
         """
         {
-          "boatId": "00000000-0000-0000-0000-000000000000",
+          "boats": [
+            {
+              "boatOrder": 1,
+              "boatId": "00000000-0000-0000-0000-000000000001"
+            },
+            {
+              "boatOrder": 2,
+              "boatId": "00000000-0000-0000-0000-000000000002"
+            }
+          ],
           "subtotalAmount": null,
           "rentalUnit": "Day",
           "durationValue": 1,
           "promotionCode": "SUMMER10"
         }
         """;
+
+    private const string PreviewCharterBookingQuoteExample = QuoteCharterBookingExample;
 
     private const string UpdateStatusExample =
         """
@@ -121,14 +132,30 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin",
                 QuoteCharterBookingExample,
                 "Dung khi customer da gui yeu cau charter booking nhung chua co tau/gia.",
-                "boatId: thay bang ID tau that tu GET /api/boats; tau phai Active va du suc chua theo adultCount + childCount customer da nhap.",
+                "boats: danh sach tau admin chon; so item phai dung bang so tau customer yeu cau, boatOrder khop thu tu requestedBoats.",
+                "boatId: van ho tro cho client cu khi booking chi yeu cau 1 tau.",
+                "Moi tau phai Active, dung seatSetupType theo requestedBoats va tong suc chua khong duoc nho hon adultCount + childCount customer da nhap.",
                 "subtotalAmount: optional; bo trong/null de backend tu tinh theo gia tau, thoi gian/quang duong; gui so tien neu admin muon override gia chot.",
                 "Hour: backend can co du lieu km/thoi gian tu GeoJSON/toa do ben; neu thieu thi tra 400 hoac admin phai nhap subtotalAmount thu cong.",
-                "Hour: so gio tinh tien = max(durationValue, thoi gian hanh trinh lam tron len gio).",
-                "Day: neu co du lieu km/thoi gian thi so ngay tinh tien = max(durationValue, thoi gian hanh trinh lam tron theo block 12 gio). Neu thieu km/thoi gian thi tinh theo dailyRentalPrice * durationValue.",
+                "Hour: so gio tinh tien = max(durationValue, phut tinh tien / 60) va lam tron den 3 chu so thap phan.",
+                "Day: tinh theo dailyRentalPrice * durationValue.",
                 "promotionCode: tuy chon; gui chuoi rong de bo promotion hien tai.",
                 "Sau khi quote thanh cong, bookingStatus = Quoted va customer moi tao payment duoc.",
                 "Khong cho quote neu booking da co payment Pending/Paid."));
+
+        group.MapPost(PreviewCharterBookingQuote, "admin/{id:guid}/quote-preview")
+            .RequireAuthorization()
+            .Accepts<QuoteCharterBookingRequest>("application/json")
+            .WithSummary("Admin xem truoc gia charter booking theo danh sach tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                PreviewCharterBookingQuoteExample,
+                "Dung khi admin dang chon tau tren FE va can xem gia tung tau truoc khi chot.",
+                "Payload giong PUT /api/charter-bookings/admin/{id}/quote.",
+                "API khong doi bookingStatus, khong giu tau, khong luu gia; chi tra preview.",
+                "Response boats[] tra unitPrice, chargeableDurationValue, subtotalAmount cua tung tau.",
+                "subtotalAmount null: backend tu tinh tong bang cach cong subtotalAmount tung tau.",
+                "subtotalAmount co gia tri: xem nhu tong gia admin override thu cong."));
 
         group.MapGet(GetCharterBookingManifestByCode, "manifest/{bookingCode}")
             .RequireAuthorization()
@@ -375,6 +402,21 @@ public sealed class CharterBookings : IEndpointGroup
         Results.Ok(await sender.Send(new QuoteCharterBookingCommand(
             id,
             request.BoatId,
+            request.Boats,
+            request.SubtotalAmount,
+            request.RentalUnit,
+            request.DurationValue,
+            request.PromotionCode), ct));
+
+    private static async Task<IResult> PreviewCharterBookingQuote(
+        ISender sender,
+        Guid id,
+        QuoteCharterBookingRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new PreviewCharterBookingQuoteCommand(
+            id,
+            request.BoatId,
+            request.Boats,
             request.SubtotalAmount,
             request.RentalUnit,
             request.DurationValue,

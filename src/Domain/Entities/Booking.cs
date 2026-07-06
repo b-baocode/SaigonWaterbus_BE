@@ -55,6 +55,7 @@ public class Booking : BaseGuidAuditableEntity
     public ICollection<Payment> Payments { get; set; } = new List<Payment>();
     public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
     public ICollection<BookingItineraryStop> ItineraryStops { get; set; } = new List<BookingItineraryStop>();
+    public ICollection<CharterBookingBoat> CharterBoats { get; set; } = new List<CharterBookingBoat>();
 
     public static bool IsCharterBookingType(string? bookingType) =>
         string.Equals(bookingType, CharterBookingType, StringComparison.OrdinalIgnoreCase);

@@ -14,6 +14,8 @@ public interface IApplicationDbContext
 
     DbSet<Boat> Boats { get; }
 
+    DbSet<CharterBookingBoat> CharterBookingBoats { get; }
+
     DbSet<Seat> Seats { get; }
 
     DbSet<Ticket> Tickets { get; }

@@ -1,4 +1,5 @@
 using SaigonWaterbus.Domain.Enums;
+using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.CharterBookings;
 
@@ -62,4 +63,35 @@ internal static class CharterBookingBoatSelectionSupport
         requestedBoatTypes
             .Select((seatSetupType, index) => new CharterBookingRequestedBoatDto(index + 1, seatSetupType.ToString()))
             .ToArray();
+
+    public static IReadOnlyList<CharterBookingSelectedBoatDto> ToSelectedBoatDtos(
+        IEnumerable<CharterBookingBoat> selectedBoats) =>
+        selectedBoats
+            .OrderBy(x => x.BoatOrder)
+            .Select(x => new CharterBookingSelectedBoatDto(
+                x.BoatOrder,
+                x.BoatId,
+                x.Boat.Name,
+                x.SeatSetupType.ToString(),
+                x.UnitPrice,
+                x.ChargeableDurationValue,
+                x.SubtotalAmount))
+            .ToArray();
+
+    public static IReadOnlyList<Guid> ResolveSelectedBoatIds(Booking booking)
+    {
+        var selectedBoatIds = booking.CharterBoats
+            .OrderBy(x => x.BoatOrder)
+            .Select(x => x.BoatId)
+            .ToList();
+
+        if (booking.BoatId.HasValue && !selectedBoatIds.Contains(booking.BoatId.Value))
+        {
+            selectedBoatIds.Insert(0, booking.BoatId.Value);
+        }
+
+        return selectedBoatIds
+            .Distinct()
+            .ToArray();
+    }
 }

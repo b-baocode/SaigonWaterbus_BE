@@ -129,7 +129,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
         var previousStatus = booking.BookingStatus;
-        var previousBoatId = booking.BoatId;
+        var previousBoatIds = CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking);
         var previousDepartureDate = booking.DepartureDate;
         var previousStartTime = booking.StartTime;
         var previousRentalUnit = booking.RentalUnit;
@@ -146,14 +146,17 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         await _context.SaveChangesAsync(cancellationToken);
         if (request.BookingStatus is BookingStatus.PendingQuote or BookingStatus.Cancelled or BookingStatus.Expired)
         {
-            await _boatHoldService.ReleaseAsync(
-                booking.Id,
-                previousBoatId,
-                previousDepartureDate.GetValueOrDefault(),
-                previousStartTime,
-                previousRentalUnit.GetValueOrDefault(),
-                previousDurationValue,
-                cancellationToken);
+            foreach (var previousBoatId in previousBoatIds)
+            {
+                await _boatHoldService.ReleaseAsync(
+                    booking.Id,
+                    previousBoatId,
+                    previousDepartureDate.GetValueOrDefault(),
+                    previousStartTime,
+                    previousRentalUnit.GetValueOrDefault(),
+                    previousDurationValue,
+                    cancellationToken);
+            }
         }
 
         var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
@@ -307,7 +310,8 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
 public sealed record QuoteCharterBookingCommand(
     Guid BookingId,
-    Guid BoatId,
+    Guid? BoatId = null,
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
     decimal? SubtotalAmount = null,
     BoatRentalUnit? RentalUnit = null,
     int? DurationValue = null,
@@ -318,7 +322,30 @@ public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<Quot
     public QuoteCharterBookingCommandValidator()
     {
         RuleFor(x => x.BookingId).NotEmpty();
-        RuleFor(x => x.BoatId).NotEmpty();
+        RuleFor(x => x.BoatId)
+            .NotEmpty()
+            .When(x => x.BoatId.HasValue);
+        RuleFor(x => x.Boats)
+            .Must((command, boats) => command.BoatId.HasValue || boats is { Count: > 0 })
+            .WithMessage("Cần chọn ít nhất một tàu để chốt giá.");
+        RuleFor(x => x.Boats)
+            .Must(x => x is null || x.Count <= CharterBookingBoatSelectionSupport.MaxRequestedBoatCount)
+            .WithMessage($"Số lượng tàu được chọn không được vượt quá {CharterBookingBoatSelectionSupport.MaxRequestedBoatCount}.");
+        RuleFor(x => x.Boats)
+            .Must(HaveUniqueBoatOrders)
+            .When(x => x.Boats is { Count: > 0 })
+            .WithMessage("boatOrder không được trùng.");
+        RuleFor(x => x.Boats)
+            .Must(HaveUniqueBoatIds)
+            .When(x => x.Boats is { Count: > 0 })
+            .WithMessage("boatId không được trùng trong cùng một quote.");
+        RuleForEach(x => x.Boats).ChildRules(boat =>
+        {
+            boat.RuleFor(x => x.BoatOrder)
+                .GreaterThan(0)
+                .WithMessage("boatOrder phải lớn hơn 0.");
+            boat.RuleFor(x => x.BoatId).NotEmpty();
+        });
         RuleFor(x => x.SubtotalAmount)
             .GreaterThan(0)
             .When(x => x.SubtotalAmount.HasValue)
@@ -331,13 +358,183 @@ public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<Quot
             .WithMessage("Thời lượng thuê phải từ 1 đến 60.");
         RuleFor(x => x.PromotionCode).MaximumLength(50).When(x => x.PromotionCode is not null);
     }
+
+    private static bool HaveUniqueBoatOrders(IReadOnlyList<QuoteCharterBookingBoatRequest>? boats) =>
+        boats is null || boats.Select(x => x.BoatOrder).Distinct().Count() == boats.Count;
+
+    private static bool HaveUniqueBoatIds(IReadOnlyList<QuoteCharterBookingBoatRequest>? boats) =>
+        boats is null || boats.Select(x => x.BoatId).Distinct().Count() == boats.Count;
+}
+
+public sealed record PreviewCharterBookingQuoteCommand(
+    Guid BookingId,
+    Guid? BoatId = null,
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
+    decimal? SubtotalAmount = null,
+    BoatRentalUnit? RentalUnit = null,
+    int? DurationValue = null,
+    string? PromotionCode = null) : IRequest<PreviewCharterBookingQuoteResult>;
+
+public sealed class PreviewCharterBookingQuoteCommandValidator
+    : AbstractValidator<PreviewCharterBookingQuoteCommand>
+{
+    public PreviewCharterBookingQuoteCommandValidator()
+    {
+        RuleFor(x => x.BookingId).NotEmpty();
+        RuleFor(x => x.BoatId)
+            .NotEmpty()
+            .When(x => x.BoatId.HasValue);
+        RuleFor(x => x.Boats)
+            .Must((command, boats) => command.BoatId.HasValue || boats is { Count: > 0 })
+            .WithMessage("Cần chọn ít nhất một tàu để xem giá.");
+        RuleFor(x => x.Boats)
+            .Must(x => x is null || x.Count <= CharterBookingBoatSelectionSupport.MaxRequestedBoatCount)
+            .WithMessage($"Số lượng tàu được chọn không được vượt quá {CharterBookingBoatSelectionSupport.MaxRequestedBoatCount}.");
+        RuleFor(x => x.Boats)
+            .Must(HaveUniqueBoatOrders)
+            .When(x => x.Boats is { Count: > 0 })
+            .WithMessage("boatOrder không được trùng.");
+        RuleFor(x => x.Boats)
+            .Must(HaveUniqueBoatIds)
+            .When(x => x.Boats is { Count: > 0 })
+            .WithMessage("boatId không được trùng trong cùng một preview.");
+        RuleForEach(x => x.Boats).ChildRules(boat =>
+        {
+            boat.RuleFor(x => x.BoatOrder)
+                .GreaterThan(0)
+                .WithMessage("boatOrder phải lớn hơn 0.");
+            boat.RuleFor(x => x.BoatId).NotEmpty();
+        });
+        RuleFor(x => x.SubtotalAmount)
+            .GreaterThan(0)
+            .When(x => x.SubtotalAmount.HasValue)
+            .WithMessage("Giá chốt phải lớn hơn 0.");
+        RuleFor(x => x.RentalUnit).IsInEnum().When(x => x.RentalUnit.HasValue);
+        RuleFor(x => x.DurationValue)
+            .GreaterThan(0)
+            .LessThanOrEqualTo(60)
+            .When(x => x.DurationValue.HasValue)
+            .WithMessage("Thời lượng thuê phải từ 1 đến 60.");
+        RuleFor(x => x.PromotionCode).MaximumLength(50).When(x => x.PromotionCode is not null);
+    }
+
+    private static bool HaveUniqueBoatOrders(IReadOnlyList<QuoteCharterBookingBoatRequest>? boats) =>
+        boats is null || boats.Select(x => x.BoatOrder).Distinct().Count() == boats.Count;
+
+    private static bool HaveUniqueBoatIds(IReadOnlyList<QuoteCharterBookingBoatRequest>? boats) =>
+        boats is null || boats.Select(x => x.BoatId).Distinct().Count() == boats.Count;
+}
+
+public sealed class PreviewCharterBookingQuoteCommandHandler
+    : IRequestHandler<PreviewCharterBookingQuoteCommand, PreviewCharterBookingQuoteResult>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public PreviewCharterBookingQuoteCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<PreviewCharterBookingQuoteResult> Handle(
+        PreviewCharterBookingQuoteCommand request,
+        CancellationToken cancellationToken)
+    {
+        await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
+
+        var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.Payments)
+            .Include(x => x.Promotion)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
+            .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
+            ?? throw new NotFoundException("Charter booking not found.");
+
+        CharterBookingQuoteSupport.EnsureCanQuote(booking);
+
+        var selectedBoats = await CharterBookingQuoteSupport.LoadSelectedBoatsAsync(
+            _context,
+            request.BoatId,
+            request.Boats,
+            cancellationToken);
+        CharterBookingQuoteSupport.ValidateSelectedBoats(booking, selectedBoats);
+
+        var rentalUnit = request.RentalUnit ?? booking.RentalUnit.GetValueOrDefault();
+        var requestedDurationValue = request.DurationValue ?? booking.DurationValue.GetValueOrDefault();
+        var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+            _context,
+            booking,
+            cancellationToken);
+        var selectedBoatPricings = CharterBookingQuoteSupport.EstimateSelectedBoatPrices(
+            booking,
+            selectedBoats,
+            rentalUnit,
+            requestedDurationValue,
+            relatedRoutes);
+        var primarySelection = selectedBoatPricings[0];
+        if (!request.SubtotalAmount.HasValue)
+        {
+            CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
+        }
+
+        var subtotal = request.SubtotalAmount ?? selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
+        var now = _timeProvider.GetUtcNow();
+        var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
+            _context,
+            booking,
+            request.PromotionCode,
+            subtotal,
+            now,
+            nameof(request.PromotionCode),
+            cancellationToken);
+        if (promotion is not null)
+        {
+            if (!booking.UserId.HasValue)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(booking.UserId),
+                    "Booking không có tài khoản để kiểm tra promotion.")]);
+            }
+
+            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
+                _context,
+                promotion,
+                booking.UserId.Value,
+                nameof(request.PromotionCode),
+                cancellationToken,
+                booking.Id);
+        }
+
+        var discount = CharterBookingPricingSupport.CalculateDiscount(promotion, subtotal);
+        var total = subtotal - discount;
+
+        return new PreviewCharterBookingQuoteResult(
+            booking.Id,
+            booking.BookingCode,
+            CharterBookingQuoteSupport.ToSelectedBoatDtos(selectedBoatPricings),
+            subtotal,
+            discount,
+            total,
+            request.SubtotalAmount.HasValue ? "Manual" : "Automatic",
+            CharterBookingRoutePricingSupport.ToDto(
+                primarySelection.Pricing.RouteEstimate,
+                rentalUnit,
+                requestedDurationValue),
+            promotion?.PromotionCode);
+    }
 }
 
 public sealed class QuoteCharterBookingCommandHandler
     : IRequestHandler<QuoteCharterBookingCommand, QuoteCharterBookingResult>
 {
-    private const string PendingPaymentStatus = "Pending";
-    private const string PaidPaymentStatus = "Paid";
     private const string UnpaidBookingPaymentStatus = "Unpaid";
 
     private static readonly TimeSpan HoldDuration = TimeSpan.FromHours(2);
@@ -366,6 +563,8 @@ public sealed class QuoteCharterBookingCommandHandler
         await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
 
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.CharterBoats)
+                .ThenInclude(x => x.Boat)
             .Include(x => x.Payments)
             .Include(x => x.Promotion)
             .Include(x => x.FromStation)
@@ -375,43 +574,25 @@ public sealed class QuoteCharterBookingCommandHandler
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        EnsureCanQuote(booking);
+        CharterBookingQuoteSupport.EnsureCanQuote(booking);
 
-        var boat = await _context.Set<Boat>()
-            .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
-            ?? throw new NotFoundException("Boat not found.");
-
-        if (boat.Status != BoatStatus.Active)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
-                "Tàu hiện không khả dụng để thuê.")]);
-        }
-
-        if (booking.PassengerCount.GetValueOrDefault() > boat.SeatCount)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(booking.PassengerCount),
-                $"Số khách vượt quá sức chứa của tàu ({boat.SeatCount}).")]);
-        }
-
-        var requestedBoatTypes = CharterBookingBoatSelectionSupport.FromStorageValue(booking.RequestedBoatTypes);
-        if (requestedBoatTypes.Count == 0 && booking.PreferredSeatSetupType.HasValue)
-        {
-            requestedBoatTypes = [booking.PreferredSeatSetupType.Value];
-        }
-
-        if (requestedBoatTypes.Count > 0 && !requestedBoatTypes.Contains(boat.SeatSetupType))
-        {
-            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
-                $"Tàu được chọn là {boat.SeatSetupType}, không trùng kiểu tàu khách yêu cầu.")]);
-        }
+        var selectedBoats = await CharterBookingQuoteSupport.LoadSelectedBoatsAsync(
+            _context,
+            request.BoatId,
+            request.Boats,
+            cancellationToken);
+        CharterBookingQuoteSupport.ValidateSelectedBoats(booking, selectedBoats);
+        var selectedBoatIds = CharterBookingQuoteSupport.GetSelectedBoatIds(selectedBoats);
 
         var now = _timeProvider.GetUtcNow();
 
         var conflicts = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.CharterBoats)
             .Where(x => x.Id != booking.Id
-                && x.BoatId == boat.Id
                 && x.DepartureDate == booking.DepartureDate
-                && (x.BookingStatus == BookingStatus.Quoted || x.BookingStatus == BookingStatus.Confirmed))
+                && (x.BookingStatus == BookingStatus.Quoted || x.BookingStatus == BookingStatus.Confirmed)
+                && ((x.BoatId.HasValue && selectedBoatIds.Contains(x.BoatId.Value))
+                    || x.CharterBoats.Any(cb => selectedBoatIds.Contains(cb.BoatId))))
             .ToListAsync(cancellationToken);
 
         foreach (var conflict in conflicts)
@@ -419,15 +600,15 @@ public sealed class QuoteCharterBookingCommandHandler
             if (conflict.BookingStatus == BookingStatus.Confirmed
                 || (conflict.HoldExpiresAt.HasValue && conflict.HoldExpiresAt.Value > now))
             {
-                throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
-                    "Tàu đã được giữ cho một booking khác trong ngày này.")]);
+                throw new ValidationException([new ValidationFailure(nameof(request.Boats),
+                    "Một trong các tàu đã được giữ cho booking khác trong ngày này.")]);
             }
 
             conflict.BookingStatus = BookingStatus.Expired;
             conflict.HoldExpiresAt = null;
         }
 
-        var previousBoatId = booking.BoatId;
+        var previousBoatIds = CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking);
         var previousDepartureDate = booking.DepartureDate;
         var previousStartTime = booking.StartTime;
         var previousRentalUnit = booking.RentalUnit;
@@ -440,21 +621,29 @@ public sealed class QuoteCharterBookingCommandHandler
             _context,
             booking,
             cancellationToken);
-        var automaticPricing = CharterBookingRoutePricingSupport.EstimatePrice(
+        var selectedBoatPricings = CharterBookingQuoteSupport.EstimateSelectedBoatPrices(
             booking,
-            boat,
+            selectedBoats,
             rentalUnit,
             requestedDurationValue,
             relatedRoutes);
+        var primarySelection = selectedBoatPricings[0];
         if (!request.SubtotalAmount.HasValue)
         {
-            CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, automaticPricing.RouteEstimate);
+            CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
         }
 
-        var subtotal = request.SubtotalAmount ?? automaticPricing.SubtotalAmount;
-        var chargeableDurationValue = automaticPricing.ChargeableDurationValue;
+        var subtotal = request.SubtotalAmount ?? selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
+        var chargeableDurationValue = primarySelection.Pricing.ChargeableDurationValue;
         var holdDurationValue = requestedDurationValue;
-        var promotion = await ResolvePromotionForQuoteAsync(booking, request, subtotal, now, cancellationToken);
+        var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
+            _context,
+            booking,
+            request.PromotionCode,
+            subtotal,
+            now,
+            nameof(request.PromotionCode),
+            cancellationToken);
         if (promotion is not null)
         {
             if (!booking.UserId.HasValue)
@@ -476,21 +665,63 @@ public sealed class QuoteCharterBookingCommandHandler
         var total = subtotal - discount;
         var holdExpiresAt = now + HoldDuration;
 
-        if (!await _boatHoldService.TryHoldAsync(
+        var holdKeyChanged = previousDepartureDate != booking.DepartureDate
+            || previousStartTime != booking.StartTime
+            || previousRentalUnit != rentalUnit
+            || previousDurationValue != holdDurationValue;
+        var newlyHeldBoatIds = new List<Guid>();
+        foreach (var selectedBoat in selectedBoatPricings)
+        {
+            if (await _boatHoldService.TryHoldAsync(
+                    booking.Id,
+                    selectedBoat.Boat.Id,
+                    booking.DepartureDate.GetValueOrDefault(),
+                    booking.StartTime,
+                    rentalUnit,
+                    holdDurationValue,
+                    holdExpiresAt,
+                    cancellationToken))
+            {
+                newlyHeldBoatIds.Add(selectedBoat.Boat.Id);
+                continue;
+            }
+
+            await CharterBookingQuoteSupport.ReleaseQuoteHoldsAsync(
+                _boatHoldService,
                 booking.Id,
-                boat.Id,
+                newlyHeldBoatIds.Where(x => holdKeyChanged || !previousBoatIds.Contains(x)),
                 booking.DepartureDate.GetValueOrDefault(),
                 booking.StartTime,
                 rentalUnit,
                 holdDurationValue,
-                holdExpiresAt,
-                cancellationToken))
-        {
-            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
-                "Tàu đang được giữ tạm thời cho booking khác. Vui lòng chọn tàu khác hoặc thử lại sau.")]);
+                cancellationToken);
+            throw new ValidationException([new ValidationFailure(nameof(request.Boats),
+                "Một trong các tàu đang được giữ tạm thời cho booking khác. Vui lòng chọn tàu khác hoặc thử lại sau.")]);
         }
 
-        booking.BoatId = boat.Id;
+        var primaryBoat = primarySelection.Boat;
+        var oldCharterBoats = booking.CharterBoats.ToArray();
+        _context.Set<CharterBookingBoat>().RemoveRange(oldCharterBoats);
+        booking.CharterBoats.Clear();
+        var selectedBoatRows = selectedBoatPricings
+            .Select(x => new CharterBookingBoat
+            {
+                BookingId = booking.Id,
+                BoatId = x.Boat.Id,
+                BoatOrder = x.BoatOrder,
+                SeatSetupType = x.Boat.SeatSetupType,
+                UnitPrice = x.Pricing.UnitPrice,
+                ChargeableDurationValue = x.Pricing.ChargeableDurationValue,
+                SubtotalAmount = x.Pricing.SubtotalAmount,
+                Created = now,
+                Booking = booking,
+                Boat = x.Boat
+            })
+            .ToArray();
+        _context.Set<CharterBookingBoat>().AddRange(selectedBoatRows);
+
+        booking.BoatId = primaryBoat.Id;
+        booking.Boat = primaryBoat;
         booking.RentalUnit = rentalUnit;
         booking.DurationValue = requestedDurationValue;
         booking.PromotionId = promotion?.Id;
@@ -521,21 +752,26 @@ public sealed class QuoteCharterBookingCommandHandler
         }
         catch (DbUpdateException)
         {
-            await _boatHoldService.ReleaseAsync(
+            await CharterBookingQuoteSupport.ReleaseQuoteHoldsAsync(
+                _boatHoldService,
                 booking.Id,
-                boat.Id,
+                newlyHeldBoatIds.Where(x => holdKeyChanged || !previousBoatIds.Contains(x)),
                 booking.DepartureDate.GetValueOrDefault(),
                 booking.StartTime,
                 rentalUnit,
                 holdDurationValue,
                 cancellationToken);
-            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
+            throw new ValidationException([new ValidationFailure(nameof(request.Boats),
                 "Tàu vừa được giữ cho booking khác. Vui lòng chọn tàu khác hoặc thử lại.")]);
         }
 
-        if (previousBoatId.HasValue
-            && previousBoatId.Value != boat.Id)
+        foreach (var previousBoatId in previousBoatIds)
         {
+            if (!holdKeyChanged && selectedBoatIds.Contains(previousBoatId))
+            {
+                continue;
+            }
+
             await _boatHoldService.ReleaseAsync(
                 booking.Id,
                 previousBoatId,
@@ -549,81 +785,21 @@ public sealed class QuoteCharterBookingCommandHandler
         return new QuoteCharterBookingResult(
             booking.Id,
             booking.BookingCode,
-            boat.Id,
-            boat.Name,
+            primaryBoat.Id,
+            primaryBoat.Name,
+            CharterBookingBoatSelectionSupport.ToSelectedBoatDtos(selectedBoatRows),
             booking.SubtotalAmount,
             booking.DiscountAmount,
             booking.TotalAmount,
-            automaticPricing.UnitPrice,
+            primarySelection.Pricing.UnitPrice,
             chargeableDurationValue,
             request.SubtotalAmount.HasValue ? "Manual" : "Automatic",
             CharterBookingRoutePricingSupport.ToDto(
-                automaticPricing.RouteEstimate,
+                primarySelection.Pricing.RouteEstimate,
                 rentalUnit,
                 requestedDurationValue),
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
             promotion?.PromotionCode);
-    }
-
-    private async Task<Promotion?> ResolvePromotionForQuoteAsync(
-        Booking booking,
-        QuoteCharterBookingCommand request,
-        decimal subtotalAmount,
-        DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        if (request.PromotionCode is not null)
-        {
-            return string.IsNullOrWhiteSpace(request.PromotionCode)
-                ? null
-                : await CharterBookingPricingSupport.ResolvePromotionAsync(
-                    _context,
-                    request.PromotionCode,
-                    subtotalAmount,
-                    now,
-                    nameof(request.PromotionCode),
-                    validateMinOrder: true,
-                    cancellationToken);
-        }
-
-        if (!booking.PromotionId.HasValue)
-        {
-            return null;
-        }
-
-        var promotion = booking.Promotion
-            ?? await _context.Set<Promotion>()
-                .SingleOrDefaultAsync(x => x.Id == booking.PromotionId.Value, cancellationToken);
-        if (promotion is null)
-        {
-            return null;
-        }
-
-        CharterBookingPricingSupport.EnsurePromotionCanBeUsed(
-            promotion,
-            subtotalAmount,
-            now,
-            nameof(request.PromotionCode),
-            validateMinOrder: true);
-        return promotion;
-    }
-
-    private static void EnsureCanQuote(Booking booking)
-    {
-        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed
-            or BookingStatus.Refunded or BookingStatus.Confirmed)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
-                "Không thể chốt giá cho booking đã hủy, đã xác nhận, đã hoàn tất hoặc đã hoàn tiền.")]);
-        }
-
-        if (booking.Payments.Any(x =>
-                string.Equals(x.PaymentStatus, PendingPaymentStatus, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(x.PaymentStatus, PaidPaymentStatus, StringComparison.OrdinalIgnoreCase)))
-        {
-            throw new ValidationException([new ValidationFailure(nameof(booking.Payments),
-                "Booking đã có payment đang chờ hoặc đã thanh toán nên không thể đổi tàu/giá.")]);
-        }
     }
 }
