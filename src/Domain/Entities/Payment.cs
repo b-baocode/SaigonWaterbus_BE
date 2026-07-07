@@ -15,12 +15,17 @@ public class Payment : BaseGuidAuditableEntity
     public string PaymentStatus { get; set; } = "Pending";
     public string? CheckoutUrl { get; set; }
     public string? QrCode { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
     public decimal RefundAmount { get; set; }
+    public decimal? RefundRequestedAmount { get; set; }
+    public string? RefundMethod { get; set; }
+    public string? RefundReason { get; set; }
     public string? RefundReferenceId { get; set; }
     public string? RefundPayoutId { get; set; }
     public string? RefundStatus { get; set; }
     public string? RefundFailureReason { get; set; }
+    public Guid? RefundProcessedByUserId { get; set; }
     public DateTimeOffset? RefundedAt { get; set; }
 
     public Booking Booking { get; set; } = null!;

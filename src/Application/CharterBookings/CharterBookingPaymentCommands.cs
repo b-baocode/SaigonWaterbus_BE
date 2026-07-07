@@ -65,13 +65,20 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             includePayments: true,
             cancellationToken);
 
-        CharterBookingPaymentSupport.EnsureCanCreatePayment(booking);
+        var now = _timeProvider.GetUtcNow();
+        if (PaymentSupport.ExpireStalePendingPayments(booking, now))
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        CharterBookingPaymentSupport.EnsureCanCreatePayment(booking, now);
 
         var existingPendingPayment = booking.Payments
             .Where(CharterBookingPaymentSupport.IsPayOsPayment)
             .OrderByDescending(x => x.Created)
             .FirstOrDefault(x =>
                 CharterBookingPaymentSupport.IsPending(x.PaymentStatus)
+                && !PaymentSupport.IsExpired(x, now)
                 && !string.IsNullOrWhiteSpace(x.CheckoutUrl));
         if (existingPendingPayment is not null)
         {
@@ -93,7 +100,6 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             request.PaymentOption,
             request.DepositPercent,
             paidAmount);
-        var now = _timeProvider.GetUtcNow();
         var orderCode = await CharterBookingPaymentSupport.GeneratePaymentOrderCodeAsync(
             _context,
             now,
@@ -102,6 +108,7 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             paymentPlan.Amount,
             nameof(paymentPlan.Amount),
             "Tổng tiền thanh toán phải là số nguyên VND lớn hơn 0.");
+        var expiresAt = PaymentSupport.ResolvePaymentExpiresAt(now);
 
         var payment = new Payment
         {
@@ -112,11 +119,13 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             Currency = booking.Currency,
             PaymentMethod = CharterBookingPaymentSupport.PayOsProvider,
             PaymentPurpose = paymentPlan.Purpose,
-            PaymentStatus = CharterBookingPaymentSupport.PendingStatus
+            PaymentStatus = CharterBookingPaymentSupport.PendingStatus,
+            ExpiresAt = expiresAt
         };
         booking.Payments.Add(payment);
         _context.Set<Payment>().Add(payment);
         CharterBookingPaymentSupport.ApplyPendingPaymentPlan(booking, paymentPlan, paidAmount);
+        PaymentSupport.EnsureCharterPaymentCompletionDeadline(booking, now);
         await _context.SaveChangesAsync(cancellationToken);
 
         CharterBookingDepositPaymentResult paymentResult;
@@ -131,7 +140,7 @@ public sealed class CreateCharterBookingPaymentCommandHandler
                     booking.ContactEmail,
                     booking.ContactPhone,
                     $"{paymentPlan.Purpose} charter booking {booking.BookingCode}",
-                    CharterBookingPaymentSupport.ResolvePaymentExpiredAt(booking)),
+                    expiresAt),
                 cancellationToken);
         }
         catch (PaymentGatewayException ex)
@@ -488,7 +497,7 @@ internal static class CharterBookingPaymentSupport
         return booking;
     }
 
-    public static void EnsureCanCreatePayment(Booking booking)
+    public static void EnsureCanCreatePayment(Booking booking, DateTimeOffset now)
     {
         if (booking.BookingStatus == BookingStatus.Cancelled)
         {
@@ -500,6 +509,14 @@ internal static class CharterBookingPaymentSupport
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Charter booking chưa được admin nhập tàu và chốt giá.")]);
+        }
+
+        if (booking.BookingStatus == BookingStatus.Quoted
+            && booking.HoldExpiresAt.HasValue
+            && booking.HoldExpiresAt.Value <= now)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(booking.HoldExpiresAt),
+                "Thời hạn phản hồi hoặc thanh toán charter booking đã hết. Vui lòng tạo yêu cầu thuê tàu mới.")]);
         }
 
         if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded)
@@ -605,8 +622,6 @@ internal static class CharterBookingPaymentSupport
 
     public static string CreatePaymentDescription(Booking booking) =>
         $"{booking.DepartureDate.GetValueOrDefault():yyMMdd}{booking.Id.ToString("N")[^6..].ToUpperInvariant()}";
-
-    public static DateTimeOffset? ResolvePaymentExpiredAt(Booking booking) => null;
 
     public static bool IsPayOsPayment(Payment payment) =>
         string.Equals(payment.Provider, PayOsProvider, StringComparison.OrdinalIgnoreCase);
@@ -736,7 +751,9 @@ internal static class CharterBookingPaymentSupport
             booking.RemainingAmount,
             payment.ProviderTransactionId,
             payment.CheckoutUrl,
-            payment.QrCode);
+            payment.QrCode,
+            PaymentSupport.ResolvePaymentExpiresAt(payment),
+            booking.HoldExpiresAt);
 
     public static SyncCharterBookingPaymentResult ToSyncPaymentResult(
         Booking booking,
@@ -753,7 +770,9 @@ internal static class CharterBookingPaymentSupport
             booking.DepositAmount,
             booking.RemainingAmount,
             payment.CheckoutUrl,
-            payment.PaidAt);
+            payment.PaidAt,
+            PaymentSupport.ResolvePaymentExpiresAt(payment),
+            booking.HoldExpiresAt);
 
     public sealed record CharterBookingPaymentPlan(
         string Purpose,

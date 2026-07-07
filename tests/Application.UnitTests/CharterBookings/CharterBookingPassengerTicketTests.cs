@@ -108,6 +108,74 @@ public class CharterBookingPassengerTicketTests
     }
 
     [Test]
+    public async Task UpdatingSinglePassengerBookingAllowsMissingDateOfBirthWhenPassengerTypeCanBeInferred()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = PaidCharterBooking(userId, adultCount: 1);
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateUpdateHandler(context, userId);
+
+        var result = await handler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("TRUMP", null)]),
+            CancellationToken.None);
+
+        result.RegisteredPassengerCount.ShouldBe(1);
+        result.TicketCount.ShouldBe(1);
+        result.Passengers.Single().FullName.ShouldBe("TRUMP");
+        result.Passengers.Single().DateOfBirth.ShouldBeNull();
+        result.Passengers.Single().PassengerType.ShouldBe(CharterBookingPassengerType.Adult.ToString());
+    }
+
+    [Test]
+    public async Task UpdatingSinglePassengerBookingCanUseContactNameWhenPassengerListIsEmpty()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = PaidCharterBooking(userId, adultCount: 1);
+        booking.ContactName = "TRUMP";
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateUpdateHandler(context, userId);
+
+        var result = await handler.Handle(
+            new UpdateCharterBookingPassengersCommand(booking.Id, []),
+            CancellationToken.None);
+
+        result.RegisteredPassengerCount.ShouldBe(1);
+        result.TicketCount.ShouldBe(1);
+        result.Passengers.Single().FullName.ShouldBe("TRUMP");
+        result.Passengers.Single().PassengerType.ShouldBe(CharterBookingPassengerType.Adult.ToString());
+    }
+
+    [Test]
+    public async Task UpdatingPassengersReturnsSpecificDateOfBirthErrorWhenPassengerTypeCannotBeInferred()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = PaidCharterBooking(userId, adultCount: 1, childCount: 1);
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateUpdateHandler(context, userId);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCharterBookingPassengersCommand(
+                    booking.Id,
+                    [new CharterBookingPassengerRequest("TRUMP", null)]),
+                CancellationToken.None));
+
+        exception.Errors["passengers[0].dateOfBirth"].Single()
+            .ShouldBe("dateOfBirth is required.");
+    }
+
+    [Test]
     public async Task ExportTicketsReturnsPassengerTicketsForBookingOwner()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -366,7 +434,7 @@ public class CharterBookingPassengerTicketTests
             new TestCharterBookingTicketPdfRenderer(),
             TimeProvider.System);
 
-    private static Booking PaidCharterBooking(Guid userId, int adultCount) =>
+    private static Booking PaidCharterBooking(Guid userId, int adultCount, int childCount = 0) =>
         new()
         {
             BookingType = Booking.CharterBookingType,
@@ -380,7 +448,8 @@ public class CharterBookingPassengerTicketTests
             RentalUnit = BoatRentalUnit.Day,
             DurationValue = 1,
             AdultCount = adultCount,
-            PassengerCount = adultCount,
+            ChildCount = childCount,
+            PassengerCount = adultCount + childCount,
             SubtotalAmount = 1_000_000,
             TotalAmount = 1_000_000,
             DepositAmount = 1_000_000,

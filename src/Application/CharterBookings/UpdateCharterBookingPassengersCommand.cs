@@ -86,7 +86,9 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
                 "Chỉ nhập danh sách hành khách sau khi charter booking đã thanh toán đủ.")]);
         }
 
-        if (request.Passengers.Count > booking.PassengerCount.GetValueOrDefault())
+        var requestedPassengers = NormalizePassengerRequests(booking, request.Passengers);
+
+        if (requestedPassengers.Count > booking.PassengerCount.GetValueOrDefault())
         {
             throw new ValidationException([new ValidationFailure(nameof(request.Passengers),
                 "Danh sách hành khách không được vượt quá số khách đã đăng ký.")]);
@@ -94,8 +96,14 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
 
         var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
 
-        var passengers = request.Passengers
-            .Select(x => CharterBookingPassengerSupport.ToEntity(booking.Id, x, today))
+        var passengers = requestedPassengers
+            .Select((x, index) => CharterBookingPassengerSupport.ToEntity(
+                booking.Id,
+                x,
+                today,
+                ResolveInferredPassengerType(booking, requestedPassengers, x),
+                $"passengers[{index}].dateOfBirth",
+                $"passengers[{index}].fullName"))
             .ToList();
         CharterBookingPassengerSupport.EnsurePassengerTypeCountsMatchRequest(
             booking,
@@ -186,5 +194,46 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
         var invalidChars = Path.GetInvalidFileNameChars();
         var safeValue = new string(value.Select(x => invalidChars.Contains(x) ? '-' : x).ToArray());
         return string.IsNullOrWhiteSpace(safeValue) ? "boarding-pass" : safeValue;
+    }
+
+    private static IReadOnlyList<CharterBookingPassengerRequest> NormalizePassengerRequests(
+        Booking booking,
+        IReadOnlyList<CharterBookingPassengerRequest>? passengers)
+    {
+        if (passengers is { Count: > 0 })
+        {
+            return passengers
+                .Select(x => string.IsNullOrWhiteSpace(x.FullName)
+                    && booking.PassengerCount.GetValueOrDefault() == 1
+                    && !string.IsNullOrWhiteSpace(booking.ContactName)
+                        ? x with { FullName = booking.ContactName }
+                        : x)
+                .ToList();
+        }
+
+        return booking.PassengerCount.GetValueOrDefault() == 1
+            && !string.IsNullOrWhiteSpace(booking.ContactName)
+                ? [new CharterBookingPassengerRequest(booking.ContactName, null)]
+                : [];
+    }
+
+    private static string? ResolveInferredPassengerType(
+        Booking booking,
+        IReadOnlyCollection<CharterBookingPassengerRequest> passengers,
+        CharterBookingPassengerRequest passenger)
+    {
+        if (!string.IsNullOrWhiteSpace(passenger.DateOfBirth)
+            || passengers.Count != 1
+            || booking.PassengerCount.GetValueOrDefault() != 1)
+        {
+            return null;
+        }
+
+        return (booking.AdultCount.GetValueOrDefault(), booking.ChildCount.GetValueOrDefault()) switch
+        {
+            (1, 0) => CharterBookingPassengerType.Adult.ToString(),
+            (0, 1) => CharterBookingPassengerType.Child.ToString(),
+            _ => null
+        };
     }
 }

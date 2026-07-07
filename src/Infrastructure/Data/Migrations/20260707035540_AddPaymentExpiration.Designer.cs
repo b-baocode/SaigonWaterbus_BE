@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260707035540_AddPaymentExpiration")]
+    partial class AddPaymentExpiration
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1206,33 +1209,15 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(500)")
                         .HasColumnName("refund_failure_reason");
 
-                    b.Property<string>("RefundMethod")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("refund_method");
-
                     b.Property<string>("RefundPayoutId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("refund_payout_id");
 
-                    b.Property<Guid?>("RefundProcessedByUserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("refund_processed_by_user_id");
-
-                    b.Property<string>("RefundReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("refund_reason");
-
                     b.Property<string>("RefundReferenceId")
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)")
                         .HasColumnName("refund_reference_id");
-
-                    b.Property<decimal?>("RefundRequestedAmount")
-                        .HasColumnType("numeric(12,2)")
-                        .HasColumnName("refund_requested_amount");
 
                     b.Property<string>("RefundStatus")
                         .HasMaxLength(30)

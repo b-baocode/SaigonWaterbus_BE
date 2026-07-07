@@ -26,12 +26,39 @@ internal static class CharterBookingPassengerSupport
     public static BookingPassenger ToEntity(
         Guid bookingId,
         CharterBookingPassengerRequest request,
-        DateOnly today)
+        DateOnly today,
+        string? inferredPassengerType = null,
+        string dateOfBirthPropertyName = nameof(CharterBookingPassengerRequest.DateOfBirth),
+        string fullNamePropertyName = nameof(CharterBookingPassengerRequest.FullName))
     {
+        if (string.IsNullOrWhiteSpace(request.FullName))
+        {
+            throw new ValidationException([new ValidationFailure(fullNamePropertyName,
+                "fullName is required.")]);
+        }
+
         if (!TryParseDateOfBirth(request.DateOfBirth, out var dateOfBirth))
         {
-            throw new ValidationException([new ValidationFailure(nameof(request.DateOfBirth),
-                "Ngày sinh không hợp lệ. Dùng định dạng yyyy-MM-dd hoặc dd/MM/yyyy.")]);
+            if (!string.IsNullOrWhiteSpace(inferredPassengerType))
+            {
+                return new BookingPassenger
+                {
+                    BookingId = bookingId,
+                    FullName = request.FullName.Trim(),
+                    PassengerType = inferredPassengerType
+                };
+            }
+
+            var message = string.IsNullOrWhiteSpace(request.DateOfBirth)
+                ? "dateOfBirth is required."
+                : "Ngày sinh không hợp lệ. Dùng định dạng yyyy-MM-dd hoặc dd/MM/yyyy.";
+            throw new ValidationException([new ValidationFailure(dateOfBirthPropertyName, message)]);
+        }
+
+        if (dateOfBirth > today)
+        {
+            throw new ValidationException([new ValidationFailure(dateOfBirthPropertyName,
+                "Ngày sinh không được ở tương lai.")]);
         }
 
         return new BookingPassenger

@@ -47,6 +47,7 @@ public sealed class GetCharterBookingListQueryHandler
                 BoatName = b.Boat != null ? b.Boat.Name : null,
                 b.SubtotalAmount,
                 b.TotalAmount,
+                b.HoldExpiresAt,
                 b.RequestedBoatDecks,
                 b.RequestedBoatTypes,
                 b.PreferredSeatSetupType
@@ -71,7 +72,8 @@ public sealed class GetCharterBookingListQueryHandler
                 b.BoatName,
                 b.BookingStatus == BookingStatus.PendingQuote ? null : b.SubtotalAmount,
                 b.BookingStatus == BookingStatus.PendingQuote ? null : b.TotalAmount,
-                ToRequestedBoatDtos(b.RequestedBoatDecks, b.RequestedBoatTypes, b.PreferredSeatSetupType)))
+                ToRequestedBoatDtos(b.RequestedBoatDecks, b.RequestedBoatTypes, b.PreferredSeatSetupType),
+                b.HoldExpiresAt))
             .ToList();
     }
 

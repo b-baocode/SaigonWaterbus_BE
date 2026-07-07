@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
@@ -45,7 +46,8 @@ public sealed class GetAdminCharterBookingListQueryHandler
                 x.ContactName,
                 x.ContactPhone,
                 x.ContactEmail,
-                x.Boat != null ? x.Boat.Name : null))
+                x.Boat != null ? x.Boat.Name : null,
+                x.HoldExpiresAt))
             .ToListAsync(cancellationToken);
     }
 }
@@ -102,8 +104,6 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 {
     private const string PendingPaymentStatus = "Pending";
     private const string PaidPaymentStatus = "Paid";
-    private const string DepositPaidBookingPaymentStatus = "DepositPaid";
-    private const string RefundedBookingPaymentStatus = "Refunded";
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
@@ -144,7 +144,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         }
 
         await _context.SaveChangesAsync(cancellationToken);
-        if (request.BookingStatus is BookingStatus.PendingQuote or BookingStatus.Cancelled or BookingStatus.Expired)
+        if (request.BookingStatus is BookingStatus.Cancelled or BookingStatus.Expired)
         {
             foreach (var previousBoatId in previousBoatIds)
             {
@@ -169,6 +169,8 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
     private static void ApplyStatusUpdate(Booking booking, BookingStatus targetStatus)
     {
+        EnsureAdminCanSetStatus(targetStatus);
+
         if (booking.BookingStatus == targetStatus)
         {
             return;
@@ -176,23 +178,6 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
         switch (targetStatus)
         {
-            case BookingStatus.PendingPayment:
-                throw CreateStatusValidation(targetStatus,
-                    "Charter booking không dùng trạng thái PendingPayment. Dùng PendingQuote khi chưa được admin chốt giá.");
-
-            case BookingStatus.PendingQuote:
-                EnsureNoPendingOrPaidPayments(booking, targetStatus);
-                booking.HoldExpiresAt = null;
-                break;
-
-            case BookingStatus.Quoted:
-                EnsureCanMarkQuoted(booking, targetStatus);
-                break;
-
-            case BookingStatus.Confirmed:
-                EnsureCanMarkConfirmed(booking, targetStatus);
-                break;
-
             case BookingStatus.Cancelled:
                 EnsureCanCancel(booking, targetStatus);
                 booking.HoldExpiresAt = null;
@@ -209,10 +194,6 @@ public sealed class UpdateCharterBookingStatusCommandHandler
                 EnsureCanComplete(booking, targetStatus);
                 break;
 
-            case BookingStatus.Refunded:
-                EnsureCanMarkRefunded(booking, targetStatus);
-                break;
-
             default:
                 throw CreateStatusValidation(targetStatus, "Trạng thái charter booking không hợp lệ.");
         }
@@ -220,27 +201,30 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         booking.BookingStatus = targetStatus;
     }
 
-    private static void EnsureCanMarkQuoted(Booking booking, BookingStatus targetStatus)
+    private static void EnsureAdminCanSetStatus(BookingStatus targetStatus)
     {
-        EnsureNoPendingOrPaidPayments(booking, targetStatus);
-
-        if (!booking.BoatId.HasValue || booking.TotalAmount <= 0)
-        {
-            throw CreateStatusValidation(targetStatus,
-                "Không thể chuyển sang Quoted khi booking chưa có tàu hoặc chưa có giá. Hãy dùng API quote để chọn tàu và chốt giá.");
-        }
-    }
-
-    private static void EnsureCanMarkConfirmed(Booking booking, BookingStatus targetStatus)
-    {
-        if (IsBookingPaymentStatus(booking, DepositPaidBookingPaymentStatus, PaidPaymentStatus)
-            || booking.Payments.Any(x => IsPaymentStatus(x.PaymentStatus, PaidPaymentStatus)))
+        if (targetStatus is BookingStatus.Cancelled or BookingStatus.Expired or BookingStatus.Completed)
         {
             return;
         }
 
+        var message = targetStatus switch
+        {
+            BookingStatus.PendingPayment =>
+                "Charter booking không dùng trạng thái PendingPayment.",
+            BookingStatus.PendingQuote =>
+                "PendingQuote do hệ thống gán khi customer tạo yêu cầu thuê tàu.",
+            BookingStatus.Quoted =>
+                "Quoted do hệ thống gán khi admin chốt giá bằng API quote.",
+            BookingStatus.Confirmed =>
+                "Confirmed do hệ thống gán khi thanh toán đặt cọc hoặc thanh toán đủ thành công.",
+            BookingStatus.Refunded =>
+                "Refunded do hệ thống gán sau luồng hoàn tiền thành công.",
+            _ => "Trạng thái charter booking không hợp lệ."
+        };
+
         throw CreateStatusValidation(targetStatus,
-            "Không thể chuyển sang Confirmed khi booking chưa có thanh toán đặt cọc hoặc thanh toán đủ.");
+            $"{message} Admin chỉ được cập nhật thủ công sang Cancelled, Expired hoặc Completed.");
     }
 
     private static void EnsureCanCancel(Booking booking, BookingStatus targetStatus)
@@ -269,15 +253,6 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         {
             throw CreateStatusValidation(targetStatus,
                 "Chỉ có thể hoàn tất charter booking đã thanh toán đủ.");
-        }
-    }
-
-    private static void EnsureCanMarkRefunded(Booking booking, BookingStatus targetStatus)
-    {
-        if (!IsBookingPaymentStatus(booking, RefundedBookingPaymentStatus))
-        {
-            throw CreateStatusValidation(targetStatus,
-                "Không thể chuyển sang Refunded khi paymentStatus chưa phải Refunded. Hãy dùng luồng hoàn tiền trước.");
         }
     }
 
@@ -537,8 +512,6 @@ public sealed class QuoteCharterBookingCommandHandler
 {
     private const string UnpaidBookingPaymentStatus = "Unpaid";
 
-    private static readonly TimeSpan HoldDuration = TimeSpan.FromHours(2);
-
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly IBoatHoldService _boatHoldService;
@@ -663,7 +636,7 @@ public sealed class QuoteCharterBookingCommandHandler
         }
         var discount = CharterBookingPricingSupport.CalculateDiscount(promotion, subtotal);
         var total = subtotal - discount;
-        var holdExpiresAt = now + HoldDuration;
+        var holdExpiresAt = now + BookingExpirationPolicy.CharterQuoteResponseTtl;
 
         var holdKeyChanged = previousDepartureDate != booking.DepartureDate
             || previousStartTime != booking.StartTime
@@ -800,6 +773,7 @@ public sealed class QuoteCharterBookingCommandHandler
                 requestedDurationValue),
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
-            promotion?.PromotionCode);
+            promotion?.PromotionCode,
+            booking.HoldExpiresAt);
     }
 }

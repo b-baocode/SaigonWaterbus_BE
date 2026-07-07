@@ -13,7 +13,7 @@ namespace SaigonWaterbus.Application.UnitTests.Auth;
 public class BrevoPaymentNotificationSenderTests
 {
     [Test]
-    public async Task PaymentSucceededUsesTemplate13AndDoesNotIncludeQr()
+    public async Task PaymentSucceededUsesTemplate14AndDoesNotIncludeQr()
     {
         var httpHandler = new CapturingHttpMessageHandler();
         var sender = CreateSender(httpHandler);
@@ -23,7 +23,7 @@ public class BrevoPaymentNotificationSenderTests
         using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
         var root = payload.RootElement;
         var parameters = root.GetProperty("params");
-        root.GetProperty("templateId").GetInt32().ShouldBe(13);
+        root.GetProperty("templateId").GetInt32().ShouldBe(14);
         parameters.GetProperty("ticketCode").ValueKind.ShouldBe(JsonValueKind.Null);
         parameters.GetProperty("qrImageUrl").ValueKind.ShouldBe(JsonValueKind.Null);
         parameters.GetProperty("pdfUrl").ValueKind.ShouldBe(JsonValueKind.Null);
@@ -31,7 +31,7 @@ public class BrevoPaymentNotificationSenderTests
     }
 
     [Test]
-    public async Task BoardingPassUsesTemplate14AndIncludesQr()
+    public async Task BoardingPassUsesTemplate13AndIncludesQr()
     {
         var httpHandler = new CapturingHttpMessageHandler();
         var sender = CreateSender(httpHandler);
@@ -52,7 +52,7 @@ public class BrevoPaymentNotificationSenderTests
         var root = payload.RootElement;
         var parameters = root.GetProperty("params");
         var attachment = root.GetProperty("attachment")[0];
-        root.GetProperty("templateId").GetInt32().ShouldBe(14);
+        root.GetProperty("templateId").GetInt32().ShouldBe(13);
         parameters.GetProperty("ticketCode").GetString().ShouldBe("TK123");
         parameters.GetProperty("qrPayload").GetString().ShouldBe("qr-token");
         parameters.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/qr-token");
@@ -73,8 +73,10 @@ public class BrevoPaymentNotificationSenderTests
                 SenderEmail = "noreply@saigonwaterbus.test",
                 SenderName = "Saigon Waterbus",
                 PublicApiBaseUrl = "https://api.test",
-                CharterBookingQuoteTemplateId = 13,
-                CharterBookingConfirmationTemplateId = 14
+                CharterBookingQuoteTemplateId = 14,
+                CharterBookingConfirmationTemplateId = 13,
+                PaymentDepositTemplateId = 14,
+                PaymentFullTemplateId = 14
             }),
             NullLogger<BrevoPaymentNotificationSender>.Instance);
 
