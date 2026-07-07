@@ -7,31 +7,35 @@ internal static class CharterBookingBoatSelectionSupport
 {
     public const int MaxRequestedBoatCount = 20;
 
-    public static IReadOnlyList<SeatSetupType> NormalizeRequestedBoatTypes(
-        IReadOnlyList<CreateCharterBookingBoatRequest>? requestedBoats,
-        SeatSetupType? preferredSeatSetupType)
+    public static IReadOnlyList<int> NormalizeRequestedBoatDecks(
+        IReadOnlyList<CreateCharterBookingBoatRequest>? requestedBoats) =>
+        requestedBoats is { Count: > 0 }
+            ? requestedBoats.Select(x => x.NumberOfDecks).ToArray()
+            : [];
+
+    public static int ResolveRequestedBoatCount(IReadOnlyList<int> requestedBoatDecks) =>
+        requestedBoatDecks.Count;
+
+    public static string? ToStorageValue(IReadOnlyList<int> requestedBoatDecks) =>
+        requestedBoatDecks.Count == 0
+            ? null
+            : string.Join(",", requestedBoatDecks);
+
+    public static IReadOnlyList<int> FromDeckStorageValue(string? requestedBoatDecks)
     {
-        if (requestedBoats is { Count: > 0 })
+        if (string.IsNullOrWhiteSpace(requestedBoatDecks))
         {
-            return requestedBoats
-                .Select(x => x.SeatSetupType)
-                .ToArray();
+            return [];
         }
 
-        return preferredSeatSetupType.HasValue
-            ? [preferredSeatSetupType.Value]
-            : [];
+        return requestedBoatDecks
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(x => int.TryParse(x, out var numberOfDecks) && numberOfDecks > 0)
+            .Select(int.Parse)
+            .ToArray();
     }
 
-    public static SeatSetupType? FirstOrNull(IReadOnlyList<SeatSetupType> requestedBoatTypes) =>
-        requestedBoatTypes.Count > 0 ? requestedBoatTypes[0] : null;
-
-    public static string? ToStorageValue(IReadOnlyList<SeatSetupType> requestedBoatTypes) =>
-        requestedBoatTypes.Count == 0
-            ? null
-            : string.Join(",", requestedBoatTypes.Select(x => x.ToString()));
-
-    public static IReadOnlyList<SeatSetupType> FromStorageValue(string? requestedBoatTypes)
+    public static IReadOnlyList<SeatSetupType> FromSeatSetupStorageValue(string? requestedBoatTypes)
     {
         if (string.IsNullOrWhiteSpace(requestedBoatTypes))
         {
@@ -45,23 +49,32 @@ internal static class CharterBookingBoatSelectionSupport
             .ToArray();
     }
 
-    public static IReadOnlyList<CharterBookingRequestedBoatDto> ToDtos(string? requestedBoatTypes)
+    public static IReadOnlyList<CharterBookingRequestedBoatDto> ToDtos(
+        string? requestedBoatDecks,
+        string? requestedBoatTypes = null)
     {
-        if (string.IsNullOrWhiteSpace(requestedBoatTypes))
+        var deckCounts = FromDeckStorageValue(requestedBoatDecks);
+        if (deckCounts.Count > 0)
         {
-            return [];
+            return ToDtos(deckCounts);
         }
 
-        return requestedBoatTypes
-            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Select((seatSetupType, index) => new CharterBookingRequestedBoatDto(index + 1, seatSetupType))
-            .ToArray();
+        return ToLegacySeatSetupDtos(FromSeatSetupStorageValue(requestedBoatTypes));
     }
 
     public static IReadOnlyList<CharterBookingRequestedBoatDto> ToDtos(
+        IReadOnlyList<int> requestedBoatDecks) =>
+        requestedBoatDecks
+            .Select((numberOfDecks, index) => new CharterBookingRequestedBoatDto(index + 1, numberOfDecks))
+            .ToArray();
+
+    public static IReadOnlyList<CharterBookingRequestedBoatDto> ToLegacySeatSetupDtos(
         IReadOnlyList<SeatSetupType> requestedBoatTypes) =>
         requestedBoatTypes
-            .Select((seatSetupType, index) => new CharterBookingRequestedBoatDto(index + 1, seatSetupType.ToString()))
+            .Select((seatSetupType, index) => new CharterBookingRequestedBoatDto(
+                index + 1,
+                null,
+                seatSetupType.ToString()))
             .ToArray();
 
     public static IReadOnlyList<CharterBookingSelectedBoatDto> ToSelectedBoatDtos(
@@ -73,6 +86,7 @@ internal static class CharterBookingBoatSelectionSupport
                 x.BoatId,
                 x.Boat.Name,
                 x.SeatSetupType.ToString(),
+                x.Boat.NumberOfDecks,
                 x.UnitPrice,
                 x.ChargeableDurationValue,
                 x.SubtotalAmount))

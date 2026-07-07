@@ -60,6 +60,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.AdultCount).HasColumnName("adult_count").IsRequired(false);
         builder.Property(x => x.ChildCount).HasColumnName("child_count").IsRequired(false);
         builder.Property(x => x.RequestedBoatCount).HasColumnName("requested_boat_count").IsRequired(false);
+        builder.Property(x => x.RequestedBoatDecks).HasColumnName("requested_boat_decks").HasMaxLength(1000);
         builder.Property(x => x.RequestedBoatTypes).HasColumnName("requested_boat_types").HasMaxLength(1000);
         builder.Property(x => x.PreferredSeatSetupType)
             .HasColumnName("preferred_seat_setup_type")

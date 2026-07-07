@@ -33,10 +33,12 @@ internal static class CharterBookingQuerySupport
         var ticketDtos = CharterBookingTicketSupport.GetDisplayTickets(booking.Tickets)
             .Select(CharterBookingTicketSupport.ToDto)
             .ToList();
-        var requestedBoatDtos = CharterBookingBoatSelectionSupport.ToDtos(booking.RequestedBoatTypes);
+        var requestedBoatDtos = CharterBookingBoatSelectionSupport.ToDtos(
+            booking.RequestedBoatDecks,
+            booking.RequestedBoatTypes);
         if (requestedBoatDtos.Count == 0 && booking.PreferredSeatSetupType.HasValue)
         {
-            requestedBoatDtos = CharterBookingBoatSelectionSupport.ToDtos([booking.PreferredSeatSetupType.Value]);
+            requestedBoatDtos = CharterBookingBoatSelectionSupport.ToLegacySeatSetupDtos([booking.PreferredSeatSetupType.Value]);
         }
         var requestedBoatCount = booking.RequestedBoatCount ?? requestedBoatDtos.Count;
 

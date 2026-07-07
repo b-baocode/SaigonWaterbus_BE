@@ -30,11 +30,13 @@ public sealed class CharterBookings : IEndpointGroup
           "toStationId": null,
           "itineraryStops": null,
           "requestedBoats": [
-            { "seatSetupType": "StandardAndVip" },
-            { "seatSetupType": "FullStandard" }
+            { "numberOfDecks": 1 },
+            { "numberOfDecks": 2 }
           ],
-          "boatRequirements": "Muốn tàu StandardAndVip và không gian tổ chức sinh nhật",
+          "boatRequirements": "Muốn tàu 1 tầng và 2 tầng, có không gian tổ chức sinh nhật",
           "specialRequests": "Can trang tri sinh nhat",
+          "contactName": "Nguyen Van A",
+          "contactPhone": "0900000000",
           "contactEmail": "customer@example.com"
         }
         """;
@@ -135,7 +137,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Dung khi customer da gui yeu cau charter booking nhung chua co tau/gia.",
                 "boats: danh sach tau admin chon; so item phai dung bang so tau customer yeu cau, boatOrder khop thu tu requestedBoats.",
                 "boatId: van ho tro cho client cu khi booking chi yeu cau 1 tau.",
-                "Moi tau phai Active, dung seatSetupType theo requestedBoats va tong suc chua khong duoc nho hon adultCount + childCount customer da nhap.",
+                "Moi tau phai Active, dung numberOfDecks theo requestedBoats va tong suc chua khong duoc nho hon adultCount + childCount customer da nhap.",
                 "subtotalAmount: optional; bo trong/null de backend tu tinh theo gia tau, thoi gian/quang duong; gui so tien neu admin muon override gia chot.",
                 "Hour: backend can co du lieu km/thoi gian tu GeoJSON/toa do ben; neu thieu thi tra 400 hoac admin phai nhap subtotalAmount thu cong.",
                 "Hour: so gio tinh tien = max(durationValue, phut tinh tien / 60) va lam tron den 3 chu so thap phan.",
@@ -233,7 +235,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Bearer token",
                 CreateCharterBookingExample,
                 "Customer chinh sua yeu cau thue tau khi bookingStatus = PendingQuote.",
-                "contactEmail: email nhan thong tin charter booking; neu khong gui hoac gui rong thi backend giu email cu.",
+                "contactName/contactPhone/contactEmail: neu gui thi backend luu gia tri moi; neu khong gui hoac gui rong thi backend giu gia tri cu hoac fallback tu tai khoan. Sau fallback van bat buoc du 3 thong tin.",
                 "departureDate: neu khong doi ngay thi khong bi validate lai rule dat truoc 7 ngay; neu doi ngay moi thi ngay moi phai cach hien tai it nhat 7 ngay.",
                 "Khong cho chinh sua khi booking da duoc quote/xac nhan/huy/hoan tat hoac da co payment Pending/Paid."));
 
@@ -351,9 +353,9 @@ public sealed class CharterBookings : IEndpointGroup
                 "rentalUnit: Hour hoac Day, la don vi thue khach mong muon.",
                 "durationValue: so gio hoac so ngay thue (1-60).",
                 "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
-                "requestedBoats: danh sach tau customer muon thue; moi item co seatSetupType.",
-                "seatSetupType: FullStandard = tau full ghe STANDARD, StandardAndVip = tau setup sightseeing voi ghe CABIN/RIVER/SKY.",
-                "preferredSeatSetupType van duoc ho tro cho client cu va duoc hieu nhu 1 tau.",
+                "requestedBoats: danh sach tau customer muon thue; moi item co numberOfDecks.",
+                "numberOfDecks: so tang cua tau khach mong muon, phai lon hon 0.",
+                "contactName/contactPhone/contactEmail: bat buoc sau khi fallback tu thong tin tai khoan; FE nen gui gia tri nguoi dung da nhap.",
                 "boatRequirements: yeu cau ghi chu them de admin chon tau.",
                 "fromStationId / toStationId: tuy chon, de null neu chua chon ben; neu dien thi lay id that tu GET /api/stations.",
                 "itineraryStops: tuy chon, de null neu khong co diem dung; neu dien thi stationId phai la id that tu GET /api/stations va stopOrder khong trung.",
@@ -568,9 +570,10 @@ public sealed class CharterBookings : IEndpointGroup
             request.ToStationId,
             request.ItineraryStops,
             request.RequestedBoats,
-            request.PreferredSeatSetupType,
             request.BoatRequirements,
             request.SpecialRequests,
+            request.ContactName,
+            request.ContactPhone,
             request.ContactEmail), ct));
 
     private static async Task<IResult> UpdateCharterBooking(
@@ -590,9 +593,10 @@ public sealed class CharterBookings : IEndpointGroup
             request.ToStationId,
             request.ItineraryStops,
             request.RequestedBoats,
-            request.PreferredSeatSetupType,
             request.BoatRequirements,
             request.SpecialRequests,
+            request.ContactName,
+            request.ContactPhone,
             request.ContactEmail), ct));
 
     private static async Task<byte[]> BuildTicketExportZipAsync(

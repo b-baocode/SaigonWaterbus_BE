@@ -19,9 +19,10 @@ public sealed record CreateCharterBookingCommand(
     Guid? ToStationId = null,
     IReadOnlyList<CreateCharterBookingItineraryStopRequest>? ItineraryStops = null,
     IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
-    SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
     string? SpecialRequests = null,
+    string? ContactName = null,
+    string? ContactPhone = null,
     string? ContactEmail = null) : IRequest<CreateCharterBookingResult>;
 
 public sealed class CreateCharterBookingCommandValidator : AbstractValidator<CreateCharterBookingCommand>
@@ -42,7 +43,6 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
         RuleFor(x => x)
             .Must(x => x.AdultCount + x.ChildCount <= 1000)
             .WithMessage("Tổng số khách không được vượt quá 1000.");
-        RuleFor(x => x.PreferredSeatSetupType).IsInEnum().When(x => x.PreferredSeatSetupType.HasValue);
         RuleFor(x => x.RequestedBoats)
             .Must(x => x is null || x.Count > 0)
             .WithMessage("Danh sách tàu yêu cầu không được rỗng nếu được gửi.");
@@ -51,12 +51,18 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .WithMessage($"Số lượng tàu yêu cầu không được vượt quá {CharterBookingBoatSelectionSupport.MaxRequestedBoatCount}.");
         RuleForEach(x => x.RequestedBoats).ChildRules(boat =>
         {
-            boat.RuleFor(x => x.SeatSetupType)
-                .IsInEnum()
-                .WithMessage("Kiểu tàu không hợp lệ.");
+            boat.RuleFor(x => x.NumberOfDecks)
+                .GreaterThan(0)
+                .WithMessage("Số tầng tàu yêu cầu phải lớn hơn 0.");
         });
         RuleFor(x => x.BoatRequirements).MaximumLength(1000).When(x => x.BoatRequirements is not null);
         RuleFor(x => x.SpecialRequests).MaximumLength(1000).When(x => x.SpecialRequests is not null);
+        RuleFor(x => x.ContactName)
+            .MaximumLength(150)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactName));
+        RuleFor(x => x.ContactPhone)
+            .MaximumLength(30)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactPhone));
         RuleFor(x => x.ContactEmail)
             .MaximumLength(255)
             .EmailAddress()
@@ -122,9 +128,9 @@ public sealed class CreateCharterBookingCommandHandler
 
         var passengerCount = request.AdultCount + request.ChildCount;
         const decimal subtotal = 0;
-        var requestedBoatTypes = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatTypes(
-            request.RequestedBoats,
-            request.PreferredSeatSetupType);
+        var requestedBoatDecks = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatDecks(
+            request.RequestedBoats);
+        var requestedBoatCount = CharterBookingBoatSelectionSupport.ResolveRequestedBoatCount(requestedBoatDecks);
 
         await EnsureStationExistsAsync(request.FromStationId, nameof(request.FromStationId), cancellationToken);
         await EnsureStationExistsAsync(request.ToStationId, nameof(request.ToStationId), cancellationToken);
@@ -137,6 +143,21 @@ public sealed class CreateCharterBookingCommandHandler
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
             ?? throw new ValidationException([new ValidationFailure("userId", "User không tồn tại.")]);
+        var contactName = ResolveRequiredContactValue(
+            request.ContactName,
+            user.FullName,
+            nameof(request.ContactName),
+            "Họ tên người đặt là bắt buộc.");
+        var contactPhone = ResolveRequiredContactValue(
+            request.ContactPhone,
+            user.PhoneNumber,
+            nameof(request.ContactPhone),
+            "Số điện thoại người đặt là bắt buộc.");
+        var contactEmail = ResolveRequiredContactValue(
+            request.ContactEmail,
+            user.Email,
+            nameof(request.ContactEmail),
+            "Email nhận thông tin charter booking là bắt buộc.");
 
         var booking = new Booking
         {
@@ -151,16 +172,16 @@ public sealed class CreateCharterBookingCommandHandler
             PassengerCount = passengerCount,
             AdultCount = request.AdultCount,
             ChildCount = request.ChildCount,
-            RequestedBoatCount = requestedBoatTypes.Count == 0 ? null : requestedBoatTypes.Count,
-            RequestedBoatTypes = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatTypes),
-            PreferredSeatSetupType = request.PreferredSeatSetupType
-                ?? CharterBookingBoatSelectionSupport.FirstOrNull(requestedBoatTypes),
+            RequestedBoatCount = requestedBoatCount == 0 ? null : requestedBoatCount,
+            RequestedBoatDecks = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatDecks),
+            RequestedBoatTypes = null,
+            PreferredSeatSetupType = null,
             BoatRequirements = request.BoatRequirements?.Trim(),
             SpecialRequests = request.SpecialRequests?.Trim(),
             BookingCode = ToCharterBookingCode(await _bookingCodeGenerator.GenerateAsync(cancellationToken)),
-            ContactName = user.FullName,
-            ContactPhone = user.PhoneNumber ?? string.Empty,
-            ContactEmail = NormalizeContactEmail(request.ContactEmail) ?? user.Email,
+            ContactName = contactName,
+            ContactPhone = contactPhone,
+            ContactEmail = contactEmail,
             BookingStatus = BookingStatus.PendingQuote,
             SubtotalAmount = subtotal,
             DiscountAmount = discount,
@@ -199,8 +220,8 @@ public sealed class CreateCharterBookingCommandHandler
             booking.TotalAmount,
             booking.BookingStatus.ToString(),
             0,
-            requestedBoatTypes.Count,
-            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatTypes));
+            requestedBoatCount,
+            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatDecks));
     }
 
     private async Task EnsureStationExistsAsync(Guid? stationId, string field, CancellationToken cancellationToken)
@@ -253,8 +274,23 @@ public sealed class CreateCharterBookingCommandHandler
         return $"CB-{bookingCode}";
     }
 
-    private static string? NormalizeContactEmail(string? contactEmail) =>
-        string.IsNullOrWhiteSpace(contactEmail) ? null : contactEmail.Trim();
+    private static string ResolveRequiredContactValue(
+        string? requestedValue,
+        string? fallbackValue,
+        string field,
+        string message)
+    {
+        var value = NormalizeContactValue(requestedValue) ?? NormalizeContactValue(fallbackValue);
+        if (value is null)
+        {
+            throw new ValidationException([new ValidationFailure(field, message)]);
+        }
+
+        return value;
+    }
+
+    private static string? NormalizeContactValue(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 }
 
 public sealed class CharterBookingPassengerRequestValidator : AbstractValidator<CharterBookingPassengerRequest>

@@ -47,6 +47,7 @@ public sealed class GetCharterBookingListQueryHandler
                 BoatName = b.Boat != null ? b.Boat.Name : null,
                 b.SubtotalAmount,
                 b.TotalAmount,
+                b.RequestedBoatDecks,
                 b.RequestedBoatTypes,
                 b.PreferredSeatSetupType
             })
@@ -70,16 +71,17 @@ public sealed class GetCharterBookingListQueryHandler
                 b.BoatName,
                 b.BookingStatus == BookingStatus.PendingQuote ? null : b.SubtotalAmount,
                 b.BookingStatus == BookingStatus.PendingQuote ? null : b.TotalAmount,
-                ToRequestedBoatDtos(b.RequestedBoatTypes, b.PreferredSeatSetupType)))
+                ToRequestedBoatDtos(b.RequestedBoatDecks, b.RequestedBoatTypes, b.PreferredSeatSetupType)))
             .ToList();
     }
 
     private static IReadOnlyList<CharterBookingListRequestedBoatDto> ToRequestedBoatDtos(
+        string? requestedBoatDecks,
         string? requestedBoatTypes,
         SeatSetupType? preferredSeatSetupType)
     {
-        var requestedBoats = CharterBookingBoatSelectionSupport.ToDtos(requestedBoatTypes)
-            .Select(x => new CharterBookingListRequestedBoatDto(x.SeatSetupType))
+        var requestedBoats = CharterBookingBoatSelectionSupport.ToDtos(requestedBoatDecks, requestedBoatTypes)
+            .Select(x => new CharterBookingListRequestedBoatDto(x.NumberOfDecks, x.SeatSetupType))
             .ToArray();
 
         if (requestedBoats.Length > 0)
@@ -88,7 +90,7 @@ public sealed class GetCharterBookingListQueryHandler
         }
 
         return preferredSeatSetupType.HasValue
-            ? [new CharterBookingListRequestedBoatDto(preferredSeatSetupType.Value.ToString())]
+            ? [new CharterBookingListRequestedBoatDto(null, preferredSeatSetupType.Value.ToString())]
             : [];
     }
 }

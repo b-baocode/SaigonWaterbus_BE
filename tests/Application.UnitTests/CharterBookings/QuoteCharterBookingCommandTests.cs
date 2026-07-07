@@ -17,7 +17,7 @@ public class QuoteCharterBookingCommandTests
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
         var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m);
-        var booking = CharterBooking(SeatSetupType.FullStandard, SeatSetupType.StandardAndVip);
+        var booking = CharterBooking(1, 2);
         context.AddRange(fullStandardBoat, booking);
         await context.SaveChangesAsync();
 
@@ -42,9 +42,9 @@ public class QuoteCharterBookingCommandTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
-        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard");
-        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip");
-        var booking = CharterBooking(SeatSetupType.FullStandard, SeatSetupType.StandardAndVip);
+        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
+        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
+        var booking = CharterBooking(1, 2);
         context.AddRange(fullStandardBoat, standardAndVipBoat, booking);
         await context.SaveChangesAsync();
 
@@ -89,9 +89,9 @@ public class QuoteCharterBookingCommandTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
-        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard");
-        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip");
-        var booking = CharterBooking(SeatSetupType.FullStandard, SeatSetupType.StandardAndVip);
+        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
+        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
+        var booking = CharterBooking(1, 2);
         context.AddRange(fullStandardBoat, standardAndVipBoat, booking);
         await context.SaveChangesAsync();
 
@@ -128,20 +128,48 @@ public class QuoteCharterBookingCommandTests
         savedBooking.CharterBoats.ShouldBeEmpty();
     }
 
+    [Test]
+    public async Task QuoteRejectsBoatWithDifferentRequestedDeckCount()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var oneDeckBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, numberOfDecks: 1);
+        var booking = CharterBooking(2);
+        context.AddRange(oneDeckBoat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new QuoteCharterBookingCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new QuoteCharterBookingCommand(
+                    booking.Id,
+                    Boats: [new QuoteCharterBookingBoatRequest(1, oneDeckBoat.Id)]),
+                CancellationToken.None));
+
+        exception.Errors["boats"].Single()
+            .ShouldContain("không trùng số tầng khách yêu cầu");
+    }
+
     private static Boat ActiveBoat(
         SeatSetupType setupType,
         decimal dailyRentalPrice,
-        string name = "Charter boat")
+        string name = "Charter boat",
+        int numberOfDecks = 1)
     {
         var boat = SeatFlowTestData.Boat(setupType, seatsConfigured: true, status: BoatStatus.Active);
         boat.Name = name;
         boat.SeatCount = 60;
+        boat.NumberOfDecks = numberOfDecks;
         boat.DailyRentalPrice = dailyRentalPrice;
         boat.HourlyRentalPrice = dailyRentalPrice / 10m;
         return boat;
     }
 
-    private static Booking CharterBooking(params SeatSetupType[] requestedBoatTypes) =>
+    private static Booking CharterBooking(params int[] requestedBoatDecks) =>
         new()
         {
             BookingType = Booking.CharterBookingType,
@@ -155,9 +183,8 @@ public class QuoteCharterBookingCommandTests
             AdultCount = 100,
             ChildCount = 1,
             PassengerCount = 101,
-            RequestedBoatCount = requestedBoatTypes.Length,
-            RequestedBoatTypes = string.Join(",", requestedBoatTypes.Select(x => x.ToString())),
-            PreferredSeatSetupType = requestedBoatTypes.FirstOrDefault(),
+            RequestedBoatCount = requestedBoatDecks.Length,
+            RequestedBoatDecks = string.Join(",", requestedBoatDecks),
             BookingStatus = BookingStatus.PendingQuote,
             PaymentStatus = "Unpaid"
         };

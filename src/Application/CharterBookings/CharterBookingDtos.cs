@@ -27,25 +27,27 @@ public sealed record CreateCharterBookingRequest(
     Guid? ToStationId = null,
     IReadOnlyList<CreateCharterBookingItineraryStopRequest>? ItineraryStops = null,
     IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
-    SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
     string? SpecialRequests = null,
+    string? ContactName = null,
+    string? ContactPhone = null,
     string? ContactEmail = null);
 
 public sealed record UpdateCharterBookingRequest(
-    DateOnly DepartureDate,
-    BoatRentalUnit RentalUnit,
-    int DurationValue,
-    int AdultCount,
-    int ChildCount,
+    DateOnly? DepartureDate = null,
+    BoatRentalUnit? RentalUnit = null,
+    int? DurationValue = null,
+    int? AdultCount = null,
+    int? ChildCount = null,
     TimeOnly? StartTime = null,
     Guid? FromStationId = null,
     Guid? ToStationId = null,
     IReadOnlyList<CreateCharterBookingItineraryStopRequest>? ItineraryStops = null,
     IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
-    SeatSetupType? PreferredSeatSetupType = null,
     string? BoatRequirements = null,
     string? SpecialRequests = null,
+    string? ContactName = null,
+    string? ContactPhone = null,
     string? ContactEmail = null);
 
 public sealed record CreateCharterBookingItineraryStopRequest(
@@ -55,17 +57,21 @@ public sealed record CreateCharterBookingItineraryStopRequest(
     string? Note = null);
 
 public sealed record CreateCharterBookingBoatRequest(
-    SeatSetupType SeatSetupType);
+    int NumberOfDecks);
 
 public sealed record CharterBookingRequestedBoatDto(
     int BoatOrder,
-    string SeatSetupType);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? NumberOfDecks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatSetupType = null);
 
 public sealed record CharterBookingSelectedBoatDto(
     int BoatOrder,
     Guid BoatId,
     string BoatName,
     string SeatSetupType,
+    int NumberOfDecks,
     decimal UnitPrice,
     decimal ChargeableDurationValue,
     decimal SubtotalAmount);
@@ -131,7 +137,10 @@ public sealed record CharterBookingListItemDto(
     IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats);
 
 public sealed record CharterBookingListRequestedBoatDto(
-    string SeatSetupType);
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? NumberOfDecks,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatSetupType = null);
 
 public sealed record CharterBookingDetailDto(
     Guid Id,

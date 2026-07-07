@@ -99,8 +99,9 @@ internal static class CharterBookingQuoteSupport
                 "boatId không được trùng trong cùng một quote.")]);
         }
 
+        var requestedBoatDecks = ResolveRequestedBoatDecks(booking);
         var requestedBoatTypes = ResolveRequestedBoatTypes(booking);
-        var requestedBoatCount = ResolveRequestedBoatCount(booking, requestedBoatTypes);
+        var requestedBoatCount = ResolveRequestedBoatCount(booking, requestedBoatDecks, requestedBoatTypes);
         if (selectedBoats.Count != requestedBoatCount)
         {
             throw new ValidationException([new ValidationFailure("Boats",
@@ -126,7 +127,16 @@ internal static class CharterBookingQuoteSupport
                     $"Tàu thứ {selectedBoat.BoatOrder} hiện không khả dụng để thuê.")]);
             }
 
-            if (selectedBoat.BoatOrder <= requestedBoatTypes.Count)
+            if (selectedBoat.BoatOrder <= requestedBoatDecks.Count)
+            {
+                var requestedNumberOfDecks = requestedBoatDecks[selectedBoat.BoatOrder - 1];
+                if (selectedBoat.Boat.NumberOfDecks != requestedNumberOfDecks)
+                {
+                    throw new ValidationException([new ValidationFailure("Boats",
+                        $"Tàu thứ {selectedBoat.BoatOrder} có {selectedBoat.Boat.NumberOfDecks} tầng, không trùng số tầng khách yêu cầu ({requestedNumberOfDecks}).")]);
+                }
+            }
+            else if (selectedBoat.BoatOrder <= requestedBoatTypes.Count)
             {
                 var requestedSeatSetupType = requestedBoatTypes[selectedBoat.BoatOrder - 1];
                 if (selectedBoat.Boat.SeatSetupType != requestedSeatSetupType)
@@ -173,6 +183,7 @@ internal static class CharterBookingQuoteSupport
                 x.Boat.Id,
                 x.Boat.Name,
                 x.Boat.SeatSetupType.ToString(),
+                x.Boat.NumberOfDecks,
                 x.Pricing.UnitPrice,
                 x.Pricing.ChargeableDurationValue,
                 x.Pricing.SubtotalAmount))
@@ -264,9 +275,12 @@ internal static class CharterBookingQuoteSupport
         }
     }
 
+    private static IReadOnlyList<int> ResolveRequestedBoatDecks(Booking booking) =>
+        CharterBookingBoatSelectionSupport.FromDeckStorageValue(booking.RequestedBoatDecks);
+
     private static IReadOnlyList<SeatSetupType> ResolveRequestedBoatTypes(Booking booking)
     {
-        var requestedBoatTypes = CharterBookingBoatSelectionSupport.FromStorageValue(booking.RequestedBoatTypes);
+        var requestedBoatTypes = CharterBookingBoatSelectionSupport.FromSeatSetupStorageValue(booking.RequestedBoatTypes);
         if (requestedBoatTypes.Count == 0 && booking.PreferredSeatSetupType.HasValue)
         {
             requestedBoatTypes = [booking.PreferredSeatSetupType.Value];
@@ -277,8 +291,9 @@ internal static class CharterBookingQuoteSupport
 
     private static int ResolveRequestedBoatCount(
         Booking booking,
+        IReadOnlyList<int> requestedBoatDecks,
         IReadOnlyList<SeatSetupType> requestedBoatTypes) =>
         booking.RequestedBoatCount.GetValueOrDefault() > 0
             ? booking.RequestedBoatCount!.Value
-            : Math.Max(1, requestedBoatTypes.Count);
+            : Math.Max(1, Math.Max(requestedBoatDecks.Count, requestedBoatTypes.Count));
 }
