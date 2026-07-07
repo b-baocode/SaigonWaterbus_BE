@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
@@ -541,6 +542,232 @@ public class CreatePaymentCommandTests
         result.CheckoutUrl.ShouldBe("https://example.test/checkout");
     }
 
+    [Test]
+    public async Task RefundPaymentFailureStoresSystemCalculatedAmount()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingCode = "BK-REFUND-FAIL",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "2000000",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddDays(-1)
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new RefundPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(refundException: new PaymentGatewayException("PayOS payout failed")),
+            new FixedTimeProvider(now));
+
+        await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new RefundPaymentCommand(payment.Id, "Customer refund", "970422", "123456789", "NGUYEN VAN A"),
+                CancellationToken.None));
+
+        payment.RefundRequestedAmount.ShouldBe(10000);
+        payment.RefundAmount.ShouldBe(0);
+        payment.RefundMethod.ShouldBe("PayOS");
+        payment.RefundReason.ShouldBe("Customer refund");
+        payment.RefundStatus.ShouldBe("Failed");
+        payment.RefundFailureReason.ShouldBe("PayOS payout failed");
+        payment.RefundProcessedByUserId.ShouldBe(userId);
+    }
+
+    [Test]
+    public async Task ManualRefundRecordsAdminRefundHistory()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var admin = SeedAdmin(context);
+        var booking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            BookingCode = "BK-MANUAL-REFUND",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "2000001",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            RefundRequestedAmount = 7000,
+            RefundMethod = "PayOS",
+            RefundReferenceId = "RF-FAILED-001",
+            RefundStatus = "Failed",
+            RefundFailureReason = "PayOS payout failed",
+            PaidAt = now.AddDays(-1)
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new ManualRefundPaymentCommandHandler(
+            context,
+            new TestUserContext(admin.Id),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new ManualRefundPaymentCommand(
+                payment.Id,
+                "Admin bank transfer",
+                "BANK-TX-001",
+                null,
+                now.AddMinutes(-10)),
+            CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(7000);
+        result.RefundRequestedAmount.ShouldBe(7000);
+        result.RefundMethod.ShouldBe("Manual");
+        result.RefundReason.ShouldBe("Admin bank transfer");
+        result.RefundReferenceId.ShouldBe("BANK-TX-001");
+        result.RefundStatus.ShouldBe("ManualRefunded");
+        result.RefundFailureReason.ShouldBeNull();
+        result.RefundProcessedByUserId.ShouldBe(admin.Id);
+        result.RefundedAt.ShouldBe(now.AddMinutes(-10));
+        booking.PaymentStatus.ShouldBe("PartiallyRefunded");
+        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
+    }
+
+    [Test]
+    public async Task ManualRefundFullAmountMarksBookingRefunded()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var admin = SeedAdmin(context);
+        var booking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            BookingCode = "BK-MANUAL-FULL",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "2000002",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            RefundRequestedAmount = 10000,
+            RefundMethod = "PayOS",
+            RefundReferenceId = "RF-FAILED-002",
+            RefundStatus = "Failed",
+            RefundFailureReason = "PayOS payout failed",
+            PaidAt = now.AddDays(-1)
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new ManualRefundPaymentCommandHandler(
+            context,
+            new TestUserContext(admin.Id),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new ManualRefundPaymentCommand(payment.Id, "Admin bank transfer"),
+            CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(10000);
+        result.RefundRequestedAmount.ShouldBe(10000);
+        result.RefundReferenceId.ShouldStartWith("MRF");
+        booking.PaymentStatus.ShouldBe("Refunded");
+        booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
+        payment.PaymentStatus.ShouldBe("Refunded");
+    }
+
+    [Test]
+    public async Task ManualRefundRequiresFailedPayOsRefundEvidence()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var admin = SeedAdmin(context);
+        var booking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            BookingCode = "BK-MANUAL-NO-EVIDENCE",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "2000003",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddDays(-1)
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new ManualRefundPaymentCommandHandler(
+            context,
+            new TestUserContext(admin.Id),
+            new FixedTimeProvider(now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new ManualRefundPaymentCommand(payment.Id, "Admin bank transfer"),
+                CancellationToken.None));
+
+        exception.Errors["refund"]
+            .ShouldContain("Chỉ được ghi nhận hoàn tiền thủ công sau khi hệ thống đã thử hoàn qua PayOS và lưu trạng thái lỗi.");
+        payment.RefundAmount.ShouldBe(0);
+        payment.RefundStatus.ShouldBeNull();
+    }
+
     private static CharterBookingDepositPaymentWebhook CreatePaidWebhook(long orderCode, long amount) =>
         new(
             "00",
@@ -565,9 +792,28 @@ public class CreatePaymentCommandTests
                 null),
             "signature");
 
+    private static User SeedAdmin(Infrastructure.Data.ApplicationDbContext context)
+    {
+        var role = new Role
+        {
+            Code = Roles.AdminCode,
+            DisplayName = "Admin"
+        };
+        var user = new User
+        {
+            FullName = "Admin",
+            PhoneNumber = "0900000001",
+            Role = role,
+            Status = UserStatus.Active
+        };
+        context.AddRange(role, user);
+        return user;
+    }
+
     private sealed class TestPaymentGateway(
         PaymentGatewayException? createPaymentException = null,
-        PaymentGatewayException? getPaymentException = null)
+        PaymentGatewayException? getPaymentException = null,
+        PaymentGatewayException? refundException = null)
         : ICharterBookingPaymentGateway
     {
         public List<CharterBookingDepositPaymentRequest> CreateRequests { get; } = [];
@@ -617,12 +863,19 @@ public class CreatePaymentCommandTests
 
         public Task<CharterBookingRefundPayoutResult> CreateRefundPayoutAsync(
             CharterBookingRefundPayoutRequest request,
-            CancellationToken cancellationToken) =>
-            Task.FromResult(new CharterBookingRefundPayoutResult(
+            CancellationToken cancellationToken)
+        {
+            if (refundException is not null)
+            {
+                throw refundException;
+            }
+
+            return Task.FromResult(new CharterBookingRefundPayoutResult(
                 "payout-id",
                 request.ReferenceId,
                 "PENDING",
                 null));
+        }
 
         public Task<CharterBookingRefundPayoutResult?> GetRefundPayoutByReferenceIdAsync(
             string referenceId,

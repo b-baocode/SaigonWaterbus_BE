@@ -223,6 +223,12 @@ public sealed record CharterBookingPaymentDto(
     DateTimeOffset? ExpiresAt,
     decimal RefundAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    decimal? RefundRequestedAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundMethod,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundReferenceId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundPayoutId,
@@ -230,6 +236,8 @@ public sealed record CharterBookingPaymentDto(
     string? RefundStatus,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundFailureReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? RefundProcessedByUserId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? RefundedAt);
 

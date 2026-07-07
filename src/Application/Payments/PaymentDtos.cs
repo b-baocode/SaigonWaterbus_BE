@@ -43,6 +43,12 @@ public sealed record PaymentDto(
     DateTimeOffset? BookingHoldExpiresAt,
     decimal RefundAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    decimal? RefundRequestedAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundMethod,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundReferenceId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundPayoutId,
@@ -51,6 +57,8 @@ public sealed record PaymentDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundFailureReason,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? RefundProcessedByUserId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? RefundedAt);
 
 public sealed record RefundPaymentRequest(
@@ -58,6 +66,12 @@ public sealed record RefundPaymentRequest(
     string BankBin,
     string AccountNumber,
     string AccountName);
+
+public sealed record ManualRefundPaymentRequest(
+    string Reason,
+    string? ReferenceId = null,
+    string? PayoutId = null,
+    DateTimeOffset? RefundedAt = null);
 
 public sealed record PaymentWebhookResult(
     bool Processed,

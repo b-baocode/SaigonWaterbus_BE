@@ -1,4 +1,5 @@
 using System.Globalization;
+using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Exceptions;
@@ -540,28 +541,19 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         }
 
         var now = _timeProvider.GetUtcNow();
-
-        var departure = await ResolveDepartureAsync(payment.Booking, cancellationToken);
-        var timeUntilDeparture = departure.HasValue ? departure.Value - now : TimeSpan.MaxValue;
-        var refundPercent = PaymentSupport.ResolveRefundPercent(timeUntilDeparture);
-        if (refundPercent <= 0)
-        {
-            throw new ValidationException([new ValidationFailure("refund",
-                "Theo chính sách hoàn tiền, hủy dưới 24 giờ trước giờ khởi hành sẽ không được hoàn.")]);
-        }
-
-        var refundableAmount = payment.Amount - payment.RefundAmount;
-        var refundAmount = Math.Min(Math.Floor(payment.Amount * refundPercent), refundableAmount);
-
-        if (refundAmount <= 0)
-        {
-            throw new ValidationException([new ValidationFailure("refund",
-                "Không còn số tiền hợp lệ để hoàn theo chính sách.")]);
-        }
+        var refundAmount = await PaymentSupport.ResolvePolicyRefundAmountAsync(
+            _context,
+            payment,
+            now,
+            cancellationToken);
         var referenceId = PaymentSupport.CreateRefundReference(payment, now);
         payment.RefundStatus = PaymentSupport.RefundPendingStatus;
+        payment.RefundRequestedAmount = refundAmount;
+        payment.RefundMethod = PaymentSupport.PayOsProvider;
+        payment.RefundReason = request.Reason.Trim();
         payment.RefundReferenceId = referenceId;
         payment.RefundFailureReason = null;
+        payment.RefundProcessedByUserId = _userContext.UserId;
         await _context.SaveChangesAsync(cancellationToken);
 
         CharterBookingRefundPayoutResult refundResult;
@@ -598,24 +590,86 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
 
         return PaymentSupport.ToDto(payment.Booking, payment);
     }
+}
 
-    private async Task<DateTimeOffset?> ResolveDepartureAsync(Booking booking, CancellationToken cancellationToken)
+public sealed record ManualRefundPaymentCommand(
+    Guid PaymentId,
+    string Reason,
+    string? ReferenceId = null,
+    string? PayoutId = null,
+    DateTimeOffset? RefundedAt = null)
+    : IRequest<PaymentDto>;
+
+public sealed class ManualRefundPaymentCommandValidator : AbstractValidator<ManualRefundPaymentCommand>
+{
+    public ManualRefundPaymentCommandValidator()
     {
-        if (Booking.IsCharterBookingType(booking.BookingType))
+        RuleFor(x => x.PaymentId).NotEmpty();
+        RuleFor(x => x.Reason).NotEmpty().MaximumLength(500);
+        RuleFor(x => x.ReferenceId).MaximumLength(100).When(x => x.ReferenceId is not null);
+        RuleFor(x => x.PayoutId).MaximumLength(100).When(x => x.PayoutId is not null);
+    }
+}
+
+public sealed class ManualRefundPaymentCommandHandler : IRequestHandler<ManualRefundPaymentCommand, PaymentDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public ManualRefundPaymentCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<PaymentDto> Handle(ManualRefundPaymentCommand request, CancellationToken cancellationToken)
+    {
+        await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
+
+        var payment = await PaymentSupport.GetPaymentForAdminAsync(
+            _context,
+            request.PaymentId,
+            includeBookingPayments: true,
+            cancellationToken);
+
+        if (!PaymentSupport.IsPaid(payment.PaymentStatus))
         {
-            var startTime = booking.StartTime ?? new TimeOnly(0, 0);
-            return new DateTimeOffset(booking.DepartureDate.GetValueOrDefault().ToDateTime(startTime), TimeSpan.Zero);
+            throw new ValidationException([new ValidationFailure(nameof(payment.PaymentStatus),
+                "Chỉ có thể ghi nhận hoàn tiền cho payment đã thanh toán.")]);
         }
 
-        if (booking.TripId is Guid tripId)
-        {
-            return await _context.Set<Trip>()
-                .Where(t => t.Id == tripId)
-                .Select(t => (DateTimeOffset?)t.DepartureTime)
-                .SingleOrDefaultAsync(cancellationToken);
-        }
+        PaymentSupport.EnsureHasFailedPayOsRefundEvidence(payment);
 
-        return null;
+        var now = _timeProvider.GetUtcNow();
+        var refundAmount = await PaymentSupport.ResolveManualRefundAmountAsync(
+            _context,
+            payment,
+            now,
+            cancellationToken);
+        var referenceId = string.IsNullOrWhiteSpace(request.ReferenceId)
+            ? PaymentSupport.CreateManualRefundReference(payment, now)
+            : request.ReferenceId.Trim();
+
+        payment.RefundAmount += refundAmount;
+        payment.RefundRequestedAmount = refundAmount;
+        payment.RefundMethod = PaymentSupport.ManualRefundMethod;
+        payment.RefundReason = request.Reason.Trim();
+        payment.RefundReferenceId = referenceId;
+        payment.RefundPayoutId = string.IsNullOrWhiteSpace(request.PayoutId) ? null : request.PayoutId.Trim();
+        payment.RefundStatus = PaymentSupport.ManualRefundedStatus;
+        payment.RefundFailureReason = null;
+        payment.RefundProcessedByUserId = _userContext.UserId;
+        payment.RefundedAt = request.RefundedAt ?? now;
+
+        PaymentSupport.ApplyRefundStatus(payment.Booking);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return PaymentSupport.ToDto(payment.Booking, payment);
     }
 }
 
@@ -628,11 +682,99 @@ internal static class PaymentSupport
     public const string FailedStatus = "Failed";
     public const string ExpiredStatus = "Expired";
     public const string RefundedStatus = "Refunded";
+    public const string ManualRefundMethod = "Manual";
+    public const string ManualRefundedStatus = "ManualRefunded";
 
     public static decimal ResolveRefundPercent(TimeSpan timeUntilDeparture) =>
         timeUntilDeparture >= TimeSpan.FromDays(3) ? 1.0m
         : timeUntilDeparture >= TimeSpan.FromHours(24) ? 0.7m
         : 0m;
+
+    public static async Task<decimal> ResolvePolicyRefundAmountAsync(
+        IApplicationDbContext context,
+        Payment payment,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var departure = await ResolveDepartureAsync(context, payment.Booking, cancellationToken);
+        var timeUntilDeparture = departure.HasValue ? departure.Value - now : TimeSpan.MaxValue;
+        var refundPercent = ResolveRefundPercent(timeUntilDeparture);
+        if (refundPercent <= 0)
+        {
+            throw new ValidationException([new ValidationFailure("refund",
+                "Theo chính sách hoàn tiền, hủy dưới 24 giờ trước giờ khởi hành sẽ không được hoàn.")]);
+        }
+
+        var refundableAmount = payment.Amount - payment.RefundAmount;
+        var refundAmount = Math.Min(Math.Floor(payment.Amount * refundPercent), refundableAmount);
+
+        if (refundAmount <= 0)
+        {
+            throw new ValidationException([new ValidationFailure("refund",
+                "Không còn số tiền hợp lệ để hoàn theo chính sách.")]);
+        }
+
+        return refundAmount;
+    }
+
+    public static async Task<decimal> ResolveManualRefundAmountAsync(
+        IApplicationDbContext context,
+        Payment payment,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var requestedAmount = payment.RefundRequestedAmount.GetValueOrDefault();
+        if (requestedAmount > 0)
+        {
+            var refundableAmount = payment.Amount - payment.RefundAmount;
+            var refundAmount = Math.Min(requestedAmount, refundableAmount);
+            if (refundAmount <= 0)
+            {
+                throw new ValidationException([new ValidationFailure("refund",
+                    "Không còn số tiền hợp lệ để ghi nhận hoàn thủ công.")]);
+            }
+
+            return refundAmount;
+        }
+
+        return await ResolvePolicyRefundAmountAsync(context, payment, now, cancellationToken);
+    }
+
+    public static void EnsureHasFailedPayOsRefundEvidence(Payment payment)
+    {
+        if (payment.RefundRequestedAmount.GetValueOrDefault() <= 0
+            || !string.Equals(payment.RefundMethod, PayOsProvider, StringComparison.OrdinalIgnoreCase)
+            || !string.Equals(payment.RefundStatus, RefundFailedStatus, StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(payment.RefundReferenceId)
+            || string.IsNullOrWhiteSpace(payment.RefundFailureReason))
+        {
+            throw new ValidationException([new ValidationFailure("refund",
+                "Chỉ được ghi nhận hoàn tiền thủ công sau khi hệ thống đã thử hoàn qua PayOS và lưu trạng thái lỗi.")]);
+        }
+    }
+
+    private static async Task<DateTimeOffset?> ResolveDepartureAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        if (Booking.IsCharterBookingType(booking.BookingType))
+        {
+            var startTime = booking.StartTime ?? new TimeOnly(0, 0);
+            return new DateTimeOffset(booking.DepartureDate.GetValueOrDefault().ToDateTime(startTime), TimeSpan.Zero);
+        }
+
+        if (booking.TripId is Guid tripId)
+        {
+            return await context.Set<Trip>()
+                .Where(t => t.Id == tripId)
+                .Select(t => (DateTimeOffset?)t.DepartureTime)
+                .SingleOrDefaultAsync(cancellationToken);
+        }
+
+        return null;
+    }
+
     public const string PartiallyRefundedStatus = "PartiallyRefunded";
     public const string UnpaidBookingPaymentStatus = "Unpaid";
     public const string DepositPaidBookingPaymentStatus = "DepositPaid";
@@ -704,6 +846,29 @@ internal static class PaymentSupport
         }
 
         return payment;
+    }
+
+    public static async Task<Payment> GetPaymentForAdminAsync(
+        IApplicationDbContext context,
+        Guid paymentId,
+        bool includeBookingPayments,
+        CancellationToken cancellationToken)
+    {
+        IQueryable<Payment> query = context.Set<Payment>().Include(x => x.Booking);
+        if (includeBookingPayments)
+        {
+            query = query.Include(x => x.Booking).ThenInclude(x => x.Payments);
+        }
+
+        query = query
+            .Include(x => x.Booking.Boat)
+            .Include(x => x.Booking.FromStation)
+            .Include(x => x.Booking.ToStation)
+            .Include(x => x.Booking.ItineraryStops)
+                .ThenInclude(x => x.Station);
+
+        return await query.SingleOrDefaultAsync(x => x.Id == paymentId, cancellationToken)
+            ?? throw new NotFoundException("Payment not found.");
     }
 
     public static async Task<Payment> GetOwnedPaymentByOrderCodeAsync(
@@ -996,6 +1161,9 @@ internal static class PaymentSupport
 
     public static string CreateRefundReference(Payment payment, DateTimeOffset now) =>
         $"RF{now.ToUnixTimeMilliseconds()}{payment.Id.ToString("N")[..8]}";
+
+    public static string CreateManualRefundReference(Payment payment, DateTimeOffset now) =>
+        $"MRF{now.ToUnixTimeMilliseconds()}{payment.Id.ToString("N")[..8]}";
 
     public static bool IsPayOsPayment(Payment payment) =>
         string.Equals(payment.Provider, PayOsProvider, StringComparison.OrdinalIgnoreCase);
@@ -1309,10 +1477,14 @@ internal static class PaymentSupport
             ResolvePaymentExpiresAt(payment),
             booking.HoldExpiresAt,
             payment.RefundAmount,
+            payment.RefundRequestedAmount,
+            payment.RefundMethod,
+            payment.RefundReason,
             payment.RefundReferenceId,
             payment.RefundPayoutId,
             payment.RefundStatus,
             payment.RefundFailureReason,
+            payment.RefundProcessedByUserId,
             payment.RefundedAt);
 
     public sealed record PaymentPlan(

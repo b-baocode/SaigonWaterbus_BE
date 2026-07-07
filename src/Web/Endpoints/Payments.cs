@@ -27,6 +27,16 @@ public sealed class Payments : IEndpointGroup
         }
         """;
 
+    private const string ManualRefundPaymentExample =
+        """
+        {
+          "reason": "Admin refunded by bank transfer after PayOS payout failed",
+          "referenceId": "BANK-TX-123456",
+          "payoutId": null,
+          "refundedAt": "2026-07-07T10:00:00Z"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapPost(CreatePayment, string.Empty)
@@ -71,6 +81,18 @@ public sealed class Payments : IEndpointGroup
                 "Tao lenh payout PayOS de hoan tien payment da thanh toan.",
                 "Khong nhan amount tu client; backend tu tinh so tien hoan tu payment.Amount, payment.RefundAmount va chinh sach hoan tien."));
 
+        group.MapPost(ManualRefundPayment, "{paymentId:guid}/manual-refund")
+            .RequireAuthorization()
+            .WithSummary("Admin ghi nhan hoan tien thu cong")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                ManualRefundPaymentExample,
+                "Dung khi PayOS payout bi loi va admin da hoan tien ngoai he thong.",
+                "Chi cho phep neu payment da co refundStatus=Failed, refundFailureReason, refundReferenceId va refundRequestedAmount tu lan refund PayOS truoc do.",
+                "API khong goi PayOS; backend tu tinh so tien can hoan va ghi nhan reason/reference vao payment history.",
+                "Backend dung lai refundRequestedAmount da tinh luc PayOS refund loi.",
+                "Response tra ve PaymentDto voi refundRequestedAmount/refundAmount/refundMethod/refundReason/refundStatus."));
+
         group.MapPost(HandlePaymentWebhook, "webhook/payos")
             .WithSummary("Webhook PayOS")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -107,6 +129,18 @@ public sealed class Payments : IEndpointGroup
             request.BankBin,
             request.AccountNumber,
             request.AccountName), ct));
+
+    private static async Task<IResult> ManualRefundPayment(
+        ISender sender,
+        Guid paymentId,
+        ManualRefundPaymentRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ManualRefundPaymentCommand(
+            paymentId,
+            request.Reason,
+            request.ReferenceId,
+            request.PayoutId,
+            request.RefundedAt), ct));
 
     private static async Task<IResult> HandlePaymentWebhook(
         ISender sender,

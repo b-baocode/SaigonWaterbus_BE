@@ -27,10 +27,14 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.ExpiresAt).HasColumnName("expires_at");
         builder.Property(x => x.PaidAt).HasColumnName("paid_at");
         builder.Property(x => x.RefundAmount).HasColumnName("refund_amount").HasColumnType("numeric(12,2)").IsRequired();
+        builder.Property(x => x.RefundRequestedAmount).HasColumnName("refund_requested_amount").HasColumnType("numeric(12,2)");
+        builder.Property(x => x.RefundMethod).HasColumnName("refund_method").HasMaxLength(30);
+        builder.Property(x => x.RefundReason).HasColumnName("refund_reason").HasMaxLength(500);
         builder.Property(x => x.RefundReferenceId).HasColumnName("refund_reference_id").HasMaxLength(100);
         builder.Property(x => x.RefundPayoutId).HasColumnName("refund_payout_id").HasMaxLength(100);
         builder.Property(x => x.RefundStatus).HasColumnName("refund_status").HasMaxLength(30);
         builder.Property(x => x.RefundFailureReason).HasColumnName("refund_failure_reason").HasMaxLength(500);
+        builder.Property(x => x.RefundProcessedByUserId).HasColumnName("refund_processed_by_user_id");
         builder.Property(x => x.RefundedAt).HasColumnName("refunded_at");
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
