@@ -34,6 +34,12 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 table: "tickets");
 
             migrationBuilder.AddColumn<Guid>(
+                name: "booking_passenger_id",
+                table: "tickets",
+                type: "uuid",
+                nullable: true);
+
+            migrationBuilder.AddColumn<Guid>(
                 name: "trip_seat_id",
                 table: "booking_passengers",
                 type: "uuid",
@@ -53,9 +59,24 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 filter: "\"booking_passenger_id\" IS NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
 
             migrationBuilder.CreateIndex(
+                name: "IX_tickets_booking_passenger_id",
+                table: "tickets",
+                column: "booking_passenger_id",
+                unique: true,
+                filter: "\"booking_passenger_id\" IS NOT NULL AND \"status\" NOT IN ('Cancelled', 'Expired')");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_booking_passengers_trip_seat_id",
                 table: "booking_passengers",
                 column: "trip_seat_id");
+
+            migrationBuilder.AddForeignKey(
+                name: "FK_tickets_booking_passengers_booking_passenger_id",
+                table: "tickets",
+                column: "booking_passenger_id",
+                principalTable: "booking_passengers",
+                principalColumn: "booking_passenger_id",
+                onDelete: ReferentialAction.SetNull);
 
             migrationBuilder.AddForeignKey(
                 name: "FK_booking_passengers_trip_seats_trip_seat_id",
@@ -72,6 +93,18 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
             migrationBuilder.DropForeignKey(
                 name: "FK_booking_passengers_trip_seats_trip_seat_id",
                 table: "booking_passengers");
+
+            migrationBuilder.DropForeignKey(
+                name: "FK_tickets_booking_passengers_booking_passenger_id",
+                table: "tickets");
+
+            migrationBuilder.DropIndex(
+                name: "IX_tickets_booking_passenger_id",
+                table: "tickets");
+
+            migrationBuilder.DropColumn(
+                name: "booking_passenger_id",
+                table: "tickets");
 
             migrationBuilder.DropIndex(
                 name: "IX_tickets_booking_id",

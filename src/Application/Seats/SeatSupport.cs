@@ -145,13 +145,16 @@ internal static class SeatSupport
     public static string NormalizeSeatTypeName(string? seatTypeCode, SeatSetupType seatSetupType) =>
         SeatTypeNameFromCode(NormalizeSeatTypeCode(seatTypeCode, seatSetupType));
 
-    public static string NormalizeSeatTypeCode(string? seatTypeCode, SeatSetupType seatSetupType)
+    public static string NormalizeSeatTypeCode(
+        string? seatTypeCode,
+        SeatSetupType seatSetupType,
+        IReadOnlyCollection<string>? extraAllowedCodes = null)
     {
         var code = string.IsNullOrWhiteSpace(seatTypeCode)
             ? DefaultSeatTypeCode(seatSetupType)
             : seatTypeCode.Trim().Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
 
-        EnsureSeatTypeAllowed(code, seatSetupType);
+        EnsureSeatTypeAllowed(code, seatSetupType, extraAllowedCodes);
         return code;
     }
 
@@ -165,19 +168,38 @@ internal static class SeatSupport
             _ => throw AuthSupport.CreateValidationException("seatTypeCode", "Loại ghế chỉ được là STANDARD, CABIN, RIVER hoặc SKY.")
         };
 
-    private static void EnsureSeatTypeAllowed(string seatTypeCode, SeatSetupType seatSetupType)
+    private static void EnsureSeatTypeAllowed(
+        string seatTypeCode,
+        SeatSetupType seatSetupType,
+        IReadOnlyCollection<string>? extraAllowedCodes = null)
     {
-        var allowedCodes = seatSetupType == SeatSetupType.FullStandard
-            ? new[] { "STANDARD" }
-            : new[] { "CABIN", "RIVER", "SKY" };
-
-        if (!allowedCodes.Contains(seatTypeCode))
+        if (seatSetupType == SeatSetupType.FullStandard)
         {
-            var message = seatSetupType == SeatSetupType.FullStandard
-                ? "Tàu FullStandard chỉ được dùng ghế STANDARD."
-                : "Tàu StandardAndVip chỉ được dùng ghế CABIN, RIVER hoặc SKY.";
-            throw AuthSupport.CreateValidationException("seatTypeCode", message);
+            if (seatTypeCode != "STANDARD")
+            {
+                throw AuthSupport.CreateValidationException("seatTypeCode",
+                    "Tàu FullStandard chỉ được dùng ghế STANDARD.");
+            }
+
+            return;
         }
+
+        // Tàu sightseeing (StandardAndVip): 3 loại built-in + loại ghế tùy chỉnh admin đã tạo trong seat_types.
+        var builtInCodes = new[] { "CABIN", "RIVER", "SKY" };
+        if (builtInCodes.Contains(seatTypeCode))
+        {
+            return;
+        }
+
+        if (extraAllowedCodes is not null
+            && seatTypeCode != "STANDARD"
+            && extraAllowedCodes.Contains(seatTypeCode, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw AuthSupport.CreateValidationException("seatTypeCode",
+            "Tàu StandardAndVip chỉ được dùng ghế CABIN, RIVER, SKY hoặc loại ghế tùy chỉnh đã tạo trong /api/seat-types.");
     }
 
     private static string DefaultSeatTypeCode(SeatSetupType seatSetupType) =>

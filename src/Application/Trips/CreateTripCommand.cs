@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -7,13 +8,17 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Trips;
 
+/// <summary>Giá vé theo loại ghế cho riêng chuyến này (ghi vào trip_seats.price).</summary>
+public sealed record TripSeatTypePriceInput(string SeatTypeCode, decimal Price);
+
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateTripCommand(
     string RouteCode,
     int Capacity,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime,
-    string? BoatCode = null) : IRequest<TripDetailDto>;
+    string? BoatCode = null,
+    IReadOnlyList<TripSeatTypePriceInput>? SeatTypePrices = null) : IRequest<TripDetailDto>;
 
 public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCommand>
 {
@@ -23,6 +28,70 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
         RuleFor(x => x.Capacity).GreaterThan(0);
         RuleFor(x => x.DepartureTime).GreaterThan(DateTimeOffset.UtcNow);
         RuleFor(x => x.BoatCode).MaximumLength(50).When(x => x.BoatCode is not null);
+        RuleFor(x => x.SeatTypePrices!)
+            .SetValidator(new TripSeatTypePricesValidator())
+            .When(x => x.SeatTypePrices is not null);
+    }
+}
+
+public sealed class TripSeatTypePricesValidator : AbstractValidator<IReadOnlyList<TripSeatTypePriceInput>>
+{
+    public TripSeatTypePricesValidator()
+    {
+        RuleFor(x => x)
+            .Must(list => list
+                .Select(p => p.SeatTypeCode.Trim().ToUpperInvariant())
+                .Distinct()
+                .Count() == list.Count)
+            .WithMessage("seatTypePrices không được trùng seatTypeCode.");
+        RuleForEach(x => x).ChildRules(item =>
+        {
+            item.RuleFor(p => p.SeatTypeCode).NotEmpty().MaximumLength(50);
+            item.RuleFor(p => p.Price)
+                .GreaterThan(0).WithMessage("Giá vé phải lớn hơn 0.")
+                .LessThanOrEqualTo(100_000_000)
+                .Must(p => decimal.Truncate(p) == p).WithMessage("Giá vé phải là số nguyên VND.");
+        });
+    }
+}
+
+internal static class TripSeatPricingSupport
+{
+    /// <summary>
+    /// Tính giá cho từng ghế của chuyến: ưu tiên giá admin nhập theo loại ghế,
+    /// không nhập thì lấy giá gốc từ seat type (DB seat_types, fallback bảng cứng).
+    /// </summary>
+    public static async Task<Func<Seat, decimal?>> BuildSeatPriceResolverAsync(
+        IApplicationDbContext context,
+        IReadOnlyList<TripSeatTypePriceInput>? seatTypePrices,
+        IReadOnlyCollection<Seat> boatSeats,
+        CancellationToken cancellationToken)
+    {
+        var basePrices = await SeatTypeBasePriceSupport.GetBasePricesAsync(context, cancellationToken);
+
+        var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
+        if (seatTypePrices is not null)
+        {
+            var boatSeatTypeCodes = boatSeats
+                .Select(x => x.SeatTypeCode)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            foreach (var input in seatTypePrices)
+            {
+                var code = input.SeatTypeCode.Trim().ToUpperInvariant();
+                if (!boatSeatTypeCodes.Contains(code))
+                {
+                    throw new ValidationException([new ValidationFailure("seatTypePrices",
+                        $"Tàu này không có ghế loại '{code}'.")]);
+                }
+
+                overrides[code] = input.Price;
+            }
+        }
+
+        return seat =>
+            overrides.TryGetValue(seat.SeatTypeCode, out var overridePrice) ? overridePrice
+            : basePrices.TryGetValue(seat.SeatTypeCode, out var basePrice) ? basePrice
+            : null;
     }
 }
 
@@ -118,8 +187,20 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         if (activeSeats.Count > 0)
         {
-            var tripSeats = activeSeats.Select(s => new TripSeat { TripId = trip.Id, SeatId = s.Id });
+            var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
+                _context, request.SeatTypePrices, activeSeats, cancellationToken);
+            var tripSeats = activeSeats.Select(s => new TripSeat
+            {
+                TripId = trip.Id,
+                SeatId = s.Id,
+                Price = resolveSeatPrice(s)
+            });
             _context.Set<TripSeat>().AddRange(tripSeats);
+        }
+        else if (request.SeatTypePrices is { Count: > 0 })
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.SeatTypePrices),
+                "Chỉ nhập seatTypePrices khi trip có gán tàu (boatCode).")]);
         }
 
         await _context.SaveChangesAsync(cancellationToken);

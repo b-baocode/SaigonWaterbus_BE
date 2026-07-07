@@ -35,4 +35,7 @@ public sealed class BrevoOptions
     public int PaymentDepositTemplateId { get; set; }
 
     public int PaymentFullTemplateId { get; set; }
+
+    /// <summary>Template Brevo cho email vé điện tử booking thường; 0 = dùng HTML inline.</summary>
+    public int ETicketTemplateId { get; set; }
 }

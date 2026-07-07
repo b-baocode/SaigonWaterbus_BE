@@ -5,6 +5,12 @@ public interface IPaymentNotificationSender
     Task SendPaymentSucceededAsync(PaymentSucceededNotification notification, CancellationToken cancellationToken);
 
     Task SendBoardingPassAsync(BoardingPassNotification notification, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gửi email vé điện tử cho booking thường sau khi thanh toán đủ:
+    /// QR chung của booking + QR riêng của từng hành khách.
+    /// </summary>
+    Task SendETicketsAsync(ETicketNotification notification, CancellationToken cancellationToken);
 }
 
 public sealed record PaymentSucceededNotification(
@@ -53,3 +59,22 @@ public sealed record EmailAttachment(
     string Name,
     string ContentType,
     byte[] Content);
+
+public sealed record ETicketNotification(
+    PaymentSucceededNotification Booking,
+    string? BookingQrToken,
+    string? TripCode,
+    string? RouteName,
+    DateTimeOffset? DepartureTime,
+    DateTimeOffset? ArrivalTime,
+    string? FromStationName,
+    string? ToStationName,
+    IReadOnlyList<ETicketPassenger> Tickets);
+
+public sealed record ETicketPassenger(
+    string PassengerName,
+    string? SeatCode,
+    string? TicketTypeName,
+    string TicketCode,
+    string QrToken,
+    string? Email);

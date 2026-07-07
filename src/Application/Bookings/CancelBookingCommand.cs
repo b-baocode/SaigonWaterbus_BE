@@ -23,13 +23,18 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly ITripSeatNotifier _tripSeatNotifier;
 
     public CancelBookingCommandHandler(
-        IApplicationDbContext context, IUserContext userContext, TimeProvider timeProvider)
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider,
+        ITripSeatNotifier? tripSeatNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _tripSeatNotifier = tripSeatNotifier ?? NullTripSeatNotifier.Instance;
     }
 
     public async Task Handle(CancelBookingCommand request, CancellationToken cancellationToken)
@@ -67,5 +72,20 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
             PromotionUsageSupport.DecrementUsage(booking.Promotion);
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (booking.TripId.HasValue)
+        {
+            var seatCodes = await _context.Set<BookingPassenger>()
+                .Where(p => p.BookingId == booking.Id && p.TripSeatId.HasValue)
+                .Select(p => p.TripSeat!.Seat.Code)
+                .ToListAsync(cancellationToken);
+            if (seatCodes.Count > 0)
+            {
+                await _tripSeatNotifier.PublishSeatStatusChangedAsync(
+                    booking.TripId.Value,
+                    seatCodes.Distinct().Select(code => new TripSeatStatusChange(code, "Available")).ToList(),
+                    cancellationToken);
+            }
+        }
     }
 }

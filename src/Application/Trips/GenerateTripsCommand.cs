@@ -14,7 +14,8 @@ public sealed record GenerateTripsCommand(
     IReadOnlyList<TimeOnly> DepartureTimes,
     DateOnly FromDate,
     DateOnly ToDate,
-    IReadOnlyList<int>? DaysOfWeek = null) : IRequest<GenerateTripsResult>;
+    IReadOnlyList<int>? DaysOfWeek = null,
+    IReadOnlyList<TripSeatTypePriceInput>? SeatTypePrices = null) : IRequest<GenerateTripsResult>;
 
 public sealed record GenerateTripsResult(
     int Created,
@@ -39,6 +40,9 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
             .Must(days => days == null || (days.Count > 0 && days.All(d => d is >= 0 and <= 6)))
             .WithMessage("DaysOfWeek values must be 0–6 (0=Sunday, 6=Saturday).")
             .When(x => x.DaysOfWeek is not null);
+        RuleFor(x => x.SeatTypePrices!)
+            .SetValidator(new TripSeatTypePricesValidator())
+            .When(x => x.SeatTypePrices is not null);
     }
 }
 
@@ -94,6 +98,9 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             ? request.DaysOfWeek.Select(d => (DayOfWeek)d).ToHashSet()
             : null;
 
+        var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
+            _context, request.SeatTypePrices, activeSeats, cancellationToken);
+
         var tripsToAdd = new List<Trip>();
         var tripSeatsToAdd = new List<TripSeat>();
         var createdCodes = new List<string>();
@@ -136,7 +143,12 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                 existingDepartures.Add(departureTime);
 
                 foreach (var seat in activeSeats)
-                    tripSeatsToAdd.Add(new TripSeat { TripId = trip.Id, SeatId = seat.Id });
+                    tripSeatsToAdd.Add(new TripSeat
+                    {
+                        TripId = trip.Id,
+                        SeatId = seat.Id,
+                        Price = resolveSeatPrice(seat)
+                    });
 
                 createdCodes.Add(tripCode);
             }

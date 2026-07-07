@@ -53,15 +53,20 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         var tripIds = trips.Select(t => t.Id).ToList();
 
         var bookedCounts = await _context.Set<Booking>()
-            .Where(b => b.TripId.HasValue
-                     && tripIds.Contains(b.TripId.Value)
-                     && b.BookingStatus != BookingStatus.Cancelled
-                     && b.BookingStatus != BookingStatus.Expired
-                     && b.BookingStatus != BookingStatus.Refunded)
-            .Select(b => new { TripId = b.TripId!.Value, Count = b.Passengers.Count })
+            .Where(b => b.TripId.HasValue && tripIds.Contains(b.TripId.Value))
+            .Where(Bookings.BookingSeatOccupancySupport.BookingOccupiesSeats(now))
+            // Chỉ đếm hành khách chiếm ghế (INFANT ngồi cùng người lớn không trừ chỗ).
+            .Select(b => new { TripId = b.TripId!.Value, Count = b.Passengers.Count(p => p.TripSeatId != null) })
             .GroupBy(x => x.TripId)
             .Select(g => new { TripId = g.Key, Count = g.Sum(x => x.Count) })
             .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
+
+        // Giá min theo chuyến: ưu tiên giá đã chốt trong trip_seats (đặt khi tạo trip).
+        var tripSeatMinPrices = await _context.Set<TripSeat>()
+            .Where(ts => tripIds.Contains(ts.TripId) && ts.Price != null && ts.Price > 0)
+            .GroupBy(ts => ts.TripId)
+            .Select(g => new { TripId = g.Key, MinPrice = g.Min(x => x.Price!.Value) })
+            .ToDictionaryAsync(x => x.TripId, x => x.MinPrice, cancellationToken);
 
         var boatIds = trips
             .Where(x => x.BoatId.HasValue)
@@ -86,7 +91,10 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                         .Where(p => p.HasValue)
                         .Min()
                 });
-        var minModifier = TicketTypePricing.All.Min(x => x.PriceModifier);
+        // Giá "từ" = loại vé trả tiền rẻ nhất (bỏ qua các loại miễn phí).
+        var minModifier = TicketTypePricing.All
+            .Where(x => x.PriceModifier > 0)
+            .Min(x => x.PriceModifier);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
@@ -94,9 +102,10 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             seatStats.TryGetValue(t.BoatId ?? Guid.Empty, out var stats);
             var capacity = stats?.ActiveSeatCount ?? t.CapacitySnapshot;
             var available = capacity - booked;
-            var minPrice = stats?.MinSeatPrice is > 0
-                ? stats.MinSeatPrice.Value * minModifier
-                : (decimal?)null;
+            var minBasePrice = tripSeatMinPrices.TryGetValue(t.Id, out var tripSeatMin)
+                ? tripSeatMin
+                : stats?.MinSeatPrice is > 0 ? stats.MinSeatPrice.Value : (decimal?)null;
+            var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
 
             return new TripSummaryDto(
                 t.Id, t.TripCode, t.Route.RouteName,

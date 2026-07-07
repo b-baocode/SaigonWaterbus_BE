@@ -61,6 +61,7 @@ public static class DependencyInjection
         builder.Services.AddHttpClient(PayOsHttpClientName);
         AddRedis(builder);
         AddRedisBackedServices(builder);
+        builder.Services.AddHostedService<BookingHoldExpiryService>();
         builder.Services.AddScoped<EsmsSmsSender>();
         builder.Services.AddScoped<ISmsOtpSender>(provider =>
         {
@@ -186,11 +187,13 @@ public static class DependencyInjection
             builder.Services.AddScoped<IOtpCache, RedisOtpCache>();
             builder.Services.AddScoped<IBoatHoldService, RedisBoatHoldService>();
             builder.Services.AddScoped<IPaymentProcessingLock, RedisPaymentProcessingLock>();
+            builder.Services.AddScoped<ISeatHoldService, RedisSeatHoldService>();
             return;
         }
 
         builder.Services.AddScoped<IOtpCache, NoOpOtpCache>();
         builder.Services.AddScoped<IBoatHoldService, NoOpBoatHoldService>();
         builder.Services.AddScoped<IPaymentProcessingLock, NoOpPaymentProcessingLock>();
+        builder.Services.AddSingleton<ISeatHoldService, InMemorySeatHoldService>();
     }
 }

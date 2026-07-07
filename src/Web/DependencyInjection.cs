@@ -32,6 +32,9 @@ public static class DependencyInjection
         builder.Services.AddScoped<IClientInfoProvider, CurrentClientInfo>();
         builder.Services.AddScoped<ICharterBookingTicketPdfRenderer, QuestPdfCharterBookingTicketPdfRenderer>();
 
+        builder.Services.AddSignalR();
+        builder.Services.AddSingleton<ITripSeatNotifier, SignalRTripSeatNotifier>();
+
         builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
         builder.Services.AddProblemDetails();
         builder.Services.ConfigureHttpJsonOptions(options =>
@@ -160,7 +163,9 @@ public static class DependencyInjection
                 corsBuilder
                     .WithOrigins(allowedOrigins)
                     .AllowAnyMethod()
-                    .AllowAnyHeader();
+                    .AllowAnyHeader()
+                    // SignalR (websocket negotiate) yêu cầu credentials khi origin cụ thể.
+                    .AllowCredentials();
             });
         });
     }

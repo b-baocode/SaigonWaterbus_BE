@@ -10,6 +10,8 @@ namespace SaigonWaterbus.Application.Tickets;
 
 internal static class TicketIssueSupport
 {
+    private const int BookingQrTokenByteCount = 24;
+
     public static async Task<IReadOnlyList<Ticket>> EnsureRegularBookingPassengerTicketsAsync(
         IApplicationDbContext context,
         Booking booking,
@@ -26,6 +28,9 @@ internal static class TicketIssueSupport
         {
             return [];
         }
+
+        // QR chung của booking: dùng để mở manifest và check-in cả nhóm.
+        var bookingQrTokenCreated = await EnsureBookingQrTokenAsync(context, booking, cancellationToken);
 
         var passengers = await context.Set<BookingPassenger>()
             .Where(x => x.BookingId == booking.Id)
@@ -64,7 +69,7 @@ internal static class TicketIssueSupport
             createdTickets.Add(ticket);
         }
 
-        if (createdTickets.Count > 0)
+        if (createdTickets.Count > 0 || bookingQrTokenCreated)
         {
             await context.SaveChangesAsync(cancellationToken);
         }
@@ -112,4 +117,31 @@ internal static class TicketIssueSupport
         throw new ValidationException([new ValidationFailure("qrToken", "Khong the tao QR token duy nhat.")]);
     }
 
+    /// <summary>
+    /// Sinh QR chung cấp booking cho booking thường (lưu vào cột charter_booking_qr_token dùng chung).
+    /// Prefix "BK" để phân biệt với QR tổng của charter ("CB").
+    /// </summary>
+    public static async Task<bool> EnsureBookingQrTokenAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(booking.CharterBookingQrToken))
+        {
+            return false;
+        }
+
+        for (var attempt = 0; attempt < 50; attempt++)
+        {
+            var token = "BK" + Convert.ToHexString(RandomNumberGenerator.GetBytes(BookingQrTokenByteCount));
+            if (!await context.Set<Booking>().AnyAsync(x => x.CharterBookingQrToken == token, cancellationToken))
+            {
+                booking.CharterBookingQrToken = token;
+                return true;
+            }
+        }
+
+        throw new ValidationException([new ValidationFailure("bookingQrToken",
+            "Khong the tao QR chung duy nhat cho booking.")]);
+    }
 }

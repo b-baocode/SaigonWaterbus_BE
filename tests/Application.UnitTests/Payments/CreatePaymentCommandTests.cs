@@ -574,6 +574,7 @@ public class CreatePaymentCommandTests
     {
         public List<PaymentSucceededNotification> Notifications { get; } = [];
         public List<BoardingPassNotification> BoardingPasses { get; } = [];
+        public List<ETicketNotification> ETickets { get; } = [];
 
         public Task SendPaymentSucceededAsync(
             PaymentSucceededNotification notification,
@@ -588,6 +589,14 @@ public class CreatePaymentCommandTests
             CancellationToken cancellationToken)
         {
             BoardingPasses.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task SendETicketsAsync(
+            ETicketNotification notification,
+            CancellationToken cancellationToken)
+        {
+            ETickets.Add(notification);
             return Task.CompletedTask;
         }
     }

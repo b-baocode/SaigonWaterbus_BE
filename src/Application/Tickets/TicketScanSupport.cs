@@ -73,18 +73,28 @@ internal static class TicketScanSupport
         return ToBookingScanDto(ticket, ticket.Booking);
     }
 
+    /// <summary>Loại vé hiển thị của charter theo PassengerType (Adult/Child) — độc lập với danh mục vé booking thường.</summary>
+    private static (string? Code, string? Name) ResolveCharterTicketType(string? passengerType) =>
+        passengerType?.Trim().ToUpperInvariant() switch
+        {
+            "ADULT" => ("ADULT", "Vé người lớn"),
+            "CHILD" => ("CHILD", "Vé trẻ em"),
+            _ => ((string?)null, (string?)null)
+        };
+
     private static TicketScanDto ToCharterBookingScanDto(Ticket ticket, Booking booking)
     {
         var ticketPassenger = ticket.BookingPassenger;
         var seatCode = ticket.BookingPassenger?.TripSeat?.Seat?.Code;
-        TicketTypePricing.TryGet(ticket.BookingPassenger?.PassengerType, out var ticketType);
+        var (charterTicketTypeCode, charterTicketTypeName) =
+            ResolveCharterTicketType(ticket.BookingPassenger?.PassengerType);
 
         return new TicketScanDto(
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
-            ticketType.Code,
-            ticketType.Name,
+            charterTicketTypeCode,
+            charterTicketTypeName,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
             ticket.CheckedInAt,

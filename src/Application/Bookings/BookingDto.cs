@@ -19,7 +19,10 @@ public sealed record BookingDetailDto(
     int PointsUsed,
     int PointsEarned,
     string? PromotionCode,
-    IReadOnlyList<BookingItemDto> Items);
+    IReadOnlyList<BookingItemDto> Items,
+    string PaymentStatus,
+    string? BookingQrToken,
+    DateTimeOffset? HoldExpiresAt);
 
 public sealed record BookingItemDto(
     Guid BookingItemId,
@@ -33,4 +36,7 @@ public sealed record BookingItemDto(
     DateTimeOffset? ScheduledDeparture,
     DateTimeOffset? ScheduledArrival,
     decimal UnitPrice,
-    string ItemStatus);
+    string ItemStatus,
+    string? TicketCode,
+    string? TicketQrToken,
+    string? TicketStatus);

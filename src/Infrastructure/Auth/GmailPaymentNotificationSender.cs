@@ -54,6 +54,76 @@ public sealed class GmailPaymentNotificationSender : IPaymentNotificationSender
             cancellationToken);
     }
 
+    public async Task SendETicketsAsync(
+        ETicketNotification notification,
+        CancellationToken cancellationToken)
+    {
+        var options = _optionsMonitor.CurrentValue;
+        var body = new System.Text.StringBuilder();
+        body.AppendLine($"Xin chao {notification.Booking.ContactName},");
+        body.AppendLine();
+        body.AppendLine($"Saigon Waterbus xac nhan thanh toan thanh cong cho booking {notification.Booking.BookingCode}.");
+        if (!string.IsNullOrWhiteSpace(notification.TripCode))
+        {
+            body.AppendLine($"Chuyen: {notification.TripCode}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(notification.FromStationName) || !string.IsNullOrWhiteSpace(notification.ToStationName))
+        {
+            body.AppendLine($"Hanh trinh: {notification.FromStationName} -> {notification.ToStationName}");
+        }
+
+        if (notification.DepartureTime.HasValue)
+        {
+            body.AppendLine($"Khoi hanh: {notification.DepartureTime.Value:dd/MM/yyyy HH:mm zzz}");
+        }
+
+        body.AppendLine();
+        if (!string.IsNullOrWhiteSpace(notification.BookingQrToken))
+        {
+            body.AppendLine($"QR chung cua booking (check-in ca nhom): {notification.BookingQrToken}");
+            AppendQrImageUrl(body, options, notification.BookingQrToken);
+            body.AppendLine();
+        }
+
+        body.AppendLine("Ve cua tung hanh khach:");
+        foreach (var ticket in notification.Tickets)
+        {
+            body.AppendLine($"- {ticket.PassengerName}"
+                + (string.IsNullOrWhiteSpace(ticket.SeatCode) ? string.Empty : $" | Ghe {ticket.SeatCode}")
+                + (string.IsNullOrWhiteSpace(ticket.TicketTypeName) ? string.Empty : $" | {ticket.TicketTypeName}"));
+            body.AppendLine($"  Ma ve: {ticket.TicketCode}");
+            body.AppendLine($"  QR: {ticket.QrToken}");
+            AppendQrImageUrl(body, options, ticket.QrToken, indent: "  ");
+        }
+
+        body.AppendLine();
+        body.AppendLine("Vui long xuat trinh ma QR khi len tau. Cam on ban da su dung dich vu Saigon Waterbus.");
+
+        await SendAsync(
+            notification.Booking.Email,
+            $"Saigon Waterbus - Ve dien tu {notification.Booking.BookingCode}",
+            body.ToString(),
+            notification.Booking.BookingCode,
+            notification.Booking.PaymentCode,
+            cancellationToken);
+    }
+
+    private static void AppendQrImageUrl(
+        System.Text.StringBuilder body,
+        GmailOptions options,
+        string qrPayload,
+        string indent = "")
+    {
+        if (string.IsNullOrWhiteSpace(options.PublicApiBaseUrl))
+        {
+            return;
+        }
+
+        body.AppendLine(
+            $"{indent}Anh QR: {options.PublicApiBaseUrl.TrimEnd('/')}/api/tickets/qr-image/{Uri.EscapeDataString(qrPayload)}");
+    }
+
     private async Task SendAsync(
         string email,
         string subject,

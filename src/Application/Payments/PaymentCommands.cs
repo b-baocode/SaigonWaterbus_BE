@@ -1,5 +1,6 @@
 using System.Globalization;
 using FluentValidation.Results;
+using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Promotions;
@@ -42,6 +43,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly IPaymentProcessingLock _paymentProcessingLock;
+    private readonly ITripSeatNotifier _tripSeatNotifier;
     private readonly TimeProvider _timeProvider;
 
     public CreatePaymentCommandHandler(
@@ -50,13 +52,15 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
-        IPaymentProcessingLock? paymentProcessingLock = null)
+        IPaymentProcessingLock? paymentProcessingLock = null,
+        ITripSeatNotifier? tripSeatNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
         _paymentProcessingLock = paymentProcessingLock ?? NullPaymentProcessingLock.Instance;
+        _tripSeatNotifier = tripSeatNotifier ?? NullTripSeatNotifier.Instance;
         _timeProvider = timeProvider;
     }
 
@@ -79,6 +83,17 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             cancellationToken);
 
         PaymentSupport.EnsureCanCreatePayment(booking);
+
+        if (BookingSeatOccupancySupport.IsHoldExpired(booking, _timeProvider.GetUtcNow()))
+        {
+            await BookingHoldExpirySupport.ExpireBookingAsync(
+                _context,
+                _tripSeatNotifier,
+                booking,
+                cancellationToken);
+            throw new ValidationException([new ValidationFailure("booking",
+                "Booking đã hết hạn giữ chỗ (15 phút). Vui lòng đặt vé lại.")]);
+        }
 
         await PaymentSupport.ApplyPromotionForCheckoutAsync(
             _context,
@@ -149,7 +164,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                     booking.ContactEmail,
                     booking.ContactPhone,
                     $"{paymentPlan.Purpose} booking {booking.BookingCode}",
-                    null),
+                    ResolvePaymentLinkExpiry(booking)),
                 cancellationToken);
         }
         catch (PaymentGatewayException ex)
@@ -185,6 +200,20 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             cancellationToken);
 
         return PaymentSupport.ToDto(booking, payment);
+    }
+
+    /// <summary>
+    /// Booking thường: link PayOS chỉ sống tới hạn giữ chỗ để tránh trả tiền cho booking đã nhả ghế.
+    /// Charter không giới hạn theo hold.
+    /// </summary>
+    private static DateTimeOffset? ResolvePaymentLinkExpiry(Booking booking)
+    {
+        if (Booking.IsCharterBookingType(booking.BookingType) || !booking.HoldExpiresAt.HasValue)
+        {
+            return null;
+        }
+
+        return booking.HoldExpiresAt.Value;
     }
 
     private async Task<bool> TryRecoverCreatedPaymentAsync(
@@ -1121,21 +1150,35 @@ internal static class PaymentSupport
         CancellationToken cancellationToken)
     {
         var isPaid = IsPaid(payment.PaymentStatus);
+        IReadOnlyList<Ticket> issuedTickets = [];
         if (isPaid)
         {
-            await TicketIssueSupport.EnsureRegularBookingPassengerTicketsAsync(
+            issuedTickets = await TicketIssueSupport.EnsureRegularBookingPassengerTicketsAsync(
                 context,
                 booking,
                 timeProvider,
                 cancellationToken);
         }
 
-        if (wasPaid || !isPaid || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        if (wasPaid || !isPaid || !payment.PaidAt.HasValue)
         {
             return;
         }
 
-        if (!payment.PaidAt.HasValue)
+        if (!Booking.IsCharterBookingType(booking.BookingType))
+        {
+            // Booking thường: gửi email vé điện tử (QR chung + QR riêng) thay cho email xác nhận thanh toán.
+            await RegularBookingETicketSupport.SendETicketEmailsAsync(
+                context,
+                paymentNotificationSender,
+                booking,
+                payment,
+                issuedTickets,
+                cancellationToken);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(booking.ContactEmail))
         {
             return;
         }
@@ -1154,14 +1197,27 @@ internal static class PaymentSupport
             throw new InvalidOperationException("Booking contact email is required to create a payment notification.");
         }
 
+        return CreatePaymentSucceededNotification(
+            booking,
+            payment,
+            booking.ContactEmail.Trim(),
+            string.IsNullOrWhiteSpace(booking.ContactName) ? "Quy khach" : booking.ContactName.Trim());
+    }
+
+    public static PaymentSucceededNotification CreatePaymentSucceededNotification(
+        Booking booking,
+        Payment payment,
+        string recipientEmail,
+        string recipientName)
+    {
         if (!payment.PaidAt.HasValue)
         {
             throw new InvalidOperationException("Payment paid time is required to create a payment notification.");
         }
 
-        var contactName = string.IsNullOrWhiteSpace(booking.ContactName)
+        var contactName = string.IsNullOrWhiteSpace(recipientName)
             ? "Quy khach"
-            : booking.ContactName.Trim();
+            : recipientName.Trim();
         var isFullyPaid = string.Equals(
                 booking.PaymentStatus,
                 PaidBookingPaymentStatus,
@@ -1179,7 +1235,7 @@ internal static class PaymentSupport
             : [];
 
         return new PaymentSucceededNotification(
-            booking.ContactEmail.Trim(),
+            recipientEmail.Trim(),
             contactName,
             booking.ContactPhone,
             booking.BookingCode,

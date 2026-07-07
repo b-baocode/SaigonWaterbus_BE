@@ -15,7 +15,11 @@ public sealed class Trips : IEndpointGroup
           "boatCode": "BOAT-01",
           "capacity": 50,
           "operatingDate": "10/06/2026",
-          "departureTime": "2026-06-10T08:30:00+07:00"
+          "departureTime": "2026-06-10T08:30:00+07:00",
+          "seatTypePrices": [
+            { "seatTypeCode": "CABIN", "price": 25000 },
+            { "seatTypeCode": "SKY", "price": 40000 }
+          ]
         }
         """;
 
@@ -69,6 +73,38 @@ public sealed class Trips : IEndpointGroup
                 null,
                 "Tra ve TripDetailDto kem stops[] sap xep theo stop_order."));
 
+        group.MapGet(GetTripSeatMap, "{id:guid}/seats")
+            .AllowAnonymous()
+            .WithSummary("So do ghe cua chuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous (dang nhap de thay ghe minh dang giu = HeldByMe)",
+                null,
+                "Tra ve toan bo ghe active cua tau theo deck/row/column kem trang thai theo chuyen.",
+                "status: Available | Held | HeldByMe | Booked | Blocked.",
+                "basePrice: gia goc theo loai ghe; gia ve = basePrice x he so loai ve (GET /api/ticket-types).",
+                "holdTtlSeconds: thoi gian giu ghe tam khi goi POST /api/trips/{id}/seats/hold.",
+                "Realtime: subscribe SignalR hub /hubs/trip-seats, goi JoinTrip(tripId) de nhan event SeatStatusChanged."));
+
+        group.MapPost(HoldTripSeats, "{id:guid}/seats/hold")
+            .RequireAuthorization()
+            .WithSummary("Tam giu ghe khi dang chon")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """{ "seatNumbers": ["A1", "A2"] }""",
+                "Giu ghe 3 phut (TTL tu gia han khi goi lai). Toi da 10 ghe.",
+                "Tra ve heldSeatNumbers + failedSeatNumbers (ghe nguoi khac dang giu) + holdExpiresAt.",
+                "Ghe da co booking active se tra 400.",
+                "Cac client khac dang xem so do ghe nhan duoc event SeatStatusChanged qua SignalR."));
+
+        group.MapPost(ReleaseTripSeats, "{id:guid}/seats/release")
+            .RequireAuthorization()
+            .WithSummary("Nha ghe dang tam giu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """{ "seatNumbers": ["A1"] }""",
+                "Chi nha duoc ghe do chinh user dang giu; ghe cua nguoi khac bi bo qua.",
+                "Tra ve 204."));
+
         group.MapPost(CreateTrip, string.Empty)
             .RequireAuthorization()
             .WithSummary("Tao chuyen tau moi")
@@ -80,6 +116,9 @@ public sealed class Trips : IEndpointGroup
                 "Neu co boatCode, capacitySnapshot lay theo so ghe active cua tau.",
                 "departureTime phai lon hon thoi diem hien tai.",
                 "capacity: so hanh khach toi da cua chuyen.",
+                "seatTypePrices (optional): chot gia ve theo loai ghe cho rieng chuyen nay (bus sightseeing tuy chinh gia).",
+                "Loai ghe khong nhap gia se tu dong lay gia goc tu GET /api/seat-types dien vao trip_seats.",
+                "Gia ve khi dat = trip_seats.price x he so loai ve (ADULT x1; INFANT/SENIOR/DISABLED mien phi, chi ghe STANDARD).",
                 "tripCode tu sinh: TR-{yyyyMMdd}-{routeCode}-{4 so ngau nhien}."));
 
         group.MapPost(GenerateTrips, "generate")
@@ -92,6 +131,8 @@ public sealed class Trips : IEndpointGroup
                 "departureTimes: mang gio khoi hanh (gio Vietnam +07:00), dinh dang HH:mm:ss.",
                 "fromDate / toDate: khoang ngay tao chuyen (toi da 365 ngay).",
                 "daysOfWeek (optional): [0=CN, 1=T2, ..., 6=T7]. Bo trong = tat ca cac ngay.",
+                "seatTypePrices (optional): chot gia ve theo loai ghe cho tat ca chuyen duoc tao trong dot nay.",
+                "Loai ghe khong nhap gia se lay gia goc tu GET /api/seat-types.",
                 "Neu chuyen da ton tai (cung tuyen + cung gio), tu dong bo qua (skip).",
                 "Tra ve: { created, skipped, createdTripCodes }."));
 
@@ -133,6 +174,22 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
+
+    private static async Task<IResult> GetTripSeatMap(ISender sender, Guid id, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetTripSeatMapQuery(id), ct));
+
+    private static async Task<IResult> HoldTripSeats(
+        ISender sender, Guid id, TripSeatSelectionRequest request, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new HoldTripSeatsCommand(id, request.SeatNumbers), ct));
+
+    private static async Task<IResult> ReleaseTripSeats(
+        ISender sender, Guid id, TripSeatSelectionRequest request, CancellationToken ct)
+    {
+        await sender.Send(new ReleaseTripSeatsCommand(id, request.SeatNumbers), ct);
+        return Results.NoContent();
+    }
+
+    public sealed record TripSeatSelectionRequest(IReadOnlyList<string> SeatNumbers);
 
     private static async Task<IResult> CreateTrip(ISender sender, CreateTripCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

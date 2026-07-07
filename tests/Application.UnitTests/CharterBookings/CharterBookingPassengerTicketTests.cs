@@ -421,6 +421,11 @@ public class CharterBookingPassengerTicketTests
             BoardingPasses.Add(notification);
             return Task.CompletedTask;
         }
+
+        public Task SendETicketsAsync(
+            ETicketNotification notification,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 
     private sealed class TestCharterBookingTicketPdfRenderer : ICharterBookingTicketPdfRenderer

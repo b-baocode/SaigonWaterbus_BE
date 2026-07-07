@@ -153,6 +153,66 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         }
     }
 
+    public async Task SendETicketsAsync(
+        ETicketNotification notification,
+        CancellationToken cancellationToken)
+    {
+        var options = _optionsMonitor.CurrentValue;
+        if (!options.Enabled)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.ApiKey)
+            || string.IsNullOrWhiteSpace(options.SenderEmail)
+            || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
+        {
+            _logger.LogWarning("Brevo e-ticket notification is enabled but required configuration is missing.");
+            return;
+        }
+
+        var payload = BuildETicketPayload(options, notification);
+        var client = _httpClientFactory.CreateClient(HttpClientName);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
+        request.Headers.TryAddWithoutValidation("api-key", options.ApiKey);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Content = JsonContent.Create(payload);
+
+        try
+        {
+            using var response = await client.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "Brevo e-ticket notification sent. BookingCode: {BookingCode}, TicketCount: {TicketCount}, Email: {Email}",
+                    notification.Booking.BookingCode,
+                    notification.Tickets.Count,
+                    notification.Booking.Email);
+                return;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning(
+                "Brevo e-ticket notification failed. Status: {StatusCode}, Body: {Body}, BookingCode: {BookingCode}, Email: {Email}",
+                response.StatusCode,
+                Truncate(body, 400),
+                notification.Booking.BookingCode,
+                notification.Booking.Email);
+        }
+        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Brevo e-ticket notification failed. BookingCode: {BookingCode}, Email: {Email}",
+                notification.Booking.BookingCode,
+                notification.Booking.Email);
+        }
+    }
+
     private static Dictionary<string, object?> BuildPayload(
         BrevoOptions options,
         PaymentSucceededNotification notification)
@@ -183,6 +243,126 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             BuildHtmlContent(notification.Booking));
         AddAttachments(payload, notification.Attachments);
         return payload;
+    }
+
+    private static Dictionary<string, object?> BuildETicketPayload(
+        BrevoOptions options,
+        ETicketNotification notification)
+    {
+        var booking = notification.Booking;
+        var parameters = BuildTemplateParams(options, booking, boardingPass: null);
+
+        var bookingQrImageUrl = CreateQrImageUrl(options.PublicApiBaseUrl, notification.BookingQrToken);
+        var departureText = notification.DepartureTime.HasValue
+            ? FormatDateTimeOffset(notification.DepartureTime.Value, "dd/MM/yyyy HH:mm")
+            : null;
+        var arrivalText = notification.ArrivalTime.HasValue
+            ? FormatDateTimeOffset(notification.ArrivalTime.Value, "dd/MM/yyyy HH:mm")
+            : null;
+
+        parameters["tripCode"] = notification.TripCode;
+        parameters["routeName"] = notification.RouteName;
+        parameters["departureTime"] = departureText;
+        parameters["arrivalTime"] = arrivalText;
+        parameters["fromStationName"] = ResolveText(notification.FromStationName);
+        parameters["toStationName"] = ResolveText(notification.ToStationName);
+        parameters["bookingQrPayload"] = notification.BookingQrToken;
+        parameters["bookingQrImageUrl"] = bookingQrImageUrl;
+        parameters["passengerCount"] = notification.Tickets.Count.ToString(CultureInfo.InvariantCulture);
+        parameters["TICKETS"] = notification.Tickets
+            .Select(ticket => new Dictionary<string, object?>
+            {
+                ["passengerName"] = ticket.PassengerName,
+                ["seatNumber"] = ticket.SeatCode,
+                ["ticketTypeName"] = ticket.TicketTypeName,
+                ["ticketCode"] = ticket.TicketCode,
+                ["qrPayload"] = ticket.QrToken,
+                ["qrImageUrl"] = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken)
+            })
+            .ToArray();
+
+        return BuildPayload(
+            options,
+            booking.Email,
+            booking.ContactName,
+            options.ETicketTemplateId,
+            parameters,
+            $"Saigon Waterbus - Vé điện tử {booking.BookingCode}",
+            BuildETicketHtmlContent(options, notification, bookingQrImageUrl, departureText));
+    }
+
+    private static string BuildETicketHtmlContent(
+        BrevoOptions options,
+        ETicketNotification notification,
+        string? bookingQrImageUrl,
+        string? departureText)
+    {
+        var booking = notification.Booking;
+        var html = new System.Text.StringBuilder();
+        html.Append("<html><body style=\"font-family:Arial,sans-serif\">");
+        html.Append($"<p>Xin chào {Encode(booking.ContactName)},</p>");
+        html.Append($"<p>Saigon Waterbus xác nhận thanh toán thành công cho booking <strong>{Encode(booking.BookingCode)}</strong>. Dưới đây là vé điện tử của bạn.</p>");
+        html.Append("<ul>");
+        if (!string.IsNullOrWhiteSpace(notification.TripCode))
+        {
+            html.Append($"<li>Chuyến: {Encode(notification.TripCode)}</li>");
+        }
+
+        if (!string.IsNullOrWhiteSpace(notification.RouteName))
+        {
+            html.Append($"<li>Tuyến: {Encode(notification.RouteName)}</li>");
+        }
+
+        if (!string.IsNullOrWhiteSpace(notification.FromStationName) || !string.IsNullOrWhiteSpace(notification.ToStationName))
+        {
+            html.Append($"<li>Hành trình: {Encode(notification.FromStationName ?? string.Empty)} → {Encode(notification.ToStationName ?? string.Empty)}</li>");
+        }
+
+        if (departureText is not null)
+        {
+            html.Append($"<li>Khởi hành: {Encode(departureText)}</li>");
+        }
+
+        html.Append($"<li>Số hành khách: {notification.Tickets.Count}</li>");
+        html.Append($"<li>Tổng tiền đã thanh toán: {Encode(FormatMoney(booking.BookingTotalAmount, booking.Currency))}</li>");
+        html.Append("</ul>");
+
+        if (!string.IsNullOrWhiteSpace(bookingQrImageUrl))
+        {
+            html.Append("<h3>QR chung của booking (check-in cả nhóm)</h3>");
+            html.Append($"<p><img src=\"{bookingQrImageUrl}\" alt=\"Booking QR\" width=\"180\" height=\"180\"/></p>");
+            html.Append($"<p>Mã booking: <strong>{Encode(booking.BookingCode)}</strong></p>");
+        }
+
+        html.Append("<h3>Vé của từng hành khách</h3>");
+        foreach (var ticket in notification.Tickets)
+        {
+            var qrImageUrl = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken);
+            html.Append("<div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px\">");
+            html.Append($"<p><strong>{Encode(ticket.PassengerName)}</strong>");
+            if (!string.IsNullOrWhiteSpace(ticket.SeatCode))
+            {
+                html.Append($" — Ghế {Encode(ticket.SeatCode)}");
+            }
+
+            if (!string.IsNullOrWhiteSpace(ticket.TicketTypeName))
+            {
+                html.Append($" ({Encode(ticket.TicketTypeName)})");
+            }
+
+            html.Append("</p>");
+            html.Append($"<p>Mã vé: {Encode(ticket.TicketCode)}</p>");
+            if (!string.IsNullOrWhiteSpace(qrImageUrl))
+            {
+                html.Append($"<p><img src=\"{qrImageUrl}\" alt=\"Ticket QR\" width=\"150\" height=\"150\"/></p>");
+            }
+
+            html.Append("</div>");
+        }
+
+        html.Append("<p>Vui lòng xuất trình mã QR khi lên tàu. Cảm ơn bạn đã sử dụng dịch vụ Saigon Waterbus.</p>");
+        html.Append("</body></html>");
+        return html.ToString();
     }
 
     private static Dictionary<string, object?> BuildPayload(

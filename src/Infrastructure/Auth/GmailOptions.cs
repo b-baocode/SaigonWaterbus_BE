@@ -11,6 +11,8 @@ public sealed class GmailOptions
     public string Password { get; set; } = string.Empty;
     public string FromEmail { get; set; } = string.Empty;
     public string FromName { get; set; } = "Saigon Waterbus";
+    /// <summary>Base URL public của API để dựng link ảnh QR trong email (vd https://api.example.com).</summary>
+    public string? PublicApiBaseUrl { get; set; }
     public string Subject { get; set; } = string.Empty;
     public string Template { get; set; } = string.Empty;
     public string RegisterSubject { get; set; } = "Mã OTP đăng ký Saigon Waterbus";

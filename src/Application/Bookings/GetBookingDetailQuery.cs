@@ -32,6 +32,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+            .Include(b => b.Tickets)
             .SingleOrDefaultAsync(
                 b => b.Id == request.BookingId && b.BookingType == Booking.SeatBookingType,
                 cancellationToken)
@@ -44,19 +45,33 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
         var fromStop = stops.FirstOrDefault();
         var toStop = stops.LastOrDefault();
 
-        var items = booking.Passengers.Select(i => new BookingItemDto(
-            i.Id,
-            booking.Trip?.TripCode ?? string.Empty,
-            i.FullName,
-            i.PhoneNumber,
-            i.PassengerType ?? "Passenger",
-            i.TripSeat?.Seat?.Code,
-            fromStop?.Station.StationName ?? string.Empty,
-            toStop?.Station.StationName ?? string.Empty,
-            booking.Trip?.DepartureTime,
-            booking.Trip?.ArrivalTime,
-            i.UnitPrice ?? 0,
-            booking.BookingStatus.ToString())).ToList();
+        var ticketsByPassengerId = booking.Tickets
+            .Where(t => t.BookingPassengerId.HasValue
+                     && t.TicketStatus != Domain.Enums.TicketStatus.Cancelled
+                     && t.TicketStatus != Domain.Enums.TicketStatus.Expired)
+            .GroupBy(t => t.BookingPassengerId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(t => t.IssuedAt).First());
+
+        var items = booking.Passengers.Select(i =>
+        {
+            ticketsByPassengerId.TryGetValue(i.Id, out var ticket);
+            return new BookingItemDto(
+                i.Id,
+                booking.Trip?.TripCode ?? string.Empty,
+                i.FullName,
+                i.PhoneNumber,
+                i.PassengerType ?? "Passenger",
+                i.TripSeat?.Seat?.Code,
+                fromStop?.Station.StationName ?? string.Empty,
+                toStop?.Station.StationName ?? string.Empty,
+                booking.Trip?.DepartureTime,
+                booking.Trip?.ArrivalTime,
+                i.UnitPrice ?? 0,
+                booking.BookingStatus.ToString(),
+                ticket?.TicketCode,
+                ticket?.QrToken,
+                ticket?.TicketStatus.ToString());
+        }).ToList();
 
         return new BookingDetailDto(
             booking.Id, booking.BookingCode,
@@ -64,6 +79,9 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             booking.SubtotalAmount, booking.DiscountAmount, booking.TotalAmount,
             booking.PointsUsed, booking.PointsEarned,
             booking.Promotion?.PromotionCode,
-            items);
+            items,
+            booking.PaymentStatus,
+            booking.CharterBookingQrToken,
+            booking.HoldExpiresAt);
     }
 }

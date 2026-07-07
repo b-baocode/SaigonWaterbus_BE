@@ -20,12 +20,16 @@ public static class TicketTypePricing
 {
     public static readonly IReadOnlyList<TicketTypeInfo> All =
     [
-        new("ADULT", "Vé người lớn", "Hành khách từ 12 tuổi trở lên", 1.0m, null),
-        new("CHILD", "Vé trẻ em", "Trẻ em dưới 12 tuổi", 0.5m, null),
-        new("SENIOR", "Vé người cao tuổi", "Hành khách từ 60 tuổi trở lên", 0.5m, null),
-        new("STUDENT", "Vé học sinh / sinh viên", "Học sinh, sinh viên có xuất trình thẻ", 0.8m, null),
-        new("SPECIAL_POLICY", "Vé miễn phí (đối tượng chính sách)",
-            "Người có công, người khuyết tật và đối tượng chính sách. Chỉ áp dụng dịch vụ waterbus thông thường.",
+        new("ADULT", "Vé người lớn", "Hành khách thông thường, nguyên giá", 1.0m, null),
+        new("INFANT", "Trẻ em dưới 2 tuổi",
+            "Miễn phí. Có thể ngồi cùng người lớn (không chiếm ghế) hoặc chiếm 1 ghế riêng tùy khách. "
+            + "Chỉ áp dụng waterbus thường, không áp dụng sightseeing.",
+            0.0m, "STANDARD"),
+        new("SENIOR", "Người cao tuổi trên 70",
+            "Miễn phí, xuất trình giấy tờ tùy thân khi lên tàu. Chỉ áp dụng waterbus thường, không áp dụng sightseeing.",
+            0.0m, "STANDARD"),
+        new("DISABLED", "Người khuyết tật",
+            "Miễn phí, xuất trình thẻ/giấy xác nhận khuyết tật khi lên tàu. Chỉ áp dụng waterbus thường, không áp dụng sightseeing.",
             0.0m, "STANDARD")
     ];
 

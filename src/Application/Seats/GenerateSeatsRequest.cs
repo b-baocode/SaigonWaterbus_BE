@@ -213,7 +213,7 @@ public sealed class GenerateSeatsRequestUseCase
         }
 
         var rowLabel = SeatSupport.RowLabel(row - 1);
-        var normalizedCode = SeatSupport.NormalizeSeatTypeCode(seatTypeCode, boat.SeatSetupType);
+        var normalizedCode = SeatSupport.NormalizeSeatTypeCode(seatTypeCode, boat.SeatSetupType, seatTypeByCode.Keys);
         seatTypeByCode.TryGetValue(normalizedCode, out var seatType);
 
         seats.Add(new Seat

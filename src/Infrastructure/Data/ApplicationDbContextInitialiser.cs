@@ -158,6 +158,8 @@ public class ApplicationDbContextInitialiser
 
         await _context.SaveChangesAsync();
 
+        await SeedSeatTypesAsync();
+
         if (!_databaseStartupSettings.SeedInternalUsers)
         {
             _logger.LogInformation("Skipping internal user seeding because Database:SeedInternalUsers is disabled.");
@@ -171,6 +173,70 @@ public class ApplicationDbContextInitialiser
         }
 
         await _context.SaveChangesAsync();
+    }
+
+    private static readonly (string Code, string Name, decimal BasePrice, int DisplayOrder)[] SeatTypeDefinitions =
+    [
+        ("STANDARD", "Standard", 7_000m, 1),
+        ("CABIN", "Cabin", 10_000m, 2),
+        ("RIVER", "River", 12_000m, 3),
+        ("SKY", "Sky", 15_000m, 4)
+    ];
+
+    /// <summary>
+    /// Seed danh mục loại ghế vào bảng seat_types (nếu thiếu) và gắn lại seat_type_id
+    /// cho các ghế được tạo trước khi bảng này có dữ liệu. Không ghi đè giá admin đã chỉnh.
+    /// </summary>
+    private async Task SeedSeatTypesAsync()
+    {
+        var existingByCode = await _context.Set<SeatType>()
+            .ToDictionaryAsync(x => x.Code, StringComparer.OrdinalIgnoreCase);
+
+        var added = false;
+        foreach (var definition in SeatTypeDefinitions)
+        {
+            if (existingByCode.ContainsKey(definition.Code))
+            {
+                continue;
+            }
+
+            _context.Set<SeatType>().Add(new SeatType
+            {
+                Code = definition.Code,
+                Name = definition.Name,
+                BasePrice = definition.BasePrice,
+                Currency = "VND",
+                IsActive = true,
+                DisplayOrder = definition.DisplayOrder
+            });
+            added = true;
+        }
+
+        if (added)
+        {
+            await _context.SaveChangesAsync();
+        }
+
+        var seatTypeIdByCode = await _context.Set<SeatType>()
+            .ToDictionaryAsync(x => x.Code, x => x.Id, StringComparer.OrdinalIgnoreCase);
+        var unlinkedSeats = await _context.Set<Seat>()
+            .Where(x => x.SeatTypeId == null)
+            .ToListAsync();
+        var linked = 0;
+        foreach (var seat in unlinkedSeats)
+        {
+            if (seatTypeIdByCode.TryGetValue(seat.SeatTypeCode, out var seatTypeId))
+            {
+                seat.SeatTypeId = seatTypeId;
+                linked++;
+            }
+        }
+
+        if (linked > 0)
+        {
+            await _context.SaveChangesAsync();
+            _logger.LogInformation("Linked {LinkedSeatCount} seats to seeded seat types.", linked);
+        }
     }
 
     public async Task ResetAndSeedSampleDataAsync()
