@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.CharterBookings;
@@ -50,6 +51,7 @@ internal static class CharterBookingQuerySupport
             booking.Created,
             booking.BookingStatus.ToString(),
             booking.PaymentStatus,
+            booking.HoldExpiresAt,
             booking.Boat?.Name,
             booking.PassengerCount.GetValueOrDefault(),
             booking.AdultCount.GetValueOrDefault(),
@@ -107,6 +109,7 @@ internal static class CharterBookingQuerySupport
                     x.CheckoutUrl,
                     x.QrCode,
                     x.PaidAt,
+                    PaymentSupport.ResolvePaymentExpiresAt(x),
                     x.RefundAmount,
                     x.RefundReferenceId,
                     x.RefundPayoutId,

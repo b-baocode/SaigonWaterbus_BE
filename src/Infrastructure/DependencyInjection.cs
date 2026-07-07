@@ -150,8 +150,10 @@ public static class DependencyInjection
         builder.Services.Configure<PayOsOptions>(builder.Configuration.GetSection(PayOsOptions.SectionName));
         builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection(RedisOptions.SectionName));
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
+        builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
+        builder.Services.AddHostedService<CharterBookingExpirationHostedService>();
     }
 
     private static void AddRedis(IHostApplicationBuilder builder)

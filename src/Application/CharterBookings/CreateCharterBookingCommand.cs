@@ -297,10 +297,12 @@ public sealed class CharterBookingPassengerRequestValidator : AbstractValidator<
 {
     public CharterBookingPassengerRequestValidator()
     {
-        RuleFor(x => x.FullName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.DateOfBirth)
+        RuleFor(x => x.FullName)
             .NotEmpty()
-            .Must(x => CharterBookingPassengerSupport.TryParseDateOfBirth(x, out _))
+            .WithMessage("fullName is required.")
+            .MaximumLength(150);
+        RuleFor(x => x.DateOfBirth)
+            .Must(x => string.IsNullOrWhiteSpace(x) || CharterBookingPassengerSupport.TryParseDateOfBirth(x, out _))
             .WithMessage("Ngày sinh không hợp lệ. Dùng định dạng yyyy-MM-dd hoặc dd/MM/yyyy.");
         RuleFor(x => x.DateOfBirth)
             .Must(x => !CharterBookingPassengerSupport.TryParseDateOfBirth(x, out var dateOfBirth)

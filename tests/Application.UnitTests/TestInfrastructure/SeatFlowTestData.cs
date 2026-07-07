@@ -93,6 +93,11 @@ internal sealed class TestUserContext(Guid userId) : IUserContext
     public bool IsAuthenticated => true;
 }
 
+internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
+{
+    public override DateTimeOffset GetUtcNow() => utcNow;
+}
+
 internal sealed class TestDatabaseExceptionClassifier : IDatabaseExceptionClassifier
 {
     public bool IsUniqueConstraintViolation(Exception exception) => false;

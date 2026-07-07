@@ -50,7 +50,7 @@ public class UpdateCharterBookingStatusCommandTests
     }
 
     [Test]
-    public async Task QuotedStatusRequiresBoatAndPrice()
+    public async Task SystemManagedStatusesCannotBeSetManuallyByAdmin()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
@@ -66,7 +66,7 @@ public class UpdateCharterBookingStatusCommandTests
                 CancellationToken.None));
 
         exception.Errors["bookingStatus"].Single()
-            .ShouldContain("chưa có tàu hoặc chưa có giá");
+            .ShouldContain("Quoted do hệ thống gán");
     }
 
     private static Booking CharterBooking(BookingStatus status, string paymentStatus) =>

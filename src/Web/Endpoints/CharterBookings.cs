@@ -121,11 +121,12 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin",
                 UpdateStatusExample,
                 "Doi bookingStatus cho charter booking hien co.",
-                "Khong dung endpoint nay de chot gia; muon sang Quoted khi chua co gia/tau thi dung PUT /api/charter-bookings/admin/{id}/quote.",
-                "Confirmed yeu cau booking da co thanh toan dat coc hoac thanh toan du.",
-                "Completed yeu cau paymentStatus = Paid.",
-                "Refunded yeu cau paymentStatus = Refunded; muon hoan tien thi dung API refund truoc.",
-                "Status hop le cho charter booking: PendingQuote, Quoted, Confirmed, Cancelled, Expired, Completed, Refunded."));
+                "Endpoint nay chi cho admin cap nhat thu cong sang Cancelled, Expired hoac Completed.",
+                "PendingQuote do he thong gan khi customer tao booking.",
+                "Quoted do he thong gan khi admin chot gia bang PUT /api/charter-bookings/admin/{id}/quote.",
+                "Confirmed do he thong gan khi thanh toan dat coc hoac thanh toan du thanh cong.",
+                "Refunded do he thong gan sau luong hoan tien thanh cong.",
+                "Completed yeu cau paymentStatus = Paid."));
 
         group.MapPut(QuoteCharterBooking, "admin/{id:guid}/quote")
             .RequireAuthorization()

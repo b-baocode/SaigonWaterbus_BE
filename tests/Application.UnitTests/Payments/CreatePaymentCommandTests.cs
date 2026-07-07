@@ -16,6 +16,7 @@ public class CreatePaymentCommandTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
         var booking = new Booking
         {
             BookingType = Booking.CharterBookingType,
@@ -32,7 +33,8 @@ public class CreatePaymentCommandTests
             PassengerCount = 1,
             SubtotalAmount = 10000,
             TotalAmount = 10000,
-            RemainingAmount = 10000
+            RemainingAmount = 10000,
+            HoldExpiresAt = now.AddHours(1)
         };
         context.Add(booking);
         await context.SaveChangesAsync();
@@ -42,7 +44,7 @@ public class CreatePaymentCommandTests
             new TestUserContext(userId),
             new TestPaymentGateway(),
             new TestPaymentNotificationSender(),
-            TimeProvider.System);
+            new FixedTimeProvider(now));
 
         var result = await handler.Handle(
             new CreatePaymentCommand(booking.Id, BookingPaymentOption.Deposit),
@@ -51,8 +53,65 @@ public class CreatePaymentCommandTests
         result.Amount.ShouldBe(5000);
         result.PaymentStatus.ShouldBe("Pending");
         result.CheckoutUrl.ShouldBe("https://example.test/checkout");
+        result.ExpiresAt.ShouldBe(now.AddMinutes(5));
+        booking.HoldExpiresAt.ShouldBe(now.AddHours(12));
         context.Set<Payment>().Count().ShouldBe(1);
         context.Set<Payment>().Single().PaymentPurpose.ShouldBe("Deposit");
+        context.Set<Payment>().Single().ExpiresAt.ShouldBe(now.AddMinutes(5));
+    }
+
+    [Test]
+    public async Task ExpiredPendingPaymentCreatesNewPaymentLink()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingCode = "BK-EXPIRED-LINK",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        var expiredPayment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000005",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending",
+            CheckoutUrl = "https://example.test/old-checkout",
+            ExpiresAt = now.AddSeconds(-1)
+        };
+        context.AddRange(booking, expiredPayment);
+        await context.SaveChangesAsync();
+        var gateway = new TestPaymentGateway();
+
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            gateway,
+            new TestPaymentNotificationSender(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new CreatePaymentCommand(booking.Id),
+            CancellationToken.None);
+
+        expiredPayment.PaymentStatus.ShouldBe("Expired");
+        result.PaymentId.ShouldNotBe(expiredPayment.Id);
+        result.PaymentStatus.ShouldBe("Pending");
+        result.ExpiresAt.ShouldBe(now.AddMinutes(5));
+        gateway.CreateRequests.Count.ShouldBe(1);
+        context.Set<Payment>().Count().ShouldBe(2);
     }
 
     [Test]
@@ -511,6 +570,8 @@ public class CreatePaymentCommandTests
         PaymentGatewayException? getPaymentException = null)
         : ICharterBookingPaymentGateway
     {
+        public List<CharterBookingDepositPaymentRequest> CreateRequests { get; } = [];
+
         public Task<CharterBookingDepositPaymentResult> CreateDepositPaymentAsync(
             CharterBookingDepositPaymentRequest request,
             CancellationToken cancellationToken)
@@ -520,6 +581,7 @@ public class CreatePaymentCommandTests
                 throw createPaymentException;
             }
 
+            CreateRequests.Add(request);
             return Task.FromResult(new CharterBookingDepositPaymentResult(
                 "payment-link-id",
                 "https://example.test/checkout",

@@ -15,6 +15,7 @@ public class Payment : BaseGuidAuditableEntity
     public string PaymentStatus { get; set; } = "Pending";
     public string? CheckoutUrl { get; set; }
     public string? QrCode { get; set; }
+    public DateTimeOffset? ExpiresAt { get; set; }
     public DateTimeOffset? PaidAt { get; set; }
     public decimal RefundAmount { get; set; }
     public string? RefundReferenceId { get; set; }

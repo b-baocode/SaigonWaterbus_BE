@@ -1,4 +1,5 @@
 using System.Globalization;
+using SaigonWaterbus.Application.Common;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -78,14 +79,20 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             includePayments: true,
             cancellationToken);
 
-        PaymentSupport.EnsureCanCreatePayment(booking);
+        var now = _timeProvider.GetUtcNow();
+        if (PaymentSupport.ExpireStalePendingPayments(booking, now))
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        PaymentSupport.EnsureCanCreatePayment(booking, now);
 
         await PaymentSupport.ApplyPromotionForCheckoutAsync(
             _context,
             _userContext,
             booking,
             request.PromotionCode,
-            _timeProvider.GetUtcNow(),
+            now,
             cancellationToken);
 
         var existingPendingPayment = booking.Payments
@@ -93,6 +100,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             .OrderByDescending(x => x.Created)
             .FirstOrDefault(x =>
                 PaymentSupport.IsPending(x.PaymentStatus)
+                && !PaymentSupport.IsExpired(x, now)
                 && !string.IsNullOrWhiteSpace(x.CheckoutUrl));
         if (existingPendingPayment is not null)
         {
@@ -114,12 +122,12 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             request.PaymentOption,
             request.DepositPercent,
             paidAmount);
-        var now = _timeProvider.GetUtcNow();
         var orderCode = await PaymentSupport.GeneratePaymentOrderCodeAsync(_context, now, cancellationToken);
         var amount = PaymentSupport.ToPayOsAmount(
             paymentPlan.Amount,
             nameof(paymentPlan.Amount),
             "Số tiền thanh toán phải là số nguyên VND lớn hơn 0.");
+        var expiresAt = PaymentSupport.ResolvePaymentExpiresAt(now);
 
         var payment = new Payment
         {
@@ -130,11 +138,13 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             Currency = booking.Currency,
             PaymentMethod = PaymentSupport.PayOsProvider,
             PaymentPurpose = paymentPlan.Purpose,
-            PaymentStatus = PaymentSupport.PendingStatus
+            PaymentStatus = PaymentSupport.PendingStatus,
+            ExpiresAt = expiresAt
         };
         booking.Payments.Add(payment);
         _context.Set<Payment>().Add(payment);
         PaymentSupport.ApplyPendingPaymentPlan(booking, paymentPlan, paidAmount);
+        PaymentSupport.EnsureCharterPaymentCompletionDeadline(booking, now);
         await _context.SaveChangesAsync(cancellationToken);
 
         CharterBookingDepositPaymentResult paymentResult;
@@ -149,7 +159,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                     booking.ContactEmail,
                     booking.ContactPhone,
                     $"{paymentPlan.Purpose} booking {booking.BookingCode}",
-                    null),
+                    expiresAt),
                 cancellationToken);
         }
         catch (PaymentGatewayException ex)
@@ -733,7 +743,7 @@ internal static class PaymentSupport
         return payment;
     }
 
-    public static void EnsureCanCreatePayment(Booking booking)
+    public static void EnsureCanCreatePayment(Booking booking, DateTimeOffset now)
     {
         if (booking.BookingStatus == BookingStatus.Cancelled)
         {
@@ -745,6 +755,15 @@ internal static class PaymentSupport
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Charter booking chưa được admin nhập tàu và chốt giá.")]);
+        }
+
+        if (Booking.IsCharterBookingType(booking.BookingType)
+            && booking.BookingStatus == BookingStatus.Quoted
+            && booking.HoldExpiresAt.HasValue
+            && booking.HoldExpiresAt.Value <= now)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(booking.HoldExpiresAt),
+                "Thời hạn phản hồi hoặc thanh toán charter booking đã hết. Vui lòng tạo yêu cầu thuê tàu mới.")]);
         }
 
         if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded or BookingStatus.Expired)
@@ -986,6 +1005,52 @@ internal static class PaymentSupport
 
     public static bool IsPaid(string status) =>
         string.Equals(status, PaidStatus, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsExpired(Payment payment, DateTimeOffset now)
+    {
+        var expiresAt = ResolvePaymentExpiresAt(payment);
+        return expiresAt.HasValue && expiresAt.Value <= now;
+    }
+
+    public static DateTimeOffset ResolvePaymentExpiresAt(DateTimeOffset now) =>
+        now + BookingExpirationPolicy.PaymentLinkTtl;
+
+    public static DateTimeOffset? ResolvePaymentExpiresAt(Payment payment) =>
+        payment.ExpiresAt
+        ?? (payment.Created == default
+            ? null
+            : payment.Created + BookingExpirationPolicy.PaymentLinkTtl);
+
+    public static bool ExpireStalePendingPayments(Booking booking, DateTimeOffset now)
+    {
+        var changed = false;
+        foreach (var payment in booking.Payments.Where(x => IsPayOsPayment(x) && IsPending(x.PaymentStatus) && IsExpired(x, now)))
+        {
+            payment.PaymentStatus = ExpiredStatus;
+            changed = true;
+        }
+
+        if (changed)
+        {
+            RestorePaymentSummaryFromPaidPayments(booking);
+        }
+
+        return changed;
+    }
+
+    public static void EnsureCharterPaymentCompletionDeadline(Booking booking, DateTimeOffset now)
+    {
+        if (!Booking.IsCharterBookingType(booking.BookingType) || booking.BookingStatus != BookingStatus.Quoted)
+        {
+            return;
+        }
+
+        var responseDeadline = now + BookingExpirationPolicy.CharterQuoteResponseTtl;
+        if (!booking.HoldExpiresAt.HasValue || booking.HoldExpiresAt.Value <= responseDeadline)
+        {
+            booking.HoldExpiresAt = now + BookingExpirationPolicy.CharterPaymentCompletionTtl;
+        }
+    }
 
     public static decimal GetPaidAmount(Booking booking) =>
         booking.Payments
@@ -1241,6 +1306,8 @@ internal static class PaymentSupport
             payment.CheckoutUrl,
             payment.QrCode,
             payment.PaidAt,
+            ResolvePaymentExpiresAt(payment),
+            booking.HoldExpiresAt,
             payment.RefundAmount,
             payment.RefundReferenceId,
             payment.RefundPayoutId,

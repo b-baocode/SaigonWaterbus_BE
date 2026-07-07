@@ -24,6 +24,7 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.PaymentStatus).HasColumnName("status").HasMaxLength(30).IsRequired();
         builder.Property(x => x.CheckoutUrl).HasColumnName("checkout_url").HasMaxLength(1000);
         builder.Property(x => x.QrCode).HasColumnName("qr_code").HasMaxLength(4000);
+        builder.Property(x => x.ExpiresAt).HasColumnName("expires_at");
         builder.Property(x => x.PaidAt).HasColumnName("paid_at");
         builder.Property(x => x.RefundAmount).HasColumnName("refund_amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.RefundReferenceId).HasColumnName("refund_reference_id").HasMaxLength(100);
@@ -37,6 +38,7 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Ignore(x => x.LastModified);
         builder.Ignore(x => x.LastModifiedBy);
 
+        builder.HasIndex(x => new { x.PaymentStatus, x.ExpiresAt });
         builder.HasOne(x => x.Booking).WithMany(x => x.Payments).HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
     }
 }

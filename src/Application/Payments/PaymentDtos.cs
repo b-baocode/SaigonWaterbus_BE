@@ -37,6 +37,10 @@ public sealed record PaymentDto(
     string? QrCode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? PaidAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? ExpiresAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? BookingHoldExpiresAt,
     decimal RefundAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundReferenceId,

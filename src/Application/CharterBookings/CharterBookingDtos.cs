@@ -114,7 +114,9 @@ public sealed record AdminCharterBookingListItemDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? ContactEmail,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? BoatName);
+    string? BoatName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? HoldExpiresAt);
 
 public sealed record CharterBookingListItemDto(
     Guid Id,
@@ -134,7 +136,9 @@ public sealed record CharterBookingListItemDto(
     decimal? SubtotalAmount,
     [property: JsonPropertyName("finalAmount")]
     decimal? FinalAmount,
-    IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats);
+    IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? HoldExpiresAt);
 
 public sealed record CharterBookingListRequestedBoatDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -152,6 +156,8 @@ public sealed record CharterBookingDetailDto(
     DateTimeOffset CreatedAt,
     string BookingStatus,
     string PaymentStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? HoldExpiresAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? BoatName,
     int PassengerCount,
@@ -213,6 +219,8 @@ public sealed record CharterBookingPaymentDto(
     string? QrCode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? PaidAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? ExpiresAt,
     decimal RefundAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? RefundReferenceId,
@@ -266,7 +274,9 @@ public sealed record CreateCharterBookingPaymentResult(
     decimal RemainingAmount,
     string? PaymentLinkId,
     string? CheckoutUrl,
-    string? QrCode);
+    string? QrCode,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? BookingHoldExpiresAt);
 
 public sealed record SyncCharterBookingPaymentResult(
     Guid BookingId,
@@ -280,7 +290,9 @@ public sealed record SyncCharterBookingPaymentResult(
     decimal DepositAmount,
     decimal RemainingAmount,
     string? CheckoutUrl,
-    DateTimeOffset? PaidAt);
+    DateTimeOffset? PaidAt,
+    DateTimeOffset? ExpiresAt,
+    DateTimeOffset? BookingHoldExpiresAt);
 
 public sealed record CharterBookingPaymentWebhookResult(
     bool Processed,
@@ -290,7 +302,7 @@ public sealed record CharterBookingPaymentWebhookResult(
 
 public sealed record CharterBookingPassengerRequest(
     string FullName,
-    string DateOfBirth);
+    string? DateOfBirth);
 
 public sealed record CharterBookingPassengerDto(
     Guid PassengerId,
@@ -494,4 +506,6 @@ public sealed record QuoteCharterBookingResult(
     string BookingStatus,
     string PaymentStatus,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? PromotionCode);
+    string? PromotionCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? HoldExpiresAt);
