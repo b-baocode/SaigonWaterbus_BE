@@ -363,8 +363,11 @@ public class CharterBookingPassengerTicketTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var user = Customer();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
         var booking = PaidCharterBooking(user.Id, adultCount: 2);
-        context.AddRange(user.Role, user, booking);
+        booking.BoatId = boat.Id;
+        booking.Boat = boat;
+        context.AddRange(user.Role, user, boat, booking);
         await context.SaveChangesAsync();
 
         var updateHandler = CreateUpdateHandler(context, user.Id);
@@ -379,6 +382,21 @@ public class CharterBookingPassengerTicketTests
 
         var qrToken = booking.CharterBookingQrToken.ShouldNotBeNull();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var staffUser = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        context.BoatStaffAssignments.Add(new BoatStaffAssignment
+        {
+            BoatId = boat.Id,
+            Boat = boat,
+            StaffUserId = staffUser.Id,
+            StaffUser = staffUser,
+            WorkingDate = booking.DepartureDate!.Value,
+            ShiftCode = "Day",
+            IsActive = true,
+            AssignedByUserId = staffUser.Id,
+            AssignedByUser = staffUser,
+            AssignedAt = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
         var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
         var checkInHandler = new UpdateCharterBookingAttendanceCommandHandler(
             context,

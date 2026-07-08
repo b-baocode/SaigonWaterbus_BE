@@ -385,7 +385,6 @@ public class CreateCharterBookingCommandTests
         detail.PassengerCount.ShouldBe(1);
         detail.RequestedBoatCount.ShouldBe(1);
         detail.RequestedBoats.Single().NumberOfDecks.ShouldBe(1);
-        detail.BoatRequirements.ShouldBe("Old boat note");
         detail.SpecialRequests.ShouldBe("New special note");
         detail.ItineraryStops.Single().StationId.ShouldBe(stopStation.Id);
         detail.ItineraryStops.Single().StayDurationMinutes.ShouldBe(15);

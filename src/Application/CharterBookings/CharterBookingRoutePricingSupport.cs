@@ -239,7 +239,7 @@ internal static class CharterBookingRoutePricingSupport
         }
 
         throw new ValidationException([new ValidationFailure("SubtotalAmount",
-            "Không thể tự tính giá thuê theo giờ vì booking chưa có đủ dữ liệu quãng đường/thời gian. Vui lòng cập nhật GeoJSON/tọa độ cho các bến hoặc nhập subtotalAmount thủ công.")]);
+            "Không thể tự tính giá thuê theo giờ vì booking chưa có đủ dữ liệu quãng đường/thời gian. Vui lòng cập nhật GeoJSON/tọa độ cho các bến.")]);
     }
 
     public static CharterBookingRouteEstimateDto ToDto(

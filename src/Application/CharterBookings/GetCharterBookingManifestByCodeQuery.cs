@@ -57,6 +57,7 @@ public sealed class GetCharterBookingManifestByCodeQueryHandler
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
             .AsNoTracking()
             .Include(x => x.Boat)
+            .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
@@ -73,7 +74,13 @@ public sealed class GetCharterBookingManifestByCodeQueryHandler
                 cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        CharterBookingManifestSupport.EnsureCanView(currentUser, booking);
+        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+            _context,
+            currentUser,
+            booking,
+            includeCustomerOwner: true,
+            notFoundWhenDenied: true,
+            cancellationToken);
         return CharterBookingManifestSupport.ToDto(booking);
     }
 }
@@ -108,7 +115,13 @@ public sealed class GetCharterBookingManifestByQrTokenQueryHandler
                 cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        CharterBookingManifestSupport.EnsureCanView(currentUser, booking);
+        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+            _context,
+            currentUser,
+            booking,
+            includeCustomerOwner: true,
+            notFoundWhenDenied: true,
+            cancellationToken);
         return CharterBookingManifestSupport.ToDto(booking);
     }
 }
@@ -121,6 +134,7 @@ internal static class CharterBookingManifestSupport
         CharterBookingQuerySupport.BuildBaseQuery(context)
             .AsNoTracking()
             .Include(x => x.Boat)
+            .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
@@ -132,17 +146,6 @@ internal static class CharterBookingManifestSupport
                 .ThenInclude(x => x.CheckedInByUser)
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.CheckedOutByUser);
-
-    public static void EnsureCanView(User currentUser, Booking booking)
-    {
-        if (booking.UserId != currentUser.Id
-            && !AuthSupport.IsAdmin(currentUser)
-            && !AuthSupport.IsManager(currentUser)
-            && !AuthSupport.IsStaff(currentUser))
-        {
-            throw new NotFoundException("Charter booking not found.");
-        }
-    }
 
     public static CharterBookingManifestDto ToDto(Booking booking)
     {

@@ -27,55 +27,39 @@ public sealed class GetCharterBookingListQueryHandler
             ?? throw new ValidationException([]);
 
         var bookings = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(b => b.Boat)
+            .Include(b => b.FromStation)
+            .Include(b => b.ToStation)
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.Created)
-            .Select(b => new
-            {
-                b.Id,
-                b.BookingCode,
-                b.BookingStatus,
-                b.PaymentStatus,
-                b.DepartureDate,
-                b.StartTime,
-                b.RentalUnit,
-                b.DurationValue,
-                b.AdultCount,
-                b.ChildCount,
-                b.PassengerCount,
-                FromStationName = b.FromStation != null ? b.FromStation.StationName : null,
-                ToStationName = b.ToStation != null ? b.ToStation.StationName : null,
-                BoatName = b.Boat != null ? b.Boat.Name : null,
-                b.SubtotalAmount,
-                b.TotalAmount,
-                b.HoldExpiresAt,
-                b.RequestedBoatDecks,
-                b.RequestedBoatTypes,
-                b.PreferredSeatSetupType
-            })
             .ToListAsync(cancellationToken);
 
-        return bookings
-            .Select(b => new CharterBookingListItemDto(
-                b.Id,
-                b.BookingCode,
-                b.BookingStatus.ToString(),
-                b.PaymentStatus,
-                b.DepartureDate.GetValueOrDefault().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                b.StartTime?.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
-                b.RentalUnit.GetValueOrDefault().ToString(),
-                b.DurationValue.GetValueOrDefault(),
-                b.AdultCount.GetValueOrDefault(),
-                b.ChildCount.GetValueOrDefault(),
-                b.PassengerCount.GetValueOrDefault(),
-                b.FromStationName,
-                b.ToStationName,
-                b.BoatName,
-                b.BookingStatus == BookingStatus.PendingQuote ? null : b.SubtotalAmount,
-                b.BookingStatus == BookingStatus.PendingQuote ? null : b.TotalAmount,
-                ToRequestedBoatDtos(b.RequestedBoatDecks, b.RequestedBoatTypes, b.PreferredSeatSetupType),
-                b.HoldExpiresAt))
-            .ToList();
+        return bookings.Select(CharterBookingListItemMapper.ToDto).ToList();
     }
+}
+
+internal static class CharterBookingListItemMapper
+{
+    public static CharterBookingListItemDto ToDto(Booking booking) =>
+        new(
+            booking.Id,
+            booking.BookingCode,
+            booking.BookingStatus.ToString(),
+            booking.PaymentStatus,
+            booking.DepartureDate.GetValueOrDefault().ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+            booking.StartTime?.ToString("HH:mm:ss", CultureInfo.InvariantCulture),
+            booking.RentalUnit.GetValueOrDefault().ToString(),
+            booking.DurationValue.GetValueOrDefault(),
+            booking.AdultCount.GetValueOrDefault(),
+            booking.ChildCount.GetValueOrDefault(),
+            booking.PassengerCount.GetValueOrDefault(),
+            booking.FromStation?.StationName,
+            booking.ToStation?.StationName,
+            booking.Boat?.Name,
+            booking.BookingStatus == BookingStatus.PendingQuote ? null : booking.SubtotalAmount,
+            booking.BookingStatus == BookingStatus.PendingQuote ? null : booking.TotalAmount,
+            ToRequestedBoatDtos(booking.RequestedBoatDecks, booking.RequestedBoatTypes, booking.PreferredSeatSetupType),
+            booking.HoldExpiresAt);
 
     private static IReadOnlyList<CharterBookingListRequestedBoatDto> ToRequestedBoatDtos(
         string? requestedBoatDecks,

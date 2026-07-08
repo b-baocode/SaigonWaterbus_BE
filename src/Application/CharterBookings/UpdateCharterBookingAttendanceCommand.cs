@@ -58,19 +58,20 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
         CancellationToken cancellationToken)
     {
         var currentUser = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
-        if (!AuthSupport.IsAdmin(currentUser)
-            && !AuthSupport.IsManager(currentUser)
-            && !AuthSupport.IsStaff(currentUser))
-        {
-            throw new ForbiddenAccessException();
-        }
-
         var qrToken = request.QrToken.Trim();
         var booking = await BuildBookingQuery()
             .SingleOrDefaultAsync(
                 x => x.CharterBookingQrToken == qrToken,
                 cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
+
+        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+            _context,
+            currentUser,
+            booking,
+            includeCustomerOwner: false,
+            notFoundWhenDenied: false,
+            cancellationToken);
 
         EnsureBookingCanUpdateAttendance(booking, request.Action);
 
@@ -132,6 +133,7 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
     private IQueryable<Booking> BuildBookingQuery() =>
         CharterBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Boat)
+            .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)

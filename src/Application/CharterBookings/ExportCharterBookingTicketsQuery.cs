@@ -60,6 +60,7 @@ public sealed class ExportCharterBookingTicketsQueryHandler
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
             .AsNoTracking()
             .Include(x => x.Boat)
+            .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
@@ -69,13 +70,13 @@ public sealed class ExportCharterBookingTicketsQueryHandler
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        if (booking.UserId != currentUser.Id
-            && !AuthSupport.IsAdmin(currentUser)
-            && !AuthSupport.IsManager(currentUser)
-            && !AuthSupport.IsStaff(currentUser))
-        {
-            throw new NotFoundException("Charter booking not found.");
-        }
+        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+            _context,
+            currentUser,
+            booking,
+            includeCustomerOwner: true,
+            notFoundWhenDenied: true,
+            cancellationToken);
 
         return CharterBookingTicketExportSupport.ToDto(booking, request.TicketIds);
     }

@@ -31,6 +31,7 @@ public sealed class GetAdminCharterBookingListQueryHandler
         await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
 
         return await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.AssignedManager)
             .OrderByDescending(x => x.Created)
             .Select(x => new AdminCharterBookingListItemDto(
                 x.Id,
@@ -47,7 +48,13 @@ public sealed class GetAdminCharterBookingListQueryHandler
                 x.ContactPhone,
                 x.ContactEmail,
                 x.Boat != null ? x.Boat.Name : null,
-                x.HoldExpiresAt))
+                x.HoldExpiresAt,
+                x.AssignedManager == null
+                    ? null
+                    : new CharterBookingUserAssignmentDto(
+                        x.AssignedManager.Id,
+                        x.AssignedManager.FullName,
+                        x.AssignedManager.UserCode)))
             .ToListAsync(cancellationToken);
     }
 }
@@ -287,7 +294,6 @@ public sealed record QuoteCharterBookingCommand(
     Guid BookingId,
     Guid? BoatId = null,
     IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
-    decimal? SubtotalAmount = null,
     BoatRentalUnit? RentalUnit = null,
     int? DurationValue = null,
     string? PromotionCode = null) : IRequest<QuoteCharterBookingResult>;
@@ -321,10 +327,6 @@ public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<Quot
                 .WithMessage("boatOrder phải lớn hơn 0.");
             boat.RuleFor(x => x.BoatId).NotEmpty();
         });
-        RuleFor(x => x.SubtotalAmount)
-            .GreaterThan(0)
-            .When(x => x.SubtotalAmount.HasValue)
-            .WithMessage("Giá chốt phải lớn hơn 0.");
         RuleFor(x => x.RentalUnit).IsInEnum().When(x => x.RentalUnit.HasValue);
         RuleFor(x => x.DurationValue)
             .GreaterThan(0)
@@ -345,7 +347,6 @@ public sealed record PreviewCharterBookingQuoteCommand(
     Guid BookingId,
     Guid? BoatId = null,
     IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
-    decimal? SubtotalAmount = null,
     BoatRentalUnit? RentalUnit = null,
     int? DurationValue = null,
     string? PromotionCode = null) : IRequest<PreviewCharterBookingQuoteResult>;
@@ -380,10 +381,6 @@ public sealed class PreviewCharterBookingQuoteCommandValidator
                 .WithMessage("boatOrder phải lớn hơn 0.");
             boat.RuleFor(x => x.BoatId).NotEmpty();
         });
-        RuleFor(x => x.SubtotalAmount)
-            .GreaterThan(0)
-            .When(x => x.SubtotalAmount.HasValue)
-            .WithMessage("Giá chốt phải lớn hơn 0.");
         RuleFor(x => x.RentalUnit).IsInEnum().When(x => x.RentalUnit.HasValue);
         RuleFor(x => x.DurationValue)
             .GreaterThan(0)
@@ -455,12 +452,9 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             requestedDurationValue,
             relatedRoutes);
         var primarySelection = selectedBoatPricings[0];
-        if (!request.SubtotalAmount.HasValue)
-        {
-            CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
-        }
+        CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
-        var subtotal = request.SubtotalAmount ?? selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
+        var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
         var now = _timeProvider.GetUtcNow();
         var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
             _context,
@@ -498,7 +492,7 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             subtotal,
             discount,
             total,
-            request.SubtotalAmount.HasValue ? "Manual" : "Automatic",
+            "Automatic",
             CharterBookingRoutePricingSupport.ToDto(
                 primarySelection.Pricing.RouteEstimate,
                 rentalUnit,
@@ -601,12 +595,9 @@ public sealed class QuoteCharterBookingCommandHandler
             requestedDurationValue,
             relatedRoutes);
         var primarySelection = selectedBoatPricings[0];
-        if (!request.SubtotalAmount.HasValue)
-        {
-            CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
-        }
+        CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
-        var subtotal = request.SubtotalAmount ?? selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
+        var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
         var chargeableDurationValue = primarySelection.Pricing.ChargeableDurationValue;
         var holdDurationValue = requestedDurationValue;
         var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
@@ -766,7 +757,7 @@ public sealed class QuoteCharterBookingCommandHandler
             booking.TotalAmount,
             primarySelection.Pricing.UnitPrice,
             chargeableDurationValue,
-            request.SubtotalAmount.HasValue ? "Manual" : "Automatic",
+            "Automatic",
             CharterBookingRoutePricingSupport.ToDto(
                 primarySelection.Pricing.RouteEstimate,
                 rentalUnit,

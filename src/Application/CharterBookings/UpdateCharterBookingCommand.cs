@@ -19,7 +19,6 @@ public sealed record UpdateCharterBookingCommand(
     Guid? ToStationId = null,
     IReadOnlyList<CreateCharterBookingItineraryStopRequest>? ItineraryStops = null,
     IReadOnlyList<CreateCharterBookingBoatRequest>? RequestedBoats = null,
-    string? BoatRequirements = null,
     string? SpecialRequests = null,
     string? ContactName = null,
     string? ContactPhone = null,
@@ -65,7 +64,6 @@ public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<Upd
                 .GreaterThan(0)
                 .WithMessage("Số tầng tàu yêu cầu phải lớn hơn 0.");
         });
-        RuleFor(x => x.BoatRequirements).MaximumLength(1000).When(x => x.BoatRequirements is not null);
         RuleFor(x => x.SpecialRequests).MaximumLength(1000).When(x => x.SpecialRequests is not null);
         RuleFor(x => x.ContactName)
             .MaximumLength(150)
@@ -190,7 +188,6 @@ public sealed class UpdateCharterBookingCommandHandler
             booking.RequestedBoatTypes = null;
             booking.PreferredSeatSetupType = null;
         }
-        booking.BoatRequirements = ResolveOptionalText(request.BoatRequirements, booking.BoatRequirements);
         booking.SpecialRequests = ResolveOptionalText(request.SpecialRequests, booking.SpecialRequests);
         booking.ContactName = ResolveRequiredContactValue(
             request.ContactName,

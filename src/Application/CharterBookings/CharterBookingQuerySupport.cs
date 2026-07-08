@@ -15,6 +15,7 @@ internal static class CharterBookingQuerySupport
             .Include(b => b.Boat)
             .Include(b => b.CharterBoats)
                 .ThenInclude(cb => cb.Boat)
+            .Include(b => b.AssignedManager)
             .Include(b => b.FromStation)
             .Include(b => b.ToStation)
             .Include(b => b.Promotion)
@@ -81,7 +82,6 @@ internal static class CharterBookingQuerySupport
                     x.StayDurationMinutes,
                     x.Note))
                 .ToList(),
-            booking.BoatRequirements,
             booking.SpecialRequests,
             booking.SubtotalAmount,
             booking.DiscountAmount,
@@ -122,6 +122,8 @@ internal static class CharterBookingQuerySupport
                     x.RefundedAt))
                 .ToList(),
             ticketDtos.Count,
-            ticketDtos);
+            ticketDtos,
+            CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
+            null);
     }
 }
