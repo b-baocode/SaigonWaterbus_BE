@@ -92,6 +92,8 @@ public sealed class Routes : IEndpointGroup
                 "Request phai chua it nhat 2 waypoint type=station.",
                 "Waypoint dau va cuoi bat buoc la station.",
                 "Neu co waypoint type=viaWaterway thi he thong dung mang waterway da import truoc do de tao RouteGeometry LineString.",
+                "viaWaterway = EP di qua mot con duong thuy (vd duong tat); Dijkstra buoc phai qua diem dai dien cua no.",
+                "avoidWaterwayOsmIds (optional): mang OSM id/ten waterway EP NE - loai khoi mang khi tim duong, de tuyen di duong dai hon (vd vong theo song thay vi cat qua kenh). Khong duoc trung voi viaWaterway.",
                 "Neu ban ve duong san, co the tao route chi bang station waypoints roi nhap duong that o /segments."));
 
         group.MapPut(UpdateRoute, "{id:guid}")

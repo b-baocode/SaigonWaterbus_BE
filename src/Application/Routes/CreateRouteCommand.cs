@@ -14,7 +14,8 @@ public sealed record CreateRouteCommand(
     int? EstimatedDurationMin,
     IReadOnlyList<CreateRouteWaypointDto> Waypoints,
     bool AutoRouteGeometry = false,
-    string? PreferWaterwayType = null) : IRequest<RouteDto>;
+    string? PreferWaterwayType = null,
+    IReadOnlyList<string>? AvoidWaterwayOsmIds = null) : IRequest<RouteDto>;
 
 public sealed record CreateRouteWaypointDto(
     string Type,
@@ -33,6 +34,11 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
             .Must(t => t == null || t == "river" || t == "canal" || t == "custom")
             .WithMessage("PreferWaterwayType phai la 'river', 'canal', hoac 'custom'.")
             .When(x => x.PreferWaterwayType != null);
+
+        RuleForEach(x => x.AvoidWaterwayOsmIds!)
+            .NotEmpty().WithMessage("avoidWaterwayOsmIds khong duoc chua phan tu rong.")
+            .MaximumLength(50)
+            .When(x => x.AvoidWaterwayOsmIds is not null);
 
         RuleFor(x => x.Waypoints)
             .NotNull()
@@ -108,8 +114,12 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
                 .ToListAsync(cancellationToken)
             : [];
 
+        var avoidWaterwayIds = BuildAvoidWaterwaySet(request.AvoidWaterwayOsmIds);
+
         if (buildGeometry)
         {
+            EnsureViaNotAvoided(request.Waypoints, avoidWaterwayIds);
+
             var filtered = string.IsNullOrWhiteSpace(request.PreferWaterwayType)
                 ? waterwaySegments
                 : waterwaySegments
@@ -122,6 +132,20 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
                     ? "No waterway network has been imported yet. Import GeoJSON map data first or create the route with station waypoints only."
                     : $"No waterway segments of type '{request.PreferWaterwayType}' found. Import GeoJSON map data with the correct waterway type first.";
                 throw new ValidationException([new ValidationFailure(nameof(request.Waypoints), detail)]);
+            }
+
+            if (avoidWaterwayIds.Count > 0)
+            {
+                filtered = filtered
+                    .Where(s => !IsWaterwayAvoided(s, avoidWaterwayIds))
+                    .ToList();
+
+                if (filtered.Count == 0)
+                {
+                    throw new ValidationException([new ValidationFailure(
+                        nameof(CreateRouteCommand.AvoidWaterwayOsmIds),
+                        "avoidWaterwayOsmIds da loai bo toan bo mang waterway; khong con duong de tao route geometry.")]);
+                }
             }
 
             waterwaySegments = filtered;
@@ -239,6 +263,40 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             route.BaseDistanceKm,
             route.EstimatedDurationMin,
             route.Status);
+    }
+
+    private static HashSet<string> BuildAvoidWaterwaySet(IReadOnlyList<string>? avoidWaterwayOsmIds) =>
+        avoidWaterwayOsmIds is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : avoidWaterwayOsmIds
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private static bool IsWaterwayAvoided(WaterwaySegment segment, HashSet<string> avoidWaterwayIds) =>
+        (segment.OsmId is not null && avoidWaterwayIds.Contains(segment.OsmId))
+        || (segment.WaterwayName is not null && avoidWaterwayIds.Contains(segment.WaterwayName));
+
+    private static void EnsureViaNotAvoided(
+        IReadOnlyList<CreateRouteWaypointDto> waypoints,
+        HashSet<string> avoidWaterwayIds)
+    {
+        if (avoidWaterwayIds.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var waypoint in waypoints)
+        {
+            if (string.Equals(waypoint.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(waypoint.WaterwayOsmId)
+                && avoidWaterwayIds.Contains(waypoint.WaterwayOsmId.Trim()))
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(CreateRouteCommand.AvoidWaterwayOsmIds),
+                    $"Waterway '{waypoint.WaterwayOsmId.Trim()}' vua la viaWaterway (ep di qua) vua nam trong avoidWaterwayOsmIds (ep ne) - mau thuan.")]);
+            }
+        }
     }
 
     private static Point GetStationPoint(Station station, string propertyName)
