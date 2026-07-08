@@ -131,19 +131,21 @@ public sealed class Users : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Lấy danh sách bến được gắn cho Manager/Staff")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc chính user đó",
+                "Admin, Manager hoặc chính user đó",
                 null,
                 "Admin xem được station assignments của Manager/Staff.",
+                "Manager xem được station assignments của Staff.",
                 "Manager/Staff xem được danh sách bến của chính mình."));
 
         groupBuilder.MapPut(AssignUserStations, "{userId:guid}/stations")
             .RequireAuthorization()
-            .WithSummary("Admin gắn bến cho Manager/Staff")
+            .WithSummary("Gắn bến cho Manager/Staff")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
+                "Admin hoặc Manager",
                 AssignStationsExample,
                 "Dùng sau khi tạo Manager hoặc Staff.",
-                "Chỉ gắn được cho tài khoản role Manager hoặc Staff.",
+                "Admin gắn được cho tài khoản role Manager hoặc Staff.",
+                "Manager chỉ gắn được cho Staff, và chỉ trong các bến Manager đang phụ trách.",
                 "stationIds là danh sách bến user phụ trách.",
                 "primaryStationId optional; nếu bỏ trống backend lấy station đầu tiên làm primary.",
                 "PUT sẽ thay thế danh sách station active hiện tại của user."));

@@ -241,10 +241,31 @@ public class UserManagementSupportTests
     }
 
     [Test]
-    public void ManagerCannotAssignStations()
+    public void ManagerCanViewAndAssignStationsToStaff()
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var target = UserWithRole(2, Roles.StaffSystemName);
+
+        Should.NotThrow(() => UserManagementSupport.EnsureCanViewStationAssignments(actor, target));
+        Should.NotThrow(() => UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
+    }
+
+    [Test]
+    public void ManagerCannotAssignStationsToManager()
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var target = UserWithRole(2, Roles.ManagerSystemName);
+
+        Should.Throw<ForbiddenAccessException>(() =>
+            UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
+    }
+
+    [TestCase(Roles.CustomerSystemName)]
+    [TestCase(Roles.AdminName)]
+    public void ManagerCannotAssignStationsToUnsupportedRoles(string targetSystemName)
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var target = UserWithRole(2, targetSystemName);
 
         Should.Throw<ForbiddenAccessException>(() =>
             UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));

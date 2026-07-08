@@ -145,12 +145,14 @@ public sealed class AssignUserStationsRequestUseCase
                 nameof(request.StationIds), "Có bến không tồn tại.")]);
         }
 
-        var primaryStationId = request.PrimaryStationId ?? stationIds[0];
-        var now = _timeProvider.GetUtcNow();
-
         var existing = await _context.Set<UserStationAssignment>()
             .Where(a => a.UserId == request.UserId)
             .ToListAsync(cancellationToken);
+
+        await EnsureStationScopeAsync(actor, stationIds, existing, cancellationToken);
+
+        var primaryStationId = request.PrimaryStationId ?? stationIds[0];
+        var now = _timeProvider.GetUtcNow();
 
         var toRemove = existing.Where(a => !stationIds.Contains(a.StationId)).ToList();
         _context.Set<UserStationAssignment>().RemoveRange(toRemove);
@@ -192,5 +194,43 @@ public sealed class AssignUserStationsRequestUseCase
                 a.IsActive,
                 a.AssignedAt))
             .ToListAsync(cancellationToken);
+    }
+
+    private async Task EnsureStationScopeAsync(
+        User actor,
+        IReadOnlyCollection<Guid> requestedStationIds,
+        IReadOnlyCollection<UserStationAssignment> existingAssignments,
+        CancellationToken cancellationToken)
+    {
+        if (!AuthSupport.IsManager(actor))
+        {
+            return;
+        }
+
+        var managerStationIds = await _context.Set<UserStationAssignment>()
+            .Where(a => a.UserId == actor.Id && a.IsActive)
+            .Select(a => a.StationId)
+            .ToListAsync(cancellationToken);
+        var managerStationSet = managerStationIds.ToHashSet();
+        if (managerStationSet.Count == 0)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(AssignUserStationsRequest.StationIds),
+                "Manager chưa được gắn bến nên không thể gắn bến cho Staff.")]);
+        }
+
+        if (requestedStationIds.Any(stationId => !managerStationSet.Contains(stationId)))
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(AssignUserStationsRequest.StationIds),
+                "Manager chỉ được gắn Staff vào các bến mà Manager đang phụ trách.")]);
+        }
+
+        if (existingAssignments.Any(a => a.IsActive && !managerStationSet.Contains(a.StationId)))
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(AssignUserStationsRequest.StationIds),
+                "Staff đang có bến ngoài phạm vi của Manager. Vui lòng Admin cập nhật.")]);
+        }
     }
 }
