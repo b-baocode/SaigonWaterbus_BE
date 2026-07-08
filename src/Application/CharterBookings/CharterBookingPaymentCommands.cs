@@ -39,19 +39,22 @@ public sealed class CreateCharterBookingPaymentCommandHandler
     private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public CreateCharterBookingPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CreateCharterBookingPaymentResult> Handle(
@@ -127,6 +130,14 @@ public sealed class CreateCharterBookingPaymentCommandHandler
         CharterBookingPaymentSupport.ApplyPendingPaymentPlan(booking, paymentPlan, paidAmount);
         PaymentSupport.EnsureCharterPaymentCompletionDeadline(booking, now);
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "PaymentCreated",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                now),
+            cancellationToken);
 
         CharterBookingDepositPaymentResult paymentResult;
         try
@@ -153,6 +164,14 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             payment.PaymentStatus = CharterBookingPaymentSupport.FailedStatus;
             CharterBookingPaymentSupport.RestorePaymentSummaryFromPaidPayments(booking);
             await _context.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.PublishChangedAsync(
+                new CharterBookingRealtimeEvent(
+                    booking.Id,
+                    "PaymentFailed",
+                    booking.BookingStatus.ToString(),
+                    booking.PaymentStatus,
+                    _timeProvider.GetUtcNow()),
+                cancellationToken);
             throw new ValidationException([new ValidationFailure("payment", ex.Message)]);
         }
 
@@ -166,6 +185,14 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             paymentResult.CheckoutUrl,
             now);
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "PaymentUpdated",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                _timeProvider.GetUtcNow()),
+            cancellationToken);
         await PaymentSupport.SendPaymentNotificationIfPaidAsync(
             _context,
             _timeProvider,
@@ -204,6 +231,14 @@ public sealed class CreateCharterBookingPaymentCommandHandler
                 paymentStatus.CheckoutUrl,
                 _timeProvider.GetUtcNow());
             await _context.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.PublishChangedAsync(
+                new CharterBookingRealtimeEvent(
+                    booking.Id,
+                    "PaymentRecovered",
+                    booking.BookingStatus.ToString(),
+                    booking.PaymentStatus,
+                    _timeProvider.GetUtcNow()),
+                cancellationToken);
             await PaymentSupport.SendPaymentNotificationIfPaidAsync(
                 _context,
                 _timeProvider,
@@ -241,19 +276,22 @@ public sealed class SyncCharterBookingPaymentCommandHandler
     private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public SyncCharterBookingPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<SyncCharterBookingPaymentResult> Handle(
@@ -307,6 +345,14 @@ public sealed class SyncCharterBookingPaymentCommandHandler
             paymentStatus.CheckoutUrl,
             _timeProvider.GetUtcNow());
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "PaymentSynced",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                _timeProvider.GetUtcNow()),
+            cancellationToken);
         await PaymentSupport.SendPaymentNotificationIfPaidAsync(
             _context,
             _timeProvider,
@@ -331,17 +377,20 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
     private readonly ICharterBookingPaymentGateway _paymentGateway;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public HandleCharterBookingPaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingPaymentWebhookResult> Handle(
@@ -419,6 +468,14 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
                 payment.CheckoutUrl,
                 _timeProvider.GetUtcNow());
             await _context.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.PublishChangedAsync(
+                new CharterBookingRealtimeEvent(
+                    booking.Id,
+                    "PaymentPaid",
+                    booking.BookingStatus.ToString(),
+                    booking.PaymentStatus,
+                    _timeProvider.GetUtcNow()),
+                cancellationToken);
             await PaymentSupport.SendPaymentNotificationIfPaidAsync(
                 _context,
                 _timeProvider,
@@ -439,6 +496,14 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
         {
             payment.PaymentStatus = CharterBookingPaymentSupport.FailedStatus;
             await _context.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.PublishChangedAsync(
+                new CharterBookingRealtimeEvent(
+                    booking.Id,
+                    "PaymentFailed",
+                    booking.BookingStatus.ToString(),
+                    booking.PaymentStatus,
+                    _timeProvider.GetUtcNow()),
+                cancellationToken);
         }
 
         return new CharterBookingPaymentWebhookResult(

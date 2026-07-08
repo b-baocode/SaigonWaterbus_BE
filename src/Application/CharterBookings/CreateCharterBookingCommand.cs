@@ -66,6 +66,9 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .EmailAddress()
             .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail))
             .WithMessage("Email nhận thông tin charter booking không hợp lệ.");
+        RuleFor(x => x.FromStationId)
+            .NotNull()
+            .WithMessage("Bến bắt đầu là bắt buộc.");
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
             .When(x => x.FromStationId.HasValue && x.ToStationId.HasValue)
             .WithMessage("Bến đi và bến đến phải khác nhau.");
@@ -98,17 +101,20 @@ public sealed class CreateCharterBookingCommandHandler
     private readonly IUserContext _userContext;
     private readonly IBookingCodeGenerator _bookingCodeGenerator;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public CreateCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IBookingCodeGenerator bookingCodeGenerator,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _bookingCodeGenerator = bookingCodeGenerator;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CreateCharterBookingResult> Handle(
@@ -130,7 +136,11 @@ public sealed class CreateCharterBookingCommandHandler
             request.RequestedBoats);
         var requestedBoatCount = CharterBookingBoatSelectionSupport.ResolveRequestedBoatCount(requestedBoatDecks);
 
-        await EnsureStationExistsAsync(request.FromStationId, nameof(request.FromStationId), cancellationToken);
+        await CharterBookingStationValidationSupport.EnsureWaterbusDepartureStationAsync(
+            _context,
+            request.FromStationId,
+            nameof(request.FromStationId),
+            cancellationToken);
         await EnsureStationExistsAsync(request.ToStationId, nameof(request.ToStationId), cancellationToken);
         await EnsureItineraryStationsExistAsync(request.ItineraryStops, cancellationToken);
 
@@ -207,6 +217,14 @@ public sealed class CreateCharterBookingCommandHandler
             throw new ValidationException([new ValidationFailure(nameof(request.DepartureDate),
                 "Tạo yêu cầu thuê tàu thất bại. Vui lòng thử lại.")]);
         }
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "Created",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                _timeProvider.GetUtcNow()),
+            cancellationToken);
 
         return new CreateCharterBookingResult(
             booking.Id,
@@ -299,11 +317,22 @@ public sealed class CharterBookingPassengerRequestValidator : AbstractValidator<
             .WithMessage("fullName is required.")
             .MaximumLength(150);
         RuleFor(x => x.DateOfBirth)
-            .Must(x => string.IsNullOrWhiteSpace(x) || CharterBookingPassengerSupport.TryParseDateOfBirth(x, out _))
-            .WithMessage("Ngày sinh không hợp lệ. Dùng định dạng yyyy-MM-dd hoặc dd/MM/yyyy.");
+            .Must(x => string.IsNullOrWhiteSpace(x)
+                || CharterBookingPassengerSupport.TryParseBirthYear(x, out _)
+                || CharterBookingPassengerSupport.TryParseDateOfBirth(x, out _))
+            .WithMessage("Năm sinh/ngày sinh không hợp lệ. Dùng năm yyyy hoặc ngày yyyy-MM-dd/dd/MM/yyyy.");
         RuleFor(x => x.DateOfBirth)
-            .Must(x => !CharterBookingPassengerSupport.TryParseDateOfBirth(x, out var dateOfBirth)
+            .Must(x => !CharterBookingPassengerSupport.TryParseBirthYear(x, out var birthYear)
+                || birthYear <= DateTime.UtcNow.Year)
+            .WithMessage("Năm sinh không được ở tương lai.");
+        RuleFor(x => x.DateOfBirth)
+            .Must(x => CharterBookingPassengerSupport.TryParseBirthYear(x, out _)
+                || !CharterBookingPassengerSupport.TryParseDateOfBirth(x, out var dateOfBirth)
                 || dateOfBirth <= DateOnly.FromDateTime(DateTime.UtcNow))
             .WithMessage("Ngày sinh không được ở tương lai.");
+        RuleFor(x => x.BirthYear)
+            .Must(x => !x.HasValue
+                || CharterBookingPassengerSupport.IsValidBirthYear(x.Value, DateOnly.FromDateTime(DateTime.UtcNow)))
+            .WithMessage("Năm sinh không hợp lệ hoặc ở tương lai.");
     }
 }

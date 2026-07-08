@@ -42,15 +42,18 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public UpdateCharterBookingAttendanceCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingAttendanceResult> Handle(
@@ -119,6 +122,14 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                request.Action.ToString(),
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                now),
+            cancellationToken);
 
         return new CharterBookingAttendanceResult(
             request.Action,

@@ -115,15 +115,18 @@ public sealed class UpdateCharterBookingStatusCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly IBoatHoldService _boatHoldService;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public UpdateCharterBookingStatusCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        IBoatHoldService? boatHoldService = null)
+        IBoatHoldService? boatHoldService = null,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingDetailDto> Handle(
@@ -151,6 +154,13 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "StatusChanged",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus),
+            cancellationToken);
         if (request.BookingStatus is BookingStatus.Cancelled or BookingStatus.Expired)
         {
             foreach (var previousBoatId in previousBoatIds)
@@ -510,17 +520,20 @@ public sealed class QuoteCharterBookingCommandHandler
     private readonly IUserContext _userContext;
     private readonly IBoatHoldService _boatHoldService;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public QuoteCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        IBoatHoldService? boatHoldService = null)
+        IBoatHoldService? boatHoldService = null,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<QuoteCharterBookingResult> Handle(
@@ -713,6 +726,14 @@ public sealed class QuoteCharterBookingCommandHandler
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.PublishChangedAsync(
+                new CharterBookingRealtimeEvent(
+                    booking.Id,
+                    "Quoted",
+                    booking.BookingStatus.ToString(),
+                    booking.PaymentStatus,
+                    now),
+                cancellationToken);
         }
         catch (DbUpdateException)
         {

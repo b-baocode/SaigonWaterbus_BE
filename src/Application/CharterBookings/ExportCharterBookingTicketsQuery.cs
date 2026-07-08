@@ -171,6 +171,7 @@ internal static class CharterBookingTicketExportSupport
                     x.BookingPassengerId,
                     x.BookingPassenger?.FullName,
                     x.BookingPassenger?.DateOfBirth,
+                    x.BookingPassenger?.BirthYear,
                     x.BookingPassenger?.PassengerType,
                     x.TicketCode,
                     x.QrToken,

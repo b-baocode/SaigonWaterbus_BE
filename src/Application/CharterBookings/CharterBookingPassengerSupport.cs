@@ -9,6 +9,7 @@ namespace SaigonWaterbus.Application.CharterBookings;
 internal static class CharterBookingPassengerSupport
 {
     public const int AdultMinimumAge = 12;
+    private const int MinimumBirthYear = 1900;
     private static readonly string[] DateFormats =
     [
         "yyyy-MM-dd",
@@ -37,6 +38,17 @@ internal static class CharterBookingPassengerSupport
                 "fullName is required.")]);
         }
 
+        if (TryResolveBirthYear(request, today, out var birthYear))
+        {
+            return new BookingPassenger
+            {
+                BookingId = bookingId,
+                FullName = request.FullName.Trim(),
+                BirthYear = birthYear,
+                PassengerType = ResolvePassengerType(birthYear, today)
+            };
+        }
+
         if (!TryParseDateOfBirth(request.DateOfBirth, out var dateOfBirth))
         {
             if (!string.IsNullOrWhiteSpace(inferredPassengerType))
@@ -50,8 +62,8 @@ internal static class CharterBookingPassengerSupport
             }
 
             var message = string.IsNullOrWhiteSpace(request.DateOfBirth)
-                ? "dateOfBirth is required."
-                : "Ngày sinh không hợp lệ. Dùng định dạng yyyy-MM-dd hoặc dd/MM/yyyy.";
+                ? "birthYear is required."
+                : "Năm sinh/ngày sinh không hợp lệ. Dùng năm yyyy hoặc ngày yyyy-MM-dd/dd/MM/yyyy.";
             throw new ValidationException([new ValidationFailure(dateOfBirthPropertyName, message)]);
         }
 
@@ -76,6 +88,7 @@ internal static class CharterBookingPassengerSupport
             passenger.Id,
             passenger.FullName,
             passenger.DateOfBirth,
+            passenger.BirthYear,
             passenger.PassengerType);
 
     public static int CountAdults(IEnumerable<BookingPassenger> passengers) =>
@@ -117,6 +130,11 @@ internal static class CharterBookingPassengerSupport
             ? CharterBookingPassengerType.Adult.ToString()
             : CharterBookingPassengerType.Child.ToString();
 
+    public static string ResolvePassengerType(int birthYear, DateOnly today) =>
+        today.Year - birthYear >= AdultMinimumAge
+            ? CharterBookingPassengerType.Adult.ToString()
+            : CharterBookingPassengerType.Child.ToString();
+
     public static bool TryParseDateOfBirth(string? value, out DateOnly dateOfBirth)
     {
         dateOfBirth = default;
@@ -126,6 +144,11 @@ internal static class CharterBookingPassengerSupport
         }
 
         var normalized = value.Trim();
+        if (TryParseBirthYear(normalized, out _))
+        {
+            return false;
+        }
+
         if (double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out var serialDate)
             && serialDate is > 0 and < 100000)
         {
@@ -147,8 +170,57 @@ internal static class CharterBookingPassengerSupport
             || DateOnly.TryParse(normalized, CultureInfo.InvariantCulture, out dateOfBirth);
     }
 
+    public static bool TryParseBirthYear(string? value, out int birthYear)
+    {
+        birthYear = default;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        var normalized = value.Trim();
+        return normalized.Length == 4
+            && int.TryParse(normalized, NumberStyles.None, CultureInfo.InvariantCulture, out birthYear)
+            && birthYear is >= MinimumBirthYear and <= 9999;
+    }
+
+    public static bool IsValidBirthYear(int birthYear, DateOnly today) =>
+        birthYear >= MinimumBirthYear && birthYear <= today.Year;
+
     public static bool IsAdult(DateOnly dateOfBirth, DateOnly today) =>
         CalculateAge(dateOfBirth, today) >= AdultMinimumAge;
+
+    private static bool TryResolveBirthYear(
+        CharterBookingPassengerRequest request,
+        DateOnly today,
+        out int birthYear)
+    {
+        birthYear = default;
+        if (request.BirthYear.HasValue)
+        {
+            birthYear = request.BirthYear.Value;
+            if (!IsValidBirthYear(birthYear, today))
+            {
+                throw new ValidationException([new ValidationFailure(nameof(request.BirthYear),
+                    birthYear > today.Year ? "Năm sinh không được ở tương lai." : "Năm sinh không hợp lệ.")]);
+            }
+
+            return true;
+        }
+
+        if (!TryParseBirthYear(request.DateOfBirth, out birthYear))
+        {
+            return false;
+        }
+
+        if (!IsValidBirthYear(birthYear, today))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.DateOfBirth),
+                birthYear > today.Year ? "Năm sinh không được ở tương lai." : "Năm sinh không hợp lệ.")]);
+        }
+
+        return true;
+    }
 
     private static int CalculateAge(DateOnly dateOfBirth, DateOnly today)
     {

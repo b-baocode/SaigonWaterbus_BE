@@ -183,6 +183,7 @@ app.Map("/", () => Results.Redirect("/swagger"));
 app.MapEndpoints(typeof(Program).Assembly);
 
 app.MapHub<SaigonWaterbus.Web.Hubs.TripSeatsHub>("/hubs/trip-seats");
+app.MapHub<SaigonWaterbus.Web.Hubs.CharterBookingsHub>("/hubs/charter-bookings");
 
 app.Run();
 

@@ -28,11 +28,16 @@ public sealed class AssignCharterBookingManagerCommandHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
-    public AssignCharterBookingManagerCommandHandler(IApplicationDbContext context, IUserContext userContext)
+    public AssignCharterBookingManagerCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingDetailDto> Handle(
@@ -65,6 +70,13 @@ public sealed class AssignCharterBookingManagerCommandHandler
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                request.ManagerUserId.HasValue ? "ManagerAssigned" : "ManagerUnassigned",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus),
+            cancellationToken);
 
         var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
@@ -244,15 +256,18 @@ public sealed class AssignCharterBookingStaffCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public AssignCharterBookingStaffCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingStaffAssignmentDto> Handle(
@@ -306,6 +321,14 @@ public sealed class AssignCharterBookingStaffCommandHandler
 
         _context.BoatStaffAssignments.Add(assignment);
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "StaffAssigned",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                assignment.AssignedAt),
+            cancellationToken);
 
         return await CharterBookingAssignmentCommandSupport.LoadStaffAssignmentDtoAsync(
             _context,
@@ -338,15 +361,18 @@ public sealed class ReplaceCharterBookingStaffCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public ReplaceCharterBookingStaffCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingStaffAssignmentDto> Handle(
@@ -418,6 +444,14 @@ public sealed class ReplaceCharterBookingStaffCommandHandler
 
         oldAssignment.ReplacedByAssignmentId = newAssignment.Id;
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "StaffReplaced",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                now),
+            cancellationToken);
 
         return await CharterBookingAssignmentCommandSupport.LoadStaffAssignmentDtoAsync(
             _context,

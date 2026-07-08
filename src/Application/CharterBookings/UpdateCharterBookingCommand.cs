@@ -107,15 +107,18 @@ public sealed class UpdateCharterBookingCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public UpdateCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingDetailDto> Handle(
@@ -165,7 +168,11 @@ public sealed class UpdateCharterBookingCommandHandler
         ValidateRequestedBoats(request.RequestedBoats);
         ValidateItineraryStops(request.ItineraryStops);
         EnsureDepartureDateCanBeUpdated(booking, departureDate);
-        await EnsureStationExistsAsync(fromStationId, nameof(request.FromStationId), cancellationToken);
+        await CharterBookingStationValidationSupport.EnsureWaterbusDepartureStationAsync(
+            _context,
+            fromStationId,
+            nameof(request.FromStationId),
+            cancellationToken);
         await EnsureStationExistsAsync(toStationId, nameof(request.ToStationId), cancellationToken);
         await EnsureItineraryStationsExistAsync(request.ItineraryStops, cancellationToken);
 
@@ -214,6 +221,14 @@ public sealed class UpdateCharterBookingCommandHandler
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "Updated",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                _timeProvider.GetUtcNow()),
+            cancellationToken);
 
         var updatedBooking = await CharterBookingQuerySupport.BuildDetailQuery(_context)
             .AsNoTracking()

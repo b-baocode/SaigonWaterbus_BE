@@ -291,6 +291,8 @@ public sealed record CharterBookingTicketDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateOnly? PassengerDateOfBirth,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? PassengerBirthYear,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType);
 
 public enum CharterBookingPaymentOption
@@ -345,13 +347,16 @@ public sealed record CharterBookingPaymentWebhookResult(
 
 public sealed record CharterBookingPassengerRequest(
     string FullName,
-    string? DateOfBirth);
+    string? DateOfBirth,
+    int? BirthYear = null);
 
 public sealed record CharterBookingPassengerDto(
     Guid PassengerId,
     string FullName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateOnly? DateOfBirth,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? BirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType);
 
@@ -400,6 +405,7 @@ public sealed record CharterBookingTicketExportItemDto(
     Guid? PassengerId,
     string? PassengerName,
     DateOnly? PassengerDateOfBirth,
+    int? PassengerBirthYear,
     string? PassengerType,
     string TicketCode,
     string QrToken,
@@ -447,6 +453,8 @@ public sealed record CharterBookingManifestPassengerDto(
     string FullName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateOnly? DateOfBirth,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? BirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

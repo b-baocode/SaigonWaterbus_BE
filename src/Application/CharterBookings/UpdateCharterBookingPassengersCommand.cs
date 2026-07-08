@@ -34,19 +34,22 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly ICharterBookingTicketPdfRenderer _ticketPdfRenderer;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public UpdateCharterBookingPassengersCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IPaymentNotificationSender paymentNotificationSender,
         ICharterBookingTicketPdfRenderer ticketPdfRenderer,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentNotificationSender = paymentNotificationSender;
         _ticketPdfRenderer = ticketPdfRenderer;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<UpdateCharterBookingPassengersResult> Handle(
@@ -119,6 +122,14 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
             cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "PassengersUpdated",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                _timeProvider.GetUtcNow()),
+            cancellationToken);
         await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
 
         var adultCount = CharterBookingPassengerSupport.CountAdults(booking.Passengers);

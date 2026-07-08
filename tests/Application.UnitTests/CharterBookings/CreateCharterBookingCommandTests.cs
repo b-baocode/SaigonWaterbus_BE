@@ -32,7 +32,8 @@ public class CreateCharterBookingCommandTests
             RoleId = role.Id,
             Status = UserStatus.Active
         };
-        context.AddRange(role, user);
+        var fromStation = WaterbusStation("ST-CREATE", "Bến đi");
+        context.AddRange(role, user, fromStation);
         await context.SaveChangesAsync();
 
         var handler = new CreateCharterBookingCommandHandler(
@@ -48,6 +49,7 @@ public class CreateCharterBookingCommandTests
                 1,
                 AdultCount: 10,
                 ChildCount: 2,
+                FromStationId: fromStation.Id,
                 RequestedBoats:
                 [
                     new CreateCharterBookingBoatRequest(1),
@@ -103,7 +105,8 @@ public class CreateCharterBookingCommandTests
             RoleId = role.Id,
             Status = UserStatus.Active
         };
-        context.AddRange(role, user);
+        var fromStation = WaterbusStation("ST-PHONE", "Bến đi");
+        context.AddRange(role, user, fromStation);
         await context.SaveChangesAsync();
 
         var handler = new CreateCharterBookingCommandHandler(
@@ -120,6 +123,7 @@ public class CreateCharterBookingCommandTests
                     1,
                     AdultCount: 10,
                     ChildCount: 2,
+                    FromStationId: fromStation.Id,
                     ContactEmail: "customer@example.test"),
                 CancellationToken.None));
 
@@ -229,6 +233,7 @@ public class CreateCharterBookingCommandTests
             RoleId = role.Id,
             Status = UserStatus.Active
         };
+        var fromStation = WaterbusStation("ST-EDIT", "Bến đi");
         var booking = new Booking
         {
             BookingType = Booking.CharterBookingType,
@@ -238,6 +243,8 @@ public class CreateCharterBookingCommandTests
             ContactName = user.FullName,
             ContactPhone = user.PhoneNumber!,
             ContactEmail = "receive@example.test",
+            FromStation = fromStation,
+            FromStationId = fromStation.Id,
             DepartureDate = new DateOnly(2026, 7, 10),
             StartTime = new TimeOnly(8, 0),
             RentalUnit = BoatRentalUnit.Day,
@@ -250,7 +257,7 @@ public class CreateCharterBookingCommandTests
             BookingStatus = BookingStatus.PendingQuote,
             PaymentStatus = "Unpaid"
         };
-        context.AddRange(role, user, booking);
+        context.AddRange(role, user, fromStation, booking);
         await context.SaveChangesAsync();
 
         var handler = new UpdateCharterBookingCommandHandler(
@@ -287,6 +294,114 @@ public class CreateCharterBookingCommandTests
         savedBooking.ContactEmail.ShouldBe("updated@example.test");
         savedBooking.RequestedBoatDecks.ShouldBe("2");
         savedBooking.RequestedBoatTypes.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task CreateRejectsExternalDepartureStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var externalStation = WaterbusStation("EXT", "Bến ngoài");
+        externalStation.IsWaterbusStation = false;
+        context.AddRange(role, user, externalStation);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedBookingCodeGenerator("CB0003"),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new CreateCharterBookingCommand(
+                    new DateOnly(2026, 7, 20),
+                    BoatRentalUnit.Day,
+                    1,
+                    AdultCount: 10,
+                    ChildCount: 2,
+                    FromStationId: externalStation.Id),
+                CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x)
+            .Single()
+            .ShouldContain("Waterbus");
+    }
+
+    [Test]
+    public async Task UpdateRejectsExternalDepartureStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "account@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var validStation = WaterbusStation("ST-VALID", "Bến Waterbus");
+        var externalStation = WaterbusStation("ST-EXT", "Bến ngoài");
+        externalStation.IsWaterbusStation = false;
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-EDIT-EXT",
+            User = user,
+            UserId = user.Id,
+            ContactName = user.FullName,
+            ContactPhone = user.PhoneNumber!,
+            ContactEmail = "receive@example.test",
+            FromStation = validStation,
+            FromStationId = validStation.Id,
+            DepartureDate = new DateOnly(2026, 7, 10),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            ChildCount = 0,
+            PassengerCount = 1,
+            BookingStatus = BookingStatus.PendingQuote,
+            PaymentStatus = "Unpaid"
+        };
+        context.AddRange(role, user, validStation, externalStation, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCharterBookingCommand(
+                    booking.Id,
+                    FromStationId: externalStation.Id),
+                CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x)
+            .Single()
+            .ShouldContain("Waterbus");
     }
 
     [Test]
@@ -407,4 +522,13 @@ public class CreateCharterBookingCommandTests
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
     }
+
+    private static Station WaterbusStation(string code, string name) =>
+        new()
+        {
+            StationCode = code,
+            StationName = name,
+            Status = StationStatus.Active,
+            IsWaterbusStation = true
+        };
 }

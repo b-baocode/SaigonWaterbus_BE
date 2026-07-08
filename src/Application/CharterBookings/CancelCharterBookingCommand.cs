@@ -23,15 +23,18 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly IBoatHoldService _boatHoldService;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public CancelCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        IBoatHoldService? boatHoldService = null)
+        IBoatHoldService? boatHoldService = null,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task Handle(CancelCharterBookingCommand request, CancellationToken cancellationToken)
@@ -65,6 +68,13 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "Cancelled",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus),
+            cancellationToken);
         foreach (var boatId in CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking))
         {
             await _boatHoldService.ReleaseAsync(

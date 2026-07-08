@@ -132,6 +132,55 @@ public class CharterBookingPassengerTicketTests
     }
 
     [Test]
+    public async Task UpdatingPassengersAcceptsBirthYearOnly()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var currentYear = DateTime.UtcNow.Year;
+        var adultBirthYear = currentYear - 30;
+        var childBirthYear = currentYear - 5;
+        var booking = PaidCharterBooking(userId, adultCount: 1, childCount: 1);
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateUpdateHandler(context, userId);
+
+        var result = await handler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CharterBookingPassengerRequest("Nguyen Van A", null, adultBirthYear),
+                    new CharterBookingPassengerRequest("Tran Thi B", childBirthYear.ToString())
+                ]),
+            CancellationToken.None);
+
+        result.RegisteredPassengerCount.ShouldBe(2);
+        result.AdultCount.ShouldBe(1);
+        result.ChildCount.ShouldBe(1);
+        result.Passengers.Select(x => x.BirthYear).Order().ShouldBe([adultBirthYear, childBirthYear]);
+        result.Passengers.ShouldAllBe(x => x.DateOfBirth == null);
+
+        var savedPassengers = context.Set<BookingPassenger>().ToArray();
+        savedPassengers.Select(x => x.BirthYear).Order().ShouldBe([adultBirthYear, childBirthYear]);
+        savedPassengers.ShouldAllBe(x => x.DateOfBirth == null);
+    }
+
+    [Test]
+    public void PassengerManifestParserAcceptsBirthYearColumn()
+    {
+        var csv = "fullName,birthYear\nNguyen Van A,1990\nTran Thi B,2021\n";
+
+        var passengers = PassengerManifestParser.Parse(
+            "passengers.csv",
+            System.Text.Encoding.UTF8.GetBytes(csv),
+            new DateOnly(2026, 1, 1));
+
+        passengers.Count.ShouldBe(2);
+        passengers.Select(x => x.BirthYear).ShouldBe([1990, 2021]);
+        passengers.ShouldAllBe(x => x.DateOfBirth == null);
+    }
+
+    [Test]
     public async Task UpdatingSinglePassengerBookingCanUseContactNameWhenPassengerListIsEmpty()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -172,7 +221,7 @@ public class CharterBookingPassengerTicketTests
                 CancellationToken.None));
 
         exception.Errors["passengers[0].dateOfBirth"].Single()
-            .ShouldBe("dateOfBirth is required.");
+            .ShouldBe("birthYear is required.");
     }
 
     [Test]

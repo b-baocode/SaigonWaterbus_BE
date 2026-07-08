@@ -26,7 +26,7 @@ public sealed class CharterBookings : IEndpointGroup
           "adultCount": 15,
           "childCount": 5,
           "startTime": "08:00:00",
-          "fromStationId": null,
+          "fromStationId": "00000000-0000-0000-0000-000000000001",
           "toStationId": null,
           "itineraryStops": null,
           "requestedBoats": [
@@ -74,11 +74,11 @@ public sealed class CharterBookings : IEndpointGroup
           "passengers": [
             {
               "fullName": "Nguyen Van A",
-              "dateOfBirth": "20/05/1995"
+              "birthYear": 1995
             },
             {
               "fullName": "Tran Thi B",
-              "dateOfBirth": "02/09/2016"
+              "birthYear": 2016
             }
           ]
         }
@@ -322,6 +322,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Customer chinh sua yeu cau thue tau khi bookingStatus = PendingQuote.",
                 "contactName/contactPhone/contactEmail: neu gui thi backend luu gia tri moi; neu khong gui hoac gui rong thi backend giu gia tri cu hoac fallback tu tai khoan. Sau fallback van bat buoc du 3 thong tin.",
                 "departureDate: neu khong doi ngay thi khong bi validate lai rule dat truoc 7 ngay; neu doi ngay moi thi ngay moi phai cach hien tai it nhat 7 ngay.",
+                "fromStationId: neu gui hoac da co san thi phai la ben Waterbus dang hoat dong.",
                 "Khong cho chinh sua khi booking da duoc quote/xac nhan/huy/hoan tat hoac da co payment Pending/Paid."));
 
         group.MapPut(UpdateCharterBookingPassengers, "{id:guid}/passengers")
@@ -332,8 +333,8 @@ public sealed class CharterBookings : IEndpointGroup
                 "Bearer token",
                 UpdatePassengersExample,
                 "Thay the toan bo danh sach hanh khach cua charter booking.",
-                "Moi hanh khach chi can fullName va dateOfBirth.",
-                "Backend tu tinh passengerType: Adult tu 12 tuoi tro len, Child duoi 12 tuoi.",
+                "Moi hanh khach chi can fullName va birthYear. Van ho tro dateOfBirth day du de tuong thich nguoc.",
+                "Backend tu tinh passengerType: Adult tu 12 tuoi tro len, Child duoi 12 tuoi theo nam sinh neu chi gui birthYear.",
                 "So hanh khach khong duoc vuot qua passengerCount da dang ky.",
                 "Sau khi luu thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
 
@@ -348,7 +349,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Chi upload sau khi charter booking da thanh toan du: PaymentStatus = Paid.",
                 "Gui multipart/form-data voi field file.",
                 "Ho tro .xlsx, .csv, .tsv, .txt.",
-                "File chi can cot ten hanh khach va ngay sinh. Header chap nhan: fullName/name/ho ten va dateOfBirth/dob/ngay sinh.",
+                "File chi can cot ten hanh khach va nam sinh/ngay sinh. Header chap nhan: fullName/name/ho ten va birthYear/year/nam sinh hoac dateOfBirth/dob/ngay sinh.",
                 "Backend tu tinh adultCount/childCount theo moc 12 tuoi.",
                 "Sau khi import thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
 
@@ -442,7 +443,8 @@ public sealed class CharterBookings : IEndpointGroup
                 "numberOfDecks: so tang cua tau khach mong muon, phai lon hon 0.",
                 "contactName/contactPhone/contactEmail: bat buoc sau khi fallback tu thong tin tai khoan; FE nen gui gia tri nguoi dung da nhap.",
                 "specialRequests: ghi chu them cua khach cho yeu cau thue tau.",
-                "fromStationId / toStationId: tuy chon, de null neu chua chon ben; neu dien thi lay id that tu GET /api/stations.",
+                "fromStationId: bat buoc, phai la ben Waterbus dang hoat dong tu GET /api/stations voi isWaterbusStation=true va status=Active.",
+                "toStationId: tuy chon; neu dien thi lay id that tu GET /api/stations.",
                 "itineraryStops: tuy chon, de null neu khong co diem dung; neu dien thi stationId phai la id that tu GET /api/stations va stopOrder khong trung.",
                 "Sau khi thanh toan du, co the upload file danh sach bang POST /api/charter-bookings/{id}/passengers/import.",
                 "bookingStatus sau khi tao: PendingQuote."));
@@ -808,7 +810,7 @@ public sealed class CharterBookings : IEndpointGroup
             AppendInfo(builder, "Booking", export.BookingCode);
             AppendInfo(builder, "So ve", ticket.TicketCode);
             AppendInfo(builder, "Hanh khach", ticket.PassengerName ?? "Khach hang");
-            AppendInfo(builder, "Ngay sinh", ticket.PassengerDateOfBirth?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
+            AppendInfo(builder, "Nam sinh", FormatPassengerBirthInfo(ticket.PassengerDateOfBirth, ticket.PassengerBirthYear));
             AppendInfo(builder, "Loai khach", ticket.PassengerType ?? string.Empty);
             AppendInfo(builder, "Tau", export.BoatName ?? string.Empty);
             AppendInfo(builder, "Ngay di", export.DepartureDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
@@ -854,7 +856,7 @@ public sealed class CharterBookings : IEndpointGroup
                 var vesselName = ResolvePdfText(export.BoatName, "Waterbus");
                 var passengerName = ResolvePdfText(ticket.PassengerName, "Khach hang");
                 var passengerType = ResolvePdfText(ticket.PassengerType, "Passenger");
-                var birthDate = FormatPdfDate(ticket.PassengerDateOfBirth);
+                var birthInfo = FormatPassengerBirthInfo(ticket.PassengerDateOfBirth, ticket.PassengerBirthYear);
 
                 document.Page(page =>
                 {
@@ -974,7 +976,7 @@ public sealed class CharterBookings : IEndpointGroup
                                                 AddPdfInfoCell(table.Cell(), "Time", startTime, teal);
                                                 AddPdfInfoCell(table.Cell(), "Vessel", vesselName, ink);
                                                 AddPdfInfoCell(table.Cell(), "Passenger type", passengerType, ink);
-                                                AddPdfInfoCell(table.Cell(), "Date of birth", birthDate, ink);
+                                                AddPdfInfoCell(table.Cell(), "Birth year", birthInfo, ink);
                                                 AddPdfInfoCell(table.Cell(), "Ticket status", ticket.TicketStatus, ink);
                                             });
                                         });
@@ -1129,6 +1131,11 @@ public sealed class CharterBookings : IEndpointGroup
     private static string FormatPdfDate(DateOnly? date) =>
         date?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "-";
 
+    private static string FormatPassengerBirthInfo(DateOnly? dateOfBirth, int? birthYear) =>
+        dateOfBirth?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
+        ?? birthYear?.ToString(CultureInfo.InvariantCulture)
+        ?? string.Empty;
+
     private static string FormatPdfTime(TimeOnly? time) =>
         time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "-";
 
@@ -1140,7 +1147,7 @@ public sealed class CharterBookings : IEndpointGroup
         IReadOnlyDictionary<Guid, string> qrFileNames)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("bookingCode,ticketCode,qrToken,ticketStatus,passengerName,dateOfBirth,passengerType,qrImageFile");
+        builder.AppendLine("bookingCode,ticketCode,qrToken,ticketStatus,passengerName,dateOfBirth,birthYear,passengerType,qrImageFile");
         foreach (var ticket in export.Tickets)
         {
             builder.Append(Csv(export.BookingCode)).Append(',');
@@ -1149,6 +1156,7 @@ public sealed class CharterBookings : IEndpointGroup
             builder.Append(Csv(ticket.TicketStatus)).Append(',');
             builder.Append(Csv(ticket.PassengerName)).Append(',');
             builder.Append(Csv(ticket.PassengerDateOfBirth?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',');
+            builder.Append(Csv(ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture))).Append(',');
             builder.Append(Csv(ticket.PassengerType)).Append(',');
             builder.Append(Csv(qrFileNames[ticket.TicketId])).AppendLine();
         }

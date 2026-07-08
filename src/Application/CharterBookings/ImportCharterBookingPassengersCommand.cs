@@ -44,19 +44,22 @@ public sealed class ImportCharterBookingPassengersCommandHandler
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly ICharterBookingTicketPdfRenderer _ticketPdfRenderer;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public ImportCharterBookingPassengersCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IPaymentNotificationSender paymentNotificationSender,
         ICharterBookingTicketPdfRenderer ticketPdfRenderer,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentNotificationSender = paymentNotificationSender;
         _ticketPdfRenderer = ticketPdfRenderer;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
     public async Task<ImportCharterBookingPassengersResult> Handle(
@@ -123,6 +126,14 @@ public sealed class ImportCharterBookingPassengersCommandHandler
             cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "PassengersImported",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus,
+                _timeProvider.GetUtcNow()),
+            cancellationToken);
         await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
 
         var adultCount = CharterBookingPassengerSupport.CountAdults(booking.Passengers);
@@ -203,20 +214,6 @@ public sealed class ImportCharterBookingPassengersCommandHandler
 
 internal static class PassengerManifestParser
 {
-    private static readonly string[] DateFormats =
-    [
-        "yyyy-MM-dd",
-        "yyyy/MM/dd",
-        "dd/MM/yyyy",
-        "d/M/yyyy",
-        "dd-MM-yyyy",
-        "d-M-yyyy",
-        "dd.MM.yyyy",
-        "d.M.yyyy",
-        "MM/dd/yyyy",
-        "M/d/yyyy"
-    ];
-
     public static IReadOnlyList<CharterBookingPassengerRequest> Parse(
         string fileName,
         byte[] content,
@@ -231,7 +228,7 @@ internal static class PassengerManifestParser
 
         var header = FindHeader(rows)
             ?? throw new ValidationException([new ValidationFailure(nameof(content),
-                "File phải có cột tên hành khách và ngày sinh.")]);
+                "File phải có cột tên hành khách và năm sinh/ngày sinh.")]);
 
         var errors = new List<ValidationFailure>();
         var passengers = new List<CharterBookingPassengerRequest>();
@@ -240,9 +237,9 @@ internal static class PassengerManifestParser
         {
             var row = rows[rowIndex];
             var fullName = GetCell(row, header.FullNameIndex)?.Trim();
-            var dateOfBirthText = GetCell(row, header.DateOfBirthIndex)?.Trim();
+            var birthInfoText = GetCell(row, header.BirthInfoIndex)?.Trim();
 
-            if (string.IsNullOrWhiteSpace(fullName) && string.IsNullOrWhiteSpace(dateOfBirthText))
+            if (string.IsNullOrWhiteSpace(fullName) && string.IsNullOrWhiteSpace(birthInfoText))
             {
                 continue;
             }
@@ -254,10 +251,23 @@ internal static class PassengerManifestParser
                 continue;
             }
 
-            if (!TryParseDateOfBirth(dateOfBirthText, out var dateOfBirth))
+            if (CharterBookingPassengerSupport.TryParseBirthYear(birthInfoText, out var birthYear))
             {
-                errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].DateOfBirth",
-                    "Ngày sinh không hợp lệ. Dùng định dạng yyyy-MM-dd hoặc dd/MM/yyyy."));
+                if (!CharterBookingPassengerSupport.IsValidBirthYear(birthYear, today))
+                {
+                    errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].BirthYear",
+                        birthYear > today.Year ? "Năm sinh không được ở tương lai." : "Năm sinh không hợp lệ."));
+                    continue;
+                }
+
+                passengers.Add(new CharterBookingPassengerRequest(fullName, null, birthYear));
+                continue;
+            }
+
+            if (!TryParseDateOfBirth(birthInfoText, out var dateOfBirth))
+            {
+                errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].BirthInfo",
+                    "Năm sinh/ngày sinh không hợp lệ. Dùng năm yyyy hoặc ngày yyyy-MM-dd/dd/MM/yyyy."));
                 continue;
             }
 
@@ -462,7 +472,7 @@ internal static class PassengerManifestParser
         for (var rowIndex = 0; rowIndex < limit; rowIndex++)
         {
             int? fullNameIndex = null;
-            int? dateOfBirthIndex = null;
+            int? birthInfoIndex = null;
 
             for (var columnIndex = 0; columnIndex < rows[rowIndex].Count; columnIndex++)
             {
@@ -472,15 +482,15 @@ internal static class PassengerManifestParser
                     fullNameIndex = columnIndex;
                 }
 
-                if (dateOfBirthIndex is null && IsDateOfBirthHeader(header))
+                if (birthInfoIndex is null && IsBirthInfoHeader(header))
                 {
-                    dateOfBirthIndex = columnIndex;
+                    birthInfoIndex = columnIndex;
                 }
             }
 
-            if (fullNameIndex.HasValue && dateOfBirthIndex.HasValue)
+            if (fullNameIndex.HasValue && birthInfoIndex.HasValue)
             {
-                return new HeaderIndexes(rowIndex, fullNameIndex.Value, dateOfBirthIndex.Value);
+                return new HeaderIndexes(rowIndex, fullNameIndex.Value, birthInfoIndex.Value);
             }
         }
 
@@ -489,32 +499,13 @@ internal static class PassengerManifestParser
 
     private static bool TryParseDateOfBirth(string? value, out DateOnly dateOfBirth)
     {
+        if (CharterBookingPassengerSupport.TryParseDateOfBirth(value, out dateOfBirth))
+        {
+            return true;
+        }
+
         dateOfBirth = default;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return false;
-        }
-
-        var normalized = value.Trim();
-        if (double.TryParse(normalized, NumberStyles.Float, CultureInfo.InvariantCulture, out var serialDate)
-            && serialDate is > 0 and < 100000)
-        {
-            dateOfBirth = DateOnly.FromDateTime(DateTime.FromOADate(serialDate));
-            return true;
-        }
-
-        if (DateOnly.TryParseExact(
-                normalized,
-                DateFormats,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.None,
-                out dateOfBirth))
-        {
-            return true;
-        }
-
-        return DateOnly.TryParse(normalized, CultureInfo.GetCultureInfo("vi-VN"), out dateOfBirth)
-            || DateOnly.TryParse(normalized, CultureInfo.InvariantCulture, out dateOfBirth);
+        return false;
     }
 
     private static char DetectDelimiter(string text)
@@ -588,12 +579,12 @@ internal static class PassengerManifestParser
         value is "hoten" or "hovaten" or "ten" or "fullname" or "name" or "passengername"
             or "tenhanhkhach" or "hanhkhach" or "khachhang";
 
-    private static bool IsDateOfBirthHeader(string value) =>
+    private static bool IsBirthInfoHeader(string value) =>
         value is "ngaysinh" or "ngaythangnamsinh" or "ngaythangnam" or "dateofbirth"
-            or "dob" or "birthdate" or "birthday";
+            or "dob" or "birthdate" or "birthday" or "namsinh" or "birthyear" or "year";
 
     private sealed record HeaderIndexes(
         int RowIndex,
         int FullNameIndex,
-        int DateOfBirthIndex);
+        int BirthInfoIndex);
 }
