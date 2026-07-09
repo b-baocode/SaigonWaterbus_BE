@@ -303,11 +303,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 public sealed record QuoteCharterBookingCommand(
     Guid BookingId,
     Guid? BoatId = null,
-    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
-    BoatRentalUnit? RentalUnit = null,
-    int? DurationValue = null,
-    string? PromotionCode = null,
-    Guid? InsurancePackageId = null) : IRequest<QuoteCharterBookingResult>;
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null) : IRequest<QuoteCharterBookingResult>;
 
 public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<QuoteCharterBookingCommand>
 {
@@ -338,14 +334,6 @@ public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<Quot
                 .WithMessage("boatOrder phải lớn hơn 0.");
             boat.RuleFor(x => x.BoatId).NotEmpty();
         });
-        RuleFor(x => x.RentalUnit).IsInEnum().When(x => x.RentalUnit.HasValue);
-        RuleFor(x => x.DurationValue)
-            .GreaterThan(0)
-            .LessThanOrEqualTo(60)
-            .When(x => x.DurationValue.HasValue)
-            .WithMessage("Thời lượng thuê phải từ 1 đến 60.");
-        RuleFor(x => x.PromotionCode).MaximumLength(50).When(x => x.PromotionCode is not null);
-        RuleFor(x => x.InsurancePackageId).NotEmpty().When(x => x.InsurancePackageId.HasValue);
     }
 
     private static bool HaveUniqueBoatOrders(IReadOnlyList<QuoteCharterBookingBoatRequest>? boats) =>
@@ -358,11 +346,7 @@ public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<Quot
 public sealed record PreviewCharterBookingQuoteCommand(
     Guid BookingId,
     Guid? BoatId = null,
-    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
-    BoatRentalUnit? RentalUnit = null,
-    int? DurationValue = null,
-    string? PromotionCode = null,
-    Guid? InsurancePackageId = null) : IRequest<PreviewCharterBookingQuoteResult>;
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null) : IRequest<PreviewCharterBookingQuoteResult>;
 
 public sealed class PreviewCharterBookingQuoteCommandValidator
     : AbstractValidator<PreviewCharterBookingQuoteCommand>
@@ -394,14 +378,6 @@ public sealed class PreviewCharterBookingQuoteCommandValidator
                 .WithMessage("boatOrder phải lớn hơn 0.");
             boat.RuleFor(x => x.BoatId).NotEmpty();
         });
-        RuleFor(x => x.RentalUnit).IsInEnum().When(x => x.RentalUnit.HasValue);
-        RuleFor(x => x.DurationValue)
-            .GreaterThan(0)
-            .LessThanOrEqualTo(60)
-            .When(x => x.DurationValue.HasValue)
-            .WithMessage("Thời lượng thuê phải từ 1 đến 60.");
-        RuleFor(x => x.PromotionCode).MaximumLength(50).When(x => x.PromotionCode is not null);
-        RuleFor(x => x.InsurancePackageId).NotEmpty().When(x => x.InsurancePackageId.HasValue);
     }
 
     private static bool HaveUniqueBoatOrders(IReadOnlyList<QuoteCharterBookingBoatRequest>? boats) =>
@@ -453,8 +429,8 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             cancellationToken);
         CharterBookingQuoteSupport.ValidateSelectedBoats(booking, selectedBoats);
 
-        var rentalUnit = request.RentalUnit ?? booking.RentalUnit.GetValueOrDefault();
-        var requestedDurationValue = request.DurationValue ?? booking.DurationValue.GetValueOrDefault();
+        var rentalUnit = booking.RentalUnit.GetValueOrDefault();
+        var requestedDurationValue = booking.DurationValue.GetValueOrDefault();
         var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
             booking,
@@ -469,22 +445,16 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
         var now = _timeProvider.GetUtcNow();
-        var insuranceSeatQuantity = selectedBoats.Sum(x => x.Boat.SeatCount);
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.CreateSelectedInsuranceSnapshotAsync(
-            _context,
-            request.InsurancePackageId,
-            insuranceSeatQuantity,
-            now,
-            cancellationToken);
+        var insuranceSnapshot = booking.InsuranceSnapshot;
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
             + (insuranceSnapshot?.TotalAmount ?? 0);
         var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
             _context,
             booking,
-            request.PromotionCode,
+            null,
             subtotal,
             now,
-            nameof(request.PromotionCode),
+            nameof(booking.PromotionId),
             cancellationToken);
         if (promotion is not null)
         {
@@ -499,7 +469,7 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
                 _context,
                 promotion,
                 booking.UserId.Value,
-                nameof(request.PromotionCode),
+                nameof(booking.PromotionId),
                 cancellationToken,
                 booking.Id);
         }
@@ -608,8 +578,8 @@ public sealed class QuoteCharterBookingCommandHandler
         var previousDurationValue = booking.DurationValue.GetValueOrDefault();
         var wasAlreadyPriced = booking.TotalAmount > 0;
         var previousPromotionId = booking.PromotionId;
-        var rentalUnit = request.RentalUnit ?? booking.RentalUnit.GetValueOrDefault();
-        var requestedDurationValue = request.DurationValue ?? booking.DurationValue.GetValueOrDefault();
+        var rentalUnit = booking.RentalUnit.GetValueOrDefault();
+        var requestedDurationValue = booking.DurationValue.GetValueOrDefault();
         var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
             booking,
@@ -623,13 +593,7 @@ public sealed class QuoteCharterBookingCommandHandler
         var primarySelection = selectedBoatPricings[0];
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
-        var insuranceSeatQuantity = selectedBoats.Sum(x => x.Boat.SeatCount);
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.CreateSelectedInsuranceSnapshotAsync(
-            _context,
-            request.InsurancePackageId,
-            insuranceSeatQuantity,
-            now,
-            cancellationToken);
+        var insuranceSnapshot = booking.InsuranceSnapshot;
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
             + (insuranceSnapshot?.TotalAmount ?? 0);
         var chargeableDurationValue = primarySelection.Pricing.ChargeableDurationValue;
@@ -637,10 +601,10 @@ public sealed class QuoteCharterBookingCommandHandler
         var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
             _context,
             booking,
-            request.PromotionCode,
+            null,
             subtotal,
             now,
-            nameof(request.PromotionCode),
+            nameof(booking.PromotionId),
             cancellationToken);
         if (promotion is not null)
         {
@@ -655,7 +619,7 @@ public sealed class QuoteCharterBookingCommandHandler
                 _context,
                 promotion,
                 booking.UserId.Value,
-                nameof(request.PromotionCode),
+                nameof(booking.PromotionId),
                 cancellationToken,
                 booking.Id);
         }

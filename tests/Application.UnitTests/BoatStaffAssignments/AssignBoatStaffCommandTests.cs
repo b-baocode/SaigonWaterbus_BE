@@ -25,8 +25,7 @@ public class AssignBoatStaffCommandTests
             Guid.NewGuid(),
             Guid.NewGuid(),
             new DateOnly(2030, 1, 2),
-            shiftCode,
-            "Captain"));
+            shiftCode));
 
         result.IsValid.ShouldBe(expectedValid);
     }
@@ -61,15 +60,14 @@ public class AssignBoatStaffCommandTests
                 boat.Id,
                 staffContext.UserId!.Value,
                 new DateOnly(2030, 1, 2),
-                null,
-                "Captain"),
+                null),
             CancellationToken.None);
 
         result.BoatId.ShouldBe(boat.Id);
         result.StaffUserId.ShouldBe(staffContext.UserId.Value);
         result.WorkingDate.ShouldBe(new DateOnly(2030, 1, 2));
         result.ShiftCode.ShouldBe(BoatStaffAssignmentSupport.DefaultShiftCode);
-        result.DutyRole.ShouldBe("Captain");
+        result.DutyRole.ShouldBe(BoatStaffAssignmentSupport.OnBoardDutyRole);
         result.IsActive.ShouldBeTrue();
         result.AssignedAt.ShouldBe(now);
 
@@ -94,12 +92,12 @@ public class AssignBoatStaffCommandTests
         var workingDate = new DateOnly(2030, 1, 2);
 
         await handler.Handle(
-            new AssignBoatStaffCommand(firstBoat.Id, staffContext.UserId!.Value, workingDate, "Day", "Captain"),
+            new AssignBoatStaffCommand(firstBoat.Id, staffContext.UserId!.Value, workingDate, "Day"),
             CancellationToken.None);
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
-                new AssignBoatStaffCommand(secondBoat.Id, staffContext.UserId.Value, workingDate, "Day", "Deckhand"),
+                new AssignBoatStaffCommand(secondBoat.Id, staffContext.UserId.Value, workingDate, "Day"),
                 CancellationToken.None));
 
         exception.Errors["staffUserId"].Single()

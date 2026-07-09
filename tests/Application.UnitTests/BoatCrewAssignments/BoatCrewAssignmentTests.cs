@@ -29,14 +29,13 @@ public class BoatCrewAssignmentTests
             new CreateBoatCrewAssignmentCommand(
                 boat.Id,
                 staffContext.UserId!.Value,
-                CrewRole.Captain,
                 new DateOnly(2030, 1, 2),
                 new DateOnly(2030, 1, 31)),
             CancellationToken.None);
 
         result.BoatId.ShouldBe(boat.Id);
         result.StaffUserId.ShouldBe(staffContext.UserId.Value);
-        result.CrewRole.ShouldBe(CrewRole.Captain);
+        result.CrewRole.ShouldBe(CrewRole.OnBoard);
         result.FromDate.ShouldBe(new DateOnly(2030, 1, 2));
         result.ToDate.ShouldBe(new DateOnly(2030, 1, 31));
         result.AssignedAt.ShouldBe(assignedAt);
@@ -46,7 +45,7 @@ public class BoatCrewAssignmentTests
     }
 
     [Test]
-    public async Task CannotCreateOverlappingCrewRoleForSameBoat()
+    public async Task CanCreateMultipleOnBoardStaffForSameBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
@@ -65,7 +64,42 @@ public class BoatCrewAssignmentTests
             new CreateBoatCrewAssignmentCommand(
                 boat.Id,
                 firstStaffContext.UserId!.Value,
-                CrewRole.Captain,
+                new DateOnly(2030, 1, 1),
+                new DateOnly(2030, 1, 31)),
+            CancellationToken.None);
+
+        var second = await handler.Handle(
+            new CreateBoatCrewAssignmentCommand(
+                boat.Id,
+                secondStaffContext.UserId!.Value,
+                new DateOnly(2030, 1, 15),
+                new DateOnly(2030, 2, 15)),
+            CancellationToken.None);
+
+        second.CrewRole.ShouldBe(CrewRole.OnBoard);
+        context.BoatCrewAssignments.Count(x => x.BoatId == boat.Id && x.IsActive).ShouldBe(2);
+    }
+
+    [Test]
+    public async Task CannotAssignSameStaffToOverlappingBoatCrew()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var firstBoat = Boat("WB-01");
+        var secondBoat = Boat("WB-02");
+        context.Boats.AddRange(firstBoat, secondBoat);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBoatCrewAssignmentCommandHandler(
+            context,
+            managerContext,
+            TimeProvider.System);
+
+        await handler.Handle(
+            new CreateBoatCrewAssignmentCommand(
+                firstBoat.Id,
+                staffContext.UserId!.Value,
                 new DateOnly(2030, 1, 1),
                 new DateOnly(2030, 1, 31)),
             CancellationToken.None);
@@ -73,15 +107,14 @@ public class BoatCrewAssignmentTests
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
                 new CreateBoatCrewAssignmentCommand(
-                    boat.Id,
-                    secondStaffContext.UserId!.Value,
-                    CrewRole.Captain,
+                    secondBoat.Id,
+                    staffContext.UserId.Value,
                     new DateOnly(2030, 1, 15),
                     new DateOnly(2030, 2, 15)),
                 CancellationToken.None));
 
-        exception.Errors["crewRole"].Single()
-            .ShouldBe("Tàu đã có crew active cùng vai trò trong khoảng ngày này.");
+        exception.Errors["staffUserId"].Single()
+            .ShouldBe("Staff này đã được gắn lên tàu khác trong khoảng ngày này.");
     }
 
     [Test]
@@ -103,7 +136,6 @@ public class BoatCrewAssignmentTests
             new CreateBoatCrewAssignmentCommand(
                 boat.Id,
                 baseStaffContext.UserId!.Value,
-                CrewRole.Captain,
                 new DateOnly(2030, 1, 1),
                 new DateOnly(2030, 1, 31)),
             CancellationToken.None);
@@ -115,13 +147,14 @@ public class BoatCrewAssignmentTests
         var replacement = await replacementHandler.Handle(
             new CreateBoatCrewReplacementCommand(
                 boat.Id,
-                CrewRole.Captain,
                 baseStaffContext.UserId.Value,
                 replacementStaffContext.UserId!.Value,
                 new DateOnly(2030, 1, 10),
                 new DateOnly(2030, 1, 12),
                 "Nghi phep"),
             CancellationToken.None);
+
+        replacement.CrewRole.ShouldBe(CrewRole.OnBoard);
 
         var calendarHandler = new GetBoatCrewCalendarQueryHandler(context, managerContext);
         var calendar = await calendarHandler.Handle(
@@ -133,10 +166,12 @@ public class BoatCrewAssignmentTests
 
         var normalDayCrew = calendar.Single(x => x.WorkingDate == new DateOnly(2030, 1, 9)).Crew.Single();
         normalDayCrew.StaffUserId.ShouldBe(baseStaffContext.UserId.Value);
+        normalDayCrew.CrewRole.ShouldBe(CrewRole.OnBoard);
         normalDayCrew.IsReplacement.ShouldBeFalse();
 
         var replacementDayCrew = calendar.Single(x => x.WorkingDate == new DateOnly(2030, 1, 10)).Crew.Single();
         replacementDayCrew.StaffUserId.ShouldBe(replacementStaffContext.UserId.Value);
+        replacementDayCrew.CrewRole.ShouldBe(CrewRole.OnBoard);
         replacementDayCrew.IsReplacement.ShouldBeTrue();
         replacementDayCrew.ReplacedStaffUserId.ShouldBe(baseStaffContext.UserId.Value);
         replacementDayCrew.ReplacementId.ShouldBe(replacement.ReplacementId);
@@ -161,7 +196,6 @@ public class BoatCrewAssignmentTests
             new CreateBoatCrewAssignmentCommand(
                 boat.Id,
                 baseStaffContext.UserId!.Value,
-                CrewRole.Captain,
                 new DateOnly(2030, 1, 1),
                 new DateOnly(2030, 1, 31)),
             CancellationToken.None);
@@ -173,7 +207,6 @@ public class BoatCrewAssignmentTests
         await replacementHandler.Handle(
             new CreateBoatCrewReplacementCommand(
                 boat.Id,
-                CrewRole.Captain,
                 baseStaffContext.UserId.Value,
                 replacementStaffContext.UserId!.Value,
                 new DateOnly(2030, 1, 10),

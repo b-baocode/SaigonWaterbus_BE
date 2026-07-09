@@ -52,15 +52,14 @@ public class CharterBookingAssignmentTests
         var result = await handler.Handle(
             new AssignCharterBookingStaffCommand(
                 booking.Id,
-                staff.UserId!.Value,
-                DutyRole: "Captain"),
+                staff.UserId!.Value),
             CancellationToken.None);
 
         result.BoatId.ShouldBe(boat.Id);
         result.StaffUserId.ShouldBe(staff.UserId.Value);
         result.WorkingDate.ShouldBe(booking.DepartureDate!.Value);
         result.ShiftCode.ShouldBe("Day");
-        result.DutyRole.ShouldBe("Captain");
+        result.DutyRole.ShouldBe("OnBoard");
 
         var assignment = context.BoatStaffAssignments.Single();
         assignment.BoatId.ShouldBe(boat.Id);

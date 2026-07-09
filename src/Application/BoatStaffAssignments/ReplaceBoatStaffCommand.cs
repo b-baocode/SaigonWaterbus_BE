@@ -82,7 +82,7 @@ public sealed class ReplaceBoatStaffCommandHandler : IRequestHandler<ReplaceBoat
             StaffUserId = request.ReplacementStaffUserId,
             WorkingDate = oldAssignment.WorkingDate,
             ShiftCode = oldAssignment.ShiftCode,
-            DutyRole = oldAssignment.DutyRole,
+            DutyRole = BoatStaffAssignmentSupport.OnBoardDutyRole,
             IsActive = true,
             AssignedByUserId = actor.Id,
             AssignedByUser = actor,

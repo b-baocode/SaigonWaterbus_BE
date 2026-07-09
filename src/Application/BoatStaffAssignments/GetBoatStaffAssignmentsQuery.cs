@@ -63,7 +63,6 @@ public sealed class GetBoatStaffAssignmentsQueryHandler
         var assignments = await query
             .OrderBy(x => x.WorkingDate)
             .ThenBy(x => x.ShiftCode)
-            .ThenBy(x => x.DutyRole)
             .ThenBy(x => x.StaffUser.FullName)
             .ToListAsync(cancellationToken);
 

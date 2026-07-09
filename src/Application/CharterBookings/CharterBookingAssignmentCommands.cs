@@ -231,8 +231,7 @@ public sealed record AssignCharterBookingStaffCommand(
     Guid BookingId,
     Guid StaffUserId,
     Guid? BoatId = null,
-    string? ShiftCode = null,
-    string? DutyRole = null) : IRequest<CharterBookingStaffAssignmentDto>;
+    string? ShiftCode = null) : IRequest<CharterBookingStaffAssignmentDto>;
 
 public sealed class AssignCharterBookingStaffCommandValidator
     : AbstractValidator<AssignCharterBookingStaffCommand>
@@ -246,7 +245,6 @@ public sealed class AssignCharterBookingStaffCommandValidator
             .MaximumLength(30)
             .Must(BoatStaffAssignmentSupport.IsValidShiftCode)
             .WithMessage("Ca làm việc chỉ được là Day hoặc Evening.");
-        RuleFor(x => x.DutyRole).MaximumLength(50);
     }
 }
 
@@ -312,7 +310,7 @@ public sealed class AssignCharterBookingStaffCommandHandler
             StaffUserId = request.StaffUserId,
             WorkingDate = workingDate,
             ShiftCode = shiftCode,
-            DutyRole = BoatStaffAssignmentSupport.NormalizeOptional(request.DutyRole),
+            DutyRole = BoatStaffAssignmentSupport.OnBoardDutyRole,
             IsActive = true,
             AssignedByUserId = actor.Id,
             AssignedByUser = actor,
@@ -425,7 +423,7 @@ public sealed class ReplaceCharterBookingStaffCommandHandler
             StaffUserId = request.ReplacementStaffUserId,
             WorkingDate = workingDate,
             ShiftCode = oldAssignment.ShiftCode,
-            DutyRole = oldAssignment.DutyRole,
+            DutyRole = BoatStaffAssignmentSupport.OnBoardDutyRole,
             IsActive = true,
             AssignedByUserId = actor.Id,
             AssignedByUser = actor,

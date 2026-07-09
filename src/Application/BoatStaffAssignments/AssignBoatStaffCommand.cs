@@ -9,8 +9,7 @@ public sealed record AssignBoatStaffCommand(
     Guid BoatId,
     Guid StaffUserId,
     DateOnly WorkingDate,
-    string? ShiftCode,
-    string? DutyRole) : IRequest<BoatStaffAssignmentDto>;
+    string? ShiftCode) : IRequest<BoatStaffAssignmentDto>;
 
 public sealed class AssignBoatStaffCommandValidator : AbstractValidator<AssignBoatStaffCommand>
 {
@@ -23,7 +22,6 @@ public sealed class AssignBoatStaffCommandValidator : AbstractValidator<AssignBo
             .MaximumLength(30)
             .Must(BoatStaffAssignmentSupport.IsValidShiftCode)
             .WithMessage("Ca làm việc chỉ được là Day hoặc Evening.");
-        RuleFor(x => x.DutyRole).MaximumLength(50);
     }
 }
 
@@ -84,7 +82,7 @@ public sealed class AssignBoatStaffCommandHandler : IRequestHandler<AssignBoatSt
             StaffUserId = request.StaffUserId,
             WorkingDate = request.WorkingDate,
             ShiftCode = shiftCode,
-            DutyRole = BoatStaffAssignmentSupport.NormalizeOptional(request.DutyRole),
+            DutyRole = BoatStaffAssignmentSupport.OnBoardDutyRole,
             IsActive = true,
             AssignedByUserId = actor.Id,
             AssignedByUser = actor,

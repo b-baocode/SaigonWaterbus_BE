@@ -14,6 +14,7 @@ internal static class BoatStaffAssignmentSupport
     public const string DefaultShiftCode = "Day";
     public const string DayShiftCode = "Day";
     public const string EveningShiftCode = "Evening";
+    public const string OnBoardDutyRole = "OnBoard";
 
     public static readonly IReadOnlyCollection<string> AllowedShiftCodes =
     [
@@ -130,7 +131,7 @@ internal static class BoatStaffAssignmentSupport
             assignment.StaffUser.FullName,
             assignment.WorkingDate,
             assignment.ShiftCode ?? DefaultShiftCode,
-            assignment.DutyRole,
+            OnBoardDutyRole,
             assignment.IsActive,
             assignment.AssignedByUserId,
             assignment.AssignedByUser.FullName,

@@ -152,6 +152,75 @@ internal static class BlogPostSupport
         }
     }
 
+    public static void EnsureValidImageFile(
+        string propertyPrefix,
+        string? fileName,
+        string? contentType,
+        long? length,
+        IBlogImageStorageService blogImageStorage)
+    {
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            throw CreateValidationException($"{propertyPrefix}FileName", "Tên file ảnh blog là bắt buộc.");
+        }
+
+        if (!length.HasValue || length <= 0)
+        {
+            throw CreateValidationException($"{propertyPrefix}Length", "Ảnh blog là bắt buộc.");
+        }
+
+        if (length > blogImageStorage.MaxImageBytes)
+        {
+            throw CreateValidationException(
+                $"{propertyPrefix}Length",
+                $"Ảnh blog không được vượt quá {blogImageStorage.MaxImageBytes / 1024 / 1024} MB.");
+        }
+
+        if (string.IsNullOrWhiteSpace(contentType)
+            || !blogImageStorage.AllowedImageContentTypes.Contains(contentType, StringComparer.OrdinalIgnoreCase))
+        {
+            throw CreateValidationException(
+                $"{propertyPrefix}ContentType",
+                "Ảnh blog chỉ hỗ trợ JPEG, PNG hoặc WebP.");
+        }
+    }
+
+    public static async Task<string> UploadImageAsync(
+        Guid blogPostId,
+        BlogPostImageFileRequest imageFile,
+        IBlogImageStorageService? blogImageStorage,
+        string propertyName,
+        CancellationToken cancellationToken)
+    {
+        if (blogImageStorage is null)
+        {
+            throw CreateValidationException(propertyName, "Dịch vụ lưu ảnh blog chưa được cấu hình.");
+        }
+
+        EnsureValidImageFile(
+            propertyName,
+            imageFile.FileName,
+            imageFile.ContentType,
+            imageFile.Length,
+            blogImageStorage);
+
+        if (imageFile.Content.CanSeek)
+        {
+            imageFile.Content.Position = 0;
+        }
+
+        var storedImage = await blogImageStorage.UploadImageAsync(
+            new BlogImageUpload(
+                blogPostId,
+                imageFile.Content,
+                imageFile.FileName,
+                imageFile.ContentType,
+                Guid.NewGuid()),
+            cancellationToken);
+
+        return storedImage.Url;
+    }
+
     public static async Task<string> GenerateUniqueSlugAsync(
         IApplicationDbContext context,
         string slugSource,
@@ -262,7 +331,7 @@ internal static class BlogPostSupport
         return await query.AnyAsync(cancellationToken);
     }
 
-    private static SaigonWaterbus.Application.Common.Exceptions.ValidationException CreateValidationException(
+    public static SaigonWaterbus.Application.Common.Exceptions.ValidationException CreateValidationException(
         string propertyName,
         string errorMessage) =>
         new([new ValidationFailure(propertyName, errorMessage)]);

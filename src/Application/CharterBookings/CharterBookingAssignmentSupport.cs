@@ -150,7 +150,6 @@ internal static class CharterBookingAssignmentSupport
         var assignments = await query
             .OrderBy(x => x.Boat.Name)
             .ThenBy(x => x.ShiftCode)
-            .ThenBy(x => x.DutyRole)
             .ThenBy(x => x.StaffUser.FullName)
             .ToListAsync(cancellationToken);
 
@@ -169,7 +168,7 @@ internal static class CharterBookingAssignmentSupport
             assignment.StaffUser.FullName,
             assignment.WorkingDate,
             assignment.ShiftCode ?? BoatStaffAssignmentSupport.DefaultShiftCode,
-            assignment.DutyRole,
+            BoatStaffAssignmentSupport.OnBoardDutyRole,
             assignment.IsActive,
             assignment.AssignedByUserId,
             assignment.AssignedByUser.FullName,

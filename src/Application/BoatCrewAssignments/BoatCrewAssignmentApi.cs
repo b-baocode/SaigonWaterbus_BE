@@ -108,8 +108,7 @@ public sealed class GetBoatCrewAssignmentsQueryHandler
         }
 
         var assignments = await query
-            .OrderBy(x => x.CrewRole)
-            .ThenBy(x => x.FromDate)
+            .OrderBy(x => x.FromDate)
             .ThenBy(x => x.StaffUser.FullName)
             .ToListAsync(cancellationToken);
 
@@ -121,7 +120,6 @@ public sealed class GetBoatCrewAssignmentsQueryHandler
 public sealed record CreateBoatCrewAssignmentCommand(
     Guid BoatId,
     Guid StaffUserId,
-    CrewRole CrewRole,
     DateOnly FromDate,
     DateOnly? ToDate = null) : IRequest<BoatCrewAssignmentDto>;
 
@@ -132,7 +130,6 @@ public sealed class CreateBoatCrewAssignmentCommandValidator
     {
         RuleFor(x => x.BoatId).NotEmpty();
         RuleFor(x => x.StaffUserId).NotEmpty();
-        RuleFor(x => x.CrewRole).IsInEnum();
         RuleFor(x => x.FromDate).NotEmpty();
         RuleFor(x => x)
             .Must(x => !x.ToDate.HasValue || x.ToDate.Value >= x.FromDate)
@@ -172,21 +169,13 @@ public sealed class CreateBoatCrewAssignmentCommandHandler
             ?? throw new NotFoundException("Không tìm thấy tàu.");
         if (boat.Status == BoatStatus.Retired)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.BoatId), "Không thể phân crew cho tàu đã Retired.");
+            throw AuthSupport.CreateValidationException(nameof(request.BoatId), "Không thể phân nhân viên cho tàu đã Retired.");
         }
 
         await BoatStaffAssignmentSupport.EnsureStaffCanBeAssignedAsync(
             _context,
             request.StaffUserId,
             nameof(request.StaffUserId),
-            cancellationToken);
-        await BoatCrewAssignmentSupport.EnsureCrewRoleAvailableAsync(
-            _context,
-            request.BoatId,
-            request.CrewRole,
-            request.FromDate,
-            request.ToDate,
-            null,
             cancellationToken);
         await BoatCrewAssignmentSupport.EnsureStaffHasNoCrewConflictAsync(
             _context,
@@ -201,7 +190,7 @@ public sealed class CreateBoatCrewAssignmentCommandHandler
             BoatId = boat.Id,
             Boat = boat,
             StaffUserId = request.StaffUserId,
-            CrewRole = request.CrewRole,
+            CrewRole = CrewRole.OnBoard,
             FromDate = request.FromDate,
             ToDate = request.ToDate,
             IsActive = true,
@@ -323,7 +312,6 @@ public sealed class GetBoatCrewReplacementsQueryHandler
 
         var replacements = await query
             .OrderBy(x => x.FromDate)
-            .ThenBy(x => x.CrewRole)
             .ThenBy(x => x.StaffUser.FullName)
             .ToListAsync(cancellationToken);
 
@@ -334,7 +322,6 @@ public sealed class GetBoatCrewReplacementsQueryHandler
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateBoatCrewReplacementCommand(
     Guid BoatId,
-    CrewRole CrewRole,
     Guid ReplacedStaffUserId,
     Guid ReplacementStaffUserId,
     DateOnly FromDate,
@@ -347,7 +334,6 @@ public sealed class CreateBoatCrewReplacementCommandValidator
     public CreateBoatCrewReplacementCommandValidator()
     {
         RuleFor(x => x.BoatId).NotEmpty();
-        RuleFor(x => x.CrewRole).IsInEnum();
         RuleFor(x => x.ReplacedStaffUserId).NotEmpty();
         RuleFor(x => x.ReplacementStaffUserId).NotEmpty();
         RuleFor(x => x.FromDate).NotEmpty();
@@ -395,13 +381,12 @@ public sealed class CreateBoatCrewReplacementCommandHandler
             ?? throw new NotFoundException("Không tìm thấy tàu.");
         if (boat.Status == BoatStatus.Retired)
         {
-            throw AuthSupport.CreateValidationException(nameof(request.BoatId), "Không thể phân crew cho tàu đã Retired.");
+            throw AuthSupport.CreateValidationException(nameof(request.BoatId), "Không thể phân nhân viên cho tàu đã Retired.");
         }
 
         var baseAssignment = await BoatCrewAssignmentSupport.LoadBaseCrewForReplacementAsync(
             _context,
             request.BoatId,
-            request.CrewRole,
             request.ReplacedStaffUserId,
             request.FromDate,
             request.ToDate,
@@ -429,7 +414,7 @@ public sealed class CreateBoatCrewReplacementCommandHandler
         var replacement = new BoatCrewAssignment
         {
             BoatId = request.BoatId,
-            CrewRole = request.CrewRole,
+            CrewRole = CrewRole.OnBoard,
             StaffUserId = request.ReplacementStaffUserId,
             FromDate = request.FromDate,
             ToDate = request.ToDate,
@@ -556,8 +541,7 @@ public sealed class GetBoatCrewCalendarQueryHandler
         {
             var crew = assignments
                 .Where(x => BoatCrewAssignmentSupport.ContainsDate(x.FromDate, x.ToDate, date))
-                .OrderBy(x => x.CrewRole)
-                .ThenBy(x => x.StaffUser.FullName)
+                .OrderBy(x => x.StaffUser.FullName)
                 .Select(x => BoatCrewAssignmentSupport.ToCalendarRoleDto(
                     x,
                     replacements
@@ -619,33 +603,6 @@ internal static class BoatCrewAssignmentSupport
     public static bool ContainsDate(DateOnly fromDate, DateOnly toDate, DateOnly date) =>
         fromDate <= date && toDate >= date;
 
-    public static async Task EnsureCrewRoleAvailableAsync(
-        IApplicationDbContext context,
-        Guid boatId,
-        CrewRole crewRole,
-        DateOnly fromDate,
-        DateOnly? toDate,
-        Guid? excludingAssignmentId,
-        CancellationToken cancellationToken)
-    {
-        var hasConflict = await context.BoatCrewAssignments.AnyAsync(
-            x => x.BoatId == boatId
-                && x.CrewRole == crewRole
-                && x.ReplacesAssignmentId == null
-                && x.IsActive
-                && (!excludingAssignmentId.HasValue || x.Id != excludingAssignmentId.Value)
-                && (!x.ToDate.HasValue || x.ToDate.Value >= fromDate)
-                && (!toDate.HasValue || x.FromDate <= toDate.Value),
-            cancellationToken);
-
-        if (hasConflict)
-        {
-            throw new ValidationException([new ValidationFailure(
-                "crewRole",
-                "Tàu đã có crew active cùng vai trò trong khoảng ngày này.")]);
-        }
-    }
-
     public static async Task EnsureStaffHasNoCrewConflictAsync(
         IApplicationDbContext context,
         Guid staffUserId,
@@ -665,14 +622,13 @@ internal static class BoatCrewAssignmentSupport
         {
             throw new ValidationException([new ValidationFailure(
                 "staffUserId",
-                "Staff này đã được gắn crew tàu khác trong khoảng ngày này.")]);
+                "Staff này đã được gắn lên tàu khác trong khoảng ngày này.")]);
         }
     }
 
     public static async Task<BoatCrewAssignment> LoadBaseCrewForReplacementAsync(
         IApplicationDbContext context,
         Guid boatId,
-        CrewRole crewRole,
         Guid replacedStaffUserId,
         DateOnly fromDate,
         DateOnly toDate,
@@ -681,7 +637,6 @@ internal static class BoatCrewAssignmentSupport
         var assignment = await context.BoatCrewAssignments
             .FirstOrDefaultAsync(
                 x => x.BoatId == boatId
-                    && x.CrewRole == crewRole
                     && x.StaffUserId == replacedStaffUserId
                     && x.ReplacesAssignmentId == null
                     && x.IsActive
@@ -692,7 +647,7 @@ internal static class BoatCrewAssignmentSupport
         {
             throw new ValidationException([new ValidationFailure(
                 "replacedStaffUserId",
-                "Người được thay phải là crew mặc định của tàu trong toàn bộ khoảng ngày thay thế.")]);
+                "Người được thay phải là nhân viên trên tàu mặc định trong toàn bộ khoảng ngày thay thế.")]);
         }
 
         return assignment;
@@ -718,7 +673,7 @@ internal static class BoatCrewAssignmentSupport
         {
             throw new ValidationException([new ValidationFailure(
                 "fromDate",
-                "Khoảng ngày này đã có người thay thế cho crew được chọn.")]);
+                "Khoảng ngày này đã có người thay thế cho nhân viên được chọn.")]);
         }
     }
 
@@ -749,7 +704,7 @@ internal static class BoatCrewAssignmentSupport
             assignment.Boat.Name,
             assignment.StaffUserId,
             assignment.StaffUser.FullName,
-            assignment.CrewRole,
+            CrewRole.OnBoard,
             assignment.FromDate,
             assignment.ToDate,
             assignment.IsActive,
@@ -762,7 +717,7 @@ internal static class BoatCrewAssignmentSupport
             replacement.Id,
             replacement.BoatId,
             replacement.Boat.Name,
-            replacement.CrewRole,
+            CrewRole.OnBoard,
             replacement.ReplacesAssignment!.StaffUserId,
             replacement.ReplacesAssignment.StaffUser.FullName,
             replacement.StaffUserId,
@@ -780,7 +735,7 @@ internal static class BoatCrewAssignmentSupport
         BoatCrewAssignment? replacement) =>
         replacement is null
             ? new BoatCrewCalendarRoleDto(
-                assignment.CrewRole,
+                CrewRole.OnBoard,
                 assignment.StaffUserId,
                 assignment.StaffUser.FullName,
                 false,
@@ -788,7 +743,7 @@ internal static class BoatCrewAssignmentSupport
                 null,
                 null)
             : new BoatCrewCalendarRoleDto(
-                assignment.CrewRole,
+                CrewRole.OnBoard,
                 replacement.StaffUserId,
                 replacement.StaffUser.FullName,
                 true,

@@ -54,6 +54,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<ICharterBookingPaymentGateway, PayOsCharterBookingPaymentGateway>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
+        builder.Services.AddScoped<IBlogImageStorageService, CloudinaryBlogImageStorageService>();
         builder.Services.AddScoped<IBoatImageStorageService, CloudinaryBoatImageStorageService>();
         builder.Services.AddScoped<IBoatDocumentStorageService, CloudinaryBoatDocumentStorageService>();
         builder.Services.AddScoped<IStationImageStorageService, CloudinaryStationImageStorageService>();

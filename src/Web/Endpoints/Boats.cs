@@ -66,7 +66,6 @@ public sealed class Boats : IEndpointGroup
         """
         {
           "staffUserId": "00000000-0000-0000-0000-000000000000",
-          "crewRole": "Captain",
           "fromDate": "2026-08-01",
           "toDate": "2026-08-31"
         }
@@ -75,7 +74,6 @@ public sealed class Boats : IEndpointGroup
     private const string CreateCrewReplacementExample =
         """
         {
-          "crewRole": "Captain",
           "replacedStaffUserId": "00000000-0000-0000-0000-000000000001",
           "replacementStaffUserId": "00000000-0000-0000-0000-000000000000",
           "fromDate": "2026-08-15",
@@ -197,24 +195,24 @@ public sealed class Boats : IEndpointGroup
 
         groupBuilder.MapGet(GetBoatCrewAssignments, "{boatId:guid}/crew-assignments")
             .RequireAuthorization()
-            .WithSummary("Xem crew mặc định của tàu")
+            .WithSummary("Xem nhân viên trên tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
                 null,
                 "Query params optional: fromDate=yyyy-MM-dd, toDate=yyyy-MM-dd, activeOnly=true|false.",
-                "Dùng cho tab nhân viên trên tàu: thuyền trưởng/thủy thủ theo khoảng ngày.",
-                "toDate=null nghĩa là crew mặc định chưa có ngày kết thúc."));
+                "Dùng cho tab nhân viên trên tàu: danh sách staff OnBoard theo khoảng ngày.",
+                "toDate=null nghĩa là phân công dài hạn chưa có ngày kết thúc."));
 
         groupBuilder.MapPost(CreateBoatCrewAssignment, "{boatId:guid}/crew-assignments")
             .RequireAuthorization()
-            .WithSummary("Gắn crew mặc định cho tàu theo khoảng ngày")
+            .WithSummary("Gắn nhân viên lên tàu theo khoảng ngày")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoặc Manager",
                 CreateCrewAssignmentExample,
-                "crewRole hợp lệ: Captain hoặc Deckhand.",
+                "FE không cần gửi crewRole; backend tự set OnBoard.",
                 "fromDate là ngày bắt đầu làm mặc định trên tàu.",
                 "toDate optional; không gửi hoặc null nghĩa là phân công dài hạn.",
-                "Không cho trùng vai trò trên cùng tàu trong khoảng ngày.",
+                "Một tàu có thể có nhiều nhân viên OnBoard trong cùng khoảng ngày.",
                 "Không cho một staff active ở hai tàu trong cùng khoảng ngày."));
 
         groupBuilder.MapDelete(DeleteBoatCrewAssignment, "{boatId:guid}/crew-assignments/{assignmentId:guid}")
@@ -223,25 +221,26 @@ public sealed class Boats : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoặc Manager",
                 null,
-                "Soft delete: đặt crew assignment isActive=false.",
+                "Soft delete: đặt assignment isActive=false.",
                 "Dùng cho nút Gỡ trong tab nhân viên trên tàu."));
 
         groupBuilder.MapGet(GetBoatCrewReplacements, "{boatId:guid}/crew-replacements")
             .RequireAuthorization()
-            .WithSummary("Xem lịch thay thế crew của tàu")
+            .WithSummary("Xem lịch thay thế nhân viên trên tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
                 null,
                 "Query params optional: fromDate=yyyy-MM-dd, toDate=yyyy-MM-dd, activeOnly=true|false.",
-                "Dùng để xem các khoảng ngày có người thay thế crew mặc định."));
+                "Dùng để xem các khoảng ngày có người thay thế nhân viên mặc định."));
 
         groupBuilder.MapPost(CreateBoatCrewReplacement, "{boatId:guid}/crew-replacements")
             .RequireAuthorization()
-            .WithSummary("Chèn người thay thế crew theo khoảng ngày")
+            .WithSummary("Chèn người thay thế nhân viên trên tàu theo khoảng ngày")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoặc Manager",
                 CreateCrewReplacementExample,
-                "Người được thay phải là crew mặc định của tàu trong toàn bộ khoảng fromDate-toDate.",
+                "FE không cần gửi crewRole; backend tự set OnBoard.",
+                "Người được thay phải là nhân viên OnBoard mặc định của tàu trong toàn bộ khoảng fromDate-toDate.",
                 "Người thay thế phải là staff OnBoard active.",
                 "Không cần sửa assignment mặc định; replacement sẽ override khi xem calendar."));
 
@@ -255,7 +254,7 @@ public sealed class Boats : IEndpointGroup
 
         groupBuilder.MapGet(GetBoatCrewCalendar, "{boatId:guid}/crew-calendar")
             .RequireAuthorization()
-            .WithSummary("Xem lịch crew hiệu lực theo ngày")
+            .WithSummary("Xem lịch nhân viên trên tàu hiệu lực theo ngày")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
                 null,
@@ -397,7 +396,6 @@ public sealed class Boats : IEndpointGroup
             new CreateBoatCrewAssignmentCommand(
                 boatId,
                 request.StaffUserId,
-                request.CrewRole,
                 request.FromDate,
                 request.ToDate),
             cancellationToken));
@@ -431,7 +429,6 @@ public sealed class Boats : IEndpointGroup
         Results.Ok(await sender.Send(
             new CreateBoatCrewReplacementCommand(
                 boatId,
-                request.CrewRole,
                 request.ReplacedStaffUserId,
                 request.ReplacementStaffUserId,
                 request.FromDate,
@@ -831,12 +828,10 @@ public sealed class Boats : IEndpointGroup
 
     private sealed record BoatCrewAssignmentApiRequest(
         Guid StaffUserId,
-        CrewRole CrewRole,
         DateOnly FromDate,
         DateOnly? ToDate = null);
 
     private sealed record BoatCrewReplacementApiRequest(
-        CrewRole CrewRole,
         Guid ReplacedStaffUserId,
         Guid ReplacementStaffUserId,
         DateOnly FromDate,

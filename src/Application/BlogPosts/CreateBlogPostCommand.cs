@@ -11,7 +11,8 @@ public sealed record CreateBlogPostCommand(
     string Category,
     string? Status,
     string? ImageUrl = null,
-    string? ImageAltText = null) : IRequest<BlogPostDto>;
+    string? ImageAltText = null,
+    BlogPostImageFileRequest? ImageFile = null) : IRequest<BlogPostDto>;
 
 public sealed class CreateBlogPostCommandValidator : AbstractValidator<CreateBlogPostCommand>
 {
@@ -45,15 +46,18 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IBlogImageStorageService? _blogImageStorage;
 
     public CreateBlogPostCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IBlogImageStorageService? blogImageStorage = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _blogImageStorage = blogImageStorage;
     }
 
     public async Task<BlogPostDto> Handle(CreateBlogPostCommand request, CancellationToken cancellationToken)
@@ -65,7 +69,6 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
 
         var title = BlogPostSupport.NormalizeRequiredText(request.Title, nameof(request.Title), 200);
         var content = BlogPostSupport.NormalizeRequiredText(request.Content, nameof(request.Content));
-        var imageUrl = BlogPostSupport.NormalizeImageUrl(request.ImageUrl, nameof(request.ImageUrl));
         var status = string.IsNullOrWhiteSpace(request.Status)
             ? BlogPostSupport.DraftStatus
             : BlogPostSupport.NormalizeStatus(request.Status, nameof(request.Status));
@@ -87,12 +90,21 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
                 cancellationToken),
             Summary = BlogPostSupport.NormalizeOptionalText(request.Summary, nameof(request.Summary), 500),
             Category = BlogPostSupport.NormalizeCategory(request.Category, nameof(request.Category)),
-            ImageUrl = imageUrl,
+            ImageUrl = null,
             ImageAltText = BlogPostSupport.NormalizeOptionalText(request.ImageAltText, nameof(request.ImageAltText), 200),
             Content = content,
             Status = status,
             PublishedAt = status == BlogPostSupport.PublishedStatus ? _timeProvider.GetUtcNow() : null
         };
+
+        post.ImageUrl = request.ImageFile is null
+            ? BlogPostSupport.NormalizeImageUrl(request.ImageUrl, nameof(request.ImageUrl))
+            : await BlogPostSupport.UploadImageAsync(
+                post.Id,
+                request.ImageFile,
+                _blogImageStorage,
+                nameof(request.ImageFile),
+                cancellationToken);
 
         BlogPostSupport.EnsurePublishedPostHasImage(post, nameof(request.ImageUrl));
 

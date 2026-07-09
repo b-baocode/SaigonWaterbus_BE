@@ -123,7 +123,7 @@ public class QuoteCharterBookingCommandTests
     }
 
     [Test]
-    public async Task QuoteIncludesSelectedCharterInsuranceInTotalAndPaymentPlan()
+    public async Task QuoteDoesNotAddCharterInsuranceFromAdminQuote()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
@@ -146,32 +146,18 @@ public class QuoteCharterBookingCommandTests
                 [
                     new QuoteCharterBookingBoatRequest(1, fullStandardBoat.Id),
                     new QuoteCharterBookingBoatRequest(2, standardAndVipBoat.Id)
-                ],
-                InsurancePackageId: insurancePackage.Id),
+                ]),
             CancellationToken.None);
 
-        result.Insurance.ShouldNotBeNull();
-        result.Insurance.Quantity.ShouldBe(120);
-        result.Insurance.UnitPremiumAmount.ShouldBe(10_000m);
-        result.Insurance.TotalAmount.ShouldBe(1_200_000m);
-        result.SubtotalAmount.ShouldBe(4_200_000m);
-        result.TotalAmount.ShouldBe(4_200_000m);
+        result.Insurance.ShouldBeNull();
+        result.SubtotalAmount.ShouldBe(3_000_000m);
+        result.TotalAmount.ShouldBe(3_000_000m);
 
         var savedBooking = await context.Set<Booking>()
             .SingleAsync(x => x.Id == booking.Id);
 
-        savedBooking.InsuranceSnapshot.ShouldNotBeNull();
-        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(120);
-        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_200_000m);
-        savedBooking.TotalAmount.ShouldBe(4_200_000m);
-
-        var paymentPlan = CharterBookingPaymentSupport.ResolvePaymentPlan(
-            savedBooking,
-            CharterBookingPaymentOption.Deposit,
-            null,
-            paidAmount: 0);
-        paymentPlan.Amount.ShouldBe(2_100_000m);
-        paymentPlan.RemainingAmount.ShouldBe(2_100_000m);
+        savedBooking.InsuranceSnapshot.ShouldBeNull();
+        savedBooking.TotalAmount.ShouldBe(3_000_000m);
     }
 
     [Test]

@@ -542,8 +542,7 @@ public sealed record AssignCharterBookingManagerRequest(
 public sealed record AssignCharterBookingStaffRequest(
     Guid StaffUserId,
     Guid? BoatId = null,
-    string? ShiftCode = null,
-    string? DutyRole = null);
+    string? ShiftCode = null);
 
 public sealed record ReplaceCharterBookingStaffRequest(
     Guid ReplacementStaffUserId,
@@ -555,11 +554,7 @@ public sealed record QuoteCharterBookingBoatRequest(
 
 public sealed record QuoteCharterBookingRequest(
     Guid? BoatId = null,
-    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
-    BoatRentalUnit? RentalUnit = null,
-    int? DurationValue = null,
-    string? PromotionCode = null,
-    Guid? InsurancePackageId = null);
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null);
 
 public sealed record UpdateCharterBookingStatusRequest(
     BookingStatus BookingStatus);
