@@ -85,6 +85,95 @@ public class QuoteCharterBookingCommandTests
     }
 
     [Test]
+    public async Task QuoteDoesNotIncludeCharterInsuranceWhenPackageIsNotSelected()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
+        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
+        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        var booking = CharterBooking(1, 2);
+        context.AddRange(fullStandardBoat, standardAndVipBoat, insurancePackage, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new QuoteCharterBookingCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new QuoteCharterBookingCommand(
+                booking.Id,
+                Boats:
+                [
+                    new QuoteCharterBookingBoatRequest(1, fullStandardBoat.Id),
+                    new QuoteCharterBookingBoatRequest(2, standardAndVipBoat.Id)
+                ]),
+            CancellationToken.None);
+
+        result.Insurance.ShouldBeNull();
+        result.SubtotalAmount.ShouldBe(3_000_000m);
+        result.TotalAmount.ShouldBe(3_000_000m);
+
+        var savedBooking = await context.Set<Booking>()
+            .SingleAsync(x => x.Id == booking.Id);
+
+        savedBooking.InsuranceSnapshot.ShouldBeNull();
+        savedBooking.TotalAmount.ShouldBe(3_000_000m);
+    }
+
+    [Test]
+    public async Task QuoteIncludesSelectedCharterInsuranceInTotalAndPaymentPlan()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
+        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
+        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        var booking = CharterBooking(1, 2);
+        context.AddRange(fullStandardBoat, standardAndVipBoat, insurancePackage, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new QuoteCharterBookingCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new QuoteCharterBookingCommand(
+                booking.Id,
+                Boats:
+                [
+                    new QuoteCharterBookingBoatRequest(1, fullStandardBoat.Id),
+                    new QuoteCharterBookingBoatRequest(2, standardAndVipBoat.Id)
+                ],
+                InsurancePackageId: insurancePackage.Id),
+            CancellationToken.None);
+
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.Quantity.ShouldBe(101);
+        result.Insurance.UnitPremiumAmount.ShouldBe(10_000m);
+        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
+        result.SubtotalAmount.ShouldBe(4_010_000m);
+        result.TotalAmount.ShouldBe(4_010_000m);
+
+        var savedBooking = await context.Set<Booking>()
+            .SingleAsync(x => x.Id == booking.Id);
+
+        savedBooking.InsuranceSnapshot.ShouldNotBeNull();
+        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_010_000m);
+        savedBooking.TotalAmount.ShouldBe(4_010_000m);
+
+        var paymentPlan = CharterBookingPaymentSupport.ResolvePaymentPlan(
+            savedBooking,
+            CharterBookingPaymentOption.Deposit,
+            null,
+            paidAmount: 0);
+        paymentPlan.Amount.ShouldBe(2_005_000m);
+        paymentPlan.RemainingAmount.ShouldBe(2_005_000m);
+    }
+
+    [Test]
     public async Task PreviewReturnsPerBoatPricesWithoutUpdatingBooking()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -187,6 +276,22 @@ public class QuoteCharterBookingCommandTests
             RequestedBoatDecks = string.Join(",", requestedBoatDecks),
             BookingStatus = BookingStatus.PendingQuote,
             PaymentStatus = "Unpaid"
+        };
+
+    private static InsurancePackage CharterInsurancePackage(decimal unitPremiumAmount) =>
+        new()
+        {
+            Code = "CHARTER_PASSENGER_BASIC",
+            Name = "Bao hiem hanh khach thue tau",
+            BookingType = Booking.CharterBookingType,
+            IsRequired = false,
+            ProviderName = "Bao hiem mac dinh",
+            UnitPremiumAmount = unitPremiumAmount,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            Conditions = ["Chi ap dung cho hanh khach co ten trong danh sach chuyen di."],
+            IsActive = true,
+            DisplayOrder = 1
         };
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

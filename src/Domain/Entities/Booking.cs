@@ -44,6 +44,7 @@ public class Booking : BaseGuidAuditableEntity
     public SeatSetupType? PreferredSeatSetupType { get; set; }
     public string? BoatRequirements { get; set; }
     public string? SpecialRequests { get; set; }
+    public BookingInsuranceSnapshot? InsuranceSnapshot { get; set; }
     public DateTimeOffset? HoldExpiresAt { get; set; }
 
     public User? User { get; set; }

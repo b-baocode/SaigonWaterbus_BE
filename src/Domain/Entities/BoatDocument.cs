@@ -22,7 +22,5 @@ public sealed class BoatDocument
 
     public DateOnly? ExpiryDate { get; set; }
 
-    public string? Note { get; set; }
-
     public DateTimeOffset UploadedAt { get; set; }
 }

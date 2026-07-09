@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.BookingHistory;
 using SaigonWaterbus.Application.Users;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -14,7 +15,12 @@ public sealed class Users : IEndpointGroup
           "nationality": "Vietnamese",
           "phoneNumber": "0912345678",
           "email": "thib@gmail.com",
-          "roleId": "00000000-0000-0000-0000-000000000003"
+          "roleId": "00000000-0000-0000-0000-000000000003",
+          "staffType": "Ground",
+          "stationIds": [
+            "00000000-0000-0000-0000-000000000001"
+          ],
+          "primaryStationId": "00000000-0000-0000-0000-000000000001"
         }
         """;
 
@@ -93,7 +99,11 @@ public sealed class Users : IEndpointGroup
                 "Manager hoặc Admin",
                 CreateUserExample,
                 "Admin tạo được Manager hoặc Staff.",
-                "Manager chỉ tạo được Staff. Customer dùng flow /api/auth/register để tự đăng ký và xác thực OTP.",
+                "Manager chỉ tạo được Staff loại Ground trong các bến Manager đang phụ trách.",
+                "StaffType hợp lệ khi role là Staff: Ground hoặc OnBoard.",
+                "Ground = nhân viên mặt đất; OnBoard = nhân viên trên tàu.",
+                "Nhân viên mặt đất có thể gửi stationIds ngay lúc tạo; nhân viên trên tàu không gắn trực tiếp vào bến.",
+                "Customer dùng flow /api/auth/register để tự đăng ký và xác thực OTP.",
                 "Không cần truyền status khi tạo user; hệ thống mặc định tạo user Active.",
                 "Không truyền password; hệ thống tự sinh mật khẩu ban đầu và trả về generatedPassword.",
                 "RoleId không cố định theo code. Gọi GET /api/users/roles để xem id hiện tại."));
@@ -211,7 +221,10 @@ public sealed class Users : IEndpointGroup
                 request.Email,
                 request.RoleId,
                 request.Gender,
-                request.Nationality),
+                request.Nationality,
+                request.StaffType,
+                request.StationIds,
+                request.PrimaryStationId),
             cancellationToken));
 
     private static async Task<IResult> Update(
@@ -228,7 +241,8 @@ public sealed class Users : IEndpointGroup
                 request.Email,
                 request.RoleId,
                 request.Gender,
-                request.Nationality),
+                request.Nationality,
+                request.StaffType),
             cancellationToken));
 
     private static async Task<IResult> UpdateStatus(
@@ -276,7 +290,10 @@ public sealed class Users : IEndpointGroup
         string Email,
         Guid RoleId,
         string? Gender = null,
-        string? Nationality = null);
+        string? Nationality = null,
+        StaffType? StaffType = null,
+        IReadOnlyCollection<Guid>? StationIds = null,
+        Guid? PrimaryStationId = null);
 
     public sealed record UpdateUserApiRequest(
         string? FullName = null,
@@ -285,7 +302,8 @@ public sealed class Users : IEndpointGroup
         string? Email = null,
         Guid? RoleId = null,
         string? Gender = null,
-        string? Nationality = null);
+        string? Nationality = null,
+        StaffType? StaffType = null);
 
     public sealed record UpdateUserStatusApiRequest(
         Domain.Enums.UserStatus Status);

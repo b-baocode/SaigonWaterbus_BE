@@ -150,6 +150,7 @@ internal static class AuthSupport
                 user.AvatarUrl,
                 user.AvatarSource,
                 user.Status,
+                user.StaffType,
                 roleDtos,
                 CreateStationAssignmentDtos(
                     user,
@@ -199,6 +200,7 @@ internal static class AuthSupport
             user.AvatarUrl,
             user.AvatarSource,
             user.Status,
+            user.StaffType,
             [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)],
             CreateStationAssignmentDtos(user, IsStaff(user) || IsManager(user)));
     }

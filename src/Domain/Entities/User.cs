@@ -30,6 +30,8 @@ public class User : BaseAuditableEntity
 
     public Role Role { get; set; } = null!;
 
+    public StaffType? StaffType { get; set; }
+
     public string? AvatarUrl { get; set; }
 
     public string? AvatarPublicId { get; set; }
@@ -59,4 +61,8 @@ public class User : BaseAuditableEntity
     public ICollection<BoatStaffAssignment> BoatStaffAssignments { get; set; } = new List<BoatStaffAssignment>();
 
     public ICollection<BoatStaffAssignment> AssignedBoatStaffAssignments { get; set; } = new List<BoatStaffAssignment>();
+
+    public ICollection<StationStaffAssignment> StationStaffAssignments { get; set; } = new List<StationStaffAssignment>();
+
+    public ICollection<StationStaffAssignment> AssignedStationStaffAssignments { get; set; } = new List<StationStaffAssignment>();
 }
