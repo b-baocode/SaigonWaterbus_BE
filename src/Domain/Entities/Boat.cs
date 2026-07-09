@@ -47,4 +47,6 @@ public class Boat : BaseAuditableEntity
     public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
 
     public ICollection<BoatStaffAssignment> StaffAssignments { get; set; } = new List<BoatStaffAssignment>();
+
+    public ICollection<BoatCrewAssignment> CrewAssignments { get; set; } = new List<BoatCrewAssignment>();
 }

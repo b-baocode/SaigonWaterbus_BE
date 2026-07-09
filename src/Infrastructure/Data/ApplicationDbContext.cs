@@ -46,6 +46,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<BoatStaffAssignment> BoatStaffAssignments => Set<BoatStaffAssignment>();
 
+    public DbSet<BoatCrewAssignment> BoatCrewAssignments => Set<BoatCrewAssignment>();
+
     public DbSet<StationStaffAssignment> StationStaffAssignments => Set<StationStaffAssignment>();
 
     public DbSet<Review> Reviews => Set<Review>();
