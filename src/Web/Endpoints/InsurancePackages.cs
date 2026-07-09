@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.InsurancePackages;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -22,7 +23,7 @@ public sealed class InsurancePackages : IEndpointGroup
             "Chi co hieu luc trong thoi gian dien ra chuyen thue tau."
           ],
           "termsUrl": "https://cdn.example.com/insurance/terms.pdf",
-          "isActive": true,
+          "status": "Active",
           "displayOrder": 1
         }
         """;
@@ -42,8 +43,15 @@ public sealed class InsurancePackages : IEndpointGroup
             "Chi co hieu luc trong thoi gian dien ra chuyen thue tau."
           ],
           "termsUrl": "https://cdn.example.com/insurance/terms.pdf",
-          "isActive": true,
+          "status": "Active",
           "displayOrder": 1
+        }
+        """;
+
+    private const string UpdateStatusExample =
+        """
+        {
+          "status": "Inactive"
         }
         """;
 
@@ -77,16 +85,16 @@ public sealed class InsurancePackages : IEndpointGroup
                 "Admin hoac Manager",
                 UpdateExample,
                 "Code khong doi qua API update.",
-                "Dat isActive=false de an goi khoi FE."));
+                "status hop le: Active | Inactive."));
 
-        group.MapDelete(DeactivateInsurancePackage, "{id:guid}")
+        group.MapPatch(UpdateInsurancePackageStatus, "{id:guid}/status")
             .RequireAuthorization()
-            .WithSummary("Vo hieu hoa goi bao hiem")
+            .WithSummary("Cap nhat trang thai goi bao hiem")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoac Manager",
-                null,
-                "Soft delete: dat isActive=false.",
-                "Tra ve 204 khi thanh cong."));
+                UpdateStatusExample,
+                "status hop le: Active | Inactive.",
+                "Inactive se an goi khoi FE khi activeOnly=true."));
     }
 
     private static async Task<IResult> GetInsurancePackages(
@@ -120,17 +128,15 @@ public sealed class InsurancePackages : IEndpointGroup
             request.ProviderLogoUrl,
             request.Conditions,
             request.TermsUrl,
-            request.IsActive,
+            request.Status,
             request.DisplayOrder), ct));
 
-    private static async Task<IResult> DeactivateInsurancePackage(
+    private static async Task<IResult> UpdateInsurancePackageStatus(
         ISender sender,
         Guid id,
-        CancellationToken ct)
-    {
-        await sender.Send(new DeactivateInsurancePackageCommand(id), ct);
-        return Results.NoContent();
-    }
+        UpdateInsurancePackageStatusRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateInsurancePackageStatusCommand(id, request.Status), ct));
 
     public sealed record UpdateInsurancePackageRequest(
         string Name,
@@ -142,6 +148,8 @@ public sealed class InsurancePackages : IEndpointGroup
         string? ProviderLogoUrl,
         IReadOnlyList<string>? Conditions,
         string? TermsUrl,
-        bool IsActive,
+        InsurancePackageStatus Status,
         int DisplayOrder);
+
+    public sealed record UpdateInsurancePackageStatusRequest(InsurancePackageStatus Status);
 }

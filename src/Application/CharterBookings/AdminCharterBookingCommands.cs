@@ -469,10 +469,11 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
         var now = _timeProvider.GetUtcNow();
+        var insuranceSeatQuantity = selectedBoats.Sum(x => x.Boat.SeatCount);
         var insuranceSnapshot = await CharterBookingInsuranceSupport.CreateSelectedInsuranceSnapshotAsync(
             _context,
-            booking,
             request.InsurancePackageId,
+            insuranceSeatQuantity,
             now,
             cancellationToken);
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
@@ -622,10 +623,11 @@ public sealed class QuoteCharterBookingCommandHandler
         var primarySelection = selectedBoatPricings[0];
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
+        var insuranceSeatQuantity = selectedBoats.Sum(x => x.Boat.SeatCount);
         var insuranceSnapshot = await CharterBookingInsuranceSupport.CreateSelectedInsuranceSnapshotAsync(
             _context,
-            booking,
             request.InsurancePackageId,
+            insuranceSeatQuantity,
             now,
             cancellationToken);
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)

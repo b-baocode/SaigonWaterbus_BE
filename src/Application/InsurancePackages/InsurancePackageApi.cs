@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
@@ -19,7 +20,7 @@ public sealed record InsurancePackageDto(
     string Currency,
     IReadOnlyList<string> Conditions,
     string? TermsUrl,
-    bool IsActive,
+    InsurancePackageStatus Status,
     int DisplayOrder);
 
 public sealed record GetInsurancePackageListQuery(
@@ -70,7 +71,7 @@ public sealed record CreateInsurancePackageCommand(
     string? ProviderLogoUrl = null,
     IReadOnlyList<string>? Conditions = null,
     string? TermsUrl = null,
-    bool IsActive = true,
+    InsurancePackageStatus Status = InsurancePackageStatus.Active,
     int? DisplayOrder = null) : IRequest<InsurancePackageDto>;
 
 public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<CreateInsurancePackageCommand>
@@ -111,6 +112,7 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
         RuleFor(x => x.Conditions)
             .Must(InsurancePackageSupport.HaveValidConditions)
             .WithMessage("conditions tối đa 20 dòng, mỗi dòng tối đa 500 ký tự.");
+        RuleFor(x => x.Status).IsInEnum();
         RuleFor(x => x.DisplayOrder).GreaterThan(0).When(x => x.DisplayOrder.HasValue);
     }
 }
@@ -154,7 +156,7 @@ public sealed class CreateInsurancePackageCommandHandler
             Currency = "VND",
             Conditions = InsurancePackageSupport.NormalizeConditions(request.Conditions),
             TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl),
-            IsActive = request.IsActive,
+            IsActive = InsurancePackageSupport.ToIsActive(request.Status),
             DisplayOrder = displayOrder
         };
 
@@ -177,7 +179,7 @@ public sealed record UpdateInsurancePackageCommand(
     string? ProviderLogoUrl,
     IReadOnlyList<string>? Conditions,
     string? TermsUrl,
-    bool IsActive,
+    InsurancePackageStatus Status,
     int DisplayOrder) : IRequest<InsurancePackageDto>;
 
 public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<UpdateInsurancePackageCommand>
@@ -214,6 +216,7 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
         RuleFor(x => x.Conditions)
             .Must(InsurancePackageSupport.HaveValidConditions)
             .WithMessage("conditions tối đa 20 dòng, mỗi dòng tối đa 500 ký tự.");
+        RuleFor(x => x.Status).IsInEnum();
         RuleFor(x => x.DisplayOrder).GreaterThan(0);
     }
 }
@@ -253,7 +256,7 @@ public sealed class UpdateInsurancePackageCommandHandler
         package.CoverageAmount = request.CoverageAmount;
         package.Conditions = InsurancePackageSupport.NormalizeConditions(request.Conditions);
         package.TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl);
-        package.IsActive = request.IsActive;
+        package.IsActive = InsurancePackageSupport.ToIsActive(request.Status);
         package.DisplayOrder = request.DisplayOrder;
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -263,34 +266,39 @@ public sealed class UpdateInsurancePackageCommandHandler
 }
 
 [Authorize(Roles = "Admin,Manager")]
-public sealed record DeactivateInsurancePackageCommand(Guid InsurancePackageId) : IRequest;
+public sealed record UpdateInsurancePackageStatusCommand(
+    Guid InsurancePackageId,
+    InsurancePackageStatus Status) : IRequest<InsurancePackageDto>;
 
-public sealed class DeactivateInsurancePackageCommandValidator
-    : AbstractValidator<DeactivateInsurancePackageCommand>
+public sealed class UpdateInsurancePackageStatusCommandValidator
+    : AbstractValidator<UpdateInsurancePackageStatusCommand>
 {
-    public DeactivateInsurancePackageCommandValidator()
+    public UpdateInsurancePackageStatusCommandValidator()
     {
         RuleFor(x => x.InsurancePackageId).NotEmpty();
+        RuleFor(x => x.Status).IsInEnum();
     }
 }
 
-public sealed class DeactivateInsurancePackageCommandHandler
-    : IRequestHandler<DeactivateInsurancePackageCommand>
+public sealed class UpdateInsurancePackageStatusCommandHandler
+    : IRequestHandler<UpdateInsurancePackageStatusCommand, InsurancePackageDto>
 {
     private readonly IApplicationDbContext _context;
 
-    public DeactivateInsurancePackageCommandHandler(IApplicationDbContext context) => _context = context;
+    public UpdateInsurancePackageStatusCommandHandler(IApplicationDbContext context) => _context = context;
 
-    public async Task Handle(
-        DeactivateInsurancePackageCommand request,
+    public async Task<InsurancePackageDto> Handle(
+        UpdateInsurancePackageStatusCommand request,
         CancellationToken cancellationToken)
     {
         var package = await _context.Set<InsurancePackage>()
             .SingleOrDefaultAsync(x => x.Id == request.InsurancePackageId, cancellationToken)
             ?? throw new NotFoundException("Insurance package not found.");
 
-        package.IsActive = false;
+        package.IsActive = InsurancePackageSupport.ToIsActive(request.Status);
         await _context.SaveChangesAsync(cancellationToken);
+
+        return InsurancePackageSupport.ToDto(package);
     }
 }
 
@@ -344,6 +352,12 @@ internal static class InsurancePackageSupport
         || Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
             && (uri.Scheme == Uri.UriSchemeHttp || uri.Scheme == Uri.UriSchemeHttps);
 
+    public static bool ToIsActive(InsurancePackageStatus status) =>
+        status == InsurancePackageStatus.Active;
+
+    public static InsurancePackageStatus ToStatus(bool isActive) =>
+        isActive ? InsurancePackageStatus.Active : InsurancePackageStatus.Inactive;
+
     public static InsurancePackageDto ToDto(InsurancePackage package) =>
         new(
             package.Id,
@@ -358,6 +372,6 @@ internal static class InsurancePackageSupport
             package.Currency,
             package.Conditions,
             package.TermsUrl,
-            package.IsActive,
+            ToStatus(package.IsActive),
             package.DisplayOrder);
 }
