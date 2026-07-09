@@ -52,8 +52,11 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             item.RuleFor(x => x.TicketTypeCode).NotEmpty().MaximumLength(50);
             item.RuleFor(x => x.SeatNumber).MaximumLength(30);
             item.RuleFor(x => x.SeatNumber).NotEmpty()
-                .When(x => !string.Equals(x.TicketTypeCode?.Trim(), "INFANT", StringComparison.OrdinalIgnoreCase))
+                .When(x => !IsInfant(x.TicketTypeCode))
                 .WithMessage("seatNumber là bắt buộc (chỉ vé INFANT - trẻ dưới 2 tuổi - mới được bỏ trống để ngồi cùng người lớn).");
+            item.RuleFor(x => x.BirthYear).NotNull()
+                .When(x => IsInfant(x.TicketTypeCode))
+                .WithMessage("birthYear là bắt buộc với vé INFANT (trẻ dưới 2 tuổi) để khai báo và lưu hành khách.");
             item.RuleFor(x => x.FromStationCode).NotEmpty().MaximumLength(50);
             item.RuleFor(x => x.ToStationCode).NotEmpty().MaximumLength(50)
                 .NotEqual(x => x.FromStationCode).WithMessage("From and To stations must be different.");
@@ -62,7 +65,24 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             item.RuleFor(x => x.PassengerEmail).EmailAddress().MaximumLength(255)
                 .When(x => !string.IsNullOrWhiteSpace(x.PassengerEmail));
         });
+
+        // Trẻ dưới 2 tuổi ngồi cùng người lớn (INFANT không chiếm ghế) phải có người lớn có ghế đi kèm.
+        // Mỗi hành khách có ghế (không phải INFANT) chỉ "kèm" tối đa một trẻ ngồi lòng.
+        RuleFor(x => x.Items)
+            .Must(items =>
+            {
+                var lapInfants = items.Count(i =>
+                    string.IsNullOrWhiteSpace(i.SeatNumber) && IsInfant(i.TicketTypeCode));
+                var seatedCompanions = items.Count(i =>
+                    !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
+                return lapInfants <= seatedCompanions;
+            })
+            .WithMessage("Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế đi kèm trong cùng booking.")
+            .When(x => x.Items is not null);
     }
+
+    private static bool IsInfant(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "INFANT", StringComparison.OrdinalIgnoreCase);
 }
 
 public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand, CreateBookingResult>
@@ -131,24 +151,41 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         if (missingTicket is not null)
             throw new NotFoundException($"Ticket type '{missingTicket}' not found.");
 
-        // Vé INFANT được phép không chiếm ghế (ngồi cùng người lớn) — chỉ áp dụng waterbus thường.
+        // Vé INFANT chỉ dành cho trẻ dưới 2 tuổi — kiểm tra năm sinh so với ngày khởi hành chuyến.
+        var departureYear = trip.DepartureTime.Year;
+        foreach (var infantItem in request.Items.Where(i => IsInfant(i.TicketTypeCode)))
+        {
+            if (!infantItem.BirthYear.HasValue)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé INFANT yêu cầu khai báo birthYear (trẻ dưới 2 tuổi).")]);
+
+            var ageAtDeparture = departureYear - infantItem.BirthYear.Value;
+            if (ageAtDeparture < 0 || ageAtDeparture > 2)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé INFANT chỉ áp dụng cho trẻ dưới 2 tuổi (sinh trong vòng 2 năm so với ngày khởi hành).")]);
+        }
+
+        // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và MIỄN PHÍ trên
+        // cả waterbus thường lẫn sightseeing. Vé free có ghế (SENIOR/DISABLED, hoặc INFANT chọn ghế riêng)
+        // vẫn bị chặn tự nhiên trên sightseeing vì ghế sightseeing không phải loại STANDARD — FareCalculator
+        // từ chối theo AllowedSeatTypeCodes, nên không cần chặn thêm ở cấp tàu tại đây.
         var lapItems = request.Items.Where(i => string.IsNullOrWhiteSpace(i.SeatNumber)).ToList();
         if (lapItems.Count > 0)
         {
-            var nonInfantLapItem = lapItems.FirstOrDefault(i =>
-                !string.Equals(i.TicketTypeCode.Trim(), "INFANT", StringComparison.OrdinalIgnoreCase));
+            var nonInfantLapItem = lapItems.FirstOrDefault(i => !IsInfant(i.TicketTypeCode));
             if (nonInfantLapItem is not null)
                 throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
                     "Chỉ vé INFANT (trẻ dưới 2 tuổi) mới được bỏ trống seatNumber.")]);
 
-            var boatSetupType = await _context.Set<Boat>()
-                .Where(b => b.Id == trip.BoatId.Value)
-                .Select(b => b.SeatSetupType)
-                .SingleAsync(cancellationToken);
-            if (boatSetupType == SeatSetupType.StandardAndVip)
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.TicketTypeCode),
-                    "Vé miễn phí (INFANT/SENIOR/DISABLED) không áp dụng cho dịch vụ sightseeing. "
-                    + "Trẻ em trên chuyến sightseeing phải đặt ghế với vé ADULT.")]);
+            // Mỗi trẻ ngồi lòng (INFANT không ghế) phải có một hành khách có ghế (không phải INFANT) đi kèm
+            // trong cùng booking — 1 người lớn kèm tối đa 1 trẻ. (Cũng khai báo ở validator, nhưng validator
+            // không chạy trong pipeline MediatR nên bắt buộc phải enforce tại handler.)
+            var seatedCompanionCount = request.Items.Count(i =>
+                !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
+            if (lapItems.Count > seatedCompanionCount)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    "Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế "
+                    + "đi kèm trong cùng booking.")]);
         }
 
         var requestedSeatCodes = request.Items
@@ -402,4 +439,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         RouteStop ToStop);
 
     private static string NormalizeSeatCode(string value) => value.Trim().ToUpperInvariant();
+
+    private static bool IsInfant(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "INFANT", StringComparison.OrdinalIgnoreCase);
 }
