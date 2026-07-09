@@ -190,8 +190,22 @@ internal static class RouteGeoJsonImportSupport
 
     public static LineString BuildRouteGeometry(
         IReadOnlyList<LineString> waterwayGeometries,
-        IReadOnlyList<Point> waypointPoints)
+        IReadOnlyList<Point> waypointPoints) =>
+        BuildRouteGeometryAlternatives(waterwayGeometries, waypointPoints, 1)[0];
+
+    /// <summary>
+    /// Sinh toi da <paramref name="maxAlternatives"/> phuong an duong di giua cac waypoint.
+    /// Phuong an 1 la duong ngan nhat; cac phuong an sau dung penalty method:
+    /// phat trong so cac canh da dung roi tim lai, ra duong khac (vd vong theo song thay vi cat rach).
+    /// </summary>
+    public static IReadOnlyList<LineString> BuildRouteGeometryAlternatives(
+        IReadOnlyList<LineString> waterwayGeometries,
+        IReadOnlyList<Point> waypointPoints,
+        int maxAlternatives)
     {
+        const double penaltyFactor = 3.0;
+        const double duplicateOverlapRatio = 0.9;
+
         if (waterwayGeometries.Count == 0)
         {
             throw CreateValidationException(
@@ -211,10 +225,41 @@ internal static class RouteGeoJsonImportSupport
             .Select(graph.AttachWaypoint)
             .ToList();
 
+        var alternatives = new List<LineString>();
+        var previousEdgeSets = new List<HashSet<int>>();
+
+        for (var attempt = 0; attempt < Math.Max(1, maxAlternatives); attempt++)
+        {
+            var usedEdgeIds = new HashSet<int>();
+            var geometry = BuildSingleRouteGeometry(graph, snappedNodeIds, waypointPoints, usedEdgeIds);
+
+            // Trung gan het canh voi phuong an truoc -> khong con duong khac dang ke, dung lai.
+            var isDuplicate = previousEdgeSets.Any(previous =>
+                usedEdgeIds.Count > 0
+                && previous.Intersect(usedEdgeIds).Count() >= duplicateOverlapRatio * usedEdgeIds.Count);
+            if (isDuplicate)
+            {
+                break;
+            }
+
+            alternatives.Add(geometry);
+            previousEdgeSets.Add(usedEdgeIds);
+            graph.PenalizeEdges(usedEdgeIds, penaltyFactor);
+        }
+
+        return alternatives;
+    }
+
+    private static LineString BuildSingleRouteGeometry(
+        WaterwayGraph graph,
+        IReadOnlyList<int> snappedNodeIds,
+        IReadOnlyList<Point> waypointPoints,
+        ISet<int>? usedEdgeIds = null)
+    {
         var routeCoordinates = new List<Coordinate>();
         for (var i = 0; i < snappedNodeIds.Count - 1; i++)
         {
-            var legCoordinates = graph.FindShortestPathCoordinates(snappedNodeIds[i], snappedNodeIds[i + 1]);
+            var legCoordinates = graph.FindShortestPathCoordinates(snappedNodeIds[i], snappedNodeIds[i + 1], usedEdgeIds);
 
             // Waypoint dau tuyen (vd ben tau) nam ngoai mang song -> bat dau duong tu dung toa do waypoint.
             if (i == 0 && IsAwayFromNetwork(waypointPoints[0], legCoordinates[0]))
@@ -413,8 +458,23 @@ internal static class RouteGeoJsonImportSupport
         private readonly Dictionary<int, List<int>> _adjacentEdges = new();
         private readonly Dictionary<CoordinateKey, int> _nodeIdsByCoordinate = new();
         private readonly Dictionary<int, Coordinate> _nodeCoordinates = new();
+        private readonly Dictionary<int, double> _edgeWeightMultipliers = new();
         private int _nextEdgeId = 1;
         private int _nextNodeId = 1;
+
+        /// <summary>Phat trong so cac canh (nhan he so) de lan tim duong sau chon duong khac.</summary>
+        public void PenalizeEdges(IEnumerable<int> edgeIds, double factor)
+        {
+            foreach (var edgeId in edgeIds)
+            {
+                _edgeWeightMultipliers[edgeId] =
+                    (_edgeWeightMultipliers.TryGetValue(edgeId, out var current) ? current : 1.0) * factor;
+            }
+        }
+
+        private double GetEdgeWeight(GraphEdge edge) =>
+            edge.LengthMeters
+            * (_edgeWeightMultipliers.TryGetValue(edge.Id, out var multiplier) ? multiplier : 1.0);
 
         public static WaterwayGraph Create(IReadOnlyList<LineString> waterways)
         {
@@ -470,7 +530,10 @@ internal static class RouteGeoJsonImportSupport
             return waypointNodeId;
         }
 
-        public IReadOnlyList<Coordinate> FindShortestPathCoordinates(int startNodeId, int endNodeId)
+        public IReadOnlyList<Coordinate> FindShortestPathCoordinates(
+            int startNodeId,
+            int endNodeId,
+            ISet<int>? usedEdgeIds = null)
         {
             if (startNodeId == endNodeId)
             {
@@ -503,7 +566,7 @@ internal static class RouteGeoJsonImportSupport
                     var nextNodeId = edge.StartNodeId == currentNodeId
                         ? edge.EndNodeId
                         : edge.StartNodeId;
-                    var nextDistance = currentDistance + edge.LengthMeters;
+                    var nextDistance = currentDistance + GetEdgeWeight(edge);
 
                     if (distances.TryGetValue(nextNodeId, out var knownDistance)
                         && knownDistance <= nextDistance)
@@ -539,6 +602,7 @@ internal static class RouteGeoJsonImportSupport
             var pathCoordinates = new List<Coordinate>();
             foreach (var (edge, forward) in traversedEdges)
             {
+                usedEdgeIds?.Add(edge.Id);
                 var coordinates = forward ? edge.Coordinates : edge.Coordinates.Reverse().ToArray();
                 AppendCoordinates(pathCoordinates, coordinates);
             }

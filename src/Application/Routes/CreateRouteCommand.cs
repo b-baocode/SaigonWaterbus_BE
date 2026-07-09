@@ -15,7 +15,8 @@ public sealed record CreateRouteCommand(
     IReadOnlyList<CreateRouteWaypointDto> Waypoints,
     bool? AutoRouteGeometry = null,
     string? PreferWaterwayType = null,
-    IReadOnlyList<string>? AvoidWaterwayOsmIds = null) : IRequest<RouteDto>;
+    IReadOnlyList<string>? AvoidWaterwayOsmIds = null,
+    IReadOnlyList<double[]>? ChosenGeometry = null) : IRequest<RouteDto>;
 
 public sealed record CreateRouteWaypointDto(
     string Type,
@@ -39,6 +40,21 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
             .NotEmpty().WithMessage("avoidWaterwayOsmIds khong duoc chua phan tu rong.")
             .MaximumLength(50)
             .When(x => x.AvoidWaterwayOsmIds is not null);
+
+        When(x => x.ChosenGeometry is not null, () =>
+        {
+            RuleFor(x => x.ChosenGeometry!)
+                .Must(g => g.Count >= 2)
+                .WithMessage("chosenGeometry phai co it nhat 2 diem.")
+                .Must(g => g.All(c => c is { Length: >= 2 }
+                    && c[0] is >= -180 and <= 180
+                    && c[1] is >= -90 and <= 90))
+                .WithMessage("chosenGeometry: moi diem phai la [longitude, latitude] hop le.");
+            RuleFor(x => x.Waypoints)
+                .Must(w => w is null || !w.Any(x2 =>
+                    string.Equals(x2.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase)))
+                .WithMessage("Khong dung viaWaterway kem chosenGeometry - geometry da duoc chon san tu preview.");
+        });
 
         RuleFor(x => x.Waypoints)
             .NotNull()
@@ -105,10 +121,13 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
         var hasViaWaterway = request.Waypoints.Any(waypoint =>
             string.Equals(waypoint.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase));
 
+        var hasChosenGeometry = request.ChosenGeometry is { Count: >= 2 };
+
         // geometryRequired: co via hoac autoRouteGeometry=true -> loi neu khong dung duoc geometry.
         // geometryBestEffort: chi nhap station (khong set co) -> co gang dung, that bai thi tao route khong geometry.
-        var geometryRequired = hasViaWaterway || request.AutoRouteGeometry == true;
-        var geometryBestEffort = !geometryRequired && request.AutoRouteGeometry != false;
+        // chosenGeometry (tu preview) co san -> khong can tu tinh.
+        var geometryRequired = !hasChosenGeometry && (hasViaWaterway || request.AutoRouteGeometry == true);
+        var geometryBestEffort = !hasChosenGeometry && !geometryRequired && request.AutoRouteGeometry != false;
         var buildGeometry = geometryRequired || geometryBestEffort;
 
         var waterwaySegments = buildGeometry
@@ -242,7 +261,14 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
         }
 
         LineString? routeGeometry = null;
-        if (buildGeometry)
+        if (hasChosenGeometry)
+        {
+            // Geometry admin da chon tu POST /api/routes/geometry-preview.
+            routeGeometry = new LineString(
+                request.ChosenGeometry!.Select(c => new Coordinate(c[0], c[1])).ToArray())
+            { SRID = 4326 };
+        }
+        else if (buildGeometry)
         {
             try
             {

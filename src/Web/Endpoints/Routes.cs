@@ -29,6 +29,17 @@ public sealed class Routes : IEndpointGroup
         }
         """;
 
+    private const string PreviewGeometryExample =
+        """
+        {
+          "waypoints": [
+            { "type": "station", "stationCode": "ST-BD", "stopOrder": 1 },
+            { "type": "station", "stationCode": "ST-LD", "stopOrder": 2 }
+          ],
+          "maxAlternatives": 3
+        }
+        """;
+
     private const string UpdateRouteExample =
         """
         {
@@ -93,10 +104,23 @@ public sealed class Routes : IEndpointGroup
                 "Waypoint dau va cuoi bat buoc la station.",
                 "CHI CAN NHAP STATION: he thong TU DONG tao RouteGeometry tu mang waterway da import (snap ben vao duong song, tim duong ngan nhat). Neu chua import mang hoac khong noi duoc thi van tao route voi geometry rong.",
                 "autoRouteGeometry: true = BAT BUOC tao geometry (tra 400 neu khong the); false = khong tao; bo trong = tu dong best-effort.",
+                "chosenGeometry (optional): mang [[lon,lat],...] lay tu 1 phuong an cua POST /api/routes/geometry-preview - dung nguyen geometry nay thay vi tu tinh (khong dung kem viaWaterway).",
                 "Neu co waypoint type=viaWaterway thi geometry la bat buoc va tuyen bi ep di qua waterway do.",
                 "viaWaterway = EP di qua mot con duong thuy (vd duong tat); Dijkstra buoc phai qua diem dai dien cua no.",
                 "avoidWaterwayOsmIds (optional): mang OSM id/ten waterway EP NE - loai khoi mang khi tim duong, de tuyen di duong dai hon (vd vong theo song thay vi cat qua kenh). Khong duoc trung voi viaWaterway.",
                 "Neu ban ve duong san, co the tao route chi bang station waypoints roi nhap duong that o /segments."));
+
+        group.MapPost(PreviewRouteGeometry, "geometry-preview")
+            .RequireAuthorization()
+            .WithSummary("Xem truoc cac phuong an duong di (khong luu)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                PreviewGeometryExample,
+                "Nhan waypoints giong POST /api/routes, tra ve toi da maxAlternatives (mac dinh 3) phuong an duong di.",
+                "Phuong an 1 la duong ngan nhat; cac phuong an sau di duong khac (vd vong theo song thay vi cat rach).",
+                "Moi phuong an: { option, distanceKm, geometry: [[lon,lat],...] }.",
+                "FE ve cac phuong an len ban do cho admin chon, roi goi POST /api/routes kem chosenGeometry = geometry cua phuong an da chon.",
+                "Ho tro preferWaterwayType va avoidWaterwayOsmIds nhu khi tao route."));
 
         group.MapPut(UpdateRoute, "{id:guid}")
             .RequireAuthorization()
@@ -170,6 +194,10 @@ public sealed class Routes : IEndpointGroup
         Results.Ok(await sender.Send(new GetRouteDetailQuery(id), ct));
 
     private static async Task<IResult> CreateRoute(ISender sender, CreateRouteCommand command, CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> PreviewRouteGeometry(
+        ISender sender, PreviewRouteGeometryCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> UpdateRoute(ISender sender, Guid id, UpdateRouteRequest req, CancellationToken ct) =>
