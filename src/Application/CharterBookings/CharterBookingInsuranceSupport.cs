@@ -9,8 +9,8 @@ internal static class CharterBookingInsuranceSupport
 {
     public static async Task<BookingInsuranceSnapshot?> CreateSelectedInsuranceSnapshotAsync(
         IApplicationDbContext context,
-        Booking booking,
         Guid? insurancePackageId,
+        int chargeableSeatQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken)
     {
@@ -35,7 +35,11 @@ internal static class CharterBookingInsuranceSupport
             throw CreateInsuranceValidation("Gói bảo hiểm đã chọn không khả dụng cho charter booking.");
         }
 
-        var quantity = ResolvePassengerQuantity(booking);
+        if (chargeableSeatQuantity <= 0)
+        {
+            throw CreateInsuranceValidation("Không xác định được số ghế tính bảo hiểm cho booking thuê tàu.");
+        }
+
         return new BookingInsuranceSnapshot
         {
             InsurancePackageId = package.Id,
@@ -50,8 +54,8 @@ internal static class CharterBookingInsuranceSupport
             Currency = package.Currency,
             Conditions = package.Conditions,
             TermsUrl = package.TermsUrl,
-            Quantity = quantity,
-            TotalAmount = package.UnitPremiumAmount * quantity,
+            Quantity = chargeableSeatQuantity,
+            TotalAmount = package.UnitPremiumAmount * chargeableSeatQuantity,
             QuotedAt = quotedAt
         };
     }
@@ -75,17 +79,6 @@ internal static class CharterBookingInsuranceSupport
                 snapshot.Conditions,
                 snapshot.TermsUrl,
                 snapshot.QuotedAt);
-
-    private static int ResolvePassengerQuantity(Booking booking)
-    {
-        var passengerCount = booking.PassengerCount.GetValueOrDefault();
-        if (passengerCount > 0)
-        {
-            return passengerCount;
-        }
-
-        return booking.AdultCount.GetValueOrDefault() + booking.ChildCount.GetValueOrDefault();
-    }
 
     private static ValidationException CreateInsuranceValidation(string message) =>
         new([new ValidationFailure("insurancePackageId", message)]);

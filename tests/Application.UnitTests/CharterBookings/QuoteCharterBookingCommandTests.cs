@@ -151,26 +151,27 @@ public class QuoteCharterBookingCommandTests
             CancellationToken.None);
 
         result.Insurance.ShouldNotBeNull();
-        result.Insurance.Quantity.ShouldBe(101);
+        result.Insurance.Quantity.ShouldBe(120);
         result.Insurance.UnitPremiumAmount.ShouldBe(10_000m);
-        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
-        result.SubtotalAmount.ShouldBe(4_010_000m);
-        result.TotalAmount.ShouldBe(4_010_000m);
+        result.Insurance.TotalAmount.ShouldBe(1_200_000m);
+        result.SubtotalAmount.ShouldBe(4_200_000m);
+        result.TotalAmount.ShouldBe(4_200_000m);
 
         var savedBooking = await context.Set<Booking>()
             .SingleAsync(x => x.Id == booking.Id);
 
         savedBooking.InsuranceSnapshot.ShouldNotBeNull();
-        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_010_000m);
-        savedBooking.TotalAmount.ShouldBe(4_010_000m);
+        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(120);
+        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_200_000m);
+        savedBooking.TotalAmount.ShouldBe(4_200_000m);
 
         var paymentPlan = CharterBookingPaymentSupport.ResolvePaymentPlan(
             savedBooking,
             CharterBookingPaymentOption.Deposit,
             null,
             paidAmount: 0);
-        paymentPlan.Amount.ShouldBe(2_005_000m);
-        paymentPlan.RemainingAmount.ShouldBe(2_005_000m);
+        paymentPlan.Amount.ShouldBe(2_100_000m);
+        paymentPlan.RemainingAmount.ShouldBe(2_100_000m);
     }
 
     [Test]
