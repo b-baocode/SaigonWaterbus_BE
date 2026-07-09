@@ -1,4 +1,7 @@
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -7,6 +10,16 @@ namespace SaigonWaterbus.Infrastructure.Data.Configurations;
 
 public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
 {
+    private static readonly JsonSerializerOptions BoatDocumentJsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    private static readonly ValueComparer<BoatDocument[]> BoatDocumentComparer = new(
+        (left, right) => SerializeDocuments(left) == SerializeDocuments(right),
+        documents => SerializeDocuments(documents).GetHashCode(),
+        documents => DeserializeDocuments(SerializeDocuments(documents)));
+
     public void Configure(EntityTypeBuilder<Boat> builder)
     {
         builder.ToTable("boats");
@@ -43,6 +56,9 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
             .HasMaxLength(30)
             .IsRequired();
 
+        builder.Property(x => x.MaintenanceStartedAt)
+            .HasColumnName("maintenance_started_at");
+
         builder.Property(x => x.SeatCount)
             .HasColumnName("seat_count");
 
@@ -78,6 +94,15 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
             .HasColumnName("image_public_id")
             .HasMaxLength(500);
 
+        builder.Property(x => x.Documents)
+            .HasColumnName("documents")
+            .HasColumnType("jsonb")
+            .HasDefaultValueSql("'[]'::jsonb")
+            .HasConversion(
+                documents => SerializeDocuments(documents),
+                json => DeserializeDocuments(json))
+            .Metadata.SetValueComparer(BoatDocumentComparer);
+
         builder.Property(x => x.HourlyRentalPrice)
             .HasColumnName("hourly_rental_price")
             .HasColumnType("numeric(12,2)");
@@ -107,4 +132,12 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
 
         builder.HasIndex(x => x.Status);
     }
+
+    private static string SerializeDocuments(BoatDocument[]? documents) =>
+        JsonSerializer.Serialize(documents ?? [], BoatDocumentJsonOptions);
+
+    private static BoatDocument[] DeserializeDocuments(string? json) =>
+        string.IsNullOrWhiteSpace(json)
+            ? []
+            : JsonSerializer.Deserialize<BoatDocument[]>(json, BoatDocumentJsonOptions) ?? [];
 }

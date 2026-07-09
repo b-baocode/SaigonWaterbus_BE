@@ -3,6 +3,7 @@ using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
 
@@ -44,7 +45,7 @@ public class CompleteSeatSetupFlowIntegrationTests
         configured.SeatsConfigured.ShouldBeTrue();
         configured.Decks.Single().Cells.Count.ShouldBe(88);
         configured.Decks.Single().Cells.Count(x => x.Type == SeatLayoutCellType.Aisle).ShouldBe(8);
-        boat.Status.ShouldBe(BoatStatus.Active);
+        boat.Status.ShouldBe(BoatStatus.Inactive);
         (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(80);
 
         var fetched = await new GetSeatsRequestUseCase(context, userContext)
@@ -93,7 +94,7 @@ public class CompleteSeatSetupFlowIntegrationTests
     }
 
     [Test]
-    public async Task FullStandardFlowGeneratesMatrixConfiguresSeatsAndActivatesBoat()
+    public async Task FullStandardFlowGeneratesMatrixConfiguresSeatsAndWaitsForDocuments()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -119,7 +120,7 @@ public class CompleteSeatSetupFlowIntegrationTests
 
         configured.ConfiguredSeats.ShouldBe(4);
         configured.SeatsConfigured.ShouldBeTrue();
-        boat.Status.ShouldBe(BoatStatus.Active);
+        boat.Status.ShouldBe(BoatStatus.Inactive);
         (await context.Seats
                 .Where(x => x.BoatId == boat.Id)
                 .ToListAsync())
@@ -127,7 +128,7 @@ public class CompleteSeatSetupFlowIntegrationTests
     }
 
     [Test]
-    public async Task SightseeingFlowPersistsMixedSeatTypesAndActivatesBoat()
+    public async Task SightseeingFlowPersistsMixedSeatTypesAndWaitsForDocuments()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -160,7 +161,7 @@ public class CompleteSeatSetupFlowIntegrationTests
 
         configured.ConfiguredSeats.ShouldBe(3);
         configured.SeatsConfigured.ShouldBeTrue();
-        boat.Status.ShouldBe(BoatStatus.Active);
+        boat.Status.ShouldBe(BoatStatus.Inactive);
 
         var seats = await context.Seats
             .Where(x => x.BoatId == boat.Id)
@@ -239,7 +240,7 @@ public class CompleteSeatSetupFlowIntegrationTests
         configured.ConfiguredSeats.ShouldBe(4);
         configured.SeatsConfigured.ShouldBeTrue();
         boat.SeatsConfigured.ShouldBeTrue();
-        boat.Status.ShouldBe(BoatStatus.Active);
+        boat.Status.ShouldBe(BoatStatus.Inactive);
         (await context.Seats.CountAsync(x => x.BoatId == boat.Id)).ShouldBe(4);
     }
 
@@ -315,6 +316,26 @@ public class CompleteSeatSetupFlowIntegrationTests
             [new DeckConfigDto(1, 2, 2)]);
 
         configured.SeatsConfigured.ShouldBeTrue();
+        boat.Status.ShouldBe(BoatStatus.Inactive);
+    }
+
+    [Test]
+    public async Task ConfigureAutoActivatesWhenDocumentsAlreadyUploaded()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        boat.Documents = RequiredDocuments(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero));
+        context.Add(boat);
+        await context.SaveChangesAsync();
+
+        var configured = await Configure(
+            context,
+            userContext,
+            boat.Id,
+            [new DeckConfigDto(1, 2, 2)]);
+
+        configured.SeatsConfigured.ShouldBeTrue();
         boat.Status.ShouldBe(BoatStatus.Active);
     }
 
@@ -353,4 +374,25 @@ public class CompleteSeatSetupFlowIntegrationTests
         new GenerateSeatsRequestUseCase(context, userContext).ExecuteAsync(
             new GenerateSeatsRequest(boatId, decks),
             CancellationToken.None);
+
+    private static BoatDocument[] RequiredDocuments(DateTimeOffset uploadedAt) =>
+    [
+        Document(BoatDocumentType.Inspection, uploadedAt),
+        Document(BoatDocumentType.Registration, uploadedAt),
+        Document(BoatDocumentType.Insurance, uploadedAt),
+        Document(BoatDocumentType.OperationLicense, uploadedAt)
+    ];
+
+    private static BoatDocument Document(BoatDocumentType type, DateTimeOffset uploadedAt) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Type = type,
+            FileName = $"{type}.pdf",
+            ContentType = "application/pdf",
+            FileSize = 4,
+            FileUrl = $"https://example.test/documents/{type}.pdf",
+            StorageKey = $"documents/{type}.pdf",
+            UploadedAt = uploadedAt
+        };
 }

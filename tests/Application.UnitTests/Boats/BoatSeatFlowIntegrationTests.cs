@@ -116,7 +116,11 @@ public class BoatSeatFlowIntegrationTests
         await context.SaveChangesAsync();
 
         await Should.ThrowAsync<ValidationException>(() =>
-            new UpdateBoatStatusRequestUseCase(context, userContext).ExecuteAsync(
+            new UpdateBoatStatusRequestUseCase(
+                    context,
+                    userContext,
+                    new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)))
+                .ExecuteAsync(
                 new UpdateBoatStatusRequest(boat.Id, BoatStatus.Active),
                 CancellationToken.None));
 
@@ -128,6 +132,29 @@ public class BoatSeatFlowIntegrationTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.StandardAndVip,
+            seatsConfigured: true);
+        boat.Documents = RequiredDocuments(now.AddDays(-1));
+        AddSeats(boat, boat.SeatCount);
+        context.Add(boat);
+        await context.SaveChangesAsync();
+
+        var result = await new UpdateBoatStatusRequestUseCase(context, userContext, new FixedTimeProvider(now))
+            .ExecuteAsync(
+                new UpdateBoatStatusRequest(boat.Id, BoatStatus.Active),
+                CancellationToken.None);
+
+        result.Status.ShouldBe(BoatStatus.Active);
+        result.IsReadyForOperation.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task ActivateRejectsConfiguredBoatWithoutRequiredDocuments()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
         var boat = SeatFlowTestData.Boat(
             SeatSetupType.StandardAndVip,
             seatsConfigured: true);
@@ -135,13 +162,75 @@ public class BoatSeatFlowIntegrationTests
         context.Add(boat);
         await context.SaveChangesAsync();
 
-        var result = await new UpdateBoatStatusRequestUseCase(context, userContext)
+        await Should.ThrowAsync<ValidationException>(() =>
+            new UpdateBoatStatusRequestUseCase(
+                    context,
+                    userContext,
+                    new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)))
+                .ExecuteAsync(
+                    new UpdateBoatStatusRequest(boat.Id, BoatStatus.Active),
+                    CancellationToken.None));
+
+        boat.Status.ShouldBe(BoatStatus.Inactive);
+    }
+
+    [Test]
+    public async Task ActivateRejectsUnderMaintenanceBoatUntilInspectionIsUpdated()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var maintenanceStartedAt = new DateTimeOffset(2030, 1, 10, 1, 0, 0, TimeSpan.Zero);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.StandardAndVip,
+            seatsConfigured: true,
+            status: BoatStatus.UnderMaintenance);
+        boat.MaintenanceStartedAt = maintenanceStartedAt;
+        boat.Documents = RequiredDocuments(maintenanceStartedAt.AddDays(-1));
+        AddSeats(boat, boat.SeatCount);
+        context.Add(boat);
+        await context.SaveChangesAsync();
+
+        var staleDto = await new GetBoatByIdRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetBoatByIdRequest(boat.Id), CancellationToken.None);
+        staleDto.MaintenanceStartedAt.ShouldBe(maintenanceStartedAt);
+        staleDto.DocumentsRequireRefresh.ShouldBeTrue();
+
+        var staleDocuments = await new GetBoatDocumentsRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetBoatDocumentsRequest(boat.Id), CancellationToken.None);
+        staleDocuments.Single(x => x.Type == BoatDocumentType.Inspection).RequiresRefresh.ShouldBeTrue();
+
+        await Should.ThrowAsync<ValidationException>(() =>
+            new UpdateBoatStatusRequestUseCase(
+                    context,
+                    userContext,
+                    new FixedTimeProvider(maintenanceStartedAt.AddDays(1)))
+                .ExecuteAsync(
+                    new UpdateBoatStatusRequest(boat.Id, BoatStatus.Active),
+                    CancellationToken.None));
+
+        await using var file = CreateDocumentFile();
+        var result = await new UpdateBoatDocumentRequestUseCase(
+                context,
+                userContext,
+                new FixedTimeProvider(maintenanceStartedAt.AddMinutes(1)),
+                new TestBoatDocumentStorageService())
             .ExecuteAsync(
-                new UpdateBoatStatusRequest(boat.Id, BoatStatus.Active),
+                new UpdateBoatDocumentRequest(
+                    boat.Id,
+                    BoatDocumentType.Inspection,
+                    new BoatDocumentFileRequest("inspection-after-maintenance.pdf", "application/pdf", file.Length, file)),
                 CancellationToken.None);
 
-        result.Status.ShouldBe(BoatStatus.Active);
-        result.IsReadyForOperation.ShouldBeTrue();
+        result.Type.ShouldBe(BoatDocumentType.Inspection);
+        boat.Status.ShouldBe(BoatStatus.Active);
+
+        var refreshedDto = await new GetBoatByIdRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetBoatByIdRequest(boat.Id), CancellationToken.None);
+        refreshedDto.DocumentsRequireRefresh.ShouldBeFalse();
+
+        var refreshedDocuments = await new GetBoatDocumentsRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetBoatDocumentsRequest(boat.Id), CancellationToken.None);
+        refreshedDocuments.Single(x => x.Type == BoatDocumentType.Inspection).RequiresRefresh.ShouldBeFalse();
     }
 
     [Test]
@@ -191,6 +280,84 @@ public class BoatSeatFlowIntegrationTests
             "https://example.test/boats/main.jpg",
             "https://example.test/boats/deck.jpg"
         ]);
+    }
+
+    [Test]
+    public async Task UpdateBoatDocumentReplacesTypeAndReturnsFourSlots()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        context.Add(boat);
+        await context.SaveChangesAsync();
+        await using var firstFile = CreateDocumentFile();
+        await using var secondFile = CreateDocumentFile();
+        var useCase = new UpdateBoatDocumentRequestUseCase(
+            context,
+            userContext,
+            new FixedTimeProvider(now),
+            new TestBoatDocumentStorageService());
+
+        var firstResult = await useCase.ExecuteAsync(
+            new UpdateBoatDocumentRequest(
+                boat.Id,
+                BoatDocumentType.Inspection,
+                new BoatDocumentFileRequest("inspection-old.pdf", "application/pdf", firstFile.Length, firstFile),
+                IssuedDate: new DateOnly(2029, 1, 1),
+                ExpiryDate: new DateOnly(2030, 1, 1)),
+            CancellationToken.None);
+
+        var secondResult = await useCase.ExecuteAsync(
+            new UpdateBoatDocumentRequest(
+                boat.Id,
+                BoatDocumentType.Inspection,
+                new BoatDocumentFileRequest("inspection-new.pdf", "application/pdf", secondFile.Length, secondFile),
+                IssuedDate: new DateOnly(2030, 1, 1),
+                ExpiryDate: new DateOnly(2031, 1, 1)),
+            CancellationToken.None);
+
+        firstResult.Id.ShouldNotBe(secondResult.Id);
+
+        var documents = await new GetBoatDocumentsRequestUseCase(context, userContext)
+            .ExecuteAsync(new GetBoatDocumentsRequest(boat.Id), CancellationToken.None);
+
+        documents.Count.ShouldBe(4);
+        documents.Single(x => x.Type == BoatDocumentType.Inspection).FileName.ShouldBe("inspection-new.pdf");
+        documents.Count(x => x.IsUploaded).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task UpdateBoatDocumentAutoActivatesConfiguredBoatWhenFourthDocumentIsUploaded()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.FullStandard,
+            seatsConfigured: true,
+            status: BoatStatus.Inactive);
+        boat.Documents = RequiredDocuments(now.AddDays(-1))
+            .Where(x => x.Type != BoatDocumentType.OperationLicense)
+            .ToArray();
+        AddSeats(boat, boat.SeatCount);
+        context.Add(boat);
+        await context.SaveChangesAsync();
+        await using var file = CreateDocumentFile();
+
+        await new UpdateBoatDocumentRequestUseCase(
+                context,
+                userContext,
+                new FixedTimeProvider(now),
+                new TestBoatDocumentStorageService())
+            .ExecuteAsync(
+                new UpdateBoatDocumentRequest(
+                    boat.Id,
+                    BoatDocumentType.OperationLicense,
+                    new BoatDocumentFileRequest("operation-license.pdf", "application/pdf", file.Length, file)),
+                CancellationToken.None);
+
+        boat.Status.ShouldBe(BoatStatus.Active);
     }
 
     [Test]
@@ -459,4 +626,27 @@ public class BoatSeatFlowIntegrationTests
     }
 
     private static MemoryStream CreateImageFile() => new([0x1, 0x2, 0x3, 0x4]);
+
+    private static MemoryStream CreateDocumentFile() => new([0x1, 0x2, 0x3, 0x4]);
+
+    private static BoatDocument[] RequiredDocuments(DateTimeOffset uploadedAt) =>
+    [
+        Document(BoatDocumentType.Inspection, uploadedAt),
+        Document(BoatDocumentType.Registration, uploadedAt),
+        Document(BoatDocumentType.Insurance, uploadedAt),
+        Document(BoatDocumentType.OperationLicense, uploadedAt)
+    ];
+
+    private static BoatDocument Document(BoatDocumentType type, DateTimeOffset uploadedAt) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Type = type,
+            FileName = $"{type}.pdf",
+            ContentType = "application/pdf",
+            FileSize = 4,
+            FileUrl = $"https://example.test/documents/{type}.pdf",
+            StorageKey = $"documents/{type}.pdf",
+            UploadedAt = uploadedAt
+        };
 }

@@ -71,6 +71,9 @@ public static class DependencyInjection
         builder.Services.AddScoped<CreateBoatRequestUseCase>();
         builder.Services.AddScoped<UpdateBoatRequestUseCase>();
         builder.Services.AddScoped<UpdateBoatStatusRequestUseCase>();
+        builder.Services.AddScoped<GetBoatDocumentsRequestUseCase>();
+        builder.Services.AddScoped<UpdateBoatDocumentRequestUseCase>();
+        builder.Services.AddScoped<DeleteBoatDocumentRequestUseCase>();
         builder.Services.AddScoped<DeleteBoatRequestUseCase>();
 
         builder.Services.AddScoped<ISeatManagementService, SeatManagementService>();

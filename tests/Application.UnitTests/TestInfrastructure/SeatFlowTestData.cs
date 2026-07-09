@@ -123,6 +123,23 @@ internal sealed class TestBoatImageStorageService : IBoatImageStorageService
     }
 }
 
+internal sealed class TestBoatDocumentStorageService : IBoatDocumentStorageService
+{
+    public long MaxDocumentBytes => 10 * 1024 * 1024;
+
+    public IReadOnlyCollection<string> AllowedDocumentContentTypes { get; } =
+        ["application/pdf", "image/jpeg", "image/png", "image/webp"];
+
+    public Task<StoredBoatDocument> UploadDocumentAsync(
+        BoatDocumentUpload upload,
+        CancellationToken cancellationToken)
+    {
+        return Task.FromResult(new StoredBoatDocument(
+            $"https://example.test/boat-documents/{upload.BoatId}/{upload.Type}/{upload.DocumentId:N}",
+            $"{upload.BoatId}/{upload.Type}/{upload.DocumentId:N}"));
+    }
+}
+
 internal sealed class TestStationImageStorageService : IStationImageStorageService
 {
     public long MaxImageBytes => 5 * 1024 * 1024;

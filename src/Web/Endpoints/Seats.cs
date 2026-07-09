@@ -101,7 +101,8 @@ public sealed class Seats : IEndpointGroup
                 "Backend tự cập nhật SeatCount bằng tổng số ô Seat được tạo.",
                 "Cần có ít nhất 1 ô Seat.",
                 "Nếu tàu đã có ghế, phải xóa toàn bộ trước khi configure lại.",
-                "Khi setup hợp lệ, backend lưu ghế vào database, đặt SeatsConfigured=true và chuyển tàu sang Active.",
+                "Khi setup hợp lệ, backend lưu ghế vào database và đặt SeatsConfigured=true.",
+                "Nếu tàu đã đủ 4 hồ sơ thì backend tự chuyển tàu sang Active; nếu chưa đủ hồ sơ thì tàu vẫn Inactive/UnderMaintenance.",
                 "Mã ghế tự sinh theo format: {tầng}-{hàng}{cột}, ví dụ 1-A1, 2-B3."));
 
         groupBuilder.MapDelete(DeleteAllSeats, "{boatId:guid}/seats")

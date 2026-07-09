@@ -12,6 +12,9 @@ public sealed class BoatManagementService : IBoatManagementService
     private readonly CreateBoatRequestUseCase _createBoat;
     private readonly UpdateBoatRequestUseCase _updateBoat;
     private readonly UpdateBoatStatusRequestUseCase _updateBoatStatus;
+    private readonly GetBoatDocumentsRequestUseCase _getBoatDocuments;
+    private readonly UpdateBoatDocumentRequestUseCase _updateBoatDocument;
+    private readonly DeleteBoatDocumentRequestUseCase _deleteBoatDocument;
     private readonly DeleteBoatRequestUseCase _deleteBoat;
 
     public BoatManagementService(
@@ -21,6 +24,9 @@ public sealed class BoatManagementService : IBoatManagementService
         CreateBoatRequestUseCase createBoat,
         UpdateBoatRequestUseCase updateBoat,
         UpdateBoatStatusRequestUseCase updateBoatStatus,
+        GetBoatDocumentsRequestUseCase getBoatDocuments,
+        UpdateBoatDocumentRequestUseCase updateBoatDocument,
+        DeleteBoatDocumentRequestUseCase deleteBoatDocument,
         DeleteBoatRequestUseCase deleteBoat)
     {
         _validator = validator;
@@ -29,6 +35,9 @@ public sealed class BoatManagementService : IBoatManagementService
         _createBoat = createBoat;
         _updateBoat = updateBoat;
         _updateBoatStatus = updateBoatStatus;
+        _getBoatDocuments = getBoatDocuments;
+        _updateBoatDocument = updateBoatDocument;
+        _deleteBoatDocument = deleteBoatDocument;
         _deleteBoat = deleteBoat;
     }
 
@@ -65,6 +74,31 @@ public sealed class BoatManagementService : IBoatManagementService
     {
         await _validator.ValidateAsync(request, cancellationToken);
         return await _updateBoatStatus.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<IReadOnlyCollection<BoatDocumentDto>> GetBoatDocumentsAsync(
+        Guid boatId,
+        CancellationToken cancellationToken)
+    {
+        var request = new GetBoatDocumentsRequest(boatId);
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _getBoatDocuments.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<BoatDocumentDto> UpdateBoatDocumentAsync(
+        UpdateBoatDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _updateBoatDocument.ExecuteAsync(request, cancellationToken);
+    }
+
+    public async Task<BoatDocumentDto> DeleteBoatDocumentAsync(
+        DeleteBoatDocumentRequest request,
+        CancellationToken cancellationToken)
+    {
+        await _validator.ValidateAsync(request, cancellationToken);
+        return await _deleteBoatDocument.ExecuteAsync(request, cancellationToken);
     }
 
     public async Task<AuthActionResultDto> DeleteBoatAsync(Guid boatId, CancellationToken cancellationToken)

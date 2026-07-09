@@ -18,5 +18,15 @@ public interface IBoatManagementService
 
     Task<BoatDto> UpdateBoatStatusAsync(UpdateBoatStatusRequest request, CancellationToken cancellationToken);
 
+    Task<IReadOnlyCollection<BoatDocumentDto>> GetBoatDocumentsAsync(Guid boatId, CancellationToken cancellationToken);
+
+    Task<BoatDocumentDto> UpdateBoatDocumentAsync(
+        UpdateBoatDocumentRequest request,
+        CancellationToken cancellationToken);
+
+    Task<BoatDocumentDto> DeleteBoatDocumentAsync(
+        DeleteBoatDocumentRequest request,
+        CancellationToken cancellationToken);
+
     Task<AuthActionResultDto> DeleteBoatAsync(Guid boatId, CancellationToken cancellationToken);
 }

@@ -12,6 +12,8 @@ public class Boat : BaseAuditableEntity
 
     public BoatStatus Status { get; set; } = BoatStatus.Active;
 
+    public DateTimeOffset? MaintenanceStartedAt { get; set; }
+
     public int SeatCount { get; set; }
 
     public int NumberOfDecks { get; set; }
@@ -29,6 +31,8 @@ public class Boat : BaseAuditableEntity
     public string[] ImageUrls { get; set; } = [];
 
     public string? ImagePublicId { get; set; }
+
+    public BoatDocument[] Documents { get; set; } = [];
 
     public decimal? HourlyRentalPrice { get; set; }
 

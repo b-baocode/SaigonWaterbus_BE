@@ -41,7 +41,9 @@ public sealed record BoatDto(
     IReadOnlyCollection<string> ImageUrls,
     string? Description,
     IReadOnlyCollection<BoatRentalPriceDto> RentalPrices,
-    SeatSetupType SeatSetupType);
+    SeatSetupType SeatSetupType,
+    DateTimeOffset? MaintenanceStartedAt,
+    bool DocumentsRequireRefresh);
 
 public sealed class GetBoatsRequestValidator : AbstractValidator<GetBoatsRequest>
 {

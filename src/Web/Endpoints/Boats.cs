@@ -103,7 +103,19 @@ public sealed class Boats : IEndpointGroup
                 "Admin, Manager hoặc Staff",
                 null,
                 "Admin xem được tàu ở mọi trạng thái.",
-                "Manager và Staff chỉ xem được tàu đang Active."));
+                "Manager và Staff chỉ xem được tàu đang Active.",
+                "Response có maintenanceStartedAt và documentsRequireRefresh để FE hiển thị banner hồ sơ sau bảo trì."));
+
+        groupBuilder.MapGet(GetBoatDocuments, "{boatId:guid}/documents")
+            .RequireAuthorization()
+            .WithSummary("Lấy 4 slot hồ sơ tàu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Manager hoặc Staff",
+                null,
+                "Trả đủ 4 loại hồ sơ: Inspection, Registration, Insurance, OperationLicense.",
+                "Slot chưa upload có isUploaded=false và fileUrl=null.",
+                "Mỗi slot có requiresRefresh; hiện chỉ Inspection cần refresh sau bảo trì.",
+                "Admin xem được tàu ở mọi trạng thái; Manager và Staff chỉ xem được tàu đang Active."));
 
         groupBuilder.MapPost(CreateBoat, "")
             .RequireAuthorization()
@@ -122,7 +134,7 @@ public sealed class Boats : IEndpointGroup
                 "seatSetupType: FullStandard hoặc StandardAndVip, là đặc tính của tàu.",
                 "Không cần nhập seatCount khi tạo tàu; backend tự tính sau khi setup sơ đồ ghế.",
                 "Tàu chưa thuộc dịch vụ nào; dịch vụ sẽ được chọn khi phân lịch chạy.",
-                "Không cần gửi status khi tạo tàu. Backend tự tạo Inactive, setup đủ ghế rồi mới chuyển Active.",
+                "Không cần gửi status khi tạo tàu. Backend tự tạo Inactive; khi đủ ghế và đủ 4 hồ sơ thì tự chuyển Active.",
                 "Số đăng ký tàu phải là duy nhất nếu cung cấp."));
 
         groupBuilder.MapPut(UpdateBoat, "{boatId:guid}")
@@ -150,7 +162,34 @@ public sealed class Boats : IEndpointGroup
                 UpdateStatusExample,
                 "Các trạng thái hợp lệ: Active, UnderMaintenance, Inactive, Retired.",
                 "Muốn chuyển Active thì tàu phải setup đủ ghế.",
+                "Muốn chuyển Active thì tàu phải có đủ 4 hồ sơ: Inspection, Registration, Insurance, OperationLicense.",
+                "Flow thường không cần gọi API này để Active: setup đủ ghế và upload đủ hồ sơ thì backend tự Active.",
+                "Nếu tàu đã vào UnderMaintenance, upload lại hồ sơ Inspection sau thời điểm vào bảo trì thì backend tự Active khi các điều kiện khác đã đủ.",
                 "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."));
+
+        groupBuilder.MapPut(UpdateBoatDocument, "{boatId:guid}/documents/{type}")
+            .RequireAuthorization()
+            .DisableAntiforgery()
+            .Accepts<BoatDocumentFormRequest>("multipart/form-data")
+            .WithSummary("Upload hoặc cập nhật một hồ sơ tàu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "type trên route: Inspection, Registration, Insurance hoặc OperationLicense.",
+                "Gửi multipart/form-data với field file.",
+                "Các field optional: issuedDate=yyyy-MM-dd, expiryDate=yyyy-MM-dd, note.",
+                "Upload lại cùng type sẽ thay thế slot hiện tại. Tối đa 4 file, mỗi loại 1 file.",
+                "Nếu sau upload tàu đủ ghế và đủ hồ sơ thì backend tự chuyển Active.",
+                "Hỗ trợ PDF, JPEG, PNG hoặc WebP, tối đa 10 MB."));
+
+        groupBuilder.MapDelete(DeleteBoatDocument, "{boatId:guid}/documents/{type}")
+            .RequireAuthorization()
+            .WithSummary("Xóa một slot hồ sơ tàu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "type trên route: Inspection, Registration, Insurance hoặc OperationLicense.",
+                "Xóa metadata hồ sơ khỏi tàu. Nếu tàu đang Active thì backend tự chuyển Inactive."));
 
         groupBuilder.MapGet(GetBoatStaffAssignments, "{boatId:guid}/staff-assignments")
             .RequireAuthorization()
@@ -202,6 +241,12 @@ public sealed class Boats : IEndpointGroup
         CancellationToken cancellationToken) =>
         Results.Ok(await boatManagementService.GetBoatByIdAsync(boatId, cancellationToken));
 
+    private static async Task<IResult> GetBoatDocuments(
+        IBoatManagementService boatManagementService,
+        Guid boatId,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await boatManagementService.GetBoatDocumentsAsync(boatId, cancellationToken));
+
     private static async Task<IResult> CreateBoat(
         IBoatManagementService boatManagementService,
         HttpRequest request,
@@ -248,6 +293,43 @@ public sealed class Boats : IEndpointGroup
         CancellationToken cancellationToken) =>
         Results.Ok(await boatManagementService.UpdateBoatStatusAsync(
             new UpdateBoatStatusRequest(boatId, request.Status),
+            cancellationToken));
+
+    private static async Task<IResult> UpdateBoatDocument(
+        IBoatManagementService boatManagementService,
+        Guid boatId,
+        BoatDocumentType type,
+        HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!request.HasFormContentType)
+        {
+            return Results.BadRequest(new { message = "Gửi multipart/form-data với field file." });
+        }
+
+        var command = await UpdateBoatDocumentRequestFromFormAsync(boatId, type, request, cancellationToken);
+        if (command is null)
+        {
+            return Results.BadRequest(new { message = "Gửi multipart/form-data với field file." });
+        }
+
+        try
+        {
+            return Results.Ok(await boatManagementService.UpdateBoatDocumentAsync(command, cancellationToken));
+        }
+        finally
+        {
+            command.File.Content.Dispose();
+        }
+    }
+
+    private static async Task<IResult> DeleteBoatDocument(
+        IBoatManagementService boatManagementService,
+        Guid boatId,
+        BoatDocumentType type,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await boatManagementService.DeleteBoatDocumentAsync(
+            new DeleteBoatDocumentRequest(boatId, type),
             cancellationToken));
 
     private static async Task<IResult> GetBoatStaffAssignments(
@@ -384,6 +466,37 @@ public sealed class Boats : IEndpointGroup
             RentalPrices: CreateRentalPricesFromForm(form));
     }
 
+    private static async Task<UpdateBoatDocumentRequest?> UpdateBoatDocumentRequestFromFormAsync(
+        Guid boatId,
+        BoatDocumentType type,
+        HttpRequest request,
+        CancellationToken cancellationToken)
+    {
+        var form = await request.ReadFormAsync(cancellationToken);
+        var file = form.Files.FirstOrDefault(file =>
+            string.Equals(file.Name, "file", StringComparison.OrdinalIgnoreCase));
+        if (file is null)
+        {
+            return null;
+        }
+
+        var content = new MemoryStream();
+        await file.CopyToAsync(content, cancellationToken);
+        content.Position = 0;
+
+        return new UpdateBoatDocumentRequest(
+            boatId,
+            type,
+            new BoatDocumentFileRequest(
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                content),
+            ParseOptionalDateOnly(GetFormValue(form, "issuedDate")),
+            ParseOptionalDateOnly(GetFormValue(form, "expiryDate")),
+            GetFormValue(form, "note"));
+    }
+
     private static string? GetFormValue(IFormCollection form, string name)
     {
         var value = form[name].ToString();
@@ -485,6 +598,23 @@ public sealed class Boats : IEndpointGroup
         decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var result)
             ? result
             : null;
+
+    private static DateOnly? ParseOptionalDateOnly(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return DateOnly.TryParseExact(
+            value,
+            ["yyyy-MM-dd", "dd/MM/yyyy"],
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.None,
+            out var result)
+            ? result
+            : null;
+    }
 
     private static T? ParseOptionalEnum<T>(string? value) where T : struct, Enum =>
         Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : null;
@@ -606,6 +736,12 @@ public sealed class Boats : IEndpointGroup
         IReadOnlyCollection<BoatRentalPriceApiRequest>? RentalPrices = null);
 
     private sealed record UpdateBoatStatusApiRequest(BoatStatus Status);
+
+    private sealed record BoatDocumentFormRequest(
+        IFormFile File,
+        DateOnly? IssuedDate = null,
+        DateOnly? ExpiryDate = null,
+        string? Note = null);
 
     private sealed record AssignBoatStaffApiRequest(
         Guid StaffUserId,

@@ -137,7 +137,7 @@ public sealed class GenerateSeatsRequestUseCase
         _context.Seats.AddRange(seats);
         boat.SeatCount = seats.Count;
         boat.SeatsConfigured = true;
-        boat.Status = BoatStatus.Active;
+        BoatDocumentSupport.AutoActivateIfReady(boat);
         await _context.SaveChangesAsync(cancellationToken);
 
         return SeatSupport.CreateBoatSeatsDto(

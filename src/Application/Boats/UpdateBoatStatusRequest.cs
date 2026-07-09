@@ -25,13 +25,16 @@ public sealed class UpdateBoatStatusRequestUseCase
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
 
     public UpdateBoatStatusRequestUseCase(
         IApplicationDbContext context,
-        IUserContext userContext)
+        IUserContext userContext,
+        TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
+        _timeProvider = timeProvider;
     }
 
     public async Task<BoatDto> ExecuteAsync(
@@ -54,6 +57,14 @@ public sealed class UpdateBoatStatusRequestUseCase
                     nameof(request.Status),
                     $"Tàu cần cấu hình đủ {boat.SeatCount} ghế trước khi chuyển Active. Hiện có {configuredSeats} ghế.");
             }
+
+            BoatDocumentSupport.EnsureCanActivate(boat);
+        }
+
+        if (request.Status == BoatStatus.UnderMaintenance
+            && boat.Status != BoatStatus.UnderMaintenance)
+        {
+            boat.MaintenanceStartedAt = _timeProvider.GetUtcNow();
         }
 
         boat.Status = request.Status;

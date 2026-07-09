@@ -77,7 +77,9 @@ internal static class BoatSupport
             imageUrls,
             boat.Description,
             rentalPrices,
-            boat.SeatSetupType);
+            boat.SeatSetupType,
+            boat.MaintenanceStartedAt,
+            BoatDocumentSupport.RequiresDocumentRefresh(boat));
     }
 
     public static IReadOnlyCollection<string> CreateImageUrls(Boat boat) =>
@@ -330,7 +332,10 @@ internal static class BoatSupport
 
     public static bool IsReadyForOperation(Boat boat) =>
         boat.Status == BoatStatus.Active
-        && boat.SeatCount > 0
+        && IsReadyForActivation(boat);
+
+    public static bool IsReadyForActivation(Boat boat) =>
+        boat.SeatCount > 0
         && IsSeatsConfigured(boat);
 
     public static void EnsureCanActivate(Boat boat, string propertyName)
