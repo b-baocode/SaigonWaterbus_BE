@@ -16,7 +16,6 @@ public sealed record BoatDocumentDto(
     string? FileUrl,
     DateOnly? IssuedDate,
     DateOnly? ExpiryDate,
-    string? Note,
     DateTimeOffset? UploadedAt,
     DateTimeOffset? UpdatedAt,
     bool RequiresRefresh);
@@ -34,8 +33,7 @@ public sealed record UpdateBoatDocumentRequest(
     BoatDocumentType Type,
     BoatDocumentFileRequest File,
     DateOnly? IssuedDate = null,
-    DateOnly? ExpiryDate = null,
-    string? Note = null);
+    DateOnly? ExpiryDate = null);
 
 public sealed record DeleteBoatDocumentRequest(
     Guid BoatId,
@@ -73,10 +71,6 @@ public sealed class UpdateBoatDocumentRequestValidator : AbstractValidator<Updat
             .GreaterThan(0)
             .WithMessage("File hồ sơ tàu là bắt buộc.");
 
-        RuleFor(x => x.Note)
-            .MaximumLength(500)
-            .WithMessage("Ghi chú hồ sơ tàu không được vượt quá 500 ký tự.");
-
         RuleFor(x => x)
             .Must(x => !x.IssuedDate.HasValue
                 || !x.ExpiryDate.HasValue
@@ -103,13 +97,16 @@ public sealed class GetBoatDocumentsRequestUseCase
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly IBoatDocumentStorageService? _boatDocumentStorage;
 
     public GetBoatDocumentsRequestUseCase(
         IApplicationDbContext context,
-        IUserContext userContext)
+        IUserContext userContext,
+        IBoatDocumentStorageService? boatDocumentStorage = null)
     {
         _context = context;
         _userContext = userContext;
+        _boatDocumentStorage = boatDocumentStorage;
     }
 
     public async Task<IReadOnlyCollection<BoatDocumentDto>> ExecuteAsync(
@@ -123,7 +120,7 @@ public sealed class GetBoatDocumentsRequestUseCase
             .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy tàu.");
 
-        return BoatDocumentSupport.CreateDocumentSlots(boat);
+        return BoatDocumentSupport.CreateDocumentSlots(boat, _boatDocumentStorage);
     }
 }
 
@@ -187,7 +184,6 @@ public sealed class UpdateBoatDocumentRequestUseCase
             StorageKey = storedDocument.StorageKey,
             IssuedDate = request.IssuedDate,
             ExpiryDate = request.ExpiryDate,
-            Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim(),
             UploadedAt = _timeProvider.GetUtcNow()
         };
 
@@ -195,7 +191,12 @@ public sealed class UpdateBoatDocumentRequestUseCase
         BoatDocumentSupport.AutoActivateIfReady(boat);
         await _context.SaveChangesAsync(cancellationToken);
 
-        return BoatDocumentSupport.CreateDocumentDto(boat.Id, request.Type, document, boat.MaintenanceStartedAt);
+        return BoatDocumentSupport.CreateDocumentDto(
+            boat.Id,
+            request.Type,
+            document,
+            boat.MaintenanceStartedAt,
+            _boatDocumentStorage);
     }
 }
 
@@ -246,13 +247,21 @@ internal static class BoatDocumentSupport
 
     public static IReadOnlyCollection<BoatDocumentDto> CreateDocumentSlots(Boat boat)
     {
+        return CreateDocumentSlots(boat, null);
+    }
+
+    public static IReadOnlyCollection<BoatDocumentDto> CreateDocumentSlots(
+        Boat boat,
+        IBoatDocumentStorageService? boatDocumentStorage)
+    {
         var latestDocuments = CreateLatestDocumentMap(boat.Documents);
         return RequiredDocumentTypes
             .Select(type => CreateDocumentDto(
                 boat.Id,
                 type,
                 latestDocuments.GetValueOrDefault(type),
-                boat.MaintenanceStartedAt))
+                boat.MaintenanceStartedAt,
+                boatDocumentStorage))
             .ToArray();
     }
 
@@ -260,8 +269,10 @@ internal static class BoatDocumentSupport
         Guid boatId,
         BoatDocumentType type,
         BoatDocument? document,
-        DateTimeOffset? maintenanceStartedAt)
+        DateTimeOffset? maintenanceStartedAt,
+        IBoatDocumentStorageService? boatDocumentStorage = null)
     {
+        var fileUrl = CreateDocumentUrl(document, boatDocumentStorage);
         return new BoatDocumentDto(
             boatId,
             type,
@@ -270,13 +281,40 @@ internal static class BoatDocumentSupport
             document?.FileName,
             document?.ContentType,
             document?.FileSize,
-            document?.FileUrl,
+            fileUrl,
             document?.IssuedDate,
             document?.ExpiryDate,
-            document?.Note,
             document?.UploadedAt,
             document?.UploadedAt,
             RequiresRefresh(type, document, maintenanceStartedAt));
+    }
+
+    private static string? CreateDocumentUrl(
+        BoatDocument? document,
+        IBoatDocumentStorageService? boatDocumentStorage)
+    {
+        if (document is null)
+        {
+            return null;
+        }
+
+        if (boatDocumentStorage is not null && !string.IsNullOrWhiteSpace(document.StorageKey))
+        {
+            try
+            {
+                var signedUrl = boatDocumentStorage.CreateDocumentUrl(document.StorageKey);
+                if (!string.IsNullOrWhiteSpace(signedUrl))
+                {
+                    return signedUrl;
+                }
+            }
+            catch
+            {
+                return document.FileUrl;
+            }
+        }
+
+        return document.FileUrl;
     }
 
     public static BoatDocument[] ReplaceDocument(

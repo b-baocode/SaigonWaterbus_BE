@@ -90,6 +90,11 @@ internal static class BoatStaffAssignmentSupport
         {
             throw new ValidationException([new ValidationFailure(propertyName, "Staff phải đang Active để được phân công.")]);
         }
+
+        if (staff.StaffType != StaffType.OnBoard)
+        {
+            throw new ValidationException([new ValidationFailure(propertyName, "Chỉ nhân viên trên tàu mới được phân công lên tàu.")]);
+        }
     }
 
     public static async Task EnsureStaffIsAvailableAsync(

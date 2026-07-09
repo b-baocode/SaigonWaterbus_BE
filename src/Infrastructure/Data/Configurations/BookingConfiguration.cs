@@ -1,4 +1,6 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -7,6 +9,13 @@ namespace SaigonWaterbus.Infrastructure.Data.Configurations;
 
 public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
 {
+    private static readonly JsonSerializerOptions InsuranceSnapshotJsonOptions = new(JsonSerializerDefaults.Web);
+
+    private static readonly ValueComparer<BookingInsuranceSnapshot?> InsuranceSnapshotComparer = new(
+        (left, right) => SerializeInsuranceSnapshot(left) == SerializeInsuranceSnapshot(right),
+        snapshot => GetInsuranceSnapshotHashCode(snapshot),
+        snapshot => DeserializeInsuranceSnapshot(SerializeInsuranceSnapshot(snapshot)));
+
     public void Configure(EntityTypeBuilder<Booking> builder)
     {
         builder.ToTable("bookings");
@@ -69,6 +78,13 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .HasMaxLength(30);
         builder.Property(x => x.BoatRequirements).HasColumnName("boat_requirements").HasMaxLength(1000);
         builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
+        builder.Property(x => x.InsuranceSnapshot)
+            .HasColumnName("insurance_snapshot")
+            .HasColumnType("jsonb")
+            .HasConversion(
+                snapshot => SerializeInsuranceSnapshot(snapshot),
+                json => DeserializeInsuranceSnapshot(json))
+            .Metadata.SetValueComparer(InsuranceSnapshotComparer);
         builder.Property(x => x.HoldExpiresAt).HasColumnName("hold_expires_at");
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
@@ -110,4 +126,20 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             "Completed" => BookingStatus.Completed,
             _ => Enum.Parse<BookingStatus>(status, true)
         };
+
+    private static string? SerializeInsuranceSnapshot(BookingInsuranceSnapshot? snapshot) =>
+        snapshot is null
+            ? null
+            : JsonSerializer.Serialize(snapshot, InsuranceSnapshotJsonOptions);
+
+    private static BookingInsuranceSnapshot? DeserializeInsuranceSnapshot(string? json) =>
+        string.IsNullOrWhiteSpace(json)
+            ? null
+            : JsonSerializer.Deserialize<BookingInsuranceSnapshot>(json, InsuranceSnapshotJsonOptions);
+
+    private static int GetInsuranceSnapshotHashCode(BookingInsuranceSnapshot? snapshot)
+    {
+        var json = SerializeInsuranceSnapshot(snapshot);
+        return json is null ? 0 : json.GetHashCode();
+    }
 }

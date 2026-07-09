@@ -159,6 +159,7 @@ public class ApplicationDbContextInitialiser
         await _context.SaveChangesAsync();
 
         await SeedSeatTypesAsync();
+        await SeedInsurancePackagesAsync();
 
         if (!_databaseStartupSettings.SeedInternalUsers)
         {
@@ -181,6 +182,27 @@ public class ApplicationDbContextInitialiser
         ("CABIN", "Cabin", 10_000m, 2),
         ("RIVER", "River", 12_000m, 3),
         ("SKY", "Sky", 15_000m, 4)
+    ];
+
+    private static readonly InsurancePackageSeed[] InsurancePackageDefinitions =
+    [
+        new(
+            "CHARTER_PASSENGER_BASIC",
+            "Bảo hiểm hành khách thuê tàu",
+            Booking.CharterBookingType,
+            false,
+            "Bảo hiểm mặc định",
+            null,
+            10_000m,
+            50_000_000m,
+            "VND",
+            [
+                "Chỉ áp dụng cho hành khách có tên trong danh sách chuyến đi.",
+                "Chỉ có hiệu lực trong thời gian diễn ra chuyến thuê tàu.",
+                "Không áp dụng nếu thông tin hành khách sai hoặc không đầy đủ."
+            ],
+            null,
+            1)
     ];
 
     /// <summary>
@@ -236,6 +258,49 @@ public class ApplicationDbContextInitialiser
         {
             await _context.SaveChangesAsync();
             _logger.LogInformation("Linked {LinkedSeatCount} seats to seeded seat types.", linked);
+        }
+    }
+
+    private async Task SeedInsurancePackagesAsync()
+    {
+        var existingKeys = await _context.Set<InsurancePackage>()
+            .Select(x => new { x.BookingType, x.Code })
+            .ToListAsync();
+        var existingKeySet = existingKeys
+            .Select(x => $"{x.BookingType}:{x.Code}")
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        var added = false;
+        foreach (var definition in InsurancePackageDefinitions)
+        {
+            var key = $"{definition.BookingType}:{definition.Code}";
+            if (existingKeySet.Contains(key))
+            {
+                continue;
+            }
+
+            _context.Set<InsurancePackage>().Add(new InsurancePackage
+            {
+                Code = definition.Code,
+                Name = definition.Name,
+                BookingType = definition.BookingType,
+                IsRequired = definition.IsRequired,
+                ProviderName = definition.ProviderName,
+                ProviderLogoUrl = definition.ProviderLogoUrl,
+                UnitPremiumAmount = definition.UnitPremiumAmount,
+                CoverageAmount = definition.CoverageAmount,
+                Currency = definition.Currency,
+                Conditions = definition.Conditions,
+                TermsUrl = definition.TermsUrl,
+                IsActive = true,
+                DisplayOrder = definition.DisplayOrder
+            });
+            added = true;
+        }
+
+        if (added)
+        {
+            await _context.SaveChangesAsync();
         }
     }
 
@@ -619,4 +684,17 @@ public class ApplicationDbContextInitialiser
         string PhoneNumber,
         string Password);
 
+    private sealed record InsurancePackageSeed(
+        string Code,
+        string Name,
+        string BookingType,
+        bool IsRequired,
+        string? ProviderName,
+        string? ProviderLogoUrl,
+        decimal UnitPremiumAmount,
+        decimal CoverageAmount,
+        string Currency,
+        string[] Conditions,
+        string? TermsUrl,
+        int DisplayOrder);
 }

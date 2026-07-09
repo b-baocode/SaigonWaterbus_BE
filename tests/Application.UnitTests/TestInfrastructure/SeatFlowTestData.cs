@@ -36,20 +36,24 @@ internal static class SeatFlowTestData
             "Manager");
     }
 
-    public static async Task<TestUserContext> SeedStaffAsync(ApplicationDbContext context)
+    public static async Task<TestUserContext> SeedStaffAsync(
+        ApplicationDbContext context,
+        StaffType staffType = StaffType.OnBoard)
     {
         return await SeedUserAsync(
             context,
             Roles.StaffCode,
             Roles.StaffSystemName,
-            "Staff");
+            "Staff",
+            staffType);
     }
 
     private static async Task<TestUserContext> SeedUserAsync(
         ApplicationDbContext context,
         string roleCode,
         string roleSystemName,
-        string roleDisplayName)
+        string roleDisplayName,
+        StaffType? staffType = null)
     {
         var role = new Role
         {
@@ -62,6 +66,7 @@ internal static class SeatFlowTestData
             FullName = $"Seat flow {roleDisplayName}",
             RoleId = role.Id,
             Role = role,
+            StaffType = staffType,
             Status = UserStatus.Active
         };
 
@@ -138,6 +143,9 @@ internal sealed class TestBoatDocumentStorageService : IBoatDocumentStorageServi
             $"https://example.test/boat-documents/{upload.BoatId}/{upload.Type}/{upload.DocumentId:N}",
             $"{upload.BoatId}/{upload.Type}/{upload.DocumentId:N}"));
     }
+
+    public string CreateDocumentUrl(string storageKey) =>
+        $"https://example.test/signed-boat-documents/{storageKey}";
 }
 
 internal sealed class TestStationImageStorageService : IStationImageStorageService

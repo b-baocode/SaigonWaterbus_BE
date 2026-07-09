@@ -55,7 +55,8 @@ public sealed class CharterBookings : IEndpointGroup
           ],
           "rentalUnit": "Day",
           "durationValue": 1,
-          "promotionCode": "SUMMER10"
+          "promotionCode": "SUMMER10",
+          "insurancePackageId": "00000000-0000-0000-0000-000000000003"
         }
         """;
 
@@ -167,6 +168,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Hour: so gio tinh tien = max(durationValue, phut tinh tien / 60) va lam tron den 3 chu so thap phan.",
                 "Day: tinh theo dailyRentalPrice * durationValue.",
                 "promotionCode: tuy chon; gui chuoi rong de bo promotion hien tai.",
+                "insurancePackageId: tuy chon; chi gui khi khach chon mua bao hiem, bo trong/null thi khong cong phi bao hiem.",
                 "Sau khi quote thanh cong, bookingStatus = Quoted va customer moi tao payment duoc.",
                 "Khong cho quote neu booking da co payment Pending/Paid."));
 
@@ -181,6 +183,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Payload giong PUT /api/charter-bookings/admin/{id}/quote.",
                 "API khong doi bookingStatus, khong giu tau, khong luu gia; chi tra preview.",
                 "Response boats[] tra unitPrice, chargeableDurationValue, subtotalAmount cua tung tau.",
+                "insurancePackageId: tuy chon; chi gui khi khach chon mua bao hiem, bo trong/null thi khong cong phi bao hiem.",
                 "Backend tu tinh tong bang cach cong subtotalAmount tung tau; khong ho tro tong gia thu cong."));
 
         group.MapPut(AssignCharterBookingManager, "admin/{id:guid}/manager")
@@ -507,7 +510,8 @@ public sealed class CharterBookings : IEndpointGroup
             request.Boats,
             request.RentalUnit,
             request.DurationValue,
-            request.PromotionCode), ct));
+            request.PromotionCode,
+            request.InsurancePackageId), ct));
 
     private static async Task<IResult> PreviewCharterBookingQuote(
         ISender sender,
@@ -520,7 +524,8 @@ public sealed class CharterBookings : IEndpointGroup
             request.Boats,
             request.RentalUnit,
             request.DurationValue,
-            request.PromotionCode), ct));
+            request.PromotionCode,
+            request.InsurancePackageId), ct));
 
     private static async Task<IResult> AssignCharterBookingManager(
         ISender sender,

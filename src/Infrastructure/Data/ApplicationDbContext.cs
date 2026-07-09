@@ -36,6 +36,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<BookingPassenger> BookingPassengers => Set<BookingPassenger>();
 
+    public DbSet<InsurancePackage> InsurancePackages => Set<InsurancePackage>();
+
     public DbSet<Payment> Payments => Set<Payment>();
 
     public DbSet<Ticket> Tickets => Set<Ticket>();
@@ -43,6 +45,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Incident> Incidents => Set<Incident>();
 
     public DbSet<BoatStaffAssignment> BoatStaffAssignments => Set<BoatStaffAssignment>();
+
+    public DbSet<StationStaffAssignment> StationStaffAssignments => Set<StationStaffAssignment>();
 
     public DbSet<Review> Reviews => Set<Review>();
 

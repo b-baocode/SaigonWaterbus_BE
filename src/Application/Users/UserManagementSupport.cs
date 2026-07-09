@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Users;
 
@@ -22,10 +23,14 @@ internal static class UserManagementSupport
 
         return query.Where(x =>
             x.Role.Code == Roles.CustomerCode
-            || x.Role.Code == Roles.StaffCode);
+            || x.Role.Code == Roles.StaffCode && x.StaffType != StaffType.OnBoard);
     }
 
-    public static void EnsureCanCreateRole(User actor, Role targetRole, string propertyName)
+    public static void EnsureCanCreateRole(
+        User actor,
+        Role targetRole,
+        StaffType? staffType,
+        string propertyName)
     {
         if (AuthSupport.IsAdmin(actor))
         {
@@ -39,10 +44,35 @@ internal static class UserManagementSupport
 
         if (AuthSupport.IsManager(actor) && CanManagerManageRole(targetRole))
         {
+            if (staffType is not StaffType.Ground)
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(StaffType),
+                    "Manager chỉ được tạo nhân viên mặt đất.");
+            }
+
             return;
         }
 
         throw AuthSupport.CreateValidationException(propertyName, "Manager chỉ được tạo tài khoản Staff. Customer phải dùng luồng đăng ký.");
+    }
+
+    public static void EnsureValidStaffTypeForRole(Role targetRole, StaffType? staffType, string propertyName)
+    {
+        if (targetRole.SystemName == Roles.StaffSystemName)
+        {
+            if (staffType.HasValue)
+            {
+                return;
+            }
+
+            throw AuthSupport.CreateValidationException(propertyName, "StaffType là bắt buộc khi tạo/cập nhật tài khoản Staff.");
+        }
+
+        if (staffType.HasValue)
+        {
+            throw AuthSupport.CreateValidationException(propertyName, "Chỉ tài khoản Staff mới có StaffType.");
+        }
     }
 
     public static void EnsureCanViewUser(User actor, User target)
@@ -53,7 +83,7 @@ internal static class UserManagementSupport
         }
 
         if (AuthSupport.IsManager(actor)
-            && (AuthSupport.IsCustomer(target) || AuthSupport.IsStaff(target)))
+            && (AuthSupport.IsCustomer(target) || CanManagerManageStaff(target)))
         {
             return;
         }
@@ -74,7 +104,7 @@ internal static class UserManagementSupport
         }
 
         if (AuthSupport.IsManager(actor)
-            && (AuthSupport.IsCustomer(target) || AuthSupport.IsStaff(target)))
+            && (AuthSupport.IsCustomer(target) || CanManagerManageStaff(target)))
         {
             return;
         }
@@ -96,7 +126,7 @@ internal static class UserManagementSupport
         }
 
         if (AuthSupport.IsManager(actor)
-            && (AuthSupport.IsCustomer(target) || AuthSupport.IsStaff(target)))
+            && (AuthSupport.IsCustomer(target) || CanManagerManageStaff(target)))
         {
             return;
         }
@@ -117,7 +147,7 @@ internal static class UserManagementSupport
             return;
         }
 
-        if (AuthSupport.IsManager(actor) && AuthSupport.IsStaff(target))
+        if (AuthSupport.IsManager(actor) && CanManagerManageStaff(target))
         {
             return;
         }
@@ -139,7 +169,7 @@ internal static class UserManagementSupport
 
         if (AuthSupport.IsManager(actor))
         {
-            if (!AuthSupport.IsCustomer(target) && !AuthSupport.IsStaff(target))
+            if (!AuthSupport.IsCustomer(target) && !CanManagerManageStaff(target))
             {
                 throw new ForbiddenAccessException();
             }
@@ -169,7 +199,7 @@ internal static class UserManagementSupport
     {
         if (AuthSupport.IsAdmin(actor)
             || actor.Id == target.Id
-            || (AuthSupport.IsManager(actor) && AuthSupport.IsStaff(target)))
+            || (AuthSupport.IsManager(actor) && CanManagerManageStaff(target)))
         {
             return;
         }
@@ -183,14 +213,16 @@ internal static class UserManagementSupport
         {
             if (AuthSupport.IsManager(target) || AuthSupport.IsStaff(target))
             {
+                EnsureTargetCanHaveStationAssignments(target, nameof(target.Id));
                 return;
             }
 
             throw AuthSupport.CreateValidationException(nameof(target.Id), "Chỉ được gắn bến cho tài khoản Manager hoặc Staff.");
         }
 
-        if (AuthSupport.IsManager(actor) && AuthSupport.IsStaff(target))
+        if (AuthSupport.IsManager(actor) && CanManagerManageStaff(target))
         {
+            EnsureTargetCanHaveStationAssignments(target, nameof(target.Id));
             return;
         }
 
@@ -202,6 +234,22 @@ internal static class UserManagementSupport
 
     private static bool CanManagerManageRole(Role role) =>
         role.SystemName is Roles.StaffSystemName;
+
+    private static bool CanManagerManageStaff(User target) =>
+        AuthSupport.IsStaff(target) && target.StaffType != StaffType.OnBoard;
+
+    public static IReadOnlyList<Guid> NormalizeStationIds(IReadOnlyCollection<Guid>? stationIds) =>
+        stationIds?.Distinct().ToList() ?? [];
+
+    public static void EnsureTargetCanHaveStationAssignments(User target, string propertyName)
+    {
+        if (AuthSupport.IsStaff(target) && target.StaffType == StaffType.OnBoard)
+        {
+            throw AuthSupport.CreateValidationException(
+                propertyName,
+                "Nhân viên trên tàu không gắn trực tiếp vào bến.");
+        }
+    }
 
     public static async Task<User> GetVisibleUserByIdAsync(
         IApplicationDbContext context,

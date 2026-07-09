@@ -11,6 +11,8 @@ public interface IBoatDocumentStorageService
     Task<StoredBoatDocument> UploadDocumentAsync(
         BoatDocumentUpload upload,
         CancellationToken cancellationToken);
+
+    string CreateDocumentUrl(string storageKey);
 }
 
 public sealed record BoatDocumentUpload(

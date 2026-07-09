@@ -14,7 +14,8 @@ public sealed record UpdateUserRequest(
     string? Email,
     Guid? RoleId,
     string? Gender = null,
-    string? Nationality = null);
+    string? Nationality = null,
+    StaffType? StaffType = null);
 
 public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
 {
@@ -67,6 +68,9 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
             .WithMessage("Vai trò là bắt buộc.")
             .When(x => x.RoleId.HasValue);
 
+        RuleFor(x => x.StaffType)
+            .IsInEnum()
+            .When(x => x.StaffType.HasValue);
     }
 }
 
@@ -106,10 +110,45 @@ public sealed class UpdateUserRequestUseCase
             ? await AuthSupport.GetRoleByIdAsync(_context, request.RoleId.Value, nameof(request.RoleId), cancellationToken)
             : user.Role;
         var roleChanged = targetRole.Id != user.RoleId;
+        var targetStaffType = targetRole.SystemName == Roles.StaffSystemName
+            ? request.StaffType ?? user.StaffType
+            : null;
 
         if (roleChanged)
         {
             UserManagementSupport.EnsureCanAssignRole(actor, user, targetRole, nameof(request.RoleId));
+        }
+
+        if (request.StaffType.HasValue || roleChanged)
+        {
+            if (targetRole.SystemName != Roles.StaffSystemName && request.StaffType.HasValue)
+            {
+                UserManagementSupport.EnsureValidStaffTypeForRole(
+                    targetRole,
+                    request.StaffType,
+                    nameof(request.StaffType));
+            }
+
+            UserManagementSupport.EnsureValidStaffTypeForRole(
+                targetRole,
+                targetStaffType,
+                nameof(request.StaffType));
+
+            if (AuthSupport.IsManager(actor) && targetStaffType is not StaffType.Ground)
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.StaffType),
+                    "Manager chỉ được cập nhật nhân viên mặt đất.");
+            }
+        }
+
+        if (targetStaffType == StaffType.OnBoard
+            && await _context.Set<UserStationAssignment>()
+                .AnyAsync(x => x.UserId == user.Id && x.IsActive, cancellationToken))
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.StaffType),
+                "Vui lòng bỏ gắn bến trước khi chuyển nhân viên sang loại trên tàu.");
         }
 
         if (request.Email is not null)
@@ -182,6 +221,11 @@ public sealed class UpdateUserRequestUseCase
             {
                 user.UserCode = await _userCodeGenerator.GenerateNextCodeAsync(targetRole.Code, cancellationToken);
             }
+        }
+
+        if (request.StaffType.HasValue || roleChanged)
+        {
+            user.StaffType = targetStaffType;
         }
 
         await AuthSupport.RevokeActiveRefreshTokensAsync(_context, user.Id, _timeProvider.GetUtcNow(), cancellationToken);

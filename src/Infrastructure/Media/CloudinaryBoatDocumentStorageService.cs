@@ -39,7 +39,8 @@ internal sealed class CloudinaryBoatDocumentStorageService : IBoatDocumentStorag
                 Overwrite = true,
                 Invalidate = true,
                 UseFilename = false,
-                UniqueFilename = false
+                UniqueFilename = false,
+                AccessMode = "public"
             });
         }
         catch (Exception ex) when (ex is not ProfileImageStorageException)
@@ -52,12 +53,35 @@ internal sealed class CloudinaryBoatDocumentStorageService : IBoatDocumentStorag
             throw new ProfileImageStorageException($"Cloudinary boat document upload failed: {result.Error.Message}");
         }
 
-        if (result.SecureUrl is null || string.IsNullOrWhiteSpace(result.PublicId))
+        if (string.IsNullOrWhiteSpace(result.PublicId))
         {
             throw new ProfileImageStorageException("Cloudinary boat document upload did not return a public URL.");
         }
 
-        return new StoredBoatDocument(result.SecureUrl.ToString(), result.PublicId);
+        var signedUrl = CreateDocumentUrl(result.PublicId);
+
+        if (string.IsNullOrWhiteSpace(signedUrl))
+        {
+            throw new ProfileImageStorageException("Cloudinary boat document upload did not return a signed URL.");
+        }
+
+        return new StoredBoatDocument(signedUrl, result.PublicId);
+    }
+
+    public string CreateDocumentUrl(string storageKey)
+    {
+        EnsureConfigured();
+        if (string.IsNullOrWhiteSpace(storageKey))
+        {
+            return string.Empty;
+        }
+
+        var cloudinary = CreateCloudinaryClient();
+        return cloudinary.Api.UrlImgUp
+            .ResourceType("raw")
+            .Signed(true)
+            .Secure(true)
+            .BuildUrl(storageKey);
     }
 
     private Cloudinary CreateCloudinaryClient() =>

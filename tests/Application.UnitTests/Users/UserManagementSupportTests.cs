@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Users;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Users;
@@ -15,7 +16,11 @@ public class UserManagementSupportTests
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var targetRole = Role(Roles.StaffSystemName);
 
-        Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+        Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(
+            actor,
+            targetRole,
+            StaffType.Ground,
+            "roleId"));
     }
 
     [Test]
@@ -25,7 +30,7 @@ public class UserManagementSupportTests
         var targetRole = Role(Roles.CustomerSystemName);
 
         Should.Throw<ValidationException>(() =>
-            UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+            UserManagementSupport.EnsureCanCreateRole(actor, targetRole, StaffType.Ground, "roleId"));
     }
 
     [TestCase(Roles.ManagerSystemName)]
@@ -36,7 +41,7 @@ public class UserManagementSupportTests
         var targetRole = Role(targetSystemName);
 
         Should.Throw<ValidationException>(() =>
-            UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+            UserManagementSupport.EnsureCanCreateRole(actor, targetRole, StaffType.Ground, "roleId"));
     }
 
     [Test]
@@ -45,7 +50,7 @@ public class UserManagementSupportTests
         var actor = UserWithRole(1, Roles.AdminName);
         var targetRole = Role(Roles.ManagerSystemName);
 
-        Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+        Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, null, "roleId"));
     }
 
     [Test]
@@ -54,7 +59,11 @@ public class UserManagementSupportTests
         var actor = UserWithRole(1, Roles.AdminName);
         var targetRole = Role(Roles.StaffSystemName);
 
-        Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+        Should.NotThrow(() => UserManagementSupport.EnsureCanCreateRole(
+            actor,
+            targetRole,
+            StaffType.OnBoard,
+            "roleId"));
     }
 
     [TestCase(Roles.AdminName)]
@@ -65,7 +74,7 @@ public class UserManagementSupportTests
         var targetRole = Role(targetSystemName);
 
         Should.Throw<ValidationException>(() =>
-            UserManagementSupport.EnsureCanCreateRole(actor, targetRole, "roleId"));
+            UserManagementSupport.EnsureCanCreateRole(actor, targetRole, null, "roleId"));
     }
 
     [TestCase(Roles.CustomerSystemName)]
@@ -86,6 +95,17 @@ public class UserManagementSupportTests
     {
         var actor = UserWithRole(1, Roles.ManagerSystemName);
         var target = UserWithRole(2, targetSystemName);
+
+        Should.Throw<ForbiddenAccessException>(() => UserManagementSupport.EnsureCanViewUser(actor, target));
+        Should.Throw<ForbiddenAccessException>(() => UserManagementSupport.EnsureCanUpdateUser(actor, target));
+        Should.Throw<ForbiddenAccessException>(() => UserManagementSupport.EnsureCanDeleteUser(actor, target));
+    }
+
+    [Test]
+    public void ManagerCannotViewUpdateOrDeleteOnBoardStaff()
+    {
+        var actor = UserWithRole(1, Roles.ManagerSystemName);
+        var target = UserWithRole(2, Roles.StaffSystemName, StaffType.OnBoard);
 
         Should.Throw<ForbiddenAccessException>(() => UserManagementSupport.EnsureCanViewUser(actor, target));
         Should.Throw<ForbiddenAccessException>(() => UserManagementSupport.EnsureCanUpdateUser(actor, target));
@@ -282,15 +302,16 @@ public class UserManagementSupportTests
             UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
     }
 
-    private static User UserWithRole(int id, string systemName) =>
-        UserWithRole(Guid.Parse($"00000000-0000-0000-0000-{id:000000000000}"), systemName);
+    private static User UserWithRole(int id, string systemName, StaffType? staffType = null) =>
+        UserWithRole(Guid.Parse($"00000000-0000-0000-0000-{id:000000000000}"), systemName, staffType);
 
-    private static User UserWithRole(Guid id, string systemName) =>
+    private static User UserWithRole(Guid id, string systemName, StaffType? staffType = null) =>
         new()
         {
             Id = id,
             FullName = $"{systemName} User",
-            Role = Role(systemName)
+            Role = Role(systemName),
+            StaffType = staffType
         };
 
     private static Role Role(string systemName) =>

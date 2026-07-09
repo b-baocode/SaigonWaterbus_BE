@@ -124,6 +124,7 @@ internal static class CharterBookingQuerySupport
             ticketDtos.Count,
             ticketDtos,
             CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
-            null);
+            null,
+            CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot));
     }
 }

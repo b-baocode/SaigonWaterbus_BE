@@ -25,6 +25,8 @@ public sealed record AuthUserDto(
     string? AvatarUrl,
     AvatarSource AvatarSource,
     UserStatus Status,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    StaffType? StaffType,
     IReadOnlyCollection<AuthRoleDto> Roles,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     IReadOnlyCollection<AuthStationAssignmentDto>? StationAssignments);

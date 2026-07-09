@@ -177,7 +177,7 @@ public sealed class Boats : IEndpointGroup
                 null,
                 "type trên route: Inspection, Registration, Insurance hoặc OperationLicense.",
                 "Gửi multipart/form-data với field file.",
-                "Các field optional: issuedDate=yyyy-MM-dd, expiryDate=yyyy-MM-dd, note.",
+                "Các field optional: issuedDate=yyyy-MM-dd, expiryDate=yyyy-MM-dd.",
                 "Upload lại cùng type sẽ thay thế slot hiện tại. Tối đa 4 file, mỗi loại 1 file.",
                 "Nếu sau upload tàu đủ ghế và đủ hồ sơ thì backend tự chuyển Active.",
                 "Hỗ trợ PDF, JPEG, PNG hoặc WebP, tối đa 10 MB."));
@@ -493,8 +493,7 @@ public sealed class Boats : IEndpointGroup
                 file.Length,
                 content),
             ParseOptionalDateOnly(GetFormValue(form, "issuedDate")),
-            ParseOptionalDateOnly(GetFormValue(form, "expiryDate")),
-            GetFormValue(form, "note"));
+            ParseOptionalDateOnly(GetFormValue(form, "expiryDate")));
     }
 
     private static string? GetFormValue(IFormCollection form, string name)
@@ -740,8 +739,7 @@ public sealed class Boats : IEndpointGroup
     private sealed record BoatDocumentFormRequest(
         IFormFile File,
         DateOnly? IssuedDate = null,
-        DateOnly? ExpiryDate = null,
-        string? Note = null);
+        DateOnly? ExpiryDate = null);
 
     private sealed record AssignBoatStaffApiRequest(
         Guid StaffUserId,

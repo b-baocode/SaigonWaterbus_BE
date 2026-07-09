@@ -81,6 +81,11 @@ public sealed class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(x => x.RoleId)
             .HasColumnName("role_id");
 
+        builder.Property(x => x.StaffType)
+            .HasColumnName("staff_type")
+            .HasConversion<string>()
+            .HasMaxLength(30);
+
         builder.Property(x => x.AvatarUrl)
             .HasColumnName("avatar_url")
             .HasMaxLength(1000);

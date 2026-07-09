@@ -195,9 +195,14 @@ public class BoatSeatFlowIntegrationTests
         staleDto.MaintenanceStartedAt.ShouldBe(maintenanceStartedAt);
         staleDto.DocumentsRequireRefresh.ShouldBeTrue();
 
-        var staleDocuments = await new GetBoatDocumentsRequestUseCase(context, userContext)
+        var staleDocuments = await new GetBoatDocumentsRequestUseCase(
+                context,
+                userContext,
+                new TestBoatDocumentStorageService())
             .ExecuteAsync(new GetBoatDocumentsRequest(boat.Id), CancellationToken.None);
         staleDocuments.Single(x => x.Type == BoatDocumentType.Inspection).RequiresRefresh.ShouldBeTrue();
+        staleDocuments.Single(x => x.Type == BoatDocumentType.Inspection).FileUrl
+            .ShouldStartWith("https://example.test/signed-boat-documents/");
 
         await Should.ThrowAsync<ValidationException>(() =>
             new UpdateBoatStatusRequestUseCase(
@@ -228,7 +233,10 @@ public class BoatSeatFlowIntegrationTests
             .ExecuteAsync(new GetBoatByIdRequest(boat.Id), CancellationToken.None);
         refreshedDto.DocumentsRequireRefresh.ShouldBeFalse();
 
-        var refreshedDocuments = await new GetBoatDocumentsRequestUseCase(context, userContext)
+        var refreshedDocuments = await new GetBoatDocumentsRequestUseCase(
+                context,
+                userContext,
+                new TestBoatDocumentStorageService())
             .ExecuteAsync(new GetBoatDocumentsRequest(boat.Id), CancellationToken.None);
         refreshedDocuments.Single(x => x.Type == BoatDocumentType.Inspection).RequiresRefresh.ShouldBeFalse();
     }
@@ -319,11 +327,16 @@ public class BoatSeatFlowIntegrationTests
 
         firstResult.Id.ShouldNotBe(secondResult.Id);
 
-        var documents = await new GetBoatDocumentsRequestUseCase(context, userContext)
+        var documents = await new GetBoatDocumentsRequestUseCase(
+                context,
+                userContext,
+                new TestBoatDocumentStorageService())
             .ExecuteAsync(new GetBoatDocumentsRequest(boat.Id), CancellationToken.None);
 
         documents.Count.ShouldBe(4);
-        documents.Single(x => x.Type == BoatDocumentType.Inspection).FileName.ShouldBe("inspection-new.pdf");
+        var inspectionDocument = documents.Single(x => x.Type == BoatDocumentType.Inspection);
+        inspectionDocument.FileName.ShouldBe("inspection-new.pdf");
+        inspectionDocument.FileUrl.ShouldStartWith("https://example.test/signed-boat-documents/");
         documents.Count(x => x.IsUploaded).ShouldBe(1);
     }
 
