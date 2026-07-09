@@ -91,7 +91,9 @@ public sealed class Routes : IEndpointGroup
                 "RouteCode phai unique (tu dong uppercase).",
                 "Request phai chua it nhat 2 waypoint type=station.",
                 "Waypoint dau va cuoi bat buoc la station.",
-                "Neu co waypoint type=viaWaterway thi he thong dung mang waterway da import truoc do de tao RouteGeometry LineString.",
+                "CHI CAN NHAP STATION: he thong TU DONG tao RouteGeometry tu mang waterway da import (snap ben vao duong song, tim duong ngan nhat). Neu chua import mang hoac khong noi duoc thi van tao route voi geometry rong.",
+                "autoRouteGeometry: true = BAT BUOC tao geometry (tra 400 neu khong the); false = khong tao; bo trong = tu dong best-effort.",
+                "Neu co waypoint type=viaWaterway thi geometry la bat buoc va tuyen bi ep di qua waterway do.",
                 "viaWaterway = EP di qua mot con duong thuy (vd duong tat); Dijkstra buoc phai qua diem dai dien cua no.",
                 "avoidWaterwayOsmIds (optional): mang OSM id/ten waterway EP NE - loai khoi mang khi tim duong, de tuyen di duong dai hon (vd vong theo song thay vi cat qua kenh). Khong duoc trung voi viaWaterway.",
                 "Neu ban ve duong san, co the tao route chi bang station waypoints roi nhap duong that o /segments."));

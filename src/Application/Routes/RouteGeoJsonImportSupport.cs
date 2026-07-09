@@ -36,7 +36,8 @@ internal sealed record ParsedNavigationMapGeoJson(
 
 internal static class RouteGeoJsonImportSupport
 {
-    private const double WaypointSnapThresholdMeters = 300;
+    // 500m vi ben nam tren bo con OSM ve tim song giua dong; song rong (Nha Be ~1km) can toi ~350-500m.
+    private const double WaypointSnapThresholdMeters = 500;
     private const double CoordinateEqualityThresholdMeters = 1;
     private static readonly GeometryFactory GeometryFactory =
         NtsGeometryServices.Instance.CreateGeometryFactory(srid: 4326);
@@ -214,7 +215,26 @@ internal static class RouteGeoJsonImportSupport
         for (var i = 0; i < snappedNodeIds.Count - 1; i++)
         {
             var legCoordinates = graph.FindShortestPathCoordinates(snappedNodeIds[i], snappedNodeIds[i + 1]);
+
+            // Waypoint dau tuyen (vd ben tau) nam ngoai mang song -> bat dau duong tu dung toa do waypoint.
+            if (i == 0 && IsAwayFromNetwork(waypointPoints[0], legCoordinates[0]))
+            {
+                routeCoordinates.Add(new Coordinate(waypointPoints[0].X, waypointPoints[0].Y));
+            }
+
             AppendCoordinates(routeCoordinates, legCoordinates);
+
+            var nextWaypoint = waypointPoints[i + 1];
+            var snappedEnd = legCoordinates[^1];
+            if (IsAwayFromNetwork(nextWaypoint, snappedEnd))
+            {
+                // Tat vao dung toa do waypoint (ben tau); neu con chang ke tiep thi quay lai song.
+                routeCoordinates.Add(new Coordinate(nextWaypoint.X, nextWaypoint.Y));
+                if (i < snappedNodeIds.Count - 2)
+                {
+                    routeCoordinates.Add(new Coordinate(snappedEnd.X, snappedEnd.Y));
+                }
+            }
         }
 
         var normalized = NormalizeCoordinates(routeCoordinates);
@@ -227,6 +247,10 @@ internal static class RouteGeoJsonImportSupport
 
         return new LineString(normalized) { SRID = 4326 };
     }
+
+    /// <summary>Waypoint cach diem snap tren mang song hon nguong 1m (via nam san tren song -> false).</summary>
+    private static bool IsAwayFromNetwork(Point waypoint, Coordinate snapped) =>
+        HaversineMeters(waypoint.Y, waypoint.X, snapped.Y, snapped.X) > CoordinateEqualityThresholdMeters;
 
     private static bool IsLineFeature(string? geometryType) =>
         geometryType == "LineString" || geometryType == "MultiLineString";

@@ -13,7 +13,7 @@ public sealed record CreateRouteCommand(
     string? Description,
     int? EstimatedDurationMin,
     IReadOnlyList<CreateRouteWaypointDto> Waypoints,
-    bool AutoRouteGeometry = false,
+    bool? AutoRouteGeometry = null,
     string? PreferWaterwayType = null,
     IReadOnlyList<string>? AvoidWaterwayOsmIds = null) : IRequest<RouteDto>;
 
@@ -104,7 +104,12 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
 
         var hasViaWaterway = request.Waypoints.Any(waypoint =>
             string.Equals(waypoint.Type, WaypointTypes.ViaWaterway, StringComparison.OrdinalIgnoreCase));
-        var buildGeometry = hasViaWaterway || request.AutoRouteGeometry;
+
+        // geometryRequired: co via hoac autoRouteGeometry=true -> loi neu khong dung duoc geometry.
+        // geometryBestEffort: chi nhap station (khong set co) -> co gang dung, that bai thi tao route khong geometry.
+        var geometryRequired = hasViaWaterway || request.AutoRouteGeometry == true;
+        var geometryBestEffort = !geometryRequired && request.AutoRouteGeometry != false;
+        var buildGeometry = geometryRequired || geometryBestEffort;
 
         var waterwaySegments = buildGeometry
             ? await _context.Set<WaterwaySegment>()
@@ -128,13 +133,18 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
 
             if (filtered.Count == 0)
             {
-                var detail = string.IsNullOrWhiteSpace(request.PreferWaterwayType)
-                    ? "No waterway network has been imported yet. Import GeoJSON map data first or create the route with station waypoints only."
-                    : $"No waterway segments of type '{request.PreferWaterwayType}' found. Import GeoJSON map data with the correct waterway type first.";
-                throw new ValidationException([new ValidationFailure(nameof(request.Waypoints), detail)]);
+                if (geometryRequired)
+                {
+                    var detail = string.IsNullOrWhiteSpace(request.PreferWaterwayType)
+                        ? "No waterway network has been imported yet. Import GeoJSON map data first or create the route with station waypoints only."
+                        : $"No waterway segments of type '{request.PreferWaterwayType}' found. Import GeoJSON map data with the correct waterway type first.";
+                    throw new ValidationException([new ValidationFailure(nameof(request.Waypoints), detail)]);
+                }
+
+                buildGeometry = false;
             }
 
-            if (avoidWaterwayIds.Count > 0)
+            if (buildGeometry && avoidWaterwayIds.Count > 0)
             {
                 filtered = filtered
                     .Where(s => !IsWaterwayAvoided(s, avoidWaterwayIds))
@@ -142,9 +152,14 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
 
                 if (filtered.Count == 0)
                 {
-                    throw new ValidationException([new ValidationFailure(
-                        nameof(CreateRouteCommand.AvoidWaterwayOsmIds),
-                        "avoidWaterwayOsmIds da loai bo toan bo mang waterway; khong con duong de tao route geometry.")]);
+                    if (geometryRequired)
+                    {
+                        throw new ValidationException([new ValidationFailure(
+                            nameof(CreateRouteCommand.AvoidWaterwayOsmIds),
+                            "avoidWaterwayOsmIds da loai bo toan bo mang waterway; khong con duong de tao route geometry.")]);
+                    }
+
+                    buildGeometry = false;
                 }
             }
 
@@ -186,7 +201,15 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
 
                 if (buildGeometry)
                 {
-                    waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
+                    try
+                    {
+                        waypointPoints.Add(GetStationPoint(station, nameof(request.Waypoints)));
+                    }
+                    catch (ValidationException) when (!geometryRequired)
+                    {
+                        // Best-effort: station thieu toa do -> bo qua geometry, van tao route.
+                        buildGeometry = false;
+                    }
                 }
 
                 continue;
@@ -218,11 +241,21 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             waypointPoints.Add(RouteGeoJsonImportSupport.CreateRepresentativePoint(viaGeometries));
         }
 
-        var routeGeometry = buildGeometry
-            ? RouteGeoJsonImportSupport.BuildRouteGeometry(
-                waterwaySegments.Select(segment => segment.Geometry).ToList(),
-                waypointPoints)
-            : null;
+        LineString? routeGeometry = null;
+        if (buildGeometry)
+        {
+            try
+            {
+                routeGeometry = RouteGeoJsonImportSupport.BuildRouteGeometry(
+                    waterwaySegments.Select(segment => segment.Geometry).ToList(),
+                    waypointPoints);
+            }
+            catch (ValidationException) when (!geometryRequired)
+            {
+                // Best-effort: khong snap duoc / khong noi duoc -> van tao route, geometry rong.
+                routeGeometry = null;
+            }
+        }
         var distanceKm = routeGeometry is null
             ? (decimal?)null
             : (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2);
