@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
 
@@ -9,6 +10,9 @@ namespace SaigonWaterbus.Web.Endpoints;
 
 public sealed class Gps : IEndpointGroup
 {
+    private const double StationMatchThresholdMeters = 500;
+    private const double FallbackSpeedKmh = 16;
+
     private const string StartSessionExample =
         """
         {
@@ -40,11 +44,12 @@ public sealed class Gps : IEndpointGroup
           "routeName": "Binh An - Thao Dien",
           "description": "Captured from GPS survey.",
           "status": "Active",
+          "averageSpeedKmh": 16,
           "startStationId": "550e8400-e29b-41d4-a716-446655440001",
           "endStationId": "550e8400-e29b-41d4-a716-446655440002",
           "coordinates": [
-            { "lat": 10.7757, "lng": 106.7072, "sequence": 1, "recordedAt": "2026-07-10T13:30:00+07:00" },
-            { "lat": 10.7761, "lng": 106.7080, "sequence": 2, "recordedAt": "2026-07-10T13:30:05+07:00" }
+            { "lat": 10.7757, "lng": 106.7072, "speedKmh": 16, "sequence": 1, "recordedAt": "2026-07-10T13:30:00+07:00" },
+            { "lat": 10.7761, "lng": 106.7080, "speedKmh": 16, "sequence": 2, "recordedAt": "2026-07-10T13:30:05+07:00" }
           ]
         }
         """;
@@ -79,6 +84,8 @@ public sealed class Gps : IEndpointGroup
                 "GPS device",
                 SaveRouteExample,
                 "Neu coordinates rong, backend se lay diem da thu theo sessionId.",
+                "Neu khong gui startStationId/endStationId, backend tu tim ben gan diem GPS dau/cuoi trong ban kinh 500m.",
+                "estimatedDurationMin = baseDistanceKm / averageSpeedKmh * 60. Neu khong gui averageSpeedKmh, backend lay trung binh speedKmh cua diem GPS; neu van thieu thi dung 16 km/h.",
                 "routeCode phai chua ton tai de tranh ghi de tuyen hien co."));
     }
 
@@ -270,17 +277,6 @@ public sealed class Gps : IEndpointGroup
             return Results.Conflict(new { message = "routeCode da ton tai, khong tu dong ghi de tuyen hien co." });
         }
 
-        var stationError = await ValidateStationsAsync(
-            dbContext,
-            request.StartStationId ?? session?.StartStationId,
-            request.EndStationId ?? session?.EndStationId,
-            cancellationToken);
-
-        if (stationError is not null)
-        {
-            return stationError;
-        }
-
         var coordinateResult = BuildRouteGeometry(request.Coordinates, session);
         if (coordinateResult.Errors.Count > 0)
         {
@@ -289,24 +285,41 @@ public sealed class Gps : IEndpointGroup
 
         var routeGeometry = coordinateResult.Geometry!;
         var baseDistanceKm = (decimal)Math.Round(CalculateLengthKm(routeGeometry), 2);
+        var estimatedDurationMin = EstimateDurationMin(baseDistanceKm, request.AverageSpeedKmh ?? coordinateResult.AverageSpeedKmh);
         var status = NormalizeOptionalText(request.Status) ?? "Active";
+
+        var stationResolution = await ResolveRouteStopStationsAsync(
+            dbContext,
+            request.StartStationId ?? session?.StartStationId,
+            request.EndStationId ?? session?.EndStationId,
+            coordinateResult.StartCoordinate!,
+            coordinateResult.EndCoordinate!,
+            cancellationToken);
+
+        if (stationResolution.Error is not null)
+        {
+            return stationResolution.Error;
+        }
+
         var route = new WaterbusRoute
         {
             RouteCode = routeCode!,
             RouteName = routeName!,
             Description = NormalizeOptionalText(request.Description),
             BaseDistanceKm = baseDistanceKm,
+            EstimatedDurationMin = estimatedDurationMin,
             Status = status,
             RouteGeometry = routeGeometry
         };
 
         dbContext.Routes.Add(route);
 
-        AddRouteStopsIfPresent(
+        var routeStops = AddRouteStopsIfPresent(
             dbContext,
             route.Id,
-            request.StartStationId ?? session?.StartStationId,
-            request.EndStationId ?? session?.EndStationId);
+            stationResolution.StartStation,
+            stationResolution.EndStation,
+            estimatedDurationMin);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -317,8 +330,10 @@ public sealed class Gps : IEndpointGroup
                 route.RouteCode,
                 route.RouteName,
                 route.BaseDistanceKm ?? 0,
+                route.EstimatedDurationMin,
                 coordinateResult.PointCount,
-                route.Status));
+                route.Status,
+                routeStops));
     }
 
     private static Dictionary<string, string[]> ValidateStartSessionRequest(
@@ -420,6 +435,11 @@ public sealed class Gps : IEndpointGroup
             && !string.Equals(status, "Inactive", StringComparison.OrdinalIgnoreCase))
         {
             errors["status"] = ["status hop le: Active hoac Inactive."];
+        }
+
+        if (request.AverageSpeedKmh is <= 0)
+        {
+            errors["averageSpeedKmh"] = ["averageSpeedKmh phai lon hon 0."];
         }
 
         if (request.StartStationId.HasValue
@@ -583,6 +603,11 @@ public sealed class Gps : IEndpointGroup
             {
                 errors[$"coordinates[{i}].lng"] = ["lng phai nam trong khoang -180 den 180."];
             }
+
+            if (coordinates[i].SpeedKmh is < 0m)
+            {
+                errors[$"coordinates[{i}].speedKmh"] = ["speedKmh khong duoc am."];
+            }
         }
 
         if (errors.Count > 0)
@@ -606,41 +631,153 @@ public sealed class Gps : IEndpointGroup
             return RouteGeometryBuildResult.Invalid(errors);
         }
 
+        var speedSamples = coordinates
+            .Where(x => x.SpeedKmh is > 0m)
+            .Select(x => x.SpeedKmh!.Value)
+            .ToArray();
+        var averageSpeedKmh = speedSamples.Length == 0 ? null : (decimal?)speedSamples.Average();
+
         return RouteGeometryBuildResult.Valid(
             new LineString(normalized.ToArray()) { SRID = 4326 },
-            normalized.Count);
+            normalized.Count,
+            normalized[0],
+            normalized[^1],
+            averageSpeedKmh);
     }
 
-    private static void AddRouteStopsIfPresent(
+    private static async Task<RouteStopStationResolution> ResolveRouteStopStationsAsync(
+        ApplicationDbContext dbContext,
+        Guid? requestedStartStationId,
+        Guid? requestedEndStationId,
+        Coordinate startCoordinate,
+        Coordinate endCoordinate,
+        CancellationToken cancellationToken)
+    {
+        var requestedStationIds = new[] { requestedStartStationId, requestedEndStationId }
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToArray();
+
+        var requestedStations = requestedStationIds.Length == 0
+            ? []
+            : await dbContext.Stations
+                .AsNoTracking()
+                .Where(x => requestedStationIds.Contains(x.Id))
+                .Select(x => new StationSummary(x.Id, x.StationCode, x.StationName, x.Latitude, x.Longitude))
+                .ToListAsync(cancellationToken);
+
+        var missingStationIds = requestedStationIds.Except(requestedStations.Select(x => x.StationId)).ToArray();
+        if (missingStationIds.Length > 0)
+        {
+            return RouteStopStationResolution.Failed(Results.NotFound(new
+            {
+                message = "startStationId/endStationId khong ton tai.",
+                stationIds = missingStationIds
+            }));
+        }
+
+        var startStation = requestedStartStationId.HasValue
+            ? requestedStations.First(x => x.StationId == requestedStartStationId.Value)
+            : null;
+        var endStation = requestedEndStationId.HasValue
+            ? requestedStations.First(x => x.StationId == requestedEndStationId.Value)
+            : null;
+
+        if (startStation is not null && endStation is not null)
+        {
+            return RouteStopStationResolution.Success(startStation, endStation);
+        }
+
+        var stationCandidates = await dbContext.Stations
+            .AsNoTracking()
+            .Where(x => x.IsWaterbusStation
+                && x.Status == StationStatus.Active
+                && x.Latitude.HasValue
+                && x.Longitude.HasValue)
+            .Select(x => new StationSummary(x.Id, x.StationCode, x.StationName, x.Latitude, x.Longitude))
+            .ToListAsync(cancellationToken);
+
+        startStation ??= FindNearestStation(startCoordinate, stationCandidates);
+        endStation ??= FindNearestStation(endCoordinate, stationCandidates);
+
+        return RouteStopStationResolution.Success(startStation, endStation);
+    }
+
+    private static StationSummary? FindNearestStation(
+        Coordinate coordinate,
+        IReadOnlyList<StationSummary> stationCandidates) =>
+        stationCandidates
+            .Select(station => new
+            {
+                Station = station,
+                DistanceMeters = HaversineMeters(
+                    coordinate.Y,
+                    coordinate.X,
+                    (double)station.Latitude!.Value,
+                    (double)station.Longitude!.Value)
+            })
+            .Where(x => x.DistanceMeters <= StationMatchThresholdMeters)
+            .OrderBy(x => x.DistanceMeters)
+            .FirstOrDefault()
+            ?.Station;
+
+    private static IReadOnlyList<GpsRouteStopResponse> AddRouteStopsIfPresent(
         ApplicationDbContext dbContext,
         Guid routeId,
-        Guid? startStationId,
-        Guid? endStationId)
+        StationSummary? startStation,
+        StationSummary? endStation,
+        int? estimatedDurationMin)
     {
-        if (startStationId.HasValue)
+        var stops = new List<GpsRouteStopResponse>();
+
+        if (startStation is not null)
         {
-            dbContext.RouteStops.Add(new RouteStop
+            var startRouteStop = new RouteStop
             {
                 RouteId = routeId,
-                StationId = startStationId.Value,
+                StationId = startStation.StationId,
                 StopOrder = 1,
+                StandardTravelMin = endStation is not null ? estimatedDurationMin : null,
+                StandardDwellMin = 2,
                 IsPickupAllowed = true,
                 IsDropoffAllowed = false
-            });
+            };
+
+            dbContext.RouteStops.Add(startRouteStop);
+            stops.Add(ToRouteStopResponse(startRouteStop, startStation));
         }
 
-        if (endStationId.HasValue)
+        if (endStation is not null)
         {
-            dbContext.RouteStops.Add(new RouteStop
+            var endRouteStop = new RouteStop
             {
                 RouteId = routeId,
-                StationId = endStationId.Value,
-                StopOrder = startStationId.HasValue ? 2 : 1,
+                StationId = endStation.StationId,
+                StopOrder = startStation is not null ? 2 : 1,
+                StandardDwellMin = 2,
                 IsPickupAllowed = false,
                 IsDropoffAllowed = true
-            });
+            };
+
+            dbContext.RouteStops.Add(endRouteStop);
+            stops.Add(ToRouteStopResponse(endRouteStop, endStation));
         }
+
+        return stops;
     }
+
+    private static GpsRouteStopResponse ToRouteStopResponse(RouteStop routeStop, StationSummary station) =>
+        new(
+            routeStop.Id,
+            station.StationId,
+            station.StationCode,
+            station.StationName,
+            routeStop.StopOrder,
+            routeStop.StandardTravelMin,
+            routeStop.StandardDwellMin,
+            routeStop.IsPickupAllowed,
+            routeStop.IsDropoffAllowed);
 
     private static bool IsRecording(string status) =>
         string.Equals(status, "Recording", StringComparison.OrdinalIgnoreCase)
@@ -664,6 +801,12 @@ public sealed class Gps : IEndpointGroup
         }
 
         return total / 1000.0;
+    }
+
+    private static int EstimateDurationMin(decimal distanceKm, decimal? averageSpeedKmh)
+    {
+        var speedKmh = averageSpeedKmh is > 0m ? (double)averageSpeedKmh.Value : FallbackSpeedKmh;
+        return Math.Max(1, (int)Math.Ceiling((double)distanceKm / speedKmh * 60));
     }
 
     private static double DistanceMeters(Coordinate a, Coordinate b) =>
@@ -709,11 +852,13 @@ public sealed class Gps : IEndpointGroup
         string? Status,
         Guid? StartStationId,
         Guid? EndStationId,
+        decimal? AverageSpeedKmh,
         IReadOnlyList<GpsRouteCoordinateRequest>? Coordinates);
 
     public sealed record GpsRouteCoordinateRequest(
         decimal Lat,
         decimal Lng,
+        decimal? SpeedKmh,
         long? Sequence,
         DateTimeOffset? RecordedAt);
 
@@ -726,21 +871,35 @@ public sealed class Gps : IEndpointGroup
         string RouteCode,
         string RouteName,
         decimal BaseDistanceKm,
+        int? EstimatedDurationMin,
         int PointCount,
-        string Status);
+        string Status,
+        IReadOnlyList<GpsRouteStopResponse> Stops);
+
+    private sealed record GpsRouteStopResponse(
+        Guid RouteStopId,
+        Guid StationId,
+        string StationCode,
+        string StationName,
+        int StopOrder,
+        int? StandardTravelMin,
+        int? StandardDwellMin,
+        bool IsPickupAllowed,
+        bool IsDropoffAllowed);
 
     private sealed record CapturedCoordinate(
         decimal Latitude,
         decimal Longitude,
+        decimal? SpeedKmh,
         long? Sequence,
         DateTimeOffset? RecordedAt,
         int Index)
     {
         public static CapturedCoordinate FromRequest(GpsRouteCoordinateRequest request, int index) =>
-            new(request.Lat, request.Lng, request.Sequence, request.RecordedAt?.ToUniversalTime(), index);
+            new(request.Lat, request.Lng, request.SpeedKmh, request.Sequence, request.RecordedAt?.ToUniversalTime(), index);
 
         public static CapturedCoordinate FromTrackPoint(GpsTrackPoint point, int index) =>
-            new(point.Latitude, point.Longitude, point.Sequence, point.RecordedAt, index);
+            new(point.Latitude, point.Longitude, point.SpeedKmh, point.Sequence, point.RecordedAt, index);
     }
 
     private sealed record GpsDeviceResolution(GpsDevice? Device, IResult? Error)
@@ -768,15 +927,47 @@ public sealed class Gps : IEndpointGroup
         public static TripLookupResult Found(Trip trip) => new(trip, false);
     }
 
+    private sealed record StationSummary(
+        Guid StationId,
+        string StationCode,
+        string StationName,
+        decimal? Latitude,
+        decimal? Longitude);
+
+    private sealed record RouteStopStationResolution(
+        StationSummary? StartStation,
+        StationSummary? EndStation,
+        IResult? Error)
+    {
+        public static RouteStopStationResolution Success(StationSummary? startStation, StationSummary? endStation) =>
+            new(startStation, endStation, null);
+
+        public static RouteStopStationResolution Failed(IResult error) => new(null, null, error);
+    }
+
     private sealed record RouteGeometryBuildResult(
         LineString? Geometry,
         int PointCount,
+        Coordinate? StartCoordinate,
+        Coordinate? EndCoordinate,
+        decimal? AverageSpeedKmh,
         Dictionary<string, string[]> Errors)
     {
-        public static RouteGeometryBuildResult Valid(LineString geometry, int pointCount) =>
-            new(geometry, pointCount, new Dictionary<string, string[]>());
+        public static RouteGeometryBuildResult Valid(
+            LineString geometry,
+            int pointCount,
+            Coordinate startCoordinate,
+            Coordinate endCoordinate,
+            decimal? averageSpeedKmh) =>
+            new(
+                geometry,
+                pointCount,
+                startCoordinate,
+                endCoordinate,
+                averageSpeedKmh,
+                new Dictionary<string, string[]>());
 
         public static RouteGeometryBuildResult Invalid(Dictionary<string, string[]> errors) =>
-            new(null, 0, errors);
+            new(null, 0, null, null, null, errors);
     }
 }
