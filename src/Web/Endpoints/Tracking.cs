@@ -107,7 +107,8 @@ public sealed class Tracking : IEndpointGroup
             });
         }
 
-        var route = await ResolveRouteAsync(dbContext, request.RouteId, request.RouteCode, cancellationToken);
+        var requestedRouteCode = request.RouteCode ?? request.CapturedRoute?.RouteCode;
+        var route = await ResolveRouteAsync(dbContext, request.RouteId, requestedRouteCode, cancellationToken);
         if (route.NotFound)
         {
             return Results.NotFound(new { message = "routeId/routeCode không tồn tại." });
@@ -132,9 +133,23 @@ public sealed class Tracking : IEndpointGroup
             }
         }
 
+        var session = await ResolveCapturedRouteSessionAsync(
+            dbContext,
+            request.CapturedRoute?.SessionId,
+            gpsDevice,
+            route.Value,
+            requestedRouteCode,
+            trip.Value,
+            cancellationToken);
+
+        if (session.Error is not null)
+        {
+            return session.Error;
+        }
+
         var now = timeProvider.GetUtcNow();
         var recordedAt = request.RecordedAt.ToUniversalTime();
-        var routeId = route.Value?.Id ?? trip.Value?.RouteId;
+        var routeId = route.Value?.Id ?? trip.Value?.RouteId ?? session.Value?.RouteId;
         var status = NormalizeOptionalText(request.Status) ?? "unknown";
         var direction = NormalizeOptionalText(request.Direction);
         var gpsFixQuality = NormalizeOptionalText(request.GpsFixQuality);
@@ -227,8 +242,36 @@ public sealed class Tracking : IEndpointGroup
                  gps_fix_quality = EXCLUDED.gps_fix_quality,
                  updated_at = EXCLUDED.updated_at
              WHERE boat_latest_locations.sequence < EXCLUDED.sequence;
-             """,
+            """,
             cancellationToken);
+
+        if (session.Value is not null)
+        {
+            dbContext.GpsTrackPoints.Add(new GpsTrackPoint
+            {
+                SessionId = session.Value.Id,
+                GpsDeviceId = gpsDevice.Id,
+                BoatId = gpsDevice.BoatId,
+                RouteId = routeId,
+                TripId = trip.Value?.Id ?? session.Value.TripId,
+                MessageId = request.MessageId,
+                Latitude = request.Lat,
+                Longitude = request.Lng,
+                SpeedKmh = request.SpeedKmh,
+                Heading = request.Heading,
+                AccuracyMeters = request.AccuracyMeters,
+                RecordedAt = recordedAt,
+                ReceivedAt = now,
+                Sequence = request.Sequence,
+                Status = status,
+                Direction = direction,
+                BatteryPercent = request.BatteryPercent,
+                SignalStrength = request.SignalStrength,
+                GpsFixQuality = gpsFixQuality
+            });
+
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
 
         return Results.Ok(new TrackingLocationAcceptedResponse(
             true,
@@ -377,6 +420,68 @@ public sealed class Tracking : IEndpointGroup
         return trip is null ? LookupResult<Trip>.Missing() : LookupResult<Trip>.Found(trip);
     }
 
+    private static async Task<CapturedRouteSessionLookup> ResolveCapturedRouteSessionAsync(
+        ApplicationDbContext dbContext,
+        Guid? sessionId,
+        GpsDevice gpsDevice,
+        WaterbusRoute? route,
+        string? routeCode,
+        Trip? trip,
+        CancellationToken cancellationToken)
+    {
+        if (!sessionId.HasValue)
+        {
+            return CapturedRouteSessionLookup.Empty();
+        }
+
+        var session = await dbContext.GpsTrackingSessions
+            .FirstOrDefaultAsync(x => x.Id == sessionId.Value, cancellationToken);
+
+        if (session is null)
+        {
+            return CapturedRouteSessionLookup.Failed(
+                Results.NotFound(new { message = "GPS session không tồn tại." }));
+        }
+
+        if (session.GpsDeviceId != gpsDevice.Id || session.BoatId != gpsDevice.BoatId)
+        {
+            return CapturedRouteSessionLookup.Failed(
+                Results.BadRequest(new { message = "sessionId không thuộc thiết bị GPS này." }));
+        }
+
+        if (!IsRecording(session.Status))
+        {
+            return CapturedRouteSessionLookup.Failed(
+                Results.BadRequest(new { message = "GPS session không còn ở trạng thái recording." }));
+        }
+
+        if (session.RouteId.HasValue && route is not null && session.RouteId.Value != route.Id)
+        {
+            return CapturedRouteSessionLookup.Failed(
+                Results.BadRequest(new { message = "routeId/routeCode không khớp với GPS session." }));
+        }
+
+        if (!string.IsNullOrWhiteSpace(session.RouteCode)
+            && !string.IsNullOrWhiteSpace(routeCode)
+            && !string.Equals(session.RouteCode.Trim(), routeCode.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return CapturedRouteSessionLookup.Failed(
+                Results.BadRequest(new { message = "routeCode không khớp với GPS session." }));
+        }
+
+        if (session.TripId.HasValue && trip is not null && session.TripId.Value != trip.Id)
+        {
+            return CapturedRouteSessionLookup.Failed(
+                Results.BadRequest(new { message = "tripId không khớp với GPS session." }));
+        }
+
+        return CapturedRouteSessionLookup.Found(session);
+    }
+
+    private static bool IsRecording(string status) =>
+        string.Equals(status, "Recording", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "recording", StringComparison.OrdinalIgnoreCase);
+
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -422,7 +527,18 @@ public sealed class Tracking : IEndpointGroup
         int? SignalStrength,
         string? GpsFixQuality,
         string? Direction,
-        string? Status);
+        string? Status,
+        TrackingCapturedRouteRequest? CapturedRoute);
+
+    public sealed record TrackingCapturedRouteRequest(
+        Guid? SessionId,
+        string? RouteCode,
+        string? RouteName,
+        decimal? ProgressMeters,
+        decimal? LengthMeters,
+        int? SampleIndex,
+        Guid? StartStationId,
+        Guid? EndStationId);
 
     private sealed record TrackingLocationAcceptedResponse(
         bool Accepted,
@@ -465,5 +581,14 @@ public sealed class Tracking : IEndpointGroup
         public static LookupResult<T> Missing() => new(null, true);
 
         public static LookupResult<T> Found(T value) => new(value, false);
+    }
+
+    private sealed record CapturedRouteSessionLookup(GpsTrackingSession? Value, IResult? Error)
+    {
+        public static CapturedRouteSessionLookup Empty() => new(null, null);
+
+        public static CapturedRouteSessionLookup Found(GpsTrackingSession session) => new(session, null);
+
+        public static CapturedRouteSessionLookup Failed(IResult error) => new(null, error);
     }
 }

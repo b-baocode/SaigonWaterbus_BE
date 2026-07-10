@@ -32,6 +32,10 @@ public interface IApplicationDbContext
 
     DbSet<BoatLatestLocation> BoatLatestLocations { get; }
 
+    DbSet<GpsTrackingSession> GpsTrackingSessions { get; }
+
+    DbSet<GpsTrackPoint> GpsTrackPoints { get; }
+
     DbSet<InsurancePackage> InsurancePackages { get; }
 
     DbSet<TEntity> Set<TEntity>()

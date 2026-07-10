@@ -64,6 +64,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<BoatLatestLocation> BoatLatestLocations => Set<BoatLatestLocation>();
 
+    public DbSet<GpsTrackingSession> GpsTrackingSessions => Set<GpsTrackingSession>();
+
+    public DbSet<GpsTrackPoint> GpsTrackPoints => Set<GpsTrackPoint>();
+
     public Task<IDbContextTransaction> BeginTransactionAsync(CancellationToken cancellationToken) =>
         Database.BeginTransactionAsync(cancellationToken);
 
