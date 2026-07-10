@@ -22,8 +22,10 @@ public static class DependencyInjection
             ?? [
                 "http://localhost:3000",
                 "http://localhost:5173",
+                "http://localhost:5177",
                 "https://localhost:3000",
-                "https://localhost:5173"
+                "https://localhost:5173",
+                "https://localhost:5177"
             ];
 
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
