@@ -1,10 +1,14 @@
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Users;
 
 public interface IUserManagementService
 {
-    Task<IReadOnlyCollection<AuthUserDto>> GetUsersAsync(CancellationToken cancellationToken);
+    Task<IReadOnlyCollection<AuthUserDto>> GetUsersAsync(
+        StaffType? staffType,
+        UserStatus? status,
+        CancellationToken cancellationToken);
 
     Task<AuthUserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken);
 

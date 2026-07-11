@@ -272,6 +272,65 @@ public class CompleteSeatSetupFlowIntegrationTests
     }
 
     [Test]
+    public async Task CustomerCanViewSeatsForActiveConfiguredBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        SeatFlowTestData.AddRequiredDocuments(boat);
+        context.Add(boat);
+        await context.SaveChangesAsync();
+
+        await Configure(
+            context,
+            adminContext,
+            boat.Id,
+            [new DeckConfigDto(1, 2, 2)]);
+
+        var fetched = await new GetSeatsRequestUseCase(context, customerContext)
+            .ExecuteAsync(new GetSeatsRequest(boat.Id), CancellationToken.None);
+
+        fetched.ConfiguredSeats.ShouldBe(4);
+        fetched.ActiveSeats.ShouldBe(4);
+        fetched.SeatsConfigured.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task CustomerCannotViewSeatsForInactiveBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.FullStandard,
+            seatsConfigured: true,
+            status: BoatStatus.Inactive);
+        context.Add(boat);
+        await context.SaveChangesAsync();
+
+        await Should.ThrowAsync<NotFoundException>(() =>
+            new GetSeatsRequestUseCase(context, customerContext)
+                .ExecuteAsync(new GetSeatsRequest(boat.Id), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task CustomerCannotViewSeatsForActiveUnconfiguredBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.FullStandard,
+            seatsConfigured: false,
+            status: BoatStatus.Active);
+        context.Add(boat);
+        await context.SaveChangesAsync();
+
+        await Should.ThrowAsync<NotFoundException>(() =>
+            new GetSeatsRequestUseCase(context, customerContext)
+                .ExecuteAsync(new GetSeatsRequest(boat.Id), CancellationToken.None));
+    }
+
+    [Test]
     public async Task GenerateMatrixRejectsDeckCountDifferentFromBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();

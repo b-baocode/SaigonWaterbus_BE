@@ -1,9 +1,12 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Users;
 
-public sealed record GetUsersRequest();
+public sealed record GetUsersRequest(
+    StaffType? StaffType = null,
+    UserStatus? Status = null);
 
 public sealed class GetUsersRequestUseCase
 {
@@ -22,7 +25,18 @@ public sealed class GetUsersRequestUseCase
     {
         var actor = await AuthSupport.EnsureCurrentUserCanManageUsersAsync(_context, _userContext, cancellationToken);
 
-        var users = await UserManagementSupport.BuildVisibleUsersQuery(_context, actor)
+        var query = UserManagementSupport.BuildVisibleUsersQuery(_context, actor);
+        if (request.StaffType.HasValue)
+        {
+            query = query.Where(x => x.StaffType == request.StaffType.Value);
+        }
+
+        if (request.Status.HasValue)
+        {
+            query = query.Where(x => x.Status == request.Status.Value);
+        }
+
+        var users = await query
             .OrderBy(x => x.FullName)
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);

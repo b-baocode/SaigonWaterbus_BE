@@ -45,7 +45,9 @@ internal static class BoatSupport
     {
         return CanManageBoats(actor)
             ? query
-            : query.Where(x => x.Status == BoatStatus.Active);
+            : query.Where(x =>
+                x.Status == BoatStatus.Active
+                && (x.SeatsConfigured || (x.SeatCount > 0 && x.Seats.Count == x.SeatCount)));
     }
 
     public static string NormalizeCode(string code) =>

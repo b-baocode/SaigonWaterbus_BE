@@ -36,6 +36,15 @@ internal static class SeatFlowTestData
             "Manager");
     }
 
+    public static async Task<TestUserContext> SeedCustomerAsync(ApplicationDbContext context)
+    {
+        return await SeedUserAsync(
+            context,
+            Roles.CustomerCode,
+            Roles.CustomerSystemName,
+            "Customer");
+    }
+
     public static async Task<TestUserContext> SeedStaffAsync(
         ApplicationDbContext context,
         StaffType staffType = StaffType.OnBoard)
