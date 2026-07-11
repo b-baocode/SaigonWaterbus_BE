@@ -132,6 +132,104 @@ public class CreateCharterBookingCommandTests
     }
 
     [Test]
+    public async Task CreateAllowsSamePickupAndDropoffWhenItineraryStopIsProvided()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var pickupStation = WaterbusStation("ST-ROUND", "Bến Ba Son");
+        var stopStation = WaterbusStation("ST-ROUND-STOP", "Điểm dừng");
+        context.AddRange(role, user, pickupStation, stopStation);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedBookingCodeGenerator("CB-ROUND"),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new CreateCharterBookingCommand(
+                new DateOnly(2026, 7, 20),
+                BoatRentalUnit.Day,
+                1,
+                AdultCount: 10,
+                ChildCount: 0,
+                FromStationId: pickupStation.Id,
+                ToStationId: pickupStation.Id,
+                ItineraryStops:
+                [
+                    new CreateCharterBookingItineraryStopRequest(stopStation.Id, 1, 30)
+                ]),
+            CancellationToken.None);
+
+        var booking = context.Set<Booking>()
+            .Include(x => x.ItineraryStops)
+            .Single(x => x.Id == result.BookingId);
+        booking.FromStationId.ShouldBe(pickupStation.Id);
+        booking.ToStationId.ShouldBe(pickupStation.Id);
+        booking.ItineraryStops.Single().StationId.ShouldBe(stopStation.Id);
+    }
+
+    [Test]
+    public async Task CreateRejectsSamePickupAndDropoffWithoutItineraryStop()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var pickupStation = WaterbusStation("ST-SAME", "Bến Ba Son");
+        context.AddRange(role, user, pickupStation);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedBookingCodeGenerator("CB-SAME"),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new CreateCharterBookingCommand(
+                    new DateOnly(2026, 7, 20),
+                    BoatRentalUnit.Day,
+                    1,
+                    AdultCount: 10,
+                    ChildCount: 0,
+                    FromStationId: pickupStation.Id,
+                    ToStationId: pickupStation.Id),
+                CancellationToken.None));
+
+        exception.Errors["toStationId"].Single()
+            .ShouldContain("Bến đón và bến trả");
+    }
+
+    [Test]
     public async Task CreateStoresSelectedInsuranceAndReturnsItInDetail()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -687,6 +785,79 @@ public class CreateCharterBookingCommandTests
         savedBooking.BoatRequirements.ShouldBe("Old boat note");
         savedBooking.SpecialRequests.ShouldBe("New special note");
         savedBooking.ItineraryStops.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task UpdateAllowsSamePickupAndDropoffWhenExistingItineraryStopIsPresent()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "account@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var pickupStation = WaterbusStation("ST-UP-ROUND", "Bến Ba Son");
+        var originalDropoffStation = WaterbusStation("ST-UP-RETURN", "Bến trả cũ");
+        var stopStation = WaterbusStation("ST-UP-STOP", "Điểm dừng");
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-UP-ROUND",
+            User = user,
+            UserId = user.Id,
+            ContactName = user.FullName,
+            ContactPhone = user.PhoneNumber!,
+            ContactEmail = user.Email,
+            FromStation = pickupStation,
+            FromStationId = pickupStation.Id,
+            ToStation = originalDropoffStation,
+            ToStationId = originalDropoffStation.Id,
+            DepartureDate = new DateOnly(2026, 7, 20),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 10,
+            ChildCount = 0,
+            PassengerCount = 10,
+            BookingStatus = BookingStatus.PendingQuote,
+            PaymentStatus = "Unpaid"
+        };
+        booking.ItineraryStops.Add(new BookingItineraryStop
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            Station = stopStation,
+            StationId = stopStation.Id,
+            StopOrder = 1,
+            StayDurationMinutes = 30
+        });
+        context.AddRange(role, user, pickupStation, originalDropoffStation, stopStation, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var detail = await handler.Handle(
+            new UpdateCharterBookingCommand(
+                booking.Id,
+                FromStationId: pickupStation.Id,
+                ToStationId: pickupStation.Id),
+            CancellationToken.None);
+
+        detail.FromStationId.ShouldBe(pickupStation.Id);
+        detail.ToStationId.ShouldBe(pickupStation.Id);
+        detail.ItineraryStops.Single().StationId.ShouldBe(stopStation.Id);
     }
 
     [Test]

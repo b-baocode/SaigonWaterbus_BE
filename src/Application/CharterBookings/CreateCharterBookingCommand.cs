@@ -84,8 +84,10 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .NotNull()
             .WithMessage("Bến bắt đầu là bắt buộc.");
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
-            .When(x => x.FromStationId.HasValue && x.ToStationId.HasValue)
-            .WithMessage("Bến đi và bến đến phải khác nhau.");
+            .When(x => x.FromStationId.HasValue
+                && x.ToStationId.HasValue
+                && !HasItineraryStops(x.ItineraryStops))
+            .WithMessage("Bến đón và bến trả phải khác nhau khi không có điểm dừng.");
         RuleFor(x => x.ItineraryStops)
             .Must(stops => stops is null || stops.Count <= 50)
             .WithMessage("Hành trình không được vượt quá 50 điểm dừng.");
@@ -106,6 +108,9 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
 
     private static bool HaveUniqueStopOrders(IReadOnlyList<CreateCharterBookingItineraryStopRequest>? stops) =>
         stops is null || stops.Select(x => x.StopOrder).Distinct().Count() == stops.Count;
+
+    private static bool HasItineraryStops(IReadOnlyList<CreateCharterBookingItineraryStopRequest>? stops) =>
+        stops is { Count: > 0 };
 }
 
 public sealed class CreateCharterBookingCommandHandler
@@ -151,6 +156,11 @@ public sealed class CreateCharterBookingCommandHandler
         var requestedBoatCount = CharterBookingBoatSelectionSupport.ResolveRequestedBoatCount(requestedBoatDecks);
         var requestedBoatDeckStorage = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatDecks);
 
+        EnsureRouteEndpointCombinationValid(
+            request.FromStationId,
+            request.ToStationId,
+            request.ItineraryStops is { Count: > 0 },
+            nameof(request.ToStationId));
         await CharterBookingStationValidationSupport.EnsureWaterbusDepartureStationAsync(
             _context,
             request.FromStationId,
@@ -290,6 +300,22 @@ public sealed class CreateCharterBookingCommandHandler
             .AnyAsync(s => s.Id == stationId.Value, cancellationToken);
         if (!exists)
             throw new ValidationException([new ValidationFailure(field, "Bến không tồn tại.")]);
+    }
+
+    private static void EnsureRouteEndpointCombinationValid(
+        Guid? fromStationId,
+        Guid? toStationId,
+        bool hasItineraryStops,
+        string field)
+    {
+        if (fromStationId.HasValue
+            && toStationId.HasValue
+            && fromStationId.Value == toStationId.Value
+            && !hasItineraryStops)
+        {
+            throw new ValidationException([new ValidationFailure(field,
+                "Bến đón và bến trả phải khác nhau khi không có điểm dừng.")]);
+        }
     }
 
     private async Task EnsureItineraryStationsExistAsync(

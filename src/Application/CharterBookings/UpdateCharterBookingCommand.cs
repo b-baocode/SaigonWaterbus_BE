@@ -87,8 +87,10 @@ public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<Upd
             .When(x => x.InsuranceSelected == true)
             .WithMessage("Vui lòng chọn gói bảo hiểm.");
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
-            .When(x => x.FromStationId.HasValue && x.ToStationId.HasValue)
-            .WithMessage("Bến đi và bến đến phải khác nhau.");
+            .When(x => x.FromStationId.HasValue
+                && x.ToStationId.HasValue
+                && x.ItineraryStops is { Count: 0 })
+            .WithMessage("Bến đón và bến trả phải khác nhau khi không có điểm dừng.");
         RuleFor(x => x.ItineraryStops)
             .Must(stops => stops is null || stops.Count <= 50)
             .WithMessage("Hành trình không được vượt quá 50 điểm dừng.");
@@ -177,7 +179,13 @@ public sealed class UpdateCharterBookingCommandHandler
             ? CharterBookingDuplicateSupport.ToItineraryStops(booking.ItineraryStops)
             : CharterBookingDuplicateSupport.ToItineraryStops(request.ItineraryStops);
 
-        ValidateResolvedUpdateValues(durationValue, adultCount, childCount, fromStationId, toStationId);
+        ValidateResolvedUpdateValues(
+            durationValue,
+            adultCount,
+            childCount,
+            fromStationId,
+            toStationId,
+            itineraryStops.Count > 0);
         ValidateRequestedBoats(request.RequestedBoats);
         ValidateItineraryStops(request.ItineraryStops);
         EnsureDepartureDateCanBeUpdated(booking, departureDate);
@@ -321,7 +329,8 @@ public sealed class UpdateCharterBookingCommandHandler
         int adultCount,
         int childCount,
         Guid? fromStationId,
-        Guid? toStationId)
+        Guid? toStationId,
+        bool hasItineraryStops)
     {
         if (durationValue is <= 0 or > 60)
         {
@@ -354,10 +363,13 @@ public sealed class UpdateCharterBookingCommandHandler
                 "Tổng số khách không được vượt quá 1000.")]);
         }
 
-        if (fromStationId.HasValue && toStationId.HasValue && fromStationId.Value == toStationId.Value)
+        if (fromStationId.HasValue
+            && toStationId.HasValue
+            && fromStationId.Value == toStationId.Value
+            && !hasItineraryStops)
         {
             throw new ValidationException([new ValidationFailure(nameof(UpdateCharterBookingCommand.ToStationId),
-                "Bến đi và bến đến phải khác nhau.")]);
+                "Bến đón và bến trả phải khác nhau khi không có điểm dừng.")]);
         }
     }
 
