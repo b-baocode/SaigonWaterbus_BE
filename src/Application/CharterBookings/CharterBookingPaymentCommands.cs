@@ -576,7 +576,7 @@ internal static class CharterBookingPaymentSupport
                 "Charter booking chưa được admin nhập tàu và chốt giá.")]);
         }
 
-        if (booking.BookingStatus == BookingStatus.Quoted
+        if ((booking.BookingStatus == BookingStatus.Quoted || booking.BookingStatus == BookingStatus.PendingPayment)
             && booking.HoldExpiresAt.HasValue
             && booking.HoldExpiresAt.Value <= now)
         {

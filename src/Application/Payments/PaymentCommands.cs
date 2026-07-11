@@ -958,7 +958,7 @@ internal static class PaymentSupport
         }
 
         if (Booking.IsCharterBookingType(booking.BookingType)
-            && booking.BookingStatus == BookingStatus.Quoted
+            && (booking.BookingStatus == BookingStatus.Quoted || booking.BookingStatus == BookingStatus.PendingPayment)
             && booking.HoldExpiresAt.HasValue
             && booking.HoldExpiresAt.Value <= now)
         {
@@ -1243,7 +1243,8 @@ internal static class PaymentSupport
 
     public static void EnsureCharterPaymentCompletionDeadline(Booking booking, DateTimeOffset now)
     {
-        if (!Booking.IsCharterBookingType(booking.BookingType) || booking.BookingStatus != BookingStatus.Quoted)
+        if (!Booking.IsCharterBookingType(booking.BookingType)
+            || (booking.BookingStatus != BookingStatus.Quoted && booking.BookingStatus != BookingStatus.PendingPayment))
         {
             return;
         }

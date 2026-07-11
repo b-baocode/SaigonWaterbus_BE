@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
@@ -81,6 +82,18 @@ public sealed class RespondCharterBookingQuoteCommandHandler
 
         if (request.Action == CharterBookingQuoteResponseAction.Accept)
         {
+            var now = _timeProvider.GetUtcNow();
+            AcceptQuote(booking, now);
+            await _context.SaveChangesAsync(cancellationToken);
+            await _realtimeNotifier.PublishChangedAsync(
+                new CharterBookingRealtimeEvent(
+                    booking.Id,
+                    "QuoteAccepted",
+                    booking.BookingStatus.ToString(),
+                    booking.PaymentStatus,
+                    now),
+                cancellationToken);
+
             return await LoadDetailAsync(booking.Id, cancellationToken);
         }
 
@@ -124,6 +137,15 @@ public sealed class RespondCharterBookingQuoteCommandHandler
             cancellationToken);
 
         return await LoadDetailAsync(booking.Id, cancellationToken);
+    }
+
+    private static void AcceptQuote(Booking booking, DateTimeOffset now)
+    {
+        booking.BookingStatus = BookingStatus.PendingPayment;
+        booking.PaymentStatus = "Unpaid";
+        booking.DepositAmount = 0;
+        booking.RemainingAmount = booking.TotalAmount;
+        booking.HoldExpiresAt = now + BookingExpirationPolicy.CharterPaymentCompletionTtl;
     }
 
     private static void EnsureNoPaymentLocks(Booking booking)

@@ -137,6 +137,40 @@ public class CharterBookingExpirationProcessorTests
         booking.HoldExpiresAt.ShouldBe(now.AddSeconds(-1));
     }
 
+    [Test]
+    public async Task CleanupExpiresOverduePendingPaymentCharterBooking()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-PENDING-PAYMENT",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 2,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000,
+            HoldExpiresAt = now.AddSeconds(-1)
+        };
+        context.Add(booking);
+        await context.SaveChangesAsync();
+        var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
+
+        var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
+
+        result.ExpiredCharterBookings.ShouldBe(1);
+        booking.BookingStatus.ShouldBe(BookingStatus.Expired);
+        booking.HoldExpiresAt.ShouldBeNull();
+    }
+
     private sealed class TestBoatHoldService : IBoatHoldService
     {
         public List<ReleaseCall> Releases { get; } = [];

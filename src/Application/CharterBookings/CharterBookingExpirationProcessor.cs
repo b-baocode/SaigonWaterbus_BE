@@ -102,7 +102,7 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
             .Include(x => x.Promotion)
             .Include(x => x.Tickets)
             .Where(x => x.BookingType == Booking.CharterBookingType
-                && x.BookingStatus == BookingStatus.Quoted
+                && (x.BookingStatus == BookingStatus.Quoted || x.BookingStatus == BookingStatus.PendingPayment)
                 && x.HoldExpiresAt.HasValue
                 && x.HoldExpiresAt.Value <= now)
             .ToListAsync(cancellationToken);
