@@ -132,6 +132,122 @@ public class CreateCharterBookingCommandTests
     }
 
     [Test]
+    public async Task CreateRejectsDuplicateActiveRequestWithExistingBookingCode()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var fromStation = WaterbusStation("ST-DUP-FROM", "Bến đi");
+        var toStation = WaterbusStation("ST-DUP-TO", "Bến đến");
+        var stopStation = WaterbusStation("ST-DUP-STOP", "Bến dừng");
+        var existingBooking = DuplicateCharterBooking(
+            user,
+            fromStation,
+            toStation,
+            "CB-DUP-001",
+            BookingStatus.PendingQuote);
+        existingBooking.ItineraryStops.Add(new BookingItineraryStop
+        {
+            Booking = existingBooking,
+            BookingId = existingBooking.Id,
+            Station = stopStation,
+            StationId = stopStation.Id,
+            StopOrder = 1,
+            StayDurationMinutes = 20,
+            Note = "Old note"
+        });
+        context.AddRange(role, user, fromStation, toStation, stopStation, existingBooking);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedBookingCodeGenerator("CB-DUP-NEW"),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                DuplicateCreateCommand(
+                    fromStation.Id,
+                    toStation.Id,
+                    stopStation.Id,
+                    contactPhone: "0900 000 000",
+                    contactEmail: "CUSTOMER@example.test"),
+                CancellationToken.None));
+
+        exception.Errors["duplicateBooking"].Single()
+            .ShouldContain("CB-DUP-001");
+        context.Set<Booking>().Count().ShouldBe(1);
+    }
+
+    [Test]
+    public async Task CreateAllowsDuplicateWhenExistingRequestIsCancelled()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var fromStation = WaterbusStation("ST-CANCEL-FROM", "Bến đi");
+        var toStation = WaterbusStation("ST-CANCEL-TO", "Bến đến");
+        var stopStation = WaterbusStation("ST-CANCEL-STOP", "Bến dừng");
+        var existingBooking = DuplicateCharterBooking(
+            user,
+            fromStation,
+            toStation,
+            "CB-CANCELLED-001",
+            BookingStatus.Cancelled);
+        existingBooking.ItineraryStops.Add(new BookingItineraryStop
+        {
+            Booking = existingBooking,
+            BookingId = existingBooking.Id,
+            Station = stopStation,
+            StationId = stopStation.Id,
+            StopOrder = 1,
+            StayDurationMinutes = 20
+        });
+        context.AddRange(role, user, fromStation, toStation, stopStation, existingBooking);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedBookingCodeGenerator("CB-ALLOWED-NEW"),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            DuplicateCreateCommand(fromStation.Id, toStation.Id, stopStation.Id),
+            CancellationToken.None);
+
+        result.BookingCode.ShouldBe("CB-ALLOWED-NEW");
+        context.Set<Booking>().Count().ShouldBe(2);
+    }
+
+    [Test]
     public async Task ListReturnsCustomerSummaryFieldsAndCharterBookingCodePrefix()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -512,6 +628,95 @@ public class CreateCharterBookingCommandTests
         savedBooking.ItineraryStops.Count.ShouldBe(1);
     }
 
+    [Test]
+    public async Task UpdateRejectsDuplicateActiveRequestWithExistingBookingCode()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var fromStation = WaterbusStation("ST-UP-DUP-FROM", "Bến đi");
+        var toStation = WaterbusStation("ST-UP-DUP-TO", "Bến đến");
+        var stopStation = WaterbusStation("ST-UP-DUP-STOP", "Bến dừng");
+        var existingBooking = DuplicateCharterBooking(
+            user,
+            fromStation,
+            toStation,
+            "CB-UP-DUP-001",
+            BookingStatus.PendingQuote);
+        existingBooking.ItineraryStops.Add(new BookingItineraryStop
+        {
+            Booking = existingBooking,
+            BookingId = existingBooking.Id,
+            Station = stopStation,
+            StationId = stopStation.Id,
+            StopOrder = 1,
+            StayDurationMinutes = 20
+        });
+        var bookingToUpdate = DuplicateCharterBooking(
+            user,
+            fromStation,
+            toStation,
+            "CB-UP-DUP-002",
+            BookingStatus.PendingQuote);
+        bookingToUpdate.DepartureDate = new DateOnly(2026, 7, 21);
+        bookingToUpdate.StartTime = new TimeOnly(10, 0);
+        bookingToUpdate.ItineraryStops.Add(new BookingItineraryStop
+        {
+            Booking = bookingToUpdate,
+            BookingId = bookingToUpdate.Id,
+            Station = stopStation,
+            StationId = stopStation.Id,
+            StopOrder = 1,
+            StayDurationMinutes = 30
+        });
+        context.AddRange(role, user, fromStation, toStation, stopStation, existingBooking, bookingToUpdate);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCharterBookingCommand(
+                    bookingToUpdate.Id,
+                    new DateOnly(2026, 7, 20),
+                    BoatRentalUnit.Day,
+                    1,
+                    AdultCount: 4,
+                    ChildCount: 1,
+                    StartTime: new TimeOnly(9, 0),
+                    FromStationId: fromStation.Id,
+                    ToStationId: toStation.Id,
+                    ItineraryStops:
+                    [
+                        new CreateCharterBookingItineraryStopRequest(stopStation.Id, 1, 20, "New note")
+                    ],
+                    RequestedBoats:
+                    [
+                        new CreateCharterBookingBoatRequest(1),
+                        new CreateCharterBookingBoatRequest(2)
+                    ]),
+                CancellationToken.None));
+
+        exception.Errors["duplicateBooking"].Single()
+            .ShouldContain("CB-UP-DUP-001");
+    }
+
     private sealed class FixedBookingCodeGenerator(string bookingCode) : IBookingCodeGenerator
     {
         public Task<string> GenerateAsync(CancellationToken cancellationToken) =>
@@ -531,4 +736,63 @@ public class CreateCharterBookingCommandTests
             Status = StationStatus.Active,
             IsWaterbusStation = true
         };
+
+    private static Booking DuplicateCharterBooking(
+        User user,
+        Station fromStation,
+        Station toStation,
+        string bookingCode,
+        BookingStatus status) =>
+        new()
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = bookingCode,
+            User = user,
+            UserId = user.Id,
+            ContactName = user.FullName,
+            ContactPhone = user.PhoneNumber!,
+            ContactEmail = user.Email,
+            FromStation = fromStation,
+            FromStationId = fromStation.Id,
+            ToStation = toStation,
+            ToStationId = toStation.Id,
+            DepartureDate = new DateOnly(2026, 7, 20),
+            StartTime = new TimeOnly(9, 0),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 4,
+            ChildCount = 1,
+            PassengerCount = 5,
+            RequestedBoatCount = 2,
+            RequestedBoatDecks = "1,2",
+            BookingStatus = status,
+            PaymentStatus = "Unpaid"
+        };
+
+    private static CreateCharterBookingCommand DuplicateCreateCommand(
+        Guid fromStationId,
+        Guid toStationId,
+        Guid stopStationId,
+        string? contactPhone = null,
+        string? contactEmail = null) =>
+        new(
+            new DateOnly(2026, 7, 20),
+            BoatRentalUnit.Day,
+            1,
+            AdultCount: 4,
+            ChildCount: 1,
+            StartTime: new TimeOnly(9, 0),
+            FromStationId: fromStationId,
+            ToStationId: toStationId,
+            ItineraryStops:
+            [
+                new CreateCharterBookingItineraryStopRequest(stopStationId, 1, 20, "New note")
+            ],
+            RequestedBoats:
+            [
+                new CreateCharterBookingBoatRequest(1),
+                new CreateCharterBookingBoatRequest(2)
+            ],
+            ContactPhone: contactPhone,
+            ContactEmail: contactEmail);
 }

@@ -79,7 +79,13 @@ public sealed record CharterBookingRouteLegEstimateDto(
     string FromStationName,
     string ToStationName,
     decimal? DistanceKm,
-    int? TravelMinutes);
+    int? TravelMinutes,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? MatchedRouteId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? MatchedRouteCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? MatchedRouteName = null);
 
 public sealed record CharterBookingRouteEstimateDto(
     IReadOnlyList<CharterBookingRouteLegEstimateDto> Legs,
@@ -94,7 +100,13 @@ public sealed record CharterBookingRouteEstimateDto(
     decimal ChargeableDurationValue,
     string RentalUnit,
     bool HasCompleteDistanceEstimate,
-    bool HasCompleteTravelTimeEstimate);
+    bool HasCompleteTravelTimeEstimate,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? MatchedRouteId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? MatchedRouteCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? MatchedRouteName = null);
 
 public sealed record CharterBookingInsuranceDto(
     Guid InsurancePackageId,

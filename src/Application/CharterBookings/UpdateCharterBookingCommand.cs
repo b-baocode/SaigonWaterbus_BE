@@ -153,8 +153,19 @@ public sealed class UpdateCharterBookingCommandHandler
         var durationValue = request.DurationValue ?? booking.DurationValue;
         var adultCount = request.AdultCount ?? booking.AdultCount.GetValueOrDefault();
         var childCount = request.ChildCount ?? booking.ChildCount.GetValueOrDefault();
+        var startTime = request.StartTime ?? booking.StartTime;
         var fromStationId = request.FromStationId ?? booking.FromStationId;
         var toStationId = request.ToStationId ?? booking.ToStationId;
+        var requestedBoatDecks = request.RequestedBoats is null
+            ? CharterBookingBoatSelectionSupport.FromDeckStorageValue(booking.RequestedBoatDecks)
+            : CharterBookingBoatSelectionSupport.NormalizeRequestedBoatDecks(request.RequestedBoats);
+        var requestedBoatCount = CharterBookingBoatSelectionSupport.ResolveRequestedBoatCount(requestedBoatDecks);
+        var requestedBoatDeckStorage = request.RequestedBoats is null
+            ? booking.RequestedBoatDecks
+            : CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatDecks);
+        var itineraryStops = request.ItineraryStops is null
+            ? CharterBookingDuplicateSupport.ToItineraryStops(booking.ItineraryStops)
+            : CharterBookingDuplicateSupport.ToItineraryStops(request.ItineraryStops);
 
         ValidateResolvedUpdateValues(durationValue, adultCount, childCount, fromStationId, toStationId);
         ValidateRequestedBoats(request.RequestedBoats);
@@ -168,10 +179,47 @@ public sealed class UpdateCharterBookingCommandHandler
         await EnsureStationExistsAsync(toStationId, nameof(request.ToStationId), cancellationToken);
         await EnsureItineraryStationsExistAsync(request.ItineraryStops, cancellationToken);
 
+        var contactName = ResolveRequiredContactValue(
+            request.ContactName,
+            booking.ContactName,
+            user.FullName,
+            nameof(request.ContactName),
+            "Họ tên người đặt là bắt buộc.");
+        var contactPhone = ResolveRequiredContactValue(
+            request.ContactPhone,
+            booking.ContactPhone,
+            user.PhoneNumber,
+            nameof(request.ContactPhone),
+            "Số điện thoại người đặt là bắt buộc.");
+        var contactEmail = ResolveRequiredContactValue(
+            request.ContactEmail,
+            booking.ContactEmail,
+            user.Email,
+            nameof(request.ContactEmail),
+            "Email nhận thông tin charter booking là bắt buộc.");
+
+        await CharterBookingDuplicateSupport.EnsureNoDuplicateActiveRequestAsync(
+            _context,
+            userId,
+            booking.Id,
+            departureDate,
+            startTime,
+            rentalUnit,
+            durationValue,
+            fromStationId,
+            toStationId,
+            adultCount,
+            childCount,
+            requestedBoatDeckStorage,
+            itineraryStops,
+            contactPhone,
+            contactEmail,
+            cancellationToken);
+
         booking.FromStationId = fromStationId;
         booking.ToStationId = toStationId;
         booking.DepartureDate = departureDate;
-        booking.StartTime = request.StartTime ?? booking.StartTime;
+        booking.StartTime = startTime;
         booking.RentalUnit = rentalUnit;
         booking.DurationValue = durationValue;
         booking.AdultCount = adultCount;
@@ -179,33 +227,15 @@ public sealed class UpdateCharterBookingCommandHandler
         booking.PassengerCount = adultCount + childCount;
         if (request.RequestedBoats is not null)
         {
-            var requestedBoatDecks = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatDecks(
-                request.RequestedBoats);
-            var requestedBoatCount = CharterBookingBoatSelectionSupport.ResolveRequestedBoatCount(requestedBoatDecks);
             booking.RequestedBoatCount = requestedBoatCount == 0 ? null : requestedBoatCount;
-            booking.RequestedBoatDecks = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatDecks);
+            booking.RequestedBoatDecks = requestedBoatDeckStorage;
             booking.RequestedBoatTypes = null;
             booking.PreferredSeatSetupType = null;
         }
         booking.SpecialRequests = ResolveOptionalText(request.SpecialRequests, booking.SpecialRequests);
-        booking.ContactName = ResolveRequiredContactValue(
-            request.ContactName,
-            booking.ContactName,
-            user.FullName,
-            nameof(request.ContactName),
-            "Họ tên người đặt là bắt buộc.");
-        booking.ContactPhone = ResolveRequiredContactValue(
-            request.ContactPhone,
-            booking.ContactPhone,
-            user.PhoneNumber,
-            nameof(request.ContactPhone),
-            "Số điện thoại người đặt là bắt buộc.");
-        booking.ContactEmail = ResolveRequiredContactValue(
-            request.ContactEmail,
-            booking.ContactEmail,
-            user.Email,
-            nameof(request.ContactEmail),
-            "Email nhận thông tin charter booking là bắt buộc.");
+        booking.ContactName = contactName;
+        booking.ContactPhone = contactPhone;
+        booking.ContactEmail = contactEmail;
 
         if (request.ItineraryStops is not null)
         {

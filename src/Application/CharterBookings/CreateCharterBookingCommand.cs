@@ -139,6 +139,7 @@ public sealed class CreateCharterBookingCommandHandler
         var requestedBoatDecks = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatDecks(
             request.RequestedBoats);
         var requestedBoatCount = CharterBookingBoatSelectionSupport.ResolveRequestedBoatCount(requestedBoatDecks);
+        var requestedBoatDeckStorage = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatDecks);
 
         await CharterBookingStationValidationSupport.EnsureWaterbusDepartureStationAsync(
             _context,
@@ -171,6 +172,24 @@ public sealed class CreateCharterBookingCommandHandler
             nameof(request.ContactEmail),
             "Email nhận thông tin charter booking là bắt buộc.");
 
+        await CharterBookingDuplicateSupport.EnsureNoDuplicateActiveRequestAsync(
+            _context,
+            userId,
+            excludeBookingId: null,
+            request.DepartureDate,
+            request.StartTime,
+            request.RentalUnit,
+            request.DurationValue,
+            request.FromStationId,
+            request.ToStationId,
+            request.AdultCount,
+            request.ChildCount,
+            requestedBoatDeckStorage,
+            CharterBookingDuplicateSupport.ToItineraryStops(request.ItineraryStops),
+            contactPhone,
+            contactEmail,
+            cancellationToken);
+
         var booking = new Booking
         {
             BookingType = Booking.CharterBookingType,
@@ -185,7 +204,7 @@ public sealed class CreateCharterBookingCommandHandler
             AdultCount = request.AdultCount,
             ChildCount = request.ChildCount,
             RequestedBoatCount = requestedBoatCount == 0 ? null : requestedBoatCount,
-            RequestedBoatDecks = CharterBookingBoatSelectionSupport.ToStorageValue(requestedBoatDecks),
+            RequestedBoatDecks = requestedBoatDeckStorage,
             RequestedBoatTypes = null,
             PreferredSeatSetupType = null,
             SpecialRequests = request.SpecialRequests?.Trim(),

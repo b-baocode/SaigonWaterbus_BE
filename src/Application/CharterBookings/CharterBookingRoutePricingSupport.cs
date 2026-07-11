@@ -31,7 +31,10 @@ internal sealed record CharterBookingRouteLegEstimate(
     string FromStationName,
     string ToStationName,
     decimal? DistanceKm,
-    int? TravelMinutes);
+    int? TravelMinutes,
+    Guid? MatchedRouteId,
+    string? MatchedRouteCode,
+    string? MatchedRouteName);
 
 internal static class CharterBookingRoutePricingSupport
 {
@@ -117,7 +120,8 @@ internal static class CharterBookingRoutePricingSupport
             .Zip(points.Skip(1), (from, to) => (from, to))
             .Select((leg, index) =>
             {
-                var distanceKm = TryMeasureRouteDistanceKm(routes, leg.from, leg.to);
+                var matchedRoute = TryResolveRouteLeg(routes, leg.from, leg.to);
+                var distanceKm = matchedRoute?.DistanceKm;
                 var travelMinutes = distanceKm.HasValue
                     ? EstimateTravelMinutes(distanceKm.Value)
                     : (int?)null;
@@ -127,7 +131,10 @@ internal static class CharterBookingRoutePricingSupport
                     leg.from.StationName,
                     leg.to.StationName,
                     distanceKm,
-                    travelMinutes);
+                    travelMinutes,
+                    matchedRoute?.RouteId,
+                    matchedRoute?.RouteCode,
+                    matchedRoute?.RouteName);
             })
             .ToArray();
 
@@ -277,15 +284,21 @@ internal static class CharterBookingRoutePricingSupport
         var chargeableDurationMinutes = chargeableDurationMinutesOverride
             ?? ResolveChargeableDurationMinutes(rentalUnit, requestedDurationValue, estimate);
 
+        var legDtos = estimate.Legs
+            .Select(x => new CharterBookingRouteLegEstimateDto(
+                x.LegOrder,
+                x.FromStationName,
+                x.ToStationName,
+                x.DistanceKm,
+                x.TravelMinutes,
+                x.MatchedRouteId,
+                x.MatchedRouteCode,
+                x.MatchedRouteName))
+            .ToArray();
+        var matchedRoute = ResolveSingleMatchedRoute(estimate.Legs);
+
         return new CharterBookingRouteEstimateDto(
-            estimate.Legs
-                .Select(x => new CharterBookingRouteLegEstimateDto(
-                    x.LegOrder,
-                    x.FromStationName,
-                    x.ToStationName,
-                    x.DistanceKm,
-                    x.TravelMinutes))
-                .ToArray(),
+            legDtos,
             estimate.TotalDistanceKm,
             estimate.EstimatedTravelMinutes,
             estimate.EstimatedStayMinutes,
@@ -297,7 +310,10 @@ internal static class CharterBookingRoutePricingSupport
             chargeableDurationValue,
             rentalUnit.ToString(),
             estimate.HasCompleteDistanceEstimate,
-            estimate.HasCompleteTravelTimeEstimate);
+            estimate.HasCompleteTravelTimeEstimate,
+            matchedRoute?.RouteId,
+            matchedRoute?.RouteCode,
+            matchedRoute?.RouteName);
     }
 
     private static decimal ResolveUnitPrice(Boat boat, BoatRentalUnit rentalUnit)
@@ -343,7 +359,7 @@ internal static class CharterBookingRoutePricingSupport
     private static int EstimateTravelMinutes(decimal distanceKm) =>
         Math.Max(1, (int)Math.Ceiling(distanceKm / AverageSpeedKmh * 60));
 
-    private static decimal? TryMeasureRouteDistanceKm(
+    private static MatchedRouteLeg? TryResolveRouteLeg(
         IReadOnlyCollection<Route> routes,
         RoutePoint from,
         RoutePoint to)
@@ -375,11 +391,34 @@ internal static class CharterBookingRoutePricingSupport
             var distanceMeters = Math.Abs(toProjection.DistanceFromStartMeters - fromProjection.DistanceFromStartMeters);
             if (distanceMeters > 0)
             {
-                return decimal.Round((decimal)(distanceMeters / 1000d), 2);
+                return new MatchedRouteLeg(
+                    route.Id,
+                    route.RouteCode,
+                    route.RouteName,
+                    decimal.Round((decimal)(distanceMeters / 1000d), 2));
             }
         }
 
         return null;
+    }
+
+    private static MatchedRouteSummary? ResolveSingleMatchedRoute(
+        IReadOnlyCollection<CharterBookingRouteLegEstimate> legs)
+    {
+        if (legs.Count == 0 || legs.Any(x => !x.MatchedRouteId.HasValue))
+        {
+            return null;
+        }
+
+        var matchedRoutes = legs
+            .Select(x => new MatchedRouteSummary(
+                x.MatchedRouteId!.Value,
+                x.MatchedRouteCode,
+                x.MatchedRouteName))
+            .Distinct()
+            .ToArray();
+
+        return matchedRoutes.Length == 1 ? matchedRoutes[0] : null;
     }
 
     private static RoutePointProjection ProjectPointToLine(LineString line, RoutePoint point)
@@ -479,4 +518,15 @@ internal static class CharterBookingRoutePricingSupport
         double Fraction,
         double DistanceFromStartMeters,
         double DistanceMeters);
+
+    private sealed record MatchedRouteLeg(
+        Guid RouteId,
+        string RouteCode,
+        string RouteName,
+        decimal DistanceKm);
+
+    private sealed record MatchedRouteSummary(
+        Guid RouteId,
+        string? RouteCode,
+        string? RouteName);
 }

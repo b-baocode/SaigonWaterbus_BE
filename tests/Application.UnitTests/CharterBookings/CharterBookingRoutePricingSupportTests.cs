@@ -86,6 +86,22 @@ public class CharterBookingRoutePricingSupportTests
         pricing.RouteEstimate.ChargeableDurationMinutes.ShouldBe(96);
         pricing.ChargeableDurationValue.ShouldBe(1.600m);
         pricing.SubtotalAmount.ShouldBe(1_600_000m);
+
+        var leg = pricing.RouteEstimate.Legs.Single();
+        leg.MatchedRouteId.ShouldBe(route.Id);
+        leg.MatchedRouteCode.ShouldBe("R-TEST");
+        leg.MatchedRouteName.ShouldBe("Bến A - Bến B");
+
+        var dto = CharterBookingRoutePricingSupport.ToDto(
+            pricing.RouteEstimate,
+            BoatRentalUnit.Hour,
+            requestedDurationValue: 1);
+        dto.MatchedRouteId.ShouldBe(route.Id);
+        dto.MatchedRouteCode.ShouldBe("R-TEST");
+        dto.MatchedRouteName.ShouldBe("Bến A - Bến B");
+        dto.Legs.Single().MatchedRouteId.ShouldBe(route.Id);
+        dto.Legs.Single().MatchedRouteCode.ShouldBe("R-TEST");
+        dto.Legs.Single().MatchedRouteName.ShouldBe("Bến A - Bến B");
     }
 
     [Test]
