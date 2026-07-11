@@ -1,6 +1,5 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
-using SaigonWaterbus.Application.BoatStaffAssignments;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
@@ -67,23 +66,6 @@ internal static class CharterBookingAssignmentSupport
         return manager;
     }
 
-    public static void EnsureCanManageCharterStaff(
-        User actor,
-        Booking booking)
-    {
-        if (AuthSupport.IsAdmin(actor))
-        {
-            return;
-        }
-
-        if (AuthSupport.IsManager(actor) && booking.AssignedManagerId == actor.Id)
-        {
-            return;
-        }
-
-        throw new ForbiddenAccessException();
-    }
-
     public static async Task EnsureCanViewOperationalAsync(
         IApplicationDbContext context,
         User actor,
@@ -121,64 +103,8 @@ internal static class CharterBookingAssignmentSupport
         throw new ForbiddenAccessException();
     }
 
-    public static async Task<IReadOnlyList<CharterBookingStaffAssignmentDto>> LoadStaffAssignmentsAsync(
-        IApplicationDbContext context,
-        Booking booking,
-        bool activeOnly,
-        CancellationToken cancellationToken)
-    {
-        var selectedBoatIds = ResolveSelectedBoatIds(booking);
-        if (selectedBoatIds.Count == 0 || !booking.DepartureDate.HasValue)
-        {
-            return [];
-        }
-
-        var query = context.BoatStaffAssignments
-            .AsNoTracking()
-            .Include(x => x.Boat)
-            .Include(x => x.StaffUser)
-            .Include(x => x.AssignedByUser)
-            .Include(x => x.ReplacedByUser)
-            .Where(x => selectedBoatIds.Contains(x.BoatId)
-                && x.WorkingDate == booking.DepartureDate.Value);
-
-        if (activeOnly)
-        {
-            query = query.Where(x => x.IsActive);
-        }
-
-        var assignments = await query
-            .OrderBy(x => x.Boat.Name)
-            .ThenBy(x => x.ShiftCode)
-            .ThenBy(x => x.StaffUser.FullName)
-            .ToListAsync(cancellationToken);
-
-        return assignments.Select(ToStaffAssignmentDto).ToList();
-    }
-
     public static CharterBookingUserAssignmentDto? ToUserAssignmentDto(User? user) =>
         user is null ? null : new CharterBookingUserAssignmentDto(user.Id, user.FullName, user.UserCode);
-
-    public static CharterBookingStaffAssignmentDto ToStaffAssignmentDto(BoatStaffAssignment assignment) =>
-        new(
-            assignment.Id,
-            assignment.BoatId,
-            assignment.Boat.Name,
-            assignment.StaffUserId,
-            assignment.StaffUser.FullName,
-            assignment.WorkingDate,
-            assignment.ShiftCode ?? BoatStaffAssignmentSupport.DefaultShiftCode,
-            BoatStaffAssignmentSupport.OnBoardDutyRole,
-            assignment.IsActive,
-            assignment.AssignedByUserId,
-            assignment.AssignedByUser.FullName,
-            assignment.AssignedAt,
-            assignment.ReplacesAssignmentId,
-            assignment.ReplacedByAssignmentId,
-            assignment.ReplacementReason,
-            assignment.ReplacedAt,
-            assignment.ReplacedByUserId,
-            assignment.ReplacedByUser?.FullName);
 
     public static async Task<bool> IsStaffAssignedToBookingAsync(
         IApplicationDbContext context,
@@ -192,11 +118,20 @@ internal static class CharterBookingAssignmentSupport
             return false;
         }
 
-        return await context.BoatStaffAssignments.AnyAsync(
-            x => x.StaffUserId == staffUserId
-                && selectedBoatIds.Contains(x.BoatId)
-                && x.WorkingDate == booking.DepartureDate.Value
-                && x.IsActive,
+        var workingDate = booking.DepartureDate.Value;
+        return await context.BoatCrewAssignments.AnyAsync(
+            assignment => assignment.StaffUserId == staffUserId
+                && selectedBoatIds.Contains(assignment.BoatId)
+                && assignment.IsActive
+                && assignment.FromDate <= workingDate
+                && (!assignment.ToDate.HasValue || assignment.ToDate.Value >= workingDate)
+                && (assignment.ReplacesAssignmentId != null
+                    || !context.BoatCrewAssignments.Any(replacement =>
+                        replacement.ReplacesAssignmentId == assignment.Id
+                        && replacement.IsActive
+                        && replacement.FromDate <= workingDate
+                        && replacement.ToDate.HasValue
+                        && replacement.ToDate.Value >= workingDate)),
             cancellationToken);
     }
 }

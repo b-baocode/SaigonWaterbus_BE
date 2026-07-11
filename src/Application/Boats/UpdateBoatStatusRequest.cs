@@ -58,6 +58,7 @@ public sealed class UpdateBoatStatusRequestUseCase
                     $"Tàu cần cấu hình đủ {boat.SeatCount} ghế trước khi chuyển Active. Hiện có {configuredSeats} ghế.");
             }
 
+            BoatSupport.EnsureCanActivate(boat, nameof(request.Status));
             BoatDocumentSupport.EnsureCanActivate(boat);
         }
 

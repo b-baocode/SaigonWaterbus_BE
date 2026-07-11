@@ -89,6 +89,35 @@ internal static class SeatFlowTestData
             SeatSetupType = setupType,
             SeatsConfigured = seatsConfigured
         };
+
+    public static void AddRequiredDocuments(
+        Boat boat,
+        DateTimeOffset? uploadedAt = null)
+    {
+        var timestamp = uploadedAt ?? new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        boat.Documents =
+        [
+            Document(BoatDocumentType.Inspection, timestamp),
+            Document(BoatDocumentType.Registration, timestamp),
+            Document(BoatDocumentType.Insurance, timestamp),
+            Document(BoatDocumentType.OperationLicense, timestamp)
+        ];
+    }
+
+    private static BoatDocument Document(
+        BoatDocumentType type,
+        DateTimeOffset uploadedAt) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            Type = type,
+            FileName = $"{type}.pdf",
+            ContentType = "application/pdf",
+            FileSize = 1024,
+            FileUrl = $"https://example.test/documents/{type}.pdf",
+            StorageKey = $"documents/{type}.pdf",
+            UploadedAt = uploadedAt
+        };
 }
 
 internal sealed class TestUserContext(Guid userId) : IUserContext

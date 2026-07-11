@@ -33,66 +33,7 @@ public class CharterBookingAssignmentTests
     }
 
     [Test]
-    public async Task AssignedManagerCanAssignStaffToSelectedCharterBoat()
-    {
-        await using var context = SeatFlowTestData.CreateContext();
-        var manager = await SeatFlowTestData.SeedManagerAsync(context);
-        var staff = await SeatFlowTestData.SeedStaffAsync(context);
-        var boat = ActiveBoat();
-        var booking = CharterBooking(boat);
-        booking.AssignedManagerId = manager.UserId;
-        context.AddRange(boat, booking);
-        await context.SaveChangesAsync();
-
-        var handler = new AssignCharterBookingStaffCommandHandler(
-            context,
-            manager,
-            new FixedTimeProvider(new DateTimeOffset(2026, 7, 8, 1, 0, 0, TimeSpan.Zero)));
-
-        var result = await handler.Handle(
-            new AssignCharterBookingStaffCommand(
-                booking.Id,
-                staff.UserId!.Value),
-            CancellationToken.None);
-
-        result.BoatId.ShouldBe(boat.Id);
-        result.StaffUserId.ShouldBe(staff.UserId.Value);
-        result.WorkingDate.ShouldBe(booking.DepartureDate!.Value);
-        result.ShiftCode.ShouldBe("Day");
-        result.DutyRole.ShouldBe("OnBoard");
-
-        var assignment = context.BoatStaffAssignments.Single();
-        assignment.BoatId.ShouldBe(boat.Id);
-        assignment.StaffUserId.ShouldBe(staff.UserId.Value);
-        assignment.AssignedByUserId.ShouldBe(manager.UserId!.Value);
-    }
-
-    [Test]
-    public async Task UnassignedManagerCannotAssignStaffToCharterBooking()
-    {
-        await using var context = SeatFlowTestData.CreateContext();
-        var assignedManager = await SeatFlowTestData.SeedManagerAsync(context);
-        var otherManager = await SeatFlowTestData.SeedManagerAsync(context);
-        var staff = await SeatFlowTestData.SeedStaffAsync(context);
-        var boat = ActiveBoat();
-        var booking = CharterBooking(boat);
-        booking.AssignedManagerId = assignedManager.UserId;
-        context.AddRange(boat, booking);
-        await context.SaveChangesAsync();
-
-        var handler = new AssignCharterBookingStaffCommandHandler(
-            context,
-            otherManager,
-            TimeProvider.System);
-
-        await Should.ThrowAsync<ForbiddenAccessException>(() =>
-            handler.Handle(
-                new AssignCharterBookingStaffCommand(booking.Id, staff.UserId!.Value),
-                CancellationToken.None));
-    }
-
-    [Test]
-    public async Task AssignedStaffCanCheckInCharterBookingQr()
+    public async Task CrewStaffCanCheckInCharterBookingQr()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var manager = await SeatFlowTestData.SeedManagerAsync(context);
@@ -106,13 +47,22 @@ public class CharterBookingAssignmentTests
         context.AddRange(customer.Role, customer, boat, booking);
         await context.SaveChangesAsync();
 
-        var assignHandler = new AssignCharterBookingStaffCommandHandler(
-            context,
-            manager,
-            TimeProvider.System);
-        await assignHandler.Handle(
-            new AssignCharterBookingStaffCommand(booking.Id, staff.UserId!.Value),
-            CancellationToken.None);
+        var managerUser = context.Users.Single(x => x.Id == manager.UserId!.Value);
+        var staffUser = context.Users.Single(x => x.Id == staff.UserId!.Value);
+        context.BoatCrewAssignments.Add(new BoatCrewAssignment
+        {
+            BoatId = boat.Id,
+            Boat = boat,
+            StaffUserId = staffUser.Id,
+            StaffUser = staffUser,
+            CrewRole = CrewRole.OnBoard,
+            FromDate = booking.DepartureDate!.Value,
+            IsActive = true,
+            AssignedByUserId = managerUser.Id,
+            AssignedByUser = managerUser,
+            AssignedAt = DateTimeOffset.UtcNow
+        });
+        await context.SaveChangesAsync();
 
         var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
         var attendanceHandler = new UpdateCharterBookingAttendanceCommandHandler(

@@ -45,8 +45,30 @@ public class Boat : BaseAuditableEntity
     public ICollection<Seat> Seats { get; set; } = new List<Seat>();
 
     public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
-
-    public ICollection<BoatStaffAssignment> StaffAssignments { get; set; } = new List<BoatStaffAssignment>();
-
+    
     public ICollection<BoatCrewAssignment> CrewAssignments { get; set; } = new List<BoatCrewAssignment>();
+}
+
+// Stored inside boats.documents JSON; this is not mapped as a separate table.
+public sealed class BoatDocument
+{
+    public Guid Id { get; set; }
+
+    public BoatDocumentType Type { get; set; }
+
+    public string FileName { get; set; } = null!;
+
+    public string ContentType { get; set; } = null!;
+
+    public long FileSize { get; set; }
+
+    public string FileUrl { get; set; } = null!;
+
+    public string StorageKey { get; set; } = null!;
+
+    public DateOnly? IssuedDate { get; set; }
+
+    public DateOnly? ExpiryDate { get; set; }
+
+    public DateTimeOffset UploadedAt { get; set; }
 }

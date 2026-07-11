@@ -28,5 +28,4 @@ public class Station : BaseGuidAuditableEntity
     public ICollection<RouteStop> RouteStops { get; set; } = new List<RouteStop>();
     public ICollection<Landmark> Landmarks { get; set; } = new List<Landmark>();
     public ICollection<UserStationAssignment> UserAssignments { get; set; } = new List<UserStationAssignment>();
-    public ICollection<StationStaffAssignment> StaffAssignments { get; set; } = new List<StationStaffAssignment>();
 }

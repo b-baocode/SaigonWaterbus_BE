@@ -1,6 +1,5 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
-using SaigonWaterbus.Application.BoatStaffAssignments;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
@@ -93,7 +92,7 @@ public sealed class GetBoatCrewAssignmentsQueryHandler
         GetBoatCrewAssignmentsQuery request,
         CancellationToken cancellationToken)
     {
-        await BoatStaffAssignmentSupport.EnsureCurrentUserCanViewBoatStaffAsync(
+        await BoatCrewAssignmentSupport.EnsureCurrentUserCanViewBoatCrewAsync(
             _context,
             _userContext,
             cancellationToken);
@@ -159,7 +158,7 @@ public sealed class CreateBoatCrewAssignmentCommandHandler
         CreateBoatCrewAssignmentCommand request,
         CancellationToken cancellationToken)
     {
-        var actor = await BoatStaffAssignmentSupport.EnsureCurrentUserCanManageBoatStaffAsync(
+        var actor = await BoatCrewAssignmentSupport.EnsureCurrentUserCanManageBoatCrewAsync(
             _context,
             _userContext,
             cancellationToken);
@@ -172,7 +171,7 @@ public sealed class CreateBoatCrewAssignmentCommandHandler
             throw AuthSupport.CreateValidationException(nameof(request.BoatId), "Không thể phân nhân viên cho tàu đã Retired.");
         }
 
-        await BoatStaffAssignmentSupport.EnsureStaffCanBeAssignedAsync(
+        await BoatCrewAssignmentSupport.EnsureStaffCanBeAssignedAsync(
             _context,
             request.StaffUserId,
             nameof(request.StaffUserId),
@@ -233,7 +232,7 @@ public sealed class DeleteBoatCrewAssignmentCommandHandler
 
     public async Task Handle(DeleteBoatCrewAssignmentCommand request, CancellationToken cancellationToken)
     {
-        await BoatStaffAssignmentSupport.EnsureCurrentUserCanManageBoatStaffAsync(
+        await BoatCrewAssignmentSupport.EnsureCurrentUserCanManageBoatCrewAsync(
             _context,
             _userContext,
             cancellationToken);
@@ -296,7 +295,7 @@ public sealed class GetBoatCrewReplacementsQueryHandler
         GetBoatCrewReplacementsQuery request,
         CancellationToken cancellationToken)
     {
-        await BoatStaffAssignmentSupport.EnsureCurrentUserCanViewBoatStaffAsync(
+        await BoatCrewAssignmentSupport.EnsureCurrentUserCanViewBoatCrewAsync(
             _context,
             _userContext,
             cancellationToken);
@@ -371,7 +370,7 @@ public sealed class CreateBoatCrewReplacementCommandHandler
         CreateBoatCrewReplacementCommand request,
         CancellationToken cancellationToken)
     {
-        var actor = await BoatStaffAssignmentSupport.EnsureCurrentUserCanManageBoatStaffAsync(
+        var actor = await BoatCrewAssignmentSupport.EnsureCurrentUserCanManageBoatCrewAsync(
             _context,
             _userContext,
             cancellationToken);
@@ -391,7 +390,7 @@ public sealed class CreateBoatCrewReplacementCommandHandler
             request.FromDate,
             request.ToDate,
             cancellationToken);
-        await BoatStaffAssignmentSupport.EnsureStaffCanBeAssignedAsync(
+        await BoatCrewAssignmentSupport.EnsureStaffCanBeAssignedAsync(
             _context,
             request.ReplacementStaffUserId,
             nameof(request.ReplacementStaffUserId),
@@ -460,7 +459,7 @@ public sealed class DeleteBoatCrewReplacementCommandHandler
 
     public async Task Handle(DeleteBoatCrewReplacementCommand request, CancellationToken cancellationToken)
     {
-        await BoatStaffAssignmentSupport.EnsureCurrentUserCanManageBoatStaffAsync(
+        await BoatCrewAssignmentSupport.EnsureCurrentUserCanManageBoatCrewAsync(
             _context,
             _userContext,
             cancellationToken);
@@ -518,7 +517,7 @@ public sealed class GetBoatCrewCalendarQueryHandler
         GetBoatCrewCalendarQuery request,
         CancellationToken cancellationToken)
     {
-        await BoatStaffAssignmentSupport.EnsureCurrentUserCanViewBoatStaffAsync(
+        await BoatCrewAssignmentSupport.EnsureCurrentUserCanViewBoatCrewAsync(
             _context,
             _userContext,
             cancellationToken);
@@ -561,6 +560,61 @@ public sealed class GetBoatCrewCalendarQueryHandler
 
 internal static class BoatCrewAssignmentSupport
 {
+    public static async Task<User> EnsureCurrentUserCanManageBoatCrewAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
+        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor))
+        {
+            return actor;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
+    public static async Task<User> EnsureCurrentUserCanViewBoatCrewAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
+        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor) || AuthSupport.IsStaff(actor))
+        {
+            return actor;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
+    public static async Task EnsureStaffCanBeAssignedAsync(
+        IApplicationDbContext context,
+        Guid staffUserId,
+        string propertyName,
+        CancellationToken cancellationToken)
+    {
+        var staff = await context.Users
+            .Include(x => x.Role)
+            .SingleOrDefaultAsync(x => x.Id == staffUserId, cancellationToken)
+            ?? throw new NotFoundException("Không tìm thấy staff.");
+
+        if (!AuthSupport.IsStaff(staff))
+        {
+            throw new ValidationException([new ValidationFailure(propertyName, "Người được phân công phải có role Staff.")]);
+        }
+
+        if (staff.Status != UserStatus.Active)
+        {
+            throw new ValidationException([new ValidationFailure(propertyName, "Staff phải đang Active để được phân công.")]);
+        }
+
+        if (staff.StaffType != StaffType.OnBoard)
+        {
+            throw new ValidationException([new ValidationFailure(propertyName, "Staff lên tàu phải có staffType = OnBoard.")]);
+        }
+    }
+
     public static IQueryable<BoatCrewAssignment> BuildBaseAssignmentQuery(IApplicationDbContext context) =>
         context.BoatCrewAssignments
             .AsNoTracking()

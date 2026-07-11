@@ -289,34 +289,6 @@ internal static class BoatDocumentSupport
             RequiresRefresh(type, document, maintenanceStartedAt));
     }
 
-    private static string? CreateDocumentUrl(
-        BoatDocument? document,
-        IBoatDocumentStorageService? boatDocumentStorage)
-    {
-        if (document is null)
-        {
-            return null;
-        }
-
-        if (boatDocumentStorage is not null && !string.IsNullOrWhiteSpace(document.StorageKey))
-        {
-            try
-            {
-                var signedUrl = boatDocumentStorage.CreateDocumentUrl(document.StorageKey);
-                if (!string.IsNullOrWhiteSpace(signedUrl))
-                {
-                    return signedUrl;
-                }
-            }
-            catch
-            {
-                return document.FileUrl;
-            }
-        }
-
-        return document.FileUrl;
-    }
-
     public static BoatDocument[] ReplaceDocument(
         IReadOnlyCollection<BoatDocument>? documents,
         BoatDocument document)
@@ -377,6 +349,54 @@ internal static class BoatDocumentSupport
         && maintenanceStartedAt is not null
         && (document is null || document.UploadedAt <= maintenanceStartedAt.Value);
 
+    public static void EnsureValidDocument(
+        BoatDocumentFileRequest file,
+        IBoatDocumentStorageService storage)
+    {
+        if (file.Length > storage.MaxDocumentBytes)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(file.Length),
+                $"Hồ sơ tàu không được vượt quá {storage.MaxDocumentBytes / 1024 / 1024} MB.");
+        }
+
+        if (string.IsNullOrWhiteSpace(file.ContentType)
+            || !storage.AllowedDocumentContentTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(file.ContentType),
+                "Hồ sơ tàu chỉ hỗ trợ PDF, JPEG, PNG hoặc WebP.");
+        }
+    }
+
+    private static string? CreateDocumentUrl(
+        BoatDocument? document,
+        IBoatDocumentStorageService? boatDocumentStorage)
+    {
+        if (document is null)
+        {
+            return null;
+        }
+
+        if (boatDocumentStorage is not null && !string.IsNullOrWhiteSpace(document.StorageKey))
+        {
+            try
+            {
+                var signedUrl = boatDocumentStorage.CreateDocumentUrl(document.StorageKey);
+                if (!string.IsNullOrWhiteSpace(signedUrl))
+                {
+                    return signedUrl;
+                }
+            }
+            catch
+            {
+                return document.FileUrl;
+            }
+        }
+
+        return document.FileUrl;
+    }
+
     private static bool HasRequiredDocumentsForActivation(
         Boat boat,
         out BoatDocumentType[] missingDocumentTypes)
@@ -399,26 +419,6 @@ internal static class BoatDocumentSupport
         var latestDocuments = CreateLatestDocumentMap(boat.Documents);
         return latestDocuments.TryGetValue(BoatDocumentType.Inspection, out var inspectionDocument)
             && inspectionDocument.UploadedAt > boat.MaintenanceStartedAt.Value;
-    }
-
-    public static void EnsureValidDocument(
-        BoatDocumentFileRequest file,
-        IBoatDocumentStorageService storage)
-    {
-        if (file.Length > storage.MaxDocumentBytes)
-        {
-            throw AuthSupport.CreateValidationException(
-                nameof(file.Length),
-                $"Hồ sơ tàu không được vượt quá {storage.MaxDocumentBytes / 1024 / 1024} MB.");
-        }
-
-        if (string.IsNullOrWhiteSpace(file.ContentType)
-            || !storage.AllowedDocumentContentTypes.Contains(file.ContentType, StringComparer.OrdinalIgnoreCase))
-        {
-            throw AuthSupport.CreateValidationException(
-                nameof(file.ContentType),
-                "Hồ sơ tàu chỉ hỗ trợ PDF, JPEG, PNG hoặc WebP.");
-        }
     }
 
     private static Dictionary<BoatDocumentType, BoatDocument> CreateLatestDocumentMap(

@@ -18,8 +18,8 @@ public sealed record CreateCharterBookingResult(
 
 public sealed record CreateCharterBookingRequest(
     DateOnly DepartureDate,
-    BoatRentalUnit RentalUnit,
-    int DurationValue,
+    BoatRentalUnit? RentalUnit,
+    int? DurationValue,
     int AdultCount,
     int ChildCount,
     TimeOnly? StartTime = null,
@@ -145,8 +145,8 @@ public sealed record CharterBookingListItemDto(
     string PaymentStatus,
     string DepartureDate,
     string? StartTime,
-    string RentalUnit,
-    int DurationValue,
+    string? RentalUnit,
+    int? DurationValue,
     int AdultCount,
     int ChildCount,
     int PassengerCount,
@@ -189,8 +189,8 @@ public sealed record CharterBookingDetailDto(
     string? PreferredSeatSetupType,
     DateOnly DepartureDate,
     TimeOnly? StartTime,
-    string RentalUnit,
-    int DurationValue,
+    string? RentalUnit,
+    int? DurationValue,
     CharterBookingRouteEstimateDto RouteEstimate,
     Guid? FromStationId,
     Guid? ToStationId,
@@ -215,7 +215,6 @@ public sealed record CharterBookingDetailDto(
     IReadOnlyList<CharterBookingTicketDto> Tickets,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingUserAssignmentDto? AssignedManager = null,
-    IReadOnlyList<CharterBookingStaffAssignmentDto>? StaffAssignments = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingInsuranceDto? Insurance = null);
 
@@ -224,33 +223,6 @@ public sealed record CharterBookingUserAssignmentDto(
     string FullName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? UserCode);
-
-public sealed record CharterBookingStaffAssignmentDto(
-    Guid AssignmentId,
-    Guid BoatId,
-    string BoatName,
-    Guid StaffUserId,
-    string StaffName,
-    DateOnly WorkingDate,
-    string ShiftCode,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? DutyRole,
-    bool IsActive,
-    Guid AssignedByUserId,
-    string AssignedByName,
-    DateTimeOffset AssignedAt,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    Guid? ReplacesAssignmentId,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    Guid? ReplacedByAssignmentId,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? ReplacementReason,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateTimeOffset? ReplacedAt,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    Guid? ReplacedByUserId,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? ReplacedByName);
 
 public sealed record CharterBookingItineraryStopDto(
     Guid StationId,
@@ -539,15 +511,6 @@ public sealed record CharterBookingAttendanceSkippedTicketDto(
 public sealed record AssignCharterBookingManagerRequest(
     Guid? ManagerUserId);
 
-public sealed record AssignCharterBookingStaffRequest(
-    Guid StaffUserId,
-    Guid? BoatId = null,
-    string? ShiftCode = null);
-
-public sealed record ReplaceCharterBookingStaffRequest(
-    Guid ReplacementStaffUserId,
-    string Reason);
-
 public sealed record QuoteCharterBookingBoatRequest(
     int BoatOrder,
     Guid BoatId);
@@ -555,6 +518,17 @@ public sealed record QuoteCharterBookingBoatRequest(
 public sealed record QuoteCharterBookingRequest(
     Guid? BoatId = null,
     IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null);
+
+public enum CharterBookingQuoteResponseAction
+{
+    Accept = 0,
+    RequestChanges = 1,
+    Reject = 2
+}
+
+public sealed record RespondCharterBookingQuoteRequest(
+    CharterBookingQuoteResponseAction Action,
+    string? Note = null);
 
 public sealed record UpdateCharterBookingStatusRequest(
     BookingStatus BookingStatus);

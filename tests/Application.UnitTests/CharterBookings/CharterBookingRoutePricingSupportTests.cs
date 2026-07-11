@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Domain.Entities;
@@ -25,22 +26,43 @@ public class CharterBookingRoutePricingSupportTests
     [Test]
     public void HourlyPriceSubtractsFreeStayMinutesAndUsesExactChargeableMinutes()
     {
-        var station = new Station
+        var fromStation = new Station
         {
             StationName = "Bến A",
             Latitude = 10,
             Longitude = 106
         };
+        var stopStation = new Station
+        {
+            StationName = "Bến B",
+            Latitude = 10,
+            Longitude = 106.001m
+        };
+        var route = new Route
+        {
+            RouteCode = "R-TEST",
+            RouteName = "Bến A - Bến B",
+            RouteGeometry = new LineString(
+            [
+                new Coordinate(106, 10),
+                new Coordinate(106.001, 10)
+            ]),
+            RouteStops =
+            [
+                new RouteStop { Station = fromStation, StationId = fromStation.Id, StopOrder = 1 },
+                new RouteStop { Station = stopStation, StationId = stopStation.Id, StopOrder = 2 }
+            ]
+        };
         var booking = new Booking
         {
             RentalUnit = BoatRentalUnit.Hour,
             DurationValue = 1,
-            FromStation = station,
+            FromStation = fromStation,
             ItineraryStops =
             [
                 new BookingItineraryStop
                 {
-                    Station = station,
+                    Station = stopStation,
                     StayDurationMinutes = 116,
                     StopOrder = 1
                 }
@@ -56,7 +78,7 @@ public class CharterBookingRoutePricingSupportTests
             boat,
             BoatRentalUnit.Hour,
             requestedDurationValue: 1,
-            relatedRoutes: null);
+            relatedRoutes: [route]);
 
         pricing.RouteEstimate.EstimatedDurationMinutes.ShouldBe(126);
         pricing.RouteEstimate.FreeStayMinutes.ShouldBe(30);
@@ -136,7 +158,7 @@ public class CharterBookingRoutePricingSupportTests
             CharterBookingRoutePricingSupport.EnsureCanAutoPrice(BoatRentalUnit.Hour, estimate));
 
         exception.Errors["subtotalAmount"].Single()
-            .ShouldContain("chưa có đủ dữ liệu quãng đường");
+            .ShouldContain("chưa có route");
     }
 
     [Test]

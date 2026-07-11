@@ -136,7 +136,7 @@ public class BoatSeatFlowIntegrationTests
         var boat = SeatFlowTestData.Boat(
             SeatSetupType.StandardAndVip,
             seatsConfigured: true);
-        boat.Documents = RequiredDocuments(now.AddDays(-1));
+        SeatFlowTestData.AddRequiredDocuments(boat, now);
         AddSeats(boat, boat.SeatCount);
         context.Add(boat);
         await context.SaveChangesAsync();
@@ -185,7 +185,7 @@ public class BoatSeatFlowIntegrationTests
             seatsConfigured: true,
             status: BoatStatus.UnderMaintenance);
         boat.MaintenanceStartedAt = maintenanceStartedAt;
-        boat.Documents = RequiredDocuments(maintenanceStartedAt.AddDays(-1));
+        SeatFlowTestData.AddRequiredDocuments(boat, maintenanceStartedAt.AddDays(-1));
         AddSeats(boat, boat.SeatCount);
         context.Add(boat);
         await context.SaveChangesAsync();
@@ -350,7 +350,8 @@ public class BoatSeatFlowIntegrationTests
             SeatSetupType.FullStandard,
             seatsConfigured: true,
             status: BoatStatus.Inactive);
-        boat.Documents = RequiredDocuments(now.AddDays(-1))
+        SeatFlowTestData.AddRequiredDocuments(boat, now.AddDays(-1));
+        boat.Documents = boat.Documents
             .Where(x => x.Type != BoatDocumentType.OperationLicense)
             .ToArray();
         AddSeats(boat, boat.SeatCount);
@@ -358,7 +359,7 @@ public class BoatSeatFlowIntegrationTests
         await context.SaveChangesAsync();
         await using var file = CreateDocumentFile();
 
-        await new UpdateBoatDocumentRequestUseCase(
+        var result = await new UpdateBoatDocumentRequestUseCase(
                 context,
                 userContext,
                 new FixedTimeProvider(now),
@@ -370,6 +371,7 @@ public class BoatSeatFlowIntegrationTests
                     new BoatDocumentFileRequest("operation-license.pdf", "application/pdf", file.Length, file)),
                 CancellationToken.None);
 
+        result.Type.ShouldBe(BoatDocumentType.OperationLicense);
         boat.Status.ShouldBe(BoatStatus.Active);
     }
 
@@ -640,26 +642,5 @@ public class BoatSeatFlowIntegrationTests
 
     private static MemoryStream CreateImageFile() => new([0x1, 0x2, 0x3, 0x4]);
 
-    private static MemoryStream CreateDocumentFile() => new([0x1, 0x2, 0x3, 0x4]);
-
-    private static BoatDocument[] RequiredDocuments(DateTimeOffset uploadedAt) =>
-    [
-        Document(BoatDocumentType.Inspection, uploadedAt),
-        Document(BoatDocumentType.Registration, uploadedAt),
-        Document(BoatDocumentType.Insurance, uploadedAt),
-        Document(BoatDocumentType.OperationLicense, uploadedAt)
-    ];
-
-    private static BoatDocument Document(BoatDocumentType type, DateTimeOffset uploadedAt) =>
-        new()
-        {
-            Id = Guid.NewGuid(),
-            Type = type,
-            FileName = $"{type}.pdf",
-            ContentType = "application/pdf",
-            FileSize = 4,
-            FileUrl = $"https://example.test/documents/{type}.pdf",
-            StorageKey = $"documents/{type}.pdf",
-            UploadedAt = uploadedAt
-        };
+    private static MemoryStream CreateDocumentFile() => new([0x25, 0x50, 0x44, 0x46]);
 }

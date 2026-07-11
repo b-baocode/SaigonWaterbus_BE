@@ -429,12 +429,12 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             cancellationToken);
         CharterBookingQuoteSupport.ValidateSelectedBoats(booking, selectedBoats);
 
-        var rentalUnit = booking.RentalUnit.GetValueOrDefault();
-        var requestedDurationValue = booking.DurationValue.GetValueOrDefault();
         var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
             booking,
             cancellationToken);
+        var rentalUnit = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
+        var requestedDurationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
         var selectedBoatPricings = CharterBookingQuoteSupport.EstimateSelectedBoatPrices(
             booking,
             selectedBoats,
@@ -578,12 +578,13 @@ public sealed class QuoteCharterBookingCommandHandler
         var previousDurationValue = booking.DurationValue.GetValueOrDefault();
         var wasAlreadyPriced = booking.TotalAmount > 0;
         var previousPromotionId = booking.PromotionId;
-        var rentalUnit = booking.RentalUnit.GetValueOrDefault();
-        var requestedDurationValue = booking.DurationValue.GetValueOrDefault();
         var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
             booking,
             cancellationToken);
+        var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
+        var rentalUnit = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
+        var requestedDurationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
         var selectedBoatPricings = CharterBookingQuoteSupport.EstimateSelectedBoatPrices(
             booking,
             selectedBoats,
@@ -597,7 +598,10 @@ public sealed class QuoteCharterBookingCommandHandler
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
             + (insuranceSnapshot?.TotalAmount ?? 0);
         var chargeableDurationValue = primarySelection.Pricing.ChargeableDurationValue;
-        var holdDurationValue = requestedDurationValue;
+        var holdDurationValue = CharterBookingRoutePricingSupport.ResolveHoldDurationValue(
+            rentalUnit,
+            requestedDurationValue,
+            routeEstimate);
         var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
             _context,
             booking,
@@ -685,7 +689,7 @@ public sealed class QuoteCharterBookingCommandHandler
         booking.BoatId = primaryBoat.Id;
         booking.Boat = primaryBoat;
         booking.RentalUnit = rentalUnit;
-        booking.DurationValue = requestedDurationValue;
+        booking.DurationValue = holdDurationValue;
         booking.PromotionId = promotion?.Id;
         booking.SubtotalAmount = subtotal;
         booking.DiscountAmount = discount;

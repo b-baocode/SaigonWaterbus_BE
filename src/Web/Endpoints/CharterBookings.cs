@@ -21,8 +21,6 @@ public sealed class CharterBookings : IEndpointGroup
         """
         {
           "departureDate": "2026-08-01",
-          "rentalUnit": "Day",
-          "durationValue": 1,
           "adultCount": 15,
           "childCount": 5,
           "startTime": "08:00:00",
@@ -57,6 +55,14 @@ public sealed class CharterBookings : IEndpointGroup
         """;
 
     private const string PreviewCharterBookingQuoteExample = QuoteCharterBookingExample;
+
+    private const string RespondCharterBookingQuoteExample =
+        """
+        {
+          "action": "RequestChanges",
+          "note": "Khach muon them diem dung tai Ben Bach Dang trong 20 phut"
+        }
+        """;
 
     private const string UpdateStatusExample =
         """
@@ -94,23 +100,6 @@ public sealed class CharterBookings : IEndpointGroup
         """
         {
           "managerUserId": "00000000-0000-0000-0000-000000000010"
-        }
-        """;
-
-    private const string AssignStaffExample =
-        """
-        {
-          "staffUserId": "00000000-0000-0000-0000-000000000020",
-          "boatId": "00000000-0000-0000-0000-000000000001",
-          "shiftCode": "Day"
-        }
-        """;
-
-    private const string ReplaceStaffExample =
-        """
-        {
-          "replacementStaffUserId": "00000000-0000-0000-0000-000000000021",
-          "reason": "Staff xin nghỉ đột xuất"
         }
         """;
 
@@ -158,9 +147,9 @@ public sealed class CharterBookings : IEndpointGroup
                 "boats: danh sach tau admin chon; so item phai dung bang so tau customer yeu cau, boatOrder khop thu tu requestedBoats.",
                 "boatId: van ho tro cho client cu khi booking chi yeu cau 1 tau.",
                 "Moi tau phai Active, dung numberOfDecks theo requestedBoats va tong suc chua khong duoc nho hon adultCount + childCount customer da nhap.",
-                "rentalUnit va durationValue duoc lay tu charter booking goc, FE khong gui lai trong quote.",
-                "Backend luon tu tinh tong gia tu gia tau, thoi gian/quang duong va khong nhan tong gia thu cong.",
-                "Hour: backend can co du lieu km/thoi gian tu GeoJSON/toa do ben; neu thieu thi tra 400.",
+                "FE/admin khong gui rentalUnit, durationValue hoac tong gia trong quote.",
+                "Backend mac dinh tinh theo Hour cho logic moi, lay thoi gian/quang duong tu route da co cua cac ben va tra routeEstimate cho khach xem.",
+                "Hour: backend can co route/GeoJSON/toa do hop le cho tung chang; neu thieu thi tra 400.",
                 "Hour: so gio tinh tien = max(durationValue, phut tinh tien / 60) va lam tron den 3 chu so thap phan.",
                 "Day: tinh theo dailyRentalPrice * durationValue.",
                 "Admin khong gui promotionCode hoac insurancePackageId trong quote.",
@@ -178,6 +167,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Payload giong PUT /api/charter-bookings/admin/{id}/quote.",
                 "API khong doi bookingStatus, khong giu tau, khong luu gia; chi tra preview.",
                 "Response boats[] tra unitPrice, chargeableDurationValue, subtotalAmount cua tung tau.",
+                "Response routeEstimate tra legs[], totalDistanceKm, estimatedDurationMinutes va chargeableDurationMinutes de FE hien thi thoi gian/lo trinh.",
                 "Admin khong gui promotionCode hoac insurancePackageId trong preview.",
                 "Backend tu tinh tong bang cach cong subtotalAmount tung tau; khong ho tro tong gia thu cong."));
 
@@ -240,7 +230,7 @@ public sealed class CharterBookings : IEndpointGroup
                 null,
                 "Admin thấy tất cả charter booking.",
                 "Manager chỉ thấy charter booking mà Admin đã gán làm người phụ trách.",
-                "Staff chỉ thấy charter booking dùng tàu mà staff được phân công trong ngày khởi hành."));
+                "Staff chỉ thấy charter booking dùng tàu mà staff đang thuộc crew trong ngày khởi hành."));
 
         group.MapGet(GetAssignedCharterBookingDetail, "assigned/{id:guid}")
             .RequireAuthorization()
@@ -250,39 +240,7 @@ public sealed class CharterBookings : IEndpointGroup
                 null,
                 "Dùng cho màn hình vận hành charter.",
                 "Manager phải là assignedManager của booking.",
-                "Staff phải có phân công active trên tàu của charter trong ngày khởi hành."));
-
-        group.MapGet(GetCharterBookingStaffAssignments, "{id:guid}/staff-assignments")
-            .RequireAuthorization()
-            .WithSummary("Danh sách staff được phân công cho charter booking")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin/Manager phụ trách/Staff được phân công",
-                null,
-                "Trả về các phân công staff active trên tàu của charter trong ngày khởi hành.",
-                "Query activeOnly=false để xem cả lịch sử thay thế."));
-
-        group.MapPost(AssignCharterBookingStaff, "{id:guid}/staff-assignments")
-            .RequireAuthorization()
-            .Accepts<AssignCharterBookingStaffRequest>("application/json")
-            .WithSummary("Phân staff cho charter booking")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager phụ trách",
-                AssignStaffExample,
-                "API này ghi dữ liệu vào boat_staff_assignments hiện có.",
-                "Nếu charter có nhiều tàu thì bắt buộc truyền boatId thuộc charter.",
-                "workingDate lấy từ departureDate của charter.",
-                "FE không cần gửi dutyRole; backend tự set OnBoard.",
-                "Không cho phân cùng staff active ở hai tàu trong cùng ngày/ca."));
-
-        group.MapPost(ReplaceCharterBookingStaff, "{id:guid}/staff-assignments/{assignmentId:guid}/replace")
-            .RequireAuthorization()
-            .Accepts<ReplaceCharterBookingStaffRequest>("application/json")
-            .WithSummary("Thay staff của charter booking")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager phụ trách",
-                ReplaceStaffExample,
-                "Phân công cũ chuyển inactive, tạo phân công mới active cho staff thay thế.",
-                "assignmentId phải thuộc tàu và ngày khởi hành của charter booking."));
+                "Staff phải thuộc crew active trên tàu của charter trong ngày khởi hành."));
 
         group.MapGet(GetCharterBookings, string.Empty)
             .RequireAuthorization()
@@ -310,6 +268,19 @@ public sealed class CharterBookings : IEndpointGroup
                 "Huy mot yeu cau thue tau con hieu luc.",
                 "Khong the huy khi da Completed/Refunded.",
                 "Tra ve 204 khi huy thanh cong."));
+
+        group.MapPost(RespondCharterBookingQuote, "{id:guid}/quote-response")
+            .RequireAuthorization()
+            .Accepts<RespondCharterBookingQuoteRequest>("application/json")
+            .WithSummary("Customer phan hoi bao gia charter booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                RespondCharterBookingQuoteExample,
+                "Chi dung khi bookingStatus = Quoted va booking chua co payment Pending/Paid.",
+                "Accept: khach dong y bao gia; FE tiep tuc goi API tao payment.",
+                "RequestChanges: khach yeu cau chinh sua; backend dua booking ve PendingQuote, xoa quote cu va nha giu tau de admin bao gia lai.",
+                "Reject: khach tu choi bao gia; backend huy booking.",
+                "note bat buoc khi action = RequestChanges."));
 
         group.MapPut(UpdateCharterBooking, "{id:guid}")
             .RequireAuthorization()
@@ -435,8 +406,7 @@ public sealed class CharterBookings : IEndpointGroup
                 CreateCharterBookingExample,
                 "Customer khong chon tau. Admin se nhap tau va chot gia bang API quote.",
                 "departureDate: phai cach ngay tao booking it nhat 7 ngay.",
-                "rentalUnit: Hour hoac Day, la don vi thue khach mong muon.",
-                "durationValue: so gio hoac so ngay thue (1-60).",
+                "Customer khong gui rentalUnit/durationValue trong logic moi; backend se tu tinh thoi luong khi admin preview/quote theo route.",
                 "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
                 "requestedBoats: danh sach tau customer muon thue; moi item co numberOfDecks.",
                 "numberOfDecks: so tang cua tau khach mong muon, phai lon hon 0.",
@@ -530,36 +500,6 @@ public sealed class CharterBookings : IEndpointGroup
     private static async Task<IResult> GetAssignedCharterBookingDetail(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetAssignedCharterBookingDetailQuery(id), ct));
 
-    private static async Task<IResult> GetCharterBookingStaffAssignments(
-        ISender sender,
-        Guid id,
-        [FromQuery] bool? activeOnly,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetCharterBookingStaffAssignmentsQuery(id, activeOnly ?? true), ct));
-
-    private static async Task<IResult> AssignCharterBookingStaff(
-        ISender sender,
-        Guid id,
-        AssignCharterBookingStaffRequest request,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new AssignCharterBookingStaffCommand(
-            id,
-            request.StaffUserId,
-            request.BoatId,
-            request.ShiftCode), ct));
-
-    private static async Task<IResult> ReplaceCharterBookingStaff(
-        ISender sender,
-        Guid id,
-        Guid assignmentId,
-        ReplaceCharterBookingStaffRequest request,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new ReplaceCharterBookingStaffCommand(
-            id,
-            assignmentId,
-            request.ReplacementStaffUserId,
-            request.Reason), ct));
-
     private static async Task<IResult> GetCharterBookings(ISender sender, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCharterBookingListQuery(), ct));
 
@@ -571,6 +511,16 @@ public sealed class CharterBookings : IEndpointGroup
         await sender.Send(new CancelCharterBookingCommand(id), ct);
         return Results.NoContent();
     }
+
+    private static async Task<IResult> RespondCharterBookingQuote(
+        ISender sender,
+        Guid id,
+        RespondCharterBookingQuoteRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new RespondCharterBookingQuoteCommand(
+            id,
+            request.Action,
+            request.Note), ct));
 
     private static async Task<IResult> UpdateCharterBookingPassengers(
         ISender sender,

@@ -31,6 +31,14 @@ internal static class CharterBookingQuerySupport
         IReadOnlyCollection<Route>? relatedRoutes = null)
     {
         var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
+        var rentalUnitForEstimate = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
+        var requestedDurationValueForEstimate = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
+        var selectedBoatDtos = CharterBookingBoatSelectionSupport.ToSelectedBoatDtos(booking.CharterBoats);
+        var selectedChargeableDurationValue = selectedBoatDtos.FirstOrDefault()?.ChargeableDurationValue;
+        var selectedChargeableDurationMinutes =
+            selectedChargeableDurationValue.HasValue && rentalUnitForEstimate == Domain.Enums.BoatRentalUnit.Hour
+                ? (int)Math.Ceiling(selectedChargeableDurationValue.Value * 60m)
+                : (int?)null;
 
         var ticketDtos = CharterBookingTicketSupport.GetDisplayTickets(booking.Tickets)
             .Select(CharterBookingTicketSupport.ToDto)
@@ -59,16 +67,18 @@ internal static class CharterBookingQuerySupport
             booking.ChildCount.GetValueOrDefault(),
             requestedBoatCount,
             requestedBoatDtos,
-            CharterBookingBoatSelectionSupport.ToSelectedBoatDtos(booking.CharterBoats),
+            selectedBoatDtos,
             booking.PreferredSeatSetupType?.ToString(),
             booking.DepartureDate.GetValueOrDefault(),
             booking.StartTime,
-            booking.RentalUnit.GetValueOrDefault().ToString(),
-            booking.DurationValue.GetValueOrDefault(),
+            booking.RentalUnit?.ToString(),
+            booking.DurationValue,
             CharterBookingRoutePricingSupport.ToDto(
                 routeEstimate,
-                booking.RentalUnit.GetValueOrDefault(),
-                booking.DurationValue.GetValueOrDefault()),
+                rentalUnitForEstimate,
+                requestedDurationValueForEstimate,
+                selectedChargeableDurationValue,
+                selectedChargeableDurationMinutes),
             booking.FromStationId,
             booking.ToStationId,
             booking.FromStation?.StationName,
@@ -124,7 +134,6 @@ internal static class CharterBookingQuerySupport
             ticketDtos.Count,
             ticketDtos,
             CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
-            null,
             CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot));
     }
 }

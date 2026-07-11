@@ -121,14 +121,23 @@ public sealed class CharterBookingsHub : Hub
             boatIds = [booking.BoatId.Value];
         }
 
+        var workingDate = booking.DepartureDate.Value;
         return boatIds.Length > 0
-            && await _context.BoatStaffAssignments
+            && await _context.BoatCrewAssignments
                 .AsNoTracking()
                 .AnyAsync(
-                    x => x.StaffUserId == actor.Id
-                        && x.IsActive
-                        && x.WorkingDate == booking.DepartureDate.Value
-                        && boatIds.Contains(x.BoatId),
+                    assignment => assignment.StaffUserId == actor.Id
+                        && assignment.IsActive
+                        && boatIds.Contains(assignment.BoatId)
+                        && assignment.FromDate <= workingDate
+                        && (!assignment.ToDate.HasValue || assignment.ToDate.Value >= workingDate)
+                        && (assignment.ReplacesAssignmentId != null
+                            || !_context.BoatCrewAssignments.Any(replacement =>
+                                replacement.ReplacesAssignmentId == assignment.Id
+                                && replacement.IsActive
+                                && replacement.FromDate <= workingDate
+                                && replacement.ToDate.HasValue
+                                && replacement.ToDate.Value >= workingDate)),
                     Context.ConnectionAborted);
     }
 

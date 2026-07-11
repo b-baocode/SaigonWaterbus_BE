@@ -432,14 +432,14 @@ public class CharterBookingPassengerTicketTests
         var qrToken = booking.CharterBookingQrToken.ShouldNotBeNull();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var staffUser = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
-        context.BoatStaffAssignments.Add(new BoatStaffAssignment
+        context.BoatCrewAssignments.Add(new BoatCrewAssignment
         {
             BoatId = boat.Id,
             Boat = boat,
             StaffUserId = staffUser.Id,
             StaffUser = staffUser,
-            WorkingDate = booking.DepartureDate!.Value,
-            ShiftCode = "Day",
+            CrewRole = CrewRole.OnBoard,
+            FromDate = booking.DepartureDate!.Value,
             IsActive = true,
             AssignedByUserId = staffUser.Id,
             AssignedByUser = staffUser,

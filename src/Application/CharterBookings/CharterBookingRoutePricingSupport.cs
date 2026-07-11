@@ -39,6 +39,30 @@ internal static class CharterBookingRoutePricingSupport
     private const decimal BufferPercent = 0.10m;
     private const int FreeStayMinutesPerBooking = 30;
     private const double RouteProjectionThresholdMeters = 1_000;
+    private const int DefaultRequestedDurationValue = 1;
+
+    public static BoatRentalUnit ResolveRentalUnit(Booking booking) =>
+        booking.RentalUnit ?? BoatRentalUnit.Hour;
+
+    public static int ResolveRequestedDurationValue(Booking booking) =>
+        Math.Max(DefaultRequestedDurationValue, booking.DurationValue.GetValueOrDefault(DefaultRequestedDurationValue));
+
+    public static int ResolveHoldDurationValue(
+        BoatRentalUnit rentalUnit,
+        int requestedDurationValue,
+        CharterBookingRouteEstimate routeEstimate)
+    {
+        if (rentalUnit == BoatRentalUnit.Day)
+        {
+            return requestedDurationValue;
+        }
+
+        var estimatedHours = routeEstimate.EstimatedDurationMinutes <= 0
+            ? requestedDurationValue
+            : (int)Math.Ceiling(routeEstimate.EstimatedDurationMinutes / 60m);
+
+        return Math.Max(requestedDurationValue, Math.Max(DefaultRequestedDurationValue, estimatedHours));
+    }
 
     public static async Task<IReadOnlyList<Route>> LoadRelatedRoutesAsync(
         IApplicationDbContext context,
@@ -93,8 +117,7 @@ internal static class CharterBookingRoutePricingSupport
             .Zip(points.Skip(1), (from, to) => (from, to))
             .Select((leg, index) =>
             {
-                var distanceKm = TryMeasureRouteDistanceKm(routes, leg.from, leg.to)
-                    ?? HaversineDistanceKm(leg.from, leg.to);
+                var distanceKm = TryMeasureRouteDistanceKm(routes, leg.from, leg.to);
                 var travelMinutes = distanceKm.HasValue
                     ? EstimateTravelMinutes(distanceKm.Value)
                     : (int?)null;
@@ -239,14 +262,21 @@ internal static class CharterBookingRoutePricingSupport
         }
 
         throw new ValidationException([new ValidationFailure("SubtotalAmount",
-            "Không thể tự tính giá thuê theo giờ vì booking chưa có đủ dữ liệu quãng đường/thời gian. Vui lòng cập nhật GeoJSON/tọa độ cho các bến.")]);
+            "Không thể tự tính giá thuê theo giờ vì booking chưa có route/GeoJSON/tọa độ hợp lệ cho các bến.")]);
     }
 
     public static CharterBookingRouteEstimateDto ToDto(
         CharterBookingRouteEstimate estimate,
         BoatRentalUnit rentalUnit,
-        int requestedDurationValue)
+        int requestedDurationValue,
+        decimal? chargeableDurationValueOverride = null,
+        int? chargeableDurationMinutesOverride = null)
     {
+        var chargeableDurationValue = chargeableDurationValueOverride
+            ?? ResolveChargeableDurationValue(rentalUnit, requestedDurationValue, estimate);
+        var chargeableDurationMinutes = chargeableDurationMinutesOverride
+            ?? ResolveChargeableDurationMinutes(rentalUnit, requestedDurationValue, estimate);
+
         return new CharterBookingRouteEstimateDto(
             estimate.Legs
                 .Select(x => new CharterBookingRouteLegEstimateDto(
@@ -263,8 +293,8 @@ internal static class CharterBookingRoutePricingSupport
             estimate.ChargeableStayMinutes,
             estimate.EstimatedBufferMinutes,
             estimate.EstimatedDurationMinutes,
-            estimate.ChargeableDurationMinutes,
-            ResolveChargeableDurationValue(rentalUnit, requestedDurationValue, estimate),
+            chargeableDurationMinutes,
+            chargeableDurationValue,
             rentalUnit.ToString(),
             estimate.HasCompleteDistanceEstimate,
             estimate.HasCompleteTravelTimeEstimate);

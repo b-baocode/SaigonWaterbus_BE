@@ -10,8 +10,8 @@ namespace SaigonWaterbus.Application.CharterBookings;
 
 public sealed record CreateCharterBookingCommand(
     DateOnly DepartureDate,
-    BoatRentalUnit RentalUnit,
-    int DurationValue,
+    BoatRentalUnit? RentalUnit,
+    int? DurationValue,
     int AdultCount,
     int ChildCount,
     TimeOnly? StartTime = null,
@@ -29,8 +29,12 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
     public CreateCharterBookingCommandValidator()
     {
         RuleFor(x => x.DepartureDate).NotEqual(default(DateOnly)).WithMessage("Ngày khởi hành là bắt buộc.");
-        RuleFor(x => x.RentalUnit).IsInEnum().WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
-        RuleFor(x => x.DurationValue).GreaterThan(0).LessThanOrEqualTo(60)
+        RuleFor(x => x.RentalUnit!.Value)
+            .IsInEnum()
+            .When(x => x.RentalUnit.HasValue)
+            .WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
+        RuleFor(x => x.DurationValue!.Value).GreaterThan(0).LessThanOrEqualTo(60)
+            .When(x => x.DurationValue.HasValue)
             .WithMessage("Thời lượng thuê phải từ 1 đến 60.");
         RuleFor(x => x.AdultCount).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
             .WithMessage("Số người lớn phải từ 0 đến 1000.");

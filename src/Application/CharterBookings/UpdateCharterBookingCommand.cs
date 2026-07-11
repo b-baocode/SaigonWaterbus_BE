@@ -149,16 +149,8 @@ public sealed class UpdateCharterBookingCommandHandler
             booking.DepartureDate,
             nameof(request.DepartureDate),
             "Ngày khởi hành là bắt buộc.");
-        var rentalUnit = ResolveRequiredValue(
-            request.RentalUnit,
-            booking.RentalUnit,
-            nameof(request.RentalUnit),
-            "Đơn vị thuê tàu là bắt buộc.");
-        var durationValue = ResolveRequiredValue(
-            request.DurationValue,
-            booking.DurationValue,
-            nameof(request.DurationValue),
-            "Thời lượng thuê là bắt buộc.");
+        var rentalUnit = request.RentalUnit ?? booking.RentalUnit;
+        var durationValue = request.DurationValue ?? booking.DurationValue;
         var adultCount = request.AdultCount ?? booking.AdultCount.GetValueOrDefault();
         var childCount = request.ChildCount ?? booking.ChildCount.GetValueOrDefault();
         var fromStationId = request.FromStationId ?? booking.FromStationId;
@@ -276,7 +268,7 @@ public sealed class UpdateCharterBookingCommandHandler
     }
 
     private static void ValidateResolvedUpdateValues(
-        int durationValue,
+        int? durationValue,
         int adultCount,
         int childCount,
         Guid? fromStationId,
