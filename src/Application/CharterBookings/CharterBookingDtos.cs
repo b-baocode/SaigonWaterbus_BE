@@ -30,7 +30,9 @@ public sealed record CreateCharterBookingRequest(
     string? SpecialRequests = null,
     string? ContactName = null,
     string? ContactPhone = null,
-    string? ContactEmail = null);
+    string? ContactEmail = null,
+    bool? InsuranceSelected = null,
+    Guid? InsurancePackageId = null);
 
 public sealed record UpdateCharterBookingRequest(
     DateOnly? DepartureDate = null,
@@ -46,7 +48,9 @@ public sealed record UpdateCharterBookingRequest(
     string? SpecialRequests = null,
     string? ContactName = null,
     string? ContactPhone = null,
-    string? ContactEmail = null);
+    string? ContactEmail = null,
+    bool? InsuranceSelected = null,
+    Guid? InsurancePackageId = null);
 
 public sealed record CreateCharterBookingItineraryStopRequest(
     Guid StationId,
@@ -126,7 +130,8 @@ public sealed record CharterBookingInsuranceDto(
     IReadOnlyList<string> Conditions,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? TermsUrl,
-    DateTimeOffset QuotedAt);
+    DateTimeOffset QuotedAt,
+    bool Selected = true);
 
 public sealed record AdminCharterBookingListItemDto(
     Guid BookingId,
@@ -228,7 +233,10 @@ public sealed record CharterBookingDetailDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingUserAssignmentDto? AssignedManager = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CharterBookingInsuranceDto? Insurance = null);
+    CharterBookingInsuranceDto? Insurance = null,
+    bool InsuranceSelected = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? InsurancePackageId = null);
 
 public sealed record CharterBookingUserAssignmentDto(
     Guid UserId,

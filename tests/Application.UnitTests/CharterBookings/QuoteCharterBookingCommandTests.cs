@@ -205,6 +205,43 @@ public class QuoteCharterBookingCommandTests
     }
 
     [Test]
+    public async Task PreviewIncludesPreselectedCharterInsurance()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
+        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
+        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        var booking = CharterBooking(1, 2);
+        booking.InsuranceSnapshot = InsuranceSnapshot(insurancePackage, quantity: 101);
+        context.AddRange(fullStandardBoat, standardAndVipBoat, insurancePackage, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new PreviewCharterBookingQuoteCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new PreviewCharterBookingQuoteCommand(
+                booking.Id,
+                Boats:
+                [
+                    new QuoteCharterBookingBoatRequest(1, fullStandardBoat.Id),
+                    new QuoteCharterBookingBoatRequest(2, standardAndVipBoat.Id)
+                ]),
+            CancellationToken.None);
+
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.Selected.ShouldBeTrue();
+        result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        result.Insurance.Quantity.ShouldBe(101);
+        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
+        result.SubtotalAmount.ShouldBe(4_010_000m);
+        result.TotalAmount.ShouldBe(4_010_000m);
+    }
+
+    [Test]
     public async Task QuoteRejectsBoatWithDifferentRequestedDeckCount()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -279,6 +316,28 @@ public class QuoteCharterBookingCommandTests
             Conditions = ["Chi ap dung cho hanh khach co ten trong danh sach chuyen di."],
             IsActive = true,
             DisplayOrder = 1
+        };
+
+    private static BookingInsuranceSnapshot InsuranceSnapshot(
+        InsurancePackage package,
+        int quantity) =>
+        new()
+        {
+            InsurancePackageId = package.Id,
+            Code = package.Code,
+            Name = package.Name,
+            BookingType = package.BookingType,
+            IsRequired = package.IsRequired,
+            ProviderName = package.ProviderName,
+            ProviderLogoUrl = package.ProviderLogoUrl,
+            UnitPremiumAmount = package.UnitPremiumAmount,
+            CoverageAmount = package.CoverageAmount,
+            Currency = package.Currency,
+            Conditions = package.Conditions,
+            TermsUrl = package.TermsUrl,
+            Quantity = quantity,
+            TotalAmount = package.UnitPremiumAmount * quantity,
+            QuotedAt = new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)
         };
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

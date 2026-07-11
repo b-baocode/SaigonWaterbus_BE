@@ -132,6 +132,67 @@ public class CreateCharterBookingCommandTests
     }
 
     [Test]
+    public async Task CreateStoresSelectedInsuranceAndReturnsItInDetail()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var fromStation = WaterbusStation("ST-INS", "Bến đi");
+        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        context.AddRange(role, user, fromStation, insurancePackage);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedBookingCodeGenerator("CB-INS-001"),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new CreateCharterBookingCommand(
+                new DateOnly(2026, 7, 20),
+                BoatRentalUnit.Day,
+                1,
+                AdultCount: 10,
+                ChildCount: 2,
+                FromStationId: fromStation.Id,
+                InsuranceSelected: true,
+                InsurancePackageId: insurancePackage.Id),
+            CancellationToken.None);
+
+        var booking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
+        booking.InsuranceSnapshot.ShouldNotBeNull();
+        booking.InsuranceSnapshot.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        booking.InsuranceSnapshot.Quantity.ShouldBe(12);
+        booking.InsuranceSnapshot.TotalAmount.ShouldBe(120_000m);
+
+        var detail = await new GetCharterBookingDetailQueryHandler(
+                context,
+                new TestUserContext(user.Id))
+            .Handle(new GetCharterBookingDetailQuery(result.BookingId), CancellationToken.None);
+
+        detail.InsuranceSelected.ShouldBeTrue();
+        detail.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        detail.Insurance.ShouldNotBeNull();
+        detail.Insurance.Selected.ShouldBeTrue();
+        detail.Insurance.Quantity.ShouldBe(12);
+        detail.Insurance.TotalAmount.ShouldBe(120_000m);
+    }
+
+    [Test]
     public async Task CreateRejectsDuplicateActiveRequestWithExistingBookingCode()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -717,6 +778,68 @@ public class CreateCharterBookingCommandTests
             .ShouldContain("CB-UP-DUP-001");
     }
 
+    [Test]
+    public async Task UpdateCanRemoveSelectedInsurance()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            FullName = "Charter customer",
+            PhoneNumber = "0900000000",
+            Email = "customer@example.test",
+            Role = role,
+            RoleId = role.Id,
+            Status = UserStatus.Active
+        };
+        var fromStation = WaterbusStation("ST-INS-REMOVE", "Bến đi");
+        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-INS-REMOVE",
+            User = user,
+            UserId = user.Id,
+            ContactName = user.FullName,
+            ContactPhone = user.PhoneNumber!,
+            ContactEmail = user.Email,
+            FromStation = fromStation,
+            FromStationId = fromStation.Id,
+            DepartureDate = new DateOnly(2026, 7, 20),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 10,
+            ChildCount = 2,
+            PassengerCount = 12,
+            BookingStatus = BookingStatus.PendingQuote,
+            PaymentStatus = "Unpaid",
+            InsuranceSnapshot = InsuranceSnapshot(insurancePackage, quantity: 12)
+        };
+        context.AddRange(role, user, fromStation, insurancePackage, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCharterBookingCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
+
+        var detail = await handler.Handle(
+            new UpdateCharterBookingCommand(
+                booking.Id,
+                InsuranceSelected: false),
+            CancellationToken.None);
+
+        detail.InsuranceSelected.ShouldBeFalse();
+        detail.InsurancePackageId.ShouldBeNull();
+        detail.Insurance.ShouldBeNull();
+        context.Set<Booking>().Single(x => x.Id == booking.Id).InsuranceSnapshot.ShouldBeNull();
+    }
+
     private sealed class FixedBookingCodeGenerator(string bookingCode) : IBookingCodeGenerator
     {
         public Task<string> GenerateAsync(CancellationToken cancellationToken) =>
@@ -795,4 +918,42 @@ public class CreateCharterBookingCommandTests
             ],
             ContactPhone: contactPhone,
             ContactEmail: contactEmail);
+
+    private static InsurancePackage CharterInsurancePackage(decimal unitPremiumAmount) =>
+        new()
+        {
+            Code = $"CHARTER_INS_{Guid.NewGuid():N}"[..20].ToUpperInvariant(),
+            Name = "Bao hiem hanh khach thue tau",
+            BookingType = Booking.CharterBookingType,
+            IsRequired = false,
+            ProviderName = "Bao hiem mac dinh",
+            UnitPremiumAmount = unitPremiumAmount,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            Conditions = ["Chi ap dung cho hanh khach co ten trong danh sach chuyen di."],
+            IsActive = true,
+            DisplayOrder = 1
+        };
+
+    private static BookingInsuranceSnapshot InsuranceSnapshot(
+        InsurancePackage package,
+        int quantity) =>
+        new()
+        {
+            InsurancePackageId = package.Id,
+            Code = package.Code,
+            Name = package.Name,
+            BookingType = package.BookingType,
+            IsRequired = package.IsRequired,
+            ProviderName = package.ProviderName,
+            ProviderLogoUrl = package.ProviderLogoUrl,
+            UnitPremiumAmount = package.UnitPremiumAmount,
+            CoverageAmount = package.CoverageAmount,
+            Currency = package.Currency,
+            Conditions = package.Conditions,
+            TermsUrl = package.TermsUrl,
+            Quantity = quantity,
+            TotalAmount = package.UnitPremiumAmount * quantity,
+            QuotedAt = new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)
+        };
 }

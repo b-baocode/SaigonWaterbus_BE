@@ -22,7 +22,9 @@ public sealed record UpdateCharterBookingCommand(
     string? SpecialRequests = null,
     string? ContactName = null,
     string? ContactPhone = null,
-    string? ContactEmail = null) : IRequest<CharterBookingDetailDto>;
+    string? ContactEmail = null,
+    bool? InsuranceSelected = null,
+    Guid? InsurancePackageId = null) : IRequest<CharterBookingDetailDto>;
 
 public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<UpdateCharterBookingCommand>
 {
@@ -76,6 +78,14 @@ public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<Upd
             .EmailAddress()
             .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail))
             .WithMessage("Email nhận thông tin charter booking không hợp lệ.");
+        RuleFor(x => x.InsurancePackageId)
+            .NotEmpty()
+            .When(x => x.InsurancePackageId.HasValue)
+            .WithMessage("Gói bảo hiểm không hợp lệ.");
+        RuleFor(x => x.InsurancePackageId)
+            .NotNull()
+            .When(x => x.InsuranceSelected == true)
+            .WithMessage("Vui lòng chọn gói bảo hiểm.");
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
             .When(x => x.FromStationId.HasValue && x.ToStationId.HasValue)
             .WithMessage("Bến đi và bến đến phải khác nhau.");
@@ -215,6 +225,14 @@ public sealed class UpdateCharterBookingCommandHandler
             contactPhone,
             contactEmail,
             cancellationToken);
+        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
+            _context,
+            request.InsuranceSelected,
+            request.InsurancePackageId,
+            booking.InsuranceSnapshot,
+            adultCount + childCount,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
 
         booking.FromStationId = fromStationId;
         booking.ToStationId = toStationId;
@@ -236,6 +254,7 @@ public sealed class UpdateCharterBookingCommandHandler
         booking.ContactName = contactName;
         booking.ContactPhone = contactPhone;
         booking.ContactEmail = contactEmail;
+        booking.InsuranceSnapshot = insuranceSnapshot;
 
         if (request.ItineraryStops is not null)
         {

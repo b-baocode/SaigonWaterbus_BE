@@ -22,7 +22,9 @@ public sealed record CreateCharterBookingCommand(
     string? SpecialRequests = null,
     string? ContactName = null,
     string? ContactPhone = null,
-    string? ContactEmail = null) : IRequest<CreateCharterBookingResult>;
+    string? ContactEmail = null,
+    bool? InsuranceSelected = null,
+    Guid? InsurancePackageId = null) : IRequest<CreateCharterBookingResult>;
 
 public sealed class CreateCharterBookingCommandValidator : AbstractValidator<CreateCharterBookingCommand>
 {
@@ -70,6 +72,14 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .EmailAddress()
             .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail))
             .WithMessage("Email nhận thông tin charter booking không hợp lệ.");
+        RuleFor(x => x.InsurancePackageId)
+            .NotEmpty()
+            .When(x => x.InsurancePackageId.HasValue)
+            .WithMessage("Gói bảo hiểm không hợp lệ.");
+        RuleFor(x => x.InsurancePackageId)
+            .NotNull()
+            .When(x => x.InsuranceSelected == true)
+            .WithMessage("Vui lòng chọn gói bảo hiểm.");
         RuleFor(x => x.FromStationId)
             .NotNull()
             .WithMessage("Bến bắt đầu là bắt buộc.");
@@ -189,6 +199,14 @@ public sealed class CreateCharterBookingCommandHandler
             contactPhone,
             contactEmail,
             cancellationToken);
+        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
+            _context,
+            request.InsuranceSelected,
+            request.InsurancePackageId,
+            currentSnapshot: null,
+            passengerCount,
+            now,
+            cancellationToken);
 
         var booking = new Booking
         {
@@ -217,6 +235,7 @@ public sealed class CreateCharterBookingCommandHandler
             DiscountAmount = discount,
             TotalAmount = total,
             RemainingAmount = total,
+            InsuranceSnapshot = insuranceSnapshot,
             ItineraryStops = request.ItineraryStops?
                 .OrderBy(x => x.StopOrder)
                 .Select(x => new BookingItineraryStop

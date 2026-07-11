@@ -31,6 +31,8 @@ public sealed class CharterBookings : IEndpointGroup
             { "numberOfDecks": 1 },
             { "numberOfDecks": 2 }
           ],
+          "insuranceSelected": true,
+          "insurancePackageId": "00000000-0000-0000-0000-000000000099",
           "specialRequests": "Can trang tri sinh nhat",
           "contactName": "Nguyen Van A",
           "contactPhone": "0900000000",
@@ -410,6 +412,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
                 "requestedBoats: danh sach tau customer muon thue; moi item co numberOfDecks.",
                 "numberOfDecks: so tang cua tau khach mong muon, phai lon hon 0.",
+                "insuranceSelected/insurancePackageId: neu khach chon bao hiem thi gui true va id goi bao hiem CharterBooking active.",
                 "contactName/contactPhone/contactEmail: bat buoc sau khi fallback tu thong tin tai khoan; FE nen gui gia tri nguoi dung da nhap.",
                 "specialRequests: ghi chu them cua khach cho yeu cau thue tau.",
                 "fromStationId: bat buoc, phai la ben Waterbus dang hoat dong tu GET /api/stations voi isWaterbusStation=true va status=Active.",
@@ -646,7 +649,9 @@ public sealed class CharterBookings : IEndpointGroup
             request.SpecialRequests,
             request.ContactName,
             request.ContactPhone,
-            request.ContactEmail), ct));
+            request.ContactEmail,
+            request.InsuranceSelected,
+            request.InsurancePackageId), ct));
 
     private static async Task<IResult> UpdateCharterBooking(
         ISender sender,
@@ -668,7 +673,9 @@ public sealed class CharterBookings : IEndpointGroup
             request.SpecialRequests,
             request.ContactName,
             request.ContactPhone,
-            request.ContactEmail), ct));
+            request.ContactEmail,
+            request.InsuranceSelected,
+            request.InsurancePackageId), ct));
 
     private static async Task<byte[]> BuildTicketExportZipAsync(
         CharterBookingTicketExportDto export,
