@@ -277,12 +277,17 @@ internal static class CharterBookingRoutePricingSupport
         BoatRentalUnit rentalUnit,
         int requestedDurationValue,
         decimal? chargeableDurationValueOverride = null,
-        int? chargeableDurationMinutesOverride = null)
+        int? chargeableDurationMinutesOverride = null,
+        bool includeChargeablePricing = true)
     {
-        var chargeableDurationValue = chargeableDurationValueOverride
-            ?? ResolveChargeableDurationValue(rentalUnit, requestedDurationValue, estimate);
-        var chargeableDurationMinutes = chargeableDurationMinutesOverride
-            ?? ResolveChargeableDurationMinutes(rentalUnit, requestedDurationValue, estimate);
+        decimal? chargeableDurationValue = includeChargeablePricing
+            ? chargeableDurationValueOverride
+                ?? ResolveChargeableDurationValue(rentalUnit, requestedDurationValue, estimate)
+            : null;
+        int? chargeableDurationMinutes = includeChargeablePricing
+            ? chargeableDurationMinutesOverride
+                ?? ResolveChargeableDurationMinutes(rentalUnit, requestedDurationValue, estimate)
+            : null;
 
         var legDtos = estimate.Legs
             .Select(x => new CharterBookingRouteLegEstimateDto(
@@ -308,7 +313,7 @@ internal static class CharterBookingRoutePricingSupport
             estimate.EstimatedDurationMinutes,
             chargeableDurationMinutes,
             chargeableDurationValue,
-            rentalUnit.ToString(),
+            includeChargeablePricing ? rentalUnit.ToString() : null,
             estimate.HasCompleteDistanceEstimate,
             estimate.HasCompleteTravelTimeEstimate,
             matchedRoute?.RouteId,

@@ -274,8 +274,8 @@ public class CreateCharterBookingCommandTests
         var booking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
         booking.InsuranceSnapshot.ShouldNotBeNull();
         booking.InsuranceSnapshot.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        booking.InsuranceSnapshot.Quantity.ShouldBe(12);
-        booking.InsuranceSnapshot.TotalAmount.ShouldBe(120_000m);
+        booking.InsuranceSnapshot.Quantity.ShouldBe(0);
+        booking.InsuranceSnapshot.TotalAmount.ShouldBe(0m);
 
         var detail = await new GetCharterBookingDetailQueryHandler(
                 context,
@@ -286,8 +286,8 @@ public class CreateCharterBookingCommandTests
         detail.InsurancePackageId.ShouldBe(insurancePackage.Id);
         detail.Insurance.ShouldNotBeNull();
         detail.Insurance.Selected.ShouldBeTrue();
-        detail.Insurance.Quantity.ShouldBe(12);
-        detail.Insurance.TotalAmount.ShouldBe(120_000m);
+        detail.Insurance.Quantity.ShouldBe(0);
+        detail.Insurance.TotalAmount.ShouldBe(0m);
     }
 
     [Test]

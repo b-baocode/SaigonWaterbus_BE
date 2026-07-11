@@ -100,9 +100,12 @@ public sealed record CharterBookingRouteEstimateDto(
     int ChargeableStayMinutes,
     int EstimatedBufferMinutes,
     int EstimatedDurationMinutes,
-    int ChargeableDurationMinutes,
-    decimal ChargeableDurationValue,
-    string RentalUnit,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? ChargeableDurationMinutes,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    decimal? ChargeableDurationValue,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RentalUnit,
     bool HasCompleteDistanceEstimate,
     bool HasCompleteTravelTimeEstimate,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

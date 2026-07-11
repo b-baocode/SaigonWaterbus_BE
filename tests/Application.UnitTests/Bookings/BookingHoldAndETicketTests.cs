@@ -72,18 +72,22 @@ public class BookingHoldAndETicketTests
         booking.CharterBookingQrToken.ShouldNotBeNullOrWhiteSpace();
         booking.CharterBookingQrToken.ShouldStartWith("BK");
 
+        sender.ETickets.Count.ShouldBe(2);
+
         // Người đặt nhận 1 email vé tổng chứa cả 2 vé + QR chung.
-        var eTicket = sender.ETickets.ShouldHaveSingleItem();
+        var eTicket = sender.ETickets.Single(x => x.Booking.Email == "booker@gmail.com");
         eTicket.Booking.Email.ShouldBe("booker@gmail.com");
         eTicket.BookingQrToken.ShouldBe(booking.CharterBookingQrToken);
         eTicket.Tickets.Count.ShouldBe(2);
         eTicket.Tickets.ShouldAllBe(x => !string.IsNullOrWhiteSpace(x.QrToken));
 
-        // Hành khách có email nhận thêm boarding pass riêng; hành khách không email thì không.
-        var boardingPass = sender.BoardingPasses.ShouldHaveSingleItem();
-        boardingPass.Booking.Email.ShouldBe("passenger-b@gmail.com");
+        // Hành khách có email nhận thêm e-ticket riêng; hành khách không email thì không.
+        var passengerETicket = sender.ETickets.Single(x => x.Booking.Email == "passenger-b@gmail.com");
+        passengerETicket.BookingQrToken.ShouldBeNull();
+        passengerETicket.Tickets.ShouldHaveSingleItem();
         var passengerTicket = context.Tickets.Single(x => x.BookingPassengerId == passengerWithEmail.Id);
-        boardingPass.QrToken.ShouldBe(passengerTicket.QrToken);
+        passengerETicket.Tickets.Single().QrToken.ShouldBe(passengerTicket.QrToken);
+        sender.BoardingPasses.ShouldBeEmpty();
 
         // Không gửi email xác nhận thanh toán kiểu cũ cho booking thường.
         sender.Notifications.ShouldBeEmpty();

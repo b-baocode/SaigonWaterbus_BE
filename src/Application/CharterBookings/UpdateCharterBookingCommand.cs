@@ -238,7 +238,7 @@ public sealed class UpdateCharterBookingCommandHandler
             request.InsuranceSelected,
             request.InsurancePackageId,
             booking.InsuranceSnapshot,
-            adultCount + childCount,
+            insuredSeatQuantity: 0,
             _timeProvider.GetUtcNow(),
             cancellationToken);
 
