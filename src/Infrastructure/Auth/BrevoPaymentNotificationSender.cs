@@ -281,7 +281,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             })
             .ToArray();
 
-        return BuildPayload(
+        var payload = BuildPayload(
             options,
             booking.Email,
             booking.ContactName,
@@ -289,6 +289,8 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             parameters,
             $"Saigon Waterbus - Vé điện tử {booking.BookingCode}",
             BuildETicketHtmlContent(options, notification, bookingQrImageUrl, departureText));
+        AddAttachments(payload, notification.Attachments);
+        return payload;
     }
 
     private static string BuildETicketHtmlContent(

@@ -69,7 +69,8 @@ public sealed record ETicketNotification(
     DateTimeOffset? ArrivalTime,
     string? FromStationName,
     string? ToStationName,
-    IReadOnlyList<ETicketPassenger> Tickets);
+    IReadOnlyList<ETicketPassenger> Tickets,
+    IReadOnlyList<EmailAttachment>? Attachments = null);
 
 public sealed record ETicketPassenger(
     string PassengerName,

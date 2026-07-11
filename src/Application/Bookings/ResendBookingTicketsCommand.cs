@@ -38,17 +38,20 @@ public sealed class ResendBookingTicketsCommandHandler
     private readonly IUserContext _userContext;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
+    private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
 
     public ResendBookingTicketsCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
+        _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
     }
 
     public async Task<ResendBookingTicketsResult> Handle(
@@ -104,7 +107,8 @@ public sealed class ResendBookingTicketsCommandHandler
             booking,
             paidPayment,
             tickets,
-            cancellationToken);
+            cancellationToken,
+            _bookingTicketPdfRenderer);
 
         var contactEmail = booking.ContactEmail?.Trim();
         var passengerEmails = await _context.Set<BookingPassenger>()

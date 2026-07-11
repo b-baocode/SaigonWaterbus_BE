@@ -47,6 +47,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly ITripSeatNotifier _tripSeatNotifier;
     private readonly TimeProvider _timeProvider;
+    private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
 
     public CreatePaymentCommandHandler(
         IApplicationDbContext context,
@@ -55,7 +56,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null,
-        ITripSeatNotifier? tripSeatNotifier = null)
+        ITripSeatNotifier? tripSeatNotifier = null,
+        IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
@@ -64,6 +66,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         _paymentProcessingLock = paymentProcessingLock ?? NullPaymentProcessingLock.Instance;
         _tripSeatNotifier = tripSeatNotifier ?? NullTripSeatNotifier.Instance;
         _timeProvider = timeProvider;
+        _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
     }
 
     public async Task<PaymentDto> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
@@ -214,7 +217,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             booking,
             payment,
             wasPaid,
-            cancellationToken);
+            cancellationToken,
+            _bookingTicketPdfRenderer);
 
         return PaymentSupport.ToDto(booking, payment);
     }
@@ -266,7 +270,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                 booking,
                 payment,
                 wasPaid,
-                cancellationToken);
+                cancellationToken,
+                _bookingTicketPdfRenderer);
             return true;
         }
         catch (PaymentGatewayException)
@@ -306,6 +311,7 @@ public sealed class SyncPaymentCommandHandler :
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
+    private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
 
     public SyncPaymentCommandHandler(
         IApplicationDbContext context,
@@ -313,7 +319,8 @@ public sealed class SyncPaymentCommandHandler :
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
-        IPaymentProcessingLock? paymentProcessingLock = null)
+        IPaymentProcessingLock? paymentProcessingLock = null,
+        IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
@@ -321,6 +328,7 @@ public sealed class SyncPaymentCommandHandler :
         _paymentNotificationSender = paymentNotificationSender;
         _paymentProcessingLock = paymentProcessingLock ?? NullPaymentProcessingLock.Instance;
         _timeProvider = timeProvider;
+        _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
     }
 
     public async Task<PaymentDto> Handle(SyncPaymentCommand request, CancellationToken cancellationToken)
@@ -406,7 +414,8 @@ public sealed class SyncPaymentCommandHandler :
             payment.Booking,
             payment,
             wasPaid,
-            cancellationToken);
+            cancellationToken,
+            _bookingTicketPdfRenderer);
     }
 }
 
@@ -421,19 +430,22 @@ public sealed class HandlePaymentWebhookCommandHandler
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
+    private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
 
     public HandlePaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
-        IPaymentProcessingLock? paymentProcessingLock = null)
+        IPaymentProcessingLock? paymentProcessingLock = null,
+        IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null)
     {
         _context = context;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
         _paymentProcessingLock = paymentProcessingLock ?? NullPaymentProcessingLock.Instance;
         _timeProvider = timeProvider;
+        _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
     }
 
     public async Task<PaymentWebhookResult> Handle(
@@ -503,7 +515,8 @@ public sealed class HandlePaymentWebhookCommandHandler
                 payment.Booking,
                 payment,
                 wasPaid,
-                cancellationToken);
+                cancellationToken,
+                _bookingTicketPdfRenderer);
             return new PaymentWebhookResult(true, webhook.Data.OrderCode, payment.PaymentStatus, "Đã ghi nhận thanh toán.");
         }
 
@@ -1387,7 +1400,8 @@ internal static class PaymentSupport
         Booking booking,
         Payment payment,
         bool wasPaid,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null)
     {
         var isPaid = IsPaid(payment.PaymentStatus);
         IReadOnlyList<Ticket> issuedTickets = [];
@@ -1407,14 +1421,15 @@ internal static class PaymentSupport
 
         if (!Booking.IsCharterBookingType(booking.BookingType))
         {
-            // Booking thường: gửi email vé điện tử (QR chung + QR riêng) thay cho email xác nhận thanh toán.
+            // Booking thường: gửi email vé điện tử (QR chung + QR riêng + PDF) thay cho email xác nhận thanh toán.
             await RegularBookingETicketSupport.SendETicketEmailsAsync(
                 context,
                 paymentNotificationSender,
                 booking,
                 payment,
                 issuedTickets,
-                cancellationToken);
+                cancellationToken,
+                bookingTicketPdfRenderer);
             return;
         }
 

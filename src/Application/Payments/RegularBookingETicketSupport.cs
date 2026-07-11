@@ -1,13 +1,15 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.TicketTypes;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Payments;
 
 /// <summary>
 /// Gửi email vé điện tử cho booking thường sau khi thanh toán đủ:
-/// - Người đặt vé (ContactEmail) nhận 1 email tổng: QR chung + toàn bộ QR riêng.
-/// - Hành khách nào có nhập email nhận thêm 1 email boarding pass chứa QR riêng của người đó.
+/// - Người đặt vé (ContactEmail) nhận 1 email tổng: QR chung + toàn bộ QR riêng + PDF đính kèm đầy đủ vé.
+/// - Hành khách nào có nhập email nhận thêm 1 email chứa vé của riêng người đó + PDF 1 vé
+///   (không có QR chung — QR chung chỉ người đặt vé có).
 /// </summary>
 internal static class RegularBookingETicketSupport
 {
@@ -17,7 +19,8 @@ internal static class RegularBookingETicketSupport
         Booking booking,
         Payment payment,
         IReadOnlyList<Ticket> tickets,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IBookingTicketPdfRenderer? pdfRenderer = null)
     {
         if (tickets.Count == 0 || !payment.PaidAt.HasValue)
         {
@@ -36,6 +39,7 @@ internal static class RegularBookingETicketSupport
         {
             trip = await context.Set<Trip>()
                 .AsNoTracking()
+                .Include(t => t.Boat)
                 .Include(t => t.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
@@ -84,6 +88,17 @@ internal static class RegularBookingETicketSupport
                 contactEmail,
                 booking.ContactName);
 
+            // Bản người đặt: PDF có trang QR tổng + toàn bộ vé.
+            var bookerAttachments = RenderPdfAttachment(
+                pdfRenderer,
+                booking,
+                trip,
+                fromStationName,
+                toStationName,
+                booking.CharterBookingQrToken,
+                eTicketPassengers,
+                $"{booking.BookingCode}-tickets.pdf");
+
             await paymentNotificationSender.SendETicketsAsync(
                 new ETicketNotification(
                     bookerNotification,
@@ -94,7 +109,8 @@ internal static class RegularBookingETicketSupport
                     trip?.ArrivalTime,
                     fromStationName,
                     toStationName,
-                    eTicketPassengers),
+                    eTicketPassengers,
+                    bookerAttachments),
                 cancellationToken);
         }
 
@@ -114,12 +130,67 @@ internal static class RegularBookingETicketSupport
                 passengerEmail,
                 eTicket.PassengerName);
 
-            await paymentNotificationSender.SendBoardingPassAsync(
-                new BoardingPassNotification(
+            // Bản hành khách: chỉ vé của người đó, không có QR tổng.
+            var passengerAttachments = RenderPdfAttachment(
+                pdfRenderer,
+                booking,
+                trip,
+                fromStationName,
+                toStationName,
+                bookingQrToken: null,
+                [eTicket],
+                $"{eTicket.TicketCode}-boarding-pass.pdf");
+
+            await paymentNotificationSender.SendETicketsAsync(
+                new ETicketNotification(
                     passengerNotification,
-                    eTicket.TicketCode,
-                    eTicket.QrToken),
+                    BookingQrToken: null,
+                    trip?.TripCode,
+                    trip?.Route.RouteName,
+                    trip?.DepartureTime,
+                    trip?.ArrivalTime,
+                    fromStationName,
+                    toStationName,
+                    [eTicket],
+                    passengerAttachments),
                 cancellationToken);
         }
+    }
+
+    private static IReadOnlyList<EmailAttachment>? RenderPdfAttachment(
+        IBookingTicketPdfRenderer? pdfRenderer,
+        Booking booking,
+        Trip? trip,
+        string? fromStationName,
+        string? toStationName,
+        string? bookingQrToken,
+        IReadOnlyList<ETicketPassenger> tickets,
+        string fileName)
+    {
+        if (pdfRenderer is null)
+        {
+            return null;
+        }
+
+        var export = new BookingTicketPdfExportDto(
+            booking.BookingCode,
+            trip?.TripCode,
+            trip?.Route.RouteName,
+            trip?.DepartureTime,
+            trip?.ArrivalTime,
+            fromStationName,
+            toStationName,
+            trip?.Boat?.Name,
+            bookingQrToken,
+            tickets
+                .Select(x => new BookingTicketPdfItemDto(
+                    x.PassengerName,
+                    x.SeatCode,
+                    x.TicketTypeName,
+                    x.TicketCode,
+                    x.QrToken))
+                .ToList());
+
+        return [new EmailAttachment(fileName, "application/pdf", pdfRenderer.Render(export))];
     }
 }

@@ -7,6 +7,7 @@ using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.CharterBookings;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
@@ -33,6 +34,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IUserContext, CurrentUser>();
         builder.Services.AddScoped<IClientInfoProvider, CurrentClientInfo>();
         builder.Services.AddScoped<ICharterBookingTicketPdfRenderer, QuestPdfCharterBookingTicketPdfRenderer>();
+        builder.Services.AddScoped<IBookingTicketPdfRenderer, QuestPdfBookingTicketPdfRenderer>();
 
         builder.Services.AddSignalR();
         builder.Services.AddSingleton<ITripSeatNotifier, SignalRTripSeatNotifier>();
