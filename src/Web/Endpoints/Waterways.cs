@@ -52,6 +52,18 @@ public sealed class Waterways : IEndpointGroup
                 "Tra ve { deletedSegments }.",
                 "Route da tao khong bi anh huong; nho import lai GeoJSON truoc khi tao route moi."));
 
+        group.MapDelete(DeleteWaterwaysExcept, "except")
+            .RequireAuthorization()
+            .WithSummary("Xoa waterway nhung giu lai duong chi dinh (vd giu Kenh Thanh Da)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Vd xoa het river tru Kenh Thanh Da: DELETE /api/waterways/except?type=river&keepNames=Kênh Thanh Đa&confirm=true.",
+                "keepNames / keepOsmIds: co the truyen nhieu lan (?keepNames=A&keepNames=B). So khop khong phan biet hoa thuong.",
+                "type (optional): river | canal | custom. Bo trong = xet tat ca loai.",
+                "Phai co it nhat 1 keepNames hoac keepOsmIds; muon xoa sach thi dung DELETE /api/waterways?confirm=true.",
+                "Yeu cau confirm=true. Tra ve { deletedSegments, keptSegments }."));
+
         group.MapDelete(DeleteWaterwaysByType, "by-type/{type}")
             .RequireAuthorization()
             .WithSummary("Xoa toan bo duong song theo loai (vd canal)")
@@ -92,6 +104,26 @@ public sealed class Waterways : IEndpointGroup
         }
 
         return Results.Ok(await sender.Send(new DeleteAllWaterwaysCommand(), ct));
+    }
+
+    private static async Task<IResult> DeleteWaterwaysExcept(
+        ISender sender,
+        string[]? keepNames,
+        string[]? keepOsmIds,
+        string? type,
+        bool confirm = false,
+        CancellationToken ct = default)
+    {
+        if (!confirm)
+        {
+            return Results.BadRequest(new
+            {
+                message = "Them ?confirm=true de xac nhan xoa waterway (tru cac duong trong keepNames/keepOsmIds)."
+            });
+        }
+
+        return Results.Ok(await sender.Send(
+            new DeleteWaterwaysExceptCommand(keepNames, keepOsmIds, type), ct));
     }
 
     private static async Task<IResult> DeleteWaterwaysByType(

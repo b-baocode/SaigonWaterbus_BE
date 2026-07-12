@@ -77,6 +77,80 @@ public sealed class DeleteAllWaterwaysCommandHandler
 }
 
 /// <summary>
+/// Xoa waterway nhung GIU LAI cac duong chi dinh (theo ten hoac OsmId).
+/// Vd xoa het river tru Kenh Thanh Da: WaterwayType = "river", KeepNames = ["Kênh Thanh Đa"].
+/// </summary>
+[Authorize(Roles = "Admin")]
+public sealed record DeleteWaterwaysExceptCommand(
+    IReadOnlyList<string>? KeepNames = null,
+    IReadOnlyList<string>? KeepOsmIds = null,
+    string? WaterwayType = null) : IRequest<DeleteWaterwaysExceptResultDto>;
+
+public sealed record DeleteWaterwaysExceptResultDto(int DeletedSegments, int KeptSegments);
+
+public sealed class DeleteWaterwaysExceptCommandHandler
+    : IRequestHandler<DeleteWaterwaysExceptCommand, DeleteWaterwaysExceptResultDto>
+{
+    private static readonly string[] AllowedTypes = ["river", "canal", "custom"];
+
+    private readonly IApplicationDbContext _context;
+
+    public DeleteWaterwaysExceptCommandHandler(IApplicationDbContext context) => _context = context;
+
+    public async Task<DeleteWaterwaysExceptResultDto> Handle(
+        DeleteWaterwaysExceptCommand request,
+        CancellationToken cancellationToken)
+    {
+        var type = request.WaterwayType?.Trim().ToLowerInvariant();
+        if (!string.IsNullOrEmpty(type) && !AllowedTypes.Contains(type))
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.WaterwayType),
+                "WaterwayType phai la 'river', 'canal' hoac 'custom'.")]);
+        }
+
+        var keepNames = BuildKeepSet(request.KeepNames);
+        var keepOsmIds = BuildKeepSet(request.KeepOsmIds);
+
+        if (keepNames.Count == 0 && keepOsmIds.Count == 0)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.KeepNames),
+                "Phai chi dinh it nhat mot keepNames hoac keepOsmIds; neu muon xoa sach dung DELETE /api/waterways?confirm=true.")]);
+        }
+
+        var query = _context.Set<WaterwaySegment>().AsQueryable();
+        if (!string.IsNullOrEmpty(type))
+        {
+            query = query.Where(s => s.WaterwayType == type);
+        }
+
+        var segments = await query.ToListAsync(cancellationToken);
+
+        var toDelete = segments
+            .Where(s => !IsKept(s, keepNames, keepOsmIds))
+            .ToList();
+
+        _context.Set<WaterwaySegment>().RemoveRange(toDelete);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new DeleteWaterwaysExceptResultDto(toDelete.Count, segments.Count - toDelete.Count);
+    }
+
+    private static bool IsKept(WaterwaySegment segment, HashSet<string> keepNames, HashSet<string> keepOsmIds) =>
+        (segment.WaterwayName is not null && keepNames.Contains(segment.WaterwayName.Trim()))
+        || (segment.OsmId is not null && keepOsmIds.Contains(segment.OsmId.Trim()));
+
+    private static HashSet<string> BuildKeepSet(IReadOnlyList<string>? values) =>
+        values is null
+            ? new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+            : values
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
 /// Xoa TAT CA waterway segment co WaterwayType chi dinh (river | canal | custom).
 /// Vd xoa het kenh: WaterwayType = "canal".
 /// </summary>

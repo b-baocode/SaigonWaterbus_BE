@@ -36,28 +36,9 @@ public sealed class CleanupImportedDataCommandHandler
                 || s.StationName.StartsWith("Unnamed"))
             .ToListAsync(cancellationToken);
 
-        // Tap hop id station dang duoc tham chieu boi bat ky bang nao -> khong xoa de tranh loi FK.
-        var referencedStationIds = new HashSet<Guid>();
-        referencedStationIds.UnionWith(await _context.Set<RouteStop>()
-            .Select(x => x.StationId).Distinct().ToListAsync(cancellationToken));
-        referencedStationIds.UnionWith(await _context.Set<Landmark>()
-            .Select(x => x.StationId).Distinct().ToListAsync(cancellationToken));
-        referencedStationIds.UnionWith(await _context.Set<UserStationAssignment>()
-            .Select(x => x.StationId).Distinct().ToListAsync(cancellationToken));
-        referencedStationIds.UnionWith(await _context.Set<BookingItineraryStop>()
-            .Select(x => x.StationId).Distinct().ToListAsync(cancellationToken));
-        referencedStationIds.UnionWith(await _context.Set<Booking>()
-            .Where(x => x.FromStationId != null)
-            .Select(x => x.FromStationId!.Value).Distinct().ToListAsync(cancellationToken));
-        referencedStationIds.UnionWith(await _context.Set<Booking>()
-            .Where(x => x.ToStationId != null)
-            .Select(x => x.ToStationId!.Value).Distinct().ToListAsync(cancellationToken));
-        referencedStationIds.UnionWith(await _context.Set<GpsTrackingSession>()
-            .Where(x => x.StartStationId != null)
-            .Select(x => x.StartStationId!.Value).Distinct().ToListAsync(cancellationToken));
-        referencedStationIds.UnionWith(await _context.Set<GpsTrackingSession>()
-            .Where(x => x.EndStationId != null)
-            .Select(x => x.EndStationId!.Value).Distinct().ToListAsync(cancellationToken));
+        // Station dang duoc tham chieu -> khong xoa de tranh loi FK.
+        var referencedStationIds = await StationReferenceSupport.GetReferencedStationIdsAsync(
+            _context, cancellationToken);
 
         var deletableStations = unnamedStations
             .Where(s => !referencedStationIds.Contains(s.Id))
