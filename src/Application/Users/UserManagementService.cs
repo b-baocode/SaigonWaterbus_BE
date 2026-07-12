@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Users;
 
@@ -43,8 +44,11 @@ public sealed class UserManagementService : IUserManagementService
         _deleteUser = deleteUser;
     }
 
-    public async Task<IReadOnlyCollection<AuthUserDto>> GetUsersAsync(CancellationToken cancellationToken) =>
-        await _getUsers.ExecuteAsync(new GetUsersRequest(), cancellationToken);
+    public async Task<IReadOnlyCollection<AuthUserDto>> GetUsersAsync(
+        StaffType? staffType,
+        UserStatus? status,
+        CancellationToken cancellationToken) =>
+        await _getUsers.ExecuteAsync(new GetUsersRequest(staffType, status), cancellationToken);
 
     public async Task<AuthUserDto> GetUserByIdAsync(Guid userId, CancellationToken cancellationToken)
     {

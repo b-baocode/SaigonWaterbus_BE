@@ -14,8 +14,8 @@ public sealed class Trips : IEndpointGroup
           "routeCode": "R01-BD-TD",
           "boatCode": "BOAT-01",
           "capacity": 50,
-          "operatingDate": "10/06/2026",
-          "departureTime": "2026-06-10T08:30:00+07:00",
+          "operatingDate": "10/08/2026",
+          "departureTime": "2026-08-10T08:30:00+07:00",
           "seatTypePrices": [
             { "seatTypeCode": "CABIN", "price": 25000 },
             { "seatTypeCode": "SKY", "price": 40000 }

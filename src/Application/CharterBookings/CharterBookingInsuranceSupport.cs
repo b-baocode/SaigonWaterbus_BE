@@ -12,7 +12,7 @@ internal static class CharterBookingInsuranceSupport
         bool? insuranceSelected,
         Guid? insurancePackageId,
         BookingInsuranceSnapshot? currentSnapshot,
-        int chargeableSeatQuantity,
+        int insuredSeatQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken)
     {
@@ -31,7 +31,7 @@ internal static class CharterBookingInsuranceSupport
             return await CreateSelectedInsuranceSnapshotAsync(
                 context,
                 insurancePackageId,
-                chargeableSeatQuantity,
+                insuredSeatQuantity,
                 quotedAt,
                 cancellationToken);
         }
@@ -41,20 +41,20 @@ internal static class CharterBookingInsuranceSupport
             return await CreateSelectedInsuranceSnapshotAsync(
                 context,
                 insurancePackageId,
-                chargeableSeatQuantity,
+                insuredSeatQuantity,
                 quotedAt,
                 cancellationToken);
         }
 
         return currentSnapshot is null
             ? null
-            : UpdateQuantity(currentSnapshot, chargeableSeatQuantity, quotedAt);
+            : UpdateQuantity(currentSnapshot, insuredSeatQuantity, quotedAt);
     }
 
     public static async Task<BookingInsuranceSnapshot?> CreateSelectedInsuranceSnapshotAsync(
         IApplicationDbContext context,
         Guid? insurancePackageId,
-        int chargeableSeatQuantity,
+        int insuredSeatQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken)
     {
@@ -79,7 +79,7 @@ internal static class CharterBookingInsuranceSupport
             throw CreateInsuranceValidation("Gói bảo hiểm đã chọn không khả dụng cho charter booking.");
         }
 
-        if (chargeableSeatQuantity <= 0)
+        if (insuredSeatQuantity < 0)
         {
             throw CreateInsuranceValidation("Không xác định được số ghế tính bảo hiểm cho booking thuê tàu.");
         }
@@ -98,10 +98,35 @@ internal static class CharterBookingInsuranceSupport
             Currency = package.Currency,
             Conditions = package.Conditions,
             TermsUrl = package.TermsUrl,
-            Quantity = chargeableSeatQuantity,
-            TotalAmount = package.UnitPremiumAmount * chargeableSeatQuantity,
+            Quantity = insuredSeatQuantity,
+            TotalAmount = package.UnitPremiumAmount * insuredSeatQuantity,
             QuotedAt = quotedAt
         };
+    }
+
+    public static async Task<BookingInsuranceSnapshot?> ResolveQuoteInsuranceSnapshotAsync(
+        IApplicationDbContext context,
+        BookingInsuranceSnapshot? requestedSnapshot,
+        IReadOnlyList<QuoteBoatSelection> selectedBoats,
+        DateTimeOffset quotedAt,
+        CancellationToken cancellationToken)
+    {
+        var insuredSeatQuantity = selectedBoats.Sum(x => x.Boat.SeatCount);
+        if (insuredSeatQuantity <= 0)
+        {
+            throw CreateInsuranceValidation("Không xác định được tổng số ghế của tàu để tính bảo hiểm thuê tàu.");
+        }
+
+        var package = await ResolveQuoteInsurancePackageAsync(
+            context,
+            requestedSnapshot?.InsurancePackageId,
+            cancellationToken);
+        if (package is null)
+        {
+            return null;
+        }
+
+        return CreateSnapshot(package, insuredSeatQuantity, quotedAt);
     }
 
     public static CharterBookingInsuranceDto? ToDto(BookingInsuranceSnapshot? snapshot) =>
@@ -126,19 +151,81 @@ internal static class CharterBookingInsuranceSupport
 
     private static BookingInsuranceSnapshot UpdateQuantity(
         BookingInsuranceSnapshot snapshot,
-        int chargeableSeatQuantity,
+        int insuredSeatQuantity,
         DateTimeOffset quotedAt)
     {
-        if (chargeableSeatQuantity <= 0)
+        if (insuredSeatQuantity < 0)
         {
             throw CreateInsuranceValidation("Không xác định được số ghế tính bảo hiểm cho booking thuê tàu.");
         }
 
-        snapshot.Quantity = chargeableSeatQuantity;
-        snapshot.TotalAmount = snapshot.UnitPremiumAmount * chargeableSeatQuantity;
+        snapshot.Quantity = insuredSeatQuantity;
+        snapshot.TotalAmount = snapshot.UnitPremiumAmount * insuredSeatQuantity;
         snapshot.QuotedAt = quotedAt;
         return snapshot;
     }
+
+    private static async Task<InsurancePackage?> ResolveQuoteInsurancePackageAsync(
+        IApplicationDbContext context,
+        Guid? requestedInsurancePackageId,
+        CancellationToken cancellationToken)
+    {
+        if (requestedInsurancePackageId.HasValue)
+        {
+            var selectedPackage = await context.Set<InsurancePackage>()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(x => x.Id == requestedInsurancePackageId.Value, cancellationToken);
+            if (selectedPackage is null)
+            {
+                throw CreateInsuranceValidation("Không tìm thấy gói bảo hiểm đã chọn.");
+            }
+
+            if (!IsActiveCharterInsurancePackage(selectedPackage))
+            {
+                throw CreateInsuranceValidation("Gói bảo hiểm đã chọn không khả dụng cho charter booking.");
+            }
+
+            return selectedPackage;
+        }
+
+        return await context.Set<InsurancePackage>()
+            .AsNoTracking()
+            .Where(IsActiveCharterInsurancePackageExpression())
+            .OrderByDescending(x => x.IsRequired)
+            .ThenBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Code)
+            .FirstOrDefaultAsync(cancellationToken);
+    }
+
+    private static BookingInsuranceSnapshot CreateSnapshot(
+        InsurancePackage package,
+        int insuredSeatQuantity,
+        DateTimeOffset quotedAt) =>
+        new()
+        {
+            InsurancePackageId = package.Id,
+            Code = package.Code,
+            Name = package.Name,
+            BookingType = package.BookingType,
+            IsRequired = package.IsRequired,
+            ProviderName = package.ProviderName,
+            ProviderLogoUrl = package.ProviderLogoUrl,
+            UnitPremiumAmount = package.UnitPremiumAmount,
+            CoverageAmount = package.CoverageAmount,
+            Currency = package.Currency,
+            Conditions = package.Conditions,
+            TermsUrl = package.TermsUrl,
+            Quantity = insuredSeatQuantity,
+            TotalAmount = package.UnitPremiumAmount * insuredSeatQuantity,
+            QuotedAt = quotedAt
+        };
+
+    private static System.Linq.Expressions.Expression<Func<InsurancePackage, bool>> IsActiveCharterInsurancePackageExpression() =>
+        package => package.BookingType == Booking.CharterBookingType && package.IsActive;
+
+    private static bool IsActiveCharterInsurancePackage(InsurancePackage package) =>
+        string.Equals(package.BookingType, Booking.CharterBookingType, StringComparison.Ordinal)
+        && package.IsActive;
 
     private static ValidationException CreateInsuranceValidation(string message) =>
         new([new ValidationFailure("insurancePackageId", message)]);

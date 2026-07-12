@@ -445,7 +445,12 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
         var now = _timeProvider.GetUtcNow();
-        var insuranceSnapshot = booking.InsuranceSnapshot;
+        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotAsync(
+            _context,
+            booking.InsuranceSnapshot,
+            selectedBoats,
+            now,
+            cancellationToken);
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
             + (insuranceSnapshot?.TotalAmount ?? 0);
         var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
@@ -594,7 +599,12 @@ public sealed class QuoteCharterBookingCommandHandler
         var primarySelection = selectedBoatPricings[0];
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
-        var insuranceSnapshot = booking.InsuranceSnapshot;
+        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotAsync(
+            _context,
+            booking.InsuranceSnapshot,
+            selectedBoats,
+            now,
+            cancellationToken);
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
             + (insuranceSnapshot?.TotalAmount ?? 0);
         var chargeableDurationValue = primarySelection.Pricing.ChargeableDurationValue;

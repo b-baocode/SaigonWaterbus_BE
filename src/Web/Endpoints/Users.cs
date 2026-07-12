@@ -71,7 +71,8 @@ public sealed class Users : IEndpointGroup
                 "Manager hoặc Admin",
                 null,
                 "Lấy danh sách user theo quyền.",
-                "Manager chỉ thấy Customer và Staff."));
+                "Manager chỉ thấy Customer và Staff.",
+                "Query params optional: staffType=Ground|OnBoard, status=Active|Suspended|PendingVerification|Deleted."));
 
         groupBuilder.MapGet(GetBookingHistory, "booking-history")
             .RequireAuthorization()
@@ -192,8 +193,10 @@ public sealed class Users : IEndpointGroup
 
     private static async Task<IResult> List(
         IUserManagementService userManagementService,
+        StaffType? staffType,
+        UserStatus? status,
         CancellationToken cancellationToken) =>
-        Results.Ok(await userManagementService.GetUsersAsync(cancellationToken));
+        Results.Ok(await userManagementService.GetUsersAsync(staffType, status, cancellationToken));
 
     private static async Task<IResult> GetById(
         IUserManagementService userManagementService,

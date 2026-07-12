@@ -28,6 +28,8 @@ public sealed class BrevoOptions
 
     public int CharterBookingQuoteTemplateId { get; set; }
 
+    public int CharterBookingPaymentTemplateId { get; set; }
+
     public int CharterBookingConfirmationTemplateId { get; set; }
 
     public int BookingPaymentConfirmationTemplateId { get; set; }

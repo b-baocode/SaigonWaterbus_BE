@@ -63,10 +63,10 @@ public sealed class Seats : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Lấy sơ đồ ghế của tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
+                "Admin, Manager, Staff hoặc Customer",
                 null,
                 "Trả về danh sách ghế nhóm theo tầng và hàng.",
-                "Manager và Staff chỉ xem được ghế của tàu đang Active và đã setup đủ ghế.",
+                "Manager, Staff và Customer chỉ xem được ghế của tàu đang Active và đã setup đủ ghế.",
                 "TotalSeats là số ghế đăng ký của tàu.",
                 "ConfiguredSeats là tổng số ghế thật đã setup trong database.",
                 "SeatsConfigured=true khi tàu đã được setup đủ ghế."));

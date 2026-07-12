@@ -102,12 +102,6 @@ public static class DependencyInjection
                 return ActivatorUtilities.CreateInstance<BrevoPaymentNotificationSender>(provider);
             }
 
-            var gmailEnabled = configuration.GetValue<bool>($"{GmailOptions.SectionName}:Enabled");
-            if (gmailEnabled)
-            {
-                return ActivatorUtilities.CreateInstance<GmailPaymentNotificationSender>(provider);
-            }
-
             return ActivatorUtilities.CreateInstance<NoOpPaymentNotificationSender>(provider);
         });
         builder.Services.AddScoped<IOtpSender>(provider =>

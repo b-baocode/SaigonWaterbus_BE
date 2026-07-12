@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
+using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Application.Users;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -300,6 +301,39 @@ public class UserManagementSupportTests
 
         Should.Throw<ValidationException>(() =>
             UserManagementSupport.EnsureCanAssignStationsToUser(actor, target));
+    }
+
+    [Test]
+    public async Task GetUsersFiltersByStaffTypeAndStatus()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var staffRole = Role(Roles.StaffSystemName);
+        var activeOnBoard = UserWithRole(Guid.NewGuid(), Roles.StaffSystemName, StaffType.OnBoard);
+        activeOnBoard.FullName = "Active OnBoard";
+        activeOnBoard.Role = staffRole;
+        activeOnBoard.RoleId = staffRole.Id;
+        activeOnBoard.Status = UserStatus.Active;
+
+        var activeGround = UserWithRole(Guid.NewGuid(), Roles.StaffSystemName, StaffType.Ground);
+        activeGround.FullName = "Active Ground";
+        activeGround.Role = staffRole;
+        activeGround.RoleId = staffRole.Id;
+        activeGround.Status = UserStatus.Active;
+
+        var suspendedOnBoard = UserWithRole(Guid.NewGuid(), Roles.StaffSystemName, StaffType.OnBoard);
+        suspendedOnBoard.FullName = "Suspended OnBoard";
+        suspendedOnBoard.Role = staffRole;
+        suspendedOnBoard.RoleId = staffRole.Id;
+        suspendedOnBoard.Status = UserStatus.Suspended;
+
+        context.AddRange(staffRole, activeOnBoard, activeGround, suspendedOnBoard);
+        await context.SaveChangesAsync();
+
+        var users = await new GetUsersRequestUseCase(context, adminContext)
+            .ExecuteAsync(new GetUsersRequest(StaffType.OnBoard, UserStatus.Active), CancellationToken.None);
+
+        users.Select(x => x.FullName).ShouldBe(["Active OnBoard"]);
     }
 
     private static User UserWithRole(int id, string systemName, StaffType? staffType = null) =>

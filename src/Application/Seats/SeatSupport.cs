@@ -66,8 +66,13 @@ internal static class SeatSupport
         CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
-        if (!AuthSupport.IsAdmin(actor) && !AuthSupport.IsManager(actor) && !AuthSupport.IsStaff(actor))
+        if (!AuthSupport.IsAdmin(actor)
+            && !AuthSupport.IsManager(actor)
+            && !AuthSupport.IsStaff(actor)
+            && !AuthSupport.IsCustomer(actor))
+        {
             throw new ForbiddenAccessException();
+        }
 
         return actor;
     }
