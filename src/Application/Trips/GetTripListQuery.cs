@@ -16,7 +16,7 @@ public sealed record TripAdminListItemDto(
     string TripStatus,
     string? StatusNote);
 
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record GetTripListQuery(
     DateOnly? OperatingDate,
     string? RouteCode,

@@ -1,6 +1,8 @@
+using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Routes;
 
@@ -71,5 +73,48 @@ public sealed class DeleteAllWaterwaysCommandHandler
         await _context.SaveChangesAsync(cancellationToken);
 
         return new DeleteAllWaterwaysResultDto(segments.Count);
+    }
+}
+
+/// <summary>
+/// Xoa TAT CA waterway segment co WaterwayType chi dinh (river | canal | custom).
+/// Vd xoa het kenh: WaterwayType = "canal".
+/// </summary>
+[Authorize(Roles = "Admin")]
+public sealed record DeleteWaterwaysByTypeCommand(string WaterwayType)
+    : IRequest<DeleteWaterwaysByTypeResultDto>;
+
+public sealed record DeleteWaterwaysByTypeResultDto(string WaterwayType, int DeletedSegments);
+
+public sealed class DeleteWaterwaysByTypeCommandHandler
+    : IRequestHandler<DeleteWaterwaysByTypeCommand, DeleteWaterwaysByTypeResultDto>
+{
+    // Cac loai hop le, khop voi NormalizeWaterwayType khi import GeoJSON.
+    private static readonly string[] AllowedTypes = ["river", "canal", "custom"];
+
+    private readonly IApplicationDbContext _context;
+
+    public DeleteWaterwaysByTypeCommandHandler(IApplicationDbContext context) => _context = context;
+
+    public async Task<DeleteWaterwaysByTypeResultDto> Handle(
+        DeleteWaterwaysByTypeCommand request,
+        CancellationToken cancellationToken)
+    {
+        var type = request.WaterwayType?.Trim().ToLowerInvariant() ?? string.Empty;
+        if (!AllowedTypes.Contains(type))
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.WaterwayType),
+                "WaterwayType phai la 'river', 'canal' hoac 'custom'.")]);
+        }
+
+        var segments = await _context.Set<WaterwaySegment>()
+            .Where(s => s.WaterwayType == type)
+            .ToListAsync(cancellationToken);
+
+        _context.Set<WaterwaySegment>().RemoveRange(segments);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new DeleteWaterwaysByTypeResultDto(type, segments.Count);
     }
 }

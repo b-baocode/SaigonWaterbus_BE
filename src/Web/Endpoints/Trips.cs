@@ -49,7 +49,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Danh sach chuyen tau (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoac Manager",
+                "Admin, Manager hoac Staff",
                 null,
                 "Query params (tat ca optional): operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeCode (string), status (string).",
                 "status hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
@@ -140,7 +140,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat trang thai chuyen tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoac Manager",
+                "Admin, Manager hoac Staff",
                 UpdateStatusExample,
                 "tripStatus hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
                 "statusNote: ghi chu kem theo (optional)."));

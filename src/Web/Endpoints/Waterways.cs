@@ -51,6 +51,18 @@ public sealed class Waterways : IEndpointGroup
                 "Yeu cau query param confirm=true de tranh xoa nham: DELETE /api/waterways?confirm=true.",
                 "Tra ve { deletedSegments }.",
                 "Route da tao khong bi anh huong; nho import lai GeoJSON truoc khi tao route moi."));
+
+        group.MapDelete(DeleteWaterwaysByType, "by-type/{type}")
+            .RequireAuthorization()
+            .WithSummary("Xoa toan bo duong song theo loai (vd canal)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Xoa TAT CA segment co type = {type} (river | canal | custom). Vd xoa het kenh: DELETE /api/waterways/by-type/canal?confirm=true.",
+                "Yeu cau query param confirm=true de tranh xoa nham.",
+                "type khong hop le tra ve 400.",
+                "Tra ve { waterwayType, deletedSegments }.",
+                "Route da tao KHONG bi anh huong; chi anh huong route tao MOI."));
     }
 
     private static async Task<IResult> GetWaterways(
@@ -80,5 +92,19 @@ public sealed class Waterways : IEndpointGroup
         }
 
         return Results.Ok(await sender.Send(new DeleteAllWaterwaysCommand(), ct));
+    }
+
+    private static async Task<IResult> DeleteWaterwaysByType(
+        ISender sender, string type, bool confirm = false, CancellationToken ct = default)
+    {
+        if (!confirm)
+        {
+            return Results.BadRequest(new
+            {
+                message = $"Them ?confirm=true de xac nhan xoa TAT CA duong song loai '{type}'."
+            });
+        }
+
+        return Results.Ok(await sender.Send(new DeleteWaterwaysByTypeCommand(type), ct));
     }
 }

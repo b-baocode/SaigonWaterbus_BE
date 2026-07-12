@@ -11,12 +11,12 @@ public sealed record CreateRouteCommand(
     string RouteCode,
     string RouteName,
     string? Description,
-    int? EstimatedDurationMin,
     IReadOnlyList<CreateRouteWaypointDto> Waypoints,
     bool? AutoRouteGeometry = null,
     string? PreferWaterwayType = null,
     IReadOnlyList<string>? AvoidWaterwayOsmIds = null,
-    IReadOnlyList<double[]>? ChosenGeometry = null) : IRequest<RouteDto>;
+    IReadOnlyList<double[]>? ChosenGeometry = null,
+    Guid? BoatId = null) : IRequest<RouteDto>;
 
 public sealed record CreateRouteWaypointDto(
     string Type,
@@ -30,7 +30,7 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.RouteName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.EstimatedDurationMin).GreaterThan(0).When(x => x.EstimatedDurationMin.HasValue);
+        RuleFor(x => x.BoatId).NotEmpty().When(x => x.BoatId.HasValue);
         RuleFor(x => x.PreferWaterwayType)
             .Must(t => t == null || t == "river" || t == "canal" || t == "custom")
             .WithMessage("PreferWaterwayType phai la 'river', 'canal', hoac 'custom'.")
@@ -105,6 +105,9 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
 
 public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteCommand, RouteDto>
 {
+    // Van toc di chuyen thuc te lay 70% MaxSpeedKmh cua thuyen (tinh ca dung ben, giam toc khu dong duc).
+    private const double RouteSpeedFactor = 0.7;
+
     private readonly IApplicationDbContext _context;
 
     public CreateRouteCommandHandler(IApplicationDbContext context) => _context = context;
@@ -116,6 +119,26 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
         if (await _context.Set<Route>().AnyAsync(r => r.RouteCode == code, cancellationToken))
         {
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route code already exists.")]);
+        }
+
+        // Neu chon thuyen: van toc uoc tinh = MaxSpeedKmh * 70%. Kiem tra som de bao loi truoc khi dung geometry.
+        double? effectiveSpeedKmh = null;
+        if (request.BoatId.HasValue)
+        {
+            var boat = await _context.Set<Boat>()
+                .AsNoTracking()
+                .SingleOrDefaultAsync(b => b.Id == request.BoatId.Value, cancellationToken)
+                ?? throw new ValidationException([new ValidationFailure(
+                    nameof(request.BoatId), "Boat not found.")]);
+
+            if (!boat.MaxSpeedKmh.HasValue || boat.MaxSpeedKmh.Value <= 0)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(request.BoatId),
+                    "Thuyen da chon chua co MaxSpeedKmh hop le de uoc tinh thoi gian di chuyen.")]);
+            }
+
+            effectiveSpeedKmh = boat.MaxSpeedKmh.Value * RouteSpeedFactor;
         }
 
         var hasViaWaterway = request.Waypoints.Any(waypoint =>
@@ -286,13 +309,21 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             ? (decimal?)null
             : (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2);
 
+        // EstimatedDurationMin = quang duong thuc te / van toc thuc te. Thieu 1 trong 2 (khong chon thuyen
+        // hoac khong dung duoc geometry de co quang duong) -> de null.
+        int? estimatedDurationMin = null;
+        if (effectiveSpeedKmh is > 0 && distanceKm is > 0)
+        {
+            estimatedDurationMin = Math.Max(1, (int)Math.Round((double)distanceKm.Value / effectiveSpeedKmh.Value * 60));
+        }
+
         var route = new Route
         {
             RouteCode = code,
             RouteName = request.RouteName.Trim(),
             Description = request.Description?.Trim(),
             BaseDistanceKm = distanceKm,
-            EstimatedDurationMin = request.EstimatedDurationMin,
+            EstimatedDurationMin = estimatedDurationMin,
             Status = "Active",
             RouteGeometry = routeGeometry
         };

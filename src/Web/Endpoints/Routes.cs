@@ -13,7 +13,7 @@ public sealed class Routes : IEndpointGroup
         {
           "routeCode": "R01-BD-LD2",
           "routeName": "Tuyen 01: Bach Dang - Linh Dong",
-          "estimatedDurationMin": 60,
+          "boatId": null,
           "waypoints": [
             { "type": "station",     "stationCode": "ST-BD",          "stopOrder": 1 },
             { "type": "viaWaterway", "waterwayOsmId": "way/708678320" },
@@ -108,6 +108,8 @@ public sealed class Routes : IEndpointGroup
                 "Neu co waypoint type=viaWaterway thi geometry la bat buoc va tuyen bi ep di qua waterway do.",
                 "viaWaterway = EP di qua mot con duong thuy (vd duong tat); Dijkstra buoc phai qua diem dai dien cua no.",
                 "avoidWaterwayOsmIds (optional): mang OSM id/ten waterway EP NE - loai khoi mang khi tim duong, de tuyen di duong dai hon (vd vong theo song thay vi cat qua kenh). Khong duoc trung voi viaWaterway.",
+                "estimatedDurationMin KHONG con nhap tay - he thong tu tinh = quang duong (BaseDistanceKm) / (MaxSpeedKmh * 70%).",
+                "boatId (optional): thuyen dung de uoc tinh thoi gian. Bo trong -> EstimatedDurationMin = null. Boat khong ton tai / khong co MaxSpeedKmh -> bao loi 400. Khong dung duoc geometry (khong co quang duong) -> EstimatedDurationMin = null.",
                 "Neu ban ve duong san, co the tao route chi bang station waypoints roi nhap duong that o /segments."));
 
         group.MapPost(PreviewRouteGeometry, "geometry-preview")
@@ -131,17 +133,18 @@ public sealed class Routes : IEndpointGroup
                 "Status hop le: Active | Inactive.",
                 "RouteCode khong doi duoc sau khi tao."));
 
-        group.MapPost(AddRouteStop, "{id:guid}/stops")
-            .RequireAuthorization()
-            .WithSummary("Them ben dung vao tuyen")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                AddStopExample,
-                "stopOrder phai unique trong cung mot tuyen.",
-                "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
-                "stop dau (isPickupAllowed=true, isDropoffAllowed=false).",
-                "standardTravelMin: phut di tu stop nay den stop tiep theo.",
-                "standardDwellMin: phut tau dung tai stop (default 2)."));
+        // DISABLED 2026-07-12: tam khoa API them ben dung vao tuyen (khong xoa code, bo comment de bat lai).
+        // group.MapPost(AddRouteStop, "{id:guid}/stops")
+        //     .RequireAuthorization()
+        //     .WithSummary("Them ben dung vao tuyen")
+        //     .WithDescription(OpenApiDescriptionBuilder.Build(
+        //         "Admin",
+        //         AddStopExample,
+        //         "stopOrder phai unique trong cung mot tuyen.",
+        //         "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
+        //         "stop dau (isPickupAllowed=true, isDropoffAllowed=false).",
+        //         "standardTravelMin: phut di tu stop nay den stop tiep theo.",
+        //         "standardDwellMin: phut tau dung tai stop (default 2)."));
 
         group.MapPut(UpdateRouteStop, "{id:guid}/stops/{stopId:guid}")
             .RequireAuthorization()

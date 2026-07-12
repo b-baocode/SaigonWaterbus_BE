@@ -5,7 +5,7 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.Trips;
 
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record UpdateTripStatusCommand(
     Guid TripId,
     TripStatus TripStatus,
