@@ -42,6 +42,7 @@ public class BrevoPaymentNotificationSenderTests
                 booking,
                 "TK123",
                 "qr-token",
+                PassengerName: "Tran Thi B",
                 Attachments:
                 [
                     new EmailAttachment("boarding-pass.pdf", "application/pdf", [1, 2, 3])
@@ -57,6 +58,7 @@ public class BrevoPaymentNotificationSenderTests
         parameters.GetProperty("qrPayload").GetString().ShouldBe("qr-token");
         parameters.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/qr-token");
         parameters.GetProperty("pdfUrl").GetString().ShouldBe("https://api.test/api/charter-bookings/tickets/pdf/qr-token");
+        parameters.GetProperty("passengerName").GetString().ShouldBe("Tran Thi B");
         parameters.GetProperty("paymentSummaryLabel").GetString().ShouldBe("Đã thanh toán");
         attachment.GetProperty("name").GetString().ShouldBe("boarding-pass.pdf");
         attachment.GetProperty("content").GetString().ShouldBe("AQID");

@@ -1488,6 +1488,21 @@ internal static class PaymentSupport
                     x.StayDurationMinutes))
                 .ToList()
             : [];
+        var vessels = isCharterBooking
+            ? ResolveNotificationVessels(booking)
+            : [];
+        var insurance = isCharterBooking && booking.InsuranceSnapshot is { } insuranceSnapshot
+            ? new PaymentNotificationInsurance(
+                insuranceSnapshot.Name,
+                insuranceSnapshot.Quantity,
+                insuranceSnapshot.TotalAmount,
+                string.IsNullOrWhiteSpace(insuranceSnapshot.Currency)
+                    ? booking.Currency
+                    : insuranceSnapshot.Currency)
+            : null;
+        var remainingPaymentDueAt = isCharterBooking && !isFullyPaid && booking.RemainingAmount > 0
+            ? booking.HoldExpiresAt
+            : null;
 
         return new PaymentSucceededNotification(
             recipientEmail.Trim(),
@@ -1516,16 +1531,42 @@ internal static class PaymentSupport
             ResolveStationAddress(isCharterBooking ? booking.FromStation : null),
             isCharterBooking ? booking.ToStation?.StationName : null,
             ResolveStationAddress(isCharterBooking ? booking.ToStation : null),
-            stops);
+            stops,
+            vessels,
+            insurance,
+            remainingPaymentDueAt);
     }
 
     private static IQueryable<Booking> IncludeCharterBookingNotificationDetails(IQueryable<Booking> query) =>
         query
             .Include(x => x.Boat)
+            .Include(x => x.CharterBoats)
+                .ThenInclude(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station);
+
+    private static IReadOnlyList<PaymentNotificationVessel> ResolveNotificationVessels(Booking booking)
+    {
+        var vessels = booking.CharterBoats
+            .Where(x => x.Boat is not null)
+            .OrderBy(x => x.BoatOrder)
+            .Select(x => new PaymentNotificationVessel(
+                x.Boat.Name,
+                x.Boat.SeatCount,
+                x.BoatOrder))
+            .ToList();
+
+        if (vessels.Count > 0)
+        {
+            return vessels;
+        }
+
+        return booking.Boat is null
+            ? []
+            : [new PaymentNotificationVessel(booking.Boat.Name, booking.Boat.SeatCount)];
+    }
 
     private static string? ResolveStationAddress(Station? station) =>
         string.IsNullOrWhiteSpace(station?.Address)

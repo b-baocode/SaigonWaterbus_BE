@@ -184,7 +184,8 @@ public sealed class ImportCharterBookingPassengersCommandHandler
                 bookingNotification,
                 ticket.TicketCode,
                 ticket.QrToken,
-                Attachments: attachments),
+                Attachments: attachments,
+                PassengerName: ticket.BookingPassenger?.FullName),
             cancellationToken);
     }
 

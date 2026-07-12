@@ -40,12 +40,27 @@ public sealed record PaymentSucceededNotification(
     string? FromStationAddress,
     string? ToStationName,
     string? ToStationAddress,
-    IReadOnlyList<PaymentNotificationStop> Stops);
+    IReadOnlyList<PaymentNotificationStop> Stops,
+    IReadOnlyList<PaymentNotificationVessel>? Vessels = null,
+    PaymentNotificationInsurance? Insurance = null,
+    DateTimeOffset? RemainingPaymentDueAt = null,
+    DateTimeOffset? PassengerListDueAt = null);
 
 public sealed record PaymentNotificationStop(
     string Name,
     string? Description,
     int StayDurationMinutes);
+
+public sealed record PaymentNotificationVessel(
+    string Name,
+    int? SeatCount = null,
+    int? Order = null);
+
+public sealed record PaymentNotificationInsurance(
+    string PackageName,
+    int InsuredSeatCount,
+    decimal TotalFee,
+    string Currency);
 
 public sealed record BoardingPassNotification(
     PaymentSucceededNotification Booking,
@@ -53,7 +68,8 @@ public sealed record BoardingPassNotification(
     string QrToken,
     string? QrImageUrl = null,
     string? PdfUrl = null,
-    IReadOnlyList<EmailAttachment>? Attachments = null);
+    IReadOnlyList<EmailAttachment>? Attachments = null,
+    string? PassengerName = null);
 
 public sealed record EmailAttachment(
     string Name,

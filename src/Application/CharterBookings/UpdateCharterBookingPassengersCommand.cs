@@ -180,7 +180,8 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
                 bookingNotification,
                 ticket.TicketCode,
                 ticket.QrToken,
-                Attachments: attachments),
+                Attachments: attachments,
+                PassengerName: ticket.BookingPassenger?.FullName),
             cancellationToken);
     }
 

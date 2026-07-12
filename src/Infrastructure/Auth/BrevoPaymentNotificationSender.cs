@@ -171,6 +171,15 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             return;
         }
 
+        if (options.ETicketTemplateId <= 0)
+        {
+            _logger.LogWarning(
+                "Brevo e-ticket notification is enabled but ETicketTemplateId is not configured. BookingCode: {BookingCode}, Email: {Email}",
+                notification.Booking.BookingCode,
+                notification.Booking.Email);
+            return;
+        }
+
         var payload = BuildETicketPayload(options, notification);
         var client = _httpClientFactory.CreateClient(HttpClientName);
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
@@ -288,83 +297,9 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             options.ETicketTemplateId,
             parameters,
             $"Saigon Waterbus - Vé điện tử {booking.BookingCode}",
-            BuildETicketHtmlContent(options, notification, bookingQrImageUrl, departureText));
+            string.Empty);
         AddAttachments(payload, notification.Attachments);
         return payload;
-    }
-
-    private static string BuildETicketHtmlContent(
-        BrevoOptions options,
-        ETicketNotification notification,
-        string? bookingQrImageUrl,
-        string? departureText)
-    {
-        var booking = notification.Booking;
-        var html = new System.Text.StringBuilder();
-        html.Append("<html><body style=\"font-family:Arial,sans-serif\">");
-        html.Append($"<p>Xin chào {Encode(booking.ContactName)},</p>");
-        html.Append($"<p>Saigon Waterbus xác nhận thanh toán thành công cho booking <strong>{Encode(booking.BookingCode)}</strong>. Dưới đây là vé điện tử của bạn.</p>");
-        html.Append("<ul>");
-        if (!string.IsNullOrWhiteSpace(notification.TripCode))
-        {
-            html.Append($"<li>Chuyến: {Encode(notification.TripCode)}</li>");
-        }
-
-        if (!string.IsNullOrWhiteSpace(notification.RouteName))
-        {
-            html.Append($"<li>Tuyến: {Encode(notification.RouteName)}</li>");
-        }
-
-        if (!string.IsNullOrWhiteSpace(notification.FromStationName) || !string.IsNullOrWhiteSpace(notification.ToStationName))
-        {
-            html.Append($"<li>Hành trình: {Encode(notification.FromStationName ?? string.Empty)} → {Encode(notification.ToStationName ?? string.Empty)}</li>");
-        }
-
-        if (departureText is not null)
-        {
-            html.Append($"<li>Khởi hành: {Encode(departureText)}</li>");
-        }
-
-        html.Append($"<li>Số hành khách: {notification.Tickets.Count}</li>");
-        html.Append($"<li>Tổng tiền đã thanh toán: {Encode(FormatMoney(booking.BookingTotalAmount, booking.Currency))}</li>");
-        html.Append("</ul>");
-
-        if (!string.IsNullOrWhiteSpace(bookingQrImageUrl))
-        {
-            html.Append("<h3>QR chung của booking (check-in cả nhóm)</h3>");
-            html.Append($"<p><img src=\"{bookingQrImageUrl}\" alt=\"Booking QR\" width=\"180\" height=\"180\"/></p>");
-            html.Append($"<p>Mã booking: <strong>{Encode(booking.BookingCode)}</strong></p>");
-        }
-
-        html.Append("<h3>Vé của từng hành khách</h3>");
-        foreach (var ticket in notification.Tickets)
-        {
-            var qrImageUrl = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken);
-            html.Append("<div style=\"border:1px solid #ddd;border-radius:8px;padding:12px;margin-bottom:12px\">");
-            html.Append($"<p><strong>{Encode(ticket.PassengerName)}</strong>");
-            if (!string.IsNullOrWhiteSpace(ticket.SeatCode))
-            {
-                html.Append($" — Ghế {Encode(ticket.SeatCode)}");
-            }
-
-            if (!string.IsNullOrWhiteSpace(ticket.TicketTypeName))
-            {
-                html.Append($" ({Encode(ticket.TicketTypeName)})");
-            }
-
-            html.Append("</p>");
-            html.Append($"<p>Mã vé: {Encode(ticket.TicketCode)}</p>");
-            if (!string.IsNullOrWhiteSpace(qrImageUrl))
-            {
-                html.Append($"<p><img src=\"{qrImageUrl}\" alt=\"Ticket QR\" width=\"150\" height=\"150\"/></p>");
-            }
-
-            html.Append("</div>");
-        }
-
-        html.Append("<p>Vui lòng xuất trình mã QR khi lên tàu. Cảm ơn bạn đã sử dụng dịch vụ Saigon Waterbus.</p>");
-        html.Append("</body></html>");
-        return html.ToString();
     }
 
     private static Dictionary<string, object?> BuildPayload(
@@ -422,6 +357,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         if (Booking.IsCharterBookingType(notification.BookingType))
         {
             return FirstPositive(
+                options.CharterBookingPaymentTemplateId,
                 notification.IsFullyPaid ? options.PaymentFullTemplateId : options.PaymentDepositTemplateId,
                 options.CharterBookingQuoteTemplateId,
                 options.BookingPaymentConfirmationTemplateId);
@@ -453,16 +389,39 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         var paymentSummaryAmount = notification.IsFullyPaid ? totalPaidAmount : remainingAmount;
         var departureText = notification.DepartureDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture);
         var timeline = ResolveTimeline(notification);
-        var stops = notification.Stops
-            .Select((stop, index) => new Dictionary<string, object?>
+        var hasRemainingPayment = !notification.IsFullyPaid && notification.RemainingAmount > 0;
+        var vessels = ResolveVessels(notification);
+        var vesselParams = vessels
+            .Select((vessel, index) => new Dictionary<string, object?>
             {
-                ["order"] = index + 1,
-                ["name"] = stop.Name,
-                ["description"] = string.IsNullOrWhiteSpace(stop.Description)
+                ["order"] = vessel.Order ?? index + 1,
+                ["name"] = vessel.Name,
+                ["seatCount"] = vessel.SeatCount,
+                ["seatCountText"] = vessel.SeatCount.HasValue
+                    ? vessel.SeatCount.Value.ToString(CultureInfo.InvariantCulture)
+                    : null
+            })
+            .ToArray();
+        var vesselName = vessels.Count > 0
+            ? string.Join(", ", vessels.Select(x => x.Name))
+            : ResolveText(notification.BoatName, "Chưa gán tàu");
+        var stops = notification.Stops
+            .Select((stop, index) =>
+            {
+                var description = string.IsNullOrWhiteSpace(stop.Description)
                     ? "Dừng theo lịch trình"
-                    : stop.Description.Trim(),
-                ["durationMinutes"] = stop.StayDurationMinutes,
-                ["durationText"] = FormatDuration(stop.StayDurationMinutes)
+                    : stop.Description.Trim();
+                var durationText = FormatDuration(stop.StayDurationMinutes);
+
+                return new Dictionary<string, object?>
+                {
+                    ["order"] = index + 1,
+                    ["name"] = stop.Name,
+                    ["description"] = description,
+                    ["durationMinutes"] = stop.StayDurationMinutes,
+                    ["durationText"] = durationText,
+                    ["detailText"] = BuildStopDetailText(description, durationText)
+                };
             })
             .ToArray();
         var routeSummary = RouteSummary(notification);
@@ -473,10 +432,21 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         var pdfUrl = string.IsNullOrWhiteSpace(boardingPass?.PdfUrl)
             ? CreateCharterBookingTicketsPdfUrl(options.PublicApiBaseUrl, qrPayload, notification.BookingType)
             : boardingPass.PdfUrl;
+        var remainingPaymentDueAt = hasRemainingPayment && notification.RemainingPaymentDueAt.HasValue
+            ? FormatDateTimeOffset(notification.RemainingPaymentDueAt.Value, "dd/MM/yyyy HH:mm")
+            : null;
+        var passengerListDueAt = notification.PassengerListDueAt.HasValue
+            ? FormatDateTimeOffset(notification.PassengerListDueAt.Value, "dd/MM/yyyy HH:mm")
+            : null;
+        var insurance = notification.Insurance;
+        var insuranceTotalFee = insurance is null
+            ? null
+            : FormatMoney(insurance.TotalFee, insurance.Currency);
 
         return new Dictionary<string, object?>
         {
             ["requestCode"] = notification.BookingCode,
+            ["bookingReference"] = notification.BookingCode,
             ["status"] = notification.BookingPaymentStatus,
             ["statusLabel"] = boardingPass is null
                 ? notification.IsFullyPaid ? "Đã xác nhận thanh toán" : "Đã xác nhận đặt cọc"
@@ -488,8 +458,10 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             ["contactName"] = notification.ContactName,
             ["contactPhone"] = notification.ContactPhone,
             ["contactEmail"] = notification.Email,
+            ["passengerName"] = boardingPass?.PassengerName,
             ["booking_code"] = notification.BookingCode,
             ["bookingCode"] = notification.BookingCode,
+            ["booking_reference"] = notification.BookingCode,
             ["booking_type"] = notification.BookingType,
             ["bookingType"] = notification.BookingType,
             ["bookingDate"] = FormatDateTimeOffset(notification.BookingCreatedAt, "dd/MM/yyyy"),
@@ -522,6 +494,10 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             ["paidAt"] = FormatDateTimeOffset(notification.PaidAt, "dd/MM/yyyy HH:mm"),
             ["is_fully_paid"] = notification.IsFullyPaid,
             ["isFullyPaid"] = notification.IsFullyPaid,
+            ["has_remaining_payment"] = hasRemainingPayment,
+            ["hasRemainingPayment"] = hasRemainingPayment,
+            ["remainingPaymentDueAt"] = remainingPaymentDueAt,
+            ["passengerListDueAt"] = passengerListDueAt,
             ["departureDate"] = departureText,
             ["startTime"] = timeline.StartTime,
             ["timelineStartTime"] = timeline.StartTime,
@@ -535,9 +511,16 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             ["fromStationAddress"] = ResolveText(notification.FromStationAddress ?? notification.FromStationName),
             ["toStationName"] = ResolveText(notification.ToStationName),
             ["toStationAddress"] = ResolveText(notification.ToStationAddress ?? notification.ToStationName),
-            ["vesselName"] = ResolveText(notification.BoatName, "Chưa gán tàu"),
+            ["vesselName"] = vesselName,
+            ["VESSELS"] = vesselParams,
+            ["vessels"] = vesselParams,
             ["passengerCount"] = notification.PassengerCount.ToString(CultureInfo.InvariantCulture),
+            ["insurancePackageName"] = insurance?.PackageName,
+            ["insuredSeatCount"] = insurance?.InsuredSeatCount.ToString(CultureInfo.InvariantCulture),
+            ["insuranceTotalFee"] = insuranceTotalFee,
+            ["insuranceCurrency"] = insurance?.Currency,
             ["STOPS"] = stops,
+            ["stops"] = stops,
             ["ticketCode"] = boardingPass?.TicketCode,
             ["qrPayload"] = qrPayload,
             ["qrImageUrl"] = qrImageUrl,
@@ -634,6 +617,31 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             ? $"{hours} giờ"
             : $"{hours} giờ {remainingMinutes} phút";
     }
+
+    private static IReadOnlyList<PaymentNotificationVessel> ResolveVessels(
+        PaymentSucceededNotification notification)
+    {
+        var vessels = notification.Vessels?
+            .Where(x => !string.IsNullOrWhiteSpace(x.Name))
+            .OrderBy(x => x.Order ?? int.MaxValue)
+            .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(x => x with { Name = x.Name.Trim() })
+            .ToList() ?? [];
+
+        if (vessels.Count > 0)
+        {
+            return vessels;
+        }
+
+        return string.IsNullOrWhiteSpace(notification.BoatName)
+            ? []
+            : [new PaymentNotificationVessel(notification.BoatName.Trim())];
+    }
+
+    private static string BuildStopDetailText(string description, string durationText) =>
+        string.IsNullOrWhiteSpace(durationText)
+            ? description
+            : $"{description} - {durationText}";
 
     private static (string StartTime, string EndTime, string? EndDate) ResolveTimeline(
         PaymentSucceededNotification notification)
