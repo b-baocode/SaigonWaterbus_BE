@@ -11,13 +11,16 @@ namespace SaigonWaterbus.Application.Trips;
 /// <summary>Giá vé theo loại ghế cho riêng chuyến này (ghi vào trip_seats.price).</summary>
 public sealed record TripSeatTypePriceInput(string SeatTypeCode, decimal Price);
 
+/// <summary>
+/// Tao chuyen tau. BoatCode BAT BUOC: trip luon gan tau de sinh trip_seats (khong co ghe thi khong ban ve duoc).
+/// CapacitySnapshot tu dong lay theo so ghe active cua tau, khong cho nhap tay.
+/// </summary>
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateTripCommand(
     string RouteCode,
-    int Capacity,
+    string BoatCode,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime,
-    string? BoatCode = null,
     IReadOnlyList<TripSeatTypePriceInput>? SeatTypePrices = null) : IRequest<TripDetailDto>;
 
 public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCommand>
@@ -25,9 +28,8 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
     public CreateTripCommandValidator()
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.Capacity).GreaterThan(0);
+        RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.DepartureTime).GreaterThan(DateTimeOffset.UtcNow);
-        RuleFor(x => x.BoatCode).MaximumLength(50).When(x => x.BoatCode is not null);
         RuleFor(x => x.SeatTypePrices!)
             .SetValidator(new TripSeatTypePricesValidator())
             .When(x => x.SeatTypePrices is not null);
@@ -147,34 +149,29 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         await EnsureNoRouteDepartureConflictAsync(route.Id, departureTime, cancellationToken);
 
-        Boat? boat = null;
-        List<Seat> activeSeats = [];
-        var capacity = request.Capacity;
-        if (!string.IsNullOrWhiteSpace(request.BoatCode))
-        {
-            var boatCode = request.BoatCode.Trim().ToUpperInvariant();
-            boat = await _context.Set<Boat>()
-                .SingleOrDefaultAsync(x => x.Code == boatCode, cancellationToken)
-                ?? throw new NotFoundException($"Boat '{boatCode}' not found.");
+        var boatCode = request.BoatCode.Trim().ToUpperInvariant();
+        var boat = await _context.Set<Boat>()
+            .SingleOrDefaultAsync(x => x.Code == boatCode, cancellationToken)
+            ?? throw new NotFoundException($"Boat '{boatCode}' not found.");
 
-            if (boat.Status != BoatStatus.Active || !boat.SeatsConfigured)
-                throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
-                    "Boat must be active and have configured seats.")]);
+        if (boat.Status != BoatStatus.Active || !boat.SeatsConfigured)
+            throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
+                "Boat must be active and have configured seats.")]);
 
-            activeSeats = await _context.Set<Seat>()
-                .Where(x => x.BoatId == boat.Id && x.IsActive)
-                .ToListAsync(cancellationToken);
+        var activeSeats = await _context.Set<Seat>()
+            .Where(x => x.BoatId == boat.Id && x.IsActive)
+            .ToListAsync(cancellationToken);
 
-            capacity = activeSeats.Count;
-            if (capacity <= 0)
-                throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
-                    "Boat has no active seats.")]);
-        }
+        // Suc chua = so ghe active cua tau (khong cho nhap tay).
+        var capacity = activeSeats.Count;
+        if (capacity <= 0)
+            throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
+                "Boat has no active seats.")]);
 
         var trip = new Trip
         {
             RouteId = route.Id,
-            BoatId = boat?.Id,
+            BoatId = boat.Id,
             TripCode = tripCode,
             OperatingDate = request.OperatingDate,
             DepartureTime = departureTime,
@@ -185,23 +182,14 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         _context.Set<Trip>().Add(trip);
 
-        if (activeSeats.Count > 0)
+        var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
+            _context, request.SeatTypePrices, activeSeats, cancellationToken);
+        _context.Set<TripSeat>().AddRange(activeSeats.Select(s => new TripSeat
         {
-            var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
-                _context, request.SeatTypePrices, activeSeats, cancellationToken);
-            var tripSeats = activeSeats.Select(s => new TripSeat
-            {
-                TripId = trip.Id,
-                SeatId = s.Id,
-                Price = resolveSeatPrice(s)
-            });
-            _context.Set<TripSeat>().AddRange(tripSeats);
-        }
-        else if (request.SeatTypePrices is { Count: > 0 })
-        {
-            throw new ValidationException([new ValidationFailure(nameof(request.SeatTypePrices),
-                "Chỉ nhập seatTypePrices khi trip có gán tàu (boatCode).")]);
-        }
+            TripId = trip.Id,
+            SeatId = s.Id,
+            Price = resolveSeatPrice(s)
+        }));
 
         await _context.SaveChangesAsync(cancellationToken);
 

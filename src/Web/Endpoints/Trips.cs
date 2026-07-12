@@ -13,7 +13,6 @@ public sealed class Trips : IEndpointGroup
         {
           "routeCode": "R01-BD-TD",
           "boatCode": "BOAT-01",
-          "capacity": 50,
           "operatingDate": "10/08/2026",
           "departureTime": "2026-08-10T08:30:00+07:00",
           "seatTypePrices": [
@@ -112,10 +111,10 @@ public sealed class Trips : IEndpointGroup
                 "Admin hoac Manager",
                 CreateTripExample,
                 "Route phai Active va co it nhat 2 ben dung.",
-                "boatCode optional nhung nen gui de trip gan voi tau va co the dat ghe.",
-                "Neu co boatCode, capacitySnapshot lay theo so ghe active cua tau.",
+                "boatCode BAT BUOC: trip luon gan tau de sinh trip_seats (khong co ghe thi khong ban ve duoc).",
+                "capacity KHONG con nhap tay - capacitySnapshot tu dong = so ghe ACTIVE cua tau (co the nho hon Boat.SeatCount neu co ghe bi vo hieu hoa).",
+                "Tau phai Status=Active va SeatsConfigured=true, va co it nhat 1 ghe active; neu khong tra 400.",
                 "departureTime phai lon hon thoi diem hien tai.",
-                "capacity: so hanh khach toi da cua chuyen.",
                 "seatTypePrices (optional): chot gia ve theo loai ghe cho rieng chuyen nay (bus sightseeing tuy chinh gia).",
                 "Loai ghe khong nhap gia se tu dong lay gia goc tu GET /api/seat-types dien vao trip_seats.",
                 "Gia ve khi dat = trip_seats.price x he so loai ve (ADULT x1; INFANT/SENIOR/DISABLED mien phi, chi ghe STANDARD).",
