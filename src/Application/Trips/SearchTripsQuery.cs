@@ -10,7 +10,24 @@ namespace SaigonWaterbus.Application.Trips;
 public sealed record SearchTripsQuery(
     Guid FromStationId,
     Guid ToStationId,
-    DateOnly OperatingDate) : IRequest<IReadOnlyList<TripSummaryDto>>;
+    DateOnly OperatingDate,
+    string? RouteType = null) : IRequest<IReadOnlyList<TripSummaryDto>>;
+
+public sealed class SearchTripsQueryValidator : AbstractValidator<SearchTripsQuery>
+{
+    public SearchTripsQueryValidator()
+    {
+        RuleFor(x => x.RouteType)
+            .Must(RouteTypes.IsValid)
+            .WithMessage($"routeType chi nhan {RouteTypes.Regular} hoac {RouteTypes.SightseeingLoop}.")
+            .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
+
+        RuleFor(x => x.RouteType)
+            .Must(x => !string.Equals(RouteTypes.Normalize(x), RouteTypes.CharterReference, StringComparison.Ordinal))
+            .WithMessage("Chuyen charter khong ban ve le nen khong tim kiem duoc.")
+            .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
+    }
+}
 
 public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, IReadOnlyList<TripSummaryDto>>
 {
@@ -42,7 +59,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var routeIds = validRouteIds.Select(x => x.RouteId).ToList();
 
-        var trips = await _context.Set<Trip>()
+        var tripQuery = _context.Set<Trip>()
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
             .Where(t => routeIds.Contains(t.RouteId)
@@ -51,8 +68,15 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                      && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
                      && t.TripStatus == TripStatus.Scheduled
-                     && t.DepartureTime > now)
-            .ToListAsync(cancellationToken);
+                     && t.DepartureTime > now);
+
+        if (!string.IsNullOrWhiteSpace(request.RouteType))
+        {
+            var routeType = RouteTypes.Normalize(request.RouteType);
+            tripQuery = tripQuery.Where(t => t.Route.RouteType == routeType);
+        }
+
+        var trips = await tripQuery.ToListAsync(cancellationToken);
 
         var tripIds = trips.Select(t => t.Id).ToList();
 
@@ -112,7 +136,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
 
             return new TripSummaryDto(
-                t.Id, t.TripCode, t.Route.RouteName,
+                t.Id, t.TripCode, t.Route.RouteName, t.Route.RouteType,
                 t.DepartureTime, t.ArrivalTime,
                 t.DepartureTime, t.ArrivalTime,
                 Math.Max(0, available), capacity,

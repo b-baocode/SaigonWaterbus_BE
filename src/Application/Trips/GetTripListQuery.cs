@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -9,6 +10,7 @@ public sealed record TripAdminListItemDto(
     string TripCode,
     string RouteCode,
     string RouteName,
+    string RouteType,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime,
     DateTimeOffset ArrivalTime,
@@ -22,7 +24,26 @@ public sealed record TripAdminListItemDto(
 public sealed record GetTripListQuery(
     DateOnly? OperatingDate,
     string? RouteCode,
-    string? Status) : IRequest<IReadOnlyList<TripAdminListItemDto>>;
+    string? Status,
+    string? TripType = null,
+    string? RouteType = null) : IRequest<IReadOnlyList<TripAdminListItemDto>>;
+
+public sealed class GetTripListQueryValidator : AbstractValidator<GetTripListQuery>
+{
+    public GetTripListQueryValidator()
+    {
+        RuleFor(x => x.TripType)
+            .Must(x => string.Equals(x, TripTypes.Regular, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(x, TripTypes.Charter, StringComparison.OrdinalIgnoreCase))
+            .WithMessage($"tripType chi nhan {TripTypes.Regular} hoac {TripTypes.Charter}.")
+            .When(x => !string.IsNullOrWhiteSpace(x.TripType));
+
+        RuleFor(x => x.RouteType)
+            .Must(RouteTypes.IsValid)
+            .WithMessage($"routeType chi nhan {RouteTypes.Regular}, {RouteTypes.SightseeingLoop} hoac {RouteTypes.CharterReference}.")
+            .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
+    }
+}
 
 public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, IReadOnlyList<TripAdminListItemDto>>
 {
@@ -50,12 +71,26 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
             Enum.TryParse<TripStatus>(request.Status, ignoreCase: true, out var status))
             query = query.Where(t => t.TripStatus == status);
 
+        if (!string.IsNullOrWhiteSpace(request.TripType))
+        {
+            var tripType = string.Equals(request.TripType, TripTypes.Charter, StringComparison.OrdinalIgnoreCase)
+                ? TripTypes.Charter
+                : TripTypes.Regular;
+            query = query.Where(t => t.TripType == tripType);
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.RouteType))
+        {
+            var routeType = RouteTypes.Normalize(request.RouteType);
+            query = query.Where(t => t.Route.RouteType == routeType);
+        }
+
         return await query
             .OrderByDescending(t => t.OperatingDate)
             .ThenBy(t => t.DepartureTime)
             .Select(t => new TripAdminListItemDto(
                 t.Id, t.TripCode,
-                t.Route.RouteCode, t.Route.RouteName,
+                t.Route.RouteCode, t.Route.RouteName, t.Route.RouteType,
                 t.OperatingDate, t.DepartureTime, t.ArrivalTime,
                 t.CapacitySnapshot, t.TripStatus.ToString(), t.StatusNote,
                 t.TripType, t.SourceBookingId))

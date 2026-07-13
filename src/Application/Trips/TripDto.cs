@@ -4,6 +4,7 @@ public sealed record TripSummaryDto(
     Guid TripId,
     string TripCode,
     string RouteName,
+    string RouteType,
     DateTimeOffset DepartureTime,
     DateTimeOffset ArrivalTime,
     DateTimeOffset? FromStopScheduledDeparture,
