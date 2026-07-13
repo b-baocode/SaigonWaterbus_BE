@@ -1,6 +1,5 @@
 using System.Globalization;
 using Microsoft.AspNetCore.Mvc;
-using SaigonWaterbus.Application.BoatCrewAssignments;
 using SaigonWaterbus.Application.Boats;
 using SaigonWaterbus.Domain.Enums;
 
@@ -59,26 +58,6 @@ public sealed class Boats : IEndpointGroup
         """
         {
           "status": "UnderMaintenance"
-        }
-        """;
-
-    private const string CreateCrewAssignmentExample =
-        """
-        {
-          "staffUserId": "00000000-0000-0000-0000-000000000000",
-          "fromDate": "2026-08-01",
-          "toDate": "2026-08-31"
-        }
-        """;
-
-    private const string CreateCrewReplacementExample =
-        """
-        {
-          "replacedStaffUserId": "00000000-0000-0000-0000-000000000001",
-          "replacementStaffUserId": "00000000-0000-0000-0000-000000000000",
-          "fromDate": "2026-08-15",
-          "toDate": "2026-08-16",
-          "reason": "Crew nghi phep"
         }
         """;
 
@@ -193,75 +172,6 @@ public sealed class Boats : IEndpointGroup
                 "type trên route: Inspection, Registration, Insurance hoặc OperationLicense.",
                 "Xóa metadata hồ sơ khỏi tàu. Nếu tàu đang Active thì backend tự chuyển Inactive."));
 
-        groupBuilder.MapGet(GetBoatCrewAssignments, "{boatId:guid}/crew-assignments")
-            .RequireAuthorization()
-            .WithSummary("Xem nhân viên trên tàu")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
-                null,
-                "Query params optional: fromDate=yyyy-MM-dd, toDate=yyyy-MM-dd, activeOnly=true|false.",
-                "Dùng cho tab nhân viên trên tàu: danh sách staff OnBoard theo khoảng ngày.",
-                "toDate=null nghĩa là phân công dài hạn chưa có ngày kết thúc."));
-
-        groupBuilder.MapPost(CreateBoatCrewAssignment, "{boatId:guid}/crew-assignments")
-            .RequireAuthorization()
-            .WithSummary("Gắn nhân viên lên tàu theo khoảng ngày")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager",
-                CreateCrewAssignmentExample,
-                "FE không cần gửi crewRole; backend tự set OnBoard.",
-                "fromDate là ngày bắt đầu làm mặc định trên tàu.",
-                "toDate optional; không gửi hoặc null nghĩa là phân công dài hạn.",
-                "Một tàu có thể có nhiều nhân viên OnBoard trong cùng khoảng ngày.",
-                "Không cho một staff active ở hai tàu trong cùng khoảng ngày."));
-
-        groupBuilder.MapDelete(DeleteBoatCrewAssignment, "{boatId:guid}/crew-assignments/{assignmentId:guid}")
-            .RequireAuthorization()
-            .WithSummary("Gỡ crew mặc định khỏi tàu")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager",
-                null,
-                "Soft delete: đặt assignment isActive=false.",
-                "Dùng cho nút Gỡ trong tab nhân viên trên tàu."));
-
-        groupBuilder.MapGet(GetBoatCrewReplacements, "{boatId:guid}/crew-replacements")
-            .RequireAuthorization()
-            .WithSummary("Xem lịch thay thế nhân viên trên tàu")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
-                null,
-                "Query params optional: fromDate=yyyy-MM-dd, toDate=yyyy-MM-dd, activeOnly=true|false.",
-                "Dùng để xem các khoảng ngày có người thay thế nhân viên mặc định."));
-
-        groupBuilder.MapPost(CreateBoatCrewReplacement, "{boatId:guid}/crew-replacements")
-            .RequireAuthorization()
-            .WithSummary("Chèn người thay thế nhân viên trên tàu theo khoảng ngày")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager",
-                CreateCrewReplacementExample,
-                "FE không cần gửi crewRole; backend tự set OnBoard.",
-                "Người được thay phải là nhân viên OnBoard mặc định của tàu trong toàn bộ khoảng fromDate-toDate.",
-                "Người thay thế phải là staff OnBoard active.",
-                "Không cần sửa assignment mặc định; replacement sẽ override khi xem calendar."));
-
-        groupBuilder.MapDelete(DeleteBoatCrewReplacement, "{boatId:guid}/crew-replacements/{replacementId:guid}")
-            .RequireAuthorization()
-            .WithSummary("Hủy lịch thay thế crew")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager",
-                null,
-                "Soft delete: đặt replacement isActive=false."));
-
-        groupBuilder.MapGet(GetBoatCrewCalendar, "{boatId:guid}/crew-calendar")
-            .RequireAuthorization()
-            .WithSummary("Xem lịch nhân viên trên tàu hiệu lực theo ngày")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
-                null,
-                "Query params bắt buộc: fromDate=yyyy-MM-dd, toDate=yyyy-MM-dd.",
-                "Trả từng ngày trong khoảng xem; nếu có replacement thì trả staff thay thế và isReplacement=true.",
-                "Khoảng xem tối đa 366 ngày."));
-
         groupBuilder.MapDelete(DeleteBoat, "{boatId:guid}")
             .RequireAuthorization()
             .WithSummary("Xóa tàu")
@@ -374,86 +284,6 @@ public sealed class Boats : IEndpointGroup
         CancellationToken cancellationToken) =>
         Results.Ok(await boatManagementService.DeleteBoatDocumentAsync(
             new DeleteBoatDocumentRequest(boatId, type),
-            cancellationToken));
-
-    private static async Task<IResult> GetBoatCrewAssignments(
-        ISender sender,
-        Guid boatId,
-        [FromQuery] DateOnly? fromDate,
-        [FromQuery] DateOnly? toDate,
-        [FromQuery] bool? activeOnly,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new GetBoatCrewAssignmentsQuery(boatId, fromDate, toDate, activeOnly ?? true),
-            cancellationToken));
-
-    private static async Task<IResult> CreateBoatCrewAssignment(
-        ISender sender,
-        Guid boatId,
-        BoatCrewAssignmentApiRequest request,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new CreateBoatCrewAssignmentCommand(
-                boatId,
-                request.StaffUserId,
-                request.FromDate,
-                request.ToDate),
-            cancellationToken));
-
-    private static async Task<IResult> DeleteBoatCrewAssignment(
-        ISender sender,
-        Guid boatId,
-        Guid assignmentId,
-        CancellationToken cancellationToken)
-    {
-        await sender.Send(new DeleteBoatCrewAssignmentCommand(boatId, assignmentId), cancellationToken);
-        return Results.NoContent();
-    }
-
-    private static async Task<IResult> GetBoatCrewReplacements(
-        ISender sender,
-        Guid boatId,
-        [FromQuery] DateOnly? fromDate,
-        [FromQuery] DateOnly? toDate,
-        [FromQuery] bool? activeOnly,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new GetBoatCrewReplacementsQuery(boatId, fromDate, toDate, activeOnly ?? true),
-            cancellationToken));
-
-    private static async Task<IResult> CreateBoatCrewReplacement(
-        ISender sender,
-        Guid boatId,
-        BoatCrewReplacementApiRequest request,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new CreateBoatCrewReplacementCommand(
-                boatId,
-                request.ReplacedStaffUserId,
-                request.ReplacementStaffUserId,
-                request.FromDate,
-                request.ToDate,
-                request.Reason),
-            cancellationToken));
-
-    private static async Task<IResult> DeleteBoatCrewReplacement(
-        ISender sender,
-        Guid boatId,
-        Guid replacementId,
-        CancellationToken cancellationToken)
-    {
-        await sender.Send(new DeleteBoatCrewReplacementCommand(boatId, replacementId), cancellationToken);
-        return Results.NoContent();
-    }
-
-    private static async Task<IResult> GetBoatCrewCalendar(
-        ISender sender,
-        Guid boatId,
-        [FromQuery] DateOnly fromDate,
-        [FromQuery] DateOnly toDate,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new GetBoatCrewCalendarQuery(boatId, fromDate, toDate),
             cancellationToken));
 
     private static async Task<IResult> DeleteBoat(
@@ -825,18 +655,6 @@ public sealed class Boats : IEndpointGroup
         IFormFile File,
         DateOnly? IssuedDate = null,
         DateOnly? ExpiryDate = null);
-
-    private sealed record BoatCrewAssignmentApiRequest(
-        Guid StaffUserId,
-        DateOnly FromDate,
-        DateOnly? ToDate = null);
-
-    private sealed record BoatCrewReplacementApiRequest(
-        Guid ReplacedStaffUserId,
-        Guid ReplacementStaffUserId,
-        DateOnly FromDate,
-        DateOnly ToDate,
-        string Reason);
 
     private sealed record BoatRentalPriceApiRequest(
         BoatRentalUnit RentalUnit,

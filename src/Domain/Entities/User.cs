@@ -58,7 +58,7 @@ public class User : BaseAuditableEntity
 
     public ICollection<UserStationAssignment> AssignedStationAssignments { get; set; } = new List<UserStationAssignment>();
 
-    public ICollection<BoatCrewAssignment> BoatCrewAssignments { get; set; } = new List<BoatCrewAssignment>();
+    public ICollection<StaffWorkAssignment> StaffWorkAssignments { get; set; } = new List<StaffWorkAssignment>();
 
-    public ICollection<BoatCrewAssignment> AssignedBoatCrewAssignments { get; set; } = new List<BoatCrewAssignment>();
+    public ICollection<StaffWorkAssignment> AssignedStaffWorkAssignments { get; set; } = new List<StaffWorkAssignment>();
 }

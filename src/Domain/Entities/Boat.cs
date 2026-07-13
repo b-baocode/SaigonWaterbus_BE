@@ -46,7 +46,7 @@ public class Boat : BaseAuditableEntity
 
     public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
     
-    public ICollection<BoatCrewAssignment> CrewAssignments { get; set; } = new List<BoatCrewAssignment>();
+    public ICollection<StaffWorkAssignment> WorkAssignments { get; set; } = new List<StaffWorkAssignment>();
 }
 
 // Stored inside boats.documents JSON; this is not mapped as a separate table.

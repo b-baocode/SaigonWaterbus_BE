@@ -15,12 +15,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 name: "FK_tickets_ticket_items_ticket_item_id",
                 table: "tickets");
 
-            migrationBuilder.DropTable(
-                name: "ticket_items");
-
-            migrationBuilder.DropTable(
-                name: "ticket_types");
-
             migrationBuilder.DropIndex(
                 name: "IX_tickets_booking_id",
                 table: "tickets");
@@ -29,15 +23,27 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 name: "IX_tickets_ticket_item_id",
                 table: "tickets");
 
-            migrationBuilder.DropColumn(
-                name: "ticket_item_id",
-                table: "tickets");
-
             migrationBuilder.AddColumn<Guid>(
                 name: "booking_passenger_id",
                 table: "tickets",
                 type: "uuid",
                 nullable: true);
+
+            migrationBuilder.Sql(
+                @"UPDATE tickets AS t
+                  SET booking_passenger_id = ti.booking_passenger_id
+                  FROM ticket_items AS ti
+                  WHERE t.ticket_item_id = ti.ticket_item_id;");
+
+            migrationBuilder.DropColumn(
+                name: "ticket_item_id",
+                table: "tickets");
+
+            migrationBuilder.DropTable(
+                name: "ticket_items");
+
+            migrationBuilder.DropTable(
+                name: "ticket_types");
 
             migrationBuilder.AddColumn<Guid>(
                 name: "trip_seat_id",

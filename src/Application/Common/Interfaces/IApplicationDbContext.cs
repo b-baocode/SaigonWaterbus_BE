@@ -22,7 +22,7 @@ public interface IApplicationDbContext
 
     DbSet<Incident> Incidents { get; }
 
-    DbSet<BoatCrewAssignment> BoatCrewAssignments { get; }
+    DbSet<StaffWorkAssignment> StaffWorkAssignments { get; }
 
     DbSet<GpsDevice> GpsDevices { get; }
 

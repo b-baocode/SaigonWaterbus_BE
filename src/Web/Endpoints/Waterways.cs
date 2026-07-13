@@ -28,53 +28,6 @@ public sealed class Waterways : IEndpointGroup
                 "Tra ve thong tin day du cua 1 waterway: OsmId, ten, loai, tong chieu dai, tung segment voi coordinates.",
                 "Id lay tu ket qua GET /api/waterways (truong id cua moi phan tu).",
                 "Tra ve 404 neu khong tim thay."));
-
-        group.MapDelete(DeleteWaterway, "{id:guid}")
-            .RequireAuthorization()
-            .WithSummary("Xoa mot duong song/kenh")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                null,
-                "Xoa TAT CA segment cua duong song nay (cung OsmId + ten + loai).",
-                "Id lay tu GET /api/waterways. Dung de don du lieu ve tay/du thua gay route geometry sai.",
-                "Tra ve { osmId, waterwayName, waterwayType, deletedSegments }.",
-                "Route da tao KHONG bi anh huong (geometry da luu rieng trong routes); chi anh huong route tao MOI.",
-                "Tra ve 404 neu khong tim thay."));
-
-        group.MapDelete(DeleteAllWaterways, string.Empty)
-            .RequireAuthorization()
-            .WithSummary("Xoa TOAN BO mang duong song")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                null,
-                "Xoa sach bang waterway_segments - dung truoc khi re-import GeoJSON de tranh du lieu cu tron voi map moi.",
-                "Yeu cau query param confirm=true de tranh xoa nham: DELETE /api/waterways?confirm=true.",
-                "Tra ve { deletedSegments }.",
-                "Route da tao khong bi anh huong; nho import lai GeoJSON truoc khi tao route moi."));
-
-        group.MapDelete(DeleteWaterwaysExcept, "except")
-            .RequireAuthorization()
-            .WithSummary("Xoa waterway nhung giu lai duong chi dinh (vd giu Kenh Thanh Da)")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                null,
-                "Vd xoa het river tru Kenh Thanh Da: DELETE /api/waterways/except?type=river&keepNames=Kênh Thanh Đa&confirm=true.",
-                "keepNames / keepOsmIds: co the truyen nhieu lan (?keepNames=A&keepNames=B). So khop khong phan biet hoa thuong.",
-                "type (optional): river | canal | custom. Bo trong = xet tat ca loai.",
-                "Phai co it nhat 1 keepNames hoac keepOsmIds; muon xoa sach thi dung DELETE /api/waterways?confirm=true.",
-                "Yeu cau confirm=true. Tra ve { deletedSegments, keptSegments }."));
-
-        group.MapDelete(DeleteWaterwaysByType, "by-type/{type}")
-            .RequireAuthorization()
-            .WithSummary("Xoa toan bo duong song theo loai (vd canal)")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                null,
-                "Xoa TAT CA segment co type = {type} (river | canal | custom). Vd xoa het kenh: DELETE /api/waterways/by-type/canal?confirm=true.",
-                "Yeu cau query param confirm=true de tranh xoa nham.",
-                "type khong hop le tra ve 400.",
-                "Tra ve { waterwayType, deletedSegments }.",
-                "Route da tao KHONG bi anh huong; chi anh huong route tao MOI."));
     }
 
     private static async Task<IResult> GetWaterways(
@@ -88,55 +41,5 @@ public sealed class Waterways : IEndpointGroup
     {
         var result = await sender.Send(new GetWaterwayDetailQuery(id), ct);
         return result is null ? Results.NotFound() : Results.Ok(result);
-    }
-
-    private static async Task<IResult> DeleteWaterway(ISender sender, Guid id, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new DeleteWaterwayCommand(id), ct));
-
-    private static async Task<IResult> DeleteAllWaterways(ISender sender, bool confirm = false, CancellationToken ct = default)
-    {
-        if (!confirm)
-        {
-            return Results.BadRequest(new
-            {
-                message = "Them ?confirm=true de xac nhan xoa TOAN BO mang duong song."
-            });
-        }
-
-        return Results.Ok(await sender.Send(new DeleteAllWaterwaysCommand(), ct));
-    }
-
-    private static async Task<IResult> DeleteWaterwaysExcept(
-        ISender sender,
-        string[]? keepNames,
-        string[]? keepOsmIds,
-        string? type,
-        bool confirm = false,
-        CancellationToken ct = default)
-    {
-        if (!confirm)
-        {
-            return Results.BadRequest(new
-            {
-                message = "Them ?confirm=true de xac nhan xoa waterway (tru cac duong trong keepNames/keepOsmIds)."
-            });
-        }
-
-        return Results.Ok(await sender.Send(
-            new DeleteWaterwaysExceptCommand(keepNames, keepOsmIds, type), ct));
-    }
-
-    private static async Task<IResult> DeleteWaterwaysByType(
-        ISender sender, string type, bool confirm = false, CancellationToken ct = default)
-    {
-        if (!confirm)
-        {
-            return Results.BadRequest(new
-            {
-                message = $"Them ?confirm=true de xac nhan xoa TAT CA duong song loai '{type}'."
-            });
-        }
-
-        return Results.Ok(await sender.Send(new DeleteWaterwaysByTypeCommand(type), ct));
     }
 }

@@ -2,6 +2,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.CharterBookings;
@@ -118,32 +119,14 @@ public sealed class GetAssignedCharterBookingsQueryHandler
         else if (AuthSupport.IsStaff(actor))
         {
             query = query.Where(x => x.DepartureDate.HasValue
-                && ((x.BoatId.HasValue && _context.BoatCrewAssignments.Any(a =>
+                && _context.StaffWorkAssignments.Any(a =>
                         a.StaffUserId == actor.Id
-                        && a.BoatId == x.BoatId.Value
-                        && a.IsActive
-                        && a.FromDate <= x.DepartureDate.Value
-                        && (!a.ToDate.HasValue || a.ToDate.Value >= x.DepartureDate.Value)
-                        && (a.ReplacesAssignmentId != null
-                            || !_context.BoatCrewAssignments.Any(r =>
-                                r.ReplacesAssignmentId == a.Id
-                                && r.IsActive
-                                && r.FromDate <= x.DepartureDate.Value
-                                && r.ToDate.HasValue
-                                && r.ToDate.Value >= x.DepartureDate.Value))))
-                    || x.CharterBoats.Any(cb => _context.BoatCrewAssignments.Any(a =>
-                        a.StaffUserId == actor.Id
-                        && a.BoatId == cb.BoatId
-                        && a.IsActive
-                        && a.FromDate <= x.DepartureDate.Value
-                        && (!a.ToDate.HasValue || a.ToDate.Value >= x.DepartureDate.Value)
-                        && (a.ReplacesAssignmentId != null
-                            || !_context.BoatCrewAssignments.Any(r =>
-                                r.ReplacesAssignmentId == a.Id
-                                && r.IsActive
-                                && r.FromDate <= x.DepartureDate.Value
-                                && r.ToDate.HasValue
-                                && r.ToDate.Value >= x.DepartureDate.Value))))));
+                        && a.Status != StaffWorkAssignmentStatus.Cancelled
+                        && a.AssignmentType == StaffWorkAssignmentType.Boat
+                        && a.BoatId.HasValue
+                        && a.WorkingDate == x.DepartureDate.Value
+                        && ((x.BoatId.HasValue && a.BoatId == x.BoatId)
+                            || x.CharterBoats.Any(cb => a.BoatId == cb.BoatId))));
         }
         else if (!AuthSupport.IsAdmin(actor))
         {

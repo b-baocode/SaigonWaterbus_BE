@@ -119,19 +119,13 @@ internal static class CharterBookingAssignmentSupport
         }
 
         var workingDate = booking.DepartureDate.Value;
-        return await context.BoatCrewAssignments.AnyAsync(
+        return await context.StaffWorkAssignments.AnyAsync(
             assignment => assignment.StaffUserId == staffUserId
-                && selectedBoatIds.Contains(assignment.BoatId)
-                && assignment.IsActive
-                && assignment.FromDate <= workingDate
-                && (!assignment.ToDate.HasValue || assignment.ToDate.Value >= workingDate)
-                && (assignment.ReplacesAssignmentId != null
-                    || !context.BoatCrewAssignments.Any(replacement =>
-                        replacement.ReplacesAssignmentId == assignment.Id
-                        && replacement.IsActive
-                        && replacement.FromDate <= workingDate
-                        && replacement.ToDate.HasValue
-                        && replacement.ToDate.Value >= workingDate)),
+                && assignment.Status != StaffWorkAssignmentStatus.Cancelled
+                && assignment.AssignmentType == StaffWorkAssignmentType.Boat
+                && assignment.BoatId.HasValue
+                && selectedBoatIds.Contains(assignment.BoatId.Value)
+                && assignment.WorkingDate == workingDate,
             cancellationToken);
     }
 }
