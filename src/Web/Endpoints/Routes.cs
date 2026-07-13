@@ -7,38 +7,17 @@ public sealed class Routes : IEndpointGroup
 {
     public static string RoutePrefix => "/api/routes";
 
-
-    private const string CreateRouteExample =
+    private const string CreateRouteFromRoutesExample =
         """
         {
-          "routeCode": "R01-BD-LD2",
-          "routeName": "Tuyen 01: Bach Dang - Linh Dong",
+          "routeCode": "R01-A-B-C",
+          "routeName": "Tuyen A - B - C",
           "routeType": "Regular",
-          "isBookable": true,
-          "boatId": null,
-          "waypoints": [
-            { "type": "station",     "stationCode": "ST-BD",          "stopOrder": 1 },
-            { "type": "viaWaterway", "waterwayOsmId": "way/708678320" },
-            { "type": "station",     "stationCode": "ST-TT",          "stopOrder": 2 },
-            { "type": "station",     "stationCode": "ST-BS",          "stopOrder": 3 },
-            { "type": "station",     "stationCode": "ST-BA",          "stopOrder": 4 },
-            { "type": "viaWaterway", "waterwayOsmId": "way/552372203" },
-            { "type": "station",     "stationCode": "ST-TD2",         "stopOrder": 5 },
-            { "type": "station",     "stationCode": "ST-TD",          "stopOrder": 6 },
-            { "type": "station",     "stationCode": "ST-HBC",         "stopOrder": 7 },
-            { "type": "station",     "stationCode": "ST-LD",          "stopOrder": 8 }
+          "description": "Ghep tu cac route GPS da thu.",
+          "sourceRouteIds": [
+            "550e8400-e29b-41d4-a716-446655440001",
+            "550e8400-e29b-41d4-a716-446655440002"
           ]
-        }
-        """;
-
-    private const string PreviewGeometryExample =
-        """
-        {
-          "waypoints": [
-            { "type": "station", "stationCode": "ST-BD", "stopOrder": 1 },
-            { "type": "station", "stationCode": "ST-LD", "stopOrder": 2 }
-          ],
-          "maxAlternatives": 3
         }
         """;
 
@@ -50,20 +29,7 @@ public sealed class Routes : IEndpointGroup
           "description": "Mo ta moi",
           "baseDistanceKm": 16.0,
           "estimatedDurationMin": 80,
-          "status": "Active",
-          "isBookable": true
-        }
-        """;
-
-    private const string AddStopExample =
-        """
-        {
-          "stationId": "550e8400-e29b-41d4-a716-446655440001",
-          "stationCode": "BD",
-          "stopOrder": 1,
-          "standardTravelMin": null,
-          "isPickupAllowed": true,
-          "isDropoffAllowed": false
+          "status": "Active"
         }
         """;
 
@@ -96,41 +62,17 @@ public sealed class Routes : IEndpointGroup
                 "Tra ve RouteDetailDto kem stops[] sap xep theo stop_order.",
                 "Tra ve 404 neu khong tim thay tuyen."));
 
-        group.MapPost(CreateRoute, string.Empty)
+        group.MapPost(CreateRouteFromRoutes, "from-routes")
             .RequireAuthorization()
-            .WithSummary("Tao tuyen moi")
+            .WithSummary("Tao route moi bang cach ghep cac route co san")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
-                CreateRouteExample,
-                "RouteCode phai unique (tu dong uppercase).",
-                "routeType: Regular | SightseeingLoop | CharterReference.",
-                "Regular: nhieu ben theo mot chieu, ben dau/cuoi khac nhau.",
-                "SightseeingLoop: ben dau va ben cuoi trung nhau.",
-                "CharterReference: route tham chieu cho charter, co the tao nhieu route khac nhau cho cac duong charter.",
-                "isBookable=false cho route chi dung lam tham chieu/charter, khong dung de tao trip ban ve.",
-                "Request phai chua it nhat 2 waypoint type=station.",
-                "Waypoint dau va cuoi bat buoc la station.",
-                "CHI CAN NHAP STATION: he thong TU DONG tao RouteGeometry tu mang waterway da import (snap ben vao duong song, tim duong ngan nhat). Neu chua import mang hoac khong noi duoc thi van tao route voi geometry rong.",
-                "autoRouteGeometry: true = BAT BUOC tao geometry (tra 400 neu khong the); false = khong tao; bo trong = tu dong best-effort.",
-                "chosenGeometry (optional): mang [[lon,lat],...] lay tu 1 phuong an cua POST /api/routes/geometry-preview - dung nguyen geometry nay thay vi tu tinh (khong dung kem viaWaterway).",
-                "Neu co waypoint type=viaWaterway thi geometry la bat buoc va tuyen bi ep di qua waterway do.",
-                "viaWaterway = EP di qua mot con duong thuy (vd duong tat); Dijkstra buoc phai qua diem dai dien cua no.",
-                "avoidWaterwayOsmIds (optional): mang OSM id/ten waterway EP NE - loai khoi mang khi tim duong, de tuyen di duong dai hon (vd vong theo song thay vi cat qua kenh). Khong duoc trung voi viaWaterway.",
-                "estimatedDurationMin KHONG con nhap tay - he thong tu tinh = quang duong (BaseDistanceKm) / (MaxSpeedKmh * 70%).",
-                "boatId (optional): thuyen dung de uoc tinh thoi gian. Bo trong -> EstimatedDurationMin = null. Boat khong ton tai / khong co MaxSpeedKmh -> bao loi 400. Khong dung duoc geometry (khong co quang duong) -> EstimatedDurationMin = null.",
-                "Neu ban ve duong san, co the tao route chi bang station waypoints roi nhap duong that o /segments."));
-
-        group.MapPost(PreviewRouteGeometry, "geometry-preview")
-            .RequireAuthorization()
-            .WithSummary("Xem truoc cac phuong an duong di (khong luu)")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                PreviewGeometryExample,
-                "Nhan waypoints giong POST /api/routes, tra ve toi da maxAlternatives (mac dinh 3) phuong an duong di.",
-                "Phuong an 1 la duong ngan nhat; cac phuong an sau di duong khac (vd vong theo song thay vi cat rach).",
-                "Moi phuong an: { option, distanceKm, geometry: [[lon,lat],...] }.",
-                "FE ve cac phuong an len ban do cho admin chon, roi goi POST /api/routes kem chosenGeometry = geometry cua phuong an da chon.",
-                "Ho tro preferWaterwayType va avoidWaterwayOsmIds nhu khi tao route."));
+                CreateRouteFromRoutesExample,
+                "sourceRouteIds phai gui dung thu tu luong di.",
+                "Ben cuoi cua route truoc phai trung ben dau cua route sau.",
+                "BE tao route moi doc lap trong routes va tao stops[] day du trong route_stops.",
+                "Route nguon van giu nguyen, co the tiep tuc dung cho charter/tham chieu.",
+                "Regular: ben dau/cuoi khac nhau. SightseeingLoop: ben dau/cuoi trung nhau. CharterReference: linh hoat."));
 
         group.MapPut(UpdateRoute, "{id:guid}")
             .RequireAuthorization()
@@ -140,20 +82,8 @@ public sealed class Routes : IEndpointGroup
                 UpdateRouteExample,
                 "Status hop le: Active | Inactive.",
                 "routeType: Regular | SightseeingLoop | CharterReference.",
-                "isBookable=false de chan route khoi flow tao/generate trip ban ve.",
+                "BE tu xac dinh kha nang dung cho dat ve theo routeType; FE khong can hien thi lua chon nay.",
                 "RouteCode khong doi duoc sau khi tao."));
-
-        group.MapPost(AddRouteStop, "{id:guid}/stops")
-            .RequireAuthorization()
-            .WithSummary("Them ben dung vao tuyen")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                AddStopExample,
-                "Co the gui stationId hoac stationCode; neu gui ca hai thi stationId duoc uu tien.",
-                "stopOrder phai unique trong cung mot tuyen.",
-                "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
-                "stop dau (isPickupAllowed=true, isDropoffAllowed=false).",
-                "standardTravelMin: phut di tu ben truoc den ben nay; ben dau tien de null."));
 
         group.MapPut(UpdateRouteStop, "{id:guid}/stops/{stopId:guid}")
             .RequireAuthorization()
@@ -163,15 +93,6 @@ public sealed class Routes : IEndpointGroup
                 UpdateStopExample,
                 "Khong doi duoc stationId hay stopOrder sau khi tao.",
                 "Dung API nay de chinh thoi gian di chuyen va quyen len/xuong."));
-
-        group.MapDelete(RemoveRouteStop, "{id:guid}/stops/{stopId:guid}")
-            .RequireAuthorization()
-            .WithSummary("Xoa ben dung khoi tuyen")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                null,
-                "Tra ve 204 khi xoa thanh cong.",
-                "Tra ve 404 neu khong tim thay tuyen hoac stop."));
 
         group.MapDelete(DeleteRoute, "{id:guid}")
             .RequireAuthorization()
@@ -195,8 +116,7 @@ public sealed class Routes : IEndpointGroup
                 "Nhan LineString/MultiLineString de import duong song/duong nen; neu co waterway=river|canal thi giu loai do, neu khong thi luu waterway_type=custom.",
                 "Point co amenity=ferry_terminal se duoc dung de tao/cap nhat station neu file co chua.",
                 "Neu line co from_station_code, to_station_code va waterbus_route/route_code thi he thong se tao/cap nhat route va route stops tu dong.",
-                "He thong se cap nhat Station va thay moi cac WaterwaySegment trung OsmId de API tao route su dung ve sau.",
-                "API tao route co the dung viaWaterway neu muon tao route geometry tu mang duong nen da import."));
+                "He thong se cap nhat Station va thay moi cac WaterwaySegment trung OsmId de su dung cho GPS/ban do ve sau."));
     }
 
     private static async Task<IResult> GetRoutes(ISender sender, CancellationToken ct) =>
@@ -205,16 +125,12 @@ public sealed class Routes : IEndpointGroup
     private static async Task<IResult> GetRouteById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetRouteDetailQuery(id), ct));
 
-    private static async Task<IResult> CreateRoute(ISender sender, CreateRouteCommand command, CancellationToken ct) =>
-        Results.Ok(await sender.Send(command, ct));
-
-    private static async Task<IResult> PreviewRouteGeometry(
-        ISender sender, PreviewRouteGeometryCommand command, CancellationToken ct) =>
+    private static async Task<IResult> CreateRouteFromRoutes(ISender sender, CreateRouteFromRoutesCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> UpdateRoute(ISender sender, Guid id, UpdateRouteRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateRouteCommand(
-            id, req.RouteName, req.RouteType, req.Description, req.BaseDistanceKm, req.EstimatedDurationMin, req.Status, req.IsBookable), ct));
+            id, req.RouteName, req.RouteType, req.Description, req.BaseDistanceKm, req.EstimatedDurationMin, req.Status), ct));
 
     private static async Task<IResult> ImportGeoJson(
         ISender sender,
@@ -226,21 +142,10 @@ public sealed class Routes : IEndpointGroup
         return Results.Ok(await sender.Send(new ImportRouteGeoJsonCommand(geoJsonContent), ct));
     }
 
-    private static async Task<IResult> AddRouteStop(ISender sender, Guid id, AddRouteStopRequest req, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new AddRouteStopCommand(
-            id, req.StationId, req.StationCode, req.StopOrder, req.StandardTravelMin,
-            req.IsPickupAllowed, req.IsDropoffAllowed), ct));
-
     private static async Task<IResult> UpdateRouteStop(ISender sender, Guid id, Guid stopId, UpdateRouteStopRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateRouteStopCommand(
             id, stopId, req.StandardTravelMin,
             req.IsPickupAllowed, req.IsDropoffAllowed), ct));
-
-    private static async Task<IResult> RemoveRouteStop(ISender sender, Guid id, Guid stopId, CancellationToken ct)
-    {
-        await sender.Send(new RemoveRouteStopCommand(id, stopId), ct);
-        return Results.NoContent();
-    }
 
     private static async Task<IResult> DeleteRoute(ISender sender, Guid id, CancellationToken ct)
     {
@@ -248,8 +153,7 @@ public sealed class Routes : IEndpointGroup
         return Results.NoContent();
     }
 
-    public sealed record UpdateRouteRequest(string RouteName, string? RouteType, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status, bool? IsBookable);
-    public sealed record AddRouteStopRequest(Guid? StationId, string? StationCode, int StopOrder, int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
+    public sealed record UpdateRouteRequest(string RouteName, string? RouteType, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
     public sealed record UpdateRouteStopRequest(int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
 
 }

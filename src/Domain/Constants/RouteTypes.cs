@@ -18,4 +18,7 @@ public static class RouteTypes
             var routeType when string.Equals(routeType, CharterReference, StringComparison.OrdinalIgnoreCase) => CharterReference,
             _ => Regular
         };
+
+    public static bool IsBookableByDefault(string routeType) =>
+        !string.Equals(routeType, CharterReference, StringComparison.Ordinal);
 }

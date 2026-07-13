@@ -14,8 +14,7 @@ public sealed record UpdateRouteCommand(
     string? Description,
     decimal? BaseDistanceKm,
     int? EstimatedDurationMin,
-    string Status,
-    bool? IsBookable = null) : IRequest<RouteDto>;
+    string Status) : IRequest<RouteDto>;
 
 public sealed class UpdateRouteCommandValidator : AbstractValidator<UpdateRouteCommand>
 {
@@ -52,15 +51,12 @@ public sealed class UpdateRouteCommandHandler : IRequestHandler<UpdateRouteComma
         route.BaseDistanceKm = request.BaseDistanceKm;
         route.EstimatedDurationMin = request.EstimatedDurationMin;
         route.Status = request.Status;
-        if (request.IsBookable.HasValue)
-        {
-            route.IsBookable = request.IsBookable.Value;
-        }
+        route.IsBookable = RouteTypes.IsBookableByDefault(routeType);
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RouteDto(route.Id, route.RouteCode, route.RouteName,
-            route.RouteType, route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status, route.IsBookable);
+            route.RouteType, route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status);
     }
 
     private static void EnsureRouteShapeIsValid(ICollection<RouteStop> routeStops, string routeType)

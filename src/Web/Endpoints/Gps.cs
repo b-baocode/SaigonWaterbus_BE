@@ -47,7 +47,6 @@ public sealed class Gps : IEndpointGroup
           "routeType": "Regular",
           "description": "Captured from GPS survey.",
           "status": "Active",
-          "isBookable": true,
           "averageSpeedKmh": 16,
           "startStationId": "550e8400-e29b-41d4-a716-446655440001",
           "endStationId": "550e8400-e29b-41d4-a716-446655440002",
@@ -337,7 +336,7 @@ public sealed class Gps : IEndpointGroup
             BaseDistanceKm = baseDistanceKm,
             EstimatedDurationMin = estimatedDurationMin,
             Status = status,
-            IsBookable = request.IsBookable ?? routeType != RouteTypes.CharterReference,
+            IsBookable = RouteTypes.IsBookableByDefault(routeType),
             RouteGeometry = routeGeometry
         };
 
@@ -358,7 +357,6 @@ public sealed class Gps : IEndpointGroup
                 route.EstimatedDurationMin,
                 coordinateResult.PointCount,
                 route.Status,
-                route.IsBookable,
                 routeStops));
     }
 
@@ -920,7 +918,7 @@ public sealed class Gps : IEndpointGroup
             stops.Add(new RouteStopDraft(
                 startStation,
                 1,
-                endStation is not null ? estimatedDurationMin : null,
+                null,
                 true,
                 false));
         }
@@ -930,7 +928,7 @@ public sealed class Gps : IEndpointGroup
             stops.Add(new RouteStopDraft(
                 endStation,
                 startStation is not null ? 2 : 1,
-                null,
+                startStation is not null ? estimatedDurationMin : null,
                 false,
                 true));
         }
@@ -1048,7 +1046,6 @@ public sealed class Gps : IEndpointGroup
         string? RouteType,
         string? Description,
         string? Status,
-        bool? IsBookable,
         Guid? StartStationId,
         Guid? EndStationId,
         decimal? AverageSpeedKmh,
@@ -1082,7 +1079,6 @@ public sealed class Gps : IEndpointGroup
         int? EstimatedDurationMin,
         int PointCount,
         string Status,
-        bool IsBookable,
         IReadOnlyList<GpsRouteStopResponse> Stops);
 
     private sealed record GpsRouteStopResponse(
