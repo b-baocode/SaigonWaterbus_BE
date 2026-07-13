@@ -3213,8 +3213,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Incidents");
 
                     b.Navigation("Seats");
-
-                    b.Navigation("StaffAssignments");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.BoatCrewAssignment", b =>
@@ -3272,8 +3270,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Landmarks");
 
                     b.Navigation("RouteStops");
-
-                    b.Navigation("StaffAssignments");
 
                     b.Navigation("UserAssignments");
                 });

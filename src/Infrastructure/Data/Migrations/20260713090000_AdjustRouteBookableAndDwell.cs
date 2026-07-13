@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations;
 
 /// <inheritdoc />
+[Microsoft.EntityFrameworkCore.Infrastructure.DbContext(typeof(global::SaigonWaterbus.Infrastructure.Data.ApplicationDbContext))]
+[Migration("20260713090000_AdjustRouteBookableAndDwell")]
 public partial class AdjustRouteBookableAndDwell : Migration
 {
     /// <inheritdoc />

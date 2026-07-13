@@ -2,6 +2,7 @@ using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Routes;
 
@@ -38,11 +39,15 @@ public sealed class UpdateRouteCommandHandler : IRequestHandler<UpdateRouteComma
     public async Task<RouteDto> Handle(UpdateRouteCommand request, CancellationToken cancellationToken)
     {
         var route = await _context.Set<Route>()
+            .Include(r => r.RouteStops)
             .SingleOrDefaultAsync(r => r.Id == request.RouteId, cancellationToken)
             ?? throw new NotFoundException("Route not found.");
 
+        var routeType = RouteTypes.Normalize(request.RouteType ?? route.RouteType);
+        EnsureRouteShapeIsValid(route.RouteStops, routeType);
+
         route.RouteName = request.RouteName.Trim();
-        route.RouteType = RouteTypes.Normalize(request.RouteType ?? route.RouteType);
+        route.RouteType = routeType;
         route.Description = request.Description?.Trim();
         route.BaseDistanceKm = request.BaseDistanceKm;
         route.EstimatedDurationMin = request.EstimatedDurationMin;
@@ -56,5 +61,32 @@ public sealed class UpdateRouteCommandHandler : IRequestHandler<UpdateRouteComma
 
         return new RouteDto(route.Id, route.RouteCode, route.RouteName,
             route.RouteType, route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status, route.IsBookable);
+    }
+
+    private static void EnsureRouteShapeIsValid(ICollection<RouteStop> routeStops, string routeType)
+    {
+        if (routeStops.Count < 2)
+        {
+            return;
+        }
+
+        var orderedStops = routeStops
+            .OrderBy(x => x.StopOrder)
+            .ToList();
+        var sameTerminal = orderedStops[0].StationId == orderedStops[^1].StationId;
+
+        if (routeType == RouteTypes.Regular && sameTerminal)
+        {
+            throw new ValidationException([
+                new(nameof(UpdateRouteCommand.RouteType), "Regular route khong duoc trung ben dau/cuoi.")
+            ]);
+        }
+
+        if (routeType == RouteTypes.SightseeingLoop && !sameTerminal)
+        {
+            throw new ValidationException([
+                new(nameof(UpdateRouteCommand.RouteType), "SightseeingLoop phai co ben dau va cuoi trung nhau.")
+            ]);
+        }
     }
 }

@@ -51,6 +51,21 @@ public sealed class Gps : IEndpointGroup
           "averageSpeedKmh": 16,
           "startStationId": "550e8400-e29b-41d4-a716-446655440001",
           "endStationId": "550e8400-e29b-41d4-a716-446655440002",
+          "stops": [
+            {
+              "stationId": "550e8400-e29b-41d4-a716-446655440001",
+              "stopOrder": 1,
+              "isPickupAllowed": true,
+              "isDropoffAllowed": false
+            },
+            {
+              "stationId": "550e8400-e29b-41d4-a716-446655440002",
+              "stopOrder": 2,
+              "standardTravelMin": 12,
+              "isPickupAllowed": false,
+              "isDropoffAllowed": true
+            }
+          ],
           "coordinates": [
             { "lat": 10.7757, "lng": 106.7072, "speedKmh": 16, "sequence": 1, "recordedAt": "2026-07-10T13:30:00+07:00" },
             { "lat": 10.7761, "lng": 106.7080, "speedKmh": 16, "sequence": 2, "recordedAt": "2026-07-10T13:30:05+07:00" }
@@ -88,7 +103,8 @@ public sealed class Gps : IEndpointGroup
                 "GPS device",
                 SaveRouteExample,
                 "Neu coordinates rong, backend se lay diem da thu theo sessionId.",
-                "Neu khong gui startStationId/endStationId, backend tu tim ben gan diem GPS dau/cuoi trong ban kinh 500m.",
+                "Neu gui stops[], backend se luu day du cac ben theo stopOrder; neu khong gui stops[] thi fallback startStationId/endStationId.",
+                "Neu khong gui stops[] va khong gui startStationId/endStationId, backend tu tim ben gan diem GPS dau/cuoi trong ban kinh 500m.",
                 "estimatedDurationMin = baseDistanceKm / averageSpeedKmh * 60. Neu khong gui averageSpeedKmh, backend lay trung binh speedKmh cua diem GPS; neu van thieu thi dung 16 km/h.",
                 "routeCode phai chua ton tai de tranh ghi de tuyen hien co."));
     }
@@ -293,17 +309,23 @@ public sealed class Gps : IEndpointGroup
         var estimatedDurationMin = EstimateDurationMin(baseDistanceKm, request.AverageSpeedKmh ?? coordinateResult.AverageSpeedKmh);
         var status = NormalizeOptionalText(request.Status) ?? "Active";
 
-        var stationResolution = await ResolveRouteStopStationsAsync(
-            dbContext,
-            request.StartStationId ?? session?.StartStationId,
-            request.EndStationId ?? session?.EndStationId,
-            coordinateResult.StartCoordinate!,
-            coordinateResult.EndCoordinate!,
-            cancellationToken);
+        var routeStopResolution = request.Stops is { Count: > 0 }
+            ? await ResolveExplicitRouteStopsAsync(
+                dbContext,
+                request.Stops,
+                cancellationToken)
+            : await ResolveFallbackRouteStopsAsync(
+                dbContext,
+                request.StartStationId ?? session?.StartStationId,
+                request.EndStationId ?? session?.EndStationId,
+                coordinateResult.StartCoordinate!,
+                coordinateResult.EndCoordinate!,
+                estimatedDurationMin,
+                cancellationToken);
 
-        if (stationResolution.Error is not null)
+        if (routeStopResolution.Error is not null)
         {
-            return stationResolution.Error;
+            return routeStopResolution.Error;
         }
 
         var route = new WaterbusRoute
@@ -321,12 +343,7 @@ public sealed class Gps : IEndpointGroup
 
         dbContext.Routes.Add(route);
 
-        var routeStops = AddRouteStopsIfPresent(
-            dbContext,
-            route.Id,
-            stationResolution.StartStation,
-            stationResolution.EndStation,
-            estimatedDurationMin);
+        var routeStops = AddRouteStops(dbContext, route.Id, routeStopResolution.Stops);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -396,6 +413,67 @@ public sealed class Gps : IEndpointGroup
         return errors;
     }
 
+    private static void ValidateRouteStops(
+        IReadOnlyList<GpsRouteStopRequest> stops,
+        string routeType,
+        Dictionary<string, string[]> errors)
+    {
+        if (stops.Count < 2)
+        {
+            errors["stops"] = ["Can gui it nhat 2 stops neu dung stops[]."];
+            return;
+        }
+
+        var hasExplicitOrder = stops.Any(x => x.StopOrder.HasValue);
+        var assignedOrders = new List<int>();
+        for (var i = 0; i < stops.Count; i++)
+        {
+            var stop = stops[i];
+            if (stop.StationId == Guid.Empty)
+            {
+                errors[$"stops[{i}].stationId"] = ["stationId la bat buoc."];
+            }
+
+            if (stop.StopOrder is <= 0)
+            {
+                errors[$"stops[{i}].stopOrder"] = ["stopOrder phai lon hon 0."];
+            }
+
+            if (stop.StandardTravelMin is < 0)
+            {
+                errors[$"stops[{i}].standardTravelMin"] = ["standardTravelMin khong duoc am."];
+            }
+
+            assignedOrders.Add(stop.StopOrder ?? i + 1);
+        }
+
+        if (hasExplicitOrder && stops.Any(x => !x.StopOrder.HasValue))
+        {
+            errors["stops"] = ["Neu dung stopOrder thi tat ca stops phai co stopOrder."];
+        }
+
+        if (assignedOrders.Count != assignedOrders.Distinct().Count())
+        {
+            errors["stops.stopOrder"] = ["stopOrder khong duoc trung nhau."];
+        }
+
+        var orderedStops = stops
+            .Select((stop, index) => new { Stop = stop, Order = stop.StopOrder ?? index + 1, Index = index })
+            .OrderBy(x => x.Order)
+            .ThenBy(x => x.Index)
+            .ToList();
+        var sameTerminal = orderedStops[0].Stop.StationId == orderedStops[^1].Stop.StationId;
+
+        if (routeType == RouteTypes.Regular && sameTerminal)
+        {
+            errors["stops"] = ["Regular route khong duoc trung ben dau/cuoi."];
+        }
+        else if (routeType == RouteTypes.SightseeingLoop && !sameTerminal)
+        {
+            errors["stops"] = ["SightseeingLoop phai co ben dau va cuoi trung nhau."];
+        }
+    }
+
     private static Dictionary<string, string[]> ValidateStopSessionRequest(StopGpsSessionRequest request)
     {
         var errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
@@ -462,7 +540,13 @@ public sealed class Gps : IEndpointGroup
             errors["averageSpeedKmh"] = ["averageSpeedKmh phai lon hon 0."];
         }
 
-        if (request.StartStationId.HasValue
+        if (request.Stops is { Count: > 0 })
+        {
+            ValidateRouteStops(request.Stops, RouteTypes.Normalize(request.RouteType), errors);
+        }
+
+        if (request.Stops is not { Count: > 0 }
+            && request.StartStationId.HasValue
             && request.EndStationId.HasValue
             && request.StartStationId.Value == request.EndStationId.Value
             && RouteTypes.Normalize(request.RouteType) != RouteTypes.SightseeingLoop)
@@ -666,6 +750,87 @@ public sealed class Gps : IEndpointGroup
             averageSpeedKmh);
     }
 
+    private static async Task<RouteStopListResolution> ResolveExplicitRouteStopsAsync(
+        ApplicationDbContext dbContext,
+        IReadOnlyList<GpsRouteStopRequest> requestStops,
+        CancellationToken cancellationToken)
+    {
+        var orderedStops = requestStops
+            .Select((stop, index) => new
+            {
+                Stop = stop,
+                StopOrder = stop.StopOrder ?? index + 1,
+                Index = index
+            })
+            .OrderBy(x => x.StopOrder)
+            .ThenBy(x => x.Index)
+            .ToList();
+
+        var stationIds = orderedStops
+            .Select(x => x.Stop.StationId)
+            .Distinct()
+            .ToArray();
+
+        var stations = await dbContext.Stations
+            .AsNoTracking()
+            .Where(x => stationIds.Contains(x.Id))
+            .Select(x => new StationSummary(x.Id, x.StationCode, x.StationName, x.Latitude, x.Longitude))
+            .ToListAsync(cancellationToken);
+
+        var stationsById = stations.ToDictionary(x => x.StationId);
+        var missingStationIds = stationIds.Except(stationsById.Keys).ToArray();
+        if (missingStationIds.Length > 0)
+        {
+            return RouteStopListResolution.Failed(Results.NotFound(new
+            {
+                message = "stops[].stationId khong ton tai.",
+                stationIds = missingStationIds
+            }));
+        }
+
+        var routeStops = new List<RouteStopDraft>();
+        for (var i = 0; i < orderedStops.Count; i++)
+        {
+            var requestStop = orderedStops[i].Stop;
+            routeStops.Add(new RouteStopDraft(
+                stationsById[requestStop.StationId],
+                orderedStops[i].StopOrder,
+                requestStop.StandardTravelMin,
+                requestStop.IsPickupAllowed ?? i < orderedStops.Count - 1,
+                requestStop.IsDropoffAllowed ?? i > 0));
+        }
+
+        return RouteStopListResolution.Success(routeStops);
+    }
+
+    private static async Task<RouteStopListResolution> ResolveFallbackRouteStopsAsync(
+        ApplicationDbContext dbContext,
+        Guid? requestedStartStationId,
+        Guid? requestedEndStationId,
+        Coordinate startCoordinate,
+        Coordinate endCoordinate,
+        int? estimatedDurationMin,
+        CancellationToken cancellationToken)
+    {
+        var stationResolution = await ResolveRouteStopStationsAsync(
+            dbContext,
+            requestedStartStationId,
+            requestedEndStationId,
+            startCoordinate,
+            endCoordinate,
+            cancellationToken);
+
+        if (stationResolution.Error is not null)
+        {
+            return RouteStopListResolution.Failed(stationResolution.Error);
+        }
+
+        return RouteStopListResolution.Success(BuildFallbackRouteStops(
+            stationResolution.StartStation,
+            stationResolution.EndStation,
+            estimatedDurationMin));
+    }
+
     private static async Task<RouteStopStationResolution> ResolveRouteStopStationsAsync(
         ApplicationDbContext dbContext,
         Guid? requestedStartStationId,
@@ -743,44 +908,57 @@ public sealed class Gps : IEndpointGroup
             .FirstOrDefault()
             ?.Station;
 
-    private static IReadOnlyList<GpsRouteStopResponse> AddRouteStopsIfPresent(
-        ApplicationDbContext dbContext,
-        Guid routeId,
+    private static IReadOnlyList<RouteStopDraft> BuildFallbackRouteStops(
         StationSummary? startStation,
         StationSummary? endStation,
         int? estimatedDurationMin)
     {
-        var stops = new List<GpsRouteStopResponse>();
+        var stops = new List<RouteStopDraft>();
 
         if (startStation is not null)
         {
-            var startRouteStop = new RouteStop
-            {
-                RouteId = routeId,
-                StationId = startStation.StationId,
-                StopOrder = 1,
-                StandardTravelMin = endStation is not null ? estimatedDurationMin : null,
-                IsPickupAllowed = true,
-                IsDropoffAllowed = false
-            };
-
-            dbContext.RouteStops.Add(startRouteStop);
-            stops.Add(ToRouteStopResponse(startRouteStop, startStation));
+            stops.Add(new RouteStopDraft(
+                startStation,
+                1,
+                endStation is not null ? estimatedDurationMin : null,
+                true,
+                false));
         }
 
         if (endStation is not null)
         {
-            var endRouteStop = new RouteStop
+            stops.Add(new RouteStopDraft(
+                endStation,
+                startStation is not null ? 2 : 1,
+                null,
+                false,
+                true));
+        }
+
+        return stops;
+    }
+
+    private static IReadOnlyList<GpsRouteStopResponse> AddRouteStops(
+        ApplicationDbContext dbContext,
+        Guid routeId,
+        IReadOnlyList<RouteStopDraft> routeStopDrafts)
+    {
+        var stops = new List<GpsRouteStopResponse>();
+
+        foreach (var draft in routeStopDrafts)
+        {
+            var routeStop = new RouteStop
             {
                 RouteId = routeId,
-                StationId = endStation.StationId,
-                StopOrder = startStation is not null ? 2 : 1,
-                IsPickupAllowed = false,
-                IsDropoffAllowed = true
+                StationId = draft.Station.StationId,
+                StopOrder = draft.StopOrder,
+                StandardTravelMin = draft.StandardTravelMin,
+                IsPickupAllowed = draft.IsPickupAllowed,
+                IsDropoffAllowed = draft.IsDropoffAllowed
             };
 
-            dbContext.RouteStops.Add(endRouteStop);
-            stops.Add(ToRouteStopResponse(endRouteStop, endStation));
+            dbContext.RouteStops.Add(routeStop);
+            stops.Add(ToRouteStopResponse(routeStop, draft.Station));
         }
 
         return stops;
@@ -874,7 +1052,15 @@ public sealed class Gps : IEndpointGroup
         Guid? StartStationId,
         Guid? EndStationId,
         decimal? AverageSpeedKmh,
+        IReadOnlyList<GpsRouteStopRequest>? Stops,
         IReadOnlyList<GpsRouteCoordinateRequest>? Coordinates);
+
+    public sealed record GpsRouteStopRequest(
+        Guid StationId,
+        int? StopOrder,
+        int? StandardTravelMin,
+        bool? IsPickupAllowed,
+        bool? IsDropoffAllowed);
 
     public sealed record GpsRouteCoordinateRequest(
         decimal Lat,
@@ -955,6 +1141,23 @@ public sealed class Gps : IEndpointGroup
         string StationName,
         decimal? Latitude,
         decimal? Longitude);
+
+    private sealed record RouteStopDraft(
+        StationSummary Station,
+        int StopOrder,
+        int? StandardTravelMin,
+        bool IsPickupAllowed,
+        bool IsDropoffAllowed);
+
+    private sealed record RouteStopListResolution(
+        IReadOnlyList<RouteStopDraft> Stops,
+        IResult? Error)
+    {
+        public static RouteStopListResolution Success(IReadOnlyList<RouteStopDraft> stops) =>
+            new(stops, null);
+
+        public static RouteStopListResolution Failed(IResult error) => new([], error);
+    }
 
     private sealed record RouteStopStationResolution(
         StationSummary? StartStation,

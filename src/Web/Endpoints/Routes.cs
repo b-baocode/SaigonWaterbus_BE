@@ -58,9 +58,10 @@ public sealed class Routes : IEndpointGroup
     private const string AddStopExample =
         """
         {
+          "stationId": "550e8400-e29b-41d4-a716-446655440001",
           "stationCode": "BD",
           "stopOrder": 1,
-          "standardTravelMin": 8,
+          "standardTravelMin": null,
           "isPickupAllowed": true,
           "isDropoffAllowed": false
         }
@@ -142,17 +143,17 @@ public sealed class Routes : IEndpointGroup
                 "isBookable=false de chan route khoi flow tao/generate trip ban ve.",
                 "RouteCode khong doi duoc sau khi tao."));
 
-        // DISABLED 2026-07-12: tam khoa API them ben dung vao tuyen (khong xoa code, bo comment de bat lai).
-        // group.MapPost(AddRouteStop, "{id:guid}/stops")
-        //     .RequireAuthorization()
-        //     .WithSummary("Them ben dung vao tuyen")
-        //     .WithDescription(OpenApiDescriptionBuilder.Build(
-        //         "Admin",
-        //         AddStopExample,
-        //         "stopOrder phai unique trong cung mot tuyen.",
-        //         "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
-        //         "stop dau (isPickupAllowed=true, isDropoffAllowed=false).",
-        //         "standardTravelMin: phut di tu stop nay den stop tiep theo."));
+        group.MapPost(AddRouteStop, "{id:guid}/stops")
+            .RequireAuthorization()
+            .WithSummary("Them ben dung vao tuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                AddStopExample,
+                "Co the gui stationId hoac stationCode; neu gui ca hai thi stationId duoc uu tien.",
+                "stopOrder phai unique trong cung mot tuyen.",
+                "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
+                "stop dau (isPickupAllowed=true, isDropoffAllowed=false).",
+                "standardTravelMin: phut di tu ben truoc den ben nay; ben dau tien de null."));
 
         group.MapPut(UpdateRouteStop, "{id:guid}/stops/{stopId:guid}")
             .RequireAuthorization()
@@ -227,7 +228,7 @@ public sealed class Routes : IEndpointGroup
 
     private static async Task<IResult> AddRouteStop(ISender sender, Guid id, AddRouteStopRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new AddRouteStopCommand(
-            id, req.StationCode, req.StopOrder, req.StandardTravelMin,
+            id, req.StationId, req.StationCode, req.StopOrder, req.StandardTravelMin,
             req.IsPickupAllowed, req.IsDropoffAllowed), ct));
 
     private static async Task<IResult> UpdateRouteStop(ISender sender, Guid id, Guid stopId, UpdateRouteStopRequest req, CancellationToken ct) =>
@@ -248,7 +249,7 @@ public sealed class Routes : IEndpointGroup
     }
 
     public sealed record UpdateRouteRequest(string RouteName, string? RouteType, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status, bool? IsBookable);
-    public sealed record AddRouteStopRequest(string StationCode, int StopOrder, int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
+    public sealed record AddRouteStopRequest(Guid? StationId, string? StationCode, int StopOrder, int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
     public sealed record UpdateRouteStopRequest(int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
 
 }

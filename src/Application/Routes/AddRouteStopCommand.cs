@@ -9,7 +9,8 @@ namespace SaigonWaterbus.Application.Routes;
 [Authorize(Roles = "Admin")]
 public sealed record AddRouteStopCommand(
     Guid RouteId,
-    string StationCode,
+    Guid? StationId,
+    string? StationCode,
     int StopOrder,
     int? StandardTravelMin,
     bool IsPickupAllowed,
@@ -20,7 +21,15 @@ public sealed class AddRouteStopCommandValidator : AbstractValidator<AddRouteSto
     public AddRouteStopCommandValidator()
     {
         RuleFor(x => x.RouteId).NotEmpty();
-        RuleFor(x => x.StationCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.StationId)
+            .NotEmpty()
+            .When(x => x.StationId.HasValue);
+        RuleFor(x => x.StationCode)
+            .MaximumLength(50)
+            .When(x => !string.IsNullOrWhiteSpace(x.StationCode));
+        RuleFor(x => x)
+            .Must(x => x.StationId.HasValue || !string.IsNullOrWhiteSpace(x.StationCode))
+            .WithMessage("Can gui stationId hoac stationCode.");
         RuleFor(x => x.StopOrder).GreaterThan(0);
     }
 }
@@ -36,10 +45,20 @@ public sealed class AddRouteStopCommandHandler : IRequestHandler<AddRouteStopCom
         if (!await _context.Set<Route>().AnyAsync(r => r.Id == request.RouteId, cancellationToken))
             throw new NotFoundException("Route not found.");
 
-        var stationCode = request.StationCode.Trim().ToUpperInvariant();
-        var station = await _context.Set<Station>()
-            .SingleOrDefaultAsync(s => s.StationCode == stationCode, cancellationToken)
-            ?? throw new NotFoundException($"Station '{stationCode}' not found.");
+        var station = request.StationId.HasValue
+            ? await _context.Set<Station>()
+                .SingleOrDefaultAsync(s => s.Id == request.StationId.Value, cancellationToken)
+            : await _context.Set<Station>()
+                .SingleOrDefaultAsync(
+                    s => s.StationCode == request.StationCode!.Trim().ToUpperInvariant(),
+                    cancellationToken);
+
+        if (station is null)
+        {
+            throw new NotFoundException(request.StationId.HasValue
+                ? "Station not found."
+                : $"Station '{request.StationCode!.Trim().ToUpperInvariant()}' not found.");
+        }
 
         var duplicate = await _context.Set<RouteStop>().AnyAsync(
             rs => rs.RouteId == request.RouteId && rs.StopOrder == request.StopOrder, cancellationToken);
