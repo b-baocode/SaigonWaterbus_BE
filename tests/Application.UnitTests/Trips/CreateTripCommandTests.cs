@@ -112,6 +112,111 @@ public class CreateTripCommandTests
         exception.Errors["boatCode"].ShouldContain("Boat has no active seats.");
     }
 
+    [Test]
+    public async Task CreateTripRejectsBoatAlreadyRunningAnotherTripOnADifferentRoute()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var routeA = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var routeB = Route("R2", Station("C", "Ben C"), Station("D", "Ben D"));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+
+        // Tau dang chay tuyen R2 tu 08:00 den 09:00.
+        var existingDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var existingTrip = new Trip
+        {
+            Route = routeB,
+            RouteId = routeB.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = "TR-BUSY",
+            OperatingDate = DateOnly.FromDateTime(existingDeparture.Date),
+            DepartureTime = existingDeparture.ToUniversalTime(),
+            ArrivalTime = existingDeparture.AddHours(1).ToUniversalTime(),
+            CapacitySnapshot = 3,
+            TripStatus = TripStatus.Scheduled
+        };
+
+        context.AddRange(routeA, routeB, boat, existingTrip);
+        await context.SaveChangesAsync();
+
+        // Chuyen moi tren tuyen R1 khoi hanh 08:30 -> chong gio voi chuyen dang chay.
+        var newDeparture = existingDeparture.AddMinutes(30);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context)
+                .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(newDeparture.Date), newDeparture), CancellationToken.None));
+
+        exception.Errors["boatCode"].ShouldNotBeEmpty();
+        exception.Errors["boatCode"][0].ShouldContain("TR-BUSY");
+    }
+
+    [Test]
+    public async Task CreateTripRejectsBoatWhenGapIsSmallerThanTurnaroundBuffer()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+
+        var existingDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var existingTrip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = "TR-BUSY",
+            OperatingDate = DateOnly.FromDateTime(existingDeparture.Date),
+            DepartureTime = existingDeparture.ToUniversalTime(),
+            ArrivalTime = existingDeparture.AddHours(1).ToUniversalTime(),
+            CapacitySnapshot = 3,
+            TripStatus = TripStatus.Scheduled
+        };
+
+        context.AddRange(route, boat, existingTrip);
+        await context.SaveChangesAsync();
+
+        // Chuyen truoc ket thuc 09:00; chuyen moi khoi hanh 09:10 -> chi cach 10 phut < 15 phut quay dau.
+        var tooSoon = existingDeparture.AddHours(1).AddMinutes(10);
+
+        await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context)
+                .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(tooSoon.Date), tooSoon), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task CreateTripAllowsBoatWhenGapIsAtLeastTurnaroundBuffer()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+
+        var existingDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var existingTrip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = "TR-EARLIER",
+            OperatingDate = DateOnly.FromDateTime(existingDeparture.Date),
+            DepartureTime = existingDeparture.ToUniversalTime(),
+            ArrivalTime = existingDeparture.AddHours(1).ToUniversalTime(),
+            CapacitySnapshot = 3,
+            TripStatus = TripStatus.Scheduled
+        };
+
+        context.AddRange(route, boat, existingTrip);
+        await context.SaveChangesAsync();
+
+        // Chuyen truoc ket thuc 09:00; chuyen moi khoi hanh 09:20 -> cach 20 phut >= 15 phut.
+        var farEnough = existingDeparture.AddHours(1).AddMinutes(20);
+
+        var result = await new CreateTripCommandHandler(context)
+            .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(farEnough.Date), farEnough), CancellationToken.None);
+
+        result.CapacitySnapshot.ShouldBe(3);
+    }
+
     private static Boat BoatWithSeats(string code, int seatCount, int inactiveSeatCount = 0)
     {
         var boat = new Boat

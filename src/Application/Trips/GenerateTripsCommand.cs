@@ -20,6 +20,7 @@ public sealed record GenerateTripsCommand(
 public sealed record GenerateTripsResult(
     int Created,
     int Skipped,
+    int SkippedBoatBusy,
     IReadOnlyList<string> CreatedTripCodes);
 
 public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTripsCommand>
@@ -98,6 +99,27 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             ? request.DaysOfWeek.Select(d => (DayOfWeek)d).ToHashSet()
             : null;
 
+        // Lich chay hien co cua TAU (moi tuyen, khong chi tuyen nay) de chan double-booking.
+        var rangeStart = new DateTimeOffset(
+            request.FromDate.Year, request.FromDate.Month, request.FromDate.Day,
+            0, 0, 0, VietnamOffset).ToUniversalTime();
+        var rangeEnd = new DateTimeOffset(
+            request.ToDate.Year, request.ToDate.Month, request.ToDate.Day,
+            23, 59, 59, VietnamOffset).ToUniversalTime();
+
+        var boatSchedule = (await _context.Set<Trip>()
+                .AsNoTracking()
+                .Where(t => t.BoatId == boat.Id
+                    && t.TripStatus != TripStatus.Cancelled
+                    && t.ArrivalTime >= rangeStart.AddDays(-1)
+                    && t.DepartureTime <= rangeEnd.AddDays(1))
+                .Select(t => new { t.DepartureTime, t.ArrivalTime })
+                .ToListAsync(cancellationToken))
+            .Select(t => (t.DepartureTime, t.ArrivalTime))
+            .ToList();
+
+        var skippedBoatBusy = 0;
+
         var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
             _context, request.SeatTypePrices, activeSeats, cancellationToken);
 
@@ -124,8 +146,17 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     continue;
                 }
 
-                var tripCode = $"TR-{date:yyyyMMdd}-{routeCode}-{time:HHmm}";
                 var arrivalTime = ComputeArrivalTime(departureTime, route.RouteStops);
+
+                // Tau da ban trong khung gio nay (ke ca chuyen vua sinh trong lo nay) -> bo qua.
+                if (boatSchedule.Any(x => TripScheduleSupport.ConflictsWithBuffer(
+                        x.DepartureTime, x.ArrivalTime, departureTime, arrivalTime)))
+                {
+                    skippedBoatBusy++;
+                    continue;
+                }
+
+                var tripCode = $"TR-{date:yyyyMMdd}-{routeCode}-{time:HHmm}";
 
                 var trip = new Trip
                 {
@@ -141,6 +172,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
 
                 tripsToAdd.Add(trip);
                 existingDepartures.Add(departureTime);
+                boatSchedule.Add((departureTime, arrivalTime));
 
                 foreach (var seat in activeSeats)
                     tripSeatsToAdd.Add(new TripSeat
@@ -161,7 +193,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        return new GenerateTripsResult(tripsToAdd.Count, skipped, createdCodes);
+        return new GenerateTripsResult(tripsToAdd.Count, skipped, skippedBoatBusy, createdCodes);
     }
 
     private static DateTimeOffset ComputeArrivalTime(

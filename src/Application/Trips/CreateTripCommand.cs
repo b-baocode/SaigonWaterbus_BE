@@ -168,6 +168,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
                 "Boat has no active seats.")]);
 
+        await EnsureBoatIsFreeAsync(boat.Id, departureTime, arrivalTime, cancellationToken);
+
         var trip = new Trip
         {
             RouteId = route.Id,
@@ -199,6 +201,41 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             trip.DepartureTime, trip.ArrivalTime,
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
             stopDtos.OrderBy(ts => ts.StopOrder).ToList());
+    }
+
+    /// <summary>
+    /// Mot tau khong the chay 2 chuyen chong gio (ke ca khac tuyen), va giua 2 chuyen
+    /// phai co thoi gian quay dau toi thieu.
+    /// </summary>
+    private async Task EnsureBoatIsFreeAsync(
+        Guid boatId,
+        DateTimeOffset departureTime,
+        DateTimeOffset arrivalTime,
+        CancellationToken cancellationToken)
+    {
+        var bufferedArrival = arrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
+        var bufferedDeparture = departureTime.Subtract(TripScheduleSupport.BoatTurnaroundBuffer);
+
+        var conflict = await _context.Set<Trip>()
+            .AsNoTracking()
+            .Where(x => x.BoatId == boatId
+                && x.TripStatus != TripStatus.Cancelled
+                && x.DepartureTime < bufferedArrival
+                && bufferedDeparture < x.ArrivalTime)
+            .OrderBy(x => x.DepartureTime)
+            .Select(x => new { x.TripCode, x.DepartureTime, x.ArrivalTime })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (conflict is not null)
+        {
+            throw new ValidationException(
+            [
+                new ValidationFailure(
+                    nameof(CreateTripCommand.BoatCode),
+                    TripScheduleSupport.BuildConflictMessage(
+                        conflict.TripCode, conflict.DepartureTime, conflict.ArrivalTime))
+            ]);
+        }
     }
 
     private async Task EnsureNoRouteDepartureConflictAsync(
