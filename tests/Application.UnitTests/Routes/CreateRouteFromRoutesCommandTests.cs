@@ -67,6 +67,29 @@ public class CreateRouteFromRoutesCommandTests
             .ShouldContain("ben cuoi cua route truoc phai trung ben dau cua route sau");
     }
 
+    [Test]
+    public async Task RejectsSightseeingLoopSourceRoutes()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A");
+        var loop = Route("LOOP-A", stationA, stationA, 10);
+        loop.RouteType = RouteTypes.SightseeingLoop;
+
+        context.Add(loop);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateRouteFromRoutesCommandHandler(context)
+                .Handle(new CreateRouteFromRoutesCommand(
+                    "A-BOOKING",
+                    "A Booking",
+                    null,
+                    [loop.Id]), CancellationToken.None));
+
+        exception.Errors["sourceRouteIds"][0]
+            .ShouldContain("SightseeingLoop");
+    }
+
     private static Station Station(string code) =>
         new()
         {

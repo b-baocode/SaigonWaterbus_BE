@@ -21,7 +21,6 @@ public sealed class Gps : IEndpointGroup
           "boatCode": "SURVEY-01",
           "routeCode": "BA-TT",
           "routeName": "Binh An - Thao Dien",
-          "routeType": "Regular",
           "startStationId": "550e8400-e29b-41d4-a716-446655440001",
           "endStationId": "550e8400-e29b-41d4-a716-446655440002",
           "plannedLengthMeters": 3500,
@@ -44,7 +43,6 @@ public sealed class Gps : IEndpointGroup
           "sessionId": "550e8400-e29b-41d4-a716-446655440000",
           "routeCode": "BA-TT",
           "routeName": "Binh An - Thao Dien",
-          "routeType": "Regular",
           "description": "Captured from GPS survey.",
           "status": "Active",
           "averageSpeedKmh": 16,
@@ -107,6 +105,7 @@ public sealed class Gps : IEndpointGroup
                 "Neu coordinates rong, backend se lay diem da thu theo sessionId.",
                 "Neu gui stops[], backend se luu day du cac ben theo stopOrder; neu khong gui stops[] thi fallback startStationId/endStationId.",
                 "Neu khong gui stops[] va khong gui startStationId/endStationId, backend tu tim ben gan diem GPS dau/cuoi trong ban kinh 500m.",
+                "BE tu xac dinh routeType: dau/cuoi trung nhau la SightseeingLoop, khac nhau la CharterReference de lam route nguon.",
                 "estimatedDurationMin = baseDistanceKm / averageSpeedKmh * 60. Neu khong gui averageSpeedKmh, backend lay trung binh speedKmh cua diem GPS; neu van thieu thi dung 16 km/h.",
                 "routeCode phai chua ton tai de tranh ghi de tuyen hien co."));
     }
@@ -287,7 +286,6 @@ public sealed class Gps : IEndpointGroup
         var routeName = NormalizeOptionalText(request.RouteName)
             ?? NormalizeOptionalText(session?.RouteName)
             ?? routeCode;
-        var routeType = RouteTypes.Normalize(request.RouteType);
 
         var errors = ValidateSaveRouteRequest(request, routeCode, routeName);
         if (errors.Count > 0)
@@ -330,6 +328,7 @@ public sealed class Gps : IEndpointGroup
             return routeStopResolution.Error;
         }
 
+        var routeType = InferRouteType(routeStopResolution.Stops);
         var reverseRouteRequest = ResolveReverseRouteRequest(request, routeCode!, routeType, routeStopResolution.Stops);
         if (reverseRouteRequest.Errors.Count > 0)
         {
@@ -453,19 +452,6 @@ public sealed class Gps : IEndpointGroup
             errors["routeName"] = ["routeName khong duoc vuot qua 150 ky tu."];
         }
 
-        if (!string.IsNullOrWhiteSpace(request.RouteType) && !RouteTypes.IsValid(request.RouteType))
-        {
-            errors["routeType"] = ["routeType hop le: Regular, SightseeingLoop, CharterReference."];
-        }
-
-        if (request.StartStationId.HasValue
-            && request.EndStationId.HasValue
-            && request.StartStationId.Value == request.EndStationId.Value
-            && RouteTypes.Normalize(request.RouteType) != RouteTypes.SightseeingLoop)
-        {
-            errors["endStationId"] = ["startStationId/endStationId chi duoc trung nhau khi routeType=SightseeingLoop."];
-        }
-
         return errors;
     }
 
@@ -539,7 +525,6 @@ public sealed class Gps : IEndpointGroup
 
     private static void ValidateRouteStops(
         IReadOnlyList<GpsRouteStopRequest> stops,
-        string routeType,
         Dictionary<string, string[]> errors)
     {
         if (stops.Count < 2)
@@ -581,21 +566,6 @@ public sealed class Gps : IEndpointGroup
             errors["stops.stopOrder"] = ["stopOrder khong duoc trung nhau."];
         }
 
-        var orderedStops = stops
-            .Select((stop, index) => new { Stop = stop, Order = stop.StopOrder ?? index + 1, Index = index })
-            .OrderBy(x => x.Order)
-            .ThenBy(x => x.Index)
-            .ToList();
-        var sameTerminal = orderedStops[0].Stop.StationId == orderedStops[^1].Stop.StationId;
-
-        if (routeType == RouteTypes.Regular && sameTerminal)
-        {
-            errors["stops"] = ["Regular route khong duoc trung ben dau/cuoi."];
-        }
-        else if (routeType == RouteTypes.SightseeingLoop && !sameTerminal)
-        {
-            errors["stops"] = ["SightseeingLoop phai co ben dau va cuoi trung nhau."];
-        }
     }
 
     private static Dictionary<string, string[]> ValidateStopSessionRequest(StopGpsSessionRequest request)
@@ -632,11 +602,6 @@ public sealed class Gps : IEndpointGroup
             errors["routeName"] = ["routeName la bat buoc neu session khong co routeName."];
         }
 
-        if (!string.IsNullOrWhiteSpace(request.RouteType) && !RouteTypes.IsValid(request.RouteType))
-        {
-            errors["routeType"] = ["routeType hop le: Regular, SightseeingLoop, CharterReference."];
-        }
-
         if (routeName?.Length > 150)
         {
             errors["routeName"] = ["routeName khong duoc vuot qua 150 ky tu."];
@@ -666,16 +631,7 @@ public sealed class Gps : IEndpointGroup
 
         if (request.Stops is { Count: > 0 })
         {
-            ValidateRouteStops(request.Stops, RouteTypes.Normalize(request.RouteType), errors);
-        }
-
-        if (request.Stops is not { Count: > 0 }
-            && request.StartStationId.HasValue
-            && request.EndStationId.HasValue
-            && request.StartStationId.Value == request.EndStationId.Value
-            && RouteTypes.Normalize(request.RouteType) != RouteTypes.SightseeingLoop)
-        {
-            errors["endStationId"] = ["startStationId/endStationId chi duoc trung nhau khi routeType=SightseeingLoop."];
+            ValidateRouteStops(request.Stops, errors);
         }
 
         return errors;
@@ -1145,6 +1101,18 @@ public sealed class Gps : IEndpointGroup
             route.Status,
             routeStops);
 
+    private static string InferRouteType(IReadOnlyList<RouteStopDraft> routeStops)
+    {
+        var orderedStops = routeStops
+            .OrderBy(x => x.StopOrder)
+            .ToList();
+
+        return orderedStops.Count >= 2
+            && orderedStops[0].Station.StationId == orderedStops[^1].Station.StationId
+            ? RouteTypes.SightseeingLoop
+            : RouteTypes.CharterReference;
+    }
+
     private static bool IsRecording(string status) =>
         string.Equals(status, "Recording", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "recording", StringComparison.OrdinalIgnoreCase);
@@ -1199,7 +1167,6 @@ public sealed class Gps : IEndpointGroup
         Guid? RouteId,
         string? RouteCode,
         string? RouteName,
-        string? RouteType,
         Guid? TripId,
         Guid? StartStationId,
         Guid? EndStationId,
@@ -1215,7 +1182,6 @@ public sealed class Gps : IEndpointGroup
         Guid? SessionId,
         string? RouteCode,
         string? RouteName,
-        string? RouteType,
         string? Description,
         string? Status,
         Guid? StartStationId,

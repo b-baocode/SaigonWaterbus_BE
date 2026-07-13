@@ -65,6 +65,7 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
         }
 
         var orderedSources = request.SourceRouteIds.Select(id => routesById[id]).ToList();
+        EnsureSourceRoutesCanBeComposed(orderedSources);
         var composedStops = BuildComposedStops(orderedSources);
         EnsureRegularRouteShapeIsValid(composedStops);
 
@@ -128,6 +129,20 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
             route.Status,
             stopDtos,
             ToGeometryDto(route.RouteGeometry));
+    }
+
+    private static void EnsureSourceRoutesCanBeComposed(IReadOnlyList<Route> sourceRoutes)
+    {
+        var loopRoute = sourceRoutes.FirstOrDefault(route =>
+            string.Equals(route.RouteType, RouteTypes.SightseeingLoop, StringComparison.OrdinalIgnoreCase));
+        if (loopRoute is not null)
+        {
+            throw new ValidationException([
+                new ValidationFailure(
+                    nameof(CreateRouteFromRoutesCommand.SourceRouteIds),
+                    $"Route '{loopRoute.RouteCode}' la SightseeingLoop nen khong dung de ghep route booking thuong.")
+            ]);
+        }
     }
 
     private static List<RouteStopDraft> BuildComposedStops(IReadOnlyList<Route> sourceRoutes)
