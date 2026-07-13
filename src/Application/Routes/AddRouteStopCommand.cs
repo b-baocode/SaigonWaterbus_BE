@@ -12,7 +12,6 @@ public sealed record AddRouteStopCommand(
     string StationCode,
     int StopOrder,
     int? StandardTravelMin,
-    int? StandardDwellMin,
     bool IsPickupAllowed,
     bool IsDropoffAllowed) : IRequest<RouteStopDto>;
 
@@ -53,7 +52,6 @@ public sealed class AddRouteStopCommandHandler : IRequestHandler<AddRouteStopCom
             StationId = station.Id,
             StopOrder = request.StopOrder,
             StandardTravelMin = request.StandardTravelMin,
-            StandardDwellMin = request.StandardDwellMin,
             IsPickupAllowed = request.IsPickupAllowed,
             IsDropoffAllowed = request.IsDropoffAllowed
         };
@@ -62,7 +60,7 @@ public sealed class AddRouteStopCommandHandler : IRequestHandler<AddRouteStopCom
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RouteStopDto(stop.Id, station.Id, station.StationCode, station.StationName,
-            stop.StopOrder, stop.StandardTravelMin, stop.StandardDwellMin,
+            stop.StopOrder, stop.StandardTravelMin,
             stop.IsPickupAllowed, stop.IsDropoffAllowed);
     }
 }

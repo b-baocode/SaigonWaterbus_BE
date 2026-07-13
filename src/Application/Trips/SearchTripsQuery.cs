@@ -45,6 +45,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
             .Where(t => routeIds.Contains(t.RouteId)
+                     && t.Route.IsBookable
                      && t.OperatingDate == request.OperatingDate
                      && t.TripStatus == TripStatus.Scheduled
                      && t.DepartureTime > now)

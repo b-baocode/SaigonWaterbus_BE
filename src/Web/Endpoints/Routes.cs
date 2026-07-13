@@ -13,6 +13,8 @@ public sealed class Routes : IEndpointGroup
         {
           "routeCode": "R01-BD-LD2",
           "routeName": "Tuyen 01: Bach Dang - Linh Dong",
+          "routeType": "Regular",
+          "isBookable": true,
           "boatId": null,
           "waypoints": [
             { "type": "station",     "stationCode": "ST-BD",          "stopOrder": 1 },
@@ -44,10 +46,12 @@ public sealed class Routes : IEndpointGroup
         """
         {
           "routeName": "Tuyen 02: Bach Dang → Nguyen Van Linh (cap nhat)",
+          "routeType": "Regular",
           "description": "Mo ta moi",
           "baseDistanceKm": 16.0,
           "estimatedDurationMin": 80,
-          "status": "Active"
+          "status": "Active",
+          "isBookable": true
         }
         """;
 
@@ -57,7 +61,6 @@ public sealed class Routes : IEndpointGroup
           "stationCode": "BD",
           "stopOrder": 1,
           "standardTravelMin": 8,
-          "standardDwellMin": 2,
           "isPickupAllowed": true,
           "isDropoffAllowed": false
         }
@@ -67,7 +70,6 @@ public sealed class Routes : IEndpointGroup
         """
         {
           "standardTravelMin": 10,
-          "standardDwellMin": 3,
           "isPickupAllowed": true,
           "isDropoffAllowed": true
         }
@@ -100,6 +102,11 @@ public sealed class Routes : IEndpointGroup
                 "Admin",
                 CreateRouteExample,
                 "RouteCode phai unique (tu dong uppercase).",
+                "routeType: Regular | SightseeingLoop | CharterReference.",
+                "Regular: nhieu ben theo mot chieu, ben dau/cuoi khac nhau.",
+                "SightseeingLoop: ben dau va ben cuoi trung nhau.",
+                "CharterReference: route tham chieu cho charter, co the tao nhieu route khac nhau cho cac duong charter.",
+                "isBookable=false cho route chi dung lam tham chieu/charter, khong dung de tao trip ban ve.",
                 "Request phai chua it nhat 2 waypoint type=station.",
                 "Waypoint dau va cuoi bat buoc la station.",
                 "CHI CAN NHAP STATION: he thong TU DONG tao RouteGeometry tu mang waterway da import (snap ben vao duong song, tim duong ngan nhat). Neu chua import mang hoac khong noi duoc thi van tao route voi geometry rong.",
@@ -131,6 +138,8 @@ public sealed class Routes : IEndpointGroup
                 "Admin",
                 UpdateRouteExample,
                 "Status hop le: Active | Inactive.",
+                "routeType: Regular | SightseeingLoop | CharterReference.",
+                "isBookable=false de chan route khoi flow tao/generate trip ban ve.",
                 "RouteCode khong doi duoc sau khi tao."));
 
         // DISABLED 2026-07-12: tam khoa API them ben dung vao tuyen (khong xoa code, bo comment de bat lai).
@@ -143,8 +152,7 @@ public sealed class Routes : IEndpointGroup
         //         "stopOrder phai unique trong cung mot tuyen.",
         //         "stop cuoi (isDropoffAllowed=true, isPickupAllowed=false).",
         //         "stop dau (isPickupAllowed=true, isDropoffAllowed=false).",
-        //         "standardTravelMin: phut di tu stop nay den stop tiep theo.",
-        //         "standardDwellMin: phut tau dung tai stop (default 2)."));
+        //         "standardTravelMin: phut di tu stop nay den stop tiep theo."));
 
         group.MapPut(UpdateRouteStop, "{id:guid}/stops/{stopId:guid}")
             .RequireAuthorization()
@@ -205,7 +213,7 @@ public sealed class Routes : IEndpointGroup
 
     private static async Task<IResult> UpdateRoute(ISender sender, Guid id, UpdateRouteRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateRouteCommand(
-            id, req.RouteName, req.Description, req.BaseDistanceKm, req.EstimatedDurationMin, req.Status), ct));
+            id, req.RouteName, req.RouteType, req.Description, req.BaseDistanceKm, req.EstimatedDurationMin, req.Status, req.IsBookable), ct));
 
     private static async Task<IResult> ImportGeoJson(
         ISender sender,
@@ -220,11 +228,11 @@ public sealed class Routes : IEndpointGroup
     private static async Task<IResult> AddRouteStop(ISender sender, Guid id, AddRouteStopRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new AddRouteStopCommand(
             id, req.StationCode, req.StopOrder, req.StandardTravelMin,
-            req.StandardDwellMin, req.IsPickupAllowed, req.IsDropoffAllowed), ct));
+            req.IsPickupAllowed, req.IsDropoffAllowed), ct));
 
     private static async Task<IResult> UpdateRouteStop(ISender sender, Guid id, Guid stopId, UpdateRouteStopRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateRouteStopCommand(
-            id, stopId, req.StandardTravelMin, req.StandardDwellMin,
+            id, stopId, req.StandardTravelMin,
             req.IsPickupAllowed, req.IsDropoffAllowed), ct));
 
     private static async Task<IResult> RemoveRouteStop(ISender sender, Guid id, Guid stopId, CancellationToken ct)
@@ -239,8 +247,8 @@ public sealed class Routes : IEndpointGroup
         return Results.NoContent();
     }
 
-    public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
-    public sealed record AddRouteStopRequest(string StationCode, int StopOrder, int? StandardTravelMin, int? StandardDwellMin, bool IsPickupAllowed, bool IsDropoffAllowed);
-    public sealed record UpdateRouteStopRequest(int? StandardTravelMin, int? StandardDwellMin, bool IsPickupAllowed, bool IsDropoffAllowed);
+    public sealed record UpdateRouteRequest(string RouteName, string? RouteType, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status, bool? IsBookable);
+    public sealed record AddRouteStopRequest(string StationCode, int StopOrder, int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
+    public sealed record UpdateRouteStopRequest(int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
 
 }

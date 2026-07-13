@@ -57,7 +57,7 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             var arrival = routeStop.StopOrder == trip.Route.RouteStops.Min(x => x.StopOrder)
                 ? trip.DepartureTime
                 : current;
-            var departure = arrival.AddMinutes(routeStop.StandardDwellMin ?? 2);
+            var departure = arrival;
             current = departure.AddMinutes(routeStop.StandardTravelMin ?? 15);
 
             yield return new TripStopDto(

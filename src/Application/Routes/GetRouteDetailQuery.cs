@@ -24,7 +24,7 @@ public sealed class GetRouteDetailQueryHandler : IRequestHandler<GetRouteDetailQ
             .OrderBy(rs => rs.StopOrder)
             .Select(rs => new RouteStopDto(
                 rs.Id, rs.Station.Id, rs.Station.StationCode, rs.Station.StationName,
-                rs.StopOrder, rs.StandardTravelMin, rs.StandardDwellMin,
+                rs.StopOrder, rs.StandardTravelMin,
                 rs.IsPickupAllowed, rs.IsDropoffAllowed))
             .ToList();
 
@@ -34,7 +34,8 @@ public sealed class GetRouteDetailQueryHandler : IRequestHandler<GetRouteDetailQ
                 .Select(c => new double[] { c.X, c.Y })
                 .ToList();
 
-        return new RouteDetailDto(route.Id, route.RouteCode, route.RouteName,
-            route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status, stops, [], geometry);
+        return new RouteDetailDto(route.Id, route.RouteCode, route.RouteName, route.RouteType,
+            route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status,
+            route.IsBookable, stops, [], geometry);
     }
 }

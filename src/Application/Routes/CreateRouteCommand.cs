@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
@@ -10,12 +11,14 @@ namespace SaigonWaterbus.Application.Routes;
 public sealed record CreateRouteCommand(
     string RouteCode,
     string RouteName,
+    string? RouteType,
     string? Description,
     IReadOnlyList<CreateRouteWaypointDto> Waypoints,
     bool? AutoRouteGeometry = null,
     string? PreferWaterwayType = null,
     IReadOnlyList<string>? AvoidWaterwayOsmIds = null,
     IReadOnlyList<double[]>? ChosenGeometry = null,
+    bool? IsBookable = null,
     Guid? BoatId = null) : IRequest<RouteDto>;
 
 public sealed record CreateRouteWaypointDto(
@@ -30,6 +33,9 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.RouteName).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.RouteType)
+            .Must(x => string.IsNullOrWhiteSpace(x) || RouteTypes.IsValid(x))
+            .WithMessage("RouteType phai la Regular, SightseeingLoop, hoac CharterReference.");
         RuleFor(x => x.BoatId).NotEmpty().When(x => x.BoatId.HasValue);
         RuleFor(x => x.PreferWaterwayType)
             .Must(t => t == null || t == "river" || t == "canal" || t == "custom")
@@ -67,6 +73,10 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
             .Must(HaveUniqueStopOrders)
             .WithMessage("StopOrder values must be unique across all station waypoints.");
 
+        RuleFor(x => x)
+            .Must(HaveValidRouteShape)
+            .WithMessage("Regular route khong duoc trung ben dau/cuoi; SightseeingLoop phai co ben dau va cuoi trung nhau.");
+
         RuleForEach(x => x.Waypoints)
             .SetValidator(new CreateRouteWaypointDtoValidator());
     }
@@ -101,6 +111,26 @@ public sealed class CreateRouteCommandValidator : AbstractValidator<CreateRouteC
 
     private static bool IsStationWaypoint(CreateRouteWaypointDto waypoint) =>
         string.Equals(waypoint.Type, WaypointTypes.Station, StringComparison.OrdinalIgnoreCase);
+
+    private static bool HaveValidRouteShape(CreateRouteCommand command)
+    {
+        if (command.Waypoints is null || !HaveStationAtBothEnds(command.Waypoints))
+        {
+            return true;
+        }
+
+        var routeType = RouteTypes.Normalize(command.RouteType);
+        var firstStationCode = command.Waypoints[0].StationCode?.Trim();
+        var lastStationCode = command.Waypoints[^1].StationCode?.Trim();
+        var sameTerminal = string.Equals(firstStationCode, lastStationCode, StringComparison.OrdinalIgnoreCase);
+
+        return routeType switch
+        {
+            RouteTypes.SightseeingLoop => sameTerminal,
+            RouteTypes.Regular => !sameTerminal,
+            _ => true
+        };
+    }
 }
 
 public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteCommand, RouteDto>
@@ -115,6 +145,7 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
     public async Task<RouteDto> Handle(CreateRouteCommand request, CancellationToken cancellationToken)
     {
         var code = request.RouteCode.Trim().ToUpperInvariant();
+        var routeType = RouteTypes.Normalize(request.RouteType);
 
         if (await _context.Set<Route>().AnyAsync(r => r.RouteCode == code, cancellationToken))
         {
@@ -321,10 +352,12 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
         {
             RouteCode = code,
             RouteName = request.RouteName.Trim(),
+            RouteType = routeType,
             Description = request.Description?.Trim(),
             BaseDistanceKm = distanceKm,
             EstimatedDurationMin = estimatedDurationMin,
             Status = "Active",
+            IsBookable = request.IsBookable ?? routeType != RouteTypes.CharterReference,
             RouteGeometry = routeGeometry
         };
 
@@ -349,10 +382,12 @@ public sealed class CreateRouteCommandHandler : IRequestHandler<CreateRouteComma
             route.Id,
             route.RouteCode,
             route.RouteName,
+            route.RouteType,
             route.Description,
             route.BaseDistanceKm,
             route.EstimatedDurationMin,
-            route.Status);
+            route.Status,
+            route.IsBookable);
     }
 
     private static HashSet<string> BuildAvoidWaterwaySet(IReadOnlyList<string>? avoidWaterwayOsmIds) =>

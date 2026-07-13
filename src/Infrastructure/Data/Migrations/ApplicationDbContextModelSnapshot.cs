@@ -1844,6 +1844,12 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("estimated_duration_min");
 
+                    b.Property<bool>("IsBookable")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true)
+                        .HasColumnName("is_bookable");
+
                     b.Property<string>("RouteCode")
                         .IsRequired()
                         .HasMaxLength(50)
@@ -1859,6 +1865,14 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("route_name");
+
+                    b.Property<string>("RouteType")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(30)
+                        .HasColumnType("character varying(30)")
+                        .HasDefaultValue("Regular")
+                        .HasColumnName("route_type");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -1896,10 +1910,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<Guid>("RouteId")
                         .HasColumnType("uuid")
                         .HasColumnName("route_id");
-
-                    b.Property<int?>("StandardDwellMin")
-                        .HasColumnType("integer")
-                        .HasColumnName("standard_dwell_min");
 
                     b.Property<int?>("StandardTravelMin")
                         .HasColumnType("integer")

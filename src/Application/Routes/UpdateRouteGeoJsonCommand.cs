@@ -308,7 +308,6 @@ public sealed class UpdateRouteGeoJsonCommandHandler
                 x.Station.StationName,
                 x.StopOrder,
                 x.StandardTravelMin,
-                x.StandardDwellMin,
                 x.IsPickupAllowed,
                 x.IsDropoffAllowed))
             .ToArray();
@@ -317,10 +316,12 @@ public sealed class UpdateRouteGeoJsonCommandHandler
             route.Id,
             route.RouteCode,
             route.RouteName,
+            route.RouteType,
             route.Description,
             route.BaseDistanceKm,
             route.EstimatedDurationMin,
             route.Status,
+            route.IsBookable,
             stops,
             [],
             routeGeometry);

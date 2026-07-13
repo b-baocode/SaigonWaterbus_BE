@@ -94,7 +94,6 @@ public class CreateTripCommandTests
                 Station = from,
                 StationId = from.Id,
                 StopOrder = 1,
-                StandardDwellMin = 2,
                 StandardTravelMin = 15
             },
             new RouteStop
@@ -103,7 +102,6 @@ public class CreateTripCommandTests
                 Station = to,
                 StationId = to.Id,
                 StopOrder = 2,
-                StandardDwellMin = 2,
                 StandardTravelMin = 15
             }
         ];

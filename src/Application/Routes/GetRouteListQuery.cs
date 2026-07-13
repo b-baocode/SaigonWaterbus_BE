@@ -16,8 +16,8 @@ public sealed class GetRouteListQueryHandler : IRequestHandler<GetRouteListQuery
         return await _context.Set<Route>()
             .Where(r => r.Status == "Active")
             .OrderBy(r => r.RouteCode)
-            .Select(r => new RouteDto(r.Id, r.RouteCode, r.RouteName,
-                r.Description, r.BaseDistanceKm, r.EstimatedDurationMin, r.Status))
+            .Select(r => new RouteDto(r.Id, r.RouteCode, r.RouteName, r.RouteType,
+                r.Description, r.BaseDistanceKm, r.EstimatedDurationMin, r.Status, r.IsBookable))
             .ToListAsync(cancellationToken);
     }
 }

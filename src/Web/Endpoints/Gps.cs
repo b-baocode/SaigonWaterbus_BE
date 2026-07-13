@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using NetTopologySuite.Geometries;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
@@ -20,6 +21,7 @@ public sealed class Gps : IEndpointGroup
           "boatCode": "SURVEY-01",
           "routeCode": "BA-TT",
           "routeName": "Binh An - Thao Dien",
+          "routeType": "Regular",
           "startStationId": "550e8400-e29b-41d4-a716-446655440001",
           "endStationId": "550e8400-e29b-41d4-a716-446655440002",
           "plannedLengthMeters": 3500,
@@ -42,8 +44,10 @@ public sealed class Gps : IEndpointGroup
           "sessionId": "550e8400-e29b-41d4-a716-446655440000",
           "routeCode": "BA-TT",
           "routeName": "Binh An - Thao Dien",
+          "routeType": "Regular",
           "description": "Captured from GPS survey.",
           "status": "Active",
+          "isBookable": true,
           "averageSpeedKmh": 16,
           "startStationId": "550e8400-e29b-41d4-a716-446655440001",
           "endStationId": "550e8400-e29b-41d4-a716-446655440002",
@@ -265,6 +269,7 @@ public sealed class Gps : IEndpointGroup
         var routeName = NormalizeOptionalText(request.RouteName)
             ?? NormalizeOptionalText(session?.RouteName)
             ?? routeCode;
+        var routeType = RouteTypes.Normalize(request.RouteType);
 
         var errors = ValidateSaveRouteRequest(request, routeCode, routeName);
         if (errors.Count > 0)
@@ -305,10 +310,12 @@ public sealed class Gps : IEndpointGroup
         {
             RouteCode = routeCode!,
             RouteName = routeName!,
+            RouteType = routeType,
             Description = NormalizeOptionalText(request.Description),
             BaseDistanceKm = baseDistanceKm,
             EstimatedDurationMin = estimatedDurationMin,
             Status = status,
+            IsBookable = request.IsBookable ?? routeType != RouteTypes.CharterReference,
             RouteGeometry = routeGeometry
         };
 
@@ -329,10 +336,12 @@ public sealed class Gps : IEndpointGroup
                 route.Id,
                 route.RouteCode,
                 route.RouteName,
+                route.RouteType,
                 route.BaseDistanceKm ?? 0,
                 route.EstimatedDurationMin,
                 coordinateResult.PointCount,
                 route.Status,
+                route.IsBookable,
                 routeStops));
     }
 
@@ -371,11 +380,17 @@ public sealed class Gps : IEndpointGroup
             errors["routeName"] = ["routeName khong duoc vuot qua 150 ky tu."];
         }
 
+        if (!string.IsNullOrWhiteSpace(request.RouteType) && !RouteTypes.IsValid(request.RouteType))
+        {
+            errors["routeType"] = ["routeType hop le: Regular, SightseeingLoop, CharterReference."];
+        }
+
         if (request.StartStationId.HasValue
             && request.EndStationId.HasValue
-            && request.StartStationId.Value == request.EndStationId.Value)
+            && request.StartStationId.Value == request.EndStationId.Value
+            && RouteTypes.Normalize(request.RouteType) != RouteTypes.SightseeingLoop)
         {
-            errors["endStationId"] = ["endStationId phai khac startStationId."];
+            errors["endStationId"] = ["startStationId/endStationId chi duoc trung nhau khi routeType=SightseeingLoop."];
         }
 
         return errors;
@@ -415,6 +430,11 @@ public sealed class Gps : IEndpointGroup
             errors["routeName"] = ["routeName la bat buoc neu session khong co routeName."];
         }
 
+        if (!string.IsNullOrWhiteSpace(request.RouteType) && !RouteTypes.IsValid(request.RouteType))
+        {
+            errors["routeType"] = ["routeType hop le: Regular, SightseeingLoop, CharterReference."];
+        }
+
         if (routeName?.Length > 150)
         {
             errors["routeName"] = ["routeName khong duoc vuot qua 150 ky tu."];
@@ -444,9 +464,10 @@ public sealed class Gps : IEndpointGroup
 
         if (request.StartStationId.HasValue
             && request.EndStationId.HasValue
-            && request.StartStationId.Value == request.EndStationId.Value)
+            && request.StartStationId.Value == request.EndStationId.Value
+            && RouteTypes.Normalize(request.RouteType) != RouteTypes.SightseeingLoop)
         {
-            errors["endStationId"] = ["endStationId phai khac startStationId."];
+            errors["endStationId"] = ["startStationId/endStationId chi duoc trung nhau khi routeType=SightseeingLoop."];
         }
 
         return errors;
@@ -739,7 +760,6 @@ public sealed class Gps : IEndpointGroup
                 StationId = startStation.StationId,
                 StopOrder = 1,
                 StandardTravelMin = endStation is not null ? estimatedDurationMin : null,
-                StandardDwellMin = 2,
                 IsPickupAllowed = true,
                 IsDropoffAllowed = false
             };
@@ -755,7 +775,6 @@ public sealed class Gps : IEndpointGroup
                 RouteId = routeId,
                 StationId = endStation.StationId,
                 StopOrder = startStation is not null ? 2 : 1,
-                StandardDwellMin = 2,
                 IsPickupAllowed = false,
                 IsDropoffAllowed = true
             };
@@ -775,7 +794,6 @@ public sealed class Gps : IEndpointGroup
             station.StationName,
             routeStop.StopOrder,
             routeStop.StandardTravelMin,
-            routeStop.StandardDwellMin,
             routeStop.IsPickupAllowed,
             routeStop.IsDropoffAllowed);
 
@@ -833,6 +851,7 @@ public sealed class Gps : IEndpointGroup
         Guid? RouteId,
         string? RouteCode,
         string? RouteName,
+        string? RouteType,
         Guid? TripId,
         Guid? StartStationId,
         Guid? EndStationId,
@@ -848,8 +867,10 @@ public sealed class Gps : IEndpointGroup
         Guid? SessionId,
         string? RouteCode,
         string? RouteName,
+        string? RouteType,
         string? Description,
         string? Status,
+        bool? IsBookable,
         Guid? StartStationId,
         Guid? EndStationId,
         decimal? AverageSpeedKmh,
@@ -870,10 +891,12 @@ public sealed class Gps : IEndpointGroup
         Guid RouteId,
         string RouteCode,
         string RouteName,
+        string RouteType,
         decimal BaseDistanceKm,
         int? EstimatedDurationMin,
         int PointCount,
         string Status,
+        bool IsBookable,
         IReadOnlyList<GpsRouteStopResponse> Stops);
 
     private sealed record GpsRouteStopResponse(
@@ -883,7 +906,6 @@ public sealed class Gps : IEndpointGroup
         string StationName,
         int StopOrder,
         int? StandardTravelMin,
-        int? StandardDwellMin,
         bool IsPickupAllowed,
         bool IsDropoffAllowed);
 
