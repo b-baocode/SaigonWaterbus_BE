@@ -28,7 +28,6 @@ public class CreateRouteFromRoutesCommandTests
             .Handle(new CreateRouteFromRoutesCommand(
                 "A-B-C",
                 "A - B - C",
-                RouteTypes.Regular,
                 null,
                 [routeAB.Id, routeBC.Id]), CancellationToken.None);
 
@@ -61,7 +60,6 @@ public class CreateRouteFromRoutesCommandTests
                 .Handle(new CreateRouteFromRoutesCommand(
                     "A-B-C-D",
                     "A - B - C - D",
-                    RouteTypes.Regular,
                     null,
                     [routeAB.Id, routeCD.Id]), CancellationToken.None));
 
