@@ -50,6 +50,9 @@ public sealed class Gps : IEndpointGroup
           "averageSpeedKmh": 16,
           "startStationId": "550e8400-e29b-41d4-a716-446655440001",
           "endStationId": "550e8400-e29b-41d4-a716-446655440002",
+          "createReverseRoute": true,
+          "reverseRouteCode": "TT-BA",
+          "reverseRouteName": "Thao Dien - Binh An",
           "stops": [
             {
               "stationId": "550e8400-e29b-41d4-a716-446655440001",
@@ -327,6 +330,32 @@ public sealed class Gps : IEndpointGroup
             return routeStopResolution.Error;
         }
 
+        var reverseRouteRequest = ResolveReverseRouteRequest(request, routeCode!, routeType, routeStopResolution.Stops);
+        if (reverseRouteRequest.Errors.Count > 0)
+        {
+            return Results.ValidationProblem(reverseRouteRequest.Errors);
+        }
+
+        if (reverseRouteRequest.Value is not null)
+        {
+            if (string.Equals(reverseRouteRequest.Value.RouteCode, routeCode, StringComparison.Ordinal))
+            {
+                return Results.ValidationProblem(new Dictionary<string, string[]>
+                {
+                    ["reverseRouteCode"] = ["reverseRouteCode phai khac routeCode."]
+                });
+            }
+
+            if (await dbContext.Routes.AnyAsync(x => x.RouteCode == reverseRouteRequest.Value.RouteCode, cancellationToken))
+            {
+                return Results.Conflict(new
+                {
+                    message = "reverseRouteCode da ton tai, khong tu dong ghi de tuyen hien co.",
+                    reverseRouteCode = reverseRouteRequest.Value.RouteCode
+                });
+            }
+        }
+
         var route = new WaterbusRoute
         {
             RouteCode = routeCode!,
@@ -343,6 +372,34 @@ public sealed class Gps : IEndpointGroup
         dbContext.Routes.Add(route);
 
         var routeStops = AddRouteStops(dbContext, route.Id, routeStopResolution.Stops);
+        CreatedGpsRouteResponse? reverseRouteResponse = null;
+
+        if (reverseRouteRequest.Value is not null)
+        {
+            var reverseGeometry = ReverseRouteGeometry(routeGeometry);
+            var reverseRoute = new WaterbusRoute
+            {
+                RouteCode = reverseRouteRequest.Value.RouteCode,
+                RouteName = reverseRouteRequest.Value.RouteName,
+                RouteType = routeType,
+                Description = NormalizeOptionalText(request.Description),
+                BaseDistanceKm = baseDistanceKm,
+                EstimatedDurationMin = estimatedDurationMin,
+                Status = status,
+                IsBookable = RouteTypes.IsBookableByDefault(routeType),
+                RouteGeometry = reverseGeometry
+            };
+
+            dbContext.Routes.Add(reverseRoute);
+            var reverseRouteStops = AddRouteStops(
+                dbContext,
+                reverseRoute.Id,
+                BuildReverseRouteStops(routeStopResolution.Stops));
+            reverseRouteResponse = ToCreatedGpsRouteResponse(
+                reverseRoute,
+                coordinateResult.PointCount,
+                reverseRouteStops);
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -357,7 +414,8 @@ public sealed class Gps : IEndpointGroup
                 route.EstimatedDurationMin,
                 coordinateResult.PointCount,
                 route.Status,
-                routeStops));
+                routeStops,
+                reverseRouteResponse));
     }
 
     private static Dictionary<string, string[]> ValidateStartSessionRequest(
@@ -409,6 +467,74 @@ public sealed class Gps : IEndpointGroup
         }
 
         return errors;
+    }
+
+    private static ReverseRouteResolution ResolveReverseRouteRequest(
+        SaveRouteFromGpsRequest request,
+        string routeCode,
+        string routeType,
+        IReadOnlyList<RouteStopDraft> routeStops)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        if (request.CreateReverseRoute != true)
+        {
+            return ReverseRouteResolution.Skipped();
+        }
+
+        if (routeType == RouteTypes.SightseeingLoop)
+        {
+            errors["createReverseRoute"] = ["SightseeingLoop khong can tao route chieu ve."];
+            return ReverseRouteResolution.Invalid(errors);
+        }
+
+        var orderedStops = routeStops
+            .OrderBy(x => x.StopOrder)
+            .ToList();
+        if (orderedStops.Count < 2)
+        {
+            errors["createReverseRoute"] = ["Can it nhat 2 stops de tao route chieu ve."];
+            return ReverseRouteResolution.Invalid(errors);
+        }
+
+        if (orderedStops[0].Station.StationId == orderedStops[^1].Station.StationId)
+        {
+            errors["createReverseRoute"] = ["Route co ben dau/cuoi trung nhau khong can tao route chieu ve."];
+            return ReverseRouteResolution.Invalid(errors);
+        }
+
+        var reverseRouteCode = NormalizeRouteCode(request.ReverseRouteCode)
+            ?? BuildDefaultReverseRouteCode(routeCode, orderedStops);
+        if (reverseRouteCode.Length > 50)
+        {
+            errors["reverseRouteCode"] = ["reverseRouteCode khong duoc vuot qua 50 ky tu."];
+        }
+
+        var reverseRouteName = NormalizeOptionalText(request.ReverseRouteName)
+            ?? $"{orderedStops[^1].Station.StationName} - {orderedStops[0].Station.StationName}";
+        if (reverseRouteName.Length > 150)
+        {
+            errors["reverseRouteName"] = ["reverseRouteName khong duoc vuot qua 150 ky tu."];
+        }
+
+        return errors.Count > 0
+            ? ReverseRouteResolution.Invalid(errors)
+            : ReverseRouteResolution.Valid(new ReverseRouteRequest(reverseRouteCode, reverseRouteName));
+    }
+
+    private static string BuildDefaultReverseRouteCode(
+        string routeCode,
+        IReadOnlyList<RouteStopDraft> orderedStops)
+    {
+        var stationCodeBased = NormalizeRouteCode(
+            $"{orderedStops[^1].Station.StationCode}-{orderedStops[0].Station.StationCode}");
+        if (!string.IsNullOrWhiteSpace(stationCodeBased) && stationCodeBased.Length <= 50)
+        {
+            return stationCodeBased;
+        }
+
+        return routeCode.Length <= 46
+            ? $"{routeCode}-REV"
+            : $"{routeCode[..46]}-REV";
     }
 
     private static void ValidateRouteStops(
@@ -936,6 +1062,37 @@ public sealed class Gps : IEndpointGroup
         return stops;
     }
 
+    private static IReadOnlyList<RouteStopDraft> BuildReverseRouteStops(
+        IReadOnlyList<RouteStopDraft> routeStops)
+    {
+        var reversedStops = routeStops
+            .OrderByDescending(x => x.StopOrder)
+            .ToList();
+        var stops = new List<RouteStopDraft>();
+
+        for (var i = 0; i < reversedStops.Count; i++)
+        {
+            stops.Add(new RouteStopDraft(
+                reversedStops[i].Station,
+                i + 1,
+                i == 0 ? null : reversedStops[i - 1].StandardTravelMin,
+                i < reversedStops.Count - 1,
+                i > 0));
+        }
+
+        return stops;
+    }
+
+    private static LineString ReverseRouteGeometry(LineString routeGeometry)
+    {
+        var coordinates = routeGeometry.Coordinates
+            .Reverse()
+            .Select(coordinate => new Coordinate(coordinate.X, coordinate.Y))
+            .ToArray();
+
+        return new LineString(coordinates) { SRID = routeGeometry.SRID };
+    }
+
     private static IReadOnlyList<GpsRouteStopResponse> AddRouteStops(
         ApplicationDbContext dbContext,
         Guid routeId,
@@ -972,6 +1129,21 @@ public sealed class Gps : IEndpointGroup
             routeStop.StandardTravelMin,
             routeStop.IsPickupAllowed,
             routeStop.IsDropoffAllowed);
+
+    private static CreatedGpsRouteResponse ToCreatedGpsRouteResponse(
+        WaterbusRoute route,
+        int pointCount,
+        IReadOnlyList<GpsRouteStopResponse> routeStops) =>
+        new(
+            route.Id,
+            route.RouteCode,
+            route.RouteName,
+            route.RouteType,
+            route.BaseDistanceKm ?? 0,
+            route.EstimatedDurationMin,
+            pointCount,
+            route.Status,
+            routeStops);
 
     private static bool IsRecording(string status) =>
         string.Equals(status, "Recording", StringComparison.OrdinalIgnoreCase)
@@ -1049,6 +1221,9 @@ public sealed class Gps : IEndpointGroup
         Guid? StartStationId,
         Guid? EndStationId,
         decimal? AverageSpeedKmh,
+        bool? CreateReverseRoute,
+        string? ReverseRouteCode,
+        string? ReverseRouteName,
         IReadOnlyList<GpsRouteStopRequest>? Stops,
         IReadOnlyList<GpsRouteCoordinateRequest>? Coordinates);
 
@@ -1070,7 +1245,7 @@ public sealed class Gps : IEndpointGroup
 
     private sealed record StopGpsSessionResponse(Guid SessionId, string Status, int RecordedPointCount);
 
-    private sealed record SaveRouteFromGpsResponse(
+    private sealed record CreatedGpsRouteResponse(
         Guid RouteId,
         string RouteCode,
         string RouteName,
@@ -1080,6 +1255,18 @@ public sealed class Gps : IEndpointGroup
         int PointCount,
         string Status,
         IReadOnlyList<GpsRouteStopResponse> Stops);
+
+    private sealed record SaveRouteFromGpsResponse(
+        Guid RouteId,
+        string RouteCode,
+        string RouteName,
+        string RouteType,
+        decimal BaseDistanceKm,
+        int? EstimatedDurationMin,
+        int PointCount,
+        string Status,
+        IReadOnlyList<GpsRouteStopResponse> Stops,
+        CreatedGpsRouteResponse? ReverseRoute);
 
     private sealed record GpsRouteStopResponse(
         Guid RouteStopId,
@@ -1137,6 +1324,22 @@ public sealed class Gps : IEndpointGroup
         string StationName,
         decimal? Latitude,
         decimal? Longitude);
+
+    private sealed record ReverseRouteRequest(
+        string RouteCode,
+        string RouteName);
+
+    private sealed record ReverseRouteResolution(
+        ReverseRouteRequest? Value,
+        Dictionary<string, string[]> Errors)
+    {
+        public static ReverseRouteResolution Skipped() => new(null, new Dictionary<string, string[]>());
+
+        public static ReverseRouteResolution Valid(ReverseRouteRequest value) =>
+            new(value, new Dictionary<string, string[]>());
+
+        public static ReverseRouteResolution Invalid(Dictionary<string, string[]> errors) => new(null, errors);
+    }
 
     private sealed record RouteStopDraft(
         StationSummary Station,
