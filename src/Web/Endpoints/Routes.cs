@@ -12,7 +12,6 @@ public sealed class Routes : IEndpointGroup
         {
           "routeCode": "R01-A-B-C",
           "routeName": "Tuyen A - B - C",
-          "routeType": "Regular",
           "description": "Ghep tu cac route GPS da thu.",
           "sourceRouteIds": [
             "550e8400-e29b-41d4-a716-446655440001",
@@ -25,7 +24,6 @@ public sealed class Routes : IEndpointGroup
         """
         {
           "routeName": "Tuyen 02: Bach Dang → Nguyen Van Linh (cap nhat)",
-          "routeType": "Regular",
           "description": "Mo ta moi",
           "baseDistanceKm": 16.0,
           "estimatedDurationMin": 80,
@@ -72,7 +70,7 @@ public sealed class Routes : IEndpointGroup
                 "Ben cuoi cua route truoc phai trung ben dau cua route sau.",
                 "BE tao route moi doc lap trong routes va tao stops[] day du trong route_stops.",
                 "Route nguon van giu nguyen, co the tiep tuc dung cho charter/tham chieu.",
-                "Regular: ben dau/cuoi khac nhau. SightseeingLoop: ben dau/cuoi trung nhau. CharterReference: linh hoat."));
+                "Route ghep luon duoc tao voi routeType=Regular; FE khong can gui routeType."));
 
         group.MapPut(UpdateRoute, "{id:guid}")
             .RequireAuthorization()
@@ -81,8 +79,7 @@ public sealed class Routes : IEndpointGroup
                 "Admin",
                 UpdateRouteExample,
                 "Status hop le: Active | Inactive.",
-                "routeType: Regular | SightseeingLoop | CharterReference.",
-                "BE tu xac dinh kha nang dung cho dat ve theo routeType; FE khong can hien thi lua chon nay.",
+                "Khong ho tro doi routeType/isBookable qua API update; cac gia tri nay do GPS/BE xac dinh khi tao route.",
                 "RouteCode khong doi duoc sau khi tao."));
 
         group.MapPut(UpdateRouteStop, "{id:guid}/stops/{stopId:guid}")
@@ -130,7 +127,7 @@ public sealed class Routes : IEndpointGroup
 
     private static async Task<IResult> UpdateRoute(ISender sender, Guid id, UpdateRouteRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateRouteCommand(
-            id, req.RouteName, req.RouteType, req.Description, req.BaseDistanceKm, req.EstimatedDurationMin, req.Status), ct));
+            id, req.RouteName, req.Description, req.BaseDistanceKm, req.EstimatedDurationMin, req.Status), ct));
 
     private static async Task<IResult> ImportGeoJson(
         ISender sender,
@@ -153,7 +150,7 @@ public sealed class Routes : IEndpointGroup
         return Results.NoContent();
     }
 
-    public sealed record UpdateRouteRequest(string RouteName, string? RouteType, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
+    public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
     public sealed record UpdateRouteStopRequest(int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
 
 }

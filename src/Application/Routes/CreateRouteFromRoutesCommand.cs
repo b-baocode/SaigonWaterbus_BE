@@ -12,7 +12,6 @@ namespace SaigonWaterbus.Application.Routes;
 public sealed record CreateRouteFromRoutesCommand(
     string RouteCode,
     string RouteName,
-    string? RouteType,
     string? Description,
     IReadOnlyList<Guid> SourceRouteIds) : IRequest<RouteDetailDto>;
 
@@ -22,9 +21,6 @@ public sealed class CreateRouteFromRoutesCommandValidator : AbstractValidator<Cr
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.RouteName).NotEmpty().MaximumLength(150);
-        RuleFor(x => x.RouteType)
-            .Must(x => string.IsNullOrWhiteSpace(x) || RouteTypes.IsValid(x))
-            .WithMessage("RouteType phai la Regular, SightseeingLoop, hoac CharterReference.");
         RuleFor(x => x.Description).MaximumLength(1000);
         RuleFor(x => x.SourceRouteIds)
             .NotNull()
@@ -46,7 +42,7 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
     public async Task<RouteDetailDto> Handle(CreateRouteFromRoutesCommand request, CancellationToken cancellationToken)
     {
         var code = request.RouteCode.Trim().ToUpperInvariant();
-        var routeType = RouteTypes.Normalize(request.RouteType);
+        const string routeType = RouteTypes.Regular;
 
         if (await _context.Set<Route>().AnyAsync(r => r.RouteCode == code, cancellationToken))
         {
@@ -70,7 +66,7 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
 
         var orderedSources = request.SourceRouteIds.Select(id => routesById[id]).ToList();
         var composedStops = BuildComposedStops(orderedSources);
-        EnsureRouteShapeIsValid(composedStops, routeType);
+        EnsureRegularRouteShapeIsValid(composedStops);
 
         var routeGeometry = BuildComposedGeometry(orderedSources);
         var baseDistanceKm = routeGeometry is not null
@@ -178,7 +174,7 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
         return composedStops;
     }
 
-    private static void EnsureRouteShapeIsValid(IReadOnlyList<RouteStopDraft> stops, string routeType)
+    private static void EnsureRegularRouteShapeIsValid(IReadOnlyList<RouteStopDraft> stops)
     {
         if (stops.Count < 2)
         {
@@ -188,17 +184,10 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
         }
 
         var sameTerminal = stops[0].Station.Id == stops[^1].Station.Id;
-        if (routeType == RouteTypes.Regular && sameTerminal)
+        if (sameTerminal)
         {
             throw new ValidationException([
-                new ValidationFailure(nameof(CreateRouteFromRoutesCommand.RouteType), "Regular route khong duoc trung ben dau/cuoi.")
-            ]);
-        }
-
-        if (routeType == RouteTypes.SightseeingLoop && !sameTerminal)
-        {
-            throw new ValidationException([
-                new ValidationFailure(nameof(CreateRouteFromRoutesCommand.RouteType), "SightseeingLoop phai co ben dau va cuoi trung nhau.")
+                new ValidationFailure(nameof(CreateRouteFromRoutesCommand.SourceRouteIds), "Route ghep GPS la route Regular nen khong duoc trung ben dau/cuoi.")
             ]);
         }
     }
