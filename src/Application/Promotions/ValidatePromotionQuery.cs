@@ -1,6 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Promotions;
 
@@ -24,47 +23,28 @@ public sealed class ValidatePromotionQueryHandler : IRequestHandler<ValidateProm
 
     public async Task<PromotionValidationDto> Handle(ValidatePromotionQuery request, CancellationToken cancellationToken)
     {
-        var code = request.Code.Trim().ToUpperInvariant();
-        var now = _timeProvider.GetUtcNow();
+        var code = PromotionSupport.NormalizeCode(request.Code);
 
         var promotion = await _context.Set<Promotion>()
             .SingleOrDefaultAsync(p => p.PromotionCode == code, cancellationToken);
 
         if (promotion is null)
-            return new PromotionValidationDto(false, 0, "Promotion code not found.");
-
-        if (promotion.Status != "Active")
-            return new PromotionValidationDto(false, 0, "Promotion is not active.");
-
-        if (promotion.ValidFrom > now || promotion.ValidTo < now)
-            return new PromotionValidationDto(false, 0, "Promotion is not within valid date range.");
-
-        if (promotion.UsageLimit.HasValue && promotion.UsageCount >= promotion.UsageLimit)
-            return new PromotionValidationDto(false, 0, "Promotion usage limit has been reached.");
-
-        if (promotion.MinOrderValue.HasValue && request.SubtotalAmount < promotion.MinOrderValue)
-            return new PromotionValidationDto(false, 0, $"Minimum order value is {promotion.MinOrderValue:N0}.");
-
-        if (_userContext.UserId.HasValue)
         {
-            var alreadyUsed = await _context.Set<Booking>()
-                .AnyAsync(x => x.UserId == _userContext.UserId.Value
-                            && x.PromotionId == promotion.Id
-                            && x.BookingStatus != BookingStatus.Cancelled
-                            && x.BookingStatus != BookingStatus.Expired
-                            && x.BookingStatus != BookingStatus.Refunded,
-                    cancellationToken);
-
-            if (promotion.AccountUsagePolicy == PromotionAccountUsagePolicy.OncePerAccount && alreadyUsed)
-            {
-                return new PromotionValidationDto(false, 0, "Promotion này mỗi tài khoản chỉ được sử dụng 1 lần.");
-            }
+            return new PromotionValidationDto(false, 0, "Không tìm thấy mã khuyến mãi.");
         }
 
-        var discount = promotion.PromotionType == PromotionType.Percent
-            ? request.SubtotalAmount * promotion.DiscountValue / 100
-            : Math.Min(promotion.DiscountValue, request.SubtotalAmount);
+        var eligibility = await PromotionEligibilitySupport.EvaluateAsync(
+            _context,
+            promotion,
+            _userContext.UserId,
+            request.SubtotalAmount,
+            _timeProvider.GetUtcNow(),
+            applyContext: null,
+            excludedBookingId: null,
+            cancellationToken);
 
-        return new PromotionValidationDto(true, discount, "Promotion applied successfully.");
+        return eligibility.IsValid
+            ? new PromotionValidationDto(true, eligibility.Discount, "Áp dụng khuyến mãi thành công.")
+            : new PromotionValidationDto(false, 0, eligibility.Reason ?? "Khuyến mãi không khả dụng.");
     }
 }

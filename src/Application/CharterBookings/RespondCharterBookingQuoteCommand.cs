@@ -1,7 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -161,7 +160,6 @@ public sealed class RespondCharterBookingQuoteCommandHandler
 
     private void RequestChanges(Booking booking, string? note, DateTimeOffset now)
     {
-        PromotionUsageSupport.DecrementUsage(booking.Promotion);
         _context.Set<CharterBookingBoat>().RemoveRange(booking.CharterBoats);
         booking.CharterBoats.Clear();
         booking.BoatId = null;
@@ -182,7 +180,6 @@ public sealed class RespondCharterBookingQuoteCommandHandler
 
     private void RejectQuote(Booking booking)
     {
-        PromotionUsageSupport.DecrementUsage(booking.Promotion);
         booking.BookingStatus = BookingStatus.Cancelled;
         booking.HoldExpiresAt = null;
         foreach (var ticket in booking.Tickets)

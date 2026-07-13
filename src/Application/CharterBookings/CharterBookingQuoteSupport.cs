@@ -198,6 +198,7 @@ internal static class CharterBookingQuoteSupport
         string promotionCodeFieldName,
         CancellationToken cancellationToken)
     {
+        // Loại trừ chính booking đang xét khỏi việc đếm lượt (re-quote không tự chặn mình).
         if (promotionCode is not null)
         {
             return string.IsNullOrWhiteSpace(promotionCode)
@@ -205,10 +206,11 @@ internal static class CharterBookingQuoteSupport
                 : await CharterBookingPricingSupport.ResolvePromotionAsync(
                     context,
                     promotionCode,
+                    booking.UserId,
                     subtotalAmount,
                     now,
                     promotionCodeFieldName,
-                    validateMinOrder: true,
+                    booking.Id,
                     cancellationToken);
         }
 
@@ -225,12 +227,15 @@ internal static class CharterBookingQuoteSupport
             return null;
         }
 
-        CharterBookingPricingSupport.EnsurePromotionCanBeUsed(
+        await CharterBookingPricingSupport.EnsurePromotionCanBeUsedAsync(
+            context,
             promotion,
+            booking.UserId,
             subtotalAmount,
             now,
             promotionCodeFieldName,
-            validateMinOrder: true);
+            booking.Id,
+            cancellationToken);
         return promotion;
     }
 

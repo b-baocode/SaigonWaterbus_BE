@@ -94,6 +94,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
     private readonly TimeProvider _timeProvider;
     private readonly ISeatHoldService _seatHoldService;
     private readonly ITripSeatNotifier _tripSeatNotifier;
+    private readonly IPromotionLock? _promotionLock;
 
     public CreateBookingCommandHandler(
         IApplicationDbContext context,
@@ -102,7 +103,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         IFareCalculator fareCalculator,
         TimeProvider timeProvider,
         ISeatHoldService? seatHoldService = null,
-        ITripSeatNotifier? tripSeatNotifier = null)
+        ITripSeatNotifier? tripSeatNotifier = null,
+        IPromotionLock? promotionLock = null)
     {
         _context = context;
         _userContext = userContext;
@@ -111,6 +113,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         _timeProvider = timeProvider;
         _seatHoldService = seatHoldService ?? NullSeatHoldService.Instance;
         _tripSeatNotifier = tripSeatNotifier ?? NullTripSeatNotifier.Instance;
+        _promotionLock = promotionLock;
     }
 
     public async Task<CreateBookingResult> Handle(CreateBookingCommand request, CancellationToken cancellationToken)
@@ -295,28 +298,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 toStop));
         }
 
-        Promotion? promotion = null;
-        if (!string.IsNullOrWhiteSpace(request.PromotionCode))
-        {
-            var promoCode = request.PromotionCode.Trim().ToUpperInvariant();
-            promotion = await _context.Set<Promotion>()
-                .SingleOrDefaultAsync(p => p.PromotionCode == promoCode, cancellationToken)
-                ?? throw new ValidationException([new ValidationFailure(nameof(request.PromotionCode),
-                    "Promotion code not found.")]);
-
-            if (promotion.Status != "Active" || promotion.ValidFrom > now || promotion.ValidTo < now
-                || (promotion.UsageLimit.HasValue && promotion.UsageCount >= promotion.UsageLimit))
-                throw new ValidationException([new ValidationFailure(nameof(request.PromotionCode),
-                    "Promotion code is not applicable.")]);
-
-            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
-                _context,
-                promotion,
-                userId,
-                nameof(request.PromotionCode),
-                cancellationToken);
-        }
-
         var itemPrices = new List<(ResolvedItem Resolved, decimal UnitPrice)>();
         foreach (var resolved in resolvedItems)
         {
@@ -334,20 +315,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         var subtotal = itemPrices.Sum(x => x.UnitPrice);
 
-        decimal discount = 0;
-        if (promotion is not null)
-        {
-            discount = promotion.PromotionType == PromotionType.Percent
-                ? Math.Min(subtotal * promotion.DiscountValue / 100, subtotal)
-                : Math.Min(promotion.DiscountValue, subtotal);
-
-            if (promotion.MinOrderValue.HasValue && subtotal < promotion.MinOrderValue)
-                throw new ValidationException([new ValidationFailure(nameof(request.PromotionCode),
-                    $"Minimum order value is {promotion.MinOrderValue:N0}.")]);
-        }
-
-        var total = subtotal - discount;
-
         var user = await _context.Users
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
@@ -356,7 +323,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         var booking = new Booking
         {
             UserId = userId,
-            PromotionId = promotion?.Id,
             TripId = trip.Id,
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
             ContactName = user.FullName,
@@ -364,8 +330,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             ContactEmail = user.Email,
             BookingStatus = BookingStatus.PendingPayment,
             SubtotalAmount = subtotal,
-            DiscountAmount = discount,
-            TotalAmount = total,
+            DiscountAmount = 0,
+            TotalAmount = subtotal,
             HoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration)
         };
 
@@ -392,13 +358,40 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         _context.Set<Booking>().Add(booking);
 
-        PromotionUsageSupport.IncrementUsage(promotion);
+        var applyContext = new PromotionApplyContext(
+            Booking.SeatBookingType,
+            trip.RouteId,
+            trip.OperatingDate.DayOfWeek,
+            TimeOnly.FromTimeSpan(trip.DepartureTime.TimeOfDay));
 
         try
         {
             await _context.ExecuteInTransactionAsync(
                 async ct =>
                 {
+                    // Khoá + kiểm tra + tính giảm giá dưới cùng transaction để không vượt hạn mức khi nhiều đơn cùng dùng một mã.
+                    if (!string.IsNullOrWhiteSpace(request.PromotionCode))
+                    {
+                        var code = PromotionSupport.NormalizeCode(request.PromotionCode);
+                        var promotion = _promotionLock is not null
+                            ? await _promotionLock.AcquireByCodeAsync(code, ct)
+                            : await _context.Set<Promotion>().SingleOrDefaultAsync(p => p.PromotionCode == code, ct);
+
+                        if (promotion is null)
+                        {
+                            throw new ValidationException([new ValidationFailure(
+                                nameof(request.PromotionCode), "Không tìm thấy mã khuyến mãi.")]);
+                        }
+
+                        var discount = await PromotionEligibilitySupport.EnsureAndCalculateAsync(
+                            _context, promotion, userId, subtotal, now,
+                            nameof(request.PromotionCode), applyContext, null, ct);
+
+                        booking.PromotionId = promotion.Id;
+                        booking.DiscountAmount = discount;
+                        booking.TotalAmount = subtotal - discount;
+                    }
+
                     await _context.SaveChangesAsync(ct);
                 },
                 cancellationToken);

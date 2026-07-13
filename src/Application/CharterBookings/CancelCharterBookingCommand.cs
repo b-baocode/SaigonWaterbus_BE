@@ -1,6 +1,5 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -61,7 +60,6 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
                 "Không thể hủy yêu cầu thuê tàu đã hoàn tất.")]);
 
         booking.BookingStatus = BookingStatus.Cancelled;
-        PromotionUsageSupport.DecrementUsage(booking.Promotion);
         foreach (var ticket in booking.Tickets)
         {
             ticket.TicketStatus = TicketStatus.Cancelled;

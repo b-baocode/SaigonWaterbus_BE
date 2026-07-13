@@ -1,5 +1,4 @@
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -18,15 +17,8 @@ public static class BookingHoldExpirySupport
         Booking booking,
         CancellationToken cancellationToken)
     {
+        // Lượt khuyến mãi suy ra từ bookings — Expired tự nhả lượt, không cần bookkeeping.
         booking.BookingStatus = BookingStatus.Expired;
-
-        if (booking.PromotionId.HasValue)
-        {
-            var promotion = booking.Promotion
-                ?? await context.Set<Promotion>()
-                    .SingleOrDefaultAsync(x => x.Id == booking.PromotionId.Value, cancellationToken);
-            PromotionUsageSupport.DecrementUsage(promotion);
-        }
 
         await context.SaveChangesAsync(cancellationToken);
         await NotifySeatsReleasedAsync(context, notifier, booking, cancellationToken);
@@ -40,7 +32,6 @@ public static class BookingHoldExpirySupport
         CancellationToken cancellationToken)
     {
         var overdueBookings = await context.Set<Booking>()
-            .Include(b => b.Promotion)
             .Include(b => b.Passengers)
                 .ThenInclude(p => p.TripSeat)
                     .ThenInclude(ts => ts!.Seat)
@@ -58,7 +49,6 @@ public static class BookingHoldExpirySupport
         foreach (var booking in overdueBookings)
         {
             booking.BookingStatus = BookingStatus.Expired;
-            PromotionUsageSupport.DecrementUsage(booking.Promotion);
         }
 
         await context.SaveChangesAsync(cancellationToken);

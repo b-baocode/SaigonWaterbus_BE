@@ -138,7 +138,6 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         var booking = await CharterBookingQuerySupport.BuildDetailQuery(_context)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
-        var previousStatus = booking.BookingStatus;
         var previousBoatIds = CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking);
         var previousDepartureDate = booking.DepartureDate;
         var previousStartTime = booking.StartTime;
@@ -147,12 +146,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
         ApplyStatusUpdate(booking, request.BookingStatus);
 
-        if (!PromotionUsageSupport.ReleasesPromotionUsage(previousStatus)
-            && PromotionUsageSupport.ReleasesPromotionUsage(request.BookingStatus))
-        {
-            PromotionUsageSupport.DecrementUsage(booking.Promotion);
-        }
-
+        // Lượt khuyến mãi suy ra từ bookings — chuyển sang trạng thái nhả lượt là tự cập nhật, không cần bookkeeping.
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(
@@ -461,22 +455,12 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             now,
             nameof(booking.PromotionId),
             cancellationToken);
-        if (promotion is not null)
+        // Per-account/first-booking đã được kiểm tra trong ResolvePromotionForQuoteAsync; chỉ cần đảm bảo có tài khoản.
+        if (promotion is not null && !booking.UserId.HasValue)
         {
-            if (!booking.UserId.HasValue)
-            {
-                throw new ValidationException([new ValidationFailure(
-                    nameof(booking.UserId),
-                    "Booking không có tài khoản để kiểm tra promotion.")]);
-            }
-
-            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
-                _context,
-                promotion,
-                booking.UserId.Value,
-                nameof(booking.PromotionId),
-                cancellationToken,
-                booking.Id);
+            throw new ValidationException([new ValidationFailure(
+                nameof(booking.UserId),
+                "Booking không có tài khoản để kiểm tra promotion.")]);
         }
 
         var discount = CharterBookingPricingSupport.CalculateDiscount(promotion, subtotal);
@@ -581,8 +565,6 @@ public sealed class QuoteCharterBookingCommandHandler
         var previousStartTime = booking.StartTime;
         var previousRentalUnit = booking.RentalUnit;
         var previousDurationValue = booking.DurationValue.GetValueOrDefault();
-        var wasAlreadyPriced = booking.TotalAmount > 0;
-        var previousPromotionId = booking.PromotionId;
         var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
             _context,
             booking,
@@ -620,22 +602,12 @@ public sealed class QuoteCharterBookingCommandHandler
             now,
             nameof(booking.PromotionId),
             cancellationToken);
-        if (promotion is not null)
+        // Per-account/first-booking đã được kiểm tra trong ResolvePromotionForQuoteAsync; chỉ cần đảm bảo có tài khoản.
+        if (promotion is not null && !booking.UserId.HasValue)
         {
-            if (!booking.UserId.HasValue)
-            {
-                throw new ValidationException([new ValidationFailure(
-                    nameof(booking.UserId),
-                    "Booking không có tài khoản để kiểm tra promotion.")]);
-            }
-
-            await PromotionUsageSupport.EnsureAccountCanUsePromotionAsync(
-                _context,
-                promotion,
-                booking.UserId.Value,
-                nameof(booking.PromotionId),
-                cancellationToken,
-                booking.Id);
+            throw new ValidationException([new ValidationFailure(
+                nameof(booking.UserId),
+                "Booking không có tài khoản để kiểm tra promotion.")]);
         }
         var discount = CharterBookingPricingSupport.CalculateDiscount(promotion, subtotal);
         var total = subtotal - discount;
@@ -711,18 +683,7 @@ public sealed class QuoteCharterBookingCommandHandler
         booking.BookingStatus = BookingStatus.Quoted;
         booking.HoldExpiresAt = holdExpiresAt;
 
-        if (wasAlreadyPriced && previousPromotionId.HasValue && previousPromotionId != promotion?.Id)
-        {
-            var previousPromotion = await _context.Set<Promotion>()
-                .SingleOrDefaultAsync(x => x.Id == previousPromotionId.Value, cancellationToken);
-            PromotionUsageSupport.DecrementUsage(previousPromotion);
-        }
-
-        if (promotion is not null && (!wasAlreadyPriced || previousPromotionId != promotion.Id))
-        {
-            PromotionUsageSupport.IncrementUsage(promotion);
-        }
-
+        // Lượt/ngân sách khuyến mãi suy ra từ bookings — đổi mã trên booking là tự phản ánh, không cần bookkeeping counter.
         try
         {
             await _context.SaveChangesAsync(cancellationToken);

@@ -1,7 +1,6 @@
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
-using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -128,7 +127,6 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
             }
 
             PaymentSupport.RestorePaymentSummaryFromPaidPayments(booking);
-            PromotionUsageSupport.DecrementUsage(booking.Promotion);
 
             var previousBoatIds = CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking);
             var previousDepartureDate = booking.DepartureDate;

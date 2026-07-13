@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.Promotions;
@@ -27,7 +28,8 @@ public sealed class DeletePromotionCommandHandler : IRequestHandler<DeletePromot
             .SingleOrDefaultAsync(p => p.Id == request.PromotionId, cancellationToken)
             ?? throw new NotFoundException("Promotion not found.");
 
-        promotion.Status = "Inactive";
+        // Soft delete: kết thúc hẳn, không bật lại được.
+        promotion.Status = PromotionStatus.Archived;
         await _context.SaveChangesAsync(cancellationToken);
     }
 }

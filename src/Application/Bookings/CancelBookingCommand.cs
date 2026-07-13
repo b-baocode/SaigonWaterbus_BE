@@ -1,6 +1,5 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
-using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -43,7 +42,6 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
             ?? throw new ValidationException([]);
 
         var booking = await _context.Set<Booking>()
-            .Include(b => b.Promotion)
             .SingleOrDefaultAsync(
                 b => b.Id == request.BookingId && b.BookingType == Booking.SeatBookingType,
                 cancellationToken)
@@ -66,10 +64,8 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
                     "Cannot cancel a booking after the trip has departed.")]);
         }
 
+        // Lượt khuyến mãi được suy ra từ bookings — đổi status sang Cancelled là tự nhả, không cần bookkeeping.
         booking.BookingStatus = BookingStatus.Cancelled;
-
-        if (booking.PromotionId.HasValue)
-            PromotionUsageSupport.DecrementUsage(booking.Promotion);
 
         await _context.SaveChangesAsync(cancellationToken);
 

@@ -1,7 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
-using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.CharterBookings;
@@ -11,10 +11,11 @@ internal static class CharterBookingPricingSupport
     public static async Task<Promotion?> ResolvePromotionAsync(
         IApplicationDbContext context,
         string? promotionCode,
+        Guid? userId,
         decimal subtotal,
         DateTimeOffset now,
         string propertyName,
-        bool validateMinOrder,
+        Guid? excludedBookingId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(promotionCode))
@@ -22,49 +23,37 @@ internal static class CharterBookingPricingSupport
             return null;
         }
 
-        var normalizedCode = promotionCode.Trim().ToUpperInvariant();
+        var normalizedCode = PromotionSupport.NormalizeCode(promotionCode);
         var promotion = await context.Set<Promotion>()
             .SingleOrDefaultAsync(p => p.PromotionCode == normalizedCode, cancellationToken)
-            ?? throw new ValidationException([new ValidationFailure(propertyName, "Promotion code not found.")]);
+            ?? throw new ValidationException([new ValidationFailure(propertyName, "Không tìm thấy mã khuyến mãi.")]);
 
-        EnsurePromotionCanBeUsed(promotion, subtotal, now, propertyName, validateMinOrder);
+        await EnsurePromotionCanBeUsedAsync(context, promotion, userId, subtotal, now, propertyName, excludedBookingId, cancellationToken);
         return promotion;
     }
 
-    public static void EnsurePromotionCanBeUsed(
+    public static async Task EnsurePromotionCanBeUsedAsync(
+        IApplicationDbContext context,
         Promotion promotion,
+        Guid? userId,
         decimal subtotal,
         DateTimeOffset now,
         string propertyName,
-        bool validateMinOrder)
+        Guid? excludedBookingId,
+        CancellationToken cancellationToken)
     {
-        if (promotion.Status != "Active"
-            || promotion.ValidFrom > now
-            || promotion.ValidTo < now
-            || (promotion.UsageLimit.HasValue && promotion.UsageCount >= promotion.UsageLimit))
-        {
-            throw new ValidationException([new ValidationFailure(propertyName,
-                "Promotion code is not applicable.")]);
-        }
-
-        if (validateMinOrder && promotion.MinOrderValue.HasValue && subtotal < promotion.MinOrderValue)
-        {
-            throw new ValidationException([new ValidationFailure(propertyName,
-                $"Minimum order value is {promotion.MinOrderValue:N0}.")]);
-        }
+        await PromotionEligibilitySupport.EnsureAndCalculateAsync(
+            context,
+            promotion,
+            userId,
+            subtotal,
+            now,
+            propertyName,
+            new PromotionApplyContext(Booking.CharterBookingType),
+            excludedBookingId,
+            cancellationToken);
     }
 
-    public static decimal CalculateDiscount(Promotion? promotion, decimal subtotal)
-    {
-        if (promotion is null)
-        {
-            return 0;
-        }
-
-        var discount = promotion.PromotionType == PromotionType.Percent
-            ? subtotal * promotion.DiscountValue / 100
-            : promotion.DiscountValue;
-
-        return Math.Min(discount, subtotal);
-    }
+    public static decimal CalculateDiscount(Promotion? promotion, decimal subtotal) =>
+        promotion?.CalculateDiscount(subtotal) ?? 0;
 }

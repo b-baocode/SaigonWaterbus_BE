@@ -82,19 +82,25 @@ public static class WaterbusSeedData
         {
             new Promotion
             {
-                PromotionCode = "WELCOME10", PromotionName = "Chào mừng khách mới", PromotionType = PromotionType.Percent,
-                DiscountValue = 10m, MinOrderValue = 15_000m,
+                PromotionCode = "WELCOME10", PromotionName = "Chào mừng khách mới",
+                Description = "Giảm 10% cho khách đặt vé lần đầu, tối đa 30.000đ.",
+                PromotionType = PromotionType.Percent,
+                DiscountValue = 10m, MaxDiscountAmount = 30_000m, MinOrderValue = 15_000m,
                 ValidFrom = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.FromHours(7)).ToUniversalTime(),
                 ValidTo   = new DateTimeOffset(2026, 12, 31, 23, 59, 59, TimeSpan.FromHours(7)).ToUniversalTime(),
-                UsageLimit = 1000, UsageCount = 0, Status = "Active"
+                UsageLimit = 1000, MaxUsesPerAccount = 1, FirstBookingOnly = true,
+                Visibility = PromotionVisibility.Public, Status = PromotionStatus.Active
             },
             new Promotion
             {
-                PromotionCode = "SUMMER2026", PromotionName = "Ưu đãi hè 2026", PromotionType = PromotionType.Fixed,
+                PromotionCode = "SUMMER2026", PromotionName = "Ưu đãi hè 2026",
+                Description = "Giảm 5.000đ cho mỗi đơn từ 20.000đ trong hè 2026.",
+                PromotionType = PromotionType.Fixed,
                 DiscountValue = 5_000m, MinOrderValue = 20_000m,
                 ValidFrom = new DateTimeOffset(2026, 6, 1, 0, 0, 0, TimeSpan.FromHours(7)).ToUniversalTime(),
                 ValidTo   = new DateTimeOffset(2026, 8, 31, 23, 59, 59, TimeSpan.FromHours(7)).ToUniversalTime(),
-                UsageLimit = 500, UsageCount = 0, Status = "Active"
+                UsageLimit = 500, BudgetCap = 2_000_000m,
+                Visibility = PromotionVisibility.Public, Status = PromotionStatus.Active
             },
         };
 

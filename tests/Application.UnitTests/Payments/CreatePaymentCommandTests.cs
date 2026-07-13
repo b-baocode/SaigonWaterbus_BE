@@ -128,7 +128,7 @@ public class CreatePaymentCommandTests
             DiscountValue = 10,
             ValidFrom = DateTimeOffset.UtcNow.AddDays(-1),
             ValidTo = DateTimeOffset.UtcNow.AddDays(1),
-            Status = "Active"
+            Status = PromotionStatus.Active
         };
         var booking = new Booking
         {
@@ -161,7 +161,8 @@ public class CreatePaymentCommandTests
         booking.DiscountAmount.ShouldBe(1000);
         booking.TotalAmount.ShouldBe(9000);
         booking.RemainingAmount.ShouldBe(0);
-        promotion.UsageCount.ShouldBe(1);
+        // Lượt dùng suy ra từ bookings: đúng 1 booking active đang dùng mã.
+        CountActivePromotionUsage(context, promotion.Id).ShouldBe(1);
         context.Set<Payment>().Single().Amount.ShouldBe(9000);
     }
 
@@ -178,7 +179,7 @@ public class CreatePaymentCommandTests
             DiscountValue = 10,
             ValidFrom = DateTimeOffset.UtcNow.AddDays(-1),
             ValidTo = DateTimeOffset.UtcNow.AddDays(1),
-            Status = "Active"
+            Status = PromotionStatus.Active
         };
         var booking = new Booking
         {
@@ -222,7 +223,8 @@ public class CreatePaymentCommandTests
         exception.Errors["promotionCode"]
             .ShouldContain("Không thể đổi mã giảm giá khi booking đã có payment đang chờ hoặc đã thanh toán.");
         booking.TotalAmount.ShouldBe(10000);
-        promotion.UsageCount.ShouldBe(0);
+        // Mã bị từ chối nên không booking nào dùng nó.
+        CountActivePromotionUsage(context, promotion.Id).ShouldBe(0);
     }
 
     [Test]
@@ -791,6 +793,12 @@ public class CreatePaymentCommandTests
                 null,
                 null),
             "signature");
+
+    private static int CountActivePromotionUsage(Infrastructure.Data.ApplicationDbContext context, Guid promotionId) =>
+        context.Set<Booking>().Count(b => b.PromotionId == promotionId
+            && b.BookingStatus != BookingStatus.Cancelled
+            && b.BookingStatus != BookingStatus.Expired
+            && b.BookingStatus != BookingStatus.Refunded);
 
     private static User SeedAdmin(Infrastructure.Data.ApplicationDbContext context)
     {

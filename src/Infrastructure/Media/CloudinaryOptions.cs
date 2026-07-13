@@ -20,6 +20,8 @@ public sealed class CloudinaryOptions
 
     public string BlogFolder { get; set; } = "saigon-waterbus/blog-posts";
 
+    public string PromotionFolder { get; set; } = "saigon-waterbus/promotions";
+
     public long MaxAvatarBytes { get; set; } = 5 * 1024 * 1024;
 
     public long MaxBoatImageBytes { get; set; } = 5 * 1024 * 1024;
@@ -29,6 +31,8 @@ public sealed class CloudinaryOptions
     public long MaxStationImageBytes { get; set; } = 5 * 1024 * 1024;
 
     public long MaxBlogImageBytes { get; set; } = 5 * 1024 * 1024;
+
+    public long MaxPromotionImageBytes { get; set; } = 5 * 1024 * 1024;
 
     public string[] AllowedAvatarContentTypes { get; set; } =
     [
@@ -60,6 +64,13 @@ public sealed class CloudinaryOptions
     ];
 
     public string[] AllowedBlogImageContentTypes { get; set; } =
+    [
+        "image/jpeg",
+        "image/png",
+        "image/webp"
+    ];
+
+    public string[] AllowedPromotionImageContentTypes { get; set; } =
     [
         "image/jpeg",
         "image/png",

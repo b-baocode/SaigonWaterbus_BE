@@ -58,6 +58,8 @@ public static class DependencyInjection
         builder.Services.AddScoped<IBoatImageStorageService, CloudinaryBoatImageStorageService>();
         builder.Services.AddScoped<IBoatDocumentStorageService, CloudinaryBoatDocumentStorageService>();
         builder.Services.AddScoped<IStationImageStorageService, CloudinaryStationImageStorageService>();
+        builder.Services.AddScoped<IPromotionImageStorageService, CloudinaryPromotionImageStorageService>();
+        builder.Services.AddScoped<IPromotionLock, PromotionLock>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddHttpClient(PayOsHttpClientName);

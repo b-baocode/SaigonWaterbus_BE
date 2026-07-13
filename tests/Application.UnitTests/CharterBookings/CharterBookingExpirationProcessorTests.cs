@@ -24,8 +24,7 @@ public class CharterBookingExpirationProcessorTests
             DiscountValue = 10,
             ValidFrom = now.AddDays(-1),
             ValidTo = now.AddDays(1),
-            Status = "Active",
-            UsageCount = 1
+            Status = PromotionStatus.Active
         };
         var booking = new Booking
         {
@@ -86,7 +85,7 @@ public class CharterBookingExpirationProcessorTests
         booking.HoldExpiresAt.ShouldBeNull();
         booking.PaymentStatus.ShouldBe("Unpaid");
         pendingPayment.PaymentStatus.ShouldBe("Expired");
-        promotion.UsageCount.ShouldBe(0);
+        // Lượt khuyến mãi suy ra từ bookings: booking chuyển Expired nên không còn tính là đã dùng.
         boatHoldService.Releases.ShouldHaveSingleItem().BoatId.ShouldBe(boat.Id);
     }
 
