@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -17,6 +18,13 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         builder.Property(x => x.BoatId).HasColumnName("boat_id");
         builder.Property(x => x.TripCode).HasColumnName("trip_code").HasMaxLength(50).IsRequired();
         builder.HasIndex(x => x.TripCode).IsUnique();
+        builder.Property(x => x.TripType)
+            .HasColumnName("trip_type")
+            .HasMaxLength(30)
+            .HasDefaultValue(TripTypes.Regular)
+            .IsRequired();
+        builder.Property(x => x.SourceBookingId).HasColumnName("source_booking_id");
+        builder.HasIndex(x => x.SourceBookingId);
 
         builder.Property(x => x.OperatingDate).HasColumnName("operating_date").HasColumnType("date").IsRequired();
         builder.Property(x => x.ServicePeriod).HasColumnName("service_period").HasMaxLength(30);
@@ -36,6 +44,7 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
 
         builder.HasOne(x => x.Route).WithMany(r => r.Trips).HasForeignKey(x => x.RouteId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Boat).WithMany().HasForeignKey(x => x.BoatId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne<Booking>().WithMany().HasForeignKey(x => x.SourceBookingId).OnDelete(DeleteBehavior.SetNull);
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");

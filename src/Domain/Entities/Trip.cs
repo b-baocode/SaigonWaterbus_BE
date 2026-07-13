@@ -1,4 +1,5 @@
 using SaigonWaterbus.Domain.Common;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Domain.Entities;
@@ -8,6 +9,8 @@ public class Trip : BaseGuidAuditableEntity
     public Guid RouteId { get; set; }
     public Guid? BoatId { get; set; }
     public string TripCode { get; set; } = null!;
+    public string TripType { get; set; } = TripTypes.Regular;
+    public Guid? SourceBookingId { get; set; }
     public DateOnly OperatingDate { get; set; }
     public string? ServicePeriod { get; set; }
     public DateTimeOffset DepartureTime { get; set; }

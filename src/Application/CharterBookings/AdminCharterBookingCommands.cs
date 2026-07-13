@@ -146,6 +146,15 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
         ApplyStatusUpdate(booking, request.BookingStatus);
 
+        if (request.BookingStatus is BookingStatus.Cancelled or BookingStatus.Expired)
+        {
+            await CharterBookingTripSupport.CancelLinkedTripsAsync(
+                _context,
+                booking.Id,
+                $"Charter booking {booking.BookingCode} đã bị hủy.",
+                cancellationToken);
+        }
+
         // Lượt khuyến mãi suy ra từ bookings — chuyển sang trạng thái nhả lượt là tự cập nhật, không cần bookkeeping.
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(

@@ -65,6 +65,12 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
             ticket.TicketStatus = TicketStatus.Cancelled;
         }
 
+        await CharterBookingTripSupport.CancelLinkedTripsAsync(
+            _context,
+            booking.Id,
+            $"Charter booking {booking.BookingCode} đã bị hủy.",
+            cancellationToken);
+
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(

@@ -14,6 +14,7 @@ public sealed class CharterBookingBoatConfiguration : IEntityTypeConfiguration<C
         builder.Property(x => x.Id).HasColumnName("charter_booking_boat_id");
         builder.Property(x => x.BookingId).HasColumnName("booking_id").IsRequired();
         builder.Property(x => x.BoatId).HasColumnName("boat_id").IsRequired();
+        builder.Property(x => x.TripId).HasColumnName("trip_id");
         builder.Property(x => x.BoatOrder).HasColumnName("boat_order").IsRequired();
         builder.Property(x => x.SeatSetupType)
             .HasColumnName("seat_setup_type")
@@ -50,5 +51,10 @@ public sealed class CharterBookingBoatConfiguration : IEntityTypeConfiguration<C
             .WithMany()
             .HasForeignKey(x => x.BoatId)
             .OnDelete(DeleteBehavior.Restrict);
+        builder.HasOne(x => x.Trip)
+            .WithMany()
+            .HasForeignKey(x => x.TripId)
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasIndex(x => x.TripId);
     }
 }

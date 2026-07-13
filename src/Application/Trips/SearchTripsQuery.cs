@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -46,6 +47,8 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 .ThenInclude(r => r.RouteStops)
             .Where(t => routeIds.Contains(t.RouteId)
                      && t.Route.IsBookable
+                     // Trip charter thue tron tau khong ban ve le.
+                     && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
                      && t.TripStatus == TripStatus.Scheduled
                      && t.DepartureTime > now)

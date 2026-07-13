@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Promotions;
@@ -634,6 +635,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         payment.RefundedAt = now;
 
         PaymentSupport.ApplyRefundStatus(payment.Booking);
+        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
@@ -715,6 +717,7 @@ public sealed class ManualRefundPaymentCommandHandler : IRequestHandler<ManualRe
         payment.RefundedAt = request.RefundedAt ?? now;
 
         PaymentSupport.ApplyRefundStatus(payment.Booking);
+        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
@@ -1358,6 +1361,25 @@ internal static class PaymentSupport
         }
 
         booking.PaymentStatus = PartiallyRefundedStatus;
+    }
+
+    /// <summary>Charter booking hoan tien du -> huy cac trip da sinh tu booking do.</summary>
+    public static async Task CancelCharterTripsIfRefundedAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        if (!Booking.IsCharterBookingType(booking.BookingType)
+            || booking.BookingStatus != BookingStatus.Refunded)
+        {
+            return;
+        }
+
+        await CharterBookingTripSupport.CancelLinkedTripsAsync(
+            context,
+            booking.Id,
+            $"Charter booking {booking.BookingCode} đã hoàn tiền.",
+            cancellationToken);
     }
 
     public static async Task SendPaymentNotificationIfPaidAsync(

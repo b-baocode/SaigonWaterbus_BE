@@ -591,3 +591,23 @@ public sealed record QuoteCharterBookingResult(
     DateTimeOffset? HoldExpiresAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingInsuranceDto? Insurance = null);
+
+public sealed record CharterBookingTripDto(
+    Guid TripId,
+    string TripCode,
+    Guid BoatId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? BoatName,
+    int BoatOrder,
+    DateTimeOffset DepartureTime,
+    DateTimeOffset ArrivalTime,
+    int CapacitySnapshot,
+    string TripStatus);
+
+public sealed record CreateCharterBookingTripResult(
+    Guid BookingId,
+    string BookingCode,
+    Guid RouteId,
+    string RouteCode,
+    string RouteName,
+    IReadOnlyList<CharterBookingTripDto> Trips);

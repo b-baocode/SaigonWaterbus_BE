@@ -14,7 +14,9 @@ public sealed record TripAdminListItemDto(
     DateTimeOffset ArrivalTime,
     int CapacitySnapshot,
     string TripStatus,
-    string? StatusNote);
+    string? StatusNote,
+    string TripType,
+    Guid? SourceBookingId);
 
 [Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record GetTripListQuery(
@@ -55,7 +57,8 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
                 t.Id, t.TripCode,
                 t.Route.RouteCode, t.Route.RouteName,
                 t.OperatingDate, t.DepartureTime, t.ArrivalTime,
-                t.CapacitySnapshot, t.TripStatus.ToString(), t.StatusNote))
+                t.CapacitySnapshot, t.TripStatus.ToString(), t.StatusNote,
+                t.TripType, t.SourceBookingId))
             .ToListAsync(cancellationToken);
     }
 }

@@ -173,6 +173,20 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin khong gui promotionCode hoac insurancePackageId trong preview.",
                 "Backend tu tinh tong bang cach cong subtotalAmount tung tau; khong ho tro tong gia thu cong."));
 
+        group.MapPost(CreateCharterBookingTrip, "admin/{id:guid}/trip")
+            .RequireAuthorization()
+            .WithSummary("Admin tao trip van hanh cho charter booking da Confirmed")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Chi dung khi bookingStatus = Confirmed (da thanh toan coc hoac du) va booking chua co trip.",
+                "Backend tim route Active co RouteStops trung khop chinh xac chuoi ben cua booking (ben di -> diem dung -> ben den, dung thu tu).",
+                "Khong co route nao khop -> tra loi validation; tao route dung lo trinh (vi du POST /api/routes/from-gps voi stops day du) roi goi lai.",
+                "Nhieu route cung khop -> uu tien RouteType = CharterReference, sau do route tao gan nhat.",
+                "Moi tau trong quote sinh mot trip rieng (tripType = Charter, khong tao trip seats).",
+                "Tau bi trung gio voi trip khac (ke ca chuyen tuyen thuong) -> tra loi validation.",
+                "Trip charter khong xuat hien trong tim kiem chuyen cua khach; khi booking bi huy/hoan tien, trip tu dong bi huy theo."));
+
         group.MapPut(AssignCharterBookingManager, "admin/{id:guid}/manager")
             .RequireAuthorization()
             .Accepts<AssignCharterBookingManagerRequest>("application/json")
@@ -487,6 +501,12 @@ public sealed class CharterBookings : IEndpointGroup
             id,
             request.BoatId,
             request.Boats), ct));
+
+    private static async Task<IResult> CreateCharterBookingTrip(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CreateCharterBookingTripCommand(id), ct));
 
     private static async Task<IResult> AssignCharterBookingManager(
         ISender sender,
