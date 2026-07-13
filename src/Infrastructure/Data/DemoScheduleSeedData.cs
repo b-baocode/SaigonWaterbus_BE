@@ -146,7 +146,6 @@ public static class DemoScheduleSeedData
 
             routeStop.StationId = station.Id;
             routeStop.StandardTravelMin = travelMinutes[i];
-            routeStop.StandardDwellMin = i == stations.Count - 1 ? 0 : 2;
             routeStop.IsPickupAllowed = true;
             routeStop.IsDropoffAllowed = true;
         }
@@ -239,11 +238,9 @@ public static class DemoScheduleSeedData
                 runningArrival = runningArrival.AddMinutes(routeStop.StandardTravelMin ?? 1);
             }
 
-            var dwellMinutes = routeStop.StandardDwellMin ?? 0;
-            var departure = runningArrival.AddMinutes(dwellMinutes);
             if (i == 0)
             {
-                firstDeparture = departure;
+                firstDeparture = runningArrival;
             }
         }
 

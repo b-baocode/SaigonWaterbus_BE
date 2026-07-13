@@ -50,26 +50,26 @@ public static class WaterbusSeedData
 
         var rsF = new[]
         {
-            RS(rFwd, sBD,   1, travelMin:  0, dwellMin: 2),
-            RS(rFwd, sTT,   2, travelMin:  5, dwellMin: 2),
-            RS(rFwd, sBS,   3, travelMin:  5, dwellMin: 2),
-            RS(rFwd, sBA,   4, travelMin: 12, dwellMin: 2),
-            RS(rFwd, sTD,   5, travelMin:  5, dwellMin: 2),
-            RS(rFwd, sTADA, 6, travelMin: 13, dwellMin: 2),
-            RS(rFwd, sHBC,  7, travelMin: 10, dwellMin: 2),
-            RS(rFwd, sLD,   8, travelMin: 10, dwellMin: 0, pickup: false),
+            RS(rFwd, sBD,   1, travelMin:  0),
+            RS(rFwd, sTT,   2, travelMin:  5),
+            RS(rFwd, sBS,   3, travelMin:  5),
+            RS(rFwd, sBA,   4, travelMin: 12),
+            RS(rFwd, sTD,   5, travelMin:  5),
+            RS(rFwd, sTADA, 6, travelMin: 13),
+            RS(rFwd, sHBC,  7, travelMin: 10),
+            RS(rFwd, sLD,   8, travelMin: 10, pickup: false),
         };
 
         var rsB = new[]
         {
-            RS(rBwd, sLD,   1, travelMin:  0, dwellMin: 2),
-            RS(rBwd, sHBC,  2, travelMin: 10, dwellMin: 2),
-            RS(rBwd, sTADA, 3, travelMin: 10, dwellMin: 2),
-            RS(rBwd, sTD,   4, travelMin: 13, dwellMin: 2),
-            RS(rBwd, sBA,   5, travelMin:  5, dwellMin: 2),
-            RS(rBwd, sBS,   6, travelMin: 12, dwellMin: 2),
-            RS(rBwd, sTT,   7, travelMin:  5, dwellMin: 2),
-            RS(rBwd, sBD,   8, travelMin:  5, dwellMin: 0, pickup: false),
+            RS(rBwd, sLD,   1, travelMin:  0),
+            RS(rBwd, sHBC,  2, travelMin: 10),
+            RS(rBwd, sTADA, 3, travelMin: 10),
+            RS(rBwd, sTD,   4, travelMin: 13),
+            RS(rBwd, sBA,   5, travelMin:  5),
+            RS(rBwd, sBS,   6, travelMin: 12),
+            RS(rBwd, sTT,   7, travelMin:  5),
+            RS(rBwd, sBD,   8, travelMin:  5, pickup: false),
         };
 
         context.Set<RouteStop>().AddRange(rsF);
@@ -285,13 +285,12 @@ public static class WaterbusSeedData
     };
 
     private static RouteStop RS(Route route, Station station, int order,
-        int travelMin, int dwellMin, bool pickup = true) => new()
+        int travelMin, bool pickup = true) => new()
         {
             Route = route,
             Station = station,
             StopOrder = order,
             StandardTravelMin = travelMin,
-            StandardDwellMin = dwellMin,
             IsPickupAllowed = pickup,
             IsDropoffAllowed = true
         };

@@ -110,8 +110,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         var route = await _context.Set<Route>()
             .Include(r => r.RouteStops.OrderBy(rs => rs.StopOrder))
                 .ThenInclude(rs => rs.Station)
-            .SingleOrDefaultAsync(r => r.RouteCode == routeCode && r.Status == "Active", cancellationToken)
-            ?? throw new NotFoundException($"Route '{routeCode}' not found or inactive.");
+            .SingleOrDefaultAsync(r => r.RouteCode == routeCode && r.Status == "Active" && r.IsBookable, cancellationToken)
+            ?? throw new NotFoundException($"Route '{routeCode}' not found, inactive, or not bookable.");
 
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route must have at least 2 stops.")]);
@@ -128,7 +128,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
                 ? departureTime
                 : currentTime;
 
-            var scheduledDeparture = scheduledArrival.AddMinutes(routeStop.StandardDwellMin ?? 2);
+            var scheduledDeparture = scheduledArrival;
 
             stopDtos.Add(new TripStopDto(
                 routeStop.Id,

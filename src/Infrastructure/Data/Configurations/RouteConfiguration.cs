@@ -15,10 +15,12 @@ public sealed class RouteConfiguration : IEntityTypeConfiguration<Domain.Entitie
         builder.HasIndex(x => x.RouteCode).IsUnique();
 
         builder.Property(x => x.RouteName).HasColumnName("route_name").HasMaxLength(150).IsRequired();
+        builder.Property(x => x.RouteType).HasColumnName("route_type").HasMaxLength(30).HasDefaultValue("Regular").IsRequired();
         builder.Property(x => x.Description).HasColumnName("description").HasMaxLength(1000);
         builder.Property(x => x.BaseDistanceKm).HasColumnName("base_distance_km").HasColumnType("numeric(8,2)");
         builder.Property(x => x.EstimatedDurationMin).HasColumnName("estimated_duration_min");
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30).IsRequired();
+        builder.Property(x => x.IsBookable).HasColumnName("is_bookable").HasDefaultValue(true).IsRequired();
         builder.Property(x => x.RouteGeometry).HasColumnName("route_geometry").HasColumnType("geography(LineString,4326)");
         builder.Ignore(x => x.OsmId);
 

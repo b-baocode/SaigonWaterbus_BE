@@ -63,8 +63,8 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
         var route = await _context.Set<Route>()
             .Include(r => r.RouteStops.OrderBy(rs => rs.StopOrder))
                 .ThenInclude(rs => rs.Station)
-            .SingleOrDefaultAsync(r => r.RouteCode == routeCode && r.Status == "Active", cancellationToken)
-            ?? throw new NotFoundException($"Route '{routeCode}' not found or inactive.");
+            .SingleOrDefaultAsync(r => r.RouteCode == routeCode && r.Status == "Active" && r.IsBookable, cancellationToken)
+            ?? throw new NotFoundException($"Route '{routeCode}' not found, inactive, or not bookable.");
 
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode),
@@ -201,9 +201,8 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
         IEnumerable<RouteStop> routeStops)
     {
         var current = departureTime;
-        foreach (var stop in routeStops.OrderBy(rs => rs.StopOrder))
+        foreach (var stop in routeStops.OrderBy(rs => rs.StopOrder).SkipLast(1))
         {
-            current = current.AddMinutes(stop.StandardDwellMin ?? 2);
             current = current.AddMinutes(stop.StandardTravelMin ?? 15);
         }
         return current;

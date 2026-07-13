@@ -16,7 +16,6 @@ public sealed class RouteStopConfiguration : IEntityTypeConfiguration<RouteStop>
         builder.Property(x => x.StationId).HasColumnName("station_id").IsRequired();
         builder.Property(x => x.StopOrder).HasColumnName("stop_order").IsRequired();
         builder.Property(x => x.StandardTravelMin).HasColumnName("standard_travel_min");
-        builder.Property(x => x.StandardDwellMin).HasColumnName("standard_dwell_min");
         builder.Property(x => x.IsPickupAllowed).HasColumnName("is_pickup_allowed").IsRequired();
         builder.Property(x => x.IsDropoffAllowed).HasColumnName("is_dropoff_allowed").IsRequired();
 

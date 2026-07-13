@@ -4,19 +4,23 @@ public sealed record RouteDto(
     Guid RouteId,
     string RouteCode,
     string RouteName,
+    string RouteType,
     string? Description,
     decimal? BaseDistanceKm,
     int? EstimatedDurationMin,
-    string Status);
+    string Status,
+    bool IsBookable);
 
 public sealed record RouteDetailDto(
     Guid RouteId,
     string RouteCode,
     string RouteName,
+    string RouteType,
     string? Description,
     decimal? BaseDistanceKm,
     int? EstimatedDurationMin,
     string Status,
+    bool IsBookable,
     IReadOnlyList<RouteStopDto> Stops,
     IReadOnlyList<RouteSegmentDto> Segments,
     IReadOnlyList<double[]>? RouteGeometry);
@@ -28,7 +32,6 @@ public sealed record RouteStopDto(
     string StationName,
     int StopOrder,
     int? StandardTravelMin,
-    int? StandardDwellMin,
     bool IsPickupAllowed,
     bool IsDropoffAllowed);
 

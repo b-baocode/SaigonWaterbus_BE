@@ -9,7 +9,6 @@ public sealed record UpdateRouteStopCommand(
     Guid RouteId,
     Guid RouteStopId,
     int? StandardTravelMin,
-    int? StandardDwellMin,
     bool IsPickupAllowed,
     bool IsDropoffAllowed) : IRequest<RouteStopDto>;
 
@@ -36,14 +35,13 @@ public sealed class UpdateRouteStopCommandHandler : IRequestHandler<UpdateRouteS
             ?? throw new NotFoundException("Route stop not found.");
 
         stop.StandardTravelMin = request.StandardTravelMin;
-        stop.StandardDwellMin = request.StandardDwellMin;
         stop.IsPickupAllowed = request.IsPickupAllowed;
         stop.IsDropoffAllowed = request.IsDropoffAllowed;
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RouteStopDto(stop.Id, stop.Station.Id, stop.Station.StationCode, stop.Station.StationName,
-            stop.StopOrder, stop.StandardTravelMin, stop.StandardDwellMin,
+            stop.StopOrder, stop.StandardTravelMin,
             stop.IsPickupAllowed, stop.IsDropoffAllowed);
     }
 }
