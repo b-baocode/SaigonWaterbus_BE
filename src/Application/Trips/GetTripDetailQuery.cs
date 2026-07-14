@@ -18,6 +18,8 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
+            .Include(t => t.TripStops)
+                .ThenInclude(ts => ts.Station)
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 

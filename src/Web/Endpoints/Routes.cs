@@ -20,6 +20,21 @@ public sealed class Routes : IEndpointGroup
         }
         """;
 
+    private const string CreateRouteFromStationsExample =
+        """
+        {
+          "routeCode": "R02-A-C",
+          "routeName": "Tuyen A - B - C",
+          "description": "Ghep tu geometry cac route co san.",
+          "routeType": null,
+          "stops": [
+            { "stationId": "550e8400-e29b-41d4-a716-446655440001", "stopOrder": 1 },
+            { "stationId": "550e8400-e29b-41d4-a716-446655440002", "stopOrder": 2, "standardTravelMin": 15 },
+            { "stationId": "550e8400-e29b-41d4-a716-446655440003", "stopOrder": 3 }
+          ]
+        }
+        """;
+
     private const string UpdateRouteExample =
         """
         {
@@ -72,6 +87,19 @@ public sealed class Routes : IEndpointGroup
                 "Route nguon van giu nguyen, co the tiep tuc dung cho charter/tham chieu.",
                 "Route ghep luon duoc tao voi routeType=Regular; FE khong can gui routeType."));
 
+        group.MapPost(CreateRouteFromStations, "from-stations")
+            .RequireAuthorization()
+            .WithSummary("Tao route co geometry tu danh sach ben theo stop order")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                CreateRouteFromStationsExample,
+                "Gui danh sach stationId + stopOrder; BE tu khop moi chang (ben truoc -> ben sau) voi mot route Active co geometry di qua ca 2 ben.",
+                "Geometry route moi duoc cat tu geometry route nguon giua 2 ben cua tung chang (tu dao chieu neu can) roi noi lai; luon co geometry, chang nao khong khop duoc -> tra loi validation kem danh sach chang thieu.",
+                "standardTravelMin tung stop la optional; bo trong thi BE uoc tinh tu quang duong chang (13 km/h).",
+                "routeType optional: bo trong thi ben dau/cuoi khac nhau la Regular, trung nhau la SightseeingLoop; gui CharterReference neu muon lam route nguon cho charter (khong bookable).",
+                "baseDistanceKm/estimatedDurationMin tinh tu geometry va travel min cac chang; route nguon van giu nguyen.",
+                "Response tra route day du stops + sourceLegs[] cho biet tung chang ghep tu route nao."));
+
         group.MapPut(UpdateRoute, "{id:guid}")
             .RequireAuthorization()
             .WithSummary("Cap nhat thong tin tuyen")
@@ -123,6 +151,9 @@ public sealed class Routes : IEndpointGroup
         Results.Ok(await sender.Send(new GetRouteDetailQuery(id), ct));
 
     private static async Task<IResult> CreateRouteFromRoutes(ISender sender, CreateRouteFromRoutesCommand command, CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> CreateRouteFromStations(ISender sender, CreateRouteFromStationsCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> UpdateRoute(ISender sender, Guid id, UpdateRouteRequest req, CancellationToken ct) =>

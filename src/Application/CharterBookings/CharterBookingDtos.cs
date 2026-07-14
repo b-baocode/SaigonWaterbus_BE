@@ -604,10 +604,22 @@ public sealed record CharterBookingTripDto(
     int CapacitySnapshot,
     string TripStatus);
 
+public sealed record CharterBookingTripStopDto(
+    Guid StationId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? StationName,
+    int StopOrder,
+    int StayDurationMinutes,
+    DateTimeOffset? PlannedArrivalTime,
+    DateTimeOffset? PlannedDepartureTime,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Note);
+
 public sealed record CreateCharterBookingTripResult(
     Guid BookingId,
     string BookingCode,
     Guid RouteId,
     string RouteCode,
     string RouteName,
-    IReadOnlyList<CharterBookingTripDto> Trips);
+    IReadOnlyList<CharterBookingTripDto> Trips,
+    IReadOnlyList<CharterBookingTripStopDto> Stops);

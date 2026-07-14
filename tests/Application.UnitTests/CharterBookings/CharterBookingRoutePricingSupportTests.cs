@@ -24,6 +24,75 @@ public class CharterBookingRoutePricingSupportTests
     }
 
     [Test]
+    public void TryExtractLegGeometryCutsMiddleSectionOfSourceRoute()
+    {
+        var route = new Route
+        {
+            RouteCode = "R-GEO",
+            RouteName = "R",
+            RouteGeometry = new LineString(
+            [
+                new Coordinate(106, 10),
+                new Coordinate(106.01, 10),
+                new Coordinate(106.02, 10),
+                new Coordinate(106.03, 10)
+            ])
+        };
+        var from = new Station { StationName = "B", Latitude = 10, Longitude = 106.01m };
+        var to = new Station { StationName = "C", Latitude = 10, Longitude = 106.02m };
+
+        var coordinates = CharterBookingRoutePricingSupport.TryExtractLegGeometry(route, from, to);
+
+        coordinates.ShouldNotBeNull();
+        coordinates[0].X.ShouldBe(106.01, 0.0001);
+        coordinates[^1].X.ShouldBe(106.02, 0.0001);
+        coordinates.ShouldAllBe(c => c.X >= 106.0099 && c.X <= 106.0201);
+    }
+
+    [Test]
+    public void TryExtractLegGeometryReversesWhenLegGoesAgainstSourceDirection()
+    {
+        var route = new Route
+        {
+            RouteCode = "R-GEO",
+            RouteName = "R",
+            RouteGeometry = new LineString(
+            [
+                new Coordinate(106, 10),
+                new Coordinate(106.01, 10),
+                new Coordinate(106.02, 10)
+            ])
+        };
+        var from = new Station { StationName = "C", Latitude = 10, Longitude = 106.02m };
+        var to = new Station { StationName = "A", Latitude = 10, Longitude = 106 };
+
+        var coordinates = CharterBookingRoutePricingSupport.TryExtractLegGeometry(route, from, to);
+
+        coordinates.ShouldNotBeNull();
+        coordinates[0].X.ShouldBe(106.02, 0.0001);
+        coordinates[^1].X.ShouldBe(106.0, 0.0001);
+    }
+
+    [Test]
+    public void TryExtractLegGeometryReturnsNullWhenStationTooFarFromSourceGeometry()
+    {
+        var route = new Route
+        {
+            RouteCode = "R-GEO",
+            RouteName = "R",
+            RouteGeometry = new LineString(
+            [
+                new Coordinate(106, 10),
+                new Coordinate(106.01, 10)
+            ])
+        };
+        var from = new Station { StationName = "A", Latitude = 10, Longitude = 106 };
+        var farAway = new Station { StationName = "X", Latitude = 11, Longitude = 107 };
+
+        CharterBookingRoutePricingSupport.TryExtractLegGeometry(route, from, farAway).ShouldBeNull();
+    }
+
+    [Test]
     public void HourlyPriceSubtractsFreeStayMinutesAndUsesExactChargeableMinutes()
     {
         var fromStation = new Station

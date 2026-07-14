@@ -48,7 +48,10 @@ public sealed class CreateCharterBookingTripCommandHandler
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.CharterBoats)
                 .ThenInclude(x => x.Boat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
@@ -75,6 +78,12 @@ public sealed class CreateCharterBookingTripCommandHandler
 
         var departureTime = CharterBookingTripSupport.ResolveDepartureTimeUtc(booking);
         var arrivalTime = CharterBookingTripSupport.ResolveArrivalTimeUtc(departureTime, booking);
+
+        var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+            _context, booking, cancellationToken);
+        var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
+        var tripStopDrafts = CharterBookingTripSupport.BuildTripStopSchedule(
+            booking, departureTime, routeEstimate);
 
         await EnsureBoatsAreFreeAsync(charterBoats, departureTime, arrivalTime, cancellationToken);
 
@@ -108,6 +117,8 @@ public sealed class CreateCharterBookingTripCommandHandler
             _context.Set<Trip>().Add(trip);
             charterBoat.TripId = trip.Id;
             trips.Add((trip, charterBoat));
+
+            TripStopScheduleSupport.CreateTripStops(_context, trip, tripStopDrafts);
         }
 
         booking.TripId = trips[0].Trip.Id;
@@ -138,6 +149,16 @@ public sealed class CreateCharterBookingTripCommandHandler
                     x.Trip.ArrivalTime,
                     x.Trip.CapacitySnapshot,
                     x.Trip.TripStatus.ToString()))
+                .ToList(),
+            tripStopDrafts
+                .Select(x => new CharterBookingTripStopDto(
+                    x.StationId,
+                    x.Station?.StationName,
+                    x.StopOrder,
+                    x.StayDurationMinutes,
+                    x.PlannedArrivalTime,
+                    x.PlannedDepartureTime,
+                    x.Note))
                 .ToList());
     }
 

@@ -146,7 +146,8 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     continue;
                 }
 
-                var arrivalTime = ComputeArrivalTime(departureTime, route.RouteStops);
+                var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(route.RouteStops, departureTime);
+                var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
                 // Tau da ban trong khung gio nay (ke ca chuyen vua sinh trong lo nay) -> bo qua.
                 if (boatSchedule.Any(x => TripScheduleSupport.ConflictsWithBuffer(
@@ -171,6 +172,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                 };
 
                 tripsToAdd.Add(trip);
+                TripStopScheduleSupport.CreateTripStops(_context, trip, stopDrafts);
                 existingDepartures.Add(departureTime);
                 boatSchedule.Add((departureTime, arrivalTime));
 
@@ -194,17 +196,5 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
         }
 
         return new GenerateTripsResult(tripsToAdd.Count, skipped, skippedBoatBusy, createdCodes);
-    }
-
-    private static DateTimeOffset ComputeArrivalTime(
-        DateTimeOffset departureTime,
-        IEnumerable<RouteStop> routeStops)
-    {
-        var current = departureTime;
-        foreach (var stop in routeStops.OrderBy(rs => rs.StopOrder).SkipLast(1))
-        {
-            current = current.AddMinutes(stop.StandardTravelMin ?? 15);
-        }
-        return current;
     }
 }

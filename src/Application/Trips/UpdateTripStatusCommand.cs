@@ -31,6 +31,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
+            .Include(t => t.TripStops)
+                .ThenInclude(ts => ts.Station)
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
@@ -47,30 +49,5 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         trip.Route.Id, trip.Route.RouteName,
         trip.DepartureTime, trip.ArrivalTime,
         trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
-        BuildStopDtos(trip).ToList());
-
-    private static IEnumerable<TripStopDto> BuildStopDtos(Trip trip)
-    {
-        var current = trip.DepartureTime;
-        foreach (var routeStop in trip.Route.RouteStops.OrderBy(x => x.StopOrder))
-        {
-            var arrival = routeStop.StopOrder == trip.Route.RouteStops.Min(x => x.StopOrder)
-                ? trip.DepartureTime
-                : current;
-            var departure = arrival;
-            current = departure.AddMinutes(routeStop.StandardTravelMin ?? 15);
-
-            yield return new TripStopDto(
-                routeStop.Id,
-                routeStop.Station.Id,
-                routeStop.Station.StationName,
-                routeStop.Station.StationCode,
-                routeStop.StopOrder,
-                arrival,
-                departure,
-                null,
-                null,
-                trip.TripStatus.ToString());
-        }
-    }
+        TripStopScheduleSupport.BuildStopDtos(trip));
 }

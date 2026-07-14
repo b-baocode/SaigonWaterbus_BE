@@ -361,7 +361,7 @@ internal static class CharterBookingRoutePricingSupport
     private static int EstimateStayMinutes(Booking booking) =>
         booking.ItineraryStops.Sum(x => x.StayDurationMinutes);
 
-    private static int EstimateTravelMinutes(decimal distanceKm) =>
+    internal static int EstimateTravelMinutes(decimal distanceKm) =>
         Math.Max(1, (int)Math.Ceiling(distanceKm / AverageSpeedKmh * 60));
 
     private static MatchedRouteLeg? TryResolveRouteLeg(
@@ -405,6 +405,105 @@ internal static class CharterBookingRoutePricingSupport
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Cat doan geometry cua route nguon giua 2 ben (theo diem chieu len LineString),
+    /// dao chieu neu ben di nam sau ben den tren route nguon. Tra ve null neu route
+    /// khong co geometry, ben thieu toa do hoac diem chieu vuot nguong cho phep.
+    /// </summary>
+    internal static Coordinate[]? TryExtractLegGeometry(Route route, Station from, Station to)
+    {
+        if (route.RouteGeometry is null)
+        {
+            return null;
+        }
+
+        var fromPoint = RoutePoint.FromStation(from);
+        var toPoint = RoutePoint.FromStation(to);
+        if (!fromPoint.Latitude.HasValue
+            || !fromPoint.Longitude.HasValue
+            || !toPoint.Latitude.HasValue
+            || !toPoint.Longitude.HasValue)
+        {
+            return null;
+        }
+
+        var fromProjection = ProjectPointToLine(route.RouteGeometry, fromPoint);
+        var toProjection = ProjectPointToLine(route.RouteGeometry, toPoint);
+        if (fromProjection.DistanceMeters > RouteProjectionThresholdMeters
+            || toProjection.DistanceMeters > RouteProjectionThresholdMeters)
+        {
+            return null;
+        }
+
+        var reversed = fromProjection.DistanceFromStartMeters > toProjection.DistanceFromStartMeters;
+        var startMeters = Math.Min(fromProjection.DistanceFromStartMeters, toProjection.DistanceFromStartMeters);
+        var endMeters = Math.Max(fromProjection.DistanceFromStartMeters, toProjection.DistanceFromStartMeters);
+        if (endMeters - startMeters <= 0)
+        {
+            return null;
+        }
+
+        var coordinates = ExtractSubLine(route.RouteGeometry, startMeters, endMeters);
+        if (coordinates.Count < 2)
+        {
+            return null;
+        }
+
+        if (reversed)
+        {
+            coordinates.Reverse();
+        }
+
+        return [.. coordinates];
+    }
+
+    private static List<Coordinate> ExtractSubLine(LineString line, double startMeters, double endMeters)
+    {
+        var coordinates = new List<Coordinate>();
+        var traversedMeters = 0d;
+
+        for (var i = 0; i < line.NumPoints - 1; i++)
+        {
+            var start = line.GetPointN(i).Coordinate;
+            var end = line.GetPointN(i + 1).Coordinate;
+            var segmentMeters = HaversineMeters(start.Y, start.X, end.Y, end.X);
+            var segmentEndMeters = traversedMeters + segmentMeters;
+
+            if (segmentMeters > 0 && segmentEndMeters >= startMeters && traversedMeters <= endMeters)
+            {
+                if (coordinates.Count == 0)
+                {
+                    var t = Math.Clamp((startMeters - traversedMeters) / segmentMeters, 0d, 1d);
+                    coordinates.Add(Interpolate(start, end, t));
+                }
+
+                if (segmentEndMeters >= endMeters)
+                {
+                    var t = Math.Clamp((endMeters - traversedMeters) / segmentMeters, 0d, 1d);
+                    AddIfDistinct(coordinates, Interpolate(start, end, t));
+                    break;
+                }
+
+                AddIfDistinct(coordinates, new Coordinate(end.X, end.Y));
+            }
+
+            traversedMeters = segmentEndMeters;
+        }
+
+        return coordinates;
+    }
+
+    private static Coordinate Interpolate(Coordinate start, Coordinate end, double t) =>
+        new(start.X + ((end.X - start.X) * t), start.Y + ((end.Y - start.Y) * t));
+
+    private static void AddIfDistinct(List<Coordinate> coordinates, Coordinate coordinate)
+    {
+        if (coordinates.Count == 0 || !coordinates[^1].Equals2D(coordinate))
+        {
+            coordinates.Add(coordinate);
+        }
     }
 
     private static MatchedRouteSummary? ResolveSingleMatchedRoute(

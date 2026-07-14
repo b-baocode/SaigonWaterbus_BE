@@ -36,4 +36,6 @@ public sealed record TripStopDto(
     DateTimeOffset? ScheduledDeparture,
     DateTimeOffset? ActualArrival,
     DateTimeOffset? ActualDeparture,
-    string StopStatus);
+    string StopStatus,
+    int StayDurationMinutes = 0,
+    string? Note = null);

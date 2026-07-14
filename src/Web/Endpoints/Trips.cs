@@ -75,7 +75,10 @@ public sealed class Trips : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Tra ve TripDetailDto kem stops[] sap xep theo stop_order."));
+                "Tra ve TripDetailDto kem stops[] sap xep theo stop_order.",
+                "stops[] lay tu bang trip_stops (lich trinh da luu khi tao trip): gio den/di du kien tung ben, stayDurationMinutes va note (trip charter co thoi gian dung theo yeu cau booking).",
+                "Trip cu tao truoc khi co trip_stops -> BE tu suy lich trinh tu route stops + gio khoi hanh nhu truoc.",
+                "Ben dau chi co gio di, ben cuoi chi co gio den."));
 
         group.MapGet(GetTripSeatMap, "{id:guid}/seats")
             .AllowAnonymous()

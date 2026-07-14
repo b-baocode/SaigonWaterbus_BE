@@ -23,4 +23,5 @@ public class Trip : BaseGuidAuditableEntity
     public Boat? Boat { get; set; }
     public ICollection<Incident> Incidents { get; set; } = new List<Incident>();
     public ICollection<TripSeat> TripSeats { get; set; } = new List<TripSeat>();
+    public ICollection<TripStop> TripStops { get; set; } = new List<TripStop>();
 }

@@ -98,6 +98,15 @@ public sealed class CharterBookings : IEndpointGroup
         }
         """;
 
+    private const string CreateCharterBookingRouteExample =
+        """
+        {
+          "routeCode": null,
+          "routeName": null,
+          "description": null
+        }
+        """;
+
     private const string AssignManagerExample =
         """
         {
@@ -173,6 +182,23 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin khong gui promotionCode hoac insurancePackageId trong preview.",
                 "Backend tu tinh tong bang cach cong subtotalAmount tung tau; khong ho tro tong gia thu cong."));
 
+        group.MapPost(CreateCharterBookingRoute, "admin/{id:guid}/route")
+            .RequireAuthorization()
+            .Accepts<CreateCharterBookingRouteRequest>("application/json")
+            .WithSummary("Admin tao route + route stops tu lo trinh charter booking bang cach ghep route co san")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                CreateCharterBookingRouteExample,
+                "Giong POST /api/routes/from-routes nhung BE tu tim route nguon: moi chang (ben truoc -> ben sau) cua lo trinh booking duoc khop voi mot route Active co geometry di qua 2 ben do.",
+                "Chuoi stops cua route moi = ben di -> cac diem dung -> ben den cua booking, dung thu tu stopOrder.",
+                "standardTravelMin cua tung stop = thoi gian chay chang (tu route nguon) + thoi gian dung (stayDurationMinutes) tai ben truoc do.",
+                "Route moi luon co routeType=CharterReference, isBookable=false; route nguon van giu nguyen.",
+                "Geometry route moi duoc cat tu geometry route nguon giua 2 ben cua tung chang (tu dao chieu neu can) roi noi lai; chang nao khong cat duoc -> tra loi validation kem danh sach chang, khong tao route.",
+                "routeCode/routeName/description trong body deu optional; bo trong thi BE tu sinh (routeCode mac dinh CH-{bookingCode}).",
+                "Da co route Active khop chinh xac lo trinh -> khong tao moi, tra ve route do voi routeAlreadyExisted=true.",
+                "Co chang khong khop duoc route nguon nao -> tra loi validation kem danh sach chang thieu; tao route nguon (vi du POST /api/routes/from-gps) roi goi lai.",
+                "Sau khi tao thanh cong co the goi POST /api/charter-bookings/admin/{id}/trip de sinh trip."));
+
         group.MapPost(CreateCharterBookingTrip, "admin/{id:guid}/trip")
             .RequireAuthorization()
             .WithSummary("Admin tao trip van hanh cho charter booking da Confirmed")
@@ -184,6 +210,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Khong co route nao khop -> tra loi validation; tao route dung lo trinh (vi du POST /api/routes/from-gps voi stops day du) roi goi lai.",
                 "Nhieu route cung khop -> uu tien RouteType = CharterReference, sau do route tao gan nhat.",
                 "Moi tau trong quote sinh mot trip rieng (tripType = Charter, khong tao trip seats).",
+                "Moi trip duoc luu kem lich trinh tung ben vao bang trip_stops: thu tu ben, thoi gian dung (stayDurationMinutes tu itinerary), gio den/di du kien tinh tu gio khoi hanh + thoi gian chay tung chang; response tra stops[] dung chung cho cac trip.",
                 "Tau bi trung gio voi trip khac (ke ca chuyen tuyen thuong) -> tra loi validation.",
                 "Trip charter khong xuat hien trong tim kiem chuyen cua khach; khi booking bi huy/hoan tien, trip tu dong bi huy theo."));
 
@@ -501,6 +528,17 @@ public sealed class CharterBookings : IEndpointGroup
             id,
             request.BoatId,
             request.Boats), ct));
+
+    private static async Task<IResult> CreateCharterBookingRoute(
+        ISender sender,
+        Guid id,
+        CreateCharterBookingRouteRequest? request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CreateCharterBookingRouteCommand(
+            id,
+            request?.RouteCode,
+            request?.RouteName,
+            request?.Description), ct));
 
     private static async Task<IResult> CreateCharterBookingTrip(
         ISender sender,

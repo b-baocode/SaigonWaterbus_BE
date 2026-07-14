@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -63,6 +64,72 @@ internal static class CharterBookingTripSupport
                 string.Equals(route.RouteType, RouteTypes.CharterReference, StringComparison.OrdinalIgnoreCase))
             .ThenByDescending(route => route.Created)
             .FirstOrDefault();
+    }
+
+    /// <summary>
+    /// Lich trinh tung ben cua trip: thu tu ben (ben di -> diem dung -> ben den), thoi gian dung
+    /// tai tung diem va gio den/di du kien tinh don tu gio khoi hanh + thoi gian chay tung chang
+    /// (tu routeEstimate) + thoi gian dung. Chang nao thieu thoi gian chay thi cac gio sau do = null.
+    /// </summary>
+    public static IReadOnlyList<TripStopDraft> BuildTripStopSchedule(
+        Booking booking,
+        DateTimeOffset departureTimeUtc,
+        CharterBookingRouteEstimate routeEstimate)
+    {
+        var points = new List<(Guid StationId, Station? Station, int StayMinutes, string? Note)>();
+        if (booking.FromStationId.HasValue)
+        {
+            points.Add((booking.FromStationId.Value, booking.FromStation, 0, null));
+        }
+
+        foreach (var stop in booking.ItineraryStops.OrderBy(x => x.StopOrder))
+        {
+            points.Add((stop.StationId, stop.Station, stop.StayDurationMinutes, stop.Note));
+        }
+
+        if (booking.ToStationId.HasValue)
+        {
+            points.Add((booking.ToStationId.Value, booking.ToStation, 0, null));
+        }
+
+        var legs = routeEstimate.Legs;
+        var legsAligned = legs.Count == points.Count - 1;
+
+        var drafts = new List<TripStopDraft>();
+        DateTimeOffset? previousDeparture = departureTimeUtc;
+        for (var i = 0; i < points.Count; i++)
+        {
+            var point = points[i];
+            DateTimeOffset? plannedArrival;
+            DateTimeOffset? plannedDeparture;
+            if (i == 0)
+            {
+                plannedArrival = null;
+                plannedDeparture = departureTimeUtc;
+            }
+            else
+            {
+                var travelMinutes = legsAligned ? legs[i - 1].TravelMinutes : null;
+                plannedArrival = previousDeparture.HasValue && travelMinutes.HasValue
+                    ? previousDeparture.Value.AddMinutes(travelMinutes.Value)
+                    : null;
+                plannedDeparture = i == points.Count - 1
+                    ? null
+                    : plannedArrival?.AddMinutes(point.StayMinutes);
+                previousDeparture = plannedDeparture;
+            }
+
+            drafts.Add(new TripStopDraft(
+                point.StationId,
+                point.Station,
+                i + 1,
+                point.StayMinutes,
+                point.Note,
+                plannedArrival,
+                plannedDeparture));
+        }
+
+        return drafts;
     }
 
     public static DateTimeOffset ResolveDepartureTimeUtc(Booking booking)

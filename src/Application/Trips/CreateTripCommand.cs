@@ -119,33 +119,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
 
         var departureTime = request.DepartureTime.ToUniversalTime();
-        var currentTime = departureTime;
-        var stopDtos = new List<TripStopDto>();
-
-        foreach (var routeStop in route.RouteStops.OrderBy(rs => rs.StopOrder))
-        {
-            var scheduledArrival = routeStop.StopOrder == route.RouteStops.Min(rs => rs.StopOrder)
-                ? departureTime
-                : currentTime;
-
-            var scheduledDeparture = scheduledArrival;
-
-            stopDtos.Add(new TripStopDto(
-                routeStop.Id,
-                routeStop.Station.Id,
-                routeStop.Station.StationName,
-                routeStop.Station.StationCode,
-                routeStop.StopOrder,
-                scheduledArrival,
-                scheduledDeparture,
-                null,
-                null,
-                "Scheduled"));
-
-            currentTime = scheduledDeparture.AddMinutes(routeStop.StandardTravelMin ?? 15);
-        }
-
-        var arrivalTime = stopDtos.Max(ts => ts.ScheduledArrival ?? departureTime);
+        var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(route.RouteStops, departureTime);
+        var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
         await EnsureNoRouteDepartureConflictAsync(route.Id, departureTime, cancellationToken);
 
@@ -183,6 +158,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         };
 
         _context.Set<Trip>().Add(trip);
+        trip.Route = route;
+        TripStopScheduleSupport.CreateTripStops(_context, trip, stopDrafts);
 
         var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
             _context, request.SeatTypePrices, activeSeats, cancellationToken);
@@ -200,7 +177,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             route.Id, route.RouteName,
             trip.DepartureTime, trip.ArrivalTime,
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
-            stopDtos.OrderBy(ts => ts.StopOrder).ToList());
+            TripStopScheduleSupport.BuildStopDtos(trip));
     }
 
     /// <summary>
