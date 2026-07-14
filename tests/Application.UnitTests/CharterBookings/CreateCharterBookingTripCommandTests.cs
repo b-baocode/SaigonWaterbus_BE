@@ -411,8 +411,8 @@ public class CreateCharterBookingTripCommandTests
         { SRID = 4326 };
         route.BaseDistanceKm = 1;
         route.EstimatedDurationMin = travelMinutes;
-        route.RouteStops.Single(x => x.StopOrder == 1).StandardTravelMin = travelMinutes;
-        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = null;
+        route.RouteStops.Single(x => x.StopOrder == 1).StandardTravelMin = null;
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = travelMinutes;
         return route;
     }
 

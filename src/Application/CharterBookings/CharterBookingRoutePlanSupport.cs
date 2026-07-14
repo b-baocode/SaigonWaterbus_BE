@@ -157,10 +157,6 @@ internal static class CharterBookingRoutePlanSupport
             {
                 composedStops.Add(new ComposedStopDraft(leg.From, null));
             }
-            else
-            {
-                composedStops[^1] = composedStops[^1] with { StandardTravelMin = selectedLeg.TravelMinutes };
-            }
 
             composedStops.Add(new ComposedStopDraft(
                 leg.To,
@@ -395,7 +391,7 @@ internal static class CharterBookingRoutePlanSupport
     {
         var stops = route.RouteStops
             .OrderBy(x => x.StopOrder)
-            .Where(x => x.StopOrder >= fromStop.StopOrder && x.StopOrder < toStop.StopOrder)
+            .Where(x => x.StopOrder > fromStop.StopOrder && x.StopOrder <= toStop.StopOrder)
             .ToList();
         var configured = stops
             .Select(x => x.StandardTravelMin)
