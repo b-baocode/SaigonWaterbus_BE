@@ -24,7 +24,10 @@ public sealed record TripDetailDto(
     int CapacitySnapshot,
     string TripStatus,
     string? StatusNote,
-    IReadOnlyList<TripStopDto> Stops);
+    IReadOnlyList<TripStopDto> Stops,
+    string TripType = "Regular",
+    Guid? SourceBookingId = null,
+    string? SourceBookingCode = null);
 
 public sealed record TripStopDto(
     Guid TripStopId,

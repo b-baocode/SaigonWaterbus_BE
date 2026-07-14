@@ -63,6 +63,286 @@ public class CharterBookingPassengerTicketTests
     }
 
     [Test]
+    public async Task UpdatingPassengersCanExceedRequestedCountUpToSelectedBoatCapacity()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateUpdateHandler(context, userId);
+
+        var result = await handler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
+                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02"),
+                    new CharterBookingPassengerRequest("Le Van C", "1988-03-03")
+                ]),
+            CancellationToken.None);
+
+        result.PassengerCount.ShouldBe(2);
+        result.RegisteredPassengerCount.ShouldBe(3);
+        result.AdultCount.ShouldBe(3);
+        result.TicketCount.ShouldBe(3);
+    }
+
+    [Test]
+    public async Task UpdatingPassengersRejectsPassengerCountAboveSelectedBoatCapacity()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateUpdateHandler(context, userId);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCharterBookingPassengersCommand(
+                    booking.Id,
+                    [
+                        new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
+                        new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02"),
+                        new CharterBookingPassengerRequest("Le Van C", "1988-03-03"),
+                        new CharterBookingPassengerRequest("Pham Thi D", "1989-04-04"),
+                        new CharterBookingPassengerRequest("Hoang Van E", "1991-05-05")
+                    ]),
+                CancellationToken.None));
+
+        exception.Errors["passengers"].Single()
+            .ShouldContain("sức chứa của tàu đã chọn (4)");
+    }
+
+    [Test]
+    public async Task ImportingPassengersCanExceedRequestedCountUpToSelectedBoatCapacity()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateImportHandler(context, userId);
+        var csv = "fullName,birthYear\nNguyen Van A,1990\nTran Thi B,1992\nLe Van C,1988\n";
+
+        var result = await handler.Handle(
+            new ImportCharterBookingPassengersCommand(
+                booking.Id,
+                "passengers.csv",
+                System.Text.Encoding.UTF8.GetBytes(csv)),
+            CancellationToken.None);
+
+        result.PassengerCount.ShouldBe(2);
+        result.RegisteredPassengerCount.ShouldBe(3);
+        result.AdultCount.ShouldBe(3);
+        result.TicketCount.ShouldBe(3);
+    }
+
+    [Test]
+    public async Task ApprovingPassengerAddRequestPreservesExistingTicketsAndCreatesTicketsForNewPassengers()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        booking.ContactEmail = "customer@example.test";
+        booking.Payments.Add(new Payment
+        {
+            PaymentCode = $"PAY{Guid.NewGuid():N}"[..20],
+            Amount = booking.TotalAmount,
+            Currency = booking.Currency,
+            PaymentMethod = "Cash",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = DateTimeOffset.UtcNow
+        });
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var updateHandler = CreateUpdateHandler(context, userId);
+        await updateHandler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
+                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                ]),
+            CancellationToken.None);
+        var originalTickets = context.Tickets
+            .Where(x => x.TicketStatus == TicketStatus.Active)
+            .ToDictionary(x => x.Id, x => x.QrToken);
+
+        var addHandler = CreateAddHandler(context, userId);
+        var result = await addHandler.Handle(
+            new AddCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+            CancellationToken.None);
+
+        result.PassengerCount.ShouldBe(2);
+        result.RegisteredPassengerCount.ShouldBe(3);
+        result.TicketCount.ShouldBe(2);
+        context.Set<BookingPassenger>().Single(x => x.FullName == "Le Van C")
+            .ApprovalStatus.ShouldBe(CharterBookingPassengerSupport.ApprovalStatusPending);
+
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var notificationSender = new TestPaymentNotificationSender();
+        var approveHandler = CreateApproveHandler(context, adminContext.UserId!.Value, notificationSender);
+        var requestBatchId = context.Set<BookingPassenger>()
+            .Single(x => x.FullName == "Le Van C")
+            .RequestBatchId
+            .ShouldNotBeNull();
+
+        var approved = await approveHandler.Handle(
+            new ApproveCharterBookingPassengerAddRequestCommand(booking.Id, requestBatchId),
+            CancellationToken.None);
+
+        approved.TicketCount.ShouldBe(3);
+        var activeTickets = context.Tickets
+            .Where(x => x.TicketStatus == TicketStatus.Active)
+            .ToArray();
+        activeTickets.Length.ShouldBe(3);
+        foreach (var (ticketId, qrToken) in originalTickets)
+        {
+            activeTickets.Single(x => x.Id == ticketId).QrToken.ShouldBe(qrToken);
+        }
+        context.Set<BookingPassenger>().Single(x => x.FullName == "Le Van C")
+            .ApprovalStatus.ShouldBe(CharterBookingPassengerSupport.ApprovalStatusApproved);
+        notificationSender.BoardingPasses.Single().Attachments.ShouldNotBeNull().Single().Content.ShouldBe([1, 2, 3]);
+    }
+
+    [Test]
+    public async Task AddingPassengersRejectsWithinTwentyFourHoursBeforeDeparture()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        booking.StartTime = new TimeOnly(8, 0);
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+        var cutoff = new DateTimeOffset(2029, 12, 31, 1, 0, 0, TimeSpan.Zero);
+        var handler = CreateAddHandler(context, userId, timeProvider: new FixedTimeProvider(cutoff));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new AddCharterBookingPassengersCommand(
+                    booking.Id,
+                    [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+                CancellationToken.None));
+
+        exception.Errors["passengers"].Single()
+            .ShouldContain("24 giờ trước giờ khởi hành");
+    }
+
+    [Test]
+    public async Task AddingPassengersRejectsSecondAddRequest()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateAddHandler(context, userId);
+        await handler.Handle(
+            new AddCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+            CancellationToken.None);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new AddCharterBookingPassengersCommand(
+                    booking.Id,
+                    [new CharterBookingPassengerRequest("Pham Thi D", "1989-04-04")]),
+                CancellationToken.None));
+
+        exception.Errors["passengers"].Single()
+            .ShouldContain("tối đa 1 lần");
+    }
+
+    [Test]
+    public async Task AssignedManagerCanRejectPassengerAddRequestWithNote()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        booking.AssignedManagerId = managerContext.UserId;
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var addHandler = CreateAddHandler(context, userId);
+        await addHandler.Handle(
+            new AddCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+            CancellationToken.None);
+        var requestBatchId = context.Set<BookingPassenger>()
+            .Single(x => x.FullName == "Le Van C")
+            .RequestBatchId
+            .ShouldNotBeNull();
+
+        var rejectHandler = CreateRejectHandler(context, managerContext.UserId!.Value);
+        await rejectHandler.Handle(
+            new RejectCharterBookingPassengerAddRequestCommand(
+                booking.Id,
+                requestBatchId,
+                "Thong tin hanh khach khong hop le"),
+            CancellationToken.None);
+
+        var passenger = context.Set<BookingPassenger>().Single(x => x.FullName == "Le Van C");
+        passenger.ApprovalStatus.ShouldBe(CharterBookingPassengerSupport.ApprovalStatusRejected);
+        passenger.ReviewNote.ShouldBe("Thong tin hanh khach khong hop le");
+        passenger.ReviewedByUserId.ShouldBe(managerContext.UserId);
+    }
+
+    [Test]
+    public async Task UpdatingPassengersRejectsWithinTwentyFourHoursBeforeDeparture()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        booking.StartTime = new TimeOnly(8, 0);
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+        var withinCutoff = new DateTimeOffset(2029, 12, 31, 1, 30, 0, TimeSpan.Zero);
+        var handler = CreateUpdateHandler(context, userId, timeProvider: new FixedTimeProvider(withinCutoff));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCharterBookingPassengersCommand(
+                    booking.Id,
+                    [
+                        new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
+                        new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    ]),
+                CancellationToken.None));
+
+        exception.Errors["passengers"].Single()
+            .ShouldContain("24 giờ trước giờ khởi hành");
+    }
+
+    [Test]
     public async Task ReplacingPassengersCancelsOldTicketsAndCreatesNewTickets()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -495,13 +775,56 @@ public class CharterBookingPassengerTicketTests
     private static UpdateCharterBookingPassengersCommandHandler CreateUpdateHandler(
         IApplicationDbContext context,
         Guid userId,
-        TestPaymentNotificationSender? paymentNotificationSender = null) =>
+        TestPaymentNotificationSender? paymentNotificationSender = null,
+        TimeProvider? timeProvider = null) =>
         new(
             context,
             new TestUserContext(userId),
             paymentNotificationSender ?? new TestPaymentNotificationSender(),
             new TestCharterBookingTicketPdfRenderer(),
-            TimeProvider.System);
+            timeProvider ?? TimeProvider.System);
+
+    private static AddCharterBookingPassengersCommandHandler CreateAddHandler(
+        IApplicationDbContext context,
+        Guid userId,
+        TimeProvider? timeProvider = null) =>
+        new(
+            context,
+            new TestUserContext(userId),
+            timeProvider ?? TimeProvider.System);
+
+    private static ApproveCharterBookingPassengerAddRequestCommandHandler CreateApproveHandler(
+        IApplicationDbContext context,
+        Guid userId,
+        TestPaymentNotificationSender? paymentNotificationSender = null,
+        TimeProvider? timeProvider = null) =>
+        new(
+            context,
+            new TestUserContext(userId),
+            paymentNotificationSender ?? new TestPaymentNotificationSender(),
+            new TestCharterBookingTicketPdfRenderer(),
+            timeProvider ?? TimeProvider.System);
+
+    private static RejectCharterBookingPassengerAddRequestCommandHandler CreateRejectHandler(
+        IApplicationDbContext context,
+        Guid userId,
+        TimeProvider? timeProvider = null) =>
+        new(
+            context,
+            new TestUserContext(userId),
+            timeProvider ?? TimeProvider.System);
+
+    private static ImportCharterBookingPassengersCommandHandler CreateImportHandler(
+        IApplicationDbContext context,
+        Guid userId,
+        TestPaymentNotificationSender? paymentNotificationSender = null,
+        TimeProvider? timeProvider = null) =>
+        new(
+            context,
+            new TestUserContext(userId),
+            paymentNotificationSender ?? new TestPaymentNotificationSender(),
+            new TestCharterBookingTicketPdfRenderer(),
+            timeProvider ?? TimeProvider.System);
 
     private static Booking PaidCharterBooking(Guid userId, int adultCount, int childCount = 0) =>
         new()
@@ -524,6 +847,24 @@ public class CharterBookingPassengerTicketTests
             DepositAmount = 1_000_000,
             RemainingAmount = 0
         };
+
+    private static void AttachSelectedBoat(Booking booking, Boat boat)
+    {
+        booking.BoatId = boat.Id;
+        booking.Boat = boat;
+        booking.CharterBoats.Add(new CharterBookingBoat
+        {
+            BookingId = booking.Id,
+            Booking = booking,
+            BoatId = boat.Id,
+            Boat = boat,
+            BoatOrder = 1,
+            SeatSetupType = boat.SeatSetupType,
+            UnitPrice = 1_000_000,
+            ChargeableDurationValue = 1,
+            SubtotalAmount = 1_000_000
+        });
+    }
 
     private static User Customer()
     {

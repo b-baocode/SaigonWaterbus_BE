@@ -4,6 +4,7 @@ using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -128,6 +129,10 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             ?? throw new NotFoundException($"Trip '{tripCode}' not found.");
 
         var now = _timeProvider.GetUtcNow();
+        if (trip.TripType != TripTypes.Regular)
+            throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
+                "Trip charter không bán vé lẻ.")]);
+
         if (trip.TripStatus != TripStatus.Scheduled || trip.DepartureTime <= now)
             throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
                 "Trip is not available for booking.")]);

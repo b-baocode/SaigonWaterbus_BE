@@ -115,6 +115,40 @@ public sealed record CharterBookingRouteEstimateDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? MatchedRouteName = null);
 
+public sealed record CharterBookingSelectedRouteDto(
+    Guid RouteId,
+    string RouteCode,
+    string RouteName,
+    string RouteType);
+
+public sealed record CharterBookingRoutePlanLegRequest(
+    Guid FromStationId,
+    Guid ToStationId,
+    Guid RouteId);
+
+public sealed record CharterBookingRouteCandidateResult(
+    Guid BookingId,
+    string BookingCode,
+    IReadOnlyList<CharterBookingRouteCandidateLegDto> Legs);
+
+public sealed record CharterBookingRouteCandidateLegDto(
+    int LegOrder,
+    Guid FromStationId,
+    string FromStationName,
+    Guid ToStationId,
+    string ToStationName,
+    IReadOnlyList<CharterBookingRouteCandidateDto> Candidates);
+
+public sealed record CharterBookingRouteCandidateDto(
+    Guid RouteId,
+    string RouteCode,
+    string RouteName,
+    string RouteType,
+    decimal? DistanceKm,
+    int? EstimatedDurationMin,
+    int FromStopOrder,
+    int ToStopOrder);
+
 public sealed record CharterBookingInsuranceDto(
     Guid InsurancePackageId,
     string Code,
@@ -239,7 +273,9 @@ public sealed record CharterBookingDetailDto(
     CharterBookingInsuranceDto? Insurance = null,
     bool InsuranceSelected = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    Guid? InsurancePackageId = null);
+    Guid? InsurancePackageId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CharterBookingSelectedRouteDto? SelectedRoute = null);
 
 public sealed record CharterBookingUserAssignmentDto(
     Guid UserId,
@@ -375,7 +411,16 @@ public sealed record CharterBookingPassengerDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? BirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? PassengerType);
+    string? PassengerType,
+    string ApprovalStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? RequestBatchId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? RequestedAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? ReviewedAt = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ReviewNote = null);
 
 public sealed record UpdateCharterBookingPassengersRequest(
     IReadOnlyList<CharterBookingPassengerRequest> Passengers);
@@ -540,7 +585,8 @@ public sealed record QuoteCharterBookingBoatRequest(
 
 public sealed record QuoteCharterBookingRequest(
     Guid? BoatId = null,
-    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null);
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
+    IReadOnlyList<CharterBookingRoutePlanLegRequest>? RoutePlan = null);
 
 public enum CharterBookingQuoteResponseAction
 {
@@ -554,7 +600,11 @@ public sealed record RespondCharterBookingQuoteRequest(
     string? Note = null);
 
 public sealed record UpdateCharterBookingStatusRequest(
-    BookingStatus BookingStatus);
+    BookingStatus BookingStatus,
+    string? Note = null);
+
+public sealed record ReviewCharterBookingPassengerAddRequest(
+    string? Note = null);
 
 public sealed record PreviewCharterBookingQuoteResult(
     Guid BookingId,
@@ -568,7 +618,9 @@ public sealed record PreviewCharterBookingQuoteResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PromotionCode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CharterBookingInsuranceDto? Insurance = null);
+    CharterBookingInsuranceDto? Insurance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CharterBookingSelectedRouteDto? SelectedRoute = null);
 
 public sealed record QuoteCharterBookingResult(
     Guid BookingId,
@@ -590,7 +642,9 @@ public sealed record QuoteCharterBookingResult(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? HoldExpiresAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CharterBookingInsuranceDto? Insurance = null);
+    CharterBookingInsuranceDto? Insurance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CharterBookingSelectedRouteDto? SelectedRoute = null);
 
 public sealed record CharterBookingTripDto(
     Guid TripId,

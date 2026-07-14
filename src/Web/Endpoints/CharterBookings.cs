@@ -69,7 +69,8 @@ public sealed class CharterBookings : IEndpointGroup
     private const string UpdateStatusExample =
         """
         {
-          "bookingStatus": "Completed"
+          "bookingStatus": "Cancelled",
+          "note": "Tau khong the van hanh do thoi tiet xau"
         }
         """;
 
@@ -132,6 +133,16 @@ public sealed class CharterBookings : IEndpointGroup
                 null,
                 "Admin xem chi tiet charter booking bat ky, khong bi gioi han theo owner."));
 
+        group.MapGet(GetAdminCharterBookingRouteCandidates, "admin/{id:guid}/route-candidates")
+            .RequireAuthorization()
+            .WithSummary("Admin xem route GPS có thể ghép cho charter")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Trả về candidate routes theo từng leg itinerary của charter booking.",
+                "FE cho admin chọn routeId cho từng leg rồi gửi routePlan vào quote-preview/quote.",
+                "BE chỉ nhận route nguồn Active có routeType CharterReference hoặc SightseeingLoop và geometry hợp lệ."));
+
         group.MapPatch(UpdateAdminCharterBookingStatus, "admin/{id:guid}/status")
             .RequireAuthorization()
             .Accepts<UpdateCharterBookingStatusRequest>("application/json")
@@ -141,6 +152,7 @@ public sealed class CharterBookings : IEndpointGroup
                 UpdateStatusExample,
                 "Doi bookingStatus cho charter booking hien co.",
                 "Endpoint nay chi cho admin cap nhat thu cong sang Cancelled, Expired hoac Completed.",
+                "Khi bookingStatus = Cancelled, note bat buoc de customer thay ly do huy.",
                 "PendingQuote do he thong gan khi customer tao booking.",
                 "Quoted do he thong gan khi admin chot gia bang PUT /api/charter-bookings/admin/{id}/quote.",
                 "Confirmed do he thong gan khi thanh toan dat coc hoac thanh toan du thanh cong.",
@@ -348,8 +360,54 @@ public sealed class CharterBookings : IEndpointGroup
                 "Thay the toan bo danh sach hanh khach cua charter booking.",
                 "Moi hanh khach chi can fullName va birthYear. Van ho tro dateOfBirth day du de tuong thich nguoc.",
                 "Backend tu tinh passengerType: Adult tu 12 tuoi tro len, Child duoi 12 tuoi theo nam sinh neu chi gui birthYear.",
-                "So hanh khach khong duoc vuot qua passengerCount da dang ky.",
+                "Chi cap nhat duoc truoc gio khoi hanh it nhat 24 gio.",
+                "So hanh khach khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
                 "Sau khi luu thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
+
+        group.MapPost(AddCharterBookingPassengers, "{id:guid}/passengers")
+            .RequireAuthorization()
+            .Accepts<UpdateCharterBookingPassengersRequest>("application/json")
+            .WithSummary("Them hanh khach vao charter booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                UpdatePassengersExample,
+                "Gui yeu cau them hanh khach moi vao danh sach hien co, khong thay the danh sach cu.",
+                "Chi gui yeu cau sau khi charter booking da thanh toan du: PaymentStatus = Paid.",
+                "Moi charter booking chi duoc gui yeu cau them hanh khach 1 lan.",
+                "Chi gui duoc truoc gio khoi hanh it nhat 24 gio.",
+                "Tong hanh khach Approved + Pending + moi gui khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
+                "Hanh khach moi duoc luu Pending; Admin/Manager duyet moi tao ve/QR va gui lai email ve day du."));
+
+        group.MapPost(ApproveCharterBookingPassengerAddRequest, "assigned/{id:guid}/passenger-add-requests/{requestBatchId:guid}/approve")
+            .RequireAuthorization()
+            .Accepts<ReviewCharterBookingPassengerAddRequest>("application/json")
+            .WithSummary("Admin/Manager duyet yeu cau them hanh khach")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin/Manager assigned",
+                """
+                {
+                  "note": null
+                }
+                """,
+                "Admin duyet duoc moi charter booking.",
+                "Manager chi duyet duoc charter booking da duoc phan cong cho minh.",
+                "Chi duyet khi booking da thanh toan du, chua check-in/check-out va con truoc gio khoi hanh it nhat 24 gio.",
+                "Sau khi duyet, backend tao ve/QR rieng cho hanh khach moi, giu ve/QR cu va gui lai email boarding pass gom tat ca ve hien hanh."));
+
+        group.MapPost(RejectCharterBookingPassengerAddRequest, "assigned/{id:guid}/passenger-add-requests/{requestBatchId:guid}/reject")
+            .RequireAuthorization()
+            .Accepts<ReviewCharterBookingPassengerAddRequest>("application/json")
+            .WithSummary("Admin/Manager tu choi yeu cau them hanh khach")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin/Manager assigned",
+                """
+                {
+                  "note": "Danh sach bo sung khong hop le"
+                }
+                """,
+                "Admin tu choi duoc moi charter booking.",
+                "Manager chi tu choi duoc charter booking da duoc phan cong cho minh.",
+                "note bat buoc khi tu choi."));
 
         group.MapPost(ImportCharterBookingPassengers, "{id:guid}/passengers/import")
             .RequireAuthorization()
@@ -364,6 +422,8 @@ public sealed class CharterBookings : IEndpointGroup
                 "Ho tro .xlsx, .csv, .tsv, .txt.",
                 "File chi can cot ten hanh khach va nam sinh/ngay sinh. Header chap nhan: fullName/name/ho ten va birthYear/year/nam sinh hoac dateOfBirth/dob/ngay sinh.",
                 "Backend tu tinh adultCount/childCount theo moc 12 tuoi.",
+                "Chi upload/cap nhat duoc truoc gio khoi hanh it nhat 24 gio.",
+                "So hanh khach khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
                 "Sau khi import thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
 
         group.MapGet(ExportCharterBookingTickets, "{id:guid}/tickets/export")
@@ -469,6 +529,12 @@ public sealed class CharterBookings : IEndpointGroup
     private static async Task<IResult> GetAdminCharterBookingDetail(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetAdminCharterBookingDetailQuery(id), ct));
 
+    private static async Task<IResult> GetAdminCharterBookingRouteCandidates(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCharterBookingRouteCandidatesQuery(id), ct));
+
     private static async Task<IResult> GetCharterBookingManifestByCode(
         ISender sender,
         string bookingCode,
@@ -507,7 +573,7 @@ public sealed class CharterBookings : IEndpointGroup
         Guid id,
         UpdateCharterBookingStatusRequest request,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new UpdateCharterBookingStatusCommand(id, request.BookingStatus), ct));
+        Results.Ok(await sender.Send(new UpdateCharterBookingStatusCommand(id, request.BookingStatus, request.Note), ct));
 
     private static async Task<IResult> QuoteCharterBooking(
         ISender sender,
@@ -517,7 +583,8 @@ public sealed class CharterBookings : IEndpointGroup
         Results.Ok(await sender.Send(new QuoteCharterBookingCommand(
             id,
             request.BoatId,
-            request.Boats), ct));
+            request.Boats,
+            request.RoutePlan), ct));
 
     private static async Task<IResult> PreviewCharterBookingQuote(
         ISender sender,
@@ -527,7 +594,8 @@ public sealed class CharterBookings : IEndpointGroup
         Results.Ok(await sender.Send(new PreviewCharterBookingQuoteCommand(
             id,
             request.BoatId,
-            request.Boats), ct));
+            request.Boats,
+            request.RoutePlan), ct));
 
     private static async Task<IResult> CreateCharterBookingRoute(
         ISender sender,
@@ -589,6 +657,35 @@ public sealed class CharterBookings : IEndpointGroup
         UpdateCharterBookingPassengersRequest request,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateCharterBookingPassengersCommand(id, request.Passengers), ct));
+
+    private static async Task<IResult> AddCharterBookingPassengers(
+        ISender sender,
+        Guid id,
+        UpdateCharterBookingPassengersRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new AddCharterBookingPassengersCommand(id, request.Passengers), ct));
+
+    private static async Task<IResult> ApproveCharterBookingPassengerAddRequest(
+        ISender sender,
+        Guid id,
+        Guid requestBatchId,
+        ReviewCharterBookingPassengerAddRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ApproveCharterBookingPassengerAddRequestCommand(
+            id,
+            requestBatchId,
+            request.Note), ct));
+
+    private static async Task<IResult> RejectCharterBookingPassengerAddRequest(
+        ISender sender,
+        Guid id,
+        Guid requestBatchId,
+        ReviewCharterBookingPassengerAddRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new RejectCharterBookingPassengerAddRequestCommand(
+            id,
+            requestBatchId,
+            request.Note ?? string.Empty), ct));
 
     private static async Task<IResult> ImportCharterBookingPassengers(
         ISender sender,

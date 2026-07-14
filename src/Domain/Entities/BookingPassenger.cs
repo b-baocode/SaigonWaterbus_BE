@@ -14,10 +14,19 @@ public class BookingPassenger : BaseGuidEntity
     public string? Nationality { get; set; }
     public string? PassengerType { get; set; }
     public string? Note { get; set; }
+    public string ApprovalStatus { get; set; } = "Approved";
+    public Guid? RequestBatchId { get; set; }
+    public DateTimeOffset? RequestedAt { get; set; }
+    public Guid? RequestedByUserId { get; set; }
+    public DateTimeOffset? ReviewedAt { get; set; }
+    public Guid? ReviewedByUserId { get; set; }
+    public string? ReviewNote { get; set; }
     public Guid? TripSeatId { get; set; }
     public decimal? UnitPrice { get; set; }
 
     public Booking Booking { get; set; } = null!;
     public TripSeat? TripSeat { get; set; }
+    public User? RequestedByUser { get; set; }
+    public User? ReviewedByUser { get; set; }
     public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();
 }

@@ -10,6 +10,7 @@ public class Booking : BaseGuidAuditableEntity
     public Guid? UserId { get; set; }
     public Guid? PromotionId { get; set; }
     public Guid? TripId { get; set; }
+    public Guid? CharterRouteId { get; set; }
     public Guid? AssignedManagerId { get; set; }
     public string BookingType { get; set; } = SeatBookingType;
     public string BookingCode { get; set; } = null!;
@@ -50,6 +51,7 @@ public class Booking : BaseGuidAuditableEntity
     public User? User { get; set; }
     public Promotion? Promotion { get; set; }
     public Trip? Trip { get; set; }
+    public Route? CharterRoute { get; set; }
     public User? AssignedManager { get; set; }
     public Boat? Boat { get; set; }
     public Station? FromStation { get; set; }

@@ -2,6 +2,7 @@ using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.StaffWorkAssignments;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
@@ -180,6 +181,122 @@ public class StaffWorkAssignmentTests
         result.TodayAssignments.Count.ShouldBe(1);
     }
 
+    [Test]
+    public async Task StaffTripsReturnsBoatTripsWithinAssignedShift()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var boat = Boat("WB-01");
+        var otherBoat = Boat("WB-02");
+        var stationA = Station("BD");
+        var stationB = Station("LD");
+        var route = Route("R1", stationA, stationB);
+        var inShiftTrip = Trip(
+            "T-IN",
+            route,
+            boat,
+            new DateTimeOffset(2030, 1, 2, 9, 0, 0, TimeSpan.FromHours(7)),
+            new DateTimeOffset(2030, 1, 2, 10, 0, 0, TimeSpan.FromHours(7)));
+        var outsideShiftTrip = Trip(
+            "T-OUT",
+            route,
+            boat,
+            new DateTimeOffset(2030, 1, 2, 18, 0, 0, TimeSpan.FromHours(7)),
+            new DateTimeOffset(2030, 1, 2, 19, 0, 0, TimeSpan.FromHours(7)));
+        var otherBoatTrip = Trip(
+            "T-OTHER",
+            route,
+            otherBoat,
+            new DateTimeOffset(2030, 1, 2, 9, 0, 0, TimeSpan.FromHours(7)),
+            new DateTimeOffset(2030, 1, 2, 10, 0, 0, TimeSpan.FromHours(7)));
+        context.AddRange(boat, otherBoat, stationA, stationB, route, inShiftTrip, outsideShiftTrip, otherBoatTrip);
+        await context.SaveChangesAsync();
+
+        var createHandler = new CreateStaffWorkAssignmentCommandHandler(context, adminContext, TimeProvider.System);
+        await createHandler.Handle(
+            new CreateStaffWorkAssignmentCommand(
+                staffContext.UserId!.Value,
+                StaffWorkAssignmentType.Boat,
+                BoatId: boat.Id,
+                StartAt: new DateTimeOffset(2030, 1, 2, 8, 0, 0, TimeSpan.FromHours(7)),
+                EndAt: new DateTimeOffset(2030, 1, 2, 16, 0, 0, TimeSpan.FromHours(7))),
+            CancellationToken.None);
+
+        var handler = new GetMyStaffTripsQueryHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 2, 3, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(new GetMyStaffTripsQuery(new DateOnly(2030, 1, 2)), CancellationToken.None);
+
+        var trip = result.Single();
+        trip.TripId.ShouldBe(inShiftTrip.Id);
+        trip.AssignmentType.ShouldBe(StaffWorkAssignmentType.Boat);
+        trip.BoatId.ShouldBe(boat.Id);
+        trip.AssignmentShiftState.ShouldBe("Active");
+    }
+
+    [Test]
+    public async Task StaffTripsReturnsStationTripsWithinAssignedShift()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.Ground);
+        var boat = Boat("WB-01");
+        var assignedStation = Station("BD");
+        var otherStation = Station("LD");
+        var throughAssignedStationRoute = Route("R1", assignedStation, otherStation);
+        var otherRoute = Route("R2", otherStation);
+        var includedTrip = Trip(
+            "T-STATION",
+            throughAssignedStationRoute,
+            boat,
+            new DateTimeOffset(2030, 1, 2, 9, 0, 0, TimeSpan.FromHours(7)),
+            new DateTimeOffset(2030, 1, 2, 10, 0, 0, TimeSpan.FromHours(7)));
+        var excludedTrip = Trip(
+            "T-OTHER",
+            otherRoute,
+            boat,
+            new DateTimeOffset(2030, 1, 2, 9, 0, 0, TimeSpan.FromHours(7)),
+            new DateTimeOffset(2030, 1, 2, 10, 0, 0, TimeSpan.FromHours(7)));
+        var managerUser = context.Users.Single(x => x.Id == managerContext.UserId!.Value);
+        var staffUser = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        context.AddRange(
+            boat,
+            assignedStation,
+            otherStation,
+            throughAssignedStationRoute,
+            otherRoute,
+            includedTrip,
+            excludedTrip,
+            StationAssignment(managerUser, assignedStation, managerUser.Id),
+            StationAssignment(staffUser, assignedStation, managerUser.Id));
+        await context.SaveChangesAsync();
+
+        var createHandler = new CreateStaffWorkAssignmentCommandHandler(context, managerContext, TimeProvider.System);
+        await createHandler.Handle(
+            new CreateStaffWorkAssignmentCommand(
+                staffContext.UserId!.Value,
+                StaffWorkAssignmentType.Station,
+                StationId: assignedStation.Id,
+                StartAt: new DateTimeOffset(2030, 1, 2, 8, 0, 0, TimeSpan.FromHours(7)),
+                EndAt: new DateTimeOffset(2030, 1, 2, 16, 0, 0, TimeSpan.FromHours(7))),
+            CancellationToken.None);
+
+        var handler = new GetMyStaffTripsQueryHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 2, 3, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(new GetMyStaffTripsQuery(new DateOnly(2030, 1, 2)), CancellationToken.None);
+
+        var trip = result.Single();
+        trip.TripId.ShouldBe(includedTrip.Id);
+        trip.AssignmentType.ShouldBe(StaffWorkAssignmentType.Station);
+        trip.StationId.ShouldBe(assignedStation.Id);
+    }
+
     private static Boat Boat(string code) =>
         new()
         {
@@ -198,6 +315,53 @@ public class StaffWorkAssignmentTests
             StationCode = code,
             StationName = code,
             Status = StationStatus.Active
+        };
+
+    private static Route Route(string code, params Station[] stations)
+    {
+        var route = new Route
+        {
+            RouteCode = code,
+            RouteName = code,
+            RouteType = RouteTypes.Regular,
+            Status = "Active"
+        };
+
+        var stopOrder = 1;
+        foreach (var station in stations)
+        {
+            route.RouteStops.Add(new RouteStop
+            {
+                RouteId = route.Id,
+                Route = route,
+                StationId = station.Id,
+                Station = station,
+                StopOrder = stopOrder++
+            });
+        }
+
+        return route;
+    }
+
+    private static Trip Trip(
+        string code,
+        Route route,
+        Boat boat,
+        DateTimeOffset departureTime,
+        DateTimeOffset arrivalTime) =>
+        new()
+        {
+            TripCode = code,
+            TripType = TripTypes.Regular,
+            TripStatus = TripStatus.Scheduled,
+            RouteId = route.Id,
+            Route = route,
+            BoatId = boat.Id,
+            Boat = boat,
+            OperatingDate = DateOnly.FromDateTime(departureTime.ToOffset(TimeSpan.FromHours(7)).DateTime),
+            DepartureTime = departureTime,
+            ArrivalTime = arrivalTime,
+            CapacitySnapshot = boat.SeatCount
         };
 
     private static UserStationAssignment StationAssignment(User user, Station station, Guid assignedByUserId) =>

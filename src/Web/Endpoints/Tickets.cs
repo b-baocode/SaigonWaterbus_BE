@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Tickets;
 using QRCoder;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -16,6 +17,7 @@ public sealed class Tickets : IEndpointGroup
                 "Bearer token",
                 null,
                 "Nhan ticketCode hoac qrToken.",
+                "Query optional: source=Qr|Manual|Override, clientOperationId, deviceTime, note.",
                 "Admin/Manager/Staff xem duoc moi ve.",
                 "Customer chi xem duoc ve thuoc booking cua minh.",
                 "Charter booking sinh ve theo tung hanh khach sau khi da thanh toan du va nhap danh sach hanh khach."));
@@ -27,6 +29,7 @@ public sealed class Tickets : IEndpointGroup
                 "Bearer token",
                 null,
                 "Nhan ticketCode hoac qrToken.",
+                "Query optional: source=Qr|Manual|Override, clientOperationId, deviceTime, note.",
                 "Chi Admin/Manager/Staff duoc check-in.",
                 "Ticket phai Active, booking phai Confirmed va da thanh toan du.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedInAt/checkedInBy."));
@@ -38,9 +41,20 @@ public sealed class Tickets : IEndpointGroup
                 "Bearer token",
                 null,
                 "Nhan ticketCode hoac qrToken.",
+                "Query optional: source=Qr|Manual|Override, clientOperationId, deviceTime, note.",
                 "Chi Admin/Manager/Staff duoc check-out.",
                 "Ticket phai da CheckedIn truoc do.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedOutAt/checkedOutBy."));
+
+        group.MapGet(GetTicketScanHistory, "{ticketId:guid}/scan-history")
+            .RequireAuthorization()
+            .WithSummary("Lịch sử scan/check-in/check-out của vé")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Admin/Manager/Staff xem được lịch sử vé.",
+                "Customer chỉ xem được lịch sử vé thuộc booking của mình.",
+                "Dùng cho màn chi tiết vé/audit."));
 
         group.MapPost(ReissueTicket, "reissue/{codeOrToken}")
             .RequireAuthorization()
@@ -66,20 +80,44 @@ public sealed class Tickets : IEndpointGroup
     private static async Task<IResult> ScanTicket(
         ISender sender,
         string codeOrToken,
+        TicketScanSource? source,
+        string? clientOperationId,
+        DateTimeOffset? deviceTime,
+        string? note,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new ScanTicketQuery(codeOrToken), ct));
+        Results.Ok(await sender.Send(
+            new ScanTicketQuery(codeOrToken, CreateMetadata(source, clientOperationId, deviceTime, note)),
+            ct));
 
     private static async Task<IResult> CheckInTicket(
         ISender sender,
         string codeOrToken,
+        TicketScanSource? source,
+        string? clientOperationId,
+        DateTimeOffset? deviceTime,
+        string? note,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new CheckInTicketCommand(codeOrToken), ct));
+        Results.Ok(await sender.Send(
+            new CheckInTicketCommand(codeOrToken, CreateMetadata(source, clientOperationId, deviceTime, note)),
+            ct));
 
     private static async Task<IResult> CheckOutTicket(
         ISender sender,
         string codeOrToken,
+        TicketScanSource? source,
+        string? clientOperationId,
+        DateTimeOffset? deviceTime,
+        string? note,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new CheckOutTicketCommand(codeOrToken), ct));
+        Results.Ok(await sender.Send(
+            new CheckOutTicketCommand(codeOrToken, CreateMetadata(source, clientOperationId, deviceTime, note)),
+            ct));
+
+    private static async Task<IResult> GetTicketScanHistory(
+        ISender sender,
+        Guid ticketId,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetTicketScanHistoryQuery(ticketId), ct));
 
     private static async Task<IResult> ReissueTicket(
         ISender sender,
@@ -100,4 +138,11 @@ public sealed class Tickets : IEndpointGroup
         var qrCode = new PngByteQRCode(qrData);
         return Results.File(qrCode.GetGraphic(20), "image/png");
     }
+
+    private static TicketScanRequestMetadata CreateMetadata(
+        TicketScanSource? source,
+        string? clientOperationId,
+        DateTimeOffset? deviceTime,
+        string? note) =>
+        new(source ?? TicketScanSource.Qr, clientOperationId, deviceTime, note);
 }

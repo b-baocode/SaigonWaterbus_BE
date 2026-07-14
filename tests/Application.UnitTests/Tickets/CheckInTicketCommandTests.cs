@@ -38,6 +38,18 @@ public class CheckInTicketCommandTests
         savedTicket.TicketStatus.ShouldBe(TicketStatus.CheckedIn);
         savedTicket.CheckedInAt.ShouldBe(now);
         savedTicket.CheckedInByUserId.ShouldBe(staffContext.UserId!.Value);
+
+        var scanEvent = context.TicketScanEvents.Single();
+        scanEvent.TicketId.ShouldBe(ticket.Id);
+        scanEvent.BookingId.ShouldBe(ticket.BookingId);
+        scanEvent.TripId.ShouldBe(ticket.Booking.TripId);
+        scanEvent.PerformedByUserId.ShouldBe(staffContext.UserId!.Value);
+        scanEvent.Action.ShouldBe(TicketScanAction.CheckIn);
+        scanEvent.Result.ShouldBe(TicketScanResult.Success);
+        scanEvent.Source.ShouldBe(TicketScanSource.Qr);
+        scanEvent.ServerTime.ShouldBe(now);
+        scanEvent.TicketStatusBefore.ShouldBe(TicketStatus.Active);
+        scanEvent.TicketStatusAfter.ShouldBe(TicketStatus.CheckedIn);
     }
 
     [Test]
@@ -58,6 +70,15 @@ public class CheckInTicketCommandTests
             handler.Handle(new CheckInTicketCommand(ticket.TicketCode), CancellationToken.None));
 
         ex.Errors["ticket"].Single().ShouldBe("Ve nay da duoc check-in.");
+
+        var scanEvent = context.TicketScanEvents.Single();
+        scanEvent.TicketId.ShouldBe(ticket.Id);
+        scanEvent.PerformedByUserId.ShouldBe(staffContext.UserId!.Value);
+        scanEvent.Action.ShouldBe(TicketScanAction.CheckIn);
+        scanEvent.Result.ShouldBe(TicketScanResult.Failed);
+        scanEvent.FailureReason.ShouldBe("Ve nay da duoc check-in.");
+        scanEvent.TicketStatusBefore.ShouldBe(TicketStatus.CheckedIn);
+        scanEvent.TicketStatusAfter.ShouldBe(TicketStatus.CheckedIn);
     }
 
     [Test]
@@ -104,6 +125,15 @@ public class CheckInTicketCommandTests
         savedTicket.CheckedOutAt.ShouldBe(checkedOutAt);
         savedTicket.CheckedOutByUserId.ShouldBe(staffContext.UserId!.Value);
         context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Completed);
+
+        var scanEvent = context.TicketScanEvents.Single();
+        scanEvent.TicketId.ShouldBe(ticket.Id);
+        scanEvent.PerformedByUserId.ShouldBe(staffContext.UserId!.Value);
+        scanEvent.Action.ShouldBe(TicketScanAction.CheckOut);
+        scanEvent.Result.ShouldBe(TicketScanResult.Success);
+        scanEvent.ServerTime.ShouldBe(checkedOutAt);
+        scanEvent.TicketStatusBefore.ShouldBe(TicketStatus.CheckedIn);
+        scanEvent.TicketStatusAfter.ShouldBe(TicketStatus.CheckedOut);
     }
 
     [Test]

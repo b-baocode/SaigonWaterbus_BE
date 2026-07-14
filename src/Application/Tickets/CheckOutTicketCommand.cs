@@ -7,7 +7,9 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Tickets;
 
-public sealed record CheckOutTicketCommand(string CodeOrToken) : IRequest<TicketScanDto>;
+public sealed record CheckOutTicketCommand(
+    string CodeOrToken,
+    TicketScanRequestMetadata? Metadata = null) : IRequest<TicketScanDto>;
 
 public sealed class CheckOutTicketCommandValidator : AbstractValidator<CheckOutTicketCommand>
 {
@@ -43,16 +45,53 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
             throw new ForbiddenAccessException();
         }
 
-        var ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
-        EnsureTicketCanBeCheckedOut(ticket);
-
         var now = _timeProvider.GetUtcNow();
-        ticket.TicketStatus = TicketStatus.CheckedOut;
+        var metadata = request.Metadata ?? new TicketScanRequestMetadata();
+        Domain.Entities.Ticket? ticket = null;
+        TicketStatus? ticketStatusBefore = null;
+
+        try
+        {
+            ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
+            ticketStatusBefore = ticket.TicketStatus;
+            EnsureTicketCanBeCheckedOut(ticket);
+        }
+        catch (Exception exception) when (TicketScanHistorySupport.IsLoggableFailure(exception))
+        {
+            await TicketScanHistorySupport.SaveFailureEventAsync(
+                _context,
+                currentUser,
+                TicketScanAction.CheckOut,
+                metadata,
+                now,
+                request.CodeOrToken,
+                ticket,
+                ticketStatusBefore,
+                exception,
+                cancellationToken);
+            throw;
+        }
+
+        ticket!.TicketStatus = TicketStatus.CheckedOut;
         ticket.CheckedOutAt = now;
         ticket.CheckedOutByUserId = currentUser.Id;
         ticket.CheckedOutByUser = currentUser;
 
         await CompleteBookingIfAllTicketsCheckedOutAsync(ticket, cancellationToken);
+
+        await TicketScanHistorySupport.AddEventAsync(
+            _context,
+            currentUser,
+            TicketScanAction.CheckOut,
+            TicketScanResult.Success,
+            metadata,
+            now,
+            request.CodeOrToken,
+            ticket,
+            ticketStatusBefore,
+            ticket.TicketStatus,
+            null,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
 

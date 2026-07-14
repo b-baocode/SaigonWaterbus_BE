@@ -22,6 +22,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                 ALTER TABLE staff_work_assignments
                     DROP COLUMN IF EXISTS trip_id;
+
+                UPDATE staff_work_assignments
+                SET status = 'Scheduled'
+                WHERE status IN ('Active', 'Completed');
                 """);
         }
 

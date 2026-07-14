@@ -9,6 +9,11 @@ namespace SaigonWaterbus.Application.CharterBookings;
 internal static class CharterBookingPassengerSupport
 {
     public const int AdultMinimumAge = 12;
+    public const string ApprovalStatusApproved = "Approved";
+    public const string ApprovalStatusPending = "Pending";
+    public const string ApprovalStatusRejected = "Rejected";
+    public const int MaxPassengerAddRequestCount = 1;
+    public static readonly TimeSpan ManifestUpdateCutoff = TimeSpan.FromHours(24);
     private const int MinimumBirthYear = 1900;
     private static readonly string[] DateFormats =
     [
@@ -45,7 +50,8 @@ internal static class CharterBookingPassengerSupport
                 BookingId = bookingId,
                 FullName = request.FullName.Trim(),
                 BirthYear = birthYear,
-                PassengerType = ResolvePassengerType(birthYear, today)
+                PassengerType = ResolvePassengerType(birthYear, today),
+                ApprovalStatus = ApprovalStatusApproved
             };
         }
 
@@ -57,7 +63,8 @@ internal static class CharterBookingPassengerSupport
                 {
                     BookingId = bookingId,
                     FullName = request.FullName.Trim(),
-                    PassengerType = inferredPassengerType
+                    PassengerType = inferredPassengerType,
+                    ApprovalStatus = ApprovalStatusApproved
                 };
             }
 
@@ -79,7 +86,8 @@ internal static class CharterBookingPassengerSupport
             FullName = request.FullName.Trim(),
             DateOfBirth = dateOfBirth,
             BirthYear = dateOfBirth.Year,
-            PassengerType = ResolvePassengerType(dateOfBirth, today)
+            PassengerType = ResolvePassengerType(dateOfBirth, today),
+            ApprovalStatus = ApprovalStatusApproved
         };
     }
 
@@ -89,7 +97,12 @@ internal static class CharterBookingPassengerSupport
             passenger.FullName,
             passenger.DateOfBirth,
             passenger.BirthYear,
-            passenger.PassengerType);
+            passenger.PassengerType,
+            NormalizeApprovalStatus(passenger.ApprovalStatus),
+            passenger.RequestBatchId,
+            passenger.RequestedAt,
+            passenger.ReviewedAt,
+            passenger.ReviewNote);
 
     public static int CountAdults(IEnumerable<BookingPassenger> passengers) =>
         passengers.Count(x => string.Equals(
@@ -103,27 +116,78 @@ internal static class CharterBookingPassengerSupport
             CharterBookingPassengerType.Child.ToString(),
             StringComparison.OrdinalIgnoreCase));
 
-    public static void EnsurePassengerTypeCountsMatchRequest(
+    public static void EnsurePassengerCountDoesNotExceedSelectedBoatCapacity(
         Booking booking,
-        IReadOnlyCollection<BookingPassenger> passengers,
+        int passengerCount,
         string propertyName)
     {
-        if (booking.AdultCount.GetValueOrDefault() + booking.ChildCount.GetValueOrDefault() <= 0)
-        {
-            return;
-        }
-
-        var adultCount = CountAdults(passengers);
-        var childCount = CountChildren(passengers);
-
-        if (adultCount <= booking.AdultCount.GetValueOrDefault() && childCount <= booking.ChildCount.GetValueOrDefault())
+        var capacity = ResolveSelectedBoatCapacity(booking);
+        if (passengerCount <= capacity)
         {
             return;
         }
 
         throw new ValidationException([new ValidationFailure(propertyName,
-            $"Danh sách hành khách không được vượt quá yêu cầu: tối đa {booking.AdultCount.GetValueOrDefault()} người lớn và {booking.ChildCount.GetValueOrDefault()} trẻ em.")]);
+            $"Danh sách hành khách không được vượt quá sức chứa của tàu đã chọn ({capacity}).")]);
     }
+
+    public static void EnsurePassengerAddRequestCountAvailable(Booking booking, string propertyName)
+    {
+        var usedRequestCount = booking.Passengers
+            .Where(x => x.RequestBatchId.HasValue)
+            .Select(x => x.RequestBatchId!.Value)
+            .Distinct()
+            .Count();
+        if (usedRequestCount < MaxPassengerAddRequestCount)
+        {
+            return;
+        }
+
+        throw new ValidationException([new ValidationFailure(propertyName,
+            $"Mỗi charter booking chỉ được gửi yêu cầu thêm hành khách tối đa {MaxPassengerAddRequestCount} lần.")]);
+    }
+
+    public static void EnsureManifestCanBeUpdatedBeforeCutoff(
+        Booking booking,
+        DateTimeOffset now,
+        string propertyName)
+    {
+        if (!booking.DepartureDate.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure(propertyName,
+                "Không xác định được ngày khởi hành của charter booking.")]);
+        }
+
+        var departureTimeUtc = CharterBookingTripSupport.ResolveDepartureTimeUtc(booking);
+        if (now < departureTimeUtc.Subtract(ManifestUpdateCutoff))
+        {
+            return;
+        }
+
+        throw new ValidationException([new ValidationFailure(propertyName,
+            "Không thể cập nhật danh sách hành khách trong vòng 24 giờ trước giờ khởi hành.")]);
+    }
+
+    public static bool IsApproved(BookingPassenger passenger) =>
+        string.Equals(
+            NormalizeApprovalStatus(passenger.ApprovalStatus),
+            ApprovalStatusApproved,
+            StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsPending(BookingPassenger passenger) =>
+        string.Equals(
+            NormalizeApprovalStatus(passenger.ApprovalStatus),
+            ApprovalStatusPending,
+            StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsRejected(BookingPassenger passenger) =>
+        string.Equals(
+            NormalizeApprovalStatus(passenger.ApprovalStatus),
+            ApprovalStatusRejected,
+            StringComparison.OrdinalIgnoreCase);
+
+    public static string NormalizeApprovalStatus(string? status) =>
+        string.IsNullOrWhiteSpace(status) ? ApprovalStatusApproved : status.Trim();
 
     public static string ResolvePassengerType(DateOnly dateOfBirth, DateOnly today) =>
         IsAdult(dateOfBirth, today)
@@ -189,6 +253,25 @@ internal static class CharterBookingPassengerSupport
 
     public static bool IsAdult(DateOnly dateOfBirth, DateOnly today) =>
         CalculateAge(dateOfBirth, today) >= AdultMinimumAge;
+
+    private static int ResolveSelectedBoatCapacity(Booking booking)
+    {
+        var selectedBoatCapacity = booking.CharterBoats
+            .Where(x => x.Boat is not null)
+            .GroupBy(x => x.BoatId)
+            .Sum(x => x.First().Boat.SeatCount);
+        if (selectedBoatCapacity > 0)
+        {
+            return selectedBoatCapacity;
+        }
+
+        if (booking.Boat is not null && booking.Boat.SeatCount > 0)
+        {
+            return booking.Boat.SeatCount;
+        }
+
+        return booking.PassengerCount.GetValueOrDefault();
+    }
 
     private static bool TryResolveBirthYear(
         CharterBookingPassengerRequest request,

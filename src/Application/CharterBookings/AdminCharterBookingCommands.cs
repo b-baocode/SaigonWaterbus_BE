@@ -94,7 +94,8 @@ public sealed class GetAdminCharterBookingDetailQueryHandler
 
 public sealed record UpdateCharterBookingStatusCommand(
     Guid BookingId,
-    BookingStatus BookingStatus) : IRequest<CharterBookingDetailDto>;
+    BookingStatus BookingStatus,
+    string? Note = null) : IRequest<CharterBookingDetailDto>;
 
 public sealed class UpdateCharterBookingStatusCommandValidator
     : AbstractValidator<UpdateCharterBookingStatusCommand>
@@ -103,6 +104,11 @@ public sealed class UpdateCharterBookingStatusCommandValidator
     {
         RuleFor(x => x.BookingId).NotEmpty();
         RuleFor(x => x.BookingStatus).IsInEnum();
+        RuleFor(x => x.Note)
+            .NotEmpty()
+            .When(x => x.BookingStatus == BookingStatus.Cancelled)
+            .WithMessage("Lý do hủy charter booking là bắt buộc.");
+        RuleFor(x => x.Note).MaximumLength(1000).When(x => x.Note is not null);
     }
 }
 
@@ -144,7 +150,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         var previousRentalUnit = booking.RentalUnit;
         var previousDurationValue = booking.DurationValue.GetValueOrDefault();
 
-        ApplyStatusUpdate(booking, request.BookingStatus);
+        ApplyStatusUpdate(booking, request.BookingStatus, request.Note);
 
         if (request.BookingStatus is BookingStatus.Cancelled or BookingStatus.Expired)
         {
@@ -187,7 +193,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         return CharterBookingQuerySupport.ToDetailDto(booking, relatedRoutes);
     }
 
-    private static void ApplyStatusUpdate(Booking booking, BookingStatus targetStatus)
+    private static void ApplyStatusUpdate(Booking booking, BookingStatus targetStatus, string? note)
     {
         EnsureAdminCanSetStatus(targetStatus);
 
@@ -201,6 +207,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
             case BookingStatus.Cancelled:
                 EnsureCanCancel(booking, targetStatus);
                 booking.HoldExpiresAt = null;
+                booking.SpecialRequests = AppendAdminCancellationNote(booking.SpecialRequests, note);
                 UpdateTickets(booking, TicketStatus.Cancelled);
                 break;
 
@@ -301,12 +308,35 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
     private static ValidationException CreateStatusValidation(BookingStatus targetStatus, string message) =>
         new([new ValidationFailure("bookingStatus", message)]);
+
+    private static string? AppendAdminCancellationNote(string? existing, string? note)
+    {
+        var trimmedNote = note?.Trim();
+        if (string.IsNullOrWhiteSpace(trimmedNote))
+        {
+            return existing;
+        }
+
+        var entry = $"Admin hủy booking: {trimmedNote}";
+        var value = string.IsNullOrWhiteSpace(existing)
+            ? entry
+            : $"{existing.Trim()}\n{entry}";
+
+        if (value.Length > 1000)
+        {
+            throw new ValidationException([new ValidationFailure("note",
+                "Lý do hủy vượt quá 1000 ký tự sau khi ghép với ghi chú hiện tại.")]);
+        }
+
+        return value;
+    }
 }
 
 public sealed record QuoteCharterBookingCommand(
     Guid BookingId,
     Guid? BoatId = null,
-    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null) : IRequest<QuoteCharterBookingResult>;
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
+    IReadOnlyList<CharterBookingRoutePlanLegRequest>? RoutePlan = null) : IRequest<QuoteCharterBookingResult>;
 
 public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<QuoteCharterBookingCommand>
 {
@@ -337,6 +367,15 @@ public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<Quot
                 .WithMessage("boatOrder phải lớn hơn 0.");
             boat.RuleFor(x => x.BoatId).NotEmpty();
         });
+        RuleFor(x => x.RoutePlan)
+            .Must(x => x is null || x.Count > 0)
+            .WithMessage("routePlan không được rỗng nếu được gửi.");
+        RuleForEach(x => x.RoutePlan).ChildRules(leg =>
+        {
+            leg.RuleFor(x => x.FromStationId).NotEmpty();
+            leg.RuleFor(x => x.ToStationId).NotEmpty();
+            leg.RuleFor(x => x.RouteId).NotEmpty();
+        });
     }
 
     private static bool HaveUniqueBoatOrders(IReadOnlyList<QuoteCharterBookingBoatRequest>? boats) =>
@@ -349,7 +388,8 @@ public sealed class QuoteCharterBookingCommandValidator : AbstractValidator<Quot
 public sealed record PreviewCharterBookingQuoteCommand(
     Guid BookingId,
     Guid? BoatId = null,
-    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null) : IRequest<PreviewCharterBookingQuoteResult>;
+    IReadOnlyList<QuoteCharterBookingBoatRequest>? Boats = null,
+    IReadOnlyList<CharterBookingRoutePlanLegRequest>? RoutePlan = null) : IRequest<PreviewCharterBookingQuoteResult>;
 
 public sealed class PreviewCharterBookingQuoteCommandValidator
     : AbstractValidator<PreviewCharterBookingQuoteCommand>
@@ -380,6 +420,15 @@ public sealed class PreviewCharterBookingQuoteCommandValidator
                 .GreaterThan(0)
                 .WithMessage("boatOrder phải lớn hơn 0.");
             boat.RuleFor(x => x.BoatId).NotEmpty();
+        });
+        RuleFor(x => x.RoutePlan)
+            .Must(x => x is null || x.Count > 0)
+            .WithMessage("routePlan không được rỗng nếu được gửi.");
+        RuleForEach(x => x.RoutePlan).ChildRules(leg =>
+        {
+            leg.RuleFor(x => x.FromStationId).NotEmpty();
+            leg.RuleFor(x => x.ToStationId).NotEmpty();
+            leg.RuleFor(x => x.RouteId).NotEmpty();
         });
     }
 
@@ -432,10 +481,19 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             cancellationToken);
         CharterBookingQuoteSupport.ValidateSelectedBoats(booking, selectedBoats);
 
-        var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+        var previewRoute = await CharterBookingRoutePlanSupport.ResolveSelectedRouteAsync(
             _context,
             booking,
+            request.RoutePlan,
+            persist: false,
+            _timeProvider.GetUtcNow(),
             cancellationToken);
+        var relatedRoutes = previewRoute is null
+            ? await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+                _context,
+                booking,
+                cancellationToken)
+            : [previewRoute];
         var rentalUnit = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
         var requestedDurationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
         var selectedBoatPricings = CharterBookingQuoteSupport.EstimateSelectedBoatPrices(
@@ -488,7 +546,8 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
                 rentalUnit,
                 requestedDurationValue),
             promotion?.PromotionCode,
-            CharterBookingInsuranceSupport.ToDto(insuranceSnapshot));
+            CharterBookingInsuranceSupport.ToDto(insuranceSnapshot),
+            CharterBookingRoutePlanSupport.ToSelectedRouteDto(previewRoute));
     }
 }
 
@@ -574,10 +633,19 @@ public sealed class QuoteCharterBookingCommandHandler
         var previousStartTime = booking.StartTime;
         var previousRentalUnit = booking.RentalUnit;
         var previousDurationValue = booking.DurationValue.GetValueOrDefault();
-        var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+        var selectedRoute = await CharterBookingRoutePlanSupport.ResolveSelectedRouteAsync(
             _context,
             booking,
+            request.RoutePlan,
+            persist: true,
+            now,
             cancellationToken);
+        var relatedRoutes = selectedRoute is null
+            ? await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+                _context,
+                booking,
+                cancellationToken)
+            : [selectedRoute];
         var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
         var rentalUnit = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
         var requestedDurationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
@@ -679,6 +747,8 @@ public sealed class QuoteCharterBookingCommandHandler
 
         booking.BoatId = primaryBoat.Id;
         booking.Boat = primaryBoat;
+        booking.CharterRouteId = selectedRoute?.Id;
+        booking.CharterRoute = selectedRoute;
         booking.RentalUnit = rentalUnit;
         booking.DurationValue = holdDurationValue;
         booking.PromotionId = promotion?.Id;
@@ -757,6 +827,7 @@ public sealed class QuoteCharterBookingCommandHandler
             booking.PaymentStatus,
             promotion?.PromotionCode,
             booking.HoldExpiresAt,
-            CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot));
+            CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot),
+            CharterBookingRoutePlanSupport.ToSelectedRouteDto(selectedRoute));
     }
 }

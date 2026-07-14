@@ -41,13 +41,30 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return ToDetailDto(trip);
+        var sourceBooking = await LoadSourceBookingAsync(trip, cancellationToken);
+        return ToDetailDto(trip, sourceBooking);
     }
 
-    internal static TripDetailDto ToDetailDto(Trip trip) => new(
+    internal static TripDetailDto ToDetailDto(Trip trip, Booking? sourceBooking = null) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
         trip.DepartureTime, trip.ArrivalTime,
         trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
-        TripStopScheduleSupport.BuildStopDtos(trip));
+        TripStopScheduleSupport.BuildStopDtos(trip),
+        trip.TripType,
+        trip.SourceBookingId,
+        sourceBooking?.BookingCode);
+
+    private async Task<Booking?> LoadSourceBookingAsync(Trip trip, CancellationToken cancellationToken)
+    {
+        if (!trip.SourceBookingId.HasValue)
+        {
+            return null;
+        }
+
+        return await _context.Set<Booking>()
+            .Include(x => x.ItineraryStops)
+            .SingleOrDefaultAsync(x => x.Id == trip.SourceBookingId.Value, cancellationToken);
+    }
+
 }

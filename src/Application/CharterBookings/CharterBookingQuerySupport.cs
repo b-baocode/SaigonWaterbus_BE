@@ -13,6 +13,7 @@ internal static class CharterBookingQuerySupport
     public static IQueryable<Booking> BuildDetailQuery(IApplicationDbContext context) =>
         BuildBaseQuery(context)
             .Include(b => b.Boat)
+            .Include(b => b.CharterRoute)
             .Include(b => b.CharterBoats)
                 .ThenInclude(cb => cb.Boat)
             .Include(b => b.AssignedManager)
@@ -138,6 +139,13 @@ internal static class CharterBookingQuerySupport
             CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
             CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot),
             booking.InsuranceSnapshot is not null,
-            booking.InsuranceSnapshot?.InsurancePackageId);
+            booking.InsuranceSnapshot?.InsurancePackageId,
+            booking.CharterRoute is null
+                ? null
+                : new CharterBookingSelectedRouteDto(
+                    booking.CharterRoute.Id,
+                    booking.CharterRoute.RouteCode,
+                    booking.CharterRoute.RouteName,
+                    booking.CharterRoute.RouteType));
     }
 }

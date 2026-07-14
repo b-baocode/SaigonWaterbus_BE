@@ -22,10 +22,29 @@ public sealed class BookingPassengerConfiguration : IEntityTypeConfiguration<Boo
         builder.Property(x => x.Nationality).HasColumnName("nationality").HasMaxLength(100);
         builder.Property(x => x.PassengerType).HasColumnName("passenger_type").HasMaxLength(30);
         builder.Property(x => x.Note).HasColumnName("note").HasMaxLength(500);
+        builder.Property(x => x.ApprovalStatus)
+            .HasColumnName("approval_status")
+            .HasMaxLength(30)
+            .HasDefaultValue("Approved")
+            .IsRequired();
+        builder.Property(x => x.RequestBatchId).HasColumnName("request_batch_id");
+        builder.Property(x => x.RequestedAt).HasColumnName("requested_at");
+        builder.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id");
+        builder.Property(x => x.ReviewedAt).HasColumnName("reviewed_at");
+        builder.Property(x => x.ReviewedByUserId).HasColumnName("reviewed_by_user_id");
+        builder.Property(x => x.ReviewNote).HasColumnName("review_note").HasMaxLength(500);
         builder.Property(x => x.TripSeatId).HasColumnName("trip_seat_id");
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(12,2)");
 
         builder.HasOne(x => x.Booking).WithMany(x => x.Passengers).HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.TripSeat).WithMany().HasForeignKey(x => x.TripSeatId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.RequestedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.RequestedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.ReviewedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.ReviewedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

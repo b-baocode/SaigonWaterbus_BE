@@ -20,6 +20,8 @@ public interface IApplicationDbContext
 
     DbSet<Ticket> Tickets { get; }
 
+    DbSet<TicketScanEvent> TicketScanEvents { get; }
+
     DbSet<Incident> Incidents { get; }
 
     DbSet<StaffWorkAssignment> StaffWorkAssignments { get; }

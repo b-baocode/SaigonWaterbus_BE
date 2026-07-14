@@ -75,6 +75,8 @@ public sealed class ImportCharterBookingPassengersCommandHandler
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.BookingPassenger)
             .Include(x => x.Boat)
+            .Include(x => x.CharterBoats)
+                .ThenInclude(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
@@ -99,22 +101,22 @@ public sealed class ImportCharterBookingPassengersCommandHandler
                 "Chỉ upload danh sách hành khách sau khi charter booking đã thanh toán đủ.")]);
         }
 
-        var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime);
-        var passengers = PassengerManifestParser.Parse(request.FileName, request.Content, today);
+        var now = _timeProvider.GetUtcNow();
+        CharterBookingPassengerSupport.EnsureManifestCanBeUpdatedBeforeCutoff(
+            booking,
+            now,
+            nameof(request.Content));
 
-        if (passengers.Count > booking.PassengerCount.GetValueOrDefault())
-        {
-            throw new ValidationException([new ValidationFailure(nameof(request.Content),
-                "Danh sách hành khách không được vượt quá số khách đã đăng ký.")]);
-        }
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        var passengers = PassengerManifestParser.Parse(request.FileName, request.Content, today);
+        CharterBookingPassengerSupport.EnsurePassengerCountDoesNotExceedSelectedBoatCapacity(
+            booking,
+            passengers.Count,
+            nameof(request.Content));
 
         var passengerEntities = passengers
             .Select(x => CharterBookingPassengerSupport.ToEntity(booking.Id, x, today))
             .ToList();
-        CharterBookingPassengerSupport.EnsurePassengerTypeCountsMatchRequest(
-            booking,
-            passengerEntities,
-            nameof(request.Content));
 
         CharterBookingTicketSupport.CancelTicketsBeforeReplacingPassengers(booking);
         _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);

@@ -1,5 +1,6 @@
 using System.Globalization;
 using SaigonWaterbus.Application.StaffWorkAssignments;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -46,15 +47,6 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 "Manager gán staff Ground vào Station trong bến mình phụ trách.",
                 "Boat/Station: bắt buộc startAt và endAt.",
                 "Backend chặn staff bị trùng ca."));
-
-        group.MapPatch(UpdateStaffWorkAssignmentStatus, "{assignmentId:guid}/status")
-            .RequireAuthorization()
-            .WithSummary("Cập nhật trạng thái phân công")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager",
-                """{ "status": "Cancelled" }""",
-                "status: Scheduled | Active | Completed | Cancelled.",
-                "Manager chỉ cập nhật phân công Station trong bến mình phụ trách."));
 
         group.MapDelete(DeleteStaffWorkAssignment, "{assignmentId:guid}")
             .RequireAuthorization()
@@ -115,15 +107,6 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 request.Note),
             cancellationToken));
 
-    private static async Task<IResult> UpdateStaffWorkAssignmentStatus(
-        ISender sender,
-        Guid assignmentId,
-        UpdateStaffWorkAssignmentStatusRequest request,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new UpdateStaffWorkAssignmentStatusCommand(assignmentId, request.Status),
-            cancellationToken));
-
     private static async Task<IResult> DeleteStaffWorkAssignment(
         ISender sender,
         Guid assignmentId,
@@ -168,7 +151,6 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         string? DutyRole = null,
         string? Note = null);
 
-    public sealed record UpdateStaffWorkAssignmentStatusRequest(StaffWorkAssignmentStatus Status);
 }
 
 public sealed class Staff : IEndpointGroup
@@ -197,6 +179,27 @@ public sealed class Staff : IEndpointGroup
                 "Staff",
                 null,
                 "Shortcut của GET /api/staff/me/assignments cho ngày hiện tại."));
+
+        group.MapGet(GetMyTrips, "me/trips")
+            .RequireAuthorization()
+            .WithSummary("Mobile staff xem chuyến được xử lý theo ca")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Staff",
+                null,
+                "Query optional: date=yyyy-MM-dd/dd-MM-yyyy/dd/MM/yyyy. Nếu bỏ trống thì lấy hôm nay theo giờ Việt Nam.",
+                "BE tự suy ra trip từ phân công Boat hoặc Station của staff.",
+                "Boat: trip có boatId trùng và thời gian trip overlap ca.",
+                "Station: trip có route đi qua station và thời gian trip overlap ca."));
+
+        group.MapGet(GetMyScanHistory, "me/scan-history")
+            .RequireAuthorization()
+            .WithSummary("Mobile staff xem lịch sử quét vé của mình")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Staff",
+                null,
+                "Query optional: fromDate, toDate, tripId, action=Scan|CheckIn|CheckOut, result=Success|Failed, source=Qr|Manual|Override.",
+                "Nếu bỏ fromDate/toDate thì lấy hôm nay theo giờ Việt Nam.",
+                "Chỉ trả các event do staff đang đăng nhập thực hiện."));
 
         group.MapGet(GetMyCurrentShift, "me/current-shift")
             .RequireAuthorization()
@@ -231,6 +234,43 @@ public sealed class Staff : IEndpointGroup
         var today = TodayInVietnam();
         return Results.Ok(await sender.Send(
             new GetMyStaffWorkAssignmentsQuery(today, today),
+            cancellationToken));
+    }
+
+    private static async Task<IResult> GetMyTrips(
+        ISender sender,
+        string? date,
+        CancellationToken cancellationToken)
+    {
+        var requestedDate = TodayInVietnam();
+        if (!string.IsNullOrWhiteSpace(date)
+            && !StaffWorkAssignments.TryParseDate(date, out requestedDate))
+        {
+            return Results.BadRequest(new { message = "date phải có định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        return Results.Ok(await sender.Send(
+            new GetMyStaffTripsQuery(requestedDate),
+            cancellationToken));
+    }
+
+    private static async Task<IResult> GetMyScanHistory(
+        ISender sender,
+        string? fromDate,
+        string? toDate,
+        Guid? tripId,
+        TicketScanAction? action,
+        TicketScanResult? result,
+        TicketScanSource? source,
+        CancellationToken cancellationToken)
+    {
+        if (!ResolveDateRange(fromDate, toDate, out var from, out var to, out var error))
+        {
+            return Results.BadRequest(new { message = error });
+        }
+
+        return Results.Ok(await sender.Send(
+            new GetMyTicketScanHistoryQuery(from, to, tripId, action, result, source),
             cancellationToken));
     }
 

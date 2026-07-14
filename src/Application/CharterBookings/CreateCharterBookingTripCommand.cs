@@ -50,6 +50,8 @@ public sealed class CreateCharterBookingTripCommandHandler
                 .ThenInclude(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
+            .Include(x => x.CharterRoute)
+                .ThenInclude(x => x!.RouteStops)
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
@@ -61,20 +63,7 @@ public sealed class CreateCharterBookingTripCommandHandler
             .OrderBy(x => x.BoatOrder)
             .ToList();
 
-        var stationSequence = CharterBookingTripSupport.BuildStationSequence(booking);
-        if (stationSequence.Count < 2)
-        {
-            throw new ValidationException([new ValidationFailure("bookingId",
-                "Lộ trình của booking chưa đủ điểm (cần ít nhất bến đi và một điểm đến) để khớp route.")]);
-        }
-
-        var route = await CharterBookingTripSupport.FindMatchingRouteAsync(
-                _context,
-                stationSequence,
-                cancellationToken)
-            ?? throw new ValidationException([new ValidationFailure("routeId",
-                "Không có route nào khớp với lộ trình của booking. "
-                + "Tạo route (ví dụ qua POST /api/routes/from-gps) có các bến đúng thứ tự lộ trình rồi thử lại.")]);
+        var route = booking.CharterRoute ?? await ResolveLegacyMatchingRouteAsync(booking, cancellationToken);
 
         var departureTime = CharterBookingTripSupport.ResolveDepartureTimeUtc(booking);
         var arrivalTime = CharterBookingTripSupport.ResolveArrivalTimeUtc(departureTime, booking);
@@ -187,6 +176,26 @@ public sealed class CreateCharterBookingTripCommandHandler
             throw new ValidationException([new ValidationFailure("bookingId",
                 "Charter booking đã có trip.")]);
         }
+    }
+
+    private async Task<Route> ResolveLegacyMatchingRouteAsync(
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        var stationSequence = CharterBookingTripSupport.BuildStationSequence(booking);
+        if (stationSequence.Count < 2)
+        {
+            throw new ValidationException([new ValidationFailure("bookingId",
+                "Lộ trình của booking chưa đủ điểm (cần ít nhất bến đi và một điểm đến) để khớp route.")]);
+        }
+
+        return await CharterBookingTripSupport.FindMatchingRouteAsync(
+                _context,
+                stationSequence,
+                cancellationToken)
+            ?? throw new ValidationException([new ValidationFailure("routeId",
+                "Không có route nào khớp với lộ trình của booking. "
+                + "Tạo route (ví dụ qua POST /api/routes/from-gps) có các bến đúng thứ tự lộ trình rồi thử lại.")]);
     }
 
     /// <summary>

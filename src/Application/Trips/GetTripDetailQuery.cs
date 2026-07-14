@@ -23,6 +23,12 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
-        return UpdateTripStatusCommandHandler.ToDetailDto(trip);
+        var sourceBooking = trip.SourceBookingId.HasValue
+            ? await _context.Set<Booking>()
+                .Include(x => x.ItineraryStops)
+                .SingleOrDefaultAsync(x => x.Id == trip.SourceBookingId.Value, cancellationToken)
+            : null;
+
+        return UpdateTripStatusCommandHandler.ToDetailDto(trip, sourceBooking);
     }
 }

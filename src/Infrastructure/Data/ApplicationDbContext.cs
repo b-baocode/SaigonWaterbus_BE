@@ -42,6 +42,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Ticket> Tickets => Set<Ticket>();
 
+    public DbSet<TicketScanEvent> TicketScanEvents => Set<TicketScanEvent>();
+
     public DbSet<Incident> Incidents => Set<Incident>();
 
     public DbSet<StaffWorkAssignment> StaffWorkAssignments => Set<StaffWorkAssignment>();

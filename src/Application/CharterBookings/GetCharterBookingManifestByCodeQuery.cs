@@ -157,6 +157,10 @@ internal static class CharterBookingManifestSupport
             && (string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
                 || booking.RemainingAmount <= 0);
 
+        var approvedPassengers = booking.Passengers
+            .Where(CharterBookingPassengerSupport.IsApproved)
+            .ToList();
+
         return new CharterBookingManifestDto(
             booking.Id,
             booking.BookingCode,
@@ -173,15 +177,15 @@ internal static class CharterBookingManifestSupport
             booking.ToStation?.StationName,
             ToItineraryStopDtos(booking),
             booking.PassengerCount.GetValueOrDefault(),
-            booking.Passengers.Count,
-            CharterBookingPassengerSupport.CountAdults(booking.Passengers),
-            CharterBookingPassengerSupport.CountChildren(booking.Passengers),
+            approvedPassengers.Count,
+            CharterBookingPassengerSupport.CountAdults(approvedPassengers),
+            CharterBookingPassengerSupport.CountChildren(approvedPassengers),
             new CharterBookingTicketSummaryDto(
                 currentTickets.Count,
                 currentTickets.Count(x => x.TicketStatus == TicketStatus.Active),
                 currentTickets.Count(x => x.TicketStatus == TicketStatus.CheckedIn),
                 currentTickets.Count(x => x.TicketStatus == TicketStatus.CheckedOut)),
-            booking.Passengers
+            approvedPassengers
                 .OrderBy(x => x.FullName)
                 .ThenBy(x => x.Id)
                 .Select(passenger =>

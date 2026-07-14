@@ -43,6 +43,30 @@ public sealed record StaffCurrentShiftDto(
     StaffWorkAssignmentDto? CurrentShift,
     IReadOnlyList<StaffWorkAssignmentDto> TodayAssignments);
 
+public sealed record StaffAssignedTripDto(
+    Guid TripId,
+    string TripCode,
+    string TripType,
+    string TripStatus,
+    DateOnly OperatingDate,
+    DateTimeOffset DepartureTime,
+    DateTimeOffset ArrivalTime,
+    Guid RouteId,
+    string RouteCode,
+    string RouteName,
+    string RouteType,
+    Guid? BoatId,
+    string? BoatCode,
+    string? BoatName,
+    Guid AssignmentId,
+    StaffWorkAssignmentType AssignmentType,
+    DateTimeOffset AssignmentStartAt,
+    DateTimeOffset AssignmentEndAt,
+    string AssignmentShiftState,
+    Guid? StationId,
+    string? StationCode,
+    string? StationName);
+
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateStaffWorkAssignmentCommand(
     Guid StaffUserId,
@@ -345,29 +369,17 @@ public sealed class GetMyCurrentStaffShiftQueryHandler
     }
 }
 
-[Authorize(Roles = "Admin,Manager")]
-public sealed record UpdateStaffWorkAssignmentStatusCommand(
-    Guid AssignmentId,
-    StaffWorkAssignmentStatus Status) : IRequest<StaffWorkAssignmentDto>;
+[Authorize(Roles = "Staff")]
+public sealed record GetMyStaffTripsQuery(DateOnly Date) : IRequest<IReadOnlyList<StaffAssignedTripDto>>;
 
-public sealed class UpdateStaffWorkAssignmentStatusCommandValidator
-    : AbstractValidator<UpdateStaffWorkAssignmentStatusCommand>
-{
-    public UpdateStaffWorkAssignmentStatusCommandValidator()
-    {
-        RuleFor(x => x.AssignmentId).NotEmpty();
-        RuleFor(x => x.Status).IsInEnum();
-    }
-}
-
-public sealed class UpdateStaffWorkAssignmentStatusCommandHandler
-    : IRequestHandler<UpdateStaffWorkAssignmentStatusCommand, StaffWorkAssignmentDto>
+public sealed class GetMyStaffTripsQueryHandler
+    : IRequestHandler<GetMyStaffTripsQuery, IReadOnlyList<StaffAssignedTripDto>>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
-    public UpdateStaffWorkAssignmentStatusCommandHandler(
+    public GetMyStaffTripsQueryHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider)
@@ -377,29 +389,134 @@ public sealed class UpdateStaffWorkAssignmentStatusCommandHandler
         _timeProvider = timeProvider;
     }
 
-    public async Task<StaffWorkAssignmentDto> Handle(
-        UpdateStaffWorkAssignmentStatusCommand request,
+    public async Task<IReadOnlyList<StaffAssignedTripDto>> Handle(
+        GetMyStaffTripsQuery request,
         CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
-        var assignment = await _context.StaffWorkAssignments
-            .SingleOrDefaultAsync(x => x.Id == request.AssignmentId, cancellationToken)
-            ?? throw new NotFoundException("Không tìm thấy phân công ca làm.");
+        if (!AuthSupport.IsStaff(actor))
+        {
+            throw new ForbiddenAccessException();
+        }
 
-        await StaffWorkAssignmentSupport.EnsureActorCanManageExistingAssignmentAsync(
-            _context,
-            actor,
-            assignment,
-            cancellationToken);
+        var assignments = await _context.StaffWorkAssignments
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .Include(x => x.Station)
+            .Where(x => x.StaffUserId == actor.Id
+                && x.WorkingDate == request.Date
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && ((x.AssignmentType == StaffWorkAssignmentType.Boat && x.BoatId.HasValue)
+                    || (x.AssignmentType == StaffWorkAssignmentType.Station && x.StationId.HasValue)))
+            .OrderBy(x => x.StartAt)
+            .ToListAsync(cancellationToken);
 
-        assignment.Status = request.Status;
-        await _context.SaveChangesAsync(cancellationToken);
+        if (assignments.Count == 0)
+        {
+            return [];
+        }
 
-        return await StaffWorkAssignmentSupport.LoadDtoAsync(
-            _context,
+        var windowStart = assignments.Min(x => x.StartAt);
+        var windowEnd = assignments.Max(x => x.EndAt);
+        var trips = await _context.Set<Trip>()
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .Include(x => x.Route)
+                .ThenInclude(x => x.RouteStops)
+                    .ThenInclude(x => x.Station)
+            .Where(x => x.TripStatus != TripStatus.Cancelled
+                && x.DepartureTime < windowEnd
+                && windowStart < x.ArrivalTime)
+            .ToListAsync(cancellationToken);
+
+        var now = _timeProvider.GetUtcNow();
+        return trips
+            .Select(trip => new { Trip = trip, Assignment = FindBestMatchingAssignment(trip, assignments) })
+            .Where(x => x.Assignment is not null)
+            .Select(x => ToAssignedTripDto(x.Trip, x.Assignment!, now))
+            .OrderBy(x => x.DepartureTime)
+            .ThenBy(x => x.TripCode)
+            .ToList();
+    }
+
+    private static StaffWorkAssignment? FindBestMatchingAssignment(
+        Trip trip,
+        IReadOnlyList<StaffWorkAssignment> assignments) =>
+        assignments
+            .Where(assignment => MatchesTrip(assignment, trip))
+            .OrderByDescending(assignment => OverlapTicks(assignment.StartAt, assignment.EndAt, trip.DepartureTime, trip.ArrivalTime))
+            .ThenBy(assignment => assignment.AssignmentType == StaffWorkAssignmentType.Boat ? 0 : 1)
+            .ThenBy(assignment => assignment.StartAt)
+            .FirstOrDefault();
+
+    private static bool MatchesTrip(StaffWorkAssignment assignment, Trip trip)
+    {
+        if (!TimeRangesOverlap(assignment.StartAt, assignment.EndAt, trip.DepartureTime, trip.ArrivalTime))
+        {
+            return false;
+        }
+
+        return assignment.AssignmentType switch
+        {
+            StaffWorkAssignmentType.Boat => trip.BoatId.HasValue
+                && assignment.BoatId.HasValue
+                && trip.BoatId.Value == assignment.BoatId.Value,
+            StaffWorkAssignmentType.Station => assignment.StationId.HasValue
+                && trip.Route.RouteStops.Any(stop => stop.StationId == assignment.StationId.Value),
+            _ => false
+        };
+    }
+
+    private static StaffAssignedTripDto ToAssignedTripDto(
+        Trip trip,
+        StaffWorkAssignment assignment,
+        DateTimeOffset now)
+    {
+        var station = assignment.AssignmentType == StaffWorkAssignmentType.Station
+            ? assignment.Station
+            : null;
+
+        return new StaffAssignedTripDto(
+            trip.Id,
+            trip.TripCode,
+            trip.TripType,
+            trip.TripStatus.ToString(),
+            trip.OperatingDate,
+            trip.DepartureTime,
+            trip.ArrivalTime,
+            trip.RouteId,
+            trip.Route.RouteCode,
+            trip.Route.RouteName,
+            trip.Route.RouteType,
+            trip.BoatId,
+            trip.Boat?.Code,
+            trip.Boat?.Name,
             assignment.Id,
-            _timeProvider.GetUtcNow(),
-            cancellationToken);
+            assignment.AssignmentType,
+            assignment.StartAt,
+            assignment.EndAt,
+            StaffWorkAssignmentSupport.ResolveShiftState(assignment, now),
+            station?.Id,
+            station?.StationCode,
+            station?.StationName);
+    }
+
+    private static bool TimeRangesOverlap(
+        DateTimeOffset firstStart,
+        DateTimeOffset firstEnd,
+        DateTimeOffset secondStart,
+        DateTimeOffset secondEnd) =>
+        firstStart < secondEnd && secondStart < firstEnd;
+
+    private static long OverlapTicks(
+        DateTimeOffset firstStart,
+        DateTimeOffset firstEnd,
+        DateTimeOffset secondStart,
+        DateTimeOffset secondEnd)
+    {
+        var start = firstStart > secondStart ? firstStart : secondStart;
+        var end = firstEnd < secondEnd ? firstEnd : secondEnd;
+        return end > start ? (end - start).Ticks : 0;
     }
 }
 
@@ -683,13 +800,12 @@ public static class StaffWorkAssignmentSupport
             return "Cancelled";
         }
 
-        if (assignment.Status == StaffWorkAssignmentStatus.Completed || now > assignment.EndAt)
+        if (now > assignment.EndAt)
         {
             return "Completed";
         }
 
-        if (assignment.Status == StaffWorkAssignmentStatus.Active
-            || (assignment.StartAt <= now && assignment.EndAt >= now))
+        if (assignment.StartAt <= now && assignment.EndAt >= now)
         {
             return "Active";
         }

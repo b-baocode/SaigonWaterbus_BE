@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
@@ -167,6 +168,55 @@ public class CreateCharterBookingTripCommandTests
     }
 
     [Test]
+    public async Task CreatesSelectedCharterRouteFromRoutePlanAndTripUsesIt()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var (stationA, stationB, stationC) = Stations();
+        SetCoordinates(stationA, latitude: 10.0m, longitude: 106.0m);
+        SetCoordinates(stationB, latitude: 10.1m, longitude: 106.1m);
+        SetCoordinates(stationC, latitude: 10.2m, longitude: 106.2m);
+        var boat = CharterBoat("Boat 1");
+        var sourceRouteAB = GpsRouteWithStops("GPS-AB", stationA, stationB, travelMinutes: 20);
+        var sourceRouteBC = GpsRouteWithStops("GPS-BC", stationB, stationC, travelMinutes: 25);
+        var autoMatchedRoute = RouteWithStops("CH-AUTO", RouteTypes.CharterReference, stationA, stationB, stationC);
+        var booking = ConfirmedCharterBooking(stationA, stationC, boat);
+        AddItineraryStop(booking, stationB, stopOrder: 1);
+        context.AddRange(stationA, stationB, stationC, boat, sourceRouteAB, sourceRouteBC, autoMatchedRoute, booking);
+        await context.SaveChangesAsync();
+
+        var selectedRoute = await CharterBookingRoutePlanSupport.ResolveSelectedRouteAsync(
+            context,
+            booking,
+            [
+                new CharterBookingRoutePlanLegRequest(stationA.Id, stationB.Id, sourceRouteAB.Id),
+                new CharterBookingRoutePlanLegRequest(stationB.Id, stationC.Id, sourceRouteBC.Id)
+            ],
+            persist: true,
+            new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            CancellationToken.None);
+        booking.CharterRouteId = selectedRoute!.Id;
+        booking.CharterRoute = selectedRoute;
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingTripCommandHandler(context, admin);
+
+        var result = await handler.Handle(
+            new CreateCharterBookingTripCommand(booking.Id),
+            CancellationToken.None);
+
+        result.RouteId.ShouldBe(selectedRoute.Id);
+        selectedRoute.RouteType.ShouldBe(RouteTypes.CharterReference);
+        selectedRoute.IsBookable.ShouldBeFalse();
+        selectedRoute.RouteStops.OrderBy(x => x.StopOrder).Select(x => x.StationId)
+            .ShouldBe([stationA.Id, stationB.Id, stationC.Id]);
+        selectedRoute.RouteStops.Single(x => x.StopOrder == 1).StandardTravelMin.ShouldBeNull();
+        selectedRoute.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin.ShouldBe(20);
+        selectedRoute.RouteStops.Single(x => x.StopOrder == 3).StandardTravelMin.ShouldBe(25);
+        context.Set<Trip>().Single(x => x.SourceBookingId == booking.Id).RouteId.ShouldBe(selectedRoute.Id);
+    }
+
+    [Test]
     public async Task FailsWhenBookingIsNotConfirmed()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -309,6 +359,12 @@ public class CreateCharterBookingTripCommandTests
             IsWaterbusStation = true
         };
 
+    private static void SetCoordinates(Station station, decimal latitude, decimal longitude)
+    {
+        station.Latitude = latitude;
+        station.Longitude = longitude;
+    }
+
     private static Boat CharterBoat(string name)
     {
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
@@ -341,6 +397,22 @@ public class CreateCharterBookingTripCommandTests
             })
             .ToList();
 
+        return route;
+    }
+
+    private static Route GpsRouteWithStops(string code, Station from, Station to, int travelMinutes)
+    {
+        var route = RouteWithStops(code, RouteTypes.CharterReference, from, to);
+        route.RouteGeometry = new LineString(
+        [
+            new Coordinate((double)from.Longitude!.Value, (double)from.Latitude!.Value),
+            new Coordinate((double)to.Longitude!.Value, (double)to.Latitude!.Value)
+        ])
+        { SRID = 4326 };
+        route.BaseDistanceKm = 1;
+        route.EstimatedDurationMin = travelMinutes;
+        route.RouteStops.Single(x => x.StopOrder == 1).StandardTravelMin = travelMinutes;
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = null;
         return route;
     }
 

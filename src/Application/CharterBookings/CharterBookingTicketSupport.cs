@@ -27,6 +27,7 @@ internal static class CharterBookingTicketSupport
         await EnsureCharterBookingQrTokenAsync(context, booking, cancellationToken);
 
         var passengers = booking.Passengers
+            .Where(CharterBookingPassengerSupport.IsApproved)
             .OrderBy(x => x.FullName)
             .ThenBy(x => x.Id)
             .ToList();
