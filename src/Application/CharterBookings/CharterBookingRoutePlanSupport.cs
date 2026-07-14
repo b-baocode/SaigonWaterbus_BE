@@ -168,8 +168,8 @@ internal static class CharterBookingRoutePlanSupport
             RouteCode = persist
                 ? await BuildUniqueRouteCodeAsync(context, booking, now, cancellationToken)
                 : $"PREVIEW-{booking.BookingCode}",
-            RouteName = BuildRouteName(booking),
-            RouteType = RouteTypes.CharterReference,
+            RouteName = CharterBookingRouteSupport.BuildCompactRouteName(booking),
+            RouteType = RouteTypes.Charter,
             Description = $"Route charter ghép từ booking {booking.BookingCode}.",
             BaseDistanceKm = decimal.Round(totalDistanceKm, 2),
             EstimatedDurationMin = totalTravelMinutes,
@@ -504,9 +504,9 @@ internal static class CharterBookingRoutePlanSupport
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        var baseCode = $"CH-{booking.BookingCode}-{now:yyyyMMddHHmmss}".ToUpperInvariant();
+        var baseCode = CharterBookingRouteSupport.BuildCompactRouteCodeBase(booking.BookingCode);
         var code = baseCode.Length <= 50 ? baseCode : baseCode[..50];
-        var suffix = 1;
+        var suffix = 2;
         while (await context.Set<Route>().AnyAsync(x => x.RouteCode == code, cancellationToken))
         {
             var suffixText = $"-{suffix++}";
@@ -516,14 +516,6 @@ internal static class CharterBookingRoutePlanSupport
         }
 
         return code;
-    }
-
-    private static string BuildRouteName(Booking booking)
-    {
-        var from = booking.FromStation?.StationName ?? "Điểm đi";
-        var to = booking.ToStation?.StationName ?? "Điểm đến";
-        var value = $"Charter {booking.BookingCode}: {from} - {to}";
-        return value.Length <= 150 ? value : value[..150];
     }
 
     private static ValidationException CreateValidation(string propertyName, string message) =>

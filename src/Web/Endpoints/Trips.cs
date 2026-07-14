@@ -53,7 +53,7 @@ public sealed class Trips : IEndpointGroup
                 "Query params (tat ca optional): operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeCode (string), status (string), tripType (string), routeType (string).",
                 "status hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
                 "tripType hop le: Regular | Charter. Trip charter sinh tu charter booking (xem sourceBookingId).",
-                "routeType hop le: Regular | SightseeingLoop | CharterReference. Dung de tach chuyen waterbus thuong va chuyen ngam canh.",
+                "routeType hop le: Regular | SightseeingLoop | Charter | CharterReference. Dung de tach chuyen waterbus thuong, ngam canh, charter va route nguon.",
                 "Sap xep: ngay moi nhat → gio khoi hanh tang dan."));
 
         group.MapGet(SearchTrips, "search")
@@ -64,7 +64,7 @@ public sealed class Trips : IEndpointGroup
                 null,
                 "Query params: fromStationId (guid), toStationId (guid), operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeType (optional).",
                 "Chi tra ve chuyen ban ve le (tripType=Regular); chuyen charter khong xuat hien.",
-                "routeType hop le: Regular (waterbus thuong) | SightseeingLoop (ngam canh); khong nhan CharterReference.",
+                "routeType hop le: Regular (waterbus thuong) | SightseeingLoop (ngam canh); khong nhan Charter/CharterReference.",
                 "Response them field routeType de FE phan biet chuyen waterbus va chuyen ngam canh.",
                 "Chi tra ve chuyen co tripStatus=Scheduled va departureTime > now.",
                 "availableSeats = capacitySnapshot - so ve da dat (BookingItem active)."));

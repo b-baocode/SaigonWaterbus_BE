@@ -118,7 +118,7 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
 
         if (request.Action == CharterBookingAttendanceAction.CheckOut)
         {
-            CompleteBookingIfAllTicketsCheckedOut(booking);
+            await CompleteBookingIfAllTicketsCheckedOutAsync(booking, cancellationToken);
         }
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -144,6 +144,7 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
     private IQueryable<Booking> BuildBookingQuery() =>
         CharterBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Boat)
+            .Include(x => x.CharterRoute)
             .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
@@ -243,7 +244,9 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
         return null;
     }
 
-    private static void CompleteBookingIfAllTicketsCheckedOut(Booking booking)
+    private async Task CompleteBookingIfAllTicketsCheckedOutAsync(
+        Booking booking,
+        CancellationToken cancellationToken)
     {
         var hasRemainingUsableTicket = booking.Tickets.Any(x =>
             x.TicketStatus != TicketStatus.Cancelled
@@ -253,6 +256,10 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
         if (!hasRemainingUsableTicket)
         {
             booking.BookingStatus = BookingStatus.Completed;
+            await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
+                _context,
+                booking,
+                cancellationToken);
         }
     }
 

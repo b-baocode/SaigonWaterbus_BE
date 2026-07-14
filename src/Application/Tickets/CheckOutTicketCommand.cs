@@ -1,7 +1,9 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
@@ -113,6 +115,13 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
         if (!hasRemainingUsableTicket)
         {
             ticket.Booking.BookingStatus = BookingStatus.Completed;
+            if (Booking.IsCharterBookingType(ticket.Booking.BookingType))
+            {
+                await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
+                    _context,
+                    ticket.Booking,
+                    cancellationToken);
+            }
         }
     }
 

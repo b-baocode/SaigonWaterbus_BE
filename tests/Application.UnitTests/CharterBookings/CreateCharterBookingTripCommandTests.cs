@@ -206,7 +206,7 @@ public class CreateCharterBookingTripCommandTests
             CancellationToken.None);
 
         result.RouteId.ShouldBe(selectedRoute.Id);
-        selectedRoute.RouteType.ShouldBe(RouteTypes.CharterReference);
+        selectedRoute.RouteType.ShouldBe(RouteTypes.Charter);
         selectedRoute.IsBookable.ShouldBeFalse();
         selectedRoute.RouteStops.OrderBy(x => x.StopOrder).Select(x => x.StationId)
             .ShouldBe([stationA.Id, stationB.Id, stationC.Id]);

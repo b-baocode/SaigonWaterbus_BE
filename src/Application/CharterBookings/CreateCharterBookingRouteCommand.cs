@@ -107,14 +107,14 @@ public sealed class CreateCharterBookingRouteCommandHandler
         {
             RouteCode = await ResolveRouteCodeAsync(request.RouteCode, booking.BookingCode, cancellationToken),
             RouteName = ResolveRouteName(request.RouteName, points),
-            RouteType = RouteTypes.CharterReference,
+            RouteType = RouteTypes.Charter,
             Description = string.IsNullOrWhiteSpace(request.Description)
                 ? $"Route tao tu lo trinh charter booking {booking.BookingCode}."
                 : request.Description.Trim(),
             BaseDistanceKm = estimate.TotalDistanceKm,
             EstimatedDurationMin = estimate.EstimatedTravelMinutes + estimate.EstimatedStayMinutes,
             Status = "Active",
-            IsBookable = RouteTypes.IsBookableByDefault(RouteTypes.CharterReference),
+            IsBookable = RouteTypes.IsBookableByDefault(RouteTypes.Charter),
             RouteGeometry = routeGeometry
         };
 
@@ -305,7 +305,7 @@ public sealed class CreateCharterBookingRouteCommandHandler
             return code;
         }
 
-        var baseCode = $"CH-{bookingCode}".ToUpperInvariant();
+        var baseCode = CharterBookingRouteSupport.BuildCompactRouteCodeBase(bookingCode);
         if (!await RouteCodeExistsAsync(baseCode, cancellationToken))
         {
             return baseCode;

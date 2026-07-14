@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -86,6 +87,7 @@ internal static class CharterBookingRoutePricingSupport
             .AsNoTracking()
             .Include(x => x.RouteStops)
             .Where(x => x.RouteGeometry != null
+                && (x.RouteType == RouteTypes.CharterReference || x.RouteType == RouteTypes.SightseeingLoop)
                 && x.RouteStops.Any(stop => stationIds.Contains(stop.StationId)))
             .ToListAsync(cancellationToken);
     }

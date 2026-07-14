@@ -23,7 +23,12 @@ public sealed class SearchTripsQueryValidator : AbstractValidator<SearchTripsQue
             .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
 
         RuleFor(x => x.RouteType)
-            .Must(x => !string.Equals(RouteTypes.Normalize(x), RouteTypes.CharterReference, StringComparison.Ordinal))
+            .Must(x =>
+            {
+                var routeType = RouteTypes.Normalize(x);
+                return routeType != RouteTypes.Charter
+                    && routeType != RouteTypes.CharterReference;
+            })
             .WithMessage("Chuyen charter khong ban ve le nen khong tim kiem duoc.")
             .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
     }

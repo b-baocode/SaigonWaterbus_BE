@@ -17,10 +17,14 @@ public sealed class CharterBookingsHub : Hub
     public const string AssignedListGroupName = "charter-bookings:assigned";
 
     private readonly IApplicationDbContext _context;
+    private readonly ILogger<CharterBookingsHub> _logger;
 
-    public CharterBookingsHub(IApplicationDbContext context)
+    public CharterBookingsHub(
+        IApplicationDbContext context,
+        ILogger<CharterBookingsHub> logger)
     {
         _context = context;
+        _logger = logger;
     }
 
     public static string BookingGroupName(Guid bookingId) => $"charter-booking:{bookingId:N}";
@@ -63,8 +67,27 @@ public sealed class CharterBookingsHub : Hub
                 x => x.Id == bookingId && x.BookingType == Booking.CharterBookingType,
                 Context.ConnectionAborted);
 
-        if (booking is null || !await CanViewBookingAsync(actor, booking))
+        if (booking is null)
         {
+            _logger.LogWarning(
+                "SignalR JoinCharterBooking forbidden: booking {BookingId} not found for user {UserId}.",
+                bookingId,
+                actor.Id);
+            throw new HubException("Forbidden.");
+        }
+
+        var canView = await CanViewBookingAsync(actor, booking);
+        if (!canView)
+        {
+            _logger.LogWarning(
+                "SignalR JoinCharterBooking forbidden: user {UserId} roleCode {RoleCode} roleSystemName {RoleSystemName} booking {BookingId} owner {OwnerUserId} assignedManager {AssignedManagerId} departureDate {DepartureDate}.",
+                actor.Id,
+                actor.Role.Code,
+                actor.Role.SystemName,
+                booking.Id,
+                booking.UserId,
+                booking.AssignedManagerId,
+                booking.DepartureDate);
             throw new HubException("Forbidden.");
         }
 
@@ -139,11 +162,14 @@ public sealed class CharterBookingsHub : Hub
         IsAdmin(actor) || IsManager(actor) || IsStaff(actor);
 
     private static bool IsAdmin(User actor) =>
-        string.Equals(actor.Role.SystemName, Roles.AdminName, StringComparison.Ordinal);
+        string.Equals(actor.Role.Code, Roles.AdminCode, StringComparison.Ordinal)
+        || string.Equals(actor.Role.SystemName, Roles.AdminName, StringComparison.Ordinal);
 
     private static bool IsManager(User actor) =>
-        string.Equals(actor.Role.SystemName, Roles.ManagerSystemName, StringComparison.Ordinal);
+        string.Equals(actor.Role.Code, Roles.ManagerCode, StringComparison.Ordinal)
+        || string.Equals(actor.Role.SystemName, Roles.ManagerSystemName, StringComparison.Ordinal);
 
     private static bool IsStaff(User actor) =>
-        string.Equals(actor.Role.SystemName, Roles.StaffSystemName, StringComparison.Ordinal);
+        string.Equals(actor.Role.Code, Roles.StaffCode, StringComparison.Ordinal)
+        || string.Equals(actor.Role.SystemName, Roles.StaffSystemName, StringComparison.Ordinal);
 }

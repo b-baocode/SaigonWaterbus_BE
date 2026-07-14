@@ -40,7 +40,7 @@ public sealed class GetTripListQueryValidator : AbstractValidator<GetTripListQue
 
         RuleFor(x => x.RouteType)
             .Must(RouteTypes.IsValid)
-            .WithMessage($"routeType chi nhan {RouteTypes.Regular}, {RouteTypes.SightseeingLoop} hoac {RouteTypes.CharterReference}.")
+            .WithMessage($"routeType chi nhan {RouteTypes.Regular}, {RouteTypes.SightseeingLoop}, {RouteTypes.Charter} hoac {RouteTypes.CharterReference}.")
             .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
     }
 }

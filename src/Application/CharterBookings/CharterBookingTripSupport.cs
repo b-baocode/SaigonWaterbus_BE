@@ -51,6 +51,7 @@ internal static class CharterBookingTripSupport
             .AsNoTracking()
             .Include(x => x.RouteStops)
             .Where(x => x.Status == "Active"
+                && (x.RouteType == RouteTypes.CharterReference || x.RouteType == RouteTypes.SightseeingLoop)
                 && x.RouteStops.Count == stationSequence.Count
                 && x.RouteStops.Any(stop => stop.StationId == firstStationId))
             .ToListAsync(cancellationToken);

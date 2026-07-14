@@ -161,6 +161,14 @@ public sealed class UpdateCharterBookingStatusCommandHandler
                 cancellationToken);
         }
 
+        if (request.BookingStatus is BookingStatus.Cancelled or BookingStatus.Expired or BookingStatus.Completed)
+        {
+            await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
+                _context,
+                booking,
+                cancellationToken);
+        }
+
         // Lượt khuyến mãi suy ra từ bookings — chuyển sang trạng thái nhả lượt là tự cập nhật, không cần bookkeeping.
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(

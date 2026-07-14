@@ -45,7 +45,7 @@ public sealed class CreateRouteFromStationsCommandValidator : AbstractValidator<
         RuleFor(x => x.Description).MaximumLength(1000);
         RuleFor(x => x.RouteType)
             .Must(x => x is null || RouteTypes.IsValid(x))
-            .WithMessage($"routeType chi nhan {RouteTypes.Regular}, {RouteTypes.SightseeingLoop} hoac {RouteTypes.CharterReference}.");
+            .WithMessage($"routeType chi nhan {RouteTypes.Regular}, {RouteTypes.SightseeingLoop}, {RouteTypes.Charter} hoac {RouteTypes.CharterReference}.");
         RuleFor(x => x.Stops)
             .NotNull()
             .Must(x => x is { Count: >= 2 })
@@ -205,7 +205,7 @@ public sealed class CreateRouteFromStationsCommandHandler
         {
             throw new ValidationException([
                 new ValidationFailure(nameof(CreateRouteFromStationsCommand.RouteType),
-                    "Route Regular khong duoc trung ben dau/cuoi; dung SightseeingLoop hoac CharterReference.")
+                    "Route Regular khong duoc trung ben dau/cuoi; dung SightseeingLoop, Charter hoac CharterReference.")
             ]);
         }
 

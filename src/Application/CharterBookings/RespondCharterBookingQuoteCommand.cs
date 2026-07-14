@@ -59,6 +59,7 @@ public sealed class RespondCharterBookingQuoteCommandHandler
             ?? throw new ValidationException([]);
 
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.CharterRoute)
             .Include(x => x.CharterBoats)
             .Include(x => x.Payments)
             .Include(x => x.Tickets)
@@ -103,10 +104,18 @@ public sealed class RespondCharterBookingQuoteCommandHandler
         switch (request.Action)
         {
             case CharterBookingQuoteResponseAction.RequestChanges:
+                await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
+                    _context,
+                    booking,
+                    cancellationToken);
                 RequestChanges(booking, request.Note, _timeProvider.GetUtcNow());
                 break;
             case CharterBookingQuoteResponseAction.Reject:
                 RejectQuote(booking);
+                await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
+                    _context,
+                    booking,
+                    cancellationToken);
                 break;
             default:
                 throw new ValidationException([new ValidationFailure(nameof(request.Action),
@@ -164,6 +173,8 @@ public sealed class RespondCharterBookingQuoteCommandHandler
         booking.CharterBoats.Clear();
         booking.BoatId = null;
         booking.Boat = null;
+        booking.CharterRouteId = null;
+        booking.CharterRoute = null;
         booking.RentalUnit = null;
         booking.DurationValue = null;
         booking.PromotionId = null;
