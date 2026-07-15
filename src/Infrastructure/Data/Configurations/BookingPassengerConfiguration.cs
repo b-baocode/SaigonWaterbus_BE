@@ -33,10 +33,14 @@ public sealed class BookingPassengerConfiguration : IEntityTypeConfiguration<Boo
         builder.Property(x => x.ReviewedAt).HasColumnName("reviewed_at");
         builder.Property(x => x.ReviewedByUserId).HasColumnName("reviewed_by_user_id");
         builder.Property(x => x.ReviewNote).HasColumnName("review_note").HasMaxLength(500);
+        builder.Property(x => x.TripId).HasColumnName("trip_id");
         builder.Property(x => x.TripSeatId).HasColumnName("trip_seat_id");
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(12,2)");
 
+        builder.HasIndex(x => x.TripId);
+
         builder.HasOne(x => x.Booking).WithMany(x => x.Passengers).HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
+        builder.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.TripSeat).WithMany().HasForeignKey(x => x.TripSeatId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.RequestedByUser)
             .WithMany()

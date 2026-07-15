@@ -17,8 +17,11 @@ public sealed record BookingManifestPassengerDto(
     string? TicketStatus,
     DateTimeOffset? CheckedInAt,
     string? CheckedInByName,
-    bool CanCheckIn);
+    bool CanCheckIn,
+    string? TripCode = null);
 
+// Booking khứ hồi: các field Return* mô tả chiều về (null với booking một chiều);
+// mỗi passenger mang TripCode của chiều mình thuộc về.
 public sealed record BookingManifestDto(
     Guid BookingId,
     string BookingCode,
@@ -37,7 +40,13 @@ public sealed record BookingManifestDto(
     int PassengerCount,
     int ActiveTicketCount,
     int CheckedInTicketCount,
-    IReadOnlyList<BookingManifestPassengerDto> Passengers);
+    IReadOnlyList<BookingManifestPassengerDto> Passengers,
+    string? ReturnTripCode = null,
+    string? ReturnRouteName = null,
+    DateTimeOffset? ReturnDepartureTime = null,
+    DateTimeOffset? ReturnArrivalTime = null,
+    string? ReturnFromStationName = null,
+    string? ReturnToStationName = null);
 
 public sealed record GetBookingManifestByCodeQuery(string BookingCode) : IRequest<BookingManifestDto>;
 
@@ -117,6 +126,10 @@ internal static class BookingManifestSupport
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+            .Include(x => x.ReturnTrip)
+                .ThenInclude(t => t!.Route)
+                    .ThenInclude(r => r.RouteStops)
+                        .ThenInclude(rs => rs.Station)
             .Include(x => x.Passengers)
                 .ThenInclude(p => p.TripSeat)
                     .ThenInclude(ts => ts!.Seat)
@@ -154,12 +167,21 @@ internal static class BookingManifestSupport
         var fromStop = stops.FirstOrDefault();
         var toStop = stops.LastOrDefault();
 
+        var returnStops = booking.ReturnTrip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
+        var returnFromStop = returnStops.FirstOrDefault();
+        var returnToStop = returnStops.LastOrDefault();
+
+        // Booking khứ hồi: sắp xếp theo chiều (đi trước, về sau) rồi mới tới ghế.
         var passengers = booking.Passengers
-            .OrderBy(x => x.TripSeat?.Seat?.Code)
+            .OrderBy(x => x.TripId.HasValue && x.TripId == booking.ReturnTripId ? 1 : 0)
+            .ThenBy(x => x.TripSeat?.Seat?.Code)
             .ThenBy(x => x.FullName)
             .Select(passenger =>
             {
                 ticketsByPassengerId.TryGetValue(passenger.Id, out var ticket);
+                var legTripCode = passenger.TripId.HasValue && passenger.TripId == booking.ReturnTripId
+                    ? booking.ReturnTrip?.TripCode
+                    : booking.Trip?.TripCode;
                 return new BookingManifestPassengerDto(
                     passenger.Id,
                     passenger.FullName,
@@ -171,7 +193,8 @@ internal static class BookingManifestSupport
                     ticket?.TicketStatus.ToString(),
                     ticket?.CheckedInAt,
                     ticket?.CheckedInByUser?.FullName,
-                    canCheckInBooking && ticket?.TicketStatus == TicketStatus.Active);
+                    canCheckInBooking && ticket?.TicketStatus == TicketStatus.Active,
+                    legTripCode);
             })
             .ToList();
 
@@ -193,6 +216,12 @@ internal static class BookingManifestSupport
             booking.Passengers.Count,
             currentTickets.Count(x => x.TicketStatus == TicketStatus.Active),
             currentTickets.Count(x => x.TicketStatus == TicketStatus.CheckedIn),
-            passengers);
+            passengers,
+            booking.ReturnTrip?.TripCode,
+            booking.ReturnTrip?.Route.RouteName,
+            booking.ReturnTrip?.DepartureTime,
+            booking.ReturnTrip?.ArrivalTime,
+            returnFromStop?.Station.StationName,
+            returnToStop?.Station.StationName);
     }
 }

@@ -815,12 +815,17 @@ internal static class PaymentSupport
             return new DateTimeOffset(booking.DepartureDate.GetValueOrDefault().ToDateTime(startTime), TimeSpan.Zero);
         }
 
-        if (booking.TripId is Guid tripId)
+        // Booking khứ hồi: chính sách hoàn tiền/hạn thanh toán tính theo chiều khởi hành sớm nhất.
+        var legTripIds = new List<Guid>();
+        if (booking.TripId.HasValue) legTripIds.Add(booking.TripId.Value);
+        if (booking.ReturnTripId.HasValue) legTripIds.Add(booking.ReturnTripId.Value);
+
+        if (legTripIds.Count > 0)
         {
             return await context.Set<Trip>()
-                .Where(t => t.Id == tripId)
+                .Where(t => legTripIds.Contains(t.Id))
                 .Select(t => (DateTimeOffset?)t.DepartureTime)
-                .SingleOrDefaultAsync(cancellationToken);
+                .MinAsync(cancellationToken);
         }
 
         return null;

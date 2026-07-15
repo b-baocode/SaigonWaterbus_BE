@@ -11,14 +11,18 @@ namespace SaigonWaterbus.Application.Bookings;
 
 /// <summary>
 /// Staff quét QR chung của booking thường → check-in toàn bộ vé Active một lượt.
+/// Booking khứ hồi: truyền TripCode của chuyến đang boarding để chỉ check-in vé chiều đó;
+/// bỏ trống thì check-in tất cả (hành vi cũ, phù hợp booking một chiều).
 /// </summary>
-public sealed record CheckInAllBookingTicketsCommand(string QrToken) : IRequest<BookingManifestDto>;
+public sealed record CheckInAllBookingTicketsCommand(string QrToken, string? TripCode = null)
+    : IRequest<BookingManifestDto>;
 
 public sealed class CheckInAllBookingTicketsCommandValidator : AbstractValidator<CheckInAllBookingTicketsCommand>
 {
     public CheckInAllBookingTicketsCommandValidator()
     {
         RuleFor(x => x.QrToken).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.TripCode).MaximumLength(50);
     }
 }
 
@@ -54,6 +58,9 @@ public sealed class CheckInAllBookingTicketsCommandHandler
         var qrToken = request.QrToken.Trim();
         var booking = await _context.Set<Booking>()
             .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
+            .Include(x => x.Trip)
+            .Include(x => x.ReturnTrip)
             .SingleOrDefaultAsync(
                 x => x.CharterBookingQrToken == qrToken && x.BookingType == Booking.SeatBookingType,
                 cancellationToken)
@@ -65,8 +72,31 @@ public sealed class CheckInAllBookingTicketsCommandHandler
                 "Booking chưa sẵn sàng để check-in (chưa xác nhận hoặc chưa thanh toán đủ).")]);
         }
 
+        // Booking khứ hồi: lọc vé theo chuyến đang boarding khi staff truyền tripCode.
+        Guid? legTripId = null;
+        if (!string.IsNullOrWhiteSpace(request.TripCode))
+        {
+            var tripCode = request.TripCode.Trim().ToUpperInvariant();
+            if (string.Equals(booking.Trip?.TripCode, tripCode, StringComparison.OrdinalIgnoreCase))
+            {
+                legTripId = booking.TripId;
+            }
+            else if (string.Equals(booking.ReturnTrip?.TripCode, tripCode, StringComparison.OrdinalIgnoreCase))
+            {
+                legTripId = booking.ReturnTripId;
+            }
+            else
+            {
+                throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
+                    "Trip không thuộc booking này.")]);
+            }
+        }
+
         var activeTickets = booking.Tickets
             .Where(x => x.TicketStatus == TicketStatus.Active)
+            .Where(x => legTripId is null
+                || x.BookingPassenger?.TripId is null
+                || x.BookingPassenger.TripId == legTripId)
             .ToList();
         if (activeTickets.Count == 0)
         {

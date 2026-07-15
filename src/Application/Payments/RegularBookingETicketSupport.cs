@@ -10,6 +10,7 @@ namespace SaigonWaterbus.Application.Payments;
 /// - Người đặt vé (ContactEmail) nhận 1 email tổng: QR chung + toàn bộ QR riêng + PDF đính kèm đầy đủ vé.
 /// - Hành khách nào có nhập email nhận thêm 1 email chứa vé của riêng người đó + PDF 1 vé
 ///   (không có QR chung — QR chung chỉ người đặt vé có).
+/// Booking khứ hồi: email tổng gộp cả 2 chiều (Legs), email hành khách hiển thị đúng chiều của vé đó.
 /// </summary>
 internal static class RegularBookingETicketSupport
 {
@@ -34,28 +35,16 @@ internal static class RegularBookingETicketSupport
             .Where(p => p.BookingId == booking.Id)
             .ToListAsync(cancellationToken);
 
-        Trip? trip = null;
-        if (booking.TripId.HasValue)
-        {
-            trip = await context.Set<Trip>()
-                .AsNoTracking()
-                .Include(t => t.Boat)
-                .Include(t => t.Route)
-                    .ThenInclude(r => r.RouteStops)
-                        .ThenInclude(rs => rs.Station)
-                .SingleOrDefaultAsync(t => t.Id == booking.TripId.Value, cancellationToken);
-        }
-
-        var stops = trip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
-        var fromStationName = stops.FirstOrDefault()?.Station.StationName;
-        var toStationName = stops.LastOrDefault()?.Station.StationName;
+        var outboundLeg = await LoadLegAsync(context, booking.TripId, cancellationToken);
+        var returnLeg = booking.ReturnTripId.HasValue
+            ? await LoadLegAsync(context, booking.ReturnTripId, cancellationToken)
+            : null;
 
         var ticketsByPassengerId = tickets
             .Where(x => x.BookingPassengerId.HasValue)
             .GroupBy(x => x.BookingPassengerId!.Value)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.IssuedAt).First());
 
-        var eTicketPassengers = new List<ETicketPassenger>();
         foreach (var passenger in passengers.OrderBy(x => x.TripSeat?.Seat?.Code).ThenBy(x => x.FullName))
         {
             if (!ticketsByPassengerId.TryGetValue(passenger.Id, out var ticket))
@@ -64,20 +53,30 @@ internal static class RegularBookingETicketSupport
             }
 
             TicketTypePricing.TryGet(passenger.PassengerType, out var ticketType);
-            eTicketPassengers.Add(new ETicketPassenger(
+            var eTicket = new ETicketPassenger(
                 passenger.FullName,
                 passenger.TripSeat?.Seat?.Code,
                 ticketType.Name,
                 ticket.TicketCode,
                 ticket.QrToken,
-                passenger.Email));
+                passenger.Email);
+
+            // Hành khách thuộc chiều nào thì vé nằm trong leg đó (TripId null = dữ liệu cũ → chiều đi).
+            var leg = returnLeg is not null && passenger.TripId == booking.ReturnTripId
+                ? returnLeg
+                : outboundLeg;
+            leg.Tickets.Add(eTicket);
         }
 
-        if (eTicketPassengers.Count == 0)
+        var allTickets = outboundLeg.Tickets
+            .Concat(returnLeg?.Tickets ?? Enumerable.Empty<ETicketPassenger>())
+            .ToList();
+        if (allTickets.Count == 0)
         {
             return;
         }
 
+        var legs = returnLeg is null ? null : new[] { outboundLeg, returnLeg };
         var contactEmail = booking.ContactEmail?.Trim();
 
         if (!string.IsNullOrWhiteSpace(contactEmail))
@@ -88,83 +87,142 @@ internal static class RegularBookingETicketSupport
                 contactEmail,
                 booking.ContactName);
 
-            // Bản người đặt: PDF có trang QR tổng + toàn bộ vé.
+            // Bản người đặt: PDF có trang QR tổng + toàn bộ vé (khứ hồi: đủ cả 2 chiều).
             var bookerAttachments = RenderPdfAttachment(
                 pdfRenderer,
                 booking,
-                trip,
-                fromStationName,
-                toStationName,
+                outboundLeg,
                 booking.CharterBookingQrToken,
-                eTicketPassengers,
+                allTickets,
+                legs,
                 $"{booking.BookingCode}-tickets.pdf");
 
             await paymentNotificationSender.SendETicketsAsync(
                 new ETicketNotification(
                     bookerNotification,
                     booking.CharterBookingQrToken,
-                    trip?.TripCode,
-                    trip?.Route.RouteName,
-                    trip?.DepartureTime,
-                    trip?.ArrivalTime,
-                    fromStationName,
-                    toStationName,
-                    eTicketPassengers,
-                    bookerAttachments),
+                    outboundLeg.Trip?.TripCode,
+                    outboundLeg.Trip?.Route.RouteName,
+                    outboundLeg.Trip?.DepartureTime,
+                    outboundLeg.Trip?.ArrivalTime,
+                    outboundLeg.FromStationName,
+                    outboundLeg.ToStationName,
+                    allTickets,
+                    bookerAttachments,
+                    legs?.Select(ToETicketLeg).ToList()),
                 cancellationToken);
         }
 
-        foreach (var eTicket in eTicketPassengers)
+        foreach (var leg in legs ?? [outboundLeg])
         {
-            var passengerEmail = eTicket.Email?.Trim();
-            if (string.IsNullOrWhiteSpace(passengerEmail)
-                || string.Equals(passengerEmail, contactEmail, StringComparison.OrdinalIgnoreCase))
+            foreach (var eTicket in leg.Tickets)
             {
-                // Không có email riêng (hoặc trùng email người đặt) → vé đã nằm trong email tổng.
-                continue;
-            }
+                var passengerEmail = eTicket.Email?.Trim();
+                if (string.IsNullOrWhiteSpace(passengerEmail)
+                    || string.Equals(passengerEmail, contactEmail, StringComparison.OrdinalIgnoreCase))
+                {
+                    // Không có email riêng (hoặc trùng email người đặt) → vé đã nằm trong email tổng.
+                    continue;
+                }
 
-            var passengerNotification = PaymentSupport.CreatePaymentSucceededNotification(
-                booking,
-                payment,
-                passengerEmail,
-                eTicket.PassengerName);
+                var passengerNotification = PaymentSupport.CreatePaymentSucceededNotification(
+                    booking,
+                    payment,
+                    passengerEmail,
+                    eTicket.PassengerName);
 
-            // Bản hành khách: chỉ vé của người đó, không có QR tổng.
-            var passengerAttachments = RenderPdfAttachment(
-                pdfRenderer,
-                booking,
-                trip,
-                fromStationName,
-                toStationName,
-                bookingQrToken: null,
-                [eTicket],
-                $"{eTicket.TicketCode}-boarding-pass.pdf");
-
-            await paymentNotificationSender.SendETicketsAsync(
-                new ETicketNotification(
-                    passengerNotification,
-                    BookingQrToken: null,
-                    trip?.TripCode,
-                    trip?.Route.RouteName,
-                    trip?.DepartureTime,
-                    trip?.ArrivalTime,
-                    fromStationName,
-                    toStationName,
+                // Bản hành khách: chỉ vé của người đó theo đúng chiều, không có QR tổng.
+                var passengerAttachments = RenderPdfAttachment(
+                    pdfRenderer,
+                    booking,
+                    leg,
+                    bookingQrToken: null,
                     [eTicket],
-                    passengerAttachments),
-                cancellationToken);
+                    legs: null,
+                    $"{eTicket.TicketCode}-boarding-pass.pdf");
+
+                await paymentNotificationSender.SendETicketsAsync(
+                    new ETicketNotification(
+                        passengerNotification,
+                        BookingQrToken: null,
+                        leg.Trip?.TripCode,
+                        leg.Trip?.Route.RouteName,
+                        leg.Trip?.DepartureTime,
+                        leg.Trip?.ArrivalTime,
+                        leg.FromStationName,
+                        leg.ToStationName,
+                        [eTicket],
+                        passengerAttachments),
+                    cancellationToken);
+            }
         }
     }
+
+    private sealed record LegContext(
+        Trip? Trip,
+        string? FromStationName,
+        string? ToStationName)
+    {
+        public List<ETicketPassenger> Tickets { get; } = [];
+    }
+
+    private static async Task<LegContext> LoadLegAsync(
+        IApplicationDbContext context,
+        Guid? tripId,
+        CancellationToken cancellationToken)
+    {
+        Trip? trip = null;
+        if (tripId.HasValue)
+        {
+            trip = await context.Set<Trip>()
+                .AsNoTracking()
+                .Include(t => t.Boat)
+                .Include(t => t.Route)
+                    .ThenInclude(r => r.RouteStops)
+                        .ThenInclude(rs => rs.Station)
+                .SingleOrDefaultAsync(t => t.Id == tripId.Value, cancellationToken);
+        }
+
+        var stops = trip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
+        return new LegContext(
+            trip,
+            stops.FirstOrDefault()?.Station.StationName,
+            stops.LastOrDefault()?.Station.StationName);
+    }
+
+    private static ETicketLeg ToETicketLeg(LegContext leg) =>
+        new(leg.Trip?.TripCode,
+            leg.Trip?.Route.RouteName,
+            leg.Trip?.DepartureTime,
+            leg.Trip?.ArrivalTime,
+            leg.FromStationName,
+            leg.ToStationName,
+            leg.Tickets);
+
+    private static BookingTicketPdfLegDto ToPdfLeg(LegContext leg) =>
+        new(leg.Trip?.TripCode,
+            leg.Trip?.Route.RouteName,
+            leg.Trip?.DepartureTime,
+            leg.Trip?.ArrivalTime,
+            leg.FromStationName,
+            leg.ToStationName,
+            leg.Trip?.Boat?.Name,
+            leg.Tickets.Select(ToPdfItem).ToList());
+
+    private static BookingTicketPdfItemDto ToPdfItem(ETicketPassenger x) =>
+        new(x.PassengerName,
+            x.SeatCode,
+            x.TicketTypeName,
+            x.TicketCode,
+            x.QrToken);
 
     private static IReadOnlyList<EmailAttachment>? RenderPdfAttachment(
         IBookingTicketPdfRenderer? pdfRenderer,
         Booking booking,
-        Trip? trip,
-        string? fromStationName,
-        string? toStationName,
+        LegContext flatLeg,
         string? bookingQrToken,
         IReadOnlyList<ETicketPassenger> tickets,
+        IReadOnlyList<LegContext>? legs,
         string fileName)
     {
         if (pdfRenderer is null)
@@ -174,22 +232,16 @@ internal static class RegularBookingETicketSupport
 
         var export = new BookingTicketPdfExportDto(
             booking.BookingCode,
-            trip?.TripCode,
-            trip?.Route.RouteName,
-            trip?.DepartureTime,
-            trip?.ArrivalTime,
-            fromStationName,
-            toStationName,
-            trip?.Boat?.Name,
+            flatLeg.Trip?.TripCode,
+            flatLeg.Trip?.Route.RouteName,
+            flatLeg.Trip?.DepartureTime,
+            flatLeg.Trip?.ArrivalTime,
+            flatLeg.FromStationName,
+            flatLeg.ToStationName,
+            flatLeg.Trip?.Boat?.Name,
             bookingQrToken,
-            tickets
-                .Select(x => new BookingTicketPdfItemDto(
-                    x.PassengerName,
-                    x.SeatCode,
-                    x.TicketTypeName,
-                    x.TicketCode,
-                    x.QrToken))
-                .ToList());
+            tickets.Select(ToPdfItem).ToList(),
+            legs?.Select(ToPdfLeg).ToList());
 
         return [new EmailAttachment(fileName, "application/pdf", pdfRenderer.Render(export))];
     }

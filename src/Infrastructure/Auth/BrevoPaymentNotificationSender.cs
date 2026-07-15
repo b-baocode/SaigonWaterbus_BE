@@ -278,6 +278,38 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         parameters["bookingQrPayload"] = notification.BookingQrToken;
         parameters["bookingQrImageUrl"] = bookingQrImageUrl;
         parameters["passengerCount"] = notification.Tickets.Count.ToString(CultureInfo.InvariantCulture);
+
+        // Vé khứ hồi: gắn tripCode cho từng vé để template phân biệt chiều; LEGS chứa từng chiều đầy đủ.
+        var ticketTripCodes = new Dictionary<string, string?>();
+        if (notification.Legs is { Count: > 1 })
+        {
+            foreach (var leg in notification.Legs)
+            {
+                foreach (var legTicket in leg.Tickets)
+                {
+                    ticketTripCodes[legTicket.TicketCode] = leg.TripCode;
+                }
+            }
+
+            parameters["isRoundTrip"] = "true";
+            parameters["LEGS"] = notification.Legs
+                .Select(leg => new Dictionary<string, object?>
+                {
+                    ["tripCode"] = leg.TripCode,
+                    ["routeName"] = leg.RouteName,
+                    ["departureTime"] = leg.DepartureTime.HasValue
+                        ? FormatDateTimeOffset(leg.DepartureTime.Value, "dd/MM/yyyy HH:mm")
+                        : null,
+                    ["arrivalTime"] = leg.ArrivalTime.HasValue
+                        ? FormatDateTimeOffset(leg.ArrivalTime.Value, "dd/MM/yyyy HH:mm")
+                        : null,
+                    ["fromStationName"] = ResolveText(leg.FromStationName),
+                    ["toStationName"] = ResolveText(leg.ToStationName),
+                    ["passengerCount"] = leg.Tickets.Count.ToString(CultureInfo.InvariantCulture)
+                })
+                .ToArray();
+        }
+
         parameters["TICKETS"] = notification.Tickets
             .Select(ticket => new Dictionary<string, object?>
             {
@@ -286,7 +318,10 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 ["ticketTypeName"] = ticket.TicketTypeName,
                 ["ticketCode"] = ticket.TicketCode,
                 ["qrPayload"] = ticket.QrToken,
-                ["qrImageUrl"] = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken)
+                ["qrImageUrl"] = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken),
+                ["tripCode"] = ticketTripCodes.TryGetValue(ticket.TicketCode, out var legTripCode)
+                    ? legTripCode
+                    : notification.TripCode
             })
             .ToArray();
 

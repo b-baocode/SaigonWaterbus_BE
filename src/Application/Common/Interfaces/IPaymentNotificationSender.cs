@@ -76,6 +76,8 @@ public sealed record EmailAttachment(
     string ContentType,
     byte[] Content);
 
+// Vé khứ hồi: Legs chứa từng chiều (đi/về); các field phẳng giữ thông tin chiều đi để template
+// một chiều cũ vẫn hoạt động. Legs = null với booking một chiều.
 public sealed record ETicketNotification(
     PaymentSucceededNotification Booking,
     string? BookingQrToken,
@@ -86,7 +88,17 @@ public sealed record ETicketNotification(
     string? FromStationName,
     string? ToStationName,
     IReadOnlyList<ETicketPassenger> Tickets,
-    IReadOnlyList<EmailAttachment>? Attachments = null);
+    IReadOnlyList<EmailAttachment>? Attachments = null,
+    IReadOnlyList<ETicketLeg>? Legs = null);
+
+public sealed record ETicketLeg(
+    string? TripCode,
+    string? RouteName,
+    DateTimeOffset? DepartureTime,
+    DateTimeOffset? ArrivalTime,
+    string? FromStationName,
+    string? ToStationName,
+    IReadOnlyList<ETicketPassenger> Tickets);
 
 public sealed record ETicketPassenger(
     string PassengerName,

@@ -85,13 +85,13 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var tripIds = trips.Select(t => t.Id).ToList();
 
-        var bookedCounts = await _context.Set<Booking>()
-            .Where(b => b.TripId.HasValue && tripIds.Contains(b.TripId.Value))
-            .Where(Bookings.BookingSeatOccupancySupport.BookingOccupiesSeats(now))
-            // Chỉ đếm hành khách chiếm ghế (INFANT ngồi cùng người lớn không trừ chỗ).
-            .Select(b => new { TripId = b.TripId!.Value, Count = b.Passengers.Count(p => p.TripSeatId != null) })
-            .GroupBy(x => x.TripId)
-            .Select(g => new { TripId = g.Key, Count = g.Sum(x => x.Count) })
+        // Đếm theo trip của từng ghế (TripSeat.TripId) thay vì Booking.TripId — booking khứ hồi
+        // có ghế trên 2 trip. Chỉ đếm hành khách chiếm ghế (INFANT ngồi cùng người lớn không trừ chỗ).
+        var bookedCounts = await _context.Set<BookingPassenger>()
+            .Where(p => p.TripSeatId.HasValue && tripIds.Contains(p.TripSeat!.TripId))
+            .Where(Bookings.BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
+            .GroupBy(p => p.TripSeat!.TripId)
+            .Select(g => new { TripId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
 
         // Giá min theo chuyến: ưu tiên giá đã chốt trong trip_seats (đặt khi tạo trip).

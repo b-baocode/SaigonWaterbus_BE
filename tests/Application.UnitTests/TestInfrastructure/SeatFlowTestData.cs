@@ -13,6 +13,8 @@ internal static class SeatFlowTestData
     {
         var options = new DbContextOptionsBuilder<ApplicationDbContext>()
             .UseInMemoryDatabase($"seat-flow-{Guid.NewGuid():N}")
+            // Handler dùng ExecuteInTransactionAsync — provider in-memory không hỗ trợ transaction thật.
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
 
         return new ApplicationDbContext(options);

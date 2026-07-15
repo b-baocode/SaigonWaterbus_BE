@@ -18,6 +18,14 @@ internal static class TicketScanSupport
             .Include(x => x.BookingPassenger)
                 .ThenInclude(x => x!.TripSeat)
                     .ThenInclude(x => x!.Seat)
+            .Include(x => x.BookingPassenger)
+                .ThenInclude(x => x!.Trip)
+                    .ThenInclude(x => x!.Boat)
+            .Include(x => x.BookingPassenger)
+                .ThenInclude(x => x!.Trip)
+                    .ThenInclude(x => x!.Route)
+                        .ThenInclude(x => x.RouteStops)
+                            .ThenInclude(x => x.Station)
             .Include(x => x.CheckedInByUser)
             .Include(x => x.CheckedOutByUser)
             .Include(x => x.Booking)
@@ -134,7 +142,9 @@ internal static class TicketScanSupport
 
     private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking)
     {
-        var stops = booking.Trip?.Route.RouteStops
+        // Booking khứ hồi: trip của vé lấy theo chiều của hành khách (TripId null = dữ liệu cũ → trip đi).
+        var trip = ticket.BookingPassenger?.Trip ?? booking.Trip;
+        var stops = trip?.Route.RouteStops
             .OrderBy(x => x.StopOrder)
             .ToArray() ?? [];
         var fromStop = stops.FirstOrDefault();
@@ -142,6 +152,11 @@ internal static class TicketScanSupport
         var ticketPassenger = ticket.BookingPassenger;
         var seatCode = ticket.BookingPassenger?.TripSeat?.Seat?.Code;
         TicketTypePricing.TryGet(ticket.BookingPassenger?.PassengerType, out var ticketType);
+
+        // Danh sách hành khách trong DTO chỉ gồm chiều của vé được quét.
+        var legPassengers = booking.Passengers
+            .Where(p => ticketPassenger?.TripId is null || p.TripId == ticketPassenger.TripId)
+            .ToList();
 
         return new TicketScanDto(
             ticket.Id,
@@ -165,22 +180,22 @@ internal static class TicketScanSupport
             booking.ContactName,
             booking.ContactPhone,
             booking.ContactEmail,
-            booking.Passengers.Count,
-            booking.Passengers.Count,
+            legPassengers.Count,
+            legPassengers.Count,
             null,
             null,
-            booking.Trip?.OperatingDate,
-            booking.Trip is null ? null : TimeOnly.FromDateTime(booking.Trip.DepartureTime.LocalDateTime),
-            booking.Trip?.TripCode,
-            booking.Trip?.DepartureTime,
-            booking.Trip?.ArrivalTime,
-            booking.Trip?.Boat?.Name,
-            booking.Trip?.Boat?.Name,
+            trip?.OperatingDate,
+            trip is null ? null : TimeOnly.FromDateTime(trip.DepartureTime.LocalDateTime),
+            trip?.TripCode,
+            trip?.DepartureTime,
+            trip?.ArrivalTime,
+            trip?.Boat?.Name,
+            trip?.Boat?.Name,
             fromStop?.Station.StationName,
             toStop?.Station.StationName,
             seatCode,
             ToPassengerDtoOrNull(ticketPassenger),
-            booking.Passengers
+            legPassengers
                 .OrderBy(x => x.FullName)
                 .Select(p => ToPassengerDto(p))
                 .ToList());

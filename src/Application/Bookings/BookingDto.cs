@@ -22,7 +22,9 @@ public sealed record BookingDetailDto(
     IReadOnlyList<BookingItemDto> Items,
     string PaymentStatus,
     string? BookingQrToken,
-    DateTimeOffset? HoldExpiresAt);
+    DateTimeOffset? HoldExpiresAt,
+    string? ReturnTripCode = null,
+    DateTimeOffset? ReturnDeparture = null);
 
 public sealed record BookingItemDto(
     Guid BookingItemId,

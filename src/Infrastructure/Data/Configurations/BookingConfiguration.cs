@@ -29,6 +29,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.UserId).HasColumnName("customer_user_id");
         builder.Property(x => x.PromotionId).HasColumnName("promotion_id");
         builder.Property(x => x.TripId).HasColumnName("trip_id");
+        builder.Property(x => x.ReturnTripId).HasColumnName("return_trip_id");
         builder.Property(x => x.CharterRouteId).HasColumnName("charter_route_id");
         builder.Property(x => x.AssignedManagerId).HasColumnName("assigned_manager_id");
         builder.Property(x => x.BookingCode).HasColumnName("booking_code").HasMaxLength(50).IsRequired();
@@ -99,10 +100,12 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
         builder.HasIndex(x => x.CharterRouteId);
         builder.HasIndex(x => x.AssignedManagerId);
+        builder.HasIndex(x => x.ReturnTripId);
 
         builder.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Promotion).WithMany(p => p.Bookings).HasForeignKey(x => x.PromotionId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.ReturnTrip).WithMany().HasForeignKey(x => x.ReturnTripId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.CharterRoute).WithMany().HasForeignKey(x => x.CharterRouteId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.AssignedManager).WithMany().HasForeignKey(x => x.AssignedManagerId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Boat).WithMany().HasForeignKey(x => x.BoatId).OnDelete(DeleteBehavior.SetNull);

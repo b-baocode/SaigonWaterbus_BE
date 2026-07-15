@@ -53,21 +53,18 @@ public static class BookingHoldExpirySupport
 
         await context.SaveChangesAsync(cancellationToken);
 
+        // Nhóm theo trip của từng ghế (TripSeat.TripId) — booking khứ hồi giữ ghế trên 2 trip.
         foreach (var tripGroup in overdueBookings
-            .Where(b => b.TripId.HasValue)
-            .GroupBy(b => b.TripId!.Value))
+            .SelectMany(b => b.Passengers)
+            .Where(p => p.TripSeat?.Seat != null && !string.IsNullOrWhiteSpace(p.TripSeat.Seat.Code))
+            .GroupBy(p => p.TripSeat!.TripId))
         {
             var releasedSeats = tripGroup
-                .SelectMany(b => b.Passengers)
-                .Select(p => p.TripSeat?.Seat?.Code)
-                .Where(code => !string.IsNullOrWhiteSpace(code))
+                .Select(p => p.TripSeat!.Seat!.Code)
                 .Distinct()
-                .Select(code => new TripSeatStatusChange(code!, "Available"))
+                .Select(code => new TripSeatStatusChange(code, "Available"))
                 .ToList();
-            if (releasedSeats.Count > 0)
-            {
-                await notifier.PublishSeatStatusChangedAsync(tripGroup.Key, releasedSeats, cancellationToken);
-            }
+            await notifier.PublishSeatStatusChangedAsync(tripGroup.Key, releasedSeats, cancellationToken);
         }
 
         return overdueBookings.Count;
@@ -79,23 +76,19 @@ public static class BookingHoldExpirySupport
         Booking booking,
         CancellationToken cancellationToken)
     {
-        if (!booking.TripId.HasValue)
-        {
-            return;
-        }
-
-        var seatCodes = await context.Set<BookingPassenger>()
+        // Nhả ghế theo trip của từng ghế — booking khứ hồi giữ ghế trên 2 trip.
+        var seats = await context.Set<BookingPassenger>()
             .Where(p => p.BookingId == booking.Id && p.TripSeatId.HasValue)
-            .Select(p => p.TripSeat!.Seat.Code)
+            .Select(p => new { p.TripSeat!.TripId, p.TripSeat.Seat.Code })
             .ToListAsync(cancellationToken);
-        if (seatCodes.Count == 0)
-        {
-            return;
-        }
 
-        await notifier.PublishSeatStatusChangedAsync(
-            booking.TripId.Value,
-            seatCodes.Distinct().Select(code => new TripSeatStatusChange(code, "Available")).ToList(),
-            cancellationToken);
+        foreach (var tripGroup in seats.GroupBy(s => s.TripId))
+        {
+            await notifier.PublishSeatStatusChangedAsync(
+                tripGroup.Key,
+                tripGroup.Select(s => s.Code).Distinct()
+                    .Select(code => new TripSeatStatusChange(code, "Available")).ToList(),
+                cancellationToken);
+        }
     }
 }

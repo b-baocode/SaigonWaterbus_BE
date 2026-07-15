@@ -29,7 +29,19 @@ public sealed class Bookings : IEndpointGroup
               "birthYear": 2025
             }
           ],
-          "promotionCode": null
+          "promotionCode": null,
+          "returnTripCode": "TR-20260610-R01-LD-BD-5678",
+          "returnItems": [
+            {
+              "seatNumber": "B2",
+              "ticketTypeCode": "ADULT",
+              "fromStationCode": "TADA",
+              "toStationCode": "BD",
+              "passengerName": "Nguyen Van A",
+              "passengerPhone": "0901234567",
+              "passengerEmail": "nguyenvana@example.com"
+            }
+          ]
         }
         """;
 
@@ -89,6 +101,7 @@ public sealed class Bookings : IEndpointGroup
                 "Admin, Manager hoac Staff",
                 null,
                 "Check-in mot luot toan bo ve Active cua booking thuong.",
+                "Booking khu hoi: truyen query ?tripCode=<chuyen dang boarding> de chi check-in ve chieu do; bo trong se check-in tat ca.",
                 "Yeu cau booking da Confirmed va thanh toan du.",
                 "Tra ve manifest moi sau khi check-in."));
 
@@ -120,7 +133,9 @@ public sealed class Bookings : IEndpointGroup
                 "Toi da 10 ghe trong 1 lan dat.",
                 "Gia tu dong tinh theo gia cua seatTypeCode cua ghe x ticket type modifier.",
                 "passengerEmail (optional): hanh khach co email se nhan rieng ve dien tu (QR) cua minh sau khi thanh toan.",
-                "bookingStatus sau khi tao: PendingPayment; ghe duoc giu 15 phut (holdExpiresAt), qua han booking tu Expired va nha ghe.",
+                "Ve khu hoi (optional): truyen them returnTripCode + returnItems de mua ve 2 chieu trong 1 booking; hai chieu doc lap (trip, ghe, hanh khach rieng), khong giam gia, tong tien = cong 2 chieu.",
+                "returnTripCode va returnItems phai di cung nhau; returnItems theo cung rule voi items (toi da 10 ghe/chieu, INFANT tinh theo tung chieu).",
+                "bookingStatus sau khi tao: PendingPayment; ghe duoc giu 15 phut (holdExpiresAt), qua han booking tu Expired va nha ghe ca 2 chieu.",
                 "Tra ve 400 neu ghe da bi dat hoac dang duoc nguoi khac tam giu (race condition)."));
     }
 
@@ -149,8 +164,8 @@ public sealed class Bookings : IEndpointGroup
         Results.Ok(await sender.Send(new GetBookingManifestByQrTokenQuery(qrToken), ct));
 
     private static async Task<IResult> CheckInAllBookingTickets(
-        ISender sender, string qrToken, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new CheckInAllBookingTicketsCommand(qrToken), ct));
+        ISender sender, string qrToken, string? tripCode, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CheckInAllBookingTicketsCommand(qrToken, tripCode), ct));
 
     private static async Task<IResult> ResendBookingTickets(
         ISender sender, Guid id, CancellationToken ct) =>

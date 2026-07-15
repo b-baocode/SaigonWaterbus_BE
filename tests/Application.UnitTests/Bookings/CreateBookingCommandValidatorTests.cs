@@ -50,6 +50,75 @@ public class CreateBookingCommandValidatorTests
         result.IsValid.ShouldBeTrue();
     }
 
+    [Test]
+    public void RoundTripWithReturnTripCodeAndItemsIsValid()
+    {
+        var result = Validator.Validate(
+            Command(Adult("A1")) with { ReturnTripCode = "TR-RET", ReturnItems = [Adult("B1")] });
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ReturnTripCodeWithoutReturnItemsIsInvalid()
+    {
+        var result = Validator.Validate(
+            Command(Adult("A1")) with { ReturnTripCode = "TR-RET" });
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.PropertyName == "ReturnItems");
+    }
+
+    [Test]
+    public void ReturnItemsWithoutReturnTripCodeIsInvalid()
+    {
+        var result = Validator.Validate(
+            Command(Adult("A1")) with { ReturnItems = [Adult("B1")] });
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.PropertyName == "ReturnTripCode");
+    }
+
+    [Test]
+    public void MoreThanTenReturnItemsIsInvalid()
+    {
+        var returnItems = Enumerable.Range(1, 11).Select(i => Adult($"A{i}")).ToArray();
+        var result = Validator.Validate(
+            Command(Adult("A1")) with { ReturnTripCode = "TR-RET", ReturnItems = returnItems });
+
+        result.IsValid.ShouldBeFalse();
+    }
+
+    [Test]
+    public void LapInfantCompanionRuleIsEvaluatedPerLeg()
+    {
+        // Chiều đi hợp lệ (người lớn + trẻ), nhưng chiều về chỉ có trẻ ngồi lòng → invalid.
+        var result = Validator.Validate(
+            Command(Adult("A1"), LapInfant()) with
+            {
+                ReturnTripCode = "TR-RET",
+                ReturnItems = [LapInfant()]
+            });
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage.Contains("đi kèm"));
+    }
+
+    [Test]
+    public void ReturnItemsFollowTheSameItemRules()
+    {
+        // Vé ADULT chiều về không có ghế → invalid.
+        var result = Validator.Validate(
+            Command(Adult("A1")) with
+            {
+                ReturnTripCode = "TR-RET",
+                ReturnItems = [Adult("B1") with { SeatNumber = null }]
+            });
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage.Contains("seatNumber"));
+    }
+
     private static CreateBookingCommand Command(params BookingItemRequest[] items) =>
         new("TR-TEST", items, null);
 

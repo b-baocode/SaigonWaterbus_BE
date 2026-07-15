@@ -23,37 +23,76 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
     {
         QuestPDF.Settings.License = LicenseType.Community;
 
-        var departureDate = FormatPdfDate(export.DepartureTime);
-        var departureTime = FormatPdfTime(export.DepartureTime);
-        var fromStation = ResolvePdfText(export.FromStationName, "Diem di");
-        var toStation = ResolvePdfText(export.ToStationName, "Diem den");
-        var vesselName = ResolvePdfText(export.BoatName, "Waterbus");
+        var legs = BuildLegs(export);
 
         return Document.Create(document =>
         {
             if (!string.IsNullOrWhiteSpace(export.BookingQrToken))
             {
-                RenderGroupPassPage(document, export, departureDate, departureTime, fromStation, toStation, vesselName);
+                RenderGroupPassPage(document, export, legs);
             }
 
-            foreach (var ticket in export.Tickets)
+            foreach (var leg in legs)
             {
-                RenderTicketPage(document, export, ticket, departureDate, departureTime, fromStation, toStation, vesselName);
+                foreach (var ticket in leg.Tickets)
+                {
+                    RenderTicketPage(document, export, ticket, leg);
+                }
             }
         }).GeneratePdf();
     }
 
-    /// <summary>Trang QR tổng: chỉ có trong bản PDF gửi người đặt vé; staff quét 1 lần check-in cả nhóm.</summary>
+    /// <summary>Một chiều của booking đã format sẵn cho PDF. Booking một chiều = 1 leg không nhãn.</summary>
+    private sealed record LegDisplay(
+        string? Label,
+        string DepartureDate,
+        string DepartureTime,
+        string FromStation,
+        string ToStation,
+        string VesselName,
+        string? TripCode,
+        IReadOnlyList<BookingTicketPdfItemDto> Tickets);
+
+    private static List<LegDisplay> BuildLegs(BookingTicketPdfExportDto export)
+    {
+        if (export.Legs is { Count: > 0 })
+        {
+            return export.Legs.Select((leg, index) => new LegDisplay(
+                export.Legs.Count > 1
+                    ? (index == 0 ? "CHIEU DI / OUTBOUND" : "CHIEU VE / RETURN")
+                    : null,
+                FormatPdfDate(leg.DepartureTime),
+                FormatPdfTime(leg.DepartureTime),
+                ResolvePdfText(leg.FromStationName, "Diem di"),
+                ResolvePdfText(leg.ToStationName, "Diem den"),
+                ResolvePdfText(leg.BoatName, "Waterbus"),
+                leg.TripCode,
+                leg.Tickets)).ToList();
+        }
+
+        return
+        [
+            new LegDisplay(
+                null,
+                FormatPdfDate(export.DepartureTime),
+                FormatPdfTime(export.DepartureTime),
+                ResolvePdfText(export.FromStationName, "Diem di"),
+                ResolvePdfText(export.ToStationName, "Diem den"),
+                ResolvePdfText(export.BoatName, "Waterbus"),
+                export.TripCode,
+                export.Tickets)
+        ];
+    }
+
+    /// <summary>Trang QR tổng: chỉ có trong bản PDF gửi người đặt vé; staff quét 1 lần check-in cả nhóm.
+    /// Booking khứ hồi: hiển thị tuyến + giờ của từng chiều và danh sách hành khách theo chiều.</summary>
     private static void RenderGroupPassPage(
         IDocumentContainer document,
         BookingTicketPdfExportDto export,
-        string departureDate,
-        string departureTime,
-        string fromStation,
-        string toStation,
-        string vesselName)
+        IReadOnlyList<LegDisplay> legs)
     {
         var qrBytes = BuildQrPngBytes(export.BookingQrToken!);
+        var totalTickets = legs.Sum(l => l.Tickets.Count);
 
         document.Page(page =>
         {
@@ -99,46 +138,42 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
                         {
                             body.Spacing(18);
 
-                            body.Item()
-                                .Border(1).BorderColor(Line).Background(Pale).Padding(16)
-                                .Row(route =>
-                                {
-                                    route.RelativeItem().Column(from =>
-                                    {
-                                        from.Item().Text("FROM").FontSize(7).SemiBold().FontColor(Muted);
-                                        from.Item().Text(fromStation).FontSize(18).Bold().FontColor(Teal);
-                                    });
-
-                                    route.ConstantItem(48).AlignCenter().Column(mid =>
-                                    {
-                                        mid.Item().AlignCenter().Text("->").FontSize(20).Bold().FontColor(Gold);
-                                        mid.Item().AlignCenter().Text("ROUTE").FontSize(6).FontColor(Muted);
-                                    });
-
-                                    route.RelativeItem().AlignRight().Column(to =>
-                                    {
-                                        to.Item().AlignRight().Text("TO").FontSize(7).SemiBold().FontColor(Muted);
-                                        to.Item().AlignRight().Text(toStation).FontSize(18).Bold().FontColor(Teal);
-                                    });
-                                });
-
-                            body.Item().Row(main =>
+                            foreach (var leg in legs)
                             {
-                                main.RelativeItem().Column(details =>
+                                body.Item().Column(legColumn =>
                                 {
-                                    details.Spacing(12);
+                                    legColumn.Spacing(10);
 
-                                    details.Item()
-                                        .BorderLeft(4).BorderColor(Gold).PaddingLeft(12)
-                                        .Column(info =>
+                                    if (leg.Label is not null)
+                                    {
+                                        legColumn.Item().Text(leg.Label)
+                                            .FontSize(9).Bold().FontColor(Navy);
+                                    }
+
+                                    legColumn.Item()
+                                        .Border(1).BorderColor(Line).Background(Pale).Padding(16)
+                                        .Row(route =>
                                         {
-                                            info.Item().Text("CHECK-IN CA NHOM / GROUP CHECK-IN")
-                                                .FontSize(7).SemiBold().FontColor(Muted);
-                                            info.Item().Text($"{export.Tickets.Count} hanh khach")
-                                                .FontSize(24).Bold().FontColor(Ink);
+                                            route.RelativeItem().Column(from =>
+                                            {
+                                                from.Item().Text("FROM").FontSize(7).SemiBold().FontColor(Muted);
+                                                from.Item().Text(leg.FromStation).FontSize(18).Bold().FontColor(Teal);
+                                            });
+
+                                            route.ConstantItem(48).AlignCenter().Column(mid =>
+                                            {
+                                                mid.Item().AlignCenter().Text("->").FontSize(20).Bold().FontColor(Gold);
+                                                mid.Item().AlignCenter().Text("ROUTE").FontSize(6).FontColor(Muted);
+                                            });
+
+                                            route.RelativeItem().AlignRight().Column(to =>
+                                            {
+                                                to.Item().AlignRight().Text("TO").FontSize(7).SemiBold().FontColor(Muted);
+                                                to.Item().AlignRight().Text(leg.ToStation).FontSize(18).Bold().FontColor(Teal);
+                                            });
                                         });
 
-                                    details.Item().Table(table =>
+                                    legColumn.Item().Table(table =>
                                     {
                                         table.ColumnsDefinition(columns =>
                                         {
@@ -146,12 +181,25 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
                                             columns.RelativeColumn();
                                         });
 
-                                        AddPdfInfoCell(table.Cell(), "Date", departureDate, Teal);
-                                        AddPdfInfoCell(table.Cell(), "Time (GMT+7)", departureTime, Teal);
-                                        AddPdfInfoCell(table.Cell(), "Vessel", vesselName, Ink);
-                                        AddPdfInfoCell(table.Cell(), "Trip", ResolvePdfText(export.TripCode), Ink);
+                                        AddPdfInfoCell(table.Cell(), "Date", leg.DepartureDate, Teal);
+                                        AddPdfInfoCell(table.Cell(), "Time (GMT+7)", leg.DepartureTime, Teal);
+                                        AddPdfInfoCell(table.Cell(), "Vessel", leg.VesselName, Ink);
+                                        AddPdfInfoCell(table.Cell(), "Trip", ResolvePdfText(leg.TripCode), Ink);
                                     });
                                 });
+                            }
+
+                            body.Item().Row(main =>
+                            {
+                                main.RelativeItem()
+                                    .BorderLeft(4).BorderColor(Gold).PaddingLeft(12)
+                                    .Column(info =>
+                                    {
+                                        info.Item().Text("CHECK-IN CA NHOM / GROUP CHECK-IN")
+                                            .FontSize(7).SemiBold().FontColor(Muted);
+                                        info.Item().Text($"{totalTickets} hanh khach")
+                                            .FontSize(24).Bold().FontColor(Ink);
+                                    });
 
                                 main.ConstantItem(170)
                                     .Border(1).BorderColor(Line).Padding(14).AlignCenter()
@@ -175,27 +223,39 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
                                         .FontSize(9).Bold().FontColor(Navy);
 
                                     var index = 1;
-                                    foreach (var ticket in export.Tickets)
+                                    foreach (var leg in legs)
                                     {
-                                        var seat = string.IsNullOrWhiteSpace(ticket.SeatCode)
-                                            ? string.Empty
-                                            : $" - Ghe {ticket.SeatCode}";
-                                        var type = string.IsNullOrWhiteSpace(ticket.TicketTypeName)
-                                            ? string.Empty
-                                            : $" - {ticket.TicketTypeName}";
-
-                                        passengers.Item().Row(passengerRow =>
+                                        if (leg.Label is not null)
                                         {
-                                            passengerRow.ConstantItem(20)
-                                                .Background(Gold).PaddingVertical(3).AlignCenter()
-                                                .Text(index.ToString(CultureInfo.InvariantCulture))
-                                                .FontSize(8).Bold().FontColor(Navy);
-                                            passengerRow.RelativeItem()
-                                                .PaddingLeft(8)
-                                                .Text($"{ticket.PassengerName}{seat}{type} ({ticket.TicketCode})")
-                                                .FontSize(9).FontColor(Ink);
-                                        });
-                                        index++;
+                                            var tripSuffix = string.IsNullOrWhiteSpace(leg.TripCode)
+                                                ? string.Empty
+                                                : $" - {leg.TripCode}";
+                                            passengers.Item().PaddingTop(4).Text($"{leg.Label}{tripSuffix}")
+                                                .FontSize(8).SemiBold().FontColor(Teal);
+                                        }
+
+                                        foreach (var ticket in leg.Tickets)
+                                        {
+                                            var seat = string.IsNullOrWhiteSpace(ticket.SeatCode)
+                                                ? string.Empty
+                                                : $" - Ghe {ticket.SeatCode}";
+                                            var type = string.IsNullOrWhiteSpace(ticket.TicketTypeName)
+                                                ? string.Empty
+                                                : $" - {ticket.TicketTypeName}";
+
+                                            passengers.Item().Row(passengerRow =>
+                                            {
+                                                passengerRow.ConstantItem(20)
+                                                    .Background(Gold).PaddingVertical(3).AlignCenter()
+                                                    .Text(index.ToString(CultureInfo.InvariantCulture))
+                                                    .FontSize(8).Bold().FontColor(Navy);
+                                                passengerRow.RelativeItem()
+                                                    .PaddingLeft(8)
+                                                    .Text($"{ticket.PassengerName}{seat}{type} ({ticket.TicketCode})")
+                                                    .FontSize(9).FontColor(Ink);
+                                            });
+                                            index++;
+                                        }
                                     }
                                 });
 
@@ -217,12 +277,13 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
         IDocumentContainer document,
         BookingTicketPdfExportDto export,
         BookingTicketPdfItemDto ticket,
-        string departureDate,
-        string departureTime,
-        string fromStation,
-        string toStation,
-        string vesselName)
+        LegDisplay leg)
     {
+        var departureDate = leg.DepartureDate;
+        var departureTime = leg.DepartureTime;
+        var fromStation = leg.FromStation;
+        var toStation = leg.ToStation;
+        var vesselName = leg.VesselName;
         var qrBytes = BuildQrPngBytes(ticket.QrToken);
         var passengerName = ResolvePdfText(ticket.PassengerName, "Khach hang");
         var ticketType = ResolvePdfText(ticket.TicketTypeName, "Passenger");
@@ -252,7 +313,9 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
                             {
                                 header.Item().Text("WATERBUS")
                                     .FontSize(20).Bold().FontColor(Colors.White);
-                                header.Item().PaddingTop(4).Text("BOARDING PASS / VE LEN TAU")
+                                header.Item().PaddingTop(4).Text(leg.Label is null
+                                        ? "BOARDING PASS / VE LEN TAU"
+                                        : $"BOARDING PASS / VE LEN TAU - {leg.Label}")
                                     .FontSize(9).SemiBold().FontColor(Gold);
                             });
 
@@ -326,7 +389,7 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
                                         AddPdfInfoCell(table.Cell(), "Seat", seatCode, Teal);
                                         AddPdfInfoCell(table.Cell(), "Ticket type", ticketType, Ink);
                                         AddPdfInfoCell(table.Cell(), "Vessel", vesselName, Ink);
-                                        AddPdfInfoCell(table.Cell(), "Trip", ResolvePdfText(export.TripCode), Ink);
+                                        AddPdfInfoCell(table.Cell(), "Trip", ResolvePdfText(leg.TripCode), Ink);
                                     });
                                 });
 

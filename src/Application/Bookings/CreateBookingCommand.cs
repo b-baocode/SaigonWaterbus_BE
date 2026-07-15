@@ -33,53 +33,86 @@ public sealed record CreateBookingResult(
     decimal TotalAmount,
     string BookingStatus,
     int ItemCount,
-    DateTimeOffset? HoldExpiresAt);
+    DateTimeOffset? HoldExpiresAt,
+    Guid? ReturnTripId = null,
+    string? ReturnTripCode = null);
 
+// Vé khứ hồi: truyền thêm ReturnTripCode + ReturnItems — hai chiều độc lập (trip, ghế, hành khách riêng),
+// tổng tiền = cộng hai chiều, promotion áp trên cả booking.
 public sealed record CreateBookingCommand(
     string TripCode,
     IReadOnlyList<BookingItemRequest> Items,
-    string? PromotionCode) : IRequest<CreateBookingResult>;
+    string? PromotionCode,
+    string? ReturnTripCode = null,
+    IReadOnlyList<BookingItemRequest>? ReturnItems = null) : IRequest<CreateBookingResult>;
 
 public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBookingCommand>
 {
+    private const string LapInfantCompanionMessage =
+        "Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế đi kèm trong cùng booking.";
+
     public CreateBookingCommandValidator()
     {
         RuleFor(x => x.TripCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.Items).NotEmpty().WithMessage("Booking must have at least one item.")
             .Must(items => items.Count <= 10).WithMessage("Maximum 10 items per booking.");
 
-        RuleForEach(x => x.Items).ChildRules(item =>
-        {
-            item.RuleFor(x => x.TicketTypeCode).NotEmpty().MaximumLength(50);
-            item.RuleFor(x => x.SeatNumber).MaximumLength(30);
-            item.RuleFor(x => x.SeatNumber).NotEmpty()
-                .When(x => !IsInfant(x.TicketTypeCode))
-                .WithMessage("seatNumber là bắt buộc (chỉ vé INFANT - trẻ dưới 2 tuổi - mới được bỏ trống để ngồi cùng người lớn).");
-            item.RuleFor(x => x.BirthYear).NotNull()
-                .When(x => IsInfant(x.TicketTypeCode))
-                .WithMessage("birthYear là bắt buộc với vé INFANT (trẻ dưới 2 tuổi) để khai báo và lưu hành khách.");
-            item.RuleFor(x => x.FromStationCode).NotEmpty().MaximumLength(50);
-            item.RuleFor(x => x.ToStationCode).NotEmpty().MaximumLength(50)
-                .NotEqual(x => x.FromStationCode).WithMessage("From and To stations must be different.");
-            item.RuleFor(x => x.PassengerName).NotEmpty().MaximumLength(150);
-            item.RuleFor(x => x.PassengerPhone).MaximumLength(20).When(x => x.PassengerPhone is not null);
-            item.RuleFor(x => x.PassengerEmail).EmailAddress().MaximumLength(255)
-                .When(x => !string.IsNullOrWhiteSpace(x.PassengerEmail));
-        });
+        RuleForEach(x => x.Items).ChildRules(ApplyItemRules);
 
         // Trẻ dưới 2 tuổi ngồi cùng người lớn (INFANT không chiếm ghế) phải có người lớn có ghế đi kèm.
-        // Mỗi hành khách có ghế (không phải INFANT) chỉ "kèm" tối đa một trẻ ngồi lòng.
+        // Mỗi hành khách có ghế (không phải INFANT) chỉ "kèm" tối đa một trẻ ngồi lòng. Tính theo từng chiều.
         RuleFor(x => x.Items)
-            .Must(items =>
-            {
-                var lapInfants = items.Count(i =>
-                    string.IsNullOrWhiteSpace(i.SeatNumber) && IsInfant(i.TicketTypeCode));
-                var seatedCompanions = items.Count(i =>
-                    !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
-                return lapInfants <= seatedCompanions;
-            })
-            .WithMessage("Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế đi kèm trong cùng booking.")
+            .Must(HasSeatedCompanionForEachLapInfant)
+            .WithMessage(LapInfantCompanionMessage)
             .When(x => x.Items is not null);
+
+        // Vé khứ hồi: ReturnTripCode và ReturnItems phải đi cùng nhau.
+        RuleFor(x => x.ReturnTripCode).MaximumLength(50);
+        RuleFor(x => x.ReturnTripCode).NotEmpty()
+            .When(x => x.ReturnItems is { Count: > 0 })
+            .WithMessage("returnTripCode là bắt buộc khi có returnItems (vé khứ hồi).");
+        RuleFor(x => x.ReturnItems).NotEmpty()
+            .When(x => !string.IsNullOrWhiteSpace(x.ReturnTripCode))
+            .WithMessage("Vé khứ hồi phải có ít nhất một returnItem cho chiều về.");
+        RuleFor(x => x.ReturnItems!)
+            .Must(items => items.Count <= 10)
+            .WithMessage("Maximum 10 items per booking.")
+            .When(x => x.ReturnItems is not null);
+
+        RuleForEach(x => x.ReturnItems).ChildRules(ApplyItemRules);
+
+        RuleFor(x => x.ReturnItems!)
+            .Must(HasSeatedCompanionForEachLapInfant)
+            .WithMessage(LapInfantCompanionMessage)
+            .When(x => x.ReturnItems is { Count: > 0 });
+    }
+
+    private static void ApplyItemRules(InlineValidator<BookingItemRequest> item)
+    {
+        item.RuleFor(x => x.TicketTypeCode).NotEmpty().MaximumLength(50);
+        item.RuleFor(x => x.SeatNumber).MaximumLength(30);
+        item.RuleFor(x => x.SeatNumber).NotEmpty()
+            .When(x => !IsInfant(x.TicketTypeCode))
+            .WithMessage("seatNumber là bắt buộc (chỉ vé INFANT - trẻ dưới 2 tuổi - mới được bỏ trống để ngồi cùng người lớn).");
+        item.RuleFor(x => x.BirthYear).NotNull()
+            .When(x => IsInfant(x.TicketTypeCode))
+            .WithMessage("birthYear là bắt buộc với vé INFANT (trẻ dưới 2 tuổi) để khai báo và lưu hành khách.");
+        item.RuleFor(x => x.FromStationCode).NotEmpty().MaximumLength(50);
+        item.RuleFor(x => x.ToStationCode).NotEmpty().MaximumLength(50)
+            .NotEqual(x => x.FromStationCode).WithMessage("From and To stations must be different.");
+        item.RuleFor(x => x.PassengerName).NotEmpty().MaximumLength(150);
+        item.RuleFor(x => x.PassengerPhone).MaximumLength(20).When(x => x.PassengerPhone is not null);
+        item.RuleFor(x => x.PassengerEmail).EmailAddress().MaximumLength(255)
+            .When(x => !string.IsNullOrWhiteSpace(x.PassengerEmail));
+    }
+
+    private static bool HasSeatedCompanionForEachLapInfant(IReadOnlyList<BookingItemRequest> items)
+    {
+        var lapInfants = items.Count(i =>
+            string.IsNullOrWhiteSpace(i.SeatNumber) && IsInfant(i.TicketTypeCode));
+        var seatedCompanions = items.Count(i =>
+            !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
+        return lapInfants <= seatedCompanions;
     }
 
     private static bool IsInfant(string? ticketTypeCode) =>
@@ -119,206 +152,52 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
     public async Task<CreateBookingResult> Handle(CreateBookingCommand request, CancellationToken cancellationToken)
     {
-        var tripCode = request.TripCode.Trim().ToUpperInvariant();
-
-        var trip = await _context.Set<Trip>()
-            .Include(t => t.Route)
-                .ThenInclude(r => r.RouteStops)
-                    .ThenInclude(rs => rs.Station)
-            .SingleOrDefaultAsync(t => t.TripCode == tripCode, cancellationToken)
-            ?? throw new NotFoundException($"Trip '{tripCode}' not found.");
-
         var now = _timeProvider.GetUtcNow();
-        if (trip.TripType != TripTypes.Regular)
-            throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
-                "Trip charter không bán vé lẻ.")]);
-
-        if (trip.TripStatus != TripStatus.Scheduled || trip.DepartureTime <= now)
-            throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
-                "Trip is not available for booking.")]);
-
-        if (!trip.BoatId.HasValue)
-            throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
-                "Trip has no boat assigned.")]);
-
-        var requestedTicketCodes = request.Items
-            .Select(i => i.TicketTypeCode.Trim().ToUpperInvariant())
-            .Distinct()
-            .ToList();
-
-        var ticketTypesByCode = new Dictionary<string, TicketTypeInfo>();
-        foreach (var code in requestedTicketCodes)
-        {
-            if (TicketTypePricing.TryGet(code, out var ticketType))
-            {
-                ticketTypesByCode[code] = ticketType;
-            }
-        }
-
-        var missingTicket = requestedTicketCodes.FirstOrDefault(c => !ticketTypesByCode.ContainsKey(c));
-        if (missingTicket is not null)
-            throw new NotFoundException($"Ticket type '{missingTicket}' not found.");
-
-        // Vé INFANT chỉ dành cho trẻ dưới 2 tuổi — kiểm tra năm sinh so với ngày khởi hành chuyến.
-        var departureYear = trip.DepartureTime.Year;
-        foreach (var infantItem in request.Items.Where(i => IsInfant(i.TicketTypeCode)))
-        {
-            if (!infantItem.BirthYear.HasValue)
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
-                    "Vé INFANT yêu cầu khai báo birthYear (trẻ dưới 2 tuổi).")]);
-
-            var ageAtDeparture = departureYear - infantItem.BirthYear.Value;
-            if (ageAtDeparture < 0 || ageAtDeparture > 2)
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
-                    "Vé INFANT chỉ áp dụng cho trẻ dưới 2 tuổi (sinh trong vòng 2 năm so với ngày khởi hành).")]);
-        }
-
-        // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và MIỄN PHÍ trên
-        // cả waterbus thường lẫn sightseeing. Vé free có ghế (SENIOR/DISABLED, hoặc INFANT chọn ghế riêng)
-        // vẫn bị chặn tự nhiên trên sightseeing vì ghế sightseeing không phải loại STANDARD — FareCalculator
-        // từ chối theo AllowedSeatTypeCodes, nên không cần chặn thêm ở cấp tàu tại đây.
-        var lapItems = request.Items.Where(i => string.IsNullOrWhiteSpace(i.SeatNumber)).ToList();
-        if (lapItems.Count > 0)
-        {
-            var nonInfantLapItem = lapItems.FirstOrDefault(i => !IsInfant(i.TicketTypeCode));
-            if (nonInfantLapItem is not null)
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                    "Chỉ vé INFANT (trẻ dưới 2 tuổi) mới được bỏ trống seatNumber.")]);
-
-            // Mỗi trẻ ngồi lòng (INFANT không ghế) phải có một hành khách có ghế (không phải INFANT) đi kèm
-            // trong cùng booking — 1 người lớn kèm tối đa 1 trẻ. (Cũng khai báo ở validator, nhưng validator
-            // không chạy trong pipeline MediatR nên bắt buộc phải enforce tại handler.)
-            var seatedCompanionCount = request.Items.Count(i =>
-                !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
-            if (lapItems.Count > seatedCompanionCount)
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                    "Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế "
-                    + "đi kèm trong cùng booking.")]);
-        }
-
-        var requestedSeatCodes = request.Items
-            .Where(i => !string.IsNullOrWhiteSpace(i.SeatNumber))
-            .Select(i => NormalizeSeatCode(i.SeatNumber!))
-            .ToList();
-
-        var duplicatedSeatCode = requestedSeatCodes
-            .GroupBy(x => x)
-            .FirstOrDefault(x => x.Count() > 1)
-            ?.Key;
-        if (duplicatedSeatCode is not null)
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{duplicatedSeatCode}' is duplicated in this booking.")]);
-
-        var seatsByCode = await _context.Set<Seat>()
-            .Where(x => x.BoatId == trip.BoatId.Value && requestedSeatCodes.Contains(x.Code))
-            .Include(x => x.SeatType)
-            .ToDictionaryAsync(x => x.Code, cancellationToken);
-
-        var missingSeat = requestedSeatCodes.FirstOrDefault(x => !seatsByCode.ContainsKey(x));
-        if (missingSeat is not null)
-            throw new NotFoundException($"Seat '{missingSeat}' not found on this trip boat.");
-
-        var invalidSeat = seatsByCode.Values.FirstOrDefault(x => !x.IsActive);
-        if (invalidSeat is not null)
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{invalidSeat.Code}' is not available for booking.")]);
-
-        var requestedSeatIds = seatsByCode.Values.Select(x => x.Id).ToList();
-        var tripSeatsBySeatId = await _context.Set<TripSeat>()
-            .Where(x => x.TripId == trip.Id && requestedSeatIds.Contains(x.SeatId))
-            .ToDictionaryAsync(x => x.SeatId, cancellationToken);
-
-        var missingSeatInTrip = seatsByCode.Values.FirstOrDefault(x => !tripSeatsBySeatId.ContainsKey(x.Id));
-        if (missingSeatInTrip is not null)
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{missingSeatInTrip.Code}' is not available on this trip.")]);
-
         var userId = _userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
-        var requestedTripSeatIds = tripSeatsBySeatId.Values.Select(x => x.Id).ToList();
-        var occupiedTripSeatIds = await _context.Set<BookingPassenger>()
-            .Where(x => x.TripSeatId.HasValue
-                     && requestedTripSeatIds.Contains(x.TripSeatId.Value))
-            .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
-            .Select(x => x.TripSeatId!.Value)
-            .ToListAsync(cancellationToken);
+        var outboundLeg = await ResolveLegAsync(
+            request.TripCode, request.Items, userId, now, nameof(request.TripCode), cancellationToken);
 
-        if (occupiedTripSeatIds.Count > 0)
+        // Vé khứ hồi: resolve chiều về y hệt chiều đi. Các ràng buộc cặp ReturnTripCode/ReturnItems cũng
+        // khai báo ở validator, nhưng validator không chạy trong pipeline MediatR nên enforce tại đây.
+        ResolvedLeg? returnLeg = null;
+        if (!string.IsNullOrWhiteSpace(request.ReturnTripCode))
         {
-            var occupiedSeat = seatsByCode.Values.First(x =>
-                tripSeatsBySeatId.TryGetValue(x.Id, out var ts) && occupiedTripSeatIds.Contains(ts.Id));
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{occupiedSeat.Code}' is already booked.")]);
-        }
+            if (request.ReturnItems is not { Count: > 0 })
+                throw new ValidationException([new ValidationFailure(nameof(request.ReturnItems),
+                    "Vé khứ hồi phải có ít nhất một returnItem cho chiều về.")]);
 
-        var heldSeats = await _seatHoldService.GetHeldSeatsAsync(trip.Id, cancellationToken);
-        var seatHeldByOther = seatsByCode.Values.FirstOrDefault(x =>
-            tripSeatsBySeatId.TryGetValue(x.Id, out var ts)
-            && heldSeats.TryGetValue(ts.Id, out var holder)
-            && holder != userId);
-        if (seatHeldByOther is not null)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{seatHeldByOther.Code}' is being held by another customer.")]);
-        }
+            returnLeg = await ResolveLegAsync(
+                request.ReturnTripCode, request.ReturnItems, userId, now,
+                nameof(request.ReturnTripCode), cancellationToken);
 
-        var routeStopByStationCode = trip.Route.RouteStops
-            .ToDictionary(
-                rs => rs.Station.StationCode.ToUpperInvariant(),
-                rs => rs);
-
-        var resolvedItems = new List<ResolvedItem>();
-        foreach (var item in request.Items)
-        {
-            var fromCode = item.FromStationCode.Trim().ToUpperInvariant();
-            var toCode = item.ToStationCode.Trim().ToUpperInvariant();
-
-            if (!routeStopByStationCode.TryGetValue(fromCode, out var fromStop))
-                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
-                    $"Station '{fromCode}' is not a stop on this trip.")]);
-
-            if (!routeStopByStationCode.TryGetValue(toCode, out var toStop))
-                throw new ValidationException([new ValidationFailure(nameof(item.ToStationCode),
-                    $"Station '{toCode}' is not a stop on this trip.")]);
-
-            if (fromStop.StopOrder >= toStop.StopOrder)
-                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
-                    $"Station '{fromCode}' must come before '{toCode}' on the route.")]);
-
-            Seat? seat = null;
-            TripSeat? tripSeat = null;
-            if (!string.IsNullOrWhiteSpace(item.SeatNumber))
+            // Hai chiều trùng một trip: chặn ghế trùng giữa hai chiều — occupancy check chạy trước khi
+            // insert nên không tự bắt được trường hợp double-book cùng TripSeat trong cùng một lệnh.
+            if (returnLeg.Trip.Id == outboundLeg.Trip.Id)
             {
-                seat = seatsByCode[NormalizeSeatCode(item.SeatNumber)];
-                tripSeat = tripSeatsBySeatId[seat.Id];
+                var outboundSeatCodes = outboundLeg.ItemPrices
+                    .Where(x => x.Resolved.Seat is not null)
+                    .Select(x => x.Resolved.Seat!.Code);
+                var overlappingSeat = returnLeg.ItemPrices
+                    .Where(x => x.Resolved.Seat is not null)
+                    .Select(x => x.Resolved.Seat!.Code)
+                    .Intersect(outboundSeatCodes)
+                    .FirstOrDefault();
+                if (overlappingSeat is not null)
+                    throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                        $"Seat '{overlappingSeat}' is duplicated in this booking.")]);
             }
-
-            resolvedItems.Add(new ResolvedItem(
-                item,
-                ticketTypesByCode[TicketTypeCatalog.NormalizeCode(item.TicketTypeCode)],
-                seat,
-                tripSeat,
-                fromStop,
-                toStop));
         }
-
-        var itemPrices = new List<(ResolvedItem Resolved, decimal UnitPrice)>();
-        foreach (var resolved in resolvedItems)
+        else if (request.ReturnItems is { Count: > 0 })
         {
-            // Hành khách không chiếm ghế (INFANT ngồi cùng người lớn) → miễn phí, không tính giá ghế.
-            var unitPrice = resolved.Seat is null
-                ? 0m
-                : await _fareCalculator.CalculateAsync(
-                    resolved.Seat.Id,
-                    resolved.TicketType.Code,
-                    cancellationToken,
-                    trip.Id);
-
-            itemPrices.Add((resolved, unitPrice));
+            throw new ValidationException([new ValidationFailure(nameof(request.ReturnTripCode),
+                "returnTripCode là bắt buộc khi có returnItems (vé khứ hồi).")]);
         }
 
-        var subtotal = itemPrices.Sum(x => x.UnitPrice);
+        var trip = outboundLeg.Trip;
+        var subtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
+            + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
 
         var user = await _context.Users
             .AsNoTracking()
@@ -329,6 +208,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         {
             UserId = userId,
             TripId = trip.Id,
+            ReturnTripId = returnLeg?.Trip.Id,
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
             ContactName = user.FullName,
             ContactPhone = user.PhoneNumber ?? string.Empty,
@@ -340,25 +220,35 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             HoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration)
         };
 
-        foreach (var x in itemPrices)
+        var legs = new List<ResolvedLeg> { outboundLeg };
+        if (returnLeg is not null)
         {
-            var passenger = new BookingPassenger
+            legs.Add(returnLeg);
+        }
+
+        foreach (var leg in legs)
+        {
+            foreach (var x in leg.ItemPrices)
             {
-                BookingId = booking.Id,
-                FullName = x.Resolved.Item.PassengerName.Trim(),
-                PhoneNumber = x.Resolved.Item.PassengerPhone?.Trim(),
-                Email = string.IsNullOrWhiteSpace(x.Resolved.Item.PassengerEmail)
-                    ? null
-                    : x.Resolved.Item.PassengerEmail.Trim(),
-                PassengerType = x.Resolved.TicketType.Code,
-                BirthYear = x.Resolved.Item.BirthYear,
-                Gender = x.Resolved.Item.Gender?.Trim(),
-                Nationality = x.Resolved.Item.Nationality?.Trim(),
-                Note = x.Resolved.Item.Note?.Trim(),
-                TripSeatId = x.Resolved.TripSeat?.Id,
-                UnitPrice = x.UnitPrice
-            };
-            booking.Passengers.Add(passenger);
+                var passenger = new BookingPassenger
+                {
+                    BookingId = booking.Id,
+                    FullName = x.Resolved.Item.PassengerName.Trim(),
+                    PhoneNumber = x.Resolved.Item.PassengerPhone?.Trim(),
+                    Email = string.IsNullOrWhiteSpace(x.Resolved.Item.PassengerEmail)
+                        ? null
+                        : x.Resolved.Item.PassengerEmail.Trim(),
+                    PassengerType = x.Resolved.TicketType.Code,
+                    BirthYear = x.Resolved.Item.BirthYear,
+                    Gender = x.Resolved.Item.Gender?.Trim(),
+                    Nationality = x.Resolved.Item.Nationality?.Trim(),
+                    Note = x.Resolved.Item.Note?.Trim(),
+                    TripId = leg.Trip.Id,
+                    TripSeatId = x.Resolved.TripSeat?.Id,
+                    UnitPrice = x.UnitPrice
+                };
+                booking.Passengers.Add(passenger);
+            }
         }
 
         _context.Set<Booking>().Add(booking);
@@ -407,26 +297,253 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 "Booking failed. Please try again.")]);
         }
 
-        var seatedItems = resolvedItems.Where(x => x.Seat is not null && x.TripSeat is not null).ToList();
-        if (seatedItems.Count > 0)
+        await NotifyLegBookedAsync(outboundLeg);
+        if (returnLeg is not null)
         {
-            await _seatHoldService.ReleaseAsync(
-                trip.Id,
-                seatedItems.Select(x => x.TripSeat!.Id).ToList(),
-                userId,
-                cancellationToken);
-            await _tripSeatNotifier.PublishSeatStatusChangedAsync(
-                trip.Id,
-                seatedItems.Select(x => new TripSeatStatusChange(x.Seat!.Code, "Booked")).ToList(),
-                cancellationToken);
+            await NotifyLegBookedAsync(returnLeg);
         }
 
         return new CreateBookingResult(
             booking.Id, booking.BookingCode,
             booking.SubtotalAmount, booking.DiscountAmount, booking.TotalAmount,
             booking.BookingStatus.ToString(), booking.Passengers.Count,
-            booking.HoldExpiresAt);
+            booking.HoldExpiresAt,
+            booking.ReturnTripId, returnLeg?.Trip.TripCode);
+
+        async Task NotifyLegBookedAsync(ResolvedLeg leg)
+        {
+            var seatedItems = leg.ItemPrices
+                .Select(x => x.Resolved)
+                .Where(x => x.Seat is not null && x.TripSeat is not null)
+                .ToList();
+            if (seatedItems.Count == 0)
+            {
+                return;
+            }
+
+            await _seatHoldService.ReleaseAsync(
+                leg.Trip.Id,
+                seatedItems.Select(x => x.TripSeat!.Id).ToList(),
+                userId,
+                cancellationToken);
+            await _tripSeatNotifier.PublishSeatStatusChangedAsync(
+                leg.Trip.Id,
+                seatedItems.Select(x => new TripSeatStatusChange(x.Seat!.Code, "Booked")).ToList(),
+                cancellationToken);
+        }
     }
+
+    // Toàn bộ validate + tính giá của một chiều (trip, loại vé, ghế, occupancy, pre-hold, ga lên/xuống)
+    // dùng chung cho chiều đi và chiều về của vé khứ hồi.
+    private async Task<ResolvedLeg> ResolveLegAsync(
+        string rawTripCode,
+        IReadOnlyList<BookingItemRequest> items,
+        Guid userId,
+        DateTimeOffset now,
+        string tripCodePropertyName,
+        CancellationToken cancellationToken)
+    {
+        var tripCode = rawTripCode.Trim().ToUpperInvariant();
+
+        var trip = await _context.Set<Trip>()
+            .Include(t => t.Route)
+                .ThenInclude(r => r.RouteStops)
+                    .ThenInclude(rs => rs.Station)
+            .SingleOrDefaultAsync(t => t.TripCode == tripCode, cancellationToken)
+            ?? throw new NotFoundException($"Trip '{tripCode}' not found.");
+
+        if (trip.TripType != TripTypes.Regular)
+            throw new ValidationException([new ValidationFailure(tripCodePropertyName,
+                "Trip charter không bán vé lẻ.")]);
+
+        if (trip.TripStatus != TripStatus.Scheduled || trip.DepartureTime <= now)
+            throw new ValidationException([new ValidationFailure(tripCodePropertyName,
+                "Trip is not available for booking.")]);
+
+        if (!trip.BoatId.HasValue)
+            throw new ValidationException([new ValidationFailure(tripCodePropertyName,
+                "Trip has no boat assigned.")]);
+
+        var requestedTicketCodes = items
+            .Select(i => i.TicketTypeCode.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToList();
+
+        var ticketTypesByCode = new Dictionary<string, TicketTypeInfo>();
+        foreach (var code in requestedTicketCodes)
+        {
+            if (TicketTypePricing.TryGet(code, out var ticketType))
+            {
+                ticketTypesByCode[code] = ticketType;
+            }
+        }
+
+        var missingTicket = requestedTicketCodes.FirstOrDefault(c => !ticketTypesByCode.ContainsKey(c));
+        if (missingTicket is not null)
+            throw new NotFoundException($"Ticket type '{missingTicket}' not found.");
+
+        // Vé INFANT chỉ dành cho trẻ dưới 2 tuổi — kiểm tra năm sinh so với ngày khởi hành chuyến.
+        var departureYear = trip.DepartureTime.Year;
+        foreach (var infantItem in items.Where(i => IsInfant(i.TicketTypeCode)))
+        {
+            if (!infantItem.BirthYear.HasValue)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé INFANT yêu cầu khai báo birthYear (trẻ dưới 2 tuổi).")]);
+
+            var ageAtDeparture = departureYear - infantItem.BirthYear.Value;
+            if (ageAtDeparture < 0 || ageAtDeparture > 2)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé INFANT chỉ áp dụng cho trẻ dưới 2 tuổi (sinh trong vòng 2 năm so với ngày khởi hành).")]);
+        }
+
+        // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và MIỄN PHÍ trên
+        // cả waterbus thường lẫn sightseeing. Vé free có ghế (SENIOR/DISABLED, hoặc INFANT chọn ghế riêng)
+        // vẫn bị chặn tự nhiên trên sightseeing vì ghế sightseeing không phải loại STANDARD — FareCalculator
+        // từ chối theo AllowedSeatTypeCodes, nên không cần chặn thêm ở cấp tàu tại đây.
+        var lapItems = items.Where(i => string.IsNullOrWhiteSpace(i.SeatNumber)).ToList();
+        if (lapItems.Count > 0)
+        {
+            var nonInfantLapItem = lapItems.FirstOrDefault(i => !IsInfant(i.TicketTypeCode));
+            if (nonInfantLapItem is not null)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    "Chỉ vé INFANT (trẻ dưới 2 tuổi) mới được bỏ trống seatNumber.")]);
+
+            // Mỗi trẻ ngồi lòng (INFANT không ghế) phải có một hành khách có ghế (không phải INFANT) đi kèm
+            // trong cùng chiều — 1 người lớn kèm tối đa 1 trẻ. (Cũng khai báo ở validator, nhưng validator
+            // không chạy trong pipeline MediatR nên bắt buộc phải enforce tại handler.)
+            var seatedCompanionCount = items.Count(i =>
+                !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
+            if (lapItems.Count > seatedCompanionCount)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    "Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế "
+                    + "đi kèm trong cùng booking.")]);
+        }
+
+        var requestedSeatCodes = items
+            .Where(i => !string.IsNullOrWhiteSpace(i.SeatNumber))
+            .Select(i => NormalizeSeatCode(i.SeatNumber!))
+            .ToList();
+
+        var duplicatedSeatCode = requestedSeatCodes
+            .GroupBy(x => x)
+            .FirstOrDefault(x => x.Count() > 1)
+            ?.Key;
+        if (duplicatedSeatCode is not null)
+            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                $"Seat '{duplicatedSeatCode}' is duplicated in this booking.")]);
+
+        var seatsByCode = await _context.Set<Seat>()
+            .Where(x => x.BoatId == trip.BoatId.Value && requestedSeatCodes.Contains(x.Code))
+            .Include(x => x.SeatType)
+            .ToDictionaryAsync(x => x.Code, cancellationToken);
+
+        var missingSeat = requestedSeatCodes.FirstOrDefault(x => !seatsByCode.ContainsKey(x));
+        if (missingSeat is not null)
+            throw new NotFoundException($"Seat '{missingSeat}' not found on this trip boat.");
+
+        var invalidSeat = seatsByCode.Values.FirstOrDefault(x => !x.IsActive);
+        if (invalidSeat is not null)
+            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                $"Seat '{invalidSeat.Code}' is not available for booking.")]);
+
+        var requestedSeatIds = seatsByCode.Values.Select(x => x.Id).ToList();
+        var tripSeatsBySeatId = await _context.Set<TripSeat>()
+            .Where(x => x.TripId == trip.Id && requestedSeatIds.Contains(x.SeatId))
+            .ToDictionaryAsync(x => x.SeatId, cancellationToken);
+
+        var missingSeatInTrip = seatsByCode.Values.FirstOrDefault(x => !tripSeatsBySeatId.ContainsKey(x.Id));
+        if (missingSeatInTrip is not null)
+            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                $"Seat '{missingSeatInTrip.Code}' is not available on this trip.")]);
+
+        var requestedTripSeatIds = tripSeatsBySeatId.Values.Select(x => x.Id).ToList();
+        var occupiedTripSeatIds = await _context.Set<BookingPassenger>()
+            .Where(x => x.TripSeatId.HasValue
+                     && requestedTripSeatIds.Contains(x.TripSeatId.Value))
+            .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
+            .Select(x => x.TripSeatId!.Value)
+            .ToListAsync(cancellationToken);
+
+        if (occupiedTripSeatIds.Count > 0)
+        {
+            var occupiedSeat = seatsByCode.Values.First(x =>
+                tripSeatsBySeatId.TryGetValue(x.Id, out var ts) && occupiedTripSeatIds.Contains(ts.Id));
+            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                $"Seat '{occupiedSeat.Code}' is already booked.")]);
+        }
+
+        var heldSeats = await _seatHoldService.GetHeldSeatsAsync(trip.Id, cancellationToken);
+        var seatHeldByOther = seatsByCode.Values.FirstOrDefault(x =>
+            tripSeatsBySeatId.TryGetValue(x.Id, out var ts)
+            && heldSeats.TryGetValue(ts.Id, out var holder)
+            && holder != userId);
+        if (seatHeldByOther is not null)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                $"Seat '{seatHeldByOther.Code}' is being held by another customer.")]);
+        }
+
+        var routeStopByStationCode = trip.Route.RouteStops
+            .ToDictionary(
+                rs => rs.Station.StationCode.ToUpperInvariant(),
+                rs => rs);
+
+        var resolvedItems = new List<ResolvedItem>();
+        foreach (var item in items)
+        {
+            var fromCode = item.FromStationCode.Trim().ToUpperInvariant();
+            var toCode = item.ToStationCode.Trim().ToUpperInvariant();
+
+            if (!routeStopByStationCode.TryGetValue(fromCode, out var fromStop))
+                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
+                    $"Station '{fromCode}' is not a stop on this trip.")]);
+
+            if (!routeStopByStationCode.TryGetValue(toCode, out var toStop))
+                throw new ValidationException([new ValidationFailure(nameof(item.ToStationCode),
+                    $"Station '{toCode}' is not a stop on this trip.")]);
+
+            if (fromStop.StopOrder >= toStop.StopOrder)
+                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
+                    $"Station '{fromCode}' must come before '{toCode}' on the route.")]);
+
+            Seat? seat = null;
+            TripSeat? tripSeat = null;
+            if (!string.IsNullOrWhiteSpace(item.SeatNumber))
+            {
+                seat = seatsByCode[NormalizeSeatCode(item.SeatNumber)];
+                tripSeat = tripSeatsBySeatId[seat.Id];
+            }
+
+            resolvedItems.Add(new ResolvedItem(
+                item,
+                ticketTypesByCode[TicketTypeCatalog.NormalizeCode(item.TicketTypeCode)],
+                seat,
+                tripSeat,
+                fromStop,
+                toStop));
+        }
+
+        var itemPrices = new List<(ResolvedItem Resolved, decimal UnitPrice)>();
+        foreach (var resolved in resolvedItems)
+        {
+            // Hành khách không chiếm ghế (INFANT ngồi cùng người lớn) → miễn phí, không tính giá ghế.
+            var unitPrice = resolved.Seat is null
+                ? 0m
+                : await _fareCalculator.CalculateAsync(
+                    resolved.Seat.Id,
+                    resolved.TicketType.Code,
+                    cancellationToken,
+                    trip.Id);
+
+            itemPrices.Add((resolved, unitPrice));
+        }
+
+        return new ResolvedLeg(trip, itemPrices);
+    }
+
+    private sealed record ResolvedLeg(
+        Trip Trip,
+        List<(ResolvedItem Resolved, decimal UnitPrice)> ItemPrices);
 
     private sealed record ResolvedItem(
         BookingItemRequest Item,

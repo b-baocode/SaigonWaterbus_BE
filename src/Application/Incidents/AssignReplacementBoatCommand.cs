@@ -114,8 +114,12 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     }
 
     private async Task<int> CountActiveTicketsAsync(Guid tripId, CancellationToken cancellationToken) =>
+        // Vé thuộc trip theo chiều của hành khách (booking khứ hồi có vé trên 2 trip);
+        // vé không gắn hành khách hoặc chưa có TripId (dữ liệu cũ/charter) tính theo trip của booking.
         await _context.Tickets.CountAsync(
-            x => x.Booking.TripId == tripId
+            x => (x.BookingPassenger != null && x.BookingPassenger.TripId != null
+                    ? x.BookingPassenger.TripId == tripId
+                    : x.Booking.TripId == tripId)
               && x.TicketStatus != TicketStatus.Cancelled
               && x.TicketStatus != TicketStatus.Expired,
             cancellationToken);

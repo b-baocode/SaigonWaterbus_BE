@@ -53,13 +53,17 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
         if (booking.BookingStatus == BookingStatus.Cancelled)
             throw new ValidationException([new ValidationFailure(nameof(request.BookingId), "Booking is already cancelled.")]);
 
-        if (booking.TripId.HasValue)
-        {
-            var trip = await _context.Set<Trip>()
-                .SingleOrDefaultAsync(t => t.Id == booking.TripId.Value, cancellationToken);
+        // Booking khứ hồi: không cho hủy nếu bất kỳ chiều nào đã khởi hành.
+        var legTripIds = new List<Guid>();
+        if (booking.TripId.HasValue) legTripIds.Add(booking.TripId.Value);
+        if (booking.ReturnTripId.HasValue) legTripIds.Add(booking.ReturnTripId.Value);
 
+        if (legTripIds.Count > 0)
+        {
             var now = _timeProvider.GetUtcNow();
-            if (trip is not null && trip.DepartureTime <= now)
+            var hasDepartedLeg = await _context.Set<Trip>()
+                .AnyAsync(t => legTripIds.Contains(t.Id) && t.DepartureTime <= now, cancellationToken);
+            if (hasDepartedLeg)
                 throw new ValidationException([new ValidationFailure(nameof(request.BookingId),
                     "Cannot cancel a booking after the trip has departed.")]);
         }
@@ -69,19 +73,18 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        if (booking.TripId.HasValue)
+        // Nhả ghế theo trip của từng ghế — booking khứ hồi giữ ghế trên 2 trip.
+        var releasedSeats = await _context.Set<BookingPassenger>()
+            .Where(p => p.BookingId == booking.Id && p.TripSeatId.HasValue)
+            .Select(p => new { p.TripSeat!.TripId, p.TripSeat.Seat.Code })
+            .ToListAsync(cancellationToken);
+        foreach (var tripGroup in releasedSeats.GroupBy(s => s.TripId))
         {
-            var seatCodes = await _context.Set<BookingPassenger>()
-                .Where(p => p.BookingId == booking.Id && p.TripSeatId.HasValue)
-                .Select(p => p.TripSeat!.Seat.Code)
-                .ToListAsync(cancellationToken);
-            if (seatCodes.Count > 0)
-            {
-                await _tripSeatNotifier.PublishSeatStatusChangedAsync(
-                    booking.TripId.Value,
-                    seatCodes.Distinct().Select(code => new TripSeatStatusChange(code, "Available")).ToList(),
-                    cancellationToken);
-            }
+            await _tripSeatNotifier.PublishSeatStatusChangedAsync(
+                tripGroup.Key,
+                tripGroup.Select(s => s.Code).Distinct()
+                    .Select(code => new TripSeatStatusChange(code, "Available")).ToList(),
+                cancellationToken);
         }
     }
 }

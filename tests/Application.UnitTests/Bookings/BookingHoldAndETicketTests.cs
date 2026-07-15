@@ -94,6 +94,102 @@ public class BookingHoldAndETicketTests
     }
 
     [Test]
+    public async Task WebhookPaidRoundTripBookingSendsETicketWithBothLegs()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var outboundTrip = CreateTrip("TR-OUT");
+        var returnTrip = CreateTrip("TR-RET");
+        var booking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            Trip = outboundTrip,
+            ReturnTrip = returnTrip,
+            BookingCode = "BK-ROUNDTRIP-ET",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "booker@gmail.com",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 20000,
+            TotalAmount = 20000,
+            RemainingAmount = 20000
+        };
+        var outboundPassenger = new BookingPassenger
+        {
+            Booking = booking,
+            Trip = outboundTrip,
+            FullName = "Khach Chieu Di",
+            PassengerType = "ADULT",
+            UnitPrice = 10000
+        };
+        var returnPassenger = new BookingPassenger
+        {
+            Booking = booking,
+            Trip = returnTrip,
+            FullName = "Khach Chieu Ve",
+            PassengerType = "ADULT",
+            Email = "passenger-return@gmail.com",
+            UnitPrice = 10000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "2000002",
+            Provider = "PayOS",
+            Amount = 20000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(outboundTrip, returnTrip, booking, outboundPassenger, returnPassenger, payment);
+        await context.SaveChangesAsync();
+
+        var sender = new RecordingPaymentNotificationSender();
+        var handler = new HandlePaymentWebhookCommandHandler(
+            context,
+            new PaidPaymentGateway(),
+            sender,
+            TimeProvider.System);
+
+        await handler.Handle(
+            new HandlePaymentWebhookCommand(CreatePaidWebhook(2000002, 20000)),
+            CancellationToken.None);
+
+        // Email tổng cho người đặt: đủ 2 vé + 2 legs đúng chiều.
+        var bookerETicket = sender.ETickets.Single(x => x.Booking.Email == "booker@gmail.com");
+        bookerETicket.Tickets.Count.ShouldBe(2);
+        bookerETicket.TripCode.ShouldBe("TR-OUT");
+        bookerETicket.Legs.ShouldNotBeNull();
+        bookerETicket.Legs.Count.ShouldBe(2);
+        bookerETicket.Legs[0].TripCode.ShouldBe("TR-OUT");
+        bookerETicket.Legs[0].Tickets.ShouldHaveSingleItem().PassengerName.ShouldBe("Khach Chieu Di");
+        bookerETicket.Legs[1].TripCode.ShouldBe("TR-RET");
+        bookerETicket.Legs[1].Tickets.ShouldHaveSingleItem().PassengerName.ShouldBe("Khach Chieu Ve");
+
+        // Email riêng của hành khách chiều về hiển thị trip chiều về.
+        var passengerETicket = sender.ETickets.Single(x => x.Booking.Email == "passenger-return@gmail.com");
+        passengerETicket.TripCode.ShouldBe("TR-RET");
+        passengerETicket.Legs.ShouldBeNull();
+        passengerETicket.Tickets.ShouldHaveSingleItem().PassengerName.ShouldBe("Khach Chieu Ve");
+    }
+
+    private static Trip CreateTrip(string tripCode) =>
+        new()
+        {
+            Route = new Route
+            {
+                RouteCode = $"R-{tripCode}",
+                RouteName = $"Route {tripCode}"
+            },
+            TripCode = tripCode,
+            OperatingDate = new DateOnly(2026, 7, 20),
+            DepartureTime = new DateTimeOffset(2026, 7, 20, 8, 0, 0, TimeSpan.Zero),
+            ArrivalTime = new DateTimeOffset(2026, 7, 20, 9, 0, 0, TimeSpan.Zero),
+            CapacitySnapshot = 2
+        };
+
+    [Test]
     public async Task CreatePaymentExpiresRegularBookingWhenHoldExpired()
     {
         await using var context = SeatFlowTestData.CreateContext();

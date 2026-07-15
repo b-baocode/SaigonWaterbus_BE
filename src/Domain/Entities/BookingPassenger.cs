@@ -21,10 +21,12 @@ public class BookingPassenger : BaseGuidEntity
     public DateTimeOffset? ReviewedAt { get; set; }
     public Guid? ReviewedByUserId { get; set; }
     public string? ReviewNote { get; set; }
+    public Guid? TripId { get; set; }
     public Guid? TripSeatId { get; set; }
     public decimal? UnitPrice { get; set; }
 
     public Booking Booking { get; set; } = null!;
+    public Trip? Trip { get; set; }
     public TripSeat? TripSeat { get; set; }
     public User? RequestedByUser { get; set; }
     public User? ReviewedByUser { get; set; }

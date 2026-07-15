@@ -10,6 +10,8 @@ public interface IBookingTicketPdfRenderer
     byte[] Render(BookingTicketPdfExportDto export);
 }
 
+// Vé khứ hồi: Legs chứa từng chiều (đi/về); các field phẳng giữ thông tin chiều đi để layout
+// một chiều cũ vẫn hoạt động. Legs = null với booking một chiều.
 public sealed record BookingTicketPdfExportDto(
     string BookingCode,
     string? TripCode,
@@ -20,6 +22,17 @@ public sealed record BookingTicketPdfExportDto(
     string? ToStationName,
     string? BoatName,
     string? BookingQrToken,
+    IReadOnlyList<BookingTicketPdfItemDto> Tickets,
+    IReadOnlyList<BookingTicketPdfLegDto>? Legs = null);
+
+public sealed record BookingTicketPdfLegDto(
+    string? TripCode,
+    string? RouteName,
+    DateTimeOffset? DepartureTime,
+    DateTimeOffset? ArrivalTime,
+    string? FromStationName,
+    string? ToStationName,
+    string? BoatName,
     IReadOnlyList<BookingTicketPdfItemDto> Tickets);
 
 public sealed record BookingTicketPdfItemDto(

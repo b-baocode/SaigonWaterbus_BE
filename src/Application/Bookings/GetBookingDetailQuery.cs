@@ -32,6 +32,10 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+            .Include(b => b.ReturnTrip)
+                .ThenInclude(t => t!.Route)
+                    .ThenInclude(r => r.RouteStops)
+                        .ThenInclude(rs => rs.Station)
             .Include(b => b.Tickets)
             .SingleOrDefaultAsync(
                 b => b.Id == request.BookingId && b.BookingType == Booking.SeatBookingType,
@@ -40,10 +44,6 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
 
         if (booking.UserId != userId)
             throw new NotFoundException("Booking not found.");
-
-        var stops = booking.Trip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
-        var fromStop = stops.FirstOrDefault();
-        var toStop = stops.LastOrDefault();
 
         var ticketsByPassengerId = booking.Tickets
             .Where(t => t.BookingPassengerId.HasValue
@@ -54,18 +54,26 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
 
         var items = booking.Passengers.Select(i =>
         {
+            // Booking khứ hồi: mỗi hành khách thuộc một chiều — lấy trip theo passenger.TripId.
+            var legTrip = i.TripId.HasValue && i.TripId == booking.ReturnTripId
+                ? booking.ReturnTrip
+                : booking.Trip;
+            var stops = legTrip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
+            var fromStop = stops.FirstOrDefault();
+            var toStop = stops.LastOrDefault();
+
             ticketsByPassengerId.TryGetValue(i.Id, out var ticket);
             return new BookingItemDto(
                 i.Id,
-                booking.Trip?.TripCode ?? string.Empty,
+                legTrip?.TripCode ?? string.Empty,
                 i.FullName,
                 i.PhoneNumber,
                 i.PassengerType ?? "Passenger",
                 i.TripSeat?.Seat?.Code,
                 fromStop?.Station.StationName ?? string.Empty,
                 toStop?.Station.StationName ?? string.Empty,
-                booking.Trip?.DepartureTime,
-                booking.Trip?.ArrivalTime,
+                legTrip?.DepartureTime,
+                legTrip?.ArrivalTime,
                 i.UnitPrice ?? 0,
                 booking.BookingStatus.ToString(),
                 ticket?.TicketCode,
@@ -82,6 +90,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             items,
             booking.PaymentStatus,
             booking.CharterBookingQrToken,
-            booking.HoldExpiresAt);
+            booking.HoldExpiresAt,
+            booking.ReturnTrip?.TripCode,
+            booking.ReturnTrip?.DepartureTime);
     }
 }
