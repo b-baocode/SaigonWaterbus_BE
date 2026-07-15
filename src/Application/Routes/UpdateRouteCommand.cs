@@ -45,6 +45,9 @@ public sealed class UpdateRouteCommandHandler : IRequestHandler<UpdateRouteComma
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RouteDto(route.Id, route.RouteCode, route.RouteName,
-            route.RouteType, route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status);
+            route.RouteType, route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status,
+            RoutePresentationSupport.ResolveLabel(route.RouteType),
+            RoutePresentationSupport.IsSelectableForCharterQuote(route),
+            RoutePresentationSupport.IsGeneratedForBooking(route));
     }
 }

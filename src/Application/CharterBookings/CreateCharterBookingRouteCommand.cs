@@ -165,7 +165,10 @@ public sealed class CreateCharterBookingRouteCommandHandler
                 route.EstimatedDurationMin,
                 route.Status,
                 stopDtos,
-                ToGeometryDto(route.RouteGeometry)),
+                ToGeometryDto(route.RouteGeometry),
+                RoutePresentationSupport.ResolveLabel(route.RouteType),
+                RoutePresentationSupport.IsSelectableForCharterQuote(route),
+                RoutePresentationSupport.IsGeneratedForBooking(route)),
             estimate.Legs
                 .Select((leg, index) => new CharterBookingRouteSourceLegDto(
                     leg.LegOrder,
@@ -369,7 +372,10 @@ public sealed class CreateCharterBookingRouteCommandHandler
                     x.IsPickupAllowed,
                     x.IsDropoffAllowed))
                 .ToList(),
-            ToGeometryDto(route.RouteGeometry));
+            ToGeometryDto(route.RouteGeometry),
+            RoutePresentationSupport.ResolveLabel(route.RouteType),
+            RoutePresentationSupport.IsSelectableForCharterQuote(route),
+            RoutePresentationSupport.IsGeneratedForBooking(route));
     }
 
     private static IReadOnlyList<double[]>? ToGeometryDto(LineString? routeGeometry) =>

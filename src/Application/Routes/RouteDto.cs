@@ -8,7 +8,10 @@ public sealed record RouteDto(
     string? Description,
     decimal? BaseDistanceKm,
     int? EstimatedDurationMin,
-    string Status);
+    string Status,
+    string RouteLabel = "",
+    bool IsSelectableForCharterQuote = false,
+    bool IsGeneratedForBooking = false);
 
 public sealed record RouteDetailDto(
     Guid RouteId,
@@ -20,7 +23,10 @@ public sealed record RouteDetailDto(
     int? EstimatedDurationMin,
     string Status,
     IReadOnlyList<RouteStopDto> Stops,
-    IReadOnlyList<double[]>? RouteGeometry);
+    IReadOnlyList<double[]>? RouteGeometry,
+    string RouteLabel = "",
+    bool IsSelectableForCharterQuote = false,
+    bool IsGeneratedForBooking = false);
 
 public sealed record RouteStopDto(
     Guid RouteStopId,

@@ -64,6 +64,8 @@ public sealed class Routes : IEndpointGroup
                 "Anonymous",
                 null,
                 "Tra ve tat ca tuyen co status = Active.",
+                "Dung query usage=charter-source neu can danh sach route nguon cho charter: chi tra GPS/CharterReference va Sightseeing.",
+                "RouteLabel hien thi ngan gon: Bus, GPS, Sightseeing, Charter. Charter la route auto ghep theo booking, khong phai route nguon.",
                 "Sap xep theo RouteCode."));
 
         group.MapGet(GetRouteById, "{id:guid}")
@@ -144,8 +146,8 @@ public sealed class Routes : IEndpointGroup
                 "He thong se cap nhat Station va thay moi cac WaterwaySegment trung OsmId de su dung cho GPS/ban do ve sau."));
     }
 
-    private static async Task<IResult> GetRoutes(ISender sender, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetRouteListQuery(), ct));
+    private static async Task<IResult> GetRoutes(ISender sender, string? usage, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetRouteListQuery(usage), ct));
 
     private static async Task<IResult> GetRouteById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetRouteDetailQuery(id), ct));

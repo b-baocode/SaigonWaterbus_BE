@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
+using SaigonWaterbus.Application.Routes;
 using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.CharterBookings;
@@ -146,6 +147,8 @@ internal static class CharterBookingQuerySupport
                     booking.CharterRoute.Id,
                     booking.CharterRoute.RouteCode,
                     booking.CharterRoute.RouteName,
-                    booking.CharterRoute.RouteType));
+                    booking.CharterRoute.RouteType,
+                    RoutePresentationSupport.ResolveLabel(booking.CharterRoute.RouteType),
+                    RoutePresentationSupport.IsGeneratedForBooking(booking.CharterRoute)));
     }
 }

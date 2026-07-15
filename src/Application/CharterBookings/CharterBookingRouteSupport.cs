@@ -48,6 +48,13 @@ internal static class CharterBookingRouteSupport
             return;
         }
 
+        var usedByOtherBooking = await context.Set<Booking>()
+            .AsNoTracking()
+            .AnyAsync(x => x.Id != booking.Id
+                && x.BookingType == Booking.CharterBookingType
+                && x.CharterRouteId == route.Id,
+                cancellationToken);
+
         var usedByOpenBooking = await context.Set<Booking>()
             .AsNoTracking()
             .AnyAsync(x => x.Id != booking.Id
@@ -59,11 +66,26 @@ internal static class CharterBookingRouteSupport
                 && x.BookingStatus != BookingStatus.Refunded,
                 cancellationToken);
 
+        var hasTrips = await context.Set<Trip>()
+            .AsNoTracking()
+            .AnyAsync(x => x.RouteId == route.Id, cancellationToken);
+
+        if (!hasTrips && !usedByOtherBooking && ShouldDeleteUnusedOwnedRoute(booking))
+        {
+            booking.CharterRouteId = null;
+            booking.CharterRoute = null;
+            context.Set<Route>().Remove(route);
+            return;
+        }
+
         if (!usedByOpenBooking)
         {
             route.Status = InactiveStatus;
         }
     }
+
+    private static bool ShouldDeleteUnusedOwnedRoute(Booking booking) =>
+        booking.BookingStatus is not BookingStatus.Completed and not BookingStatus.Refunded;
 
     private static bool IsOwnedComposedRoute(Route route, Booking booking)
     {

@@ -209,7 +209,9 @@ internal static class CharterBookingRoutePlanSupport
                 route.Id,
                 route.RouteCode,
                 route.RouteName,
-                route.RouteType);
+                route.RouteType,
+                RoutePresentationSupport.ResolveLabel(route.RouteType),
+                RoutePresentationSupport.IsGeneratedForBooking(route));
 
     public static IReadOnlyList<ItineraryLeg> BuildItineraryLegs(Booking booking)
     {
@@ -267,7 +269,9 @@ internal static class CharterBookingRoutePlanSupport
             segment.DistanceKm,
             ResolveTravelMinutes(route, fromStop!, toStop!, segment.DistanceKm),
             fromStop!.StopOrder,
-            toStop!.StopOrder);
+            toStop!.StopOrder,
+            RoutePresentationSupport.ResolveLabel(route.RouteType),
+            RoutePresentationSupport.IsSelectableForCharterQuote(route));
     }
 
     private static SelectedRouteLeg ResolveSelectedRouteLeg(Route route, ItineraryLeg leg, int index)
