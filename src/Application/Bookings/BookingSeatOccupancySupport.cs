@@ -33,6 +33,25 @@ public static class BookingSeatOccupancySupport
               || p.Booking.HoldExpiresAt == null
               || p.Booking.HoldExpiresAt > now);
 
+    /// <summary>
+    /// Hai chặng [aFrom, aTo) và [bFrom, bTo) (nửa mở theo stop_order — khách xuống trạm nào
+    /// thì ghế trống từ trạm đó) có giao nhau hay không.
+    /// </summary>
+    public static bool SegmentsOverlap(int aFrom, int aTo, int bFrom, int bTo) =>
+        aFrom < bTo && bFrom < aTo;
+
+    /// <summary>Chặng quy ước "cả trip" cho dữ liệu cũ / trip sightseeing (không bán ghế theo chặng).</summary>
+    public const int FullTripFromOrder = int.MinValue;
+    public const int FullTripToOrder = int.MaxValue;
+
+    /// <summary>
+    /// Passenger có chiếm ghế trên chặng [fromOrder, toOrder) không. Passenger không có
+    /// stop order (dữ liệu cũ, sightseeing) được coi là chiếm ghế cả trip.
+    /// </summary>
+    public static Expression<Func<BookingPassenger, bool>> PassengerOverlapsSegment(int fromOrder, int toOrder) =>
+        p => (p.FromStopOrder ?? int.MinValue) < toOrder
+          && fromOrder < (p.ToStopOrder ?? int.MaxValue);
+
     /// <summary>Booking PendingPayment đã quá hạn giữ chỗ hay chưa.</summary>
     public static bool IsHoldExpired(Booking booking, DateTimeOffset now) =>
         booking.BookingStatus == BookingStatus.PendingPayment

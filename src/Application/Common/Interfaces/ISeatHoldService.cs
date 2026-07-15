@@ -1,27 +1,36 @@
 namespace SaigonWaterbus.Application.Common.Interfaces;
 
+/// <summary>
+/// Một lượt giữ ghế tạm trên chặng [FromStopOrder, ToStopOrder) theo stop_order của tuyến.
+/// Chặng "cả trip" (sightseeing / không chọn chặng) dùng (int.MinValue, int.MaxValue).
+/// </summary>
+public sealed record SeatHoldInfo(Guid UserId, int FromStopOrder, int ToStopOrder);
+
 public interface ISeatHoldService
 {
     /// <summary>
-    /// Giữ tạm các ghế cho user trong thời hạn ttl. Trả về danh sách tripSeatId KHÔNG giữ được
-    /// (đang bị user khác giữ). Ghế user này đã giữ trước đó sẽ được gia hạn TTL.
+    /// Giữ tạm các ghế cho user trên chặng [fromStopOrder, toStopOrder) trong thời hạn ttl.
+    /// Trả về danh sách tripSeatId KHÔNG giữ được (user khác đang giữ chặng giao nhau).
+    /// Ghế user này đã giữ trước đó trên cùng chặng sẽ được gia hạn TTL.
     /// </summary>
     Task<IReadOnlyList<Guid>> TryHoldAsync(
         Guid tripId,
         IReadOnlyList<Guid> tripSeatIds,
         Guid userId,
+        int fromStopOrder,
+        int toStopOrder,
         TimeSpan ttl,
         CancellationToken cancellationToken);
 
-    /// <summary>Nhả các ghế do chính user này giữ. Ghế do người khác giữ sẽ bỏ qua.</summary>
+    /// <summary>Nhả mọi lượt giữ của chính user này trên các ghế. Lượt giữ của người khác bỏ qua.</summary>
     Task ReleaseAsync(
         Guid tripId,
         IReadOnlyList<Guid> tripSeatIds,
         Guid userId,
         CancellationToken cancellationToken);
 
-    /// <summary>Trả về map tripSeatId → userId đang giữ của một chuyến.</summary>
-    Task<IReadOnlyDictionary<Guid, Guid>> GetHeldSeatsAsync(
+    /// <summary>Map tripSeatId → các lượt giữ còn hiệu lực của một chuyến.</summary>
+    Task<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>> GetHeldSeatsAsync(
         Guid tripId,
         CancellationToken cancellationToken);
 }
@@ -36,6 +45,8 @@ public sealed class NullSeatHoldService : ISeatHoldService
         Guid tripId,
         IReadOnlyList<Guid> tripSeatIds,
         Guid userId,
+        int fromStopOrder,
+        int toStopOrder,
         TimeSpan ttl,
         CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyList<Guid>>([]);
@@ -47,8 +58,9 @@ public sealed class NullSeatHoldService : ISeatHoldService
         CancellationToken cancellationToken) =>
         Task.CompletedTask;
 
-    public Task<IReadOnlyDictionary<Guid, Guid>> GetHeldSeatsAsync(
+    public Task<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>> GetHeldSeatsAsync(
         Guid tripId,
         CancellationToken cancellationToken) =>
-        Task.FromResult<IReadOnlyDictionary<Guid, Guid>>(new Dictionary<Guid, Guid>());
+        Task.FromResult<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>>(
+            new Dictionary<Guid, IReadOnlyList<SeatHoldInfo>>());
 }

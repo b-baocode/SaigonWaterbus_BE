@@ -87,8 +87,11 @@ public sealed class Trips : IEndpointGroup
                 "Anonymous (dang nhap de thay ghe minh dang giu = HeldByMe)",
                 null,
                 "Tra ve toan bo ghe active cua tau theo deck/row/column kem trang thai theo chuyen.",
+                "Query ?fromStationCode=&toStationCode=: chang khach dinh di — trang thai ghe tinh theo chang do "
+                + "(trip Regular ban ghe theo chang: ghe chi Booked/Held neu co ve/luot giu giao chang). Bo trong = xem ca tuyen.",
                 "status: Available | Held | HeldByMe | Booked | Blocked.",
-                "basePrice: gia goc theo loai ghe; gia ve = basePrice x he so loai ve (GET /api/ticket-types).",
+                "basePrice: ghe STANDARD tren trip Regular = gia theo quang duong cua chang (GET /api/fare-policy); "
+                + "ghe khac = gia goc theo loai ghe. Gia ve = basePrice x he so loai ve (GET /api/ticket-types).",
                 "holdTtlSeconds: thoi gian giu ghe tam khi goi POST /api/trips/{id}/seats/hold.",
                 "Realtime: subscribe SignalR hub /hubs/trip-seats, goi JoinTrip(tripId) de nhan event SeatStatusChanged."));
 
@@ -97,10 +100,11 @@ public sealed class Trips : IEndpointGroup
             .WithSummary("Tam giu ghe khi dang chon")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
-                """{ "seatNumbers": ["A1", "A2"] }""",
+                """{ "seatNumbers": ["A1", "A2"], "fromStationCode": "BB", "toStationCode": "LT" }""",
                 "Giu ghe 3 phut (TTL tu gia han khi goi lai). Toi da 10 ghe.",
-                "Tra ve heldSeatNumbers + failedSeatNumbers (ghe nguoi khac dang giu) + holdExpiresAt.",
-                "Ghe da co booking active se tra 400.",
+                "fromStationCode/toStationCode: bat buoc voi trip Regular (ghe ban theo chang); bo trong voi sightseeing.",
+                "Tra ve heldSeatNumbers + failedSeatNumbers (ghe nguoi khac dang giu chang giao nhau) + holdExpiresAt.",
+                "Ghe da co booking active giao chang se tra 400.",
                 "Cac client khac dang xem so do ghe nhan duoc event SeatStatusChanged qua SignalR."));
 
         group.MapPost(ReleaseTripSeats, "{id:guid}/seats/release")
@@ -187,12 +191,14 @@ public sealed class Trips : IEndpointGroup
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
 
-    private static async Task<IResult> GetTripSeatMap(ISender sender, Guid id, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetTripSeatMapQuery(id), ct));
+    private static async Task<IResult> GetTripSeatMap(
+        ISender sender, Guid id, string? fromStationCode, string? toStationCode, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetTripSeatMapQuery(id, fromStationCode, toStationCode), ct));
 
     private static async Task<IResult> HoldTripSeats(
         ISender sender, Guid id, TripSeatSelectionRequest request, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new HoldTripSeatsCommand(id, request.SeatNumbers), ct));
+        Results.Ok(await sender.Send(new HoldTripSeatsCommand(
+            id, request.SeatNumbers, request.FromStationCode, request.ToStationCode), ct));
 
     private static async Task<IResult> ReleaseTripSeats(
         ISender sender, Guid id, TripSeatSelectionRequest request, CancellationToken ct)
@@ -201,7 +207,10 @@ public sealed class Trips : IEndpointGroup
         return Results.NoContent();
     }
 
-    public sealed record TripSeatSelectionRequest(IReadOnlyList<string> SeatNumbers);
+    public sealed record TripSeatSelectionRequest(
+        IReadOnlyList<string> SeatNumbers,
+        string? FromStationCode = null,
+        string? ToStationCode = null);
 
     private static async Task<IResult> CreateTrip(ISender sender, CreateTripCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

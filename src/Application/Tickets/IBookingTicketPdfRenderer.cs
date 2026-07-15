@@ -40,4 +40,6 @@ public sealed record BookingTicketPdfItemDto(
     string? SeatCode,
     string? TicketTypeName,
     string TicketCode,
-    string QrToken);
+    string QrToken,
+    string? FromStationName = null,
+    string? ToStationName = null);

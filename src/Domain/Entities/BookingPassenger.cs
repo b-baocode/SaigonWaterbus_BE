@@ -25,9 +25,19 @@ public class BookingPassenger : BaseGuidEntity
     public Guid? TripSeatId { get; set; }
     public decimal? UnitPrice { get; set; }
 
+    // Chặng đi của hành khách trên trip (trạm lên/xuống). Null = chiếm ghế cả trip
+    // (dữ liệu cũ và trip sightseeing). StopOrder snapshot từ route_stops lúc đặt,
+    // dùng check hai vé cùng ghế có giao chặng hay không mà không cần join route.
+    public Guid? FromStationId { get; set; }
+    public Guid? ToStationId { get; set; }
+    public int? FromStopOrder { get; set; }
+    public int? ToStopOrder { get; set; }
+
     public Booking Booking { get; set; } = null!;
     public Trip? Trip { get; set; }
     public TripSeat? TripSeat { get; set; }
+    public Station? FromStation { get; set; }
+    public Station? ToStation { get; set; }
     public User? RequestedByUser { get; set; }
     public User? ReviewedByUser { get; set; }
     public ICollection<Ticket> Tickets { get; set; } = new List<Ticket>();

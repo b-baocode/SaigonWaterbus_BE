@@ -12,8 +12,15 @@ public interface ITripSeatNotifier
         CancellationToken cancellationToken);
 }
 
-/// <summary>Status: Available | Held | Booked.</summary>
-public sealed record TripSeatStatusChange(string SeatCode, string Status);
+/// <summary>
+/// Status: Available | Held | Booked. FromStopOrder/ToStopOrder là chặng bị ảnh hưởng
+/// (null = cả trip) — client đang xem chặng không giao nhau có thể bỏ qua sự kiện.
+/// </summary>
+public sealed record TripSeatStatusChange(
+    string SeatCode,
+    string Status,
+    int? FromStopOrder = null,
+    int? ToStopOrder = null);
 
 public sealed class NullTripSeatNotifier : ITripSeatNotifier
 {

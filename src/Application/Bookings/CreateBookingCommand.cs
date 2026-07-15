@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
@@ -174,19 +175,25 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
             // Hai chiều trùng một trip: chặn ghế trùng giữa hai chiều — occupancy check chạy trước khi
             // insert nên không tự bắt được trường hợp double-book cùng TripSeat trong cùng một lệnh.
+            // Trip Regular bán ghế theo chặng: chỉ chặn khi hai chặng giao nhau.
             if (returnLeg.Trip.Id == outboundLeg.Trip.Id)
             {
-                var outboundSeatCodes = outboundLeg.ItemPrices
+                var sameTripUsesSegments = DistanceFareSupport.UsesDistanceFare(outboundLeg.Trip);
+                var outboundSeated = outboundLeg.ItemPrices
                     .Where(x => x.Resolved.Seat is not null)
-                    .Select(x => x.Resolved.Seat!.Code);
+                    .Select(x => x.Resolved)
+                    .ToList();
                 var overlappingSeat = returnLeg.ItemPrices
                     .Where(x => x.Resolved.Seat is not null)
-                    .Select(x => x.Resolved.Seat!.Code)
-                    .Intersect(outboundSeatCodes)
-                    .FirstOrDefault();
+                    .Select(x => x.Resolved)
+                    .FirstOrDefault(r => outboundSeated.Any(o =>
+                        o.Seat!.Code == r.Seat!.Code
+                        && (!sameTripUsesSegments || BookingSeatOccupancySupport.SegmentsOverlap(
+                            o.FromStop.StopOrder, o.ToStop.StopOrder,
+                            r.FromStop.StopOrder, r.ToStop.StopOrder))));
                 if (overlappingSeat is not null)
                     throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                        $"Seat '{overlappingSeat}' is duplicated in this booking.")]);
+                        $"Seat '{overlappingSeat.Seat!.Code}' is duplicated in this booking.")]);
             }
         }
         else if (request.ReturnItems is { Count: > 0 })
@@ -228,6 +235,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         foreach (var leg in legs)
         {
+            // Stop order chỉ lưu cho trip bán ghế theo chặng (Regular) — passenger sightseeing
+            // giữ null = chiếm ghế cả trip như trước.
+            var legUsesSegments = DistanceFareSupport.UsesDistanceFare(leg.Trip);
             foreach (var x in leg.ItemPrices)
             {
                 var passenger = new BookingPassenger
@@ -245,7 +255,11 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                     Note = x.Resolved.Item.Note?.Trim(),
                     TripId = leg.Trip.Id,
                     TripSeatId = x.Resolved.TripSeat?.Id,
-                    UnitPrice = x.UnitPrice
+                    UnitPrice = x.UnitPrice,
+                    FromStationId = x.Resolved.FromStop.StationId,
+                    ToStationId = x.Resolved.ToStop.StationId,
+                    FromStopOrder = legUsesSegments ? x.Resolved.FromStop.StopOrder : null,
+                    ToStopOrder = legUsesSegments ? x.Resolved.ToStop.StopOrder : null
                 };
                 booking.Passengers.Add(passenger);
             }
@@ -326,9 +340,15 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 seatedItems.Select(x => x.TripSeat!.Id).ToList(),
                 userId,
                 cancellationToken);
+            var legUsesSegments = DistanceFareSupport.UsesDistanceFare(leg.Trip);
             await _tripSeatNotifier.PublishSeatStatusChangedAsync(
                 leg.Trip.Id,
-                seatedItems.Select(x => new TripSeatStatusChange(x.Seat!.Code, "Booked")).ToList(),
+                seatedItems
+                    .Select(x => new TripSeatStatusChange(
+                        x.Seat!.Code, "Booked",
+                        legUsesSegments ? x.FromStop.StopOrder : null,
+                        legUsesSegments ? x.ToStop.StopOrder : null))
+                    .ToList(),
                 cancellationToken);
         }
     }
@@ -419,18 +439,59 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                     + "đi kèm trong cùng booking.")]);
         }
 
-        var requestedSeatCodes = items
-            .Where(i => !string.IsNullOrWhiteSpace(i.SeatNumber))
-            .Select(i => NormalizeSeatCode(i.SeatNumber!))
-            .ToList();
+        var usesSegments = DistanceFareSupport.UsesDistanceFare(trip);
 
-        var duplicatedSeatCode = requestedSeatCodes
-            .GroupBy(x => x)
-            .FirstOrDefault(x => x.Count() > 1)
-            ?.Key;
-        if (duplicatedSeatCode is not null)
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{duplicatedSeatCode}' is duplicated in this booking.")]);
+        // Trạm lên/xuống resolve trước để biết chặng của từng item — trip Regular bán ghế
+        // theo chặng nên mọi check ghế (trùng ghế, occupancy, pre-hold) và giá đều theo chặng.
+        var routeStopByStationCode = trip.Route.RouteStops
+            .ToDictionary(
+                rs => rs.Station.StationCode.ToUpperInvariant(),
+                rs => rs);
+
+        var itemSegments = new List<(BookingItemRequest Item, RouteStop FromStop, RouteStop ToStop)>();
+        foreach (var item in items)
+        {
+            var fromCode = item.FromStationCode.Trim().ToUpperInvariant();
+            var toCode = item.ToStationCode.Trim().ToUpperInvariant();
+
+            if (!routeStopByStationCode.TryGetValue(fromCode, out var fromStop))
+                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
+                    $"Station '{fromCode}' is not a stop on this trip.")]);
+
+            if (!routeStopByStationCode.TryGetValue(toCode, out var toStop))
+                throw new ValidationException([new ValidationFailure(nameof(item.ToStationCode),
+                    $"Station '{toCode}' is not a stop on this trip.")]);
+
+            if (fromStop.StopOrder >= toStop.StopOrder)
+                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
+                    $"Station '{fromCode}' must come before '{toCode}' on the route.")]);
+
+            itemSegments.Add((item, fromStop, toStop));
+        }
+
+        // Trùng ghế trong cùng chiều: trip Regular cho phép hai vé cùng ghế nếu chặng không
+        // giao nhau (khách trước xuống, khách sau lên); trip khác giữ nguyên cấm trùng.
+        var seatedSegments = itemSegments
+            .Where(x => !string.IsNullOrWhiteSpace(x.Item.SeatNumber))
+            .Select(x => (SeatCode: NormalizeSeatCode(x.Item.SeatNumber!), x.FromStop, x.ToStop))
+            .ToList();
+        foreach (var seatGroup in seatedSegments.GroupBy(x => x.SeatCode).Where(g => g.Count() > 1))
+        {
+            var members = seatGroup.ToList();
+            var hasConflict = !usesSegments || members
+                .SelectMany((a, i) => members.Skip(i + 1).Select(b => (a, b)))
+                .Any(p => BookingSeatOccupancySupport.SegmentsOverlap(
+                    p.a.FromStop.StopOrder, p.a.ToStop.StopOrder,
+                    p.b.FromStop.StopOrder, p.b.ToStop.StopOrder));
+            if (hasConflict)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    $"Seat '{seatGroup.Key}' is duplicated in this booking.")]);
+        }
+
+        var requestedSeatCodes = seatedSegments
+            .Select(x => x.SeatCode)
+            .Distinct()
+            .ToList();
 
         var seatsByCode = await _context.Set<Seat>()
             .Where(x => x.BoatId == trip.BoatId.Value && requestedSeatCodes.Contains(x.Code))
@@ -456,56 +517,49 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
                 $"Seat '{missingSeatInTrip.Code}' is not available on this trip.")]);
 
+        // Ghế đã có vé: chỉ chặn khi vé đang chiếm ghế GIAO CHẶNG với item (trip Regular);
+        // vé cũ / trip sightseeing không có stop order được coi là chiếm ghế cả trip.
         var requestedTripSeatIds = tripSeatsBySeatId.Values.Select(x => x.Id).ToList();
-        var occupiedTripSeatIds = await _context.Set<BookingPassenger>()
+        var occupyingPassengers = await _context.Set<BookingPassenger>()
             .Where(x => x.TripSeatId.HasValue
                      && requestedTripSeatIds.Contains(x.TripSeatId.Value))
             .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
-            .Select(x => x.TripSeatId!.Value)
+            .Select(x => new { TripSeatId = x.TripSeatId!.Value, x.FromStopOrder, x.ToStopOrder })
             .ToListAsync(cancellationToken);
 
-        if (occupiedTripSeatIds.Count > 0)
-        {
-            var occupiedSeat = seatsByCode.Values.First(x =>
-                tripSeatsBySeatId.TryGetValue(x.Id, out var ts) && occupiedTripSeatIds.Contains(ts.Id));
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{occupiedSeat.Code}' is already booked.")]);
-        }
-
         var heldSeats = await _seatHoldService.GetHeldSeatsAsync(trip.Id, cancellationToken);
-        var seatHeldByOther = seatsByCode.Values.FirstOrDefault(x =>
-            tripSeatsBySeatId.TryGetValue(x.Id, out var ts)
-            && heldSeats.TryGetValue(ts.Id, out var holder)
-            && holder != userId);
-        if (seatHeldByOther is not null)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                $"Seat '{seatHeldByOther.Code}' is being held by another customer.")]);
-        }
 
-        var routeStopByStationCode = trip.Route.RouteStops
-            .ToDictionary(
-                rs => rs.Station.StationCode.ToUpperInvariant(),
-                rs => rs);
+        foreach (var (item, fromStop, toStop) in itemSegments)
+        {
+            if (string.IsNullOrWhiteSpace(item.SeatNumber))
+                continue;
+
+            var seat = seatsByCode[NormalizeSeatCode(item.SeatNumber)];
+            var tripSeat = tripSeatsBySeatId[seat.Id];
+            var (fromOrder, toOrder) = usesSegments
+                ? (fromStop.StopOrder, toStop.StopOrder)
+                : (BookingSeatOccupancySupport.FullTripFromOrder, BookingSeatOccupancySupport.FullTripToOrder);
+
+            var occupied = occupyingPassengers.Any(p =>
+                p.TripSeatId == tripSeat.Id
+                && BookingSeatOccupancySupport.SegmentsOverlap(
+                    p.FromStopOrder ?? int.MinValue, p.ToStopOrder ?? int.MaxValue, fromOrder, toOrder));
+            if (occupied)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    $"Seat '{seat.Code}' is already booked.")]);
+
+            var heldByOther = heldSeats.TryGetValue(tripSeat.Id, out var holds)
+                && holds.Any(h => h.UserId != userId
+                    && BookingSeatOccupancySupport.SegmentsOverlap(
+                        h.FromStopOrder, h.ToStopOrder, fromOrder, toOrder));
+            if (heldByOther)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    $"Seat '{seat.Code}' is being held by another customer.")]);
+        }
 
         var resolvedItems = new List<ResolvedItem>();
-        foreach (var item in items)
+        foreach (var (item, fromStop, toStop) in itemSegments)
         {
-            var fromCode = item.FromStationCode.Trim().ToUpperInvariant();
-            var toCode = item.ToStationCode.Trim().ToUpperInvariant();
-
-            if (!routeStopByStationCode.TryGetValue(fromCode, out var fromStop))
-                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
-                    $"Station '{fromCode}' is not a stop on this trip.")]);
-
-            if (!routeStopByStationCode.TryGetValue(toCode, out var toStop))
-                throw new ValidationException([new ValidationFailure(nameof(item.ToStationCode),
-                    $"Station '{toCode}' is not a stop on this trip.")]);
-
-            if (fromStop.StopOrder >= toStop.StopOrder)
-                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
-                    $"Station '{fromCode}' must come before '{toCode}' on the route.")]);
-
             Seat? seat = null;
             TripSeat? tripSeat = null;
             if (!string.IsNullOrWhiteSpace(item.SeatNumber))
@@ -523,17 +577,42 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 toStop));
         }
 
+        // Giá: ghế STANDARD trên trip Regular tính theo quãng đường của chặng
+        // (GET /api/fare-policy); tuyến chưa nhập đủ km thì fallback giá theo loại ghế
+        // để không chặn booking. Ghế sightseeing giữ nguyên giá theo loại ghế.
+        FarePolicyDto? farePolicy = null;
         var itemPrices = new List<(ResolvedItem Resolved, decimal UnitPrice)>();
         foreach (var resolved in resolvedItems)
         {
-            // Hành khách không chiếm ghế (INFANT ngồi cùng người lớn) → miễn phí, không tính giá ghế.
-            var unitPrice = resolved.Seat is null
-                ? 0m
-                : await _fareCalculator.CalculateAsync(
-                    resolved.Seat.Id,
-                    resolved.TicketType.Code,
-                    cancellationToken,
-                    trip.Id);
+            decimal unitPrice;
+            if (resolved.Seat is null)
+            {
+                // Hành khách không chiếm ghế (INFANT ngồi cùng người lớn) → miễn phí.
+                unitPrice = 0m;
+            }
+            else
+            {
+                var distanceKm = usesSegments && resolved.Seat.SeatTypeCode.Equals(
+                        DistanceFareSupport.DistanceFareSeatTypeCode, StringComparison.OrdinalIgnoreCase)
+                    ? DistanceFareSupport.TryComputeSegmentDistanceKm(
+                        trip.Route.RouteStops, resolved.FromStop.StopOrder, resolved.ToStop.StopOrder)
+                    : null;
+
+                if (distanceKm.HasValue)
+                {
+                    farePolicy ??= await DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken);
+                    unitPrice = DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value)
+                        * resolved.TicketType.PriceModifier;
+                }
+                else
+                {
+                    unitPrice = await _fareCalculator.CalculateAsync(
+                        resolved.Seat.Id,
+                        resolved.TicketType.Code,
+                        cancellationToken,
+                        trip.Id);
+                }
+            }
 
             itemPrices.Add((resolved, unitPrice));
         }

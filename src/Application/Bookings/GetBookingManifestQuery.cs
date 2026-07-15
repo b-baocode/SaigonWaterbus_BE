@@ -18,7 +18,9 @@ public sealed record BookingManifestPassengerDto(
     DateTimeOffset? CheckedInAt,
     string? CheckedInByName,
     bool CanCheckIn,
-    string? TripCode = null);
+    string? TripCode = null,
+    string? FromStationName = null,
+    string? ToStationName = null);
 
 // Booking khứ hồi: các field Return* mô tả chiều về (null với booking một chiều);
 // mỗi passenger mang TripCode của chiều mình thuộc về.
@@ -133,6 +135,10 @@ internal static class BookingManifestSupport
             .Include(x => x.Passengers)
                 .ThenInclude(p => p.TripSeat)
                     .ThenInclude(ts => ts!.Seat)
+            .Include(x => x.Passengers)
+                .ThenInclude(p => p.FromStation)
+            .Include(x => x.Passengers)
+                .ThenInclude(p => p.ToStation)
             .Include(x => x.Tickets)
                 .ThenInclude(t => t.CheckedInByUser);
 
@@ -194,7 +200,9 @@ internal static class BookingManifestSupport
                     ticket?.CheckedInAt,
                     ticket?.CheckedInByUser?.FullName,
                     canCheckInBooking && ticket?.TicketStatus == TicketStatus.Active,
-                    legTripCode);
+                    legTripCode,
+                    passenger.FromStation?.StationName,
+                    passenger.ToStation?.StationName);
             })
             .ToList();
 

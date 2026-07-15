@@ -112,6 +112,7 @@ public sealed class CreateRouteFromStationsCommandHandler
                 StationId = station.Id,
                 StopOrder = i + 1,
                 StandardTravelMin = i == 0 ? null : legs[i - 1].TravelMinutes,
+                DistanceFromPreviousKm = i == 0 ? null : Math.Round(legs[i - 1].DistanceKm, 3),
                 IsPickupAllowed = i < orderedStops.Count - 1,
                 IsDropoffAllowed = i > 0
             };
@@ -124,6 +125,7 @@ public sealed class CreateRouteFromStationsCommandHandler
                 station.StationName,
                 routeStop.StopOrder,
                 routeStop.StandardTravelMin,
+                routeStop.DistanceFromPreviousKm,
                 routeStop.IsPickupAllowed,
                 routeStop.IsDropoffAllowed));
         }

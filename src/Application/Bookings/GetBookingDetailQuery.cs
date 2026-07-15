@@ -28,6 +28,10 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             .Include(b => b.Passengers)
                 .ThenInclude(p => p.TripSeat)
                     .ThenInclude(ts => ts!.Seat)
+            .Include(b => b.Passengers)
+                .ThenInclude(p => p.FromStation)
+            .Include(b => b.Passengers)
+                .ThenInclude(p => p.ToStation)
             .Include(b => b.Trip)
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
@@ -70,8 +74,10 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 i.PhoneNumber,
                 i.PassengerType ?? "Passenger",
                 i.TripSeat?.Seat?.Code,
-                fromStop?.Station.StationName ?? string.Empty,
-                toStop?.Station.StationName ?? string.Empty,
+                // Chặng riêng của hành khách (ghế bán theo chặng); dữ liệu cũ chưa lưu trạm
+                // thì rơi về trạm đầu/cuối tuyến như trước.
+                i.FromStation?.StationName ?? fromStop?.Station.StationName ?? string.Empty,
+                i.ToStation?.StationName ?? toStop?.Station.StationName ?? string.Empty,
                 legTrip?.DepartureTime,
                 legTrip?.ArrivalTime,
                 i.UnitPrice ?? 0,

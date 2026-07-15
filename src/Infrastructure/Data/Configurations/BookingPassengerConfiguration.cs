@@ -36,8 +36,13 @@ public sealed class BookingPassengerConfiguration : IEntityTypeConfiguration<Boo
         builder.Property(x => x.TripId).HasColumnName("trip_id");
         builder.Property(x => x.TripSeatId).HasColumnName("trip_seat_id");
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(12,2)");
+        builder.Property(x => x.FromStationId).HasColumnName("from_station_id");
+        builder.Property(x => x.ToStationId).HasColumnName("to_station_id");
+        builder.Property(x => x.FromStopOrder).HasColumnName("from_stop_order");
+        builder.Property(x => x.ToStopOrder).HasColumnName("to_stop_order");
 
         builder.HasIndex(x => x.TripId);
+        builder.HasIndex(x => new { x.TripSeatId, x.FromStopOrder, x.ToStopOrder });
 
         builder.HasOne(x => x.Booking).WithMany(x => x.Passengers).HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.Cascade);
         builder.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId).OnDelete(DeleteBehavior.SetNull);
@@ -49,6 +54,14 @@ public sealed class BookingPassengerConfiguration : IEntityTypeConfiguration<Boo
         builder.HasOne(x => x.ReviewedByUser)
             .WithMany()
             .HasForeignKey(x => x.ReviewedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.FromStation)
+            .WithMany()
+            .HasForeignKey(x => x.FromStationId)
+            .OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.ToStation)
+            .WithMany()
+            .HasForeignKey(x => x.ToStationId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

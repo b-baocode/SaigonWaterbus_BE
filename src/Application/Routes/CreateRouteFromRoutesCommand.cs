@@ -100,6 +100,7 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
                 StationId = draft.Station.Id,
                 StopOrder = i + 1,
                 StandardTravelMin = i == 0 ? null : draft.StandardTravelMin,
+                DistanceFromPreviousKm = i == 0 ? null : draft.DistanceFromPreviousKm,
                 IsPickupAllowed = i < composedStops.Count - 1,
                 IsDropoffAllowed = i > 0
             };
@@ -112,6 +113,7 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
                 draft.Station.StationName,
                 routeStop.StopOrder,
                 routeStop.StandardTravelMin,
+                routeStop.DistanceFromPreviousKm,
                 routeStop.IsPickupAllowed,
                 routeStop.IsDropoffAllowed));
         }
@@ -182,7 +184,7 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
             for (var stopIndex = startIndex; stopIndex < stops.Count; stopIndex++)
             {
                 var stop = stops[stopIndex];
-                composedStops.Add(new RouteStopDraft(stop.Station, stop.StandardTravelMin));
+                composedStops.Add(new RouteStopDraft(stop.Station, stop.StandardTravelMin, stop.DistanceFromPreviousKm));
             }
         }
 
@@ -254,5 +256,5 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
                 .Select(coordinate => new[] { coordinate.X, coordinate.Y })
                 .ToList();
 
-    private sealed record RouteStopDraft(Station Station, int? StandardTravelMin);
+    private sealed record RouteStopDraft(Station Station, int? StandardTravelMin, decimal? DistanceFromPreviousKm);
 }

@@ -1,17 +1,17 @@
-using System.Collections.Concurrent;
 using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Infrastructure.Redis;
 
 /// <summary>
 /// Fallback giữ ghế trong bộ nhớ khi không bật Redis (môi trường dev / single instance).
-/// Đăng ký dưới dạng singleton.
+/// Đăng ký dưới dạng singleton. Mỗi ghế có thể có nhiều lượt giữ trên các chặng không giao nhau.
 /// </summary>
 public sealed class InMemorySeatHoldService : ISeatHoldService
 {
-    private sealed record SeatHold(Guid UserId, DateTimeOffset ExpiresAt);
+    private sealed record SeatHold(Guid UserId, int FromStopOrder, int ToStopOrder, DateTimeOffset ExpiresAt);
 
-    private readonly ConcurrentDictionary<(Guid TripId, Guid TripSeatId), SeatHold> _holds = new();
+    private readonly object _lock = new();
+    private readonly Dictionary<(Guid TripId, Guid TripSeatId), List<SeatHold>> _holds = new();
     private readonly TimeProvider _timeProvider;
 
     public InMemorySeatHoldService(TimeProvider? timeProvider = null)
@@ -23,29 +23,44 @@ public sealed class InMemorySeatHoldService : ISeatHoldService
         Guid tripId,
         IReadOnlyList<Guid> tripSeatIds,
         Guid userId,
+        int fromStopOrder,
+        int toStopOrder,
         TimeSpan ttl,
         CancellationToken cancellationToken)
     {
-        var now = _timeProvider.GetUtcNow();
         if (ttl <= TimeSpan.Zero)
         {
             return Task.FromResult<IReadOnlyList<Guid>>(tripSeatIds);
         }
 
-        PruneExpired(now);
-        var newHold = new SeatHold(userId, now.Add(ttl));
+        var now = _timeProvider.GetUtcNow();
         var failed = new List<Guid>();
 
-        foreach (var tripSeatId in tripSeatIds)
+        lock (_lock)
         {
-            var key = (tripId, tripSeatId);
-            var current = _holds.AddOrUpdate(
-                key,
-                newHold,
-                (_, existing) => existing.UserId == userId || existing.ExpiresAt <= now ? newHold : existing);
-            if (current.UserId != userId)
+            PruneExpired(now);
+
+            foreach (var tripSeatId in tripSeatIds)
             {
-                failed.Add(tripSeatId);
+                var key = (tripId, tripSeatId);
+                _holds.TryGetValue(key, out var holds);
+
+                var conflict = holds is not null && holds.Any(h =>
+                    h.UserId != userId
+                    && h.FromStopOrder < toStopOrder
+                    && fromStopOrder < h.ToStopOrder);
+                if (conflict)
+                {
+                    failed.Add(tripSeatId);
+                    continue;
+                }
+
+                holds ??= _holds[key] = [];
+                holds.RemoveAll(h =>
+                    h.UserId == userId
+                    && h.FromStopOrder == fromStopOrder
+                    && h.ToStopOrder == toStopOrder);
+                holds.Add(new SeatHold(userId, fromStopOrder, toStopOrder, now.Add(ttl)));
             }
         }
 
@@ -58,39 +73,59 @@ public sealed class InMemorySeatHoldService : ISeatHoldService
         Guid userId,
         CancellationToken cancellationToken)
     {
-        foreach (var tripSeatId in tripSeatIds)
+        lock (_lock)
         {
-            var key = (tripId, tripSeatId);
-            if (_holds.TryGetValue(key, out var hold) && hold.UserId == userId)
+            foreach (var tripSeatId in tripSeatIds)
             {
-                _holds.TryRemove(new KeyValuePair<(Guid, Guid), SeatHold>(key, hold));
+                if (_holds.TryGetValue((tripId, tripSeatId), out var holds))
+                {
+                    holds.RemoveAll(h => h.UserId == userId);
+                    if (holds.Count == 0)
+                    {
+                        _holds.Remove((tripId, tripSeatId));
+                    }
+                }
             }
         }
 
         return Task.CompletedTask;
     }
 
-    public Task<IReadOnlyDictionary<Guid, Guid>> GetHeldSeatsAsync(
+    public Task<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>> GetHeldSeatsAsync(
         Guid tripId,
         CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
-        PruneExpired(now);
+        var result = new Dictionary<Guid, IReadOnlyList<SeatHoldInfo>>();
 
-        var result = _holds
-            .Where(x => x.Key.TripId == tripId && x.Value.ExpiresAt > now)
-            .ToDictionary(x => x.Key.TripSeatId, x => x.Value.UserId);
+        lock (_lock)
+        {
+            PruneExpired(now);
 
-        return Task.FromResult<IReadOnlyDictionary<Guid, Guid>>(result);
+            foreach (var entry in _holds)
+            {
+                if (entry.Key.TripId != tripId || entry.Value.Count == 0)
+                {
+                    continue;
+                }
+
+                result[entry.Key.TripSeatId] = entry.Value
+                    .Select(h => new SeatHoldInfo(h.UserId, h.FromStopOrder, h.ToStopOrder))
+                    .ToList();
+            }
+        }
+
+        return Task.FromResult<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>>(result);
     }
 
     private void PruneExpired(DateTimeOffset now)
     {
-        foreach (var entry in _holds)
+        foreach (var entry in _holds.ToList())
         {
-            if (entry.Value.ExpiresAt <= now)
+            entry.Value.RemoveAll(h => h.ExpiresAt <= now);
+            if (entry.Value.Count == 0)
             {
-                _holds.TryRemove(entry);
+                _holds.Remove(entry.Key);
             }
         }
     }

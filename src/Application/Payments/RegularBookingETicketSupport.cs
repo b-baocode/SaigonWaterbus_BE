@@ -32,6 +32,8 @@ internal static class RegularBookingETicketSupport
             .AsNoTracking()
             .Include(p => p.TripSeat)
                 .ThenInclude(ts => ts!.Seat)
+            .Include(p => p.FromStation)
+            .Include(p => p.ToStation)
             .Where(p => p.BookingId == booking.Id)
             .ToListAsync(cancellationToken);
 
@@ -59,7 +61,9 @@ internal static class RegularBookingETicketSupport
                 ticketType.Name,
                 ticket.TicketCode,
                 ticket.QrToken,
-                passenger.Email);
+                passenger.Email,
+                passenger.FromStation?.StationName,
+                passenger.ToStation?.StationName);
 
             // Hành khách thuộc chiều nào thì vé nằm trong leg đó (TripId null = dữ liệu cũ → chiều đi).
             var leg = returnLeg is not null && passenger.TripId == booking.ReturnTripId
@@ -214,7 +218,9 @@ internal static class RegularBookingETicketSupport
             x.SeatCode,
             x.TicketTypeName,
             x.TicketCode,
-            x.QrToken);
+            x.QrToken,
+            x.FromStationName,
+            x.ToStationName);
 
     private static IReadOnlyList<EmailAttachment>? RenderPdfAttachment(
         IBookingTicketPdfRenderer? pdfRenderer,

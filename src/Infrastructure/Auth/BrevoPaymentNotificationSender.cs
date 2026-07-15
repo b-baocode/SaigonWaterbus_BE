@@ -321,7 +321,10 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 ["qrImageUrl"] = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken),
                 ["tripCode"] = ticketTripCodes.TryGetValue(ticket.TicketCode, out var legTripCode)
                     ? legTripCode
-                    : notification.TripCode
+                    : notification.TripCode,
+                // Chặng riêng của hành khách (ghế bán theo chặng); vé đi cả tuyến thì rơi về trạm đầu/cuối.
+                ["fromStationName"] = ResolveText(ticket.FromStationName ?? notification.FromStationName),
+                ["toStationName"] = ResolveText(ticket.ToStationName ?? notification.ToStationName)
             })
             .ToArray();
 

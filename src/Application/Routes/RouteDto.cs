@@ -29,5 +29,6 @@ public sealed record RouteStopDto(
     string StationName,
     int StopOrder,
     int? StandardTravelMin,
+    decimal? DistanceFromPreviousKm,
     bool IsPickupAllowed,
     bool IsDropoffAllowed);

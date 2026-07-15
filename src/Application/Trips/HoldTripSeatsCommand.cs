@@ -14,9 +14,13 @@ public sealed record HoldTripSeatsResult(
     DateTimeOffset HoldExpiresAt,
     int HoldTtlSeconds);
 
+// FromStationCode/ToStationCode: chặng khách sẽ đi — bắt buộc với trip Regular (ghế bán theo chặng),
+// bỏ trống với trip sightseeing (giữ ghế cả trip).
 public sealed record HoldTripSeatsCommand(
     Guid TripId,
-    IReadOnlyList<string> SeatNumbers) : IRequest<HoldTripSeatsResult>;
+    IReadOnlyList<string> SeatNumbers,
+    string? FromStationCode = null,
+    string? ToStationCode = null) : IRequest<HoldTripSeatsResult>;
 
 public sealed record ReleaseTripSeatsCommand(
     Guid TripId,
@@ -54,6 +58,9 @@ internal static class TripSeatResolutionSupport
         CancellationToken cancellationToken)
     {
         var trip = await context.Set<Trip>()
+            .Include(t => t.Route)
+                .ThenInclude(r => r.RouteStops)
+                    .ThenInclude(rs => rs.Station)
             .SingleOrDefaultAsync(t => t.Id == tripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
@@ -150,6 +157,22 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
 
         var now = _timeProvider.GetUtcNow();
         var trip = await TripSeatResolutionSupport.GetBookableTripAsync(_context, request.TripId, now, cancellationToken);
+
+        // Trip Regular bán ghế theo chặng nên bắt buộc truyền trạm lên/xuống;
+        // sightseeing giữ nguyên giữ ghế cả trip.
+        var usesSegments = Fares.DistanceFareSupport.UsesDistanceFare(trip);
+        if (usesSegments && (string.IsNullOrWhiteSpace(request.FromStationCode)
+                             || string.IsNullOrWhiteSpace(request.ToStationCode)))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.FromStationCode),
+                "fromStationCode và toStationCode là bắt buộc khi giữ ghế trên trip Regular (ghế bán theo chặng).")]);
+        }
+
+        var segment = usesSegments
+            ? TripSegmentSupport.Resolve(trip, request.FromStationCode, request.ToStationCode,
+                nameof(request.FromStationCode), nameof(request.ToStationCode))
+            : TripSegmentSupport.FullTrip;
+
         var resolvedSeats = await TripSeatResolutionSupport.ResolveTripSeatsAsync(
             _context, trip, request.SeatNumbers, cancellationToken);
 
@@ -164,6 +187,7 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
         var occupiedTripSeatIds = (await _context.Set<BookingPassenger>()
                 .Where(x => x.TripSeatId.HasValue && tripSeatIds.Contains(x.TripSeatId.Value))
                 .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
+                .Where(BookingSeatOccupancySupport.PassengerOverlapsSegment(segment.FromStopOrder, segment.ToStopOrder))
                 .Select(x => x.TripSeatId!.Value)
                 .ToListAsync(cancellationToken))
             .ToHashSet();
@@ -177,7 +201,7 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
 
         var ttl = BookingSeatOccupancySupport.SeatPreHoldDuration;
         var failedTripSeatIds = (await _seatHoldService.TryHoldAsync(
-                trip.Id, tripSeatIds, userId, ttl, cancellationToken))
+                trip.Id, tripSeatIds, userId, segment.FromStopOrder, segment.ToStopOrder, ttl, cancellationToken))
             .ToHashSet();
 
         var heldSeatNumbers = resolvedSeats
@@ -193,7 +217,11 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
         {
             await _tripSeatNotifier.PublishSeatStatusChangedAsync(
                 trip.Id,
-                heldSeatNumbers.Select(code => new TripSeatStatusChange(code, "Held")).ToList(),
+                heldSeatNumbers
+                    .Select(code => new TripSeatStatusChange(code, "Held",
+                        segment.IsFullTrip ? null : segment.FromStopOrder,
+                        segment.IsFullTrip ? null : segment.ToStopOrder))
+                    .ToList(),
                 cancellationToken);
         }
 
@@ -247,7 +275,8 @@ public sealed class ReleaseTripSeatsCommandHandler : IRequestHandler<ReleaseTrip
 
         var heldSeats = await _seatHoldService.GetHeldSeatsAsync(trip.Id, cancellationToken);
         var mySeats = resolvedSeats
-            .Where(x => heldSeats.TryGetValue(x.TripSeat.Id, out var holder) && holder == userId)
+            .Where(x => heldSeats.TryGetValue(x.TripSeat.Id, out var holds)
+                     && holds.Any(h => h.UserId == userId))
             .ToList();
         if (mySeats.Count == 0)
         {
@@ -260,9 +289,15 @@ public sealed class ReleaseTripSeatsCommandHandler : IRequestHandler<ReleaseTrip
             userId,
             cancellationToken);
 
-        await _tripSeatNotifier.PublishSeatStatusChangedAsync(
-            trip.Id,
-            mySeats.Select(x => new TripSeatStatusChange(x.Seat.Code, "Available")).ToList(),
-            cancellationToken);
+        // Nhả toàn bộ lượt giữ của user trên các ghế → phát một sự kiện cho từng chặng vừa nhả.
+        var changes = mySeats
+            .SelectMany(x => heldSeats[x.TripSeat.Id]
+                .Where(h => h.UserId == userId)
+                .Select(h => new TripSeatStatusChange(
+                    x.Seat.Code, "Available",
+                    h.FromStopOrder == int.MinValue ? null : h.FromStopOrder,
+                    h.ToStopOrder == int.MaxValue ? null : h.ToStopOrder)))
+            .ToList();
+        await _tripSeatNotifier.PublishSeatStatusChangedAsync(trip.Id, changes, cancellationToken);
     }
 }

@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -25,9 +26,17 @@ public sealed record TripSeatMapDto(
     int TotalSeats,
     int AvailableSeats,
     int HoldTtlSeconds,
-    IReadOnlyList<TripSeatMapSeatDto> Seats);
+    IReadOnlyList<TripSeatMapSeatDto> Seats,
+    string? FromStationCode = null,
+    string? ToStationCode = null,
+    decimal? SegmentDistanceKm = null);
 
-public sealed record GetTripSeatMapQuery(Guid TripId) : IRequest<TripSeatMapDto>;
+// FromStationCode/ToStationCode: chặng khách định đi — trạng thái ghế và giá (trip Regular)
+// tính theo chặng đó; bỏ trống = xem cả tuyến (ghế bận nếu có bất kỳ vé nào trên trip).
+public sealed record GetTripSeatMapQuery(
+    Guid TripId,
+    string? FromStationCode = null,
+    string? ToStationCode = null) : IRequest<TripSeatMapDto>;
 
 public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQuery, TripSeatMapDto>
 {
@@ -59,8 +68,15 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
         var trip = await _context.Set<Trip>()
             .AsNoTracking()
             .Include(t => t.Boat)
+            .Include(t => t.Route)
+                .ThenInclude(r => r.RouteStops)
+                    .ThenInclude(rs => rs.Station)
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
+
+        var segment = TripSegmentSupport.Resolve(
+            trip, request.FromStationCode, request.ToStationCode,
+            nameof(request.FromStationCode), nameof(request.ToStationCode));
 
         if (!trip.BoatId.HasValue)
         {
@@ -86,12 +102,30 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
         var occupiedTripSeatIds = (await _context.Set<BookingPassenger>()
                 .Where(x => x.TripSeatId.HasValue && tripSeatIds.Contains(x.TripSeatId.Value))
                 .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
+                .Where(BookingSeatOccupancySupport.PassengerOverlapsSegment(segment.FromStopOrder, segment.ToStopOrder))
                 .Select(x => x.TripSeatId!.Value)
                 .ToListAsync(cancellationToken))
             .ToHashSet();
 
         var heldSeats = await _seatHoldService.GetHeldSeatsAsync(trip.Id, cancellationToken);
         var currentUserId = _userContext.UserId;
+
+        // Giá theo km cho ghế STANDARD trên trip Regular: theo chặng đang xem,
+        // hoặc cả tuyến khi không truyền chặng. Thiếu km → null, fallback giá theo loại ghế.
+        decimal? distanceKm = null;
+        decimal? distanceFare = null;
+        if (DistanceFareSupport.UsesDistanceFare(trip) && trip.Route is not null)
+        {
+            var routeStops = trip.Route.RouteStops;
+            var fromOrder = segment.IsFullTrip ? routeStops.Min(rs => rs.StopOrder) : segment.FromStopOrder;
+            var toOrder = segment.IsFullTrip ? routeStops.Max(rs => rs.StopOrder) : segment.ToStopOrder;
+            distanceKm = DistanceFareSupport.TryComputeSegmentDistanceKm(routeStops, fromOrder, toOrder);
+            if (distanceKm.HasValue)
+            {
+                var policy = await DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken);
+                distanceFare = DistanceFareSupport.CalculateFare(policy, distanceKm.Value);
+            }
+        }
 
         var seatDtos = seats
             .OrderBy(x => x.Deck)
@@ -107,8 +141,8 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                     seat.Column,
                     seat.SeatTypeCode,
                     seat.SeatType?.Name,
-                    ResolveBasePrice(seat, tripSeat),
-                    ResolveStatus(tripSeat, occupiedTripSeatIds, heldSeats, currentUserId));
+                    ResolveBasePrice(seat, tripSeat, distanceFare),
+                    ResolveStatus(tripSeat, occupiedTripSeatIds, heldSeats, currentUserId, segment));
             })
             .ToList();
 
@@ -121,11 +155,20 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             seatDtos.Count,
             seatDtos.Count(x => x.Status == StatusAvailable),
             (int)BookingSeatOccupancySupport.SeatPreHoldDuration.TotalSeconds,
-            seatDtos);
+            seatDtos,
+            segment.FromStop?.Station.StationCode,
+            segment.ToStop?.Station.StationCode,
+            distanceKm);
     }
 
-    private static decimal ResolveBasePrice(Seat seat, TripSeat? tripSeat)
+    private static decimal ResolveBasePrice(Seat seat, TripSeat? tripSeat, decimal? distanceFare)
     {
+        if (distanceFare.HasValue
+            && seat.SeatTypeCode.Equals(DistanceFareSupport.DistanceFareSeatTypeCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return distanceFare.Value;
+        }
+
         if (tripSeat?.Price is > 0)
         {
             return tripSeat.Price.Value;
@@ -142,8 +185,9 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
     private static string ResolveStatus(
         TripSeat? tripSeat,
         HashSet<Guid> occupiedTripSeatIds,
-        IReadOnlyDictionary<Guid, Guid> heldSeats,
-        Guid? currentUserId)
+        IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>> heldSeats,
+        Guid? currentUserId,
+        TripSegmentSupport.Segment segment)
     {
         if (tripSeat is null || tripSeat.Status == TripSeat.StatusBlocked)
         {
@@ -155,9 +199,16 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             return StatusBooked;
         }
 
-        if (heldSeats.TryGetValue(tripSeat.Id, out var holderUserId))
+        if (heldSeats.TryGetValue(tripSeat.Id, out var holds))
         {
-            return holderUserId == currentUserId ? StatusHeldByMe : StatusHeld;
+            var overlapping = holds
+                .Where(h => BookingSeatOccupancySupport.SegmentsOverlap(
+                    h.FromStopOrder, h.ToStopOrder, segment.FromStopOrder, segment.ToStopOrder))
+                .ToList();
+            if (overlapping.Count > 0)
+            {
+                return overlapping.All(h => h.UserId == currentUserId) ? StatusHeldByMe : StatusHeld;
+            }
         }
 
         return StatusAvailable;

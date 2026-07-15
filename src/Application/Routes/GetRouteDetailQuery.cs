@@ -24,7 +24,7 @@ public sealed class GetRouteDetailQueryHandler : IRequestHandler<GetRouteDetailQ
             .OrderBy(rs => rs.StopOrder)
             .Select(rs => new RouteStopDto(
                 rs.Id, rs.Station.Id, rs.Station.StationCode, rs.Station.StationName,
-                rs.StopOrder, rs.StandardTravelMin,
+                rs.StopOrder, rs.StandardTravelMin, rs.DistanceFromPreviousKm,
                 rs.IsPickupAllowed, rs.IsDropoffAllowed))
             .ToList();
 

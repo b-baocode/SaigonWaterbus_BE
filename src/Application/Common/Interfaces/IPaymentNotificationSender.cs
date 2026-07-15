@@ -100,10 +100,14 @@ public sealed record ETicketLeg(
     string? ToStationName,
     IReadOnlyList<ETicketPassenger> Tickets);
 
+// FromStationName/ToStationName: chặng của riêng hành khách (trip Regular bán ghế theo chặng);
+// null = đi cả tuyến (dữ liệu cũ, sightseeing) → hiển thị theo trạm đầu/cuối của leg.
 public sealed record ETicketPassenger(
     string PassengerName,
     string? SeatCode,
     string? TicketTypeName,
     string TicketCode,
     string QrToken,
-    string? Email);
+    string? Email,
+    string? FromStationName = null,
+    string? ToStationName = null);

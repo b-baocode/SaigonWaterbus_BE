@@ -85,14 +85,41 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var tripIds = trips.Select(t => t.Id).ToList();
 
+        // Chặng tìm kiếm (stop order) theo từng route — ghế bán theo chặng nên chỗ trống
+        // của một chuyến phụ thuộc đoạn khách muốn đi.
+        var searchSegmentByRouteId = validRouteIds
+            .GroupBy(x => x.RouteId)
+            .ToDictionary(
+                g => g.Key,
+                g => (FromOrder: g.First().FromStop.StopOrder, ToOrder: g.First().ToStop.StopOrder));
+
         // Đếm theo trip của từng ghế (TripSeat.TripId) thay vì Booking.TripId — booking khứ hồi
-        // có ghế trên 2 trip. Chỉ đếm hành khách chiếm ghế (INFANT ngồi cùng người lớn không trừ chỗ).
-        var bookedCounts = await _context.Set<BookingPassenger>()
+        // có ghế trên 2 trip. Chỉ đếm hành khách chiếm ghế (INFANT ngồi cùng người lớn không trừ chỗ),
+        // và chỉ tính ghế có vé GIAO CHẶNG tìm kiếm (vé cũ không có chặng = chiếm cả trip).
+        // Đếm distinct ghế vì một ghế có thể có nhiều vé trên các đoạn khác nhau.
+        var occupyingPassengers = await _context.Set<BookingPassenger>()
             .Where(p => p.TripSeatId.HasValue && tripIds.Contains(p.TripSeat!.TripId))
             .Where(Bookings.BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
-            .GroupBy(p => p.TripSeat!.TripId)
-            .Select(g => new { TripId = g.Key, Count = g.Count() })
-            .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
+            .Select(p => new
+            {
+                p.TripSeat!.TripId,
+                TripSeatId = p.TripSeatId!.Value,
+                p.FromStopOrder,
+                p.ToStopOrder
+            })
+            .ToListAsync(cancellationToken);
+
+        var routeIdByTripId = trips.ToDictionary(t => t.Id, t => t.RouteId);
+        var bookedCounts = occupyingPassengers
+            .Where(p =>
+            {
+                var segment = searchSegmentByRouteId[routeIdByTripId[p.TripId]];
+                return Bookings.BookingSeatOccupancySupport.SegmentsOverlap(
+                    p.FromStopOrder ?? int.MinValue, p.ToStopOrder ?? int.MaxValue,
+                    segment.FromOrder, segment.ToOrder);
+            })
+            .GroupBy(p => p.TripId)
+            .ToDictionary(g => g.Key, g => g.Select(p => p.TripSeatId).Distinct().Count());
 
         // Giá min theo chuyến: ưu tiên giá đã chốt trong trip_seats (đặt khi tạo trip).
         var tripSeatMinPrices = await _context.Set<TripSeat>()
@@ -129,15 +156,35 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             .Where(x => x.PriceModifier > 0)
             .Min(x => x.PriceModifier);
 
+        // Trip Regular tính giá theo quãng đường: giá "từ" = giá chặng tìm kiếm (nếu tuyến đã
+        // nhập đủ km); fallback giá theo loại ghế như cũ khi thiếu km.
+        var farePolicy = trips.Any(Fares.DistanceFareSupport.UsesDistanceFare)
+            ? await Fares.DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken)
+            : null;
+
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
             var booked = bookedCounts.GetValueOrDefault(t.Id, 0);
             seatStats.TryGetValue(t.BoatId ?? Guid.Empty, out var stats);
             var capacity = stats?.ActiveSeatCount ?? t.CapacitySnapshot;
             var available = capacity - booked;
-            var minBasePrice = tripSeatMinPrices.TryGetValue(t.Id, out var tripSeatMin)
-                ? tripSeatMin
-                : stats?.MinSeatPrice is > 0 ? stats.MinSeatPrice.Value : (decimal?)null;
+
+            decimal? segmentFare = null;
+            if (farePolicy is not null && Fares.DistanceFareSupport.UsesDistanceFare(t))
+            {
+                var segment = searchSegmentByRouteId[t.RouteId];
+                var distanceKm = Fares.DistanceFareSupport.TryComputeSegmentDistanceKm(
+                    t.Route.RouteStops, segment.FromOrder, segment.ToOrder);
+                if (distanceKm.HasValue)
+                {
+                    segmentFare = Fares.DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value);
+                }
+            }
+
+            var minBasePrice = segmentFare
+                ?? (tripSeatMinPrices.TryGetValue(t.Id, out var tripSeatMin)
+                    ? tripSeatMin
+                    : stats?.MinSeatPrice is > 0 ? stats.MinSeatPrice.Value : (decimal?)null);
             var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
 
             return new TripSummaryDto(

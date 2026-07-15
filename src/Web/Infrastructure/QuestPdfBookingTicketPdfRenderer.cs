@@ -242,6 +242,10 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
                                             var type = string.IsNullOrWhiteSpace(ticket.TicketTypeName)
                                                 ? string.Empty
                                                 : $" - {ticket.TicketTypeName}";
+                                            var segment = string.IsNullOrWhiteSpace(ticket.FromStationName)
+                                                          || string.IsNullOrWhiteSpace(ticket.ToStationName)
+                                                ? string.Empty
+                                                : $" - {ticket.FromStationName} -> {ticket.ToStationName}";
 
                                             passengers.Item().Row(passengerRow =>
                                             {
@@ -251,7 +255,7 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
                                                     .FontSize(8).Bold().FontColor(Navy);
                                                 passengerRow.RelativeItem()
                                                     .PaddingLeft(8)
-                                                    .Text($"{ticket.PassengerName}{seat}{type} ({ticket.TicketCode})")
+                                                    .Text($"{ticket.PassengerName}{seat}{type}{segment} ({ticket.TicketCode})")
                                                     .FontSize(9).FontColor(Ink);
                                             });
                                             index++;
@@ -281,8 +285,10 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
     {
         var departureDate = leg.DepartureDate;
         var departureTime = leg.DepartureTime;
-        var fromStation = leg.FromStation;
-        var toStation = leg.ToStation;
+        // Ghế bán theo chặng: FROM/TO trên vé là trạm lên/xuống của riêng hành khách;
+        // vé đi cả tuyến (dữ liệu cũ, sightseeing) giữ trạm đầu/cuối của leg.
+        var fromStation = string.IsNullOrWhiteSpace(ticket.FromStationName) ? leg.FromStation : ticket.FromStationName;
+        var toStation = string.IsNullOrWhiteSpace(ticket.ToStationName) ? leg.ToStation : ticket.ToStationName;
         var vesselName = leg.VesselName;
         var qrBytes = BuildQrPngBytes(ticket.QrToken);
         var passengerName = ResolvePdfText(ticket.PassengerName, "Khach hang");

@@ -133,6 +133,7 @@ public sealed class CreateCharterBookingRouteCommandHandler
                 StandardTravelMin = i == 0
                     ? null
                     : estimate.Legs[i - 1].TravelMinutes!.Value + points[i - 1].StayMinutes,
+                DistanceFromPreviousKm = i == 0 ? null : estimate.Legs[i - 1].DistanceKm,
                 IsPickupAllowed = i < points.Count - 1,
                 IsDropoffAllowed = i > 0
             };
@@ -145,6 +146,7 @@ public sealed class CreateCharterBookingRouteCommandHandler
                 point.Station.StationName,
                 routeStop.StopOrder,
                 routeStop.StandardTravelMin,
+                routeStop.DistanceFromPreviousKm,
                 routeStop.IsPickupAllowed,
                 routeStop.IsDropoffAllowed));
         }
@@ -366,6 +368,7 @@ public sealed class CreateCharterBookingRouteCommandHandler
                     x.Station.StationName,
                     x.StopOrder,
                     x.StandardTravelMin,
+                    x.DistanceFromPreviousKm,
                     x.IsPickupAllowed,
                     x.IsDropoffAllowed))
                 .ToList(),

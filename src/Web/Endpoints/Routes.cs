@@ -172,7 +172,7 @@ public sealed class Routes : IEndpointGroup
 
     private static async Task<IResult> UpdateRouteStop(ISender sender, Guid id, Guid stopId, UpdateRouteStopRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateRouteStopCommand(
-            id, stopId, req.StandardTravelMin,
+            id, stopId, req.StandardTravelMin, req.DistanceFromPreviousKm,
             req.IsPickupAllowed, req.IsDropoffAllowed), ct));
 
     private static async Task<IResult> DeleteRoute(ISender sender, Guid id, CancellationToken ct)
@@ -182,6 +182,6 @@ public sealed class Routes : IEndpointGroup
     }
 
     public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
-    public sealed record UpdateRouteStopRequest(int? StandardTravelMin, bool IsPickupAllowed, bool IsDropoffAllowed);
+    public sealed record UpdateRouteStopRequest(int? StandardTravelMin, decimal? DistanceFromPreviousKm, bool IsPickupAllowed, bool IsDropoffAllowed);
 
 }

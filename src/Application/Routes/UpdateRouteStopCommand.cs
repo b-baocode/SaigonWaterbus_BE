@@ -9,6 +9,7 @@ public sealed record UpdateRouteStopCommand(
     Guid RouteId,
     Guid RouteStopId,
     int? StandardTravelMin,
+    decimal? DistanceFromPreviousKm,
     bool IsPickupAllowed,
     bool IsDropoffAllowed) : IRequest<RouteStopDto>;
 
@@ -18,6 +19,9 @@ public sealed class UpdateRouteStopCommandValidator : AbstractValidator<UpdateRo
     {
         RuleFor(x => x.RouteId).NotEmpty();
         RuleFor(x => x.RouteStopId).NotEmpty();
+        RuleFor(x => x.DistanceFromPreviousKm)
+            .Must(x => x is null or (> 0 and <= 999))
+            .WithMessage("distanceFromPreviousKm phai lon hon 0 va toi da 999 km.");
     }
 }
 
@@ -35,13 +39,14 @@ public sealed class UpdateRouteStopCommandHandler : IRequestHandler<UpdateRouteS
             ?? throw new NotFoundException("Route stop not found.");
 
         stop.StandardTravelMin = request.StandardTravelMin;
+        stop.DistanceFromPreviousKm = request.DistanceFromPreviousKm;
         stop.IsPickupAllowed = request.IsPickupAllowed;
         stop.IsDropoffAllowed = request.IsDropoffAllowed;
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return new RouteStopDto(stop.Id, stop.Station.Id, stop.Station.StationCode, stop.Station.StationName,
-            stop.StopOrder, stop.StandardTravelMin,
+            stop.StopOrder, stop.StandardTravelMin, stop.DistanceFromPreviousKm,
             stop.IsPickupAllowed, stop.IsDropoffAllowed);
     }
 }

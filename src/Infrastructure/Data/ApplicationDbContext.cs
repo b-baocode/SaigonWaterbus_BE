@@ -32,6 +32,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Promotion> Promotions => Set<Promotion>();
 
+    public DbSet<FarePolicy> FarePolicies => Set<FarePolicy>();
+
     public DbSet<Booking> Bookings => Set<Booking>();
 
     public DbSet<BookingPassenger> BookingPassengers => Set<BookingPassenger>();
