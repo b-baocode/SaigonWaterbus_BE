@@ -159,7 +159,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         _context.Set<Trip>().Add(trip);
         trip.Route = route;
-        TripStopScheduleSupport.CreateTripStops(_context, trip, stopDrafts);
+        TripStopScheduleSupport.CreateTripStops(trip, stopDrafts);
 
         var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
             _context, request.SeatTypePrices, activeSeats, cancellationToken);

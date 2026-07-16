@@ -107,7 +107,7 @@ public sealed class CreateCharterBookingTripCommandHandler
             charterBoat.TripId = trip.Id;
             trips.Add((trip, charterBoat));
 
-            TripStopScheduleSupport.CreateTripStops(_context, trip, tripStopDrafts);
+            TripStopScheduleSupport.CreateTripStops(trip, tripStopDrafts);
         }
 
         booking.TripId = trips[0].Trip.Id;

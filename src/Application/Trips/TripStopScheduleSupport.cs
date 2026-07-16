@@ -75,7 +75,6 @@ internal static class TripStopScheduleSupport
 
     /// <summary>Tao trip_stops cho trip tu drafts (gan luon nav Station de dung dung cho DTO).</summary>
     public static List<TripStop> CreateTripStops(
-        IApplicationDbContext context,
         Trip trip,
         IReadOnlyList<TripStopDraft> drafts)
     {
@@ -94,7 +93,9 @@ internal static class TripStopScheduleSupport
                 Note = draft.Note
             };
 
-            context.Set<TripStop>().Add(tripStop);
+            // Chỉ add qua navigation — add thêm vào DbSet sẽ khiến EF fixup nhét bản thứ hai
+            // vào trip.TripStops (stops lặp đôi trong DTO của lệnh tạo trip). EF tự discover
+            // entity mới qua trip khi SaveChanges.
             trip.TripStops.Add(tripStop);
             tripStops.Add(tripStop);
         }

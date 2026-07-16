@@ -172,7 +172,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                 };
 
                 tripsToAdd.Add(trip);
-                TripStopScheduleSupport.CreateTripStops(_context, trip, stopDrafts);
+                TripStopScheduleSupport.CreateTripStops(trip, stopDrafts);
                 existingDepartures.Add(departureTime);
                 boatSchedule.Add((departureTime, arrivalTime));
 

@@ -217,6 +217,27 @@ public class CreateTripCommandTests
         result.CapacitySnapshot.ShouldBe(3);
     }
 
+    [Test]
+    public async Task CreateTripReturnsEachStopExactlyOnce()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var result = await new CreateTripCommandHandler(context)
+            .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
+
+        // Regression: add vào DbSet + nav collection cùng lúc khiến EF fixup nhân đôi stops trong DTO.
+        result.Stops.Count.ShouldBe(2);
+        result.Stops.Select(x => x.TripStopId).Distinct().Count().ShouldBe(2);
+        result.Stops.Select(x => x.StopOrder).ShouldBe([1, 2]);
+        context.Set<TripStop>().Count(x => x.TripId == result.TripId).ShouldBe(2);
+    }
+
     private static Boat BoatWithSeats(string code, int seatCount, int inactiveSeatCount = 0)
     {
         var boat = new Boat
