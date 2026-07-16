@@ -599,6 +599,218 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task RefundIsRejectedForRegularRouteBooking()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var trip = TripOnRoute("Regular", now.AddDays(5));
+        var (booking, payment) = PaidSeatBooking(userId, trip, "BK-REFUND-REG", now);
+        context.AddRange(trip.Route, trip, booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new RefundPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new FixedTimeProvider(now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+                CancellationToken.None));
+
+        exception.Errors["refund"].Single().ShouldContain("không hỗ trợ hoàn tiền");
+        payment.RefundAmount.ShouldBe(0);
+        payment.RefundStatus.ShouldBeNull();
+        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
+    }
+
+    [Test]
+    public async Task RefundSightseeingBookingRefunds100PercentWhenMoreThan3DaysBeforeDeparture()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var trip = TripOnRoute("SightseeingLoop", now.AddDays(5));
+        var (booking, payment) = PaidSeatBooking(userId, trip, "BK-REFUND-SS", now);
+        context.AddRange(trip.Route, trip, booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new RefundPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+            CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(10000);
+        payment.RefundAmount.ShouldBe(10000);
+        booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
+        booking.PaymentStatus.ShouldBe("Refunded");
+    }
+
+    [Test]
+    public async Task RefundSightseeingBookingRefunds70PercentWithin3Days()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var trip = TripOnRoute("SightseeingLoop", now.AddDays(2));
+        var (booking, payment) = PaidSeatBooking(userId, trip, "BK-REFUND-SS70", now);
+        context.AddRange(trip.Route, trip, booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new RefundPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+            CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(7000);
+        booking.PaymentStatus.ShouldBe("PartiallyRefunded");
+    }
+
+    [Test]
+    public async Task RefundSightseeingBookingIsRejectedUnder24Hours()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var trip = TripOnRoute("SightseeingLoop", now.AddHours(5));
+        var (booking, payment) = PaidSeatBooking(userId, trip, "BK-REFUND-SS0", now);
+        context.AddRange(trip.Route, trip, booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new RefundPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new FixedTimeProvider(now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+                CancellationToken.None));
+
+        exception.Errors["refund"].Single().ShouldContain("dưới 24 giờ");
+    }
+
+    [Test]
+    public async Task RefundCharterBookingStillFollowsExistingPolicy()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "BK-REFUND-CHARTER",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            DepartureDate = DateOnly.FromDateTime(now.AddDays(5).UtcDateTime),
+            StartTime = new TimeOnly(8, 0),
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "2000010",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddDays(-1)
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+
+        var handler = new RefundPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+            CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(10000);
+        booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
+    }
+
+    private static Trip TripOnRoute(string routeType, DateTimeOffset departureTime)
+    {
+        var route = new Route
+        {
+            RouteCode = $"R-{Guid.NewGuid():N}"[..20],
+            RouteName = $"Route {routeType}",
+            RouteType = routeType
+        };
+        return new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            TripCode = $"TR-{Guid.NewGuid():N}"[..20],
+            OperatingDate = DateOnly.FromDateTime(departureTime.UtcDateTime),
+            DepartureTime = departureTime,
+            ArrivalTime = departureTime.AddHours(1),
+            CapacitySnapshot = 4
+        };
+    }
+
+    private static (Booking Booking, Payment Payment) PaidSeatBooking(
+        Guid userId,
+        Trip trip,
+        string bookingCode,
+        DateTimeOffset now)
+    {
+        var booking = new Booking
+        {
+            UserId = userId,
+            Trip = trip,
+            TripId = trip.Id,
+            BookingCode = bookingCode,
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = $"20001{Math.Abs(bookingCode.GetHashCode()) % 100:D2}",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddDays(-1)
+        };
+        return (booking, payment);
+    }
+
+    [Test]
     public async Task ManualRefundRecordsAdminRefundHistory()
     {
         await using var context = SeatFlowTestData.CreateContext();

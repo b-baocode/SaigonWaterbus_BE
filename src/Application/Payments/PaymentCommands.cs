@@ -747,6 +747,8 @@ internal static class PaymentSupport
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        await EnsureSeatBookingRouteIsRefundableAsync(context, payment.Booking, cancellationToken);
+
         var departure = await ResolveDepartureAsync(context, payment.Booking, cancellationToken);
         var timeUntilDeparture = departure.HasValue ? departure.Value - now : TimeSpan.MaxValue;
         var refundPercent = ResolveRefundPercent(timeUntilDeparture);
@@ -801,6 +803,39 @@ internal static class PaymentSupport
         {
             throw new ValidationException([new ValidationFailure("refund",
                 "Chỉ được ghi nhận hoàn tiền thủ công sau khi hệ thống đã thử hoàn qua PayOS và lưu trạng thái lỗi.")]);
+        }
+    }
+
+    /// <summary>
+    /// Vé tuyến thường (route Regular) không hỗ trợ hoàn tiền — chỉ vé sightseeing được hoàn
+    /// theo chính sách. Charter không đi qua check này (giữ nguyên chính sách hiện tại).
+    /// </summary>
+    private static async Task EnsureSeatBookingRouteIsRefundableAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        if (Booking.IsCharterBookingType(booking.BookingType))
+        {
+            return;
+        }
+
+        var legTripIds = new List<Guid>();
+        if (booking.TripId.HasValue) legTripIds.Add(booking.TripId.Value);
+        if (booking.ReturnTripId.HasValue) legTripIds.Add(booking.ReturnTripId.Value);
+        if (legTripIds.Count == 0)
+        {
+            return;
+        }
+
+        var hasRegularLeg = await context.Set<Trip>()
+            .AnyAsync(
+                t => legTripIds.Contains(t.Id) && t.Route.RouteType == Domain.Constants.RouteTypes.Regular,
+                cancellationToken);
+        if (hasRegularLeg)
+        {
+            throw new ValidationException([new ValidationFailure("refund",
+                "Vé tuyến thường không hỗ trợ hoàn tiền; chỉ vé sightseeing được hoàn theo chính sách.")]);
         }
     }
 
