@@ -66,14 +66,21 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             throw new ValidationException([new ValidationFailure("incident", "Sự cố này đã được xử lý.")]);
         }
 
+        var resolvedAt = _timeProvider.GetUtcNow();
         incident.ResolutionStatus = IncidentSupport.ResolvedStatus;
         incident.ResolutionNote = request.ResolutionNote.Trim();
-        incident.ResolvedAt = _timeProvider.GetUtcNow();
+        incident.ResolvedAt = resolvedAt;
         incident.ResolvedByUserId = actor.Id;
         incident.Resolver = actor;
 
         if (request.BoatStatus.HasValue)
         {
+            if (request.BoatStatus.Value == BoatStatus.UnderMaintenance
+                && incident.Boat.Status != BoatStatus.UnderMaintenance)
+            {
+                incident.Boat.MaintenanceStartedAt = resolvedAt;
+            }
+
             incident.Boat.Status = request.BoatStatus.Value;
         }
 

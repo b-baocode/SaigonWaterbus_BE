@@ -5,5 +5,6 @@ public enum BoatStatus
     Active = 1,
     UnderMaintenance = 2,
     Inactive = 3,
-    Retired = 4
+    Retired = 4,
+    Incident = 5
 }
