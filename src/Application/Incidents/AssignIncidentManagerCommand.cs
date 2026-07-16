@@ -21,15 +21,18 @@ public sealed class AssignIncidentManagerCommandHandler : IRequestHandler<Assign
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IIncidentRealtimeNotifier _realtimeNotifier;
 
     public AssignIncidentManagerCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IIncidentRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(
@@ -59,6 +62,9 @@ public sealed class AssignIncidentManagerCommandHandler : IRequestHandler<Assign
         await _context.SaveChangesAsync(cancellationToken);
 
         incident = await LoadIncidentQuery().SingleAsync(x => x.Id == request.IncidentId, cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            IncidentSupport.ToRealtimeEvent(incident, "IncidentAssigned", incident.AssignedAt),
+            cancellationToken);
         return IncidentSupport.ToDto(incident);
     }
 

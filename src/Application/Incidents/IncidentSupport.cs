@@ -107,4 +107,20 @@ internal static class IncidentSupport
             incident.ResolvedAt,
             incident.ResolvedByUserId,
             incident.Resolver?.FullName);
+
+    public static IncidentRealtimeEvent ToRealtimeEvent(
+        Incident incident,
+        string eventType,
+        DateTimeOffset? occurredAt = null) =>
+        new(
+            incident.Id,
+            eventType,
+            incident.BoatId,
+            incident.Boat?.Name,
+            incident.TripId,
+            incident.Trip?.TripCode,
+            incident.ReplacementBoatId,
+            incident.ReplacementBoat?.Name,
+            incident.ResolutionStatus,
+            occurredAt);
 }

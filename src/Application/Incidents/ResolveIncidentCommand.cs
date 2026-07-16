@@ -28,15 +28,18 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IIncidentRealtimeNotifier _realtimeNotifier;
 
     public ResolveIncidentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IIncidentRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(ResolveIncidentCommand request, CancellationToken cancellationToken)
@@ -81,6 +84,9 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            IncidentSupport.ToRealtimeEvent(incident, "IncidentResolved", incident.ResolvedAt),
+            cancellationToken);
 
         return IncidentSupport.ToDto(incident);
     }

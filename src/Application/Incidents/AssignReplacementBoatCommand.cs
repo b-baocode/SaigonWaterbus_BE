@@ -30,15 +30,18 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly IIncidentRealtimeNotifier _realtimeNotifier;
 
     public AssignReplacementBoatCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        IIncidentRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(
@@ -110,6 +113,9 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         await _context.SaveChangesAsync(cancellationToken);
 
         incident = await LoadIncidentQuery().SingleAsync(x => x.Id == request.IncidentId, cancellationToken);
+        await _realtimeNotifier.PublishChangedAsync(
+            IncidentSupport.ToRealtimeEvent(incident, "RescueDispatched", incident.ReplacementAssignedAt),
+            cancellationToken);
         return IncidentSupport.ToDto(incident);
     }
 

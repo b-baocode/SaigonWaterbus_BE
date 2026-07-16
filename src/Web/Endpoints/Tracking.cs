@@ -12,6 +12,7 @@ namespace SaigonWaterbus.Web.Endpoints;
 public sealed class Tracking : IEndpointGroup
 {
     private const int OnlineThresholdSeconds = 60;
+    private const string OpenIncidentStatus = "Open";
 
     private const string LocationExample =
         """
@@ -287,6 +288,11 @@ public sealed class Tracking : IEndpointGroup
             trip.Value?.Id,
             now);
 
+        var activeIncident = await LoadActiveIncidentForBoatAsync(
+            dbContext,
+            gpsDevice.BoatId,
+            cancellationToken);
+
         await PublishBoatLocationAsync(
             trackingHubContext,
             logger,
@@ -294,6 +300,7 @@ public sealed class Tracking : IEndpointGroup
                 gpsDevice.BoatId,
                 gpsDevice.Boat.Code,
                 gpsDevice.Boat.Name,
+                gpsDevice.Boat.Status.ToString(),
                 gpsDevice.DeviceId,
                 request.MessageId,
                 routeId,
@@ -313,6 +320,7 @@ public sealed class Tracking : IEndpointGroup
                 request.BatteryPercent,
                 request.SignalStrength,
                 gpsFixQuality,
+                activeIncident,
                 IsOnline: true),
             cancellationToken);
 
@@ -332,7 +340,16 @@ public sealed class Tracking : IEndpointGroup
             .OrderBy(x => x.Boat.Code)
             .ToListAsync(cancellationToken);
 
-        return Results.Ok(locations.Select(x => ToLatestLocationDto(x, now)));
+        var incidentsByBoatId = await LoadActiveIncidentsByBoatAsync(
+            dbContext,
+            locations.Select(x => x.BoatId),
+            cancellationToken);
+
+        return Results.Ok(locations.Select(x =>
+        {
+            incidentsByBoatId.TryGetValue(x.BoatId, out var activeIncident);
+            return ToLatestLocationDto(x, now, activeIncident);
+        }));
     }
 
     private static async Task<IResult> GetLatestBoatLocationByCode(
@@ -350,9 +367,17 @@ public sealed class Tracking : IEndpointGroup
             .Where(x => x.Boat.Code == normalizedBoatCode)
             .FirstOrDefaultAsync(cancellationToken);
 
-        return location is null
-            ? Results.NotFound(new { message = "Chưa có vị trí mới nhất cho tàu này." })
-            : Results.Ok(ToLatestLocationDto(location, now));
+        if (location is null)
+        {
+            return Results.NotFound(new { message = "Chưa có vị trí mới nhất cho tàu này." });
+        }
+
+        var activeIncident = await LoadActiveIncidentForBoatAsync(
+            dbContext,
+            location.BoatId,
+            cancellationToken);
+
+        return Results.Ok(ToLatestLocationDto(location, now, activeIncident));
     }
 
     private static Dictionary<string, string[]> ValidateLocationRequest(
@@ -520,11 +545,15 @@ public sealed class Tracking : IEndpointGroup
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static BoatLatestLocationDto ToLatestLocationDto(BoatLatestLocation location, DateTimeOffset now) =>
+    private static BoatLatestLocationDto ToLatestLocationDto(
+        BoatLatestLocation location,
+        DateTimeOffset now,
+        ActiveIncidentTrackingDto? activeIncident) =>
         new(
             location.BoatId,
             location.Boat.Code,
             location.Boat.Name,
+            location.Boat.Status.ToString(),
             location.RouteId,
             location.Route?.RouteCode,
             location.TripId,
@@ -542,7 +571,59 @@ public sealed class Tracking : IEndpointGroup
             location.BatteryPercent,
             location.SignalStrength,
             location.GpsFixQuality,
+            activeIncident,
             now - location.ReceivedAt <= TimeSpan.FromSeconds(OnlineThresholdSeconds));
+
+    private static async Task<Dictionary<Guid, ActiveIncidentTrackingDto>> LoadActiveIncidentsByBoatAsync(
+        IApplicationDbContext dbContext,
+        IEnumerable<Guid> boatIds,
+        CancellationToken cancellationToken)
+    {
+        var boatIdList = boatIds.Distinct().ToArray();
+        if (boatIdList.Length == 0)
+        {
+            return new Dictionary<Guid, ActiveIncidentTrackingDto>();
+        }
+
+        var incidents = await dbContext.Incidents
+            .AsNoTracking()
+            .Include(x => x.ReplacementBoat)
+            .Where(x => boatIdList.Contains(x.BoatId) && x.ResolutionStatus == OpenIncidentStatus)
+            .OrderByDescending(x => x.OccurredAt)
+            .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        return incidents
+            .GroupBy(x => x.BoatId)
+            .ToDictionary(x => x.Key, x => ToActiveIncidentTrackingDto(x.First()));
+    }
+
+    private static async Task<ActiveIncidentTrackingDto?> LoadActiveIncidentForBoatAsync(
+        IApplicationDbContext dbContext,
+        Guid boatId,
+        CancellationToken cancellationToken)
+    {
+        var incident = await dbContext.Incidents
+            .AsNoTracking()
+            .Include(x => x.ReplacementBoat)
+            .Where(x => x.BoatId == boatId && x.ResolutionStatus == OpenIncidentStatus)
+            .OrderByDescending(x => x.OccurredAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return incident is null ? null : ToActiveIncidentTrackingDto(incident);
+    }
+
+    private static ActiveIncidentTrackingDto ToActiveIncidentTrackingDto(Incident incident) =>
+        new(
+            incident.Id,
+            incident.IncidentType,
+            incident.Severity,
+            incident.Description,
+            incident.OccurredAt,
+            incident.ResolutionStatus,
+            incident.ReplacementBoatId,
+            incident.ReplacementBoat?.Name);
 
     private static async Task PublishBoatLocationAsync(
         IHubContext<TrackingHub> trackingHubContext,
@@ -612,6 +693,7 @@ public sealed class Tracking : IEndpointGroup
         Guid BoatId,
         string BoatCode,
         string BoatName,
+        string BoatStatus,
         Guid? RouteId,
         string? RouteCode,
         Guid? TripId,
@@ -629,12 +711,14 @@ public sealed class Tracking : IEndpointGroup
         int? BatteryPercent,
         int? SignalStrength,
         string? GpsFixQuality,
+        ActiveIncidentTrackingDto? ActiveIncident,
         bool IsOnline);
 
     private sealed record BoatLocationRealtimeDto(
         Guid BoatId,
         string BoatCode,
         string BoatName,
+        string BoatStatus,
         string DeviceId,
         Guid MessageId,
         Guid? RouteId,
@@ -654,7 +738,18 @@ public sealed class Tracking : IEndpointGroup
         int? BatteryPercent,
         int? SignalStrength,
         string? GpsFixQuality,
+        ActiveIncidentTrackingDto? ActiveIncident,
         bool IsOnline);
+
+    private sealed record ActiveIncidentTrackingDto(
+        Guid IncidentId,
+        string IncidentType,
+        string? Severity,
+        string Description,
+        DateTimeOffset OccurredAt,
+        string ResolutionStatus,
+        Guid? ReplacementBoatId,
+        string? ReplacementBoatName);
 
     private sealed record LookupResult<T>(T? Value, bool NotFound)
         where T : class
