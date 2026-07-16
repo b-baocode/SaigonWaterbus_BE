@@ -57,13 +57,6 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             .SingleOrDefaultAsync(x => x.Id == request.IncidentId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy sự cố.");
 
-        if (!incident.TripId.HasValue || incident.Trip is null)
-        {
-            throw new ValidationException([new ValidationFailure(
-                nameof(request.IncidentId),
-                "Chỉ có thể gắn tàu thay thế cho sự cố có chuyến tàu.")]);
-        }
-
         if (incident.BoatId == request.ReplacementBoatId)
         {
             throw new ValidationException([new ValidationFailure(
@@ -83,12 +76,15 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                 "Tàu thay thế phải Active và đã setup đủ ghế.")]);
         }
 
-        var activeTicketCount = await CountActiveTicketsAsync(incident.Trip.Id, cancellationToken);
-        if (replacementBoat.SeatCount < activeTicketCount)
+        if (incident.Trip is not null)
         {
-            throw new ValidationException([new ValidationFailure(
-                nameof(request.ReplacementBoatId),
-                $"Tàu thay thế không đủ ghế. Cần tối thiểu {activeTicketCount} ghế.")]);
+            var activeTicketCount = await CountActiveTicketsAsync(incident.Trip.Id, cancellationToken);
+            if (replacementBoat.SeatCount < activeTicketCount)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(request.ReplacementBoatId),
+                    $"Tàu thay thế không đủ ghế. Cần tối thiểu {activeTicketCount} ghế.")]);
+            }
         }
 
         incident.ReplacementBoatId = replacementBoat.Id;
@@ -98,17 +94,20 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         incident.ReplacementAssignedByUser = actor;
         incident.ReplacementNote = NormalizeNote(request.Note);
 
-        incident.Trip.BoatId = replacementBoat.Id;
-        incident.Trip.Boat = replacementBoat;
-        if (incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
+        if (incident.Trip is not null)
         {
-            incident.Trip.TripStatus = request.DelayMinutes.GetValueOrDefault() > 0
-                ? TripStatus.Delayed
-                : TripStatus.Scheduled;
-        }
+            incident.Trip.BoatId = replacementBoat.Id;
+            incident.Trip.Boat = replacementBoat;
+            if (incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
+            {
+                incident.Trip.TripStatus = request.DelayMinutes.GetValueOrDefault() > 0
+                    ? TripStatus.Delayed
+                    : TripStatus.Scheduled;
+            }
 
-        incident.Trip.StatusNote = incident.ReplacementNote
-            ?? $"Đã điều tàu {replacementBoat.Name} thay thế.";
+            incident.Trip.StatusNote = incident.ReplacementNote
+                ?? $"Đã điều tàu {replacementBoat.Name} thay thế.";
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
 
