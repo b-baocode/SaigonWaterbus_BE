@@ -119,7 +119,9 @@ public sealed record CharterBookingSelectedRouteDto(
     Guid RouteId,
     string RouteCode,
     string RouteName,
-    string RouteType);
+    string RouteType,
+    string RouteLabel = "",
+    bool IsGeneratedForBooking = false);
 
 public sealed record CharterBookingRoutePlanLegRequest(
     Guid FromStationId,
@@ -147,7 +149,9 @@ public sealed record CharterBookingRouteCandidateDto(
     decimal? DistanceKm,
     int? EstimatedDurationMin,
     int FromStopOrder,
-    int ToStopOrder);
+    int ToStopOrder,
+    string RouteLabel = "",
+    bool IsSelectableForCharterQuote = true);
 
 public sealed record CharterBookingInsuranceDto(
     Guid InsurancePackageId,

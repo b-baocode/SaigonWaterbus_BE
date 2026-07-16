@@ -145,7 +145,10 @@ public sealed class CreateRouteFromStationsCommandHandler
                 stopDtos,
                 route.RouteGeometry!.Coordinates
                     .Select(coordinate => new[] { coordinate.X, coordinate.Y })
-                    .ToList()),
+                    .ToList(),
+                RoutePresentationSupport.ResolveLabel(route.RouteType),
+                RoutePresentationSupport.IsSelectableForCharterQuote(route),
+                RoutePresentationSupport.IsGeneratedForBooking(route)),
             legs
                 .Select(x => new RouteComposedLegDto(
                     x.LegOrder,

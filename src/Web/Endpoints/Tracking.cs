@@ -1,8 +1,10 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Infrastructure.Data;
+using SaigonWaterbus.Web.Hubs;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -72,6 +74,8 @@ public sealed class Tracking : IEndpointGroup
     private static async Task<IResult> ReceiveLocation(
         ApplicationDbContext dbContext,
         TimeProvider timeProvider,
+        IHubContext<TrackingHub> trackingHubContext,
+        ILogger<Tracking> logger,
         [FromHeader(Name = "X-Device-Id")] string? headerDeviceId,
         TrackingLocationRequest request,
         CancellationToken cancellationToken)
@@ -273,7 +277,7 @@ public sealed class Tracking : IEndpointGroup
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        return Results.Ok(new TrackingLocationAcceptedResponse(
+        var acceptedResponse = new TrackingLocationAcceptedResponse(
             true,
             request.MessageId,
             gpsDevice.DeviceId,
@@ -281,7 +285,38 @@ public sealed class Tracking : IEndpointGroup
             gpsDevice.BoatId,
             routeId,
             trip.Value?.Id,
-            now));
+            now);
+
+        await PublishBoatLocationAsync(
+            trackingHubContext,
+            logger,
+            new BoatLocationRealtimeDto(
+                gpsDevice.BoatId,
+                gpsDevice.Boat.Code,
+                gpsDevice.Boat.Name,
+                gpsDevice.DeviceId,
+                request.MessageId,
+                routeId,
+                route.Value?.RouteCode,
+                trip.Value?.Id,
+                trip.Value?.TripCode,
+                request.Lat,
+                request.Lng,
+                request.SpeedKmh,
+                request.Heading,
+                request.AccuracyMeters,
+                recordedAt,
+                now,
+                request.Sequence,
+                status,
+                direction,
+                request.BatteryPercent,
+                request.SignalStrength,
+                gpsFixQuality,
+                IsOnline: true),
+            cancellationToken);
+
+        return Results.Ok(acceptedResponse);
     }
 
     private static async Task<IResult> GetLatestBoatLocations(
@@ -509,6 +544,29 @@ public sealed class Tracking : IEndpointGroup
             location.GpsFixQuality,
             now - location.ReceivedAt <= TimeSpan.FromSeconds(OnlineThresholdSeconds));
 
+    private static async Task PublishBoatLocationAsync(
+        IHubContext<TrackingHub> trackingHubContext,
+        ILogger logger,
+        BoatLocationRealtimeDto payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await trackingHubContext.Clients.All.SendAsync(
+                TrackingHub.BoatLocationEventName,
+                payload,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                ex,
+                "Failed to broadcast GPS location for boat {BoatCode} sequence {Sequence}.",
+                payload.BoatCode,
+                payload.Sequence);
+        }
+    }
+
     public sealed record TrackingLocationRequest(
         Guid MessageId,
         string? DeviceId,
@@ -554,6 +612,31 @@ public sealed class Tracking : IEndpointGroup
         Guid BoatId,
         string BoatCode,
         string BoatName,
+        Guid? RouteId,
+        string? RouteCode,
+        Guid? TripId,
+        string? TripCode,
+        decimal Lat,
+        decimal Lng,
+        decimal? SpeedKmh,
+        int? Heading,
+        decimal? AccuracyMeters,
+        DateTimeOffset RecordedAt,
+        DateTimeOffset ReceivedAt,
+        long Sequence,
+        string Status,
+        string? Direction,
+        int? BatteryPercent,
+        int? SignalStrength,
+        string? GpsFixQuality,
+        bool IsOnline);
+
+    private sealed record BoatLocationRealtimeDto(
+        Guid BoatId,
+        string BoatCode,
+        string BoatName,
+        string DeviceId,
+        Guid MessageId,
         Guid? RouteId,
         string? RouteCode,
         Guid? TripId,

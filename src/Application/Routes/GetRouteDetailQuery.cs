@@ -36,6 +36,9 @@ public sealed class GetRouteDetailQueryHandler : IRequestHandler<GetRouteDetailQ
 
         return new RouteDetailDto(route.Id, route.RouteCode, route.RouteName, route.RouteType,
             route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status,
-            stops, geometry);
+            stops, geometry,
+            RoutePresentationSupport.ResolveLabel(route.RouteType),
+            RoutePresentationSupport.IsSelectableForCharterQuote(route),
+            RoutePresentationSupport.IsGeneratedForBooking(route));
     }
 }

@@ -130,7 +130,10 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
             route.EstimatedDurationMin,
             route.Status,
             stopDtos,
-            ToGeometryDto(route.RouteGeometry));
+            ToGeometryDto(route.RouteGeometry),
+            RoutePresentationSupport.ResolveLabel(route.RouteType),
+            RoutePresentationSupport.IsSelectableForCharterQuote(route),
+            RoutePresentationSupport.IsGeneratedForBooking(route));
     }
 
     private static void EnsureSourceRoutesCanBeComposed(IReadOnlyList<Route> sourceRoutes)
