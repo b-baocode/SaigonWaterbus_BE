@@ -81,9 +81,10 @@ public sealed class Incidents : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoặc Manager",
                 AssignReplacementBoatExample,
-                "Chi ap dung cho incident co tripId.",
+                "Neu incident co tripId, backend cap nhat trip.BoatId sang tau thay the.",
+                "Neu incident khong co tripId, backend chi luu tau cuu ho/thay the vao incident.",
                 "Tau thay the phai Active, setup du ghe va khong trung tau gap su co.",
-                "Backend cap nhat trip.BoatId sang tau thay the."));
+                "delayMinutes chi anh huong trang thai trip khi incident co tripId."));
 
         group.MapPatch(ResolveIncident, "{incidentId:guid}/resolve")
             .RequireAuthorization()

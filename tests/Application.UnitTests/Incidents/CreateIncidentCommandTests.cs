@@ -89,6 +89,51 @@ public class CreateIncidentCommandTests
         context.Boats.Single().Status.ShouldBe(BoatStatus.UnderMaintenance);
     }
 
+    [Test]
+    public async Task ManagerCanAssignReplacementBoatForIncidentWithoutTrip()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var incidentBoat = Boat("WB-01");
+        var replacementBoat = Boat("WB-02");
+        var incident = new Incident
+        {
+            Boat = incidentBoat,
+            BoatId = incidentBoat.Id,
+            IncidentType = "MechanicalFailure",
+            Description = "Tau can cuu ho tren song.",
+            Severity = "High",
+            OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ResolutionStatus = IncidentSupport.OpenStatus
+        };
+        context.AddRange(incidentBoat, replacementBoat, incident);
+        await context.SaveChangesAsync();
+
+        var assignedAt = new DateTimeOffset(2030, 1, 1, 2, 0, 0, TimeSpan.Zero);
+        var handler = new AssignReplacementBoatCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(assignedAt));
+
+        var result = await handler.Handle(
+            new AssignReplacementBoatCommand(
+                incident.Id,
+                replacementBoat.Id,
+                DelayMinutes: null,
+                Note: "Dieu tau den ho tro."),
+            CancellationToken.None);
+
+        result.TripId.ShouldBeNull();
+        result.ReplacementBoatId.ShouldBe(replacementBoat.Id);
+        result.ReplacementBoatName.ShouldBe(replacementBoat.Name);
+
+        var savedIncident = context.Incidents.Single();
+        savedIncident.ReplacementBoatId.ShouldBe(replacementBoat.Id);
+        savedIncident.ReplacementAssignedAt.ShouldBe(assignedAt);
+        savedIncident.ReplacementAssignedByUserId.ShouldBe(managerContext.UserId!.Value);
+        savedIncident.ReplacementNote.ShouldBe("Dieu tau den ho tro.");
+    }
+
     private static Boat Boat(string code) =>
         new()
         {
