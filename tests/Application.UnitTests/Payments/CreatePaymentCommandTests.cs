@@ -446,6 +446,121 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task WebhookPaidCreatesInAppNotificationOnce()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = userId,
+            BookingCode = "CB-NOTIF",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@gmail.com",
+            BookingStatus = BookingStatus.Quoted,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 5000,
+            RemainingAmount = 5000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000011",
+            Provider = "PayOS",
+            Amount = 5000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Deposit",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var realtimeNotifier = new RecordingNotificationRealtimeNotifier();
+        var handler = new HandlePaymentWebhookCommandHandler(
+            context,
+            new TestPaymentGateway(),
+            new TestPaymentNotificationSender(),
+            TimeProvider.System,
+            notificationRealtimeNotifier: realtimeNotifier);
+
+        await handler.Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(1000011, 5000)), CancellationToken.None);
+
+        var notification = context.Set<Notification>().Single();
+        notification.UserId.ShouldBe(userId);
+        notification.Type.ShouldBe("booking_confirmed");
+        notification.RelatedEntityType.ShouldBe("booking");
+        notification.RelatedEntityId.ShouldBe(booking.Id);
+        notification.IsRead.ShouldBeFalse();
+        notification.Title.ShouldBe("Đã nhận tiền đặt cọc");
+        notification.Body.ShouldNotBeNullOrWhiteSpace();
+        realtimeNotifier.Published.Count.ShouldBe(1);
+        realtimeNotifier.Published.Single().UserId.ShouldBe(userId);
+        realtimeNotifier.Published.Single().NotificationId.ShouldBe(notification.Id);
+
+        // Webhook PayOS có thể bắn lại — payment đã Paid thì không tạo thông báo trùng.
+        await handler.Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(1000011, 5000)), CancellationToken.None);
+        context.Set<Notification>().Count().ShouldBe(1);
+        realtimeNotifier.Published.Count.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task WebhookPaidGuestBookingSkipsInAppNotification()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = null,
+            BookingCode = "CB-GUEST",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@gmail.com",
+            BookingStatus = BookingStatus.Quoted,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000012",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var sender = new TestPaymentNotificationSender();
+        var handler = new HandlePaymentWebhookCommandHandler(
+            context,
+            new TestPaymentGateway(),
+            sender,
+            TimeProvider.System);
+
+        await handler.Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(1000012, 10000)), CancellationToken.None);
+
+        context.Set<Notification>().Count().ShouldBe(0);
+        sender.Notifications.Count.ShouldBe(1);
+    }
+
+    [Test]
     public async Task WebhookPaidRegularBookingCreatesPassengerTicket()
     {
         await using var context = SeatFlowTestData.CreateContext();

@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -46,11 +47,16 @@ public sealed class UpdatePromotionCommandHandler : IRequestHandler<UpdatePromot
 {
     private readonly IApplicationDbContext _context;
     private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
-    public UpdatePromotionCommandHandler(IApplicationDbContext context, TimeProvider timeProvider)
+    public UpdatePromotionCommandHandler(
+        IApplicationDbContext context,
+        TimeProvider timeProvider,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _timeProvider = timeProvider;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<PromotionDto> Handle(UpdatePromotionCommand request, CancellationToken cancellationToken)
@@ -87,6 +93,9 @@ public sealed class UpdatePromotionCommandHandler : IRequestHandler<UpdatePromot
         var scope = await PromotionSupport.NormalizeScopeAsync(
             _context, request.Scope, nameof(request.Scope), cancellationToken);
 
+        var wasAnnounceable = promotion.Status == PromotionStatus.Active
+            && promotion.Visibility == PromotionVisibility.Public;
+
         promotion.PromotionName = request.PromotionName.Trim();
         promotion.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
         promotion.DiscountValue = request.DiscountValue;
@@ -102,7 +111,17 @@ public sealed class UpdatePromotionCommandHandler : IRequestHandler<UpdatePromot
         promotion.Visibility = request.Visibility;
         promotion.Status = request.Status;
 
+        // Vừa trở thành Active + Public (phát hành hoặc công khai hóa) → broadcast cho khách hàng.
+        IReadOnlyList<Notification> announcementNotifications = [];
+        if (!wasAnnounceable)
+        {
+            announcementNotifications = await NotificationSupport.AddPromotionAnnouncementNotificationsAsync(
+                _context, promotion, _timeProvider.GetUtcNow(), cancellationToken);
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier, announcementNotifications, cancellationToken);
 
         return PromotionSupport.ToDto(promotion, _timeProvider.GetUtcNow(), totalUsed, budgetSpent);
     }

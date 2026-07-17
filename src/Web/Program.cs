@@ -186,6 +186,7 @@ app.MapHub<SaigonWaterbus.Web.Hubs.TripSeatsHub>("/hubs/trip-seats");
 app.MapHub<SaigonWaterbus.Web.Hubs.CharterBookingsHub>("/hubs/charter-bookings");
 app.MapHub<SaigonWaterbus.Web.Hubs.TrackingHub>("/hubs/tracking");
 app.MapHub<SaigonWaterbus.Web.Hubs.IncidentsHub>("/hubs/incidents");
+app.MapHub<SaigonWaterbus.Web.Hubs.NotificationsHub>("/hubs/notifications");
 
 app.Run();
 

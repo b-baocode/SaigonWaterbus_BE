@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -55,15 +56,18 @@ public sealed class CreatePromotionCommandHandler : IRequestHandler<CreatePromot
     private readonly IApplicationDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly IPromotionImageStorageService? _imageStorage;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CreatePromotionCommandHandler(
         IApplicationDbContext context,
         TimeProvider timeProvider,
-        IPromotionImageStorageService? imageStorage = null)
+        IPromotionImageStorageService? imageStorage = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _timeProvider = timeProvider;
         _imageStorage = imageStorage;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<PromotionDto> Handle(CreatePromotionCommand request, CancellationToken cancellationToken)
@@ -117,7 +121,11 @@ public sealed class CreatePromotionCommandHandler : IRequestHandler<CreatePromot
         }
 
         _context.Set<Promotion>().Add(promotion);
+        var announcementNotifications = await NotificationSupport.AddPromotionAnnouncementNotificationsAsync(
+            _context, promotion, _timeProvider.GetUtcNow(), cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier, announcementNotifications, cancellationToken);
 
         return PromotionSupport.ToDto(promotion, _timeProvider.GetUtcNow(), 0, 0);
     }

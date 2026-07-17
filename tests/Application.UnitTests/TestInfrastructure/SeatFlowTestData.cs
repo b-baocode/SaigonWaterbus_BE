@@ -143,6 +143,19 @@ internal sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     public override DateTimeOffset GetUtcNow() => utcNow;
 }
 
+internal sealed class RecordingNotificationRealtimeNotifier : INotificationRealtimeNotifier
+{
+    public List<NotificationRealtimeEvent> Published { get; } = [];
+
+    public Task PublishCreatedAsync(
+        IReadOnlyList<NotificationRealtimeEvent> notifications,
+        CancellationToken cancellationToken)
+    {
+        Published.AddRange(notifications);
+        return Task.CompletedTask;
+    }
+}
+
 internal sealed class TestDatabaseExceptionClassifier : IDatabaseExceptionClassifier
 {
     public bool IsUniqueConstraintViolation(Exception exception) => false;

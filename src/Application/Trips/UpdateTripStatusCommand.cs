@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -22,8 +23,18 @@ public sealed class UpdateTripStatusCommandValidator : AbstractValidator<UpdateT
 public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripStatusCommand, TripDetailDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
-    public UpdateTripStatusCommandHandler(IApplicationDbContext context) => _context = context;
+    public UpdateTripStatusCommandHandler(
+        IApplicationDbContext context,
+        TimeProvider? timeProvider = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+    {
+        _context = context;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+    }
 
     public async Task<TripDetailDto> Handle(UpdateTripStatusCommand request, CancellationToken cancellationToken)
     {
@@ -36,10 +47,20 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
+        var oldStatus = trip.TripStatus;
         trip.TripStatus = request.TripStatus;
         trip.StatusNote = request.StatusNote;
 
+        var createdNotifications = await NotificationSupport.AddTripStatusChangedNotificationsAsync(
+            _context,
+            trip,
+            oldStatus,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier, createdNotifications, cancellationToken);
 
         var sourceBooking = await LoadSourceBookingAsync(trip, cancellationToken);
         return ToDetailDto(trip, sourceBooking);

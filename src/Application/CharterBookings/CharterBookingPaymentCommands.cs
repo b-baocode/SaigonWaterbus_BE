@@ -40,6 +40,7 @@ public sealed class CreateCharterBookingPaymentCommandHandler
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CreateCharterBookingPaymentCommandHandler(
         IApplicationDbContext context,
@@ -47,7 +48,8 @@ public sealed class CreateCharterBookingPaymentCommandHandler
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
@@ -55,6 +57,7 @@ public sealed class CreateCharterBookingPaymentCommandHandler
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<CreateCharterBookingPaymentResult> Handle(
@@ -200,7 +203,8 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             booking,
             payment,
             wasPaid,
-            cancellationToken);
+            cancellationToken,
+            notificationRealtimeNotifier: _notificationRealtimeNotifier);
 
         return CharterBookingPaymentSupport.ToCreatePaymentResult(booking, payment);
     }
@@ -246,7 +250,8 @@ public sealed class CreateCharterBookingPaymentCommandHandler
                 booking,
                 payment,
                 wasPaid,
-                cancellationToken);
+                cancellationToken,
+                notificationRealtimeNotifier: _notificationRealtimeNotifier);
             return true;
         }
         catch (PaymentGatewayException)
@@ -278,13 +283,16 @@ public sealed class SyncCharterBookingPaymentCommandHandler
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+
     public SyncCharterBookingPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
@@ -292,6 +300,7 @@ public sealed class SyncCharterBookingPaymentCommandHandler
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<SyncCharterBookingPaymentResult> Handle(
@@ -360,7 +369,8 @@ public sealed class SyncCharterBookingPaymentCommandHandler
             booking,
             payment,
             wasPaid,
-            cancellationToken);
+            cancellationToken,
+            notificationRealtimeNotifier: _notificationRealtimeNotifier);
 
         return CharterBookingPaymentSupport.ToSyncPaymentResult(booking, payment);
     }
@@ -379,18 +389,22 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+
     public HandleCharterBookingPaymentWebhookCommandHandler(
         IApplicationDbContext context,
         ICharterBookingPaymentGateway paymentGateway,
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _paymentGateway = paymentGateway;
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<CharterBookingPaymentWebhookResult> Handle(
@@ -483,7 +497,8 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
                 booking,
                 payment,
                 wasPaid,
-                cancellationToken);
+                cancellationToken,
+                notificationRealtimeNotifier: _notificationRealtimeNotifier);
 
             return new CharterBookingPaymentWebhookResult(
                 true,

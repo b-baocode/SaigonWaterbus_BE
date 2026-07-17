@@ -499,3 +499,6 @@ $RECYCLE.BIN/
 # JetBrains IDE
 .idea/
 *.sln.iml
+
+# Claude Code local config
+.claude/
