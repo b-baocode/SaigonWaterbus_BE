@@ -58,16 +58,27 @@ public sealed class Trips : IEndpointGroup
 
         group.MapGet(SearchTrips, "search")
             .AllowAnonymous()
-            .WithSummary("Tim chuyen tau theo hanh trinh va ngay")
+            .WithSummary("Tim chuyen waterbus thuong theo hanh trinh va ngay")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Query params: fromStationId (guid), toStationId (guid), operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeType (optional).",
-                "Chi tra ve chuyen ban ve le (tripType=Regular); chuyen charter khong xuat hien.",
-                "routeType hop le: Regular (waterbus thuong) | SightseeingLoop (ngam canh); khong nhan Charter/CharterReference.",
-                "Response them field routeType de FE phan biet chuyen waterbus va chuyen ngam canh.",
+                "Query params: fromStationId (guid), toStationId (guid), operatingDate (dd/MM/yyyy hoac dd-MM-yyyy).",
+                "Chi tra ve chuyen waterbus thuong (routeType=Regular, tripType=Regular); chuyen charter khong xuat hien.",
+                "Chuyen ngam canh tim bang GET /api/trips/search/sightseeing (khong can chon ben).",
                 "Chi tra ve chuyen co tripStatus=Scheduled va departureTime > now.",
-                "availableSeats = capacitySnapshot - so ve da dat (BookingItem active)."));
+                "availableSeats = so ghe con trong tren CHANG tim kiem (ghe ban theo chang, xem ghi chu seat map)."));
+
+        group.MapGet(SearchSightseeingTrips, "search/sightseeing")
+            .AllowAnonymous()
+            .WithSummary("Tim chuyen ngam canh theo ngay")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Query params: operatingDate (dd/MM/yyyy, dd-MM-yyyy hoac yyyy-MM-dd). Khong can fromStationId/toStationId vi tuyen ngam canh la vong lap: ben bat dau = ben ket thuc.",
+                "Chi tra ve chuyen co route routeType=SightseeingLoop, tripStatus=Scheduled va departureTime > now.",
+                "Ghe ban nguyen chuyen (khong theo chang): availableSeats = tong ghe active - so ghe da co ve/dang giu.",
+                "minPrice = gia ghe re nhat da chot trong trip_seats x he so loai ve re nhat.",
+                "fromStopScheduledDeparture/toStopScheduledArrival = gio khoi hanh/ket thuc cua nguyen chuyen."));
 
         group.MapGet(GetTripById, "{id:guid}")
             .AllowAnonymous()
@@ -176,7 +187,7 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> SearchTrips(
         ISender sender,
-        Guid fromStationId, Guid toStationId, string operatingDate, string? routeType,
+        Guid fromStationId, Guid toStationId, string operatingDate,
         CancellationToken ct)
     {
         if (!TryParseRequiredDateOnly(operatingDate, out var parsedOperatingDate))
@@ -185,7 +196,18 @@ public sealed class Trips : IEndpointGroup
         }
 
         return Results.Ok(await sender.Send(
-            new SearchTripsQuery(fromStationId, toStationId, parsedOperatingDate, routeType), ct));
+            new SearchTripsQuery(fromStationId, toStationId, parsedOperatingDate), ct));
+    }
+
+    private static async Task<IResult> SearchSightseeingTrips(
+        ISender sender, string operatingDate, CancellationToken ct)
+    {
+        if (!TryParseRequiredDateOnly(operatingDate, out var parsedOperatingDate))
+        {
+            return Results.BadRequest(new { message = "operatingDate phải có định dạng dd/MM/yyyy, dd-MM-yyyy hoặc yyyy-MM-dd." });
+        }
+
+        return Results.Ok(await sender.Send(new SearchSightseeingTripsQuery(parsedOperatingDate), ct));
     }
 
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>

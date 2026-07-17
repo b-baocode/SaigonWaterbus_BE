@@ -7,32 +7,14 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Trips;
 
+/// <summary>
+/// Tìm chuyến waterbus thường (route Regular) theo chặng đi + ngày.
+/// Chuyến sightseeing tìm bằng <see cref="SearchSightseeingTripsQuery"/> riêng.
+/// </summary>
 public sealed record SearchTripsQuery(
     Guid FromStationId,
     Guid ToStationId,
-    DateOnly OperatingDate,
-    string? RouteType = null) : IRequest<IReadOnlyList<TripSummaryDto>>;
-
-public sealed class SearchTripsQueryValidator : AbstractValidator<SearchTripsQuery>
-{
-    public SearchTripsQueryValidator()
-    {
-        RuleFor(x => x.RouteType)
-            .Must(RouteTypes.IsValid)
-            .WithMessage($"routeType chi nhan {RouteTypes.Regular} hoac {RouteTypes.SightseeingLoop}.")
-            .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
-
-        RuleFor(x => x.RouteType)
-            .Must(x =>
-            {
-                var routeType = RouteTypes.Normalize(x);
-                return routeType != RouteTypes.Charter
-                    && routeType != RouteTypes.CharterReference;
-            })
-            .WithMessage("Chuyen charter khong ban ve le nen khong tim kiem duoc.")
-            .When(x => !string.IsNullOrWhiteSpace(x.RouteType));
-    }
-}
+    DateOnly OperatingDate) : IRequest<IReadOnlyList<TripSummaryDto>>;
 
 public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, IReadOnlyList<TripSummaryDto>>
 {
@@ -69,17 +51,13 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 .ThenInclude(r => r.RouteStops)
             .Where(t => routeIds.Contains(t.RouteId)
                      && t.Route.IsBookable
-                     // Trip charter thue tron tau khong ban ve le.
+                     // Endpoint nay chi tim waterbus thuong; sightseeing co endpoint rieng,
+                     // charter thue tron tau khong ban ve le.
+                     && t.Route.RouteType == RouteTypes.Regular
                      && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
                      && t.TripStatus == TripStatus.Scheduled
                      && t.DepartureTime > now);
-
-        if (!string.IsNullOrWhiteSpace(request.RouteType))
-        {
-            var routeType = RouteTypes.Normalize(request.RouteType);
-            tripQuery = tripQuery.Where(t => t.Route.RouteType == routeType);
-        }
 
         var trips = await tripQuery.ToListAsync(cancellationToken);
 
