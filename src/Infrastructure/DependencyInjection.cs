@@ -2,10 +2,12 @@
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Infrastructure.Data.Interceptors;
+using SaigonWaterbus.Infrastructure.Incidents;
 using SaigonWaterbus.Infrastructure.Media;
 using SaigonWaterbus.Infrastructure.Options;
 using SaigonWaterbus.Infrastructure.Payments;
@@ -22,6 +24,7 @@ public static class DependencyInjection
     private const string BrevoHttpClientName = "Brevo";
     private const string EsmsHttpClientName = "Esms";
     private const string PayOsHttpClientName = "PayOS";
+    private const string IncidentGpsHookHttpClientName = "IncidentGpsHook";
 
     public static void AddInfrastructureServices(this IHostApplicationBuilder builder)
     {
@@ -53,6 +56,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IBookingCodeGenerator, BookingCodeGenerator>();
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<ICharterBookingPaymentGateway, PayOsCharterBookingPaymentGateway>();
+        builder.Services.AddScoped<IIncidentGpsHookNotifier, HttpIncidentGpsHookNotifier>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IBlogImageStorageService, CloudinaryBlogImageStorageService>();
         builder.Services.AddScoped<IBoatImageStorageService, CloudinaryBoatImageStorageService>();
@@ -63,6 +67,11 @@ public static class DependencyInjection
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddHttpClient(PayOsHttpClientName);
+        builder.Services.AddHttpClient(IncidentGpsHookHttpClientName, (provider, client) =>
+        {
+            var options = provider.GetRequiredService<IOptions<IncidentGpsHookOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(1, options.TimeoutSeconds));
+        });
         AddRedis(builder);
         AddRedisBackedServices(builder);
         builder.Services.AddHostedService<BookingHoldExpiryService>();
@@ -150,6 +159,7 @@ public static class DependencyInjection
         builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection(RedisOptions.SectionName));
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
         builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
+        builder.Services.Configure<IncidentGpsHookOptions>(builder.Configuration.GetSection(IncidentGpsHookOptions.SectionName));
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<CharterBookingExpirationHostedService>();

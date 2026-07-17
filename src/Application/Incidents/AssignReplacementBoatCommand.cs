@@ -31,17 +31,20 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly IIncidentRealtimeNotifier _realtimeNotifier;
+    private readonly IIncidentGpsHookNotifier _gpsHookNotifier;
 
     public AssignReplacementBoatCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        IIncidentRealtimeNotifier? realtimeNotifier = null)
+        IIncidentRealtimeNotifier? realtimeNotifier = null,
+        IIncidentGpsHookNotifier? gpsHookNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
+        _gpsHookNotifier = gpsHookNotifier ?? NullIncidentGpsHookNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(
@@ -112,8 +115,14 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         await _context.SaveChangesAsync(cancellationToken);
 
         incident = await LoadIncidentQuery().SingleAsync(x => x.Id == request.IncidentId, cancellationToken);
+        await IncidentSupport.PublishGpsHookAsync(
+            _context,
+            _gpsHookNotifier,
+            incident,
+            IncidentSupport.RescueDispatchedEvent,
+            cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
-            IncidentSupport.ToRealtimeEvent(incident, "RescueDispatched", incident.ReplacementAssignedAt),
+            IncidentSupport.ToRealtimeEvent(incident, IncidentSupport.RescueDispatchedEvent, incident.ReplacementAssignedAt),
             cancellationToken);
         return IncidentSupport.ToDto(incident);
     }

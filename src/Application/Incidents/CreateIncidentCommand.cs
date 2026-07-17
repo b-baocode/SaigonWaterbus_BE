@@ -33,17 +33,20 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly IIncidentRealtimeNotifier _realtimeNotifier;
+    private readonly IIncidentGpsHookNotifier _gpsHookNotifier;
 
     public CreateIncidentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        IIncidentRealtimeNotifier? realtimeNotifier = null)
+        IIncidentRealtimeNotifier? realtimeNotifier = null,
+        IIncidentGpsHookNotifier? gpsHookNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
+        _gpsHookNotifier = gpsHookNotifier ?? NullIncidentGpsHookNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(CreateIncidentCommand request, CancellationToken cancellationToken)
@@ -98,8 +101,14 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
 
         _context.Incidents.Add(incident);
         await _context.SaveChangesAsync(cancellationToken);
+        await IncidentSupport.PublishGpsHookAsync(
+            _context,
+            _gpsHookNotifier,
+            incident,
+            IncidentSupport.IncidentCreatedEvent,
+            cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
-            IncidentSupport.ToRealtimeEvent(incident, "IncidentCreated", now),
+            IncidentSupport.ToRealtimeEvent(incident, IncidentSupport.IncidentCreatedEvent, now),
             cancellationToken);
 
         return IncidentSupport.ToDto(incident);
