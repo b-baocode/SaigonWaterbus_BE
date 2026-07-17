@@ -121,6 +121,19 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             .GroupBy(p => p.TripId)
             .ToDictionary(g => g.Key, g => g.Select(p => p.TripSeatId).Distinct().Count());
 
+        // Giờ đi/đến theo CHẶNG tìm kiếm: lấy từ trip_stops (giờ dự kiến từng bến của chuyến);
+        // trip cũ chưa có trip_stops thì suy từ route stops như BuildStopDtos.
+        var tripStopsByTripId = (await _context.Set<TripStop>()
+                .Where(ts => tripIds.Contains(ts.TripId))
+                .Select(ts => new { ts.TripId, ts.StopOrder, ts.PlannedArrivalTime, ts.PlannedDepartureTime })
+                .ToListAsync(cancellationToken))
+            .GroupBy(ts => ts.TripId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.ToDictionary(
+                    ts => ts.StopOrder,
+                    ts => (Arrival: ts.PlannedArrivalTime, Departure: ts.PlannedDepartureTime)));
+
         // Giá min theo chuyến: ưu tiên giá đã chốt trong trip_seats (đặt khi tạo trip).
         var tripSeatMinPrices = await _context.Set<TripSeat>()
             .Where(ts => tripIds.Contains(ts.TripId) && ts.Price != null && ts.Price > 0)
@@ -187,12 +200,44 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                     : stats?.MinSeatPrice is > 0 ? stats.MinSeatPrice.Value : (decimal?)null);
             var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
 
+            // Giờ đi tại bến lên + giờ đến tại bến xuống của CHẶNG khách tìm — không phải
+            // giờ đầu/cuối của nguyên chuyến.
+            var (fromStopDeparture, toStopArrival) = ResolveSegmentTimes(
+                t, searchSegmentByRouteId[t.RouteId], tripStopsByTripId);
+
             return new TripSummaryDto(
                 t.Id, t.TripCode, t.Route.RouteName, t.Route.RouteType,
                 t.DepartureTime, t.ArrivalTime,
-                t.DepartureTime, t.ArrivalTime,
+                fromStopDeparture, toStopArrival,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString());
         }).ToList();
+    }
+
+    private static (DateTimeOffset? FromStopDeparture, DateTimeOffset? ToStopArrival) ResolveSegmentTimes(
+        Trip trip,
+        (int FromOrder, int ToOrder) segment,
+        IReadOnlyDictionary<Guid, Dictionary<int, (DateTimeOffset? Arrival, DateTimeOffset? Departure)>> tripStopsByTripId)
+    {
+        if (tripStopsByTripId.TryGetValue(trip.Id, out var stopsByOrder))
+        {
+            var fromDeparture = stopsByOrder.TryGetValue(segment.FromOrder, out var fromStop)
+                ? fromStop.Departure ?? fromStop.Arrival
+                : null;
+            var toArrival = stopsByOrder.TryGetValue(segment.ToOrder, out var toStop)
+                ? toStop.Arrival ?? toStop.Departure
+                : null;
+            return (fromDeparture ?? trip.DepartureTime, toArrival ?? trip.ArrivalTime);
+        }
+
+        // Trip cũ chưa có trip_stops: suy lịch dừng từ route stops (cùng cách BuildStopDtos fallback).
+        var drafts = TripStopScheduleSupport.BuildFromRouteStops(
+            trip.Route.RouteStops.OrderBy(rs => rs.StopOrder).ToList(),
+            trip.DepartureTime);
+        var fromDraft = drafts.FirstOrDefault(d => d.StopOrder == segment.FromOrder);
+        var toDraft = drafts.FirstOrDefault(d => d.StopOrder == segment.ToOrder);
+        return (
+            fromDraft?.PlannedDepartureTime ?? fromDraft?.PlannedArrivalTime ?? trip.DepartureTime,
+            toDraft?.PlannedArrivalTime ?? toDraft?.PlannedDepartureTime ?? trip.ArrivalTime);
     }
 }

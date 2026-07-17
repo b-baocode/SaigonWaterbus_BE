@@ -283,9 +283,11 @@ public sealed class QuestPdfBookingTicketPdfRenderer : IBookingTicketPdfRenderer
         BookingTicketPdfItemDto ticket,
         LegDisplay leg)
     {
-        var departureDate = leg.DepartureDate;
-        var departureTime = leg.DepartureTime;
-        // Ghế bán theo chặng: FROM/TO trên vé là trạm lên/xuống của riêng hành khách;
+        // Ghế bán theo chặng: Date/Time trên vé là giờ tàu rời trạm LÊN của hành khách;
+        // vé không có giờ chặng (dữ liệu cũ, sightseeing) giữ giờ khởi hành của leg.
+        var departureDate = ticket.DepartureTime.HasValue ? FormatPdfDate(ticket.DepartureTime) : leg.DepartureDate;
+        var departureTime = ticket.DepartureTime.HasValue ? FormatPdfTime(ticket.DepartureTime) : leg.DepartureTime;
+        // FROM/TO trên vé là trạm lên/xuống của riêng hành khách;
         // vé đi cả tuyến (dữ liệu cũ, sightseeing) giữ trạm đầu/cuối của leg.
         var fromStation = string.IsNullOrWhiteSpace(ticket.FromStationName) ? leg.FromStation : ticket.FromStationName;
         var toStation = string.IsNullOrWhiteSpace(ticket.ToStationName) ? leg.ToStation : ticket.ToStationName;

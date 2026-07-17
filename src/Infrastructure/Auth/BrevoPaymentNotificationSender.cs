@@ -322,9 +322,13 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 ["tripCode"] = ticketTripCodes.TryGetValue(ticket.TicketCode, out var legTripCode)
                     ? legTripCode
                     : notification.TripCode,
-                // Chặng riêng của hành khách (ghế bán theo chặng); vé đi cả tuyến thì rơi về trạm đầu/cuối.
+                // Chặng riêng của hành khách (ghế bán theo chặng); vé đi cả tuyến thì rơi về trạm đầu/cuối
+                // và giờ khởi hành của chuyến.
                 ["fromStationName"] = ResolveText(ticket.FromStationName ?? notification.FromStationName),
-                ["toStationName"] = ResolveText(ticket.ToStationName ?? notification.ToStationName)
+                ["toStationName"] = ResolveText(ticket.ToStationName ?? notification.ToStationName),
+                ["departureTime"] = (ticket.DepartureTime ?? notification.DepartureTime) is { } boarding
+                    ? FormatDateTimeOffset(boarding, "dd/MM/yyyy HH:mm")
+                    : null
             })
             .ToArray();
 

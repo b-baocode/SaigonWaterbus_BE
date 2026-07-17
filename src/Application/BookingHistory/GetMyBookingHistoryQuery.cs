@@ -47,10 +47,15 @@ public sealed class GetMyBookingHistoryQueryHandler
         var standardBookings = await _context.Set<Booking>()
             .AsNoTracking()
             .Include(x => x.Passengers)
+                .ThenInclude(p => p.FromStation)
+            .Include(x => x.Passengers)
+                .ThenInclude(p => p.ToStation)
             .Include(x => x.Trip)
                 .ThenInclude(x => x!.Route)
                     .ThenInclude(x => x.RouteStops)
                         .ThenInclude(x => x.Station)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
             .Where(x => x.BookingType == Booking.SeatBookingType)
             .Where(x => x.UserId == userId)
             .ToListAsync(cancellationToken);
@@ -75,7 +80,25 @@ public sealed class GetMyBookingHistoryQueryHandler
         var stops = booking.Trip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
         var firstStop = stops.FirstOrDefault();
         var lastStop = stops.LastOrDefault();
-        var departure = booking.Trip?.DepartureTime;
+
+        // Chặng của BOOKING (ghế bán theo chặng): ga lên sớm nhất → ga xuống muộn nhất trong các vé
+        // chiều đi; giờ theo trip_stops tại 2 bến đó. Dữ liệu cũ chưa lưu chặng → đầu/cuối tuyến như trước.
+        var outboundPassengers = booking.Passengers
+            .Where(p => p.TripId is null || p.TripId == booking.TripId)
+            .ToList();
+        var earliestBoarding = outboundPassengers
+            .Where(p => p.FromStopOrder.HasValue)
+            .OrderBy(p => p.FromStopOrder)
+            .FirstOrDefault();
+        var latestAlighting = outboundPassengers
+            .Where(p => p.ToStopOrder.HasValue)
+            .OrderByDescending(p => p.ToStopOrder)
+            .FirstOrDefault();
+
+        DateTimeOffset? departure = booking.Trip is null
+            ? null
+            : Trips.TripStopScheduleSupport.ResolveSegmentTimes(
+                booking.Trip, earliestBoarding?.FromStopOrder, latestAlighting?.ToStopOrder).Departure;
 
         return new BookingHistoryItemDto(
             booking.Id,
@@ -84,8 +107,8 @@ public sealed class GetMyBookingHistoryQueryHandler
             booking.Created,
             departure.HasValue ? DateOnly.FromDateTime(departure.Value.LocalDateTime) : null,
             departure.HasValue ? TimeOnly.FromDateTime(departure.Value.LocalDateTime) : null,
-            firstStop?.Station.StationName,
-            lastStop?.Station.StationName,
+            earliestBoarding?.FromStation?.StationName ?? firstStop?.Station.StationName,
+            latestAlighting?.ToStation?.StationName ?? lastStop?.Station.StationName,
             booking.Passengers.Count,
             booking.BookingStatus.ToString(),
             booking.TotalAmount,

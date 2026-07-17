@@ -54,6 +54,17 @@ internal static class RegularBookingETicketSupport
                 continue;
             }
 
+            // Hành khách thuộc chiều nào thì vé nằm trong leg đó (TripId null = dữ liệu cũ → chiều đi).
+            var leg = returnLeg is not null && passenger.TripId == booking.ReturnTripId
+                ? returnLeg
+                : outboundLeg;
+
+            // Giờ boarding = giờ tàu rời bến LÊN của khách (theo chặng), không phải giờ đầu chuyến.
+            DateTimeOffset? boardingTime = leg.Trip is null
+                ? null
+                : Trips.TripStopScheduleSupport.ResolveSegmentTimes(
+                    leg.Trip, passenger.FromStopOrder, passenger.ToStopOrder).Departure;
+
             TicketTypePricing.TryGet(passenger.PassengerType, out var ticketType);
             var eTicket = new ETicketPassenger(
                 passenger.FullName,
@@ -63,12 +74,9 @@ internal static class RegularBookingETicketSupport
                 ticket.QrToken,
                 passenger.Email,
                 passenger.FromStation?.StationName,
-                passenger.ToStation?.StationName);
+                passenger.ToStation?.StationName,
+                boardingTime);
 
-            // Hành khách thuộc chiều nào thì vé nằm trong leg đó (TripId null = dữ liệu cũ → chiều đi).
-            var leg = returnLeg is not null && passenger.TripId == booking.ReturnTripId
-                ? returnLeg
-                : outboundLeg;
             leg.Tickets.Add(eTicket);
         }
 
@@ -184,6 +192,7 @@ internal static class RegularBookingETicketSupport
                 .Include(t => t.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+                .Include(t => t.TripStops)
                 .SingleOrDefaultAsync(t => t.Id == tripId.Value, cancellationToken);
         }
 
@@ -220,7 +229,8 @@ internal static class RegularBookingETicketSupport
             x.TicketCode,
             x.QrToken,
             x.FromStationName,
-            x.ToStationName);
+            x.ToStationName,
+            x.DepartureTime);
 
     private static IReadOnlyList<EmailAttachment>? RenderPdfAttachment(
         IBookingTicketPdfRenderer? pdfRenderer,

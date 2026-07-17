@@ -19,6 +19,10 @@ internal static class TicketScanSupport
                 .ThenInclude(x => x!.TripSeat)
                     .ThenInclude(x => x!.Seat)
             .Include(x => x.BookingPassenger)
+                .ThenInclude(x => x!.FromStation)
+            .Include(x => x.BookingPassenger)
+                .ThenInclude(x => x!.ToStation)
+            .Include(x => x.BookingPassenger)
                 .ThenInclude(x => x!.Trip)
                     .ThenInclude(x => x!.Boat)
             .Include(x => x.BookingPassenger)
@@ -26,6 +30,9 @@ internal static class TicketScanSupport
                     .ThenInclude(x => x!.Route)
                         .ThenInclude(x => x.RouteStops)
                             .ThenInclude(x => x.Station)
+            .Include(x => x.BookingPassenger)
+                .ThenInclude(x => x!.Trip)
+                    .ThenInclude(x => x!.TripStops)
             .Include(x => x.CheckedInByUser)
             .Include(x => x.CheckedOutByUser)
             .Include(x => x.Booking)
@@ -38,6 +45,9 @@ internal static class TicketScanSupport
                     .ThenInclude(x => x!.Route)
                         .ThenInclude(x => x.RouteStops)
                             .ThenInclude(x => x.Station)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Trip)
+                    .ThenInclude(x => x!.TripStops)
             .SingleOrDefaultAsync(
                 x => x.TicketCode == normalizedCodeOrToken || x.QrToken == normalizedCodeOrToken,
                 cancellationToken)
@@ -153,6 +163,15 @@ internal static class TicketScanSupport
         var seatCode = ticket.BookingPassenger?.TripSeat?.Seat?.Code;
         TicketTypePricing.TryGet(ticket.BookingPassenger?.PassengerType, out var ticketType);
 
+        // Ga lên/xuống + giờ đi/đến theo CHẶNG trên vé (ghế bán theo chặng) — staff quét vé phải
+        // thấy đúng chỗ khách lên/xuống; dữ liệu cũ chưa lưu chặng thì rơi về đầu/cuối chuyến.
+        var fromStationName = ticketPassenger?.FromStation?.StationName ?? fromStop?.Station.StationName;
+        var toStationName = ticketPassenger?.ToStation?.StationName ?? toStop?.Station.StationName;
+        var segmentTimes = trip is null
+            ? default((DateTimeOffset Departure, DateTimeOffset Arrival)?)
+            : Trips.TripStopScheduleSupport.ResolveSegmentTimes(
+                trip, ticketPassenger?.FromStopOrder, ticketPassenger?.ToStopOrder);
+
         // Danh sách hành khách trong DTO chỉ gồm chiều của vé được quét.
         var legPassengers = booking.Passengers
             .Where(p => ticketPassenger?.TripId is null || p.TripId == ticketPassenger.TripId)
@@ -185,14 +204,14 @@ internal static class TicketScanSupport
             null,
             null,
             trip?.OperatingDate,
-            trip is null ? null : TimeOnly.FromDateTime(trip.DepartureTime.LocalDateTime),
+            segmentTimes is null ? null : TimeOnly.FromDateTime(segmentTimes.Value.Departure.LocalDateTime),
             trip?.TripCode,
-            trip?.DepartureTime,
-            trip?.ArrivalTime,
+            segmentTimes?.Departure,
+            segmentTimes?.Arrival,
             trip?.Boat?.Name,
             trip?.Boat?.Name,
-            fromStop?.Station.StationName,
-            toStop?.Station.StationName,
+            fromStationName,
+            toStationName,
             seatCode,
             ToPassengerDtoOrNull(ticketPassenger),
             legPassengers

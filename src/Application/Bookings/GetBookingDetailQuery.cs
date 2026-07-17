@@ -36,10 +36,14 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+            .Include(b => b.Trip)
+                .ThenInclude(t => t!.TripStops)
             .Include(b => b.ReturnTrip)
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+            .Include(b => b.ReturnTrip)
+                .ThenInclude(t => t!.TripStops)
             .Include(b => b.Tickets)
             .SingleOrDefaultAsync(
                 b => b.Id == request.BookingId && b.BookingType == Booking.SeatBookingType,
@@ -66,6 +70,11 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             var fromStop = stops.FirstOrDefault();
             var toStop = stops.LastOrDefault();
 
+            // Giờ đi/đến theo CHẶNG của hành khách (trip_stops), không phải đầu/cuối nguyên chuyến.
+            var segmentTimes = legTrip is null
+                ? default((DateTimeOffset Departure, DateTimeOffset Arrival)?)
+                : Trips.TripStopScheduleSupport.ResolveSegmentTimes(legTrip, i.FromStopOrder, i.ToStopOrder);
+
             ticketsByPassengerId.TryGetValue(i.Id, out var ticket);
             return new BookingItemDto(
                 i.Id,
@@ -78,8 +87,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 // thì rơi về trạm đầu/cuối tuyến như trước.
                 i.FromStation?.StationName ?? fromStop?.Station.StationName ?? string.Empty,
                 i.ToStation?.StationName ?? toStop?.Station.StationName ?? string.Empty,
-                legTrip?.DepartureTime,
-                legTrip?.ArrivalTime,
+                segmentTimes?.Departure,
+                segmentTimes?.Arrival,
                 i.UnitPrice ?? 0,
                 booking.BookingStatus.ToString(),
                 ticket?.TicketCode,

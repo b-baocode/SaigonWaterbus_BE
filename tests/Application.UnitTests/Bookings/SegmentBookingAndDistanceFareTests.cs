@@ -189,6 +189,159 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task SearchTripsReturnsSegmentTimesFromTripStops()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-TIME-1", withDistances: true);
+        var trip = seeded.Trip;
+
+        var bb = context.Set<Station>().Single(s => s.StationCode == "BB");
+        var hb = context.Set<Station>().Single(s => s.StationCode == "HB");
+        var lt = context.Set<Station>().Single(s => s.StationCode == "LT");
+
+        // Lịch dừng dự kiến: BB 0' → HB +20' → LT +45'.
+        var dep = trip.DepartureTime;
+        context.AddRange(
+            new TripStop { TripId = trip.Id, StationId = bb.Id, StopOrder = 1, PlannedArrivalTime = dep, PlannedDepartureTime = dep },
+            new TripStop { TripId = trip.Id, StationId = hb.Id, StopOrder = 2, PlannedArrivalTime = dep.AddMinutes(20), PlannedDepartureTime = dep.AddMinutes(20) },
+            new TripStop { TripId = trip.Id, StationId = lt.Id, StopOrder = 3, PlannedArrivalTime = dep.AddMinutes(45), PlannedDepartureTime = dep.AddMinutes(45) });
+        await context.SaveChangesAsync();
+
+        var searchHandler = new SearchTripsQueryHandler(context, new FixedTimeProvider(Now));
+        var date = DateOnly.FromDateTime(Now.UtcDateTime);
+
+        // Chặng giữa HB→LT: giờ đi/đến phải là giờ tại bến của CHẶNG, không phải đầu/cuối nguyên chuyến.
+        var tail = (await searchHandler.Handle(
+            new SearchTripsQuery(hb.Id, lt.Id, date), CancellationToken.None))
+            .Single(x => x.TripCode == "TR-TIME-1");
+        tail.FromStopScheduledDeparture.ShouldBe(dep.AddMinutes(20));
+        tail.ToStopScheduledArrival.ShouldBe(dep.AddMinutes(45));
+        tail.DepartureTime.ShouldBe(dep);
+
+        var head = (await searchHandler.Handle(
+            new SearchTripsQuery(bb.Id, hb.Id, date), CancellationToken.None))
+            .Single(x => x.TripCode == "TR-TIME-1");
+        head.FromStopScheduledDeparture.ShouldBe(dep);
+        head.ToStopScheduledArrival.ShouldBe(dep.AddMinutes(20));
+    }
+
+    [Test]
+    public async Task SearchTripsDerivesSegmentTimesWhenTripHasNoTripStops()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-TIME-2", withDistances: true);
+
+        var hb = context.Set<Station>().Single(s => s.StationCode == "HB");
+        var lt = context.Set<Station>().Single(s => s.StationCode == "LT");
+        var searchHandler = new SearchTripsQueryHandler(context, new FixedTimeProvider(Now));
+
+        // Không có trip_stops → suy từ route stops (StandardTravelMin null → mặc định 15'/chặng).
+        var tail = (await searchHandler.Handle(
+                new SearchTripsQuery(hb.Id, lt.Id, DateOnly.FromDateTime(Now.UtcDateTime)), CancellationToken.None))
+            .Single(x => x.TripCode == "TR-TIME-2");
+        tail.FromStopScheduledDeparture.ShouldBe(seeded.Trip.DepartureTime.AddMinutes(15));
+        tail.ToStopScheduledArrival.ShouldBe(seeded.Trip.DepartureTime.AddMinutes(30));
+    }
+
+    [Test]
+    public async Task BookingDetailShowsSegmentStationsAndTimes()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-DET-1", withDistances: true);
+        var dep = await SeedTripStopsAsync(context, seeded.Trip);
+
+        var booking = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand("TR-DET-1", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+
+        var detail = await new GetBookingDetailQueryHandler(context, userContext)
+            .Handle(new GetBookingDetailQuery(booking.BookingId), CancellationToken.None);
+
+        // Ga + giờ theo CHẶNG của hành khách, không phải đầu/cuối nguyên chuyến.
+        var item = detail.Items.ShouldHaveSingleItem();
+        item.FromStationName.ShouldBe("Station HB");
+        item.ToStationName.ShouldBe("Station LT");
+        item.ScheduledDeparture.ShouldBe(dep.AddMinutes(20));
+        item.ScheduledArrival.ShouldBe(dep.AddMinutes(45));
+    }
+
+    [Test]
+    public async Task ScannedTicketShowsPassengerSegmentStationsAndTimes()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-SCAN-1", withDistances: true);
+        var dep = await SeedTripStopsAsync(context, seeded.Trip);
+
+        var booking = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand("TR-SCAN-1", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+        var passenger = context.Set<BookingPassenger>().Single(p => p.BookingId == booking.BookingId);
+        var ticket = new Ticket
+        {
+            BookingId = booking.BookingId,
+            BookingPassengerId = passenger.Id,
+            TicketCode = "TK-SCAN-1",
+            QrToken = "QR-SCAN-1",
+            TicketStatus = TicketStatus.Active,
+            IssuedAt = Now
+        };
+        context.Add(ticket);
+        await context.SaveChangesAsync();
+
+        var dto = await new Application.Tickets.ScanTicketQueryHandler(
+                context, staffContext, new FixedTimeProvider(Now))
+            .Handle(new Application.Tickets.ScanTicketQuery(ticket.QrToken), CancellationToken.None);
+
+        // Staff quét vé phải thấy đúng ga lên/xuống + giờ theo chặng trên vé.
+        dto.FromStationName.ShouldBe("Station HB");
+        dto.ToStationName.ShouldBe("Station LT");
+        dto.ScheduledDeparture.ShouldBe(dep.AddMinutes(20));
+        dto.ScheduledArrival.ShouldBe(dep.AddMinutes(45));
+        dto.StartTime.ShouldBe(TimeOnly.FromDateTime(dep.AddMinutes(20).LocalDateTime));
+    }
+
+    [Test]
+    public async Task BookingHistoryShowsBookingSegmentNotWholeRoute()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-HIST-1", withDistances: true);
+        var dep = await SeedTripStopsAsync(context, seeded.Trip);
+
+        await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand("TR-HIST-1", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+
+        var items = await new Application.BookingHistory.GetMyBookingHistoryQueryHandler(context, userContext)
+            .Handle(new Application.BookingHistory.GetMyBookingHistoryQuery(), CancellationToken.None);
+
+        var item = items.ShouldHaveSingleItem();
+        item.FromStationName.ShouldBe("Station HB");
+        item.ToStationName.ShouldBe("Station LT");
+        item.DepartureTime.ShouldBe(TimeOnly.FromDateTime(dep.AddMinutes(20).LocalDateTime));
+    }
+
+    /// <summary>Gắn trip_stops cho trip 3 trạm: BB +0' → HB +20' → LT +45'. Trả về giờ khởi hành.</summary>
+    private static async Task<DateTimeOffset> SeedTripStopsAsync(ApplicationDbContext context, Trip trip)
+    {
+        var bb = context.Set<Station>().Single(s => s.StationCode == "BB");
+        var hb = context.Set<Station>().Single(s => s.StationCode == "HB");
+        var lt = context.Set<Station>().Single(s => s.StationCode == "LT");
+        var dep = trip.DepartureTime;
+        context.AddRange(
+            new TripStop { TripId = trip.Id, StationId = bb.Id, StopOrder = 1, PlannedDepartureTime = dep },
+            new TripStop { TripId = trip.Id, StationId = hb.Id, StopOrder = 2, PlannedArrivalTime = dep.AddMinutes(20), PlannedDepartureTime = dep.AddMinutes(20) },
+            new TripStop { TripId = trip.Id, StationId = lt.Id, StopOrder = 3, PlannedArrivalTime = dep.AddMinutes(45) });
+        await context.SaveChangesAsync();
+        return dep;
+    }
+
+    [Test]
     public void SegmentsOverlapUsesHalfOpenIntervals()
     {
         // Chạm biên (xuống trạm 2, người khác lên trạm 2) → không giao.

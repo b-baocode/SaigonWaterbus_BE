@@ -35,6 +35,7 @@ public sealed record BookingTicketPdfLegDto(
     string? BoatName,
     IReadOnlyList<BookingTicketPdfItemDto> Tickets);
 
+// DepartureTime = giờ tàu rời bến lên của hành khách (theo chặng); null → dùng giờ chuyến.
 public sealed record BookingTicketPdfItemDto(
     string PassengerName,
     string? SeatCode,
@@ -42,4 +43,5 @@ public sealed record BookingTicketPdfItemDto(
     string TicketCode,
     string QrToken,
     string? FromStationName = null,
-    string? ToStationName = null);
+    string? ToStationName = null,
+    DateTimeOffset? DepartureTime = null);
