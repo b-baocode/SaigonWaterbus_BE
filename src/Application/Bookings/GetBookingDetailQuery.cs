@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -41,6 +42,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
             .Include(b => b.Tickets)
+            .Include(b => b.Payments)
             .SingleOrDefaultAsync(
                 b => b.Id == request.BookingId && b.BookingType == Booking.SeatBookingType,
                 cancellationToken)
@@ -97,6 +99,33 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             booking.PaymentStatus,
             booking.CharterBookingQrToken,
             booking.HoldExpiresAt,
+            booking.Payments
+                .OrderByDescending(x => x.Created)
+                .Select(x => new BookingPaymentDto(
+                    x.Id,
+                    x.PaymentCode,
+                    x.Provider,
+                    x.ProviderTransactionId,
+                    x.Amount,
+                    x.Currency,
+                    x.PaymentMethod,
+                    x.PaymentPurpose,
+                    x.PaymentStatus,
+                    x.CheckoutUrl,
+                    x.QrCode,
+                    x.PaidAt,
+                    PaymentSupport.ResolvePaymentExpiresAt(x),
+                    x.RefundAmount,
+                    x.RefundRequestedAmount,
+                    x.RefundMethod,
+                    x.RefundReason,
+                    x.RefundReferenceId,
+                    x.RefundPayoutId,
+                    x.RefundStatus,
+                    x.RefundFailureReason,
+                    x.RefundProcessedByUserId,
+                    x.RefundedAt))
+                .ToList(),
             booking.ReturnTrip?.TripCode,
             booking.ReturnTrip?.DepartureTime);
     }

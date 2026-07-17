@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SaigonWaterbus.Application.Bookings;
 
 public sealed record BookingListItemDto(
@@ -23,8 +25,47 @@ public sealed record BookingDetailDto(
     string PaymentStatus,
     string? BookingQrToken,
     DateTimeOffset? HoldExpiresAt,
+    IReadOnlyList<BookingPaymentDto> Payments,
     string? ReturnTripCode = null,
     DateTimeOffset? ReturnDeparture = null);
+
+public sealed record BookingPaymentDto(
+    Guid PaymentId,
+    string PaymentCode,
+    string? Provider,
+    string? ProviderTransactionId,
+    decimal Amount,
+    string Currency,
+    string PaymentMethod,
+    string PaymentPurpose,
+    string PaymentStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? CheckoutUrl,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? QrCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? PaidAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? ExpiresAt,
+    decimal RefundAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    decimal? RefundRequestedAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundMethod,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundReferenceId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundPayoutId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundFailureReason,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? RefundProcessedByUserId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? RefundedAt);
 
 public sealed record BookingItemDto(
     Guid BookingItemId,
