@@ -5,6 +5,7 @@ namespace SaigonWaterbus.Application.Boats;
 
 public sealed record GetBoatsRequest(
     BoatStatus? Status = null,
+    BoatServiceType? ServiceType = null,
     string? Search = null);
 
 public sealed record BoatRentalPriceDto(
@@ -30,6 +31,7 @@ public sealed record BoatDto(
     string Code,
     string? RegistrationNumber,
     string Name,
+    BoatServiceType ServiceType,
     BoatStatus Status,
     int SeatCount,
     int NumberOfDecks,
@@ -53,6 +55,11 @@ public sealed class GetBoatsRequestValidator : AbstractValidator<GetBoatsRequest
             .IsInEnum()
             .WithMessage("Trạng thái tàu không hợp lệ.")
             .When(x => x.Status.HasValue);
+
+        RuleFor(x => x.ServiceType)
+            .IsInEnum()
+            .WithMessage("Loại tàu không hợp lệ.")
+            .When(x => x.ServiceType.HasValue);
 
         RuleFor(x => x.Search)
             .MaximumLength(100)
@@ -88,6 +95,11 @@ public sealed class GetBoatsRequestUseCase
         if (request.Status.HasValue)
         {
             query = query.Where(x => x.Status == request.Status.Value);
+        }
+
+        if (request.ServiceType.HasValue)
+        {
+            query = query.Where(x => x.ServiceType == request.ServiceType.Value);
         }
 
         if (!string.IsNullOrWhiteSpace(request.Search))

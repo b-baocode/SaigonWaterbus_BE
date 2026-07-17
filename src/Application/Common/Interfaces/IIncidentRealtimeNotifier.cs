@@ -18,6 +18,8 @@ public sealed record IncidentRealtimeEvent(
     string? BoatName = null,
     Guid? TripId = null,
     string? TripCode = null,
+    Guid? RescueBoatId = null,
+    string? RescueBoatName = null,
     Guid? ReplacementBoatId = null,
     string? ReplacementBoatName = null,
     string? ResolutionStatus = null,

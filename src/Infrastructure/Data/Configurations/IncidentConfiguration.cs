@@ -23,6 +23,9 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         builder.Property(x => x.AssignedManagerId).HasColumnName("assigned_manager_id");
         builder.Property(x => x.AssignedAt).HasColumnName("assigned_at");
         builder.Property(x => x.AssignedByUserId).HasColumnName("assigned_by_user_id");
+        builder.Property(x => x.RescueBoatId).HasColumnName("rescue_boat_id");
+        builder.Property(x => x.RescueDispatchedAt).HasColumnName("rescue_dispatched_at");
+        builder.Property(x => x.RescueDispatchedByUserId).HasColumnName("rescue_dispatched_by_user_id");
         builder.Property(x => x.ReplacementBoatId).HasColumnName("replacement_boat_id");
         builder.Property(x => x.ReplacementAssignedAt).HasColumnName("replacement_assigned_at");
         builder.Property(x => x.ReplacementAssignedByUserId).HasColumnName("replacement_assigned_by_user_id");
@@ -36,6 +39,8 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         builder.HasIndex(x => x.ReportedBy);
         builder.HasIndex(x => x.AssignedManagerId);
         builder.HasIndex(x => x.AssignedByUserId);
+        builder.HasIndex(x => x.RescueBoatId);
+        builder.HasIndex(x => x.RescueDispatchedByUserId);
         builder.HasIndex(x => x.ReplacementBoatId);
         builder.HasIndex(x => x.ReplacementAssignedByUserId);
         builder.HasIndex(x => x.ResolvedByUserId);
@@ -63,6 +68,16 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         builder.HasOne(x => x.AssignedByUser)
             .WithMany()
             .HasForeignKey(x => x.AssignedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.RescueBoat)
+            .WithMany()
+            .HasForeignKey(x => x.RescueBoatId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.RescueDispatchedByUser)
+            .WithMany()
+            .HasForeignKey(x => x.RescueDispatchedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.ReplacementBoat)

@@ -185,9 +185,10 @@ public sealed class Boats : IEndpointGroup
     private static async Task<IResult> GetBoats(
         IBoatManagementService boatManagementService,
         [FromQuery] BoatStatus? status,
+        [FromQuery] BoatServiceType? serviceType,
         [FromQuery] string? search,
         CancellationToken cancellationToken) =>
-        Results.Ok(await boatManagementService.GetBoatsAsync(status, search, cancellationToken));
+        Results.Ok(await boatManagementService.GetBoatsAsync(status, serviceType, search, cancellationToken));
 
     private static async Task<IResult> GetBoatById(
         IBoatManagementService boatManagementService,
@@ -308,6 +309,7 @@ public sealed class Boats : IEndpointGroup
             body?.YearBuilt,
             body?.Description,
             body?.ImageUrl,
+            ServiceType: body?.ServiceType ?? BoatServiceType.Passenger,
             SeatSetupType: body?.SeatSetupType ?? SeatSetupType.FullStandard,
             RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray(),
             ImageUrls: body?.ImageUrls);
@@ -330,6 +332,8 @@ public sealed class Boats : IEndpointGroup
             ParseOptionalInt(GetFormValue(form, "yearBuilt")),
             GetFormValue(form, "description"),
             GetFormValue(form, "imageUrl"),
+            ServiceType: ParseOptionalEnum<BoatServiceType>(GetFormValue(form, "serviceType"))
+                ?? BoatServiceType.Passenger,
             SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType"))
                 ?? SeatSetupType.FullStandard,
             RentalPrices: CreateRentalPricesFromForm(form),
@@ -353,6 +357,7 @@ public sealed class Boats : IEndpointGroup
             body?.YearBuilt,
             body?.Description,
             body?.ImageUrl,
+            ServiceType: body?.ServiceType,
             SeatSetupType: body?.SeatSetupType,
             ImageUrls: body?.ImageUrls,
             RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray());
@@ -375,6 +380,7 @@ public sealed class Boats : IEndpointGroup
             ParseOptionalInt(GetFormValue(form, "yearBuilt")),
             GetFormValue(form, "description"),
             GetFormValue(form, "imageUrl"),
+            ServiceType: ParseOptionalEnum<BoatServiceType>(GetFormValue(form, "serviceType")),
             SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType")),
             ImageUrls: GetFormValues(form, "imageUrls"),
             ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken),
@@ -627,6 +633,7 @@ public sealed class Boats : IEndpointGroup
         string Code,
         string Name,
         int NumberOfDecks = 0,
+        BoatServiceType ServiceType = BoatServiceType.Passenger,
         SeatSetupType SeatSetupType = SeatSetupType.FullStandard,
         string? RegistrationNumber = null,
         int? MaxSpeedKmh = null,
@@ -640,6 +647,7 @@ public sealed class Boats : IEndpointGroup
         string? Code = null,
         string? Name = null,
         int? NumberOfDecks = null,
+        BoatServiceType? ServiceType = null,
         SeatSetupType? SeatSetupType = null,
         string? RegistrationNumber = null,
         int? MaxSpeedKmh = null,

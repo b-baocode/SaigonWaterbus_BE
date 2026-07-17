@@ -15,6 +15,9 @@ public class Incident : BaseGuidEntity
     public Guid? AssignedManagerId { get; set; }
     public DateTimeOffset? AssignedAt { get; set; }
     public Guid? AssignedByUserId { get; set; }
+    public Guid? RescueBoatId { get; set; }
+    public DateTimeOffset? RescueDispatchedAt { get; set; }
+    public Guid? RescueDispatchedByUserId { get; set; }
     public Guid? ReplacementBoatId { get; set; }
     public DateTimeOffset? ReplacementAssignedAt { get; set; }
     public Guid? ReplacementAssignedByUserId { get; set; }
@@ -28,6 +31,8 @@ public class Incident : BaseGuidEntity
     public User? Reporter { get; set; }
     public User? AssignedManager { get; set; }
     public User? AssignedByUser { get; set; }
+    public Boat? RescueBoat { get; set; }
+    public User? RescueDispatchedByUser { get; set; }
     public Boat? ReplacementBoat { get; set; }
     public User? ReplacementAssignedByUser { get; set; }
     public User? Resolver { get; set; }

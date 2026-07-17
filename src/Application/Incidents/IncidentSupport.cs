@@ -81,7 +81,7 @@ internal static class IncidentSupport
         }
     }
 
-    public static IncidentDto ToDto(Incident incident) =>
+    public static IncidentDto ToDto(Incident incident, int activeTicketCount = 0) =>
         new(
             incident.Id,
             incident.BoatId,
@@ -100,12 +100,18 @@ internal static class IncidentSupport
             incident.AssignedAt,
             incident.AssignedByUserId,
             incident.AssignedByUser?.FullName,
+            incident.RescueBoatId,
+            incident.RescueBoat?.Name,
+            incident.RescueDispatchedAt,
+            incident.RescueDispatchedByUserId,
+            incident.RescueDispatchedByUser?.FullName,
             incident.ReplacementBoatId,
             incident.ReplacementBoat?.Name,
             incident.ReplacementAssignedAt,
             incident.ReplacementAssignedByUserId,
             incident.ReplacementAssignedByUser?.FullName,
             incident.ReplacementNote,
+            activeTicketCount,
             incident.ResolutionNote,
             incident.ResolvedAt,
             incident.ResolvedByUserId,
@@ -122,6 +128,8 @@ internal static class IncidentSupport
             incident.Boat?.Name,
             incident.TripId,
             incident.Trip?.TripCode,
+            incident.RescueBoatId,
+            incident.RescueBoat?.Name,
             incident.ReplacementBoatId,
             incident.ReplacementBoat?.Name,
             incident.ResolutionStatus,
@@ -143,9 +151,60 @@ internal static class IncidentSupport
                 eventType,
                 incident.Id,
                 incident.Boat.Code,
+                incident.RescueBoat?.Code,
                 incident.ReplacementBoat?.Code,
                 location?.Latitude,
                 location?.Longitude),
             cancellationToken);
+    }
+
+    public static Task<int> CountActiveTicketsAsync(
+        IApplicationDbContext context,
+        Guid tripId,
+        CancellationToken cancellationToken) =>
+        context.Tickets.CountAsync(
+            x => (x.BookingPassenger != null && x.BookingPassenger.TripId != null
+                    ? x.BookingPassenger.TripId == tripId
+                    : x.Booking.TripId == tripId)
+              && x.TicketStatus != TicketStatus.Cancelled
+              && x.TicketStatus != TicketStatus.Expired,
+            cancellationToken);
+
+    public static async Task<IReadOnlyDictionary<Guid, int>> CountActiveTicketsByTripAsync(
+        IApplicationDbContext context,
+        IReadOnlyCollection<Guid> tripIds,
+        CancellationToken cancellationToken)
+    {
+        if (tripIds.Count == 0)
+        {
+            return new Dictionary<Guid, int>();
+        }
+
+        var passengerTicketCounts = await context.Tickets
+            .AsNoTracking()
+            .Where(x => x.BookingPassenger != null
+                && x.BookingPassenger.TripId != null
+                && tripIds.Contains(x.BookingPassenger.TripId.Value)
+                && x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired)
+            .GroupBy(x => x.BookingPassenger!.TripId!.Value)
+            .Select(x => new { TripId = x.Key, Count = x.Count() })
+            .ToListAsync(cancellationToken);
+
+        var legacyTicketCounts = await context.Tickets
+            .AsNoTracking()
+            .Where(x => (x.BookingPassenger == null || x.BookingPassenger.TripId == null)
+                && x.Booking.TripId != null
+                && tripIds.Contains(x.Booking.TripId.Value)
+                && x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired)
+            .GroupBy(x => x.Booking.TripId!.Value)
+            .Select(x => new { TripId = x.Key, Count = x.Count() })
+            .ToListAsync(cancellationToken);
+
+        return passengerTicketCounts
+            .Concat(legacyTicketCounts)
+            .GroupBy(x => x.TripId)
+            .ToDictionary(x => x.Key, x => x.Sum(item => item.Count));
     }
 }

@@ -47,7 +47,9 @@ internal static class BoatSupport
             ? query
             : query.Where(x =>
                 x.Status == BoatStatus.Active
-                && (x.SeatsConfigured || (x.SeatCount > 0 && x.Seats.Count == x.SeatCount)));
+                && (x.ServiceType == BoatServiceType.Rescue
+                    || x.SeatsConfigured
+                    || (x.SeatCount > 0 && x.Seats.Count == x.SeatCount)));
     }
 
     public static string NormalizeCode(string code) =>
@@ -68,6 +70,7 @@ internal static class BoatSupport
             boat.Code,
             boat.RegistrationNumber,
             boat.Name,
+            boat.ServiceType,
             boat.Status,
             boat.SeatCount,
             boat.NumberOfDecks,
@@ -337,11 +340,16 @@ internal static class BoatSupport
         && IsReadyForActivation(boat);
 
     public static bool IsReadyForActivation(Boat boat) =>
-        boat.SeatCount > 0
-        && IsSeatsConfigured(boat);
+        boat.ServiceType == BoatServiceType.Rescue
+        || (boat.SeatCount > 0 && IsSeatsConfigured(boat));
 
     public static void EnsureCanActivate(Boat boat, string propertyName)
     {
+        if (boat.ServiceType == BoatServiceType.Rescue)
+        {
+            return;
+        }
+
         if (boat.SeatCount <= 0 || !IsSeatsConfigured(boat))
         {
             throw AuthSupport.CreateValidationException(

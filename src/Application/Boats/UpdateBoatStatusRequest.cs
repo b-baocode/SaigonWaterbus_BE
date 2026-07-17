@@ -50,16 +50,20 @@ public sealed class UpdateBoatStatusRequestUseCase
 
         if (request.Status == BoatStatus.Active)
         {
-            var configuredSeats = boat.Seats.Count;
-            if (boat.SeatCount <= 0 || configuredSeats != boat.SeatCount)
+            if (boat.ServiceType == BoatServiceType.Passenger)
             {
-                throw SaigonWaterbus.Application.Auth.Common.AuthSupport.CreateValidationException(
-                    nameof(request.Status),
-                    $"Tàu cần cấu hình đủ {boat.SeatCount} ghế trước khi chuyển Active. Hiện có {configuredSeats} ghế.");
+                var configuredSeats = boat.Seats.Count;
+                if (boat.SeatCount <= 0 || configuredSeats != boat.SeatCount)
+                {
+                    throw SaigonWaterbus.Application.Auth.Common.AuthSupport.CreateValidationException(
+                        nameof(request.Status),
+                        $"Tàu cần cấu hình đủ {boat.SeatCount} ghế trước khi chuyển Active. Hiện có {configuredSeats} ghế.");
+                }
+
+                BoatDocumentSupport.EnsureCanActivate(boat);
             }
 
             BoatSupport.EnsureCanActivate(boat, nameof(request.Status));
-            BoatDocumentSupport.EnsureCanActivate(boat);
         }
 
         if (request.Status == BoatStatus.UnderMaintenance
