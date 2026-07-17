@@ -58,6 +58,8 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             .Include(x => x.Reporter)
             .Include(x => x.AssignedManager)
             .Include(x => x.AssignedByUser)
+            .Include(x => x.RescueBoat)
+            .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
             .Include(x => x.Resolver)
@@ -104,6 +106,9 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             IncidentSupport.ToRealtimeEvent(incident, IncidentSupport.IncidentResolvedEvent, incident.ResolvedAt),
             cancellationToken);
 
-        return IncidentSupport.ToDto(incident);
+        var activeTicketCount = incident.TripId.HasValue
+            ? await IncidentSupport.CountActiveTicketsAsync(_context, incident.TripId.Value, cancellationToken)
+            : 0;
+        return IncidentSupport.ToDto(incident, activeTicketCount);
     }
 }

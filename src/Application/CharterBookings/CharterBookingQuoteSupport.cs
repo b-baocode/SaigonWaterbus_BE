@@ -121,7 +121,8 @@ internal static class CharterBookingQuoteSupport
 
         foreach (var selectedBoat in selectedBoats)
         {
-            if (selectedBoat.Boat.Status != BoatStatus.Active)
+            if (selectedBoat.Boat.ServiceType != BoatServiceType.Passenger
+                || selectedBoat.Boat.Status != BoatStatus.Active)
             {
                 throw new ValidationException([new ValidationFailure("Boats",
                     $"Tàu thứ {selectedBoat.BoatOrder} hiện không khả dụng để thuê.")]);

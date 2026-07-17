@@ -30,6 +30,8 @@ public sealed class GetIncidentListQueryHandler : IRequestHandler<GetIncidentLis
             .Include(x => x.Reporter)
             .Include(x => x.AssignedManager)
             .Include(x => x.AssignedByUser)
+            .Include(x => x.RescueBoat)
+            .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
             .Include(x => x.Resolver)
@@ -55,7 +57,21 @@ public sealed class GetIncidentListQueryHandler : IRequestHandler<GetIncidentLis
             .OrderByDescending(x => x.OccurredAt)
             .ThenByDescending(x => x.Id)
             .ToListAsync(cancellationToken);
+        var activeTicketCounts = await IncidentSupport.CountActiveTicketsByTripAsync(
+            _context,
+            incidents
+                .Where(x => x.TripId.HasValue)
+                .Select(x => x.TripId!.Value)
+                .Distinct()
+                .ToArray(),
+            cancellationToken);
 
-        return incidents.Select(IncidentSupport.ToDto).ToList();
+        return incidents
+            .Select(x => IncidentSupport.ToDto(
+                x,
+                x.TripId.HasValue && activeTicketCounts.TryGetValue(x.TripId.Value, out var count)
+                    ? count
+                    : 0))
+            .ToList();
     }
 }

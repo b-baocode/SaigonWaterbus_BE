@@ -43,10 +43,11 @@ public sealed class BoatManagementService : IBoatManagementService
 
     public async Task<IReadOnlyCollection<BoatDto>> GetBoatsAsync(
         BoatStatus? status,
+        BoatServiceType? serviceType,
         string? search,
         CancellationToken cancellationToken)
     {
-        var request = new GetBoatsRequest(status, search);
+        var request = new GetBoatsRequest(status, serviceType, search);
         await _validator.ValidateAsync(request, cancellationToken);
         return await _getBoats.ExecuteAsync(request, cancellationToken);
     }

@@ -11,6 +11,7 @@ public sealed record IncidentGpsHookNotification(
     string Event,
     Guid IncidentId,
     string BoatCode,
+    string? RescueBoatCode,
     string? ReplacementBoatCode,
     decimal? Lat,
     decimal? Lng);

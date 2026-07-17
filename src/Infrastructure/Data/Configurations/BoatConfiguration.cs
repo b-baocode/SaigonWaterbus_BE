@@ -50,6 +50,12 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
             .HasMaxLength(150)
             .IsRequired();
 
+        builder.Property(x => x.ServiceType)
+            .HasColumnName("service_type")
+            .HasConversion<string>()
+            .HasMaxLength(30)
+            .IsRequired();
+
         builder.Property(x => x.Status)
             .HasColumnName("status")
             .HasConversion<string>()
@@ -131,6 +137,7 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
         builder.Ignore(x => x.LastModifiedBy);
 
         builder.HasIndex(x => x.Status);
+        builder.HasIndex(x => x.ServiceType);
     }
 
     private static string SerializeDocuments(BoatDocument[]? documents) =>

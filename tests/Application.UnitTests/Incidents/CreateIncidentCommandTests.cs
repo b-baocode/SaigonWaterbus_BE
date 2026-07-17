@@ -93,12 +93,12 @@ public class CreateIncidentCommandTests
     }
 
     [Test]
-    public async Task ManagerCanAssignReplacementBoatForIncidentWithoutTrip()
+    public async Task ManagerCanDispatchRescueBoatForIncidentWithoutPassengers()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
         var incidentBoat = Boat("WB-01");
-        var replacementBoat = Boat("WB-02");
+        var rescueBoat = RescueBoat("RS-01");
         var incident = new Incident
         {
             Boat = incidentBoat,
@@ -109,7 +109,7 @@ public class CreateIncidentCommandTests
             OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
             ResolutionStatus = IncidentSupport.OpenStatus
         };
-        context.AddRange(incidentBoat, replacementBoat, incident);
+        context.AddRange(incidentBoat, rescueBoat, incident);
         await context.SaveChangesAsync();
 
         var assignedAt = new DateTimeOffset(2030, 1, 1, 2, 0, 0, TimeSpan.Zero);
@@ -121,19 +121,25 @@ public class CreateIncidentCommandTests
         var result = await handler.Handle(
             new AssignReplacementBoatCommand(
                 incident.Id,
-                replacementBoat.Id,
+                rescueBoat.Id,
+                ReplacementBoatId: null,
                 DelayMinutes: null,
                 Note: "Dieu tau den ho tro."),
             CancellationToken.None);
 
         result.TripId.ShouldBeNull();
-        result.ReplacementBoatId.ShouldBe(replacementBoat.Id);
-        result.ReplacementBoatName.ShouldBe(replacementBoat.Name);
+        result.RescueBoatId.ShouldBe(rescueBoat.Id);
+        result.RescueBoatName.ShouldBe(rescueBoat.Name);
+        result.ReplacementBoatId.ShouldBeNull();
+        result.ActiveTicketCount.ShouldBe(0);
 
         var savedIncident = context.Incidents.Single();
-        savedIncident.ReplacementBoatId.ShouldBe(replacementBoat.Id);
-        savedIncident.ReplacementAssignedAt.ShouldBe(assignedAt);
-        savedIncident.ReplacementAssignedByUserId.ShouldBe(managerContext.UserId!.Value);
+        savedIncident.RescueBoatId.ShouldBe(rescueBoat.Id);
+        savedIncident.RescueDispatchedAt.ShouldBe(assignedAt);
+        savedIncident.RescueDispatchedByUserId.ShouldBe(managerContext.UserId!.Value);
+        savedIncident.ReplacementBoatId.ShouldBeNull();
+        savedIncident.ReplacementAssignedAt.ShouldBeNull();
+        savedIncident.ReplacementAssignedByUserId.ShouldBeNull();
         savedIncident.ReplacementNote.ShouldBe("Dieu tau den ho tro.");
     }
 
@@ -143,7 +149,7 @@ public class CreateIncidentCommandTests
         await using var context = SeatFlowTestData.CreateContext();
         var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
         var incidentBoat = Boat("WB_001");
-        var replacementBoat = Boat("WB_003");
+        var rescueBoat = RescueBoat("RS_001");
         var incident = new Incident
         {
             Boat = incidentBoat,
@@ -156,7 +162,7 @@ public class CreateIncidentCommandTests
         };
         context.AddRange(
             incidentBoat,
-            replacementBoat,
+            rescueBoat,
             incident,
             new BoatLatestLocation
             {
@@ -181,7 +187,8 @@ public class CreateIncidentCommandTests
         await handler.Handle(
             new AssignReplacementBoatCommand(
                 incident.Id,
-                replacementBoat.Id,
+                rescueBoat.Id,
+                ReplacementBoatId: null,
                 DelayMinutes: null,
                 Note: "Dieu tau den ho tro."),
             CancellationToken.None);
@@ -191,9 +198,93 @@ public class CreateIncidentCommandTests
         notification.Event.ShouldBe(IncidentSupport.RescueDispatchedEvent);
         notification.IncidentId.ShouldBe(incident.Id);
         notification.BoatCode.ShouldBe("WB_001");
-        notification.ReplacementBoatCode.ShouldBe("WB_003");
+        notification.RescueBoatCode.ShouldBe("RS_001");
+        notification.ReplacementBoatCode.ShouldBeNull();
         notification.Lat.ShouldBe(10.7765m);
         notification.Lng.ShouldBe(106.7065m);
+    }
+
+    [Test]
+    public async Task IncidentWithActiveTicketsRequiresPassengerReplacementBoatAndRescueBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var incidentBoat = Boat("WB-01");
+        var rescueBoat = RescueBoat("RS-01");
+        var replacementBoat = Boat("WB-02");
+        var route = Route("R1");
+        var trip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = incidentBoat,
+            BoatId = incidentBoat.Id,
+            TripCode = "TR-20300101-01",
+            OperatingDate = new DateOnly(2030, 1, 1),
+            DepartureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)),
+            ArrivalTime = new DateTimeOffset(2030, 1, 1, 8, 30, 0, TimeSpan.FromHours(7)),
+            CapacitySnapshot = 20,
+            TripStatus = TripStatus.Delayed
+        };
+        var incident = new Incident
+        {
+            Boat = incidentBoat,
+            BoatId = incidentBoat.Id,
+            Trip = trip,
+            TripId = trip.Id,
+            IncidentType = "MechanicalFailure",
+            Description = "Tau can cuu ho tren song.",
+            Severity = "High",
+            OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ResolutionStatus = IncidentSupport.OpenStatus
+        };
+        var booking = new Booking
+        {
+            Trip = trip,
+            TripId = trip.Id,
+            BookingCode = "BK-INCIDENT",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid"
+        };
+        var ticket = new Ticket
+        {
+            Booking = booking,
+            TicketCode = "TICKET-1",
+            QrToken = "QR-1",
+            TicketStatus = TicketStatus.Active,
+            IssuedAt = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero)
+        };
+        context.AddRange(incidentBoat, rescueBoat, replacementBoat, route, trip, incident, booking, ticket);
+        await context.SaveChangesAsync();
+
+        var assignedAt = new DateTimeOffset(2030, 1, 1, 2, 0, 0, TimeSpan.Zero);
+        var handler = new AssignReplacementBoatCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(assignedAt));
+
+        var result = await handler.Handle(
+            new AssignReplacementBoatCommand(
+                incident.Id,
+                rescueBoat.Id,
+                replacementBoat.Id,
+                DelayMinutes: 20,
+                Note: "Dieu tau cuu ho va tau thay the."),
+            CancellationToken.None);
+
+        result.ActiveTicketCount.ShouldBe(1);
+        result.RescueBoatId.ShouldBe(rescueBoat.Id);
+        result.ReplacementBoatId.ShouldBe(replacementBoat.Id);
+
+        var savedIncident = context.Incidents.Single();
+        savedIncident.RescueBoatId.ShouldBe(rescueBoat.Id);
+        savedIncident.ReplacementBoatId.ShouldBe(replacementBoat.Id);
+
+        var savedTrip = context.Trips.Single();
+        savedTrip.BoatId.ShouldBe(replacementBoat.Id);
+        savedTrip.TripStatus.ShouldBe(TripStatus.Delayed);
     }
 
     private static Boat Boat(string code) =>
@@ -206,6 +297,19 @@ public class CreateIncidentCommandTests
             NumberOfDecks = 1,
             SeatSetupType = SeatSetupType.FullStandard,
             SeatsConfigured = true
+        };
+
+    private static Boat RescueBoat(string code) =>
+        new()
+        {
+            Code = code,
+            Name = code,
+            ServiceType = BoatServiceType.Rescue,
+            Status = BoatStatus.Active,
+            SeatCount = 0,
+            NumberOfDecks = 1,
+            SeatSetupType = SeatSetupType.FullStandard,
+            SeatsConfigured = false
         };
 
     private static Route Route(string code) =>

@@ -39,9 +39,10 @@ public sealed class Incidents : IEndpointGroup
     private const string AssignReplacementBoatExample =
         """
         {
+          "rescueBoatId": "00000000-0000-0000-0000-000000000000",
           "replacementBoatId": "00000000-0000-0000-0000-000000000000",
           "delayMinutes": 30,
-          "note": "Dieu tau WB-02 thay the va ho tro khach tai ben."
+          "note": "Dieu tau cuu ho va tau thay the ho tro khach tai vi tri su co."
         }
         """;
 
@@ -81,9 +82,10 @@ public sealed class Incidents : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoặc Manager",
                 AssignReplacementBoatExample,
-                "Neu incident co tripId, backend cap nhat trip.BoatId sang tau thay the.",
-                "Neu incident khong co tripId, backend chi luu tau cuu ho/thay the vao incident.",
-                "Tau thay the phai Active, setup du ghe va khong trung tau gap su co.",
+                "rescueBoatId bat buoc, phai la tau serviceType Rescue dang Active.",
+                "Neu trip co ve/khach dang hieu luc, replacementBoatId bat buoc va backend cap nhat trip.BoatId sang tau thay the.",
+                "Neu khong co khach can chuyen, chi gui rescueBoatId; replacementBoatId phai de null.",
+                "Tau thay the phai serviceType Passenger, Active, setup du ghe va khong trung tau cuu ho/tau gap su co.",
                 "delayMinutes chi anh huong trang thai trip khi incident co tripId."));
 
         group.MapPatch(ResolveIncident, "{incidentId:guid}/resolve")
@@ -137,6 +139,7 @@ public sealed class Incidents : IEndpointGroup
         Results.Ok(await sender.Send(
             new AssignReplacementBoatCommand(
                 incidentId,
+                request.RescueBoatId,
                 request.ReplacementBoatId,
                 request.DelayMinutes,
                 request.Note),
@@ -166,7 +169,8 @@ public sealed class Incidents : IEndpointGroup
     public sealed record AssignManagerRequest(Guid ManagerUserId);
 
     public sealed record AssignReplacementBoatRequest(
-        Guid ReplacementBoatId,
+        Guid RescueBoatId,
+        Guid? ReplacementBoatId,
         int? DelayMinutes,
         string? Note);
 

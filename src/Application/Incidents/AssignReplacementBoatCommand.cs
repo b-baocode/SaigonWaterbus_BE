@@ -10,7 +10,8 @@ namespace SaigonWaterbus.Application.Incidents;
 
 public sealed record AssignReplacementBoatCommand(
     Guid IncidentId,
-    Guid ReplacementBoatId,
+    Guid RescueBoatId,
+    Guid? ReplacementBoatId,
     int? DelayMinutes,
     string? Note) : IRequest<IncidentDto>;
 
@@ -19,7 +20,8 @@ public sealed class AssignReplacementBoatCommandValidator : AbstractValidator<As
     public AssignReplacementBoatCommandValidator()
     {
         RuleFor(x => x.IncidentId).NotEmpty();
-        RuleFor(x => x.ReplacementBoatId).NotEmpty();
+        RuleFor(x => x.RescueBoatId).NotEmpty();
+        RuleFor(x => x.ReplacementBoatId).NotEmpty().When(x => x.ReplacementBoatId.HasValue);
         RuleFor(x => x.DelayMinutes).GreaterThanOrEqualTo(0).When(x => x.DelayMinutes.HasValue);
         RuleFor(x => x.Note).MaximumLength(1000);
     }
@@ -60,28 +62,57 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             .SingleOrDefaultAsync(x => x.Id == request.IncidentId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy sự cố.");
 
-        if (incident.BoatId == request.ReplacementBoatId)
+        if (incident.BoatId == request.RescueBoatId)
         {
             throw new ValidationException([new ValidationFailure(
-                nameof(request.ReplacementBoatId),
-                "Tàu thay thế không được trùng với tàu gặp sự cố.")]);
+                nameof(request.RescueBoatId),
+                "Tàu cứu hộ không được trùng với tàu gặp sự cố.")]);
         }
 
-        var replacementBoat = await _context.Boats
-            .Include(x => x.Seats)
-            .SingleOrDefaultAsync(x => x.Id == request.ReplacementBoatId, cancellationToken)
-            ?? throw new NotFoundException("Không tìm thấy tàu thay thế.");
+        var rescueBoat = await _context.Boats
+            .SingleOrDefaultAsync(x => x.Id == request.RescueBoatId, cancellationToken)
+            ?? throw new NotFoundException("Không tìm thấy tàu cứu hộ.");
+        EnsureRescueBoatReady(rescueBoat);
 
-        if (replacementBoat.Status != BoatStatus.Active || !BoatSupport.IsReadyForOperation(replacementBoat))
-        {
-            throw new ValidationException([new ValidationFailure(
-                nameof(request.ReplacementBoatId),
-                "Tàu thay thế phải Active và đã setup đủ ghế.")]);
-        }
-
+        var activeTicketCount = 0;
+        Boat? replacementBoat = null;
         if (incident.Trip is not null)
         {
-            var activeTicketCount = await CountActiveTicketsAsync(incident.Trip.Id, cancellationToken);
+            activeTicketCount = await IncidentSupport.CountActiveTicketsAsync(
+                _context,
+                incident.Trip.Id,
+                cancellationToken);
+        }
+
+        if (activeTicketCount > 0)
+        {
+            if (!request.ReplacementBoatId.HasValue)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(request.ReplacementBoatId),
+                    $"Chuyến có {activeTicketCount} vé/khách đang hiệu lực nên phải chọn tàu chở khách thay thế.")]);
+            }
+
+            if (request.ReplacementBoatId.Value == incident.BoatId)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(request.ReplacementBoatId),
+                    "Tàu thay thế không được trùng với tàu gặp sự cố.")]);
+            }
+
+            if (request.ReplacementBoatId.Value == request.RescueBoatId)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(request.ReplacementBoatId),
+                    "Tàu thay thế chở khách không được trùng với tàu cứu hộ.")]);
+            }
+
+            replacementBoat = await _context.Boats
+                .Include(x => x.Seats)
+                .SingleOrDefaultAsync(x => x.Id == request.ReplacementBoatId.Value, cancellationToken)
+                ?? throw new NotFoundException("Không tìm thấy tàu thay thế.");
+            EnsurePassengerReplacementBoatReady(replacementBoat);
+
             if (replacementBoat.SeatCount < activeTicketCount)
             {
                 throw new ValidationException([new ValidationFailure(
@@ -89,15 +120,27 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                     $"Tàu thay thế không đủ ghế. Cần tối thiểu {activeTicketCount} ghế.")]);
             }
         }
+        else if (request.ReplacementBoatId.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.ReplacementBoatId),
+                "Sự cố không có khách cần chuyển nên chỉ chọn tàu cứu hộ.")]);
+        }
 
-        incident.ReplacementBoatId = replacementBoat.Id;
+        var assignedAt = _timeProvider.GetUtcNow();
+        incident.RescueBoatId = rescueBoat.Id;
+        incident.RescueBoat = rescueBoat;
+        incident.RescueDispatchedAt = assignedAt;
+        incident.RescueDispatchedByUserId = actor.Id;
+        incident.RescueDispatchedByUser = actor;
+        incident.ReplacementBoatId = replacementBoat?.Id;
         incident.ReplacementBoat = replacementBoat;
-        incident.ReplacementAssignedAt = _timeProvider.GetUtcNow();
-        incident.ReplacementAssignedByUserId = actor.Id;
-        incident.ReplacementAssignedByUser = actor;
+        incident.ReplacementAssignedAt = replacementBoat is null ? null : assignedAt;
+        incident.ReplacementAssignedByUserId = replacementBoat is null ? null : actor.Id;
+        incident.ReplacementAssignedByUser = replacementBoat is null ? null : actor;
         incident.ReplacementNote = NormalizeNote(request.Note);
 
-        if (incident.Trip is not null)
+        if (incident.Trip is not null && replacementBoat is not null)
         {
             incident.Trip.BoatId = replacementBoat.Id;
             incident.Trip.Boat = replacementBoat;
@@ -115,6 +158,9 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         await _context.SaveChangesAsync(cancellationToken);
 
         incident = await LoadIncidentQuery().SingleAsync(x => x.Id == request.IncidentId, cancellationToken);
+        activeTicketCount = incident.TripId.HasValue
+            ? await IncidentSupport.CountActiveTicketsAsync(_context, incident.TripId.Value, cancellationToken)
+            : 0;
         await IncidentSupport.PublishGpsHookAsync(
             _context,
             _gpsHookNotifier,
@@ -122,21 +168,32 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             IncidentSupport.RescueDispatchedEvent,
             cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
-            IncidentSupport.ToRealtimeEvent(incident, IncidentSupport.RescueDispatchedEvent, incident.ReplacementAssignedAt),
+            IncidentSupport.ToRealtimeEvent(incident, IncidentSupport.RescueDispatchedEvent, incident.RescueDispatchedAt),
             cancellationToken);
-        return IncidentSupport.ToDto(incident);
+        return IncidentSupport.ToDto(incident, activeTicketCount);
     }
 
-    private async Task<int> CountActiveTicketsAsync(Guid tripId, CancellationToken cancellationToken) =>
-        // Vé thuộc trip theo chiều của hành khách (booking khứ hồi có vé trên 2 trip);
-        // vé không gắn hành khách hoặc chưa có TripId (dữ liệu cũ/charter) tính theo trip của booking.
-        await _context.Tickets.CountAsync(
-            x => (x.BookingPassenger != null && x.BookingPassenger.TripId != null
-                    ? x.BookingPassenger.TripId == tripId
-                    : x.Booking.TripId == tripId)
-              && x.TicketStatus != TicketStatus.Cancelled
-              && x.TicketStatus != TicketStatus.Expired,
-            cancellationToken);
+    private static void EnsureRescueBoatReady(Boat rescueBoat)
+    {
+        if (rescueBoat.ServiceType != BoatServiceType.Rescue || rescueBoat.Status != BoatStatus.Active)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(AssignReplacementBoatCommand.RescueBoatId),
+                "Tàu cứu hộ phải có serviceType Rescue và đang Active.")]);
+        }
+    }
+
+    private static void EnsurePassengerReplacementBoatReady(Boat replacementBoat)
+    {
+        if (replacementBoat.ServiceType != BoatServiceType.Passenger
+            || replacementBoat.Status != BoatStatus.Active
+            || !BoatSupport.IsReadyForOperation(replacementBoat))
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(AssignReplacementBoatCommand.ReplacementBoatId),
+                "Tàu thay thế phải là Passenger, Active và đã setup đủ ghế.")]);
+        }
+    }
 
     private static string? NormalizeNote(string? note) =>
         string.IsNullOrWhiteSpace(note) ? null : note.Trim();
@@ -148,6 +205,8 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             .Include(x => x.Reporter)
             .Include(x => x.AssignedManager)
             .Include(x => x.AssignedByUser)
+            .Include(x => x.RescueBoat)
+            .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
             .Include(x => x.Resolver);

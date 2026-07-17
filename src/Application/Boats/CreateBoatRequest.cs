@@ -20,6 +20,7 @@ public sealed record CreateBoatRequest(
     string? ImageContentType = null,
     long? ImageLength = null,
     Stream? ImageContent = null,
+    BoatServiceType ServiceType = BoatServiceType.Passenger,
     SeatSetupType SeatSetupType = SeatSetupType.FullStandard,
     IReadOnlyCollection<BoatRentalPriceRequest>? RentalPrices = null,
     IReadOnlyCollection<string>? ImageUrls = null,
@@ -50,6 +51,10 @@ public sealed class CreateBoatRequestValidator : AbstractValidator<CreateBoatReq
         RuleFor(x => x.Status)
             .IsInEnum()
             .WithMessage("Trạng thái tàu không hợp lệ.");
+
+        RuleFor(x => x.ServiceType)
+            .IsInEnum()
+            .WithMessage("Loại tàu không hợp lệ.");
 
         RuleFor(x => x.SeatCount)
             .GreaterThanOrEqualTo(0)
@@ -162,6 +167,7 @@ public sealed class CreateBoatRequestUseCase
             Code = normalizedCode,
             RegistrationNumber = normalizedRegistrationNumber,
             Name = request.Name.Trim(),
+            ServiceType = request.ServiceType,
             Status = request.Status,
             SeatCount = 0,
             NumberOfDecks = request.NumberOfDecks,

@@ -10,6 +10,8 @@ public class Boat : BaseAuditableEntity
 
     public string Name { get; set; } = null!;
 
+    public BoatServiceType ServiceType { get; set; } = BoatServiceType.Passenger;
+
     public BoatStatus Status { get; set; } = BoatStatus.Active;
 
     public DateTimeOffset? MaintenanceStartedAt { get; set; }

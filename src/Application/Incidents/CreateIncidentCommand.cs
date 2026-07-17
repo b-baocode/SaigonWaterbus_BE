@@ -111,7 +111,10 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
             IncidentSupport.ToRealtimeEvent(incident, IncidentSupport.IncidentCreatedEvent, now),
             cancellationToken);
 
-        return IncidentSupport.ToDto(incident);
+        var activeTicketCount = trip is null
+            ? 0
+            : await IncidentSupport.CountActiveTicketsAsync(_context, trip.Id, cancellationToken);
+        return IncidentSupport.ToDto(incident, activeTicketCount);
     }
 
     private static string? NormalizeOptional(string? value) =>

@@ -18,6 +18,7 @@ public sealed record UpdateBoatRequest(
     string? ImageContentType = null,
     long? ImageLength = null,
     Stream? ImageContent = null,
+    BoatServiceType? ServiceType = null,
     SeatSetupType? SeatSetupType = null,
     IReadOnlyCollection<string>? ImageUrls = null,
     IReadOnlyCollection<BoatImageFileRequest>? ImageFiles = null,
@@ -56,6 +57,11 @@ public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatReq
             .IsInEnum()
             .WithMessage("Kiểu ghế của tàu không hợp lệ.")
             .When(x => x.SeatSetupType.HasValue);
+
+        RuleFor(x => x.ServiceType)
+            .IsInEnum()
+            .WithMessage("Loại tàu không hợp lệ.")
+            .When(x => x.ServiceType.HasValue);
 
         RuleFor(x => x.Description)
             .MaximumLength(1000)
@@ -146,6 +152,20 @@ public sealed class UpdateBoatRequestUseCase
         if (request.Name is not null)
         {
             boat.Name = request.Name.Trim();
+        }
+
+        if (request.ServiceType.HasValue)
+        {
+            if (request.ServiceType.Value == BoatServiceType.Rescue
+                && boat.Status == BoatStatus.Active
+                && boat.Seats.Count > 0)
+            {
+                throw AuthSupport.CreateValidationException(
+                    nameof(request.ServiceType),
+                    "Tàu đang Active và đã có ghế. Chuyển Inactive hoặc xóa ghế trước khi đổi sang Rescue.");
+            }
+
+            boat.ServiceType = request.ServiceType.Value;
         }
 
         var capacityChanged = (request.NumberOfDecks.HasValue && request.NumberOfDecks.Value != boat.NumberOfDecks)

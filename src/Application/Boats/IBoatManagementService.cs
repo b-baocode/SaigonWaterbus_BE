@@ -7,6 +7,7 @@ public interface IBoatManagementService
 {
     Task<IReadOnlyCollection<BoatDto>> GetBoatsAsync(
         BoatStatus? status,
+        BoatServiceType? serviceType,
         string? search,
         CancellationToken cancellationToken);
 
