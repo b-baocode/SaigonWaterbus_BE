@@ -11,6 +11,9 @@ internal static class IncidentSupport
 {
     public const string OpenStatus = "Open";
     public const string ResolvedStatus = "Resolved";
+    public const string IncidentCreatedEvent = "IncidentCreated";
+    public const string RescueDispatchedEvent = "RescueDispatched";
+    public const string IncidentResolvedEvent = "IncidentResolved";
     public const string CriticalSeverity = "Critical";
     public const string HighSeverity = "High";
 
@@ -123,4 +126,26 @@ internal static class IncidentSupport
             incident.ReplacementBoat?.Name,
             incident.ResolutionStatus,
             occurredAt);
+
+    public static async Task PublishGpsHookAsync(
+        IApplicationDbContext context,
+        IIncidentGpsHookNotifier gpsHookNotifier,
+        Incident incident,
+        string eventType,
+        CancellationToken cancellationToken)
+    {
+        var location = await context.BoatLatestLocations
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.BoatId == incident.BoatId, cancellationToken);
+
+        await gpsHookNotifier.NotifyAsync(
+            new IncidentGpsHookNotification(
+                eventType,
+                incident.Id,
+                incident.Boat.Code,
+                incident.ReplacementBoat?.Code,
+                location?.Latitude,
+                location?.Longitude),
+            cancellationToken);
+    }
 }

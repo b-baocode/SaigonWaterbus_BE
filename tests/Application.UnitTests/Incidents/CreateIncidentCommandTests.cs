@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Entities;
@@ -136,6 +137,65 @@ public class CreateIncidentCommandTests
         savedIncident.ReplacementNote.ShouldBe("Dieu tau den ho tro.");
     }
 
+    [Test]
+    public async Task AssignReplacementBoatPublishesGpsHookWithBoatCodesAndLocation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var incidentBoat = Boat("WB_001");
+        var replacementBoat = Boat("WB_003");
+        var incident = new Incident
+        {
+            Boat = incidentBoat,
+            BoatId = incidentBoat.Id,
+            IncidentType = "MechanicalFailure",
+            Description = "Tau can cuu ho tren song.",
+            Severity = "High",
+            OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ResolutionStatus = IncidentSupport.OpenStatus
+        };
+        context.AddRange(
+            incidentBoat,
+            replacementBoat,
+            incident,
+            new BoatLatestLocation
+            {
+                BoatId = incidentBoat.Id,
+                GpsDeviceId = Guid.NewGuid(),
+                Latitude = 10.7765m,
+                Longitude = 106.7065m,
+                RecordedAt = new DateTimeOffset(2030, 1, 1, 1, 59, 0, TimeSpan.Zero),
+                ReceivedAt = new DateTimeOffset(2030, 1, 1, 1, 59, 1, TimeSpan.Zero),
+                UpdatedAt = new DateTimeOffset(2030, 1, 1, 1, 59, 1, TimeSpan.Zero)
+            });
+        await context.SaveChangesAsync();
+
+        var assignedAt = new DateTimeOffset(2030, 1, 1, 2, 0, 0, TimeSpan.Zero);
+        var gpsHook = new CapturingIncidentGpsHookNotifier();
+        var handler = new AssignReplacementBoatCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(assignedAt),
+            gpsHookNotifier: gpsHook);
+
+        await handler.Handle(
+            new AssignReplacementBoatCommand(
+                incident.Id,
+                replacementBoat.Id,
+                DelayMinutes: null,
+                Note: "Dieu tau den ho tro."),
+            CancellationToken.None);
+
+        gpsHook.Notifications.Count.ShouldBe(1);
+        var notification = gpsHook.Notifications.Single();
+        notification.Event.ShouldBe(IncidentSupport.RescueDispatchedEvent);
+        notification.IncidentId.ShouldBe(incident.Id);
+        notification.BoatCode.ShouldBe("WB_001");
+        notification.ReplacementBoatCode.ShouldBe("WB_003");
+        notification.Lat.ShouldBe(10.7765m);
+        notification.Lng.ShouldBe(106.7065m);
+    }
+
     private static Boat Boat(string code) =>
         new()
         {
@@ -159,5 +219,18 @@ public class CreateIncidentCommandTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class CapturingIncidentGpsHookNotifier : IIncidentGpsHookNotifier
+    {
+        public List<IncidentGpsHookNotification> Notifications { get; } = [];
+
+        public Task NotifyAsync(
+            IncidentGpsHookNotification notification,
+            CancellationToken cancellationToken)
+        {
+            Notifications.Add(notification);
+            return Task.CompletedTask;
+        }
     }
 }
