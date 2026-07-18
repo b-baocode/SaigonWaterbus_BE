@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Web.Hubs;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
@@ -12,6 +13,8 @@ namespace SaigonWaterbus.Web.Endpoints;
 public sealed class Tracking : IEndpointGroup
 {
     private const int OnlineThresholdSeconds = 60;
+    private const int MaxRemainingMinutesToNextStation = 24 * 60;
+    private const decimal MaxRemainingDistanceKmToNextStation = 10_000m;
     private const string OpenIncidentStatus = "Open";
 
     private const string LocationExample =
@@ -22,6 +25,9 @@ public sealed class Tracking : IEndpointGroup
           "boatCode": "WB_01",
           "routeCode": "DEMO-WATERBUS",
           "tripId": null,
+          "nextStationId": null,
+          "remainingDistanceKmToNextStation": 2.4,
+          "remainingMinutesToNextStation": 8,
           "lat": 10.7757162,
           "lng": 106.7086174,
           "speedKmh": 16,
@@ -52,6 +58,7 @@ public sealed class Tracking : IEndpointGroup
                 "Header bắt buộc: X-Device-Id, đây là mã định danh/key do phần mềm GPS sinh ra.",
                 "deviceId trong body nếu gửi phải trùng với X-Device-Id.",
                 "Backend dùng gps_devices để map thiết bị sang tàu, không tin boatId từ client.",
+                "GPS có thể gửi nextStationId, remainingDistanceKmToNextStation, remainingMinutesToNextStation để FE hiển thị ETA tới bến kế tiếp.",
                 "sequence phải tăng dần theo từng thiết bị."));
 
         group.MapGet(GetLatestBoatLocations, "boats/latest")
@@ -152,9 +159,20 @@ public sealed class Tracking : IEndpointGroup
             return session.Error;
         }
 
+        var routeId = route.Value?.Id ?? trip.Value?.RouteId ?? session.Value?.RouteId;
+        var nextStationLookup = await ResolveNextStationAsync(
+            dbContext,
+            request.NextStationId,
+            trip.Value,
+            routeId,
+            cancellationToken);
+        if (nextStationLookup.Error is not null)
+        {
+            return nextStationLookup.Error;
+        }
+
         var now = timeProvider.GetUtcNow();
         var recordedAt = request.RecordedAt.ToUniversalTime();
-        var routeId = route.Value?.Id ?? trip.Value?.RouteId ?? session.Value?.RouteId;
         var status = NormalizeOptionalText(request.Status) ?? "unknown";
         var direction = NormalizeOptionalText(request.Direction);
         var gpsFixQuality = NormalizeOptionalText(request.GpsFixQuality);
@@ -193,8 +211,11 @@ public sealed class Tracking : IEndpointGroup
                  gps_device_id,
                  route_id,
                  trip_id,
+                 next_station_id,
                  latitude,
                  longitude,
+                 remaining_distance_km_to_next_station,
+                 remaining_minutes_to_next_station,
                  speed_kmh,
                  heading,
                  accuracy_meters,
@@ -213,8 +234,11 @@ public sealed class Tracking : IEndpointGroup
                  {gpsDevice.Id},
                  {routeId},
                  {trip.Value?.Id},
+                 {request.NextStationId},
                  {request.Lat},
                  {request.Lng},
+                 {request.RemainingDistanceKmToNextStation},
+                 {request.RemainingMinutesToNextStation},
                  {request.SpeedKmh},
                  {request.Heading},
                  {request.AccuracyMeters},
@@ -232,8 +256,11 @@ public sealed class Tracking : IEndpointGroup
              SET gps_device_id = EXCLUDED.gps_device_id,
                  route_id = EXCLUDED.route_id,
                  trip_id = EXCLUDED.trip_id,
+                 next_station_id = EXCLUDED.next_station_id,
                  latitude = EXCLUDED.latitude,
                  longitude = EXCLUDED.longitude,
+                 remaining_distance_km_to_next_station = EXCLUDED.remaining_distance_km_to_next_station,
+                 remaining_minutes_to_next_station = EXCLUDED.remaining_minutes_to_next_station,
                  speed_kmh = EXCLUDED.speed_kmh,
                  heading = EXCLUDED.heading,
                  accuracy_meters = EXCLUDED.accuracy_meters,
@@ -249,6 +276,17 @@ public sealed class Tracking : IEndpointGroup
              WHERE boat_latest_locations.sequence < EXCLUDED.sequence;
             """,
             cancellationToken);
+
+        var tripStatusChanged = false;
+        if (trip.Value is not null
+            && trip.Value.TripStatus is TripStatus.Scheduled or TripStatus.Boarding or TripStatus.Delayed)
+        {
+            trip.Value.TripStatus = TripStatus.InProgress;
+            trip.Value.StatusNote = string.IsNullOrWhiteSpace(trip.Value.StatusNote)
+                ? "GPS đã bắt đầu gửi vị trí cho chuyến."
+                : trip.Value.StatusNote;
+            tripStatusChanged = true;
+        }
 
         if (session.Value is not null)
         {
@@ -274,7 +312,10 @@ public sealed class Tracking : IEndpointGroup
                 SignalStrength = request.SignalStrength,
                 GpsFixQuality = gpsFixQuality
             });
+        }
 
+        if (session.Value is not null || tripStatusChanged)
+        {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
@@ -307,6 +348,11 @@ public sealed class Tracking : IEndpointGroup
                 route.Value?.RouteCode,
                 trip.Value?.Id,
                 trip.Value?.TripCode,
+                request.NextStationId,
+                nextStationLookup.Value?.StationCode,
+                nextStationLookup.Value?.StationName,
+                request.RemainingDistanceKmToNextStation,
+                request.RemainingMinutesToNextStation,
                 request.Lat,
                 request.Lng,
                 request.SpeedKmh,
@@ -337,6 +383,7 @@ public sealed class Tracking : IEndpointGroup
             .Include(x => x.Boat)
             .Include(x => x.Route)
             .Include(x => x.Trip)
+            .Include(x => x.NextStation)
             .OrderBy(x => x.Boat.Code)
             .ToListAsync(cancellationToken);
 
@@ -364,6 +411,7 @@ public sealed class Tracking : IEndpointGroup
             .Include(x => x.Boat)
             .Include(x => x.Route)
             .Include(x => x.Trip)
+            .Include(x => x.NextStation)
             .Where(x => x.Boat.Code == normalizedBoatCode)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -425,6 +473,25 @@ public sealed class Tracking : IEndpointGroup
             errors["accuracyMeters"] = ["accuracyMeters không được âm."];
         }
 
+        if (request.NextStationId == Guid.Empty)
+        {
+            errors["nextStationId"] = ["nextStationId không hợp lệ."];
+        }
+
+        if (request.RemainingDistanceKmToNextStation is < 0m or > MaxRemainingDistanceKmToNextStation)
+        {
+            errors["remainingDistanceKmToNextStation"] = [
+                $"remainingDistanceKmToNextStation phải từ 0 đến {MaxRemainingDistanceKmToNextStation}."
+            ];
+        }
+
+        if (request.RemainingMinutesToNextStation is < 0 or > MaxRemainingMinutesToNextStation)
+        {
+            errors["remainingMinutesToNextStation"] = [
+                $"remainingMinutesToNextStation phải từ 0 đến {MaxRemainingMinutesToNextStation}."
+            ];
+        }
+
         if (request.BatteryPercent is < 0 or > 100)
         {
             errors["batteryPercent"] = ["batteryPercent phải nằm trong khoảng 0 đến 100."];
@@ -478,6 +545,63 @@ public sealed class Tracking : IEndpointGroup
         var trip = await dbContext.Set<Trip>()
             .FirstOrDefaultAsync(x => x.Id == tripId.Value, cancellationToken);
         return trip is null ? LookupResult<Trip>.Missing() : LookupResult<Trip>.Found(trip);
+    }
+
+    private static async Task<NextStationLookup> ResolveNextStationAsync(
+        ApplicationDbContext dbContext,
+        Guid? nextStationId,
+        Trip? trip,
+        Guid? routeId,
+        CancellationToken cancellationToken)
+    {
+        if (!nextStationId.HasValue)
+        {
+            return NextStationLookup.Empty();
+        }
+
+        var station = await dbContext.Stations
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == nextStationId.Value, cancellationToken);
+        if (station is null)
+        {
+            return NextStationLookup.Failed(
+                Results.NotFound(new { message = "nextStationId không tồn tại." }));
+        }
+
+        if (trip is not null)
+        {
+            var belongsToTrip = await dbContext.Set<TripStop>()
+                .AsNoTracking()
+                .AnyAsync(x => x.TripId == trip.Id && x.StationId == nextStationId.Value, cancellationToken);
+            if (!belongsToTrip)
+            {
+                belongsToTrip = await dbContext.RouteStops
+                    .AsNoTracking()
+                    .AnyAsync(x => x.RouteId == trip.RouteId && x.StationId == nextStationId.Value, cancellationToken);
+            }
+
+            if (!belongsToTrip)
+            {
+                return NextStationLookup.Failed(
+                    Results.BadRequest(new { message = "nextStationId không thuộc trip đang gửi GPS." }));
+            }
+
+            return NextStationLookup.Found(station);
+        }
+
+        if (routeId.HasValue)
+        {
+            var belongsToRoute = await dbContext.RouteStops
+                .AsNoTracking()
+                .AnyAsync(x => x.RouteId == routeId.Value && x.StationId == nextStationId.Value, cancellationToken);
+            if (!belongsToRoute)
+            {
+                return NextStationLookup.Failed(
+                    Results.BadRequest(new { message = "nextStationId không thuộc route đang gửi GPS." }));
+            }
+        }
+
+        return NextStationLookup.Found(station);
     }
 
     private static async Task<CapturedRouteSessionLookup> ResolveCapturedRouteSessionAsync(
@@ -558,6 +682,11 @@ public sealed class Tracking : IEndpointGroup
             location.Route?.RouteCode,
             location.TripId,
             location.Trip?.TripCode,
+            location.NextStationId,
+            location.NextStation?.StationCode,
+            location.NextStation?.StationName,
+            location.RemainingDistanceKmToNextStation,
+            location.RemainingMinutesToNextStation,
             location.Latitude,
             location.Longitude,
             location.SpeedKmh,
@@ -655,6 +784,9 @@ public sealed class Tracking : IEndpointGroup
         Guid? RouteId,
         string? RouteCode,
         Guid? TripId,
+        Guid? NextStationId,
+        decimal? RemainingDistanceKmToNextStation,
+        int? RemainingMinutesToNextStation,
         decimal Lat,
         decimal Lng,
         decimal? SpeedKmh,
@@ -698,6 +830,11 @@ public sealed class Tracking : IEndpointGroup
         string? RouteCode,
         Guid? TripId,
         string? TripCode,
+        Guid? NextStationId,
+        string? NextStationCode,
+        string? NextStationName,
+        decimal? RemainingDistanceKmToNextStation,
+        int? RemainingMinutesToNextStation,
         decimal Lat,
         decimal Lng,
         decimal? SpeedKmh,
@@ -725,6 +862,11 @@ public sealed class Tracking : IEndpointGroup
         string? RouteCode,
         Guid? TripId,
         string? TripCode,
+        Guid? NextStationId,
+        string? NextStationCode,
+        string? NextStationName,
+        decimal? RemainingDistanceKmToNextStation,
+        int? RemainingMinutesToNextStation,
         decimal Lat,
         decimal Lng,
         decimal? SpeedKmh,
@@ -768,5 +910,14 @@ public sealed class Tracking : IEndpointGroup
         public static CapturedRouteSessionLookup Found(GpsTrackingSession session) => new(session, null);
 
         public static CapturedRouteSessionLookup Failed(IResult error) => new(null, error);
+    }
+
+    private sealed record NextStationLookup(Station? Value, IResult? Error)
+    {
+        public static NextStationLookup Empty() => new(null, null);
+
+        public static NextStationLookup Found(Station station) => new(station, null);
+
+        public static NextStationLookup Failed(IResult error) => new(null, error);
     }
 }

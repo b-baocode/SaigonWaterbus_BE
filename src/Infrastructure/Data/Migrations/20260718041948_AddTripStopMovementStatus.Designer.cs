@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260718041948_AddTripStopMovementStatus")]
+    partial class AddTripStopMovementStatus
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -274,10 +277,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("numeric(10,7)")
                         .HasColumnName("longitude");
 
-                    b.Property<Guid?>("NextStationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("next_station_id");
-
                     b.Property<DateTimeOffset>("ReceivedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("received_at");
@@ -285,14 +284,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset>("RecordedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("recorded_at");
-
-                    b.Property<decimal?>("RemainingDistanceKmToNextStation")
-                        .HasColumnType("numeric(10,3)")
-                        .HasColumnName("remaining_distance_km_to_next_station");
-
-                    b.Property<int?>("RemainingMinutesToNextStation")
-                        .HasColumnType("integer")
-                        .HasColumnName("remaining_minutes_to_next_station");
 
                     b.Property<Guid?>("RouteId")
                         .HasColumnType("uuid")
@@ -327,8 +318,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasKey("BoatId");
 
                     b.HasIndex("GpsDeviceId");
-
-                    b.HasIndex("NextStationId");
 
                     b.HasIndex("RecordedAt");
 
@@ -460,18 +449,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(30)
                         .HasColumnType("character varying(30)")
                         .HasColumnName("payment_status");
-
-                    b.Property<int>("PointsEarned")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("points_earned");
-
-                    b.Property<int>("PointsUsed")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("points_used");
 
                     b.Property<string>("PreferredSeatSetupType")
                         .HasMaxLength(30)
@@ -3077,11 +3054,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Station", "NextStation")
-                        .WithMany()
-                        .HasForeignKey("NextStationId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SaigonWaterbus.Domain.Entities.Route", "Route")
                         .WithMany()
                         .HasForeignKey("RouteId")
@@ -3095,8 +3067,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Boat");
 
                     b.Navigation("GpsDevice");
-
-                    b.Navigation("NextStation");
 
                     b.Navigation("Route");
 

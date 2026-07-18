@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Trips;
@@ -162,9 +163,9 @@ internal static class TripStopScheduleSupport
                     x.StopOrder,
                     x.PlannedArrivalTime ?? x.PlannedDepartureTime,
                     x.PlannedDepartureTime ?? x.PlannedArrivalTime,
-                    null,
-                    null,
-                    trip.TripStatus.ToString(),
+                    x.ActualArrivalTime,
+                    x.ActualDepartureTime,
+                    x.StopStatus,
                     x.StayDurationMinutes,
                     x.Note))
                 .ToList();
@@ -182,7 +183,7 @@ internal static class TripStopScheduleSupport
                 draft.PlannedDepartureTime ?? draft.PlannedArrivalTime,
                 null,
                 null,
-                trip.TripStatus.ToString(),
+                TripStopStatuses.Scheduled,
                 draft.StayDurationMinutes,
                 draft.Note))
             .ToList();

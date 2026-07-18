@@ -287,6 +287,59 @@ public class CreateIncidentCommandTests
         savedTrip.TripStatus.ShouldBe(TripStatus.Delayed);
     }
 
+    [Test]
+    public async Task GpsCallbackCompletesRescueMissionAndMovesIncidentBoatToMaintenance()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var incidentBoat = Boat("WB_005");
+        incidentBoat.Status = BoatStatus.Incident;
+        var rescueBoat = RescueBoat("SOS_001");
+        var incident = new Incident
+        {
+            Boat = incidentBoat,
+            BoatId = incidentBoat.Id,
+            RescueBoat = rescueBoat,
+            RescueBoatId = rescueBoat.Id,
+            IncidentType = "MechanicalFailure",
+            Description = "Tau can keo ve ben.",
+            Severity = "High",
+            OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ResolutionStatus = IncidentSupport.OpenStatus
+        };
+        context.AddRange(incidentBoat, rescueBoat, incident);
+        await context.SaveChangesAsync();
+
+        var completedAt = new DateTimeOffset(2030, 1, 1, 3, 0, 0, TimeSpan.Zero);
+        var gpsHook = new CapturingIncidentGpsHookNotifier();
+        var handler = new CompleteRescueMissionCommandHandler(
+            context,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 4, 0, 0, TimeSpan.Zero)),
+            gpsHookNotifier: gpsHook);
+
+        var result = await handler.Handle(
+            new CompleteRescueMissionCommand(
+                incident.Id,
+                "WB_005",
+                "SOS_001",
+                completedAt,
+                "Tau da duoc keo ve ben."),
+            CancellationToken.None);
+
+        result.ResolutionStatus.ShouldBe(IncidentSupport.ResolvedStatus);
+        result.ResolvedAt.ShouldBe(completedAt);
+        result.ResolutionNote.ShouldBe("Tau da duoc keo ve ben.");
+
+        var savedIncidentBoat = context.Boats.Single(x => x.Id == incidentBoat.Id);
+        savedIncidentBoat.Status.ShouldBe(BoatStatus.UnderMaintenance);
+        savedIncidentBoat.MaintenanceStartedAt.ShouldBe(completedAt);
+
+        var savedRescueBoat = context.Boats.Single(x => x.Id == rescueBoat.Id);
+        savedRescueBoat.Status.ShouldBe(BoatStatus.Active);
+
+        gpsHook.Notifications.Count.ShouldBe(1);
+        gpsHook.Notifications.Single().Event.ShouldBe(IncidentSupport.IncidentResolvedEvent);
+    }
+
     private static Boat Boat(string code) =>
         new()
         {

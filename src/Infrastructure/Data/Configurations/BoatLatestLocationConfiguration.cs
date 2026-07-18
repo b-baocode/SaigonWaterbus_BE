@@ -15,8 +15,13 @@ public sealed class BoatLatestLocationConfiguration : IEntityTypeConfiguration<B
         builder.Property(x => x.GpsDeviceId).HasColumnName("gps_device_id").IsRequired();
         builder.Property(x => x.RouteId).HasColumnName("route_id");
         builder.Property(x => x.TripId).HasColumnName("trip_id");
+        builder.Property(x => x.NextStationId).HasColumnName("next_station_id");
         builder.Property(x => x.Latitude).HasColumnName("latitude").HasColumnType("numeric(10,7)").IsRequired();
         builder.Property(x => x.Longitude).HasColumnName("longitude").HasColumnType("numeric(10,7)").IsRequired();
+        builder.Property(x => x.RemainingDistanceKmToNextStation)
+            .HasColumnName("remaining_distance_km_to_next_station")
+            .HasColumnType("numeric(10,3)");
+        builder.Property(x => x.RemainingMinutesToNextStation).HasColumnName("remaining_minutes_to_next_station");
         builder.Property(x => x.SpeedKmh).HasColumnName("speed_kmh").HasColumnType("numeric(6,2)");
         builder.Property(x => x.Heading).HasColumnName("heading");
         builder.Property(x => x.AccuracyMeters).HasColumnName("accuracy_meters").HasColumnType("numeric(8,2)");
@@ -33,6 +38,7 @@ public sealed class BoatLatestLocationConfiguration : IEntityTypeConfiguration<B
         builder.HasIndex(x => x.GpsDeviceId);
         builder.HasIndex(x => x.RouteId);
         builder.HasIndex(x => x.TripId);
+        builder.HasIndex(x => x.NextStationId);
         builder.HasIndex(x => x.RecordedAt);
         builder.HasIndex(x => new { x.RouteId, x.Status });
 
@@ -56,6 +62,11 @@ public sealed class BoatLatestLocationConfiguration : IEntityTypeConfiguration<B
         builder.HasOne(x => x.Trip)
             .WithMany()
             .HasForeignKey(x => x.TripId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.NextStation)
+            .WithMany()
+            .HasForeignKey(x => x.NextStationId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

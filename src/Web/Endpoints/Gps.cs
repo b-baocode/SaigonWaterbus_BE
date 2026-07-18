@@ -1,18 +1,28 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
+using SaigonWaterbus.Infrastructure.Options;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
 public sealed class Gps : IEndpointGroup
 {
+    private const string LiveHookSecretHeaderName = "X-Live-Hook-Secret";
+    private const int DefaultScheduleLookAheadMinutes = 120;
+    private const int DefaultScheduleLookBehindMinutes = 30;
+    private const int MaxScheduleLookAheadMinutes = 24 * 60;
+    private const int MaxScheduleLookBehindMinutes = 12 * 60;
     private const double StationMatchThresholdMeters = 500;
     private const double FallbackSpeedKmh = 16;
+    private const int DefaultTripStopTravelMinutes = 15;
 
     private const string StartSessionExample =
         """
@@ -108,6 +118,36 @@ public sealed class Gps : IEndpointGroup
                 "BE tu xac dinh routeType: dau/cuoi trung nhau la SightseeingLoop, khac nhau la CharterReference de lam route nguon.",
                 "estimatedDurationMin = baseDistanceKm / averageSpeedKmh * 60. Neu khong gui averageSpeedKmh, backend lay trung binh speedKmh cua diem GPS; neu van thieu thi dung 16 km/h.",
                 "routeCode phai chua ton tai de tranh ghi de tuyen hien co."));
+
+        group.MapGet(GetDueTripSchedules, "gps/trips/due")
+            .AllowAnonymous()
+            .WithSummary("GPS lay lich chuyen sap/đang chay de tu dong van hanh")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS service",
+                null,
+                $"Header bat buoc: {LiveHookSecretHeaderName}.",
+                "Query optional: boatCode, lookAheadMinutes, lookBehindMinutes.",
+                "Tra ve trip da gan tau, route geometry, stop schedule de GPS tu chon trip dung gio va gui location kem tripId."));
+
+        group.MapPost(CompleteGpsTrip, "gps/trips/{tripId:guid}/complete")
+            .AllowAnonymous()
+            .WithSummary("GPS bao BE chuyen thuong da chay xong")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS service",
+                null,
+                $"Header bat buoc: {LiveHookSecretHeaderName}.",
+                "Body optional: boatCode, completedAt, note.",
+                "BE verify boatCode neu co, sau do set tripStatus Completed."));
+
+        group.MapPost(ReportTripStopEvent, "gps/trips/{tripId:guid}/stops/{stationId:guid}/event")
+            .AllowAnonymous()
+            .WithSummary("GPS bao BE trang thai cap/roi ben cua mot chuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS service",
+                null,
+                $"Header bat buoc: {LiveHookSecretHeaderName}.",
+                "event hop le: Arriving, Arrived, Departed, Skipped.",
+                "BE cap nhat trip_stops.stop_status, actual_arrival_time, actual_departure_time de FE hien bang tau di chuyen."));
     }
 
     private static async Task<IResult> StartSession(
@@ -417,6 +457,189 @@ public sealed class Gps : IEndpointGroup
                 reverseRouteResponse));
     }
 
+    private static async Task<IResult> GetDueTripSchedules(
+        ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        [FromQuery] string? boatCode,
+        [FromQuery] int? lookAheadMinutes,
+        [FromQuery] int? lookBehindMinutes,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        var validationErrors = ValidateDueTripScheduleRequest(lookAheadMinutes, lookBehindMinutes);
+        if (validationErrors.Count > 0)
+        {
+            return Results.ValidationProblem(validationErrors);
+        }
+
+        var now = timeProvider.GetUtcNow();
+        var resolvedLookAheadMinutes = lookAheadMinutes.GetValueOrDefault(DefaultScheduleLookAheadMinutes);
+        var resolvedLookBehindMinutes = lookBehindMinutes.GetValueOrDefault(DefaultScheduleLookBehindMinutes);
+        var windowStart = now.AddMinutes(-resolvedLookBehindMinutes);
+        var windowEnd = now.AddMinutes(resolvedLookAheadMinutes);
+        var normalizedBoatCode = NormalizeRouteCode(boatCode);
+
+        var query = dbContext.Trips
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .Include(x => x.Route)
+                .ThenInclude(x => x.RouteStops)
+                    .ThenInclude(x => x.Station)
+            .Include(x => x.TripStops)
+                .ThenInclude(x => x.Station)
+            .Where(x => x.BoatId.HasValue
+                && x.Boat != null
+                && x.Boat.Status == BoatStatus.Active
+                && x.TripStatus != TripStatus.Cancelled
+                && x.TripStatus != TripStatus.Completed
+                && ((x.DepartureTime >= windowStart && x.DepartureTime <= windowEnd)
+                    || x.TripStatus == TripStatus.Boarding
+                    || x.TripStatus == TripStatus.InProgress));
+
+        if (!string.IsNullOrWhiteSpace(normalizedBoatCode))
+        {
+            query = query.Where(x => x.Boat!.Code == normalizedBoatCode);
+        }
+
+        var trips = await query
+            .OrderBy(x => x.DepartureTime)
+            .ThenBy(x => x.TripCode)
+            .ToListAsync(cancellationToken);
+
+        return Results.Ok(new GpsDueTripScheduleResponse(
+            now,
+            windowStart,
+            windowEnd,
+            trips.Select(ToGpsTripScheduleItem).ToArray()));
+    }
+
+    private static async Task<IResult> CompleteGpsTrip(
+        ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        Guid tripId,
+        CompleteGpsTripRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        var trip = await dbContext.Trips
+            .Include(x => x.Boat)
+            .SingleOrDefaultAsync(x => x.Id == tripId, cancellationToken);
+        if (trip is null)
+        {
+            return Results.NotFound(new { message = "Trip không tồn tại." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BoatCode)
+            && !string.Equals(trip.Boat?.Code, request.BoatCode.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { message = "boatCode không khớp với tàu của trip." });
+        }
+
+        if (trip.TripStatus == TripStatus.Cancelled)
+        {
+            return Results.BadRequest(new { message = "Trip đã bị hủy, không thể hoàn tất từ GPS." });
+        }
+
+        if (trip.TripStatus != TripStatus.Completed)
+        {
+            var completedAt = request.CompletedAt?.ToUniversalTime() ?? timeProvider.GetUtcNow();
+            trip.TripStatus = TripStatus.Completed;
+            trip.StatusNote = NormalizeOptionalText(request.Note)
+                ?? $"GPS đã hoàn tất chuyến lúc {completedAt:O}.";
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        return Results.Ok(new GpsTripStatusResponse(
+            trip.Id,
+            trip.TripCode,
+            trip.Boat?.Code,
+            trip.TripStatus.ToString(),
+            trip.StatusNote));
+    }
+
+    private static async Task<IResult> ReportTripStopEvent(
+        ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        Guid tripId,
+        Guid stationId,
+        ReportTripStopEventRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        var eventType = NormalizeTripStopEvent(request.Event);
+        if (eventType is null)
+        {
+            return Results.BadRequest(new { message = "event chỉ nhận Arriving, Arrived, Departed hoặc Skipped." });
+        }
+
+        var trip = await dbContext.Trips
+            .Include(x => x.Boat)
+            .Include(x => x.Route)
+                .ThenInclude(x => x.RouteStops)
+                    .ThenInclude(x => x.Station)
+            .Include(x => x.TripStops)
+                .ThenInclude(x => x.Station)
+            .SingleOrDefaultAsync(x => x.Id == tripId, cancellationToken);
+        if (trip is null)
+        {
+            return Results.NotFound(new { message = "Trip không tồn tại." });
+        }
+
+        if (!string.IsNullOrWhiteSpace(request.BoatCode)
+            && !string.Equals(trip.Boat?.Code, request.BoatCode.Trim(), StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.BadRequest(new { message = "boatCode không khớp với tàu của trip." });
+        }
+
+        var tripStop = await EnsureTripStopExistsAsync(dbContext, trip, stationId, cancellationToken);
+        if (tripStop is null)
+        {
+            return Results.NotFound(new { message = "stationId không thuộc trip/route này." });
+        }
+
+        var occurredAt = request.OccurredAt?.ToUniversalTime() ?? timeProvider.GetUtcNow();
+        ApplyTripStopEvent(tripStop, eventType, occurredAt, request.Note);
+        if (trip.TripStatus is TripStatus.Scheduled or TripStatus.Boarding or TripStatus.Delayed)
+        {
+            trip.TripStatus = TripStatus.InProgress;
+            trip.StatusNote ??= "GPS đã cập nhật trạng thái bến cho chuyến.";
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Results.Ok(new GpsTripStopStatusResponse(
+            trip.Id,
+            trip.TripCode,
+            trip.Boat?.Code,
+            tripStop.Id,
+            tripStop.StationId,
+            tripStop.Station.StationCode,
+            tripStop.Station.StationName,
+            tripStop.StopOrder,
+            tripStop.StopStatus,
+            tripStop.ActualArrivalTime,
+            tripStop.ActualDepartureTime,
+            trip.TripStatus.ToString()));
+    }
+
     private static Dictionary<string, string[]> ValidateStartSessionRequest(
         string? headerDeviceId,
         StartGpsSessionRequest request)
@@ -450,6 +673,24 @@ public sealed class Gps : IEndpointGroup
         if (request.RouteName?.Length > 150)
         {
             errors["routeName"] = ["routeName khong duoc vuot qua 150 ky tu."];
+        }
+
+        return errors;
+    }
+
+    private static Dictionary<string, string[]> ValidateDueTripScheduleRequest(
+        int? lookAheadMinutes,
+        int? lookBehindMinutes)
+    {
+        var errors = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase);
+        if (lookAheadMinutes is < 1 or > MaxScheduleLookAheadMinutes)
+        {
+            errors["lookAheadMinutes"] = [$"lookAheadMinutes phai tu 1 den {MaxScheduleLookAheadMinutes}."];
+        }
+
+        if (lookBehindMinutes is < 0 or > MaxScheduleLookBehindMinutes)
+        {
+            errors["lookBehindMinutes"] = [$"lookBehindMinutes phai tu 0 den {MaxScheduleLookBehindMinutes}."];
         }
 
         return errors;
@@ -1126,6 +1367,201 @@ public sealed class Gps : IEndpointGroup
     private static string? NormalizeRouteCode(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim().ToUpperInvariant();
 
+    private static string? NormalizeTripStopEvent(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return value.Trim() switch
+        {
+            var eventType when string.Equals(eventType, TripStopStatuses.Arriving, StringComparison.OrdinalIgnoreCase)
+                => TripStopStatuses.Arriving,
+            var eventType when string.Equals(eventType, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
+                => TripStopStatuses.Arrived,
+            var eventType when string.Equals(eventType, "Docked", StringComparison.OrdinalIgnoreCase)
+                => TripStopStatuses.Arrived,
+            var eventType when string.Equals(eventType, TripStopStatuses.Departed, StringComparison.OrdinalIgnoreCase)
+                => TripStopStatuses.Departed,
+            var eventType when string.Equals(eventType, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase)
+                => TripStopStatuses.Skipped,
+            _ => null
+        };
+    }
+
+    private static bool IsValidLiveHookSecret(string? expectedSecret, string? actualSecret)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSecret) || string.IsNullOrWhiteSpace(actualSecret))
+        {
+            return false;
+        }
+
+        var expectedBytes = Encoding.UTF8.GetBytes(expectedSecret.Trim());
+        var actualBytes = Encoding.UTF8.GetBytes(actualSecret.Trim());
+        return expectedBytes.Length == actualBytes.Length
+            && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+    }
+
+    private static GpsTripScheduleItemResponse ToGpsTripScheduleItem(Trip trip) =>
+        new(
+            trip.Id,
+            trip.TripCode,
+            trip.TripType,
+            trip.BoatId!.Value,
+            trip.Boat!.Code,
+            trip.Boat.Name,
+            trip.RouteId,
+            trip.Route.RouteCode,
+            trip.Route.RouteName,
+            trip.Route.RouteType,
+            trip.OperatingDate,
+            trip.DepartureTime,
+            trip.ArrivalTime,
+            trip.TripStatus.ToString(),
+            trip.StatusNote,
+            trip.Route.BaseDistanceKm,
+            trip.Route.EstimatedDurationMin,
+            ToRouteGeometryResponse(trip.Route.RouteGeometry),
+            ToGpsTripStopResponses(trip));
+
+    private static IReadOnlyList<double[]>? ToRouteGeometryResponse(LineString? routeGeometry) =>
+        routeGeometry is null
+            ? null
+            : routeGeometry.Coordinates
+                .Select(coordinate => new[] { coordinate.X, coordinate.Y })
+                .ToArray();
+
+    private static IReadOnlyList<GpsTripScheduleStopResponse> ToGpsTripStopResponses(Trip trip)
+    {
+        if (trip.TripStops.Count > 0)
+        {
+            return trip.TripStops
+                .OrderBy(x => x.StopOrder)
+                .Select(x => new GpsTripScheduleStopResponse(
+                    x.Id,
+                    x.StationId,
+                    x.Station.StationCode,
+                    x.Station.StationName,
+                    x.StopOrder,
+                    x.PlannedArrivalTime,
+                    x.PlannedDepartureTime,
+                    x.ActualArrivalTime,
+                    x.ActualDepartureTime,
+                    x.StopStatus,
+                    x.Station.Latitude,
+                    x.Station.Longitude))
+                .ToArray();
+        }
+
+        return trip.Route.RouteStops
+            .OrderBy(x => x.StopOrder)
+            .Select(x => new GpsTripScheduleStopResponse(
+                null,
+                x.StationId,
+                x.Station.StationCode,
+                x.Station.StationName,
+                x.StopOrder,
+                null,
+                null,
+                null,
+                null,
+                TripStopStatuses.Scheduled,
+                x.Station.Latitude,
+                x.Station.Longitude))
+            .ToArray();
+    }
+
+    private static async Task<TripStop?> EnsureTripStopExistsAsync(
+        ApplicationDbContext dbContext,
+        Trip trip,
+        Guid stationId,
+        CancellationToken cancellationToken)
+    {
+        var tripStop = trip.TripStops.FirstOrDefault(x => x.StationId == stationId);
+        if (tripStop is not null)
+        {
+            return tripStop;
+        }
+
+        if (trip.Route.RouteStops.Count == 0)
+        {
+            await dbContext.Entry(trip.Route)
+                .Collection(x => x.RouteStops)
+                .Query()
+                .Include(x => x.Station)
+                .LoadAsync(cancellationToken);
+        }
+
+        var routeStops = trip.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray();
+        if (routeStops.All(x => x.StationId != stationId))
+        {
+            return null;
+        }
+
+        CreateTripStopsFromRouteStops(trip, routeStops);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return trip.TripStops.FirstOrDefault(x => x.StationId == stationId);
+    }
+
+    private static void CreateTripStopsFromRouteStops(
+        Trip trip,
+        IReadOnlyList<RouteStop> routeStops)
+    {
+        var previousDeparture = trip.DepartureTime;
+        for (var i = 0; i < routeStops.Count; i++)
+        {
+            DateTimeOffset? plannedArrival;
+            DateTimeOffset? plannedDeparture;
+            if (i == 0)
+            {
+                plannedArrival = null;
+                plannedDeparture = trip.DepartureTime;
+            }
+            else
+            {
+                plannedArrival = previousDeparture.AddMinutes(
+                    routeStops[i].StandardTravelMin ?? DefaultTripStopTravelMinutes);
+                plannedDeparture = i == routeStops.Count - 1 ? null : plannedArrival;
+                previousDeparture = plannedDeparture ?? plannedArrival.Value;
+            }
+
+            trip.TripStops.Add(new TripStop
+            {
+                TripId = trip.Id,
+                StationId = routeStops[i].StationId,
+                Station = routeStops[i].Station,
+                StopOrder = i + 1,
+                StayDurationMinutes = 0,
+                PlannedArrivalTime = plannedArrival,
+                PlannedDepartureTime = plannedDeparture
+            });
+        }
+    }
+
+    private static void ApplyTripStopEvent(
+        TripStop tripStop,
+        string eventType,
+        DateTimeOffset occurredAt,
+        string? note)
+    {
+        tripStop.StopStatus = eventType;
+        tripStop.Note = NormalizeOptionalText(note) ?? tripStop.Note;
+        if (eventType is TripStopStatuses.Arrived)
+        {
+            tripStop.ActualArrivalTime ??= occurredAt;
+        }
+        else if (eventType is TripStopStatuses.Departed)
+        {
+            tripStop.ActualDepartureTime = occurredAt;
+            tripStop.ActualArrivalTime ??= occurredAt;
+        }
+        else if (eventType is TripStopStatuses.Skipped)
+        {
+            tripStop.ActualDepartureTime ??= occurredAt;
+        }
+    }
+
     private static double CalculateLengthKm(LineString line)
     {
         double total = 0;
@@ -1193,6 +1629,19 @@ public sealed class Gps : IEndpointGroup
         IReadOnlyList<GpsRouteStopRequest>? Stops,
         IReadOnlyList<GpsRouteCoordinateRequest>? Coordinates);
 
+    public sealed record CompleteGpsTripRequest(
+        string? BoatCode,
+        DateTimeOffset? CompletedAt,
+        string? Note);
+
+    public sealed record ReportTripStopEventRequest(
+        string? BoatCode,
+        string Event,
+        DateTimeOffset? OccurredAt,
+        decimal? Lat,
+        decimal? Lng,
+        string? Note);
+
     public sealed record GpsRouteStopRequest(
         Guid StationId,
         int? StopOrder,
@@ -1208,6 +1657,68 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset? RecordedAt);
 
     private sealed record GpsSessionResponse(Guid SessionId, string Status);
+
+    private sealed record GpsDueTripScheduleResponse(
+        DateTimeOffset ServerTime,
+        DateTimeOffset WindowStart,
+        DateTimeOffset WindowEnd,
+        IReadOnlyList<GpsTripScheduleItemResponse> Trips);
+
+    private sealed record GpsTripScheduleItemResponse(
+        Guid TripId,
+        string TripCode,
+        string TripType,
+        Guid BoatId,
+        string BoatCode,
+        string BoatName,
+        Guid RouteId,
+        string RouteCode,
+        string RouteName,
+        string RouteType,
+        DateOnly OperatingDate,
+        DateTimeOffset DepartureTime,
+        DateTimeOffset ArrivalTime,
+        string TripStatus,
+        string? StatusNote,
+        decimal? BaseDistanceKm,
+        int? EstimatedDurationMin,
+        IReadOnlyList<double[]>? RouteGeometry,
+        IReadOnlyList<GpsTripScheduleStopResponse> Stops);
+
+    private sealed record GpsTripScheduleStopResponse(
+        Guid? TripStopId,
+        Guid StationId,
+        string StationCode,
+        string StationName,
+        int StopOrder,
+        DateTimeOffset? PlannedArrivalTime,
+        DateTimeOffset? PlannedDepartureTime,
+        DateTimeOffset? ActualArrivalTime,
+        DateTimeOffset? ActualDepartureTime,
+        string StopStatus,
+        decimal? Latitude,
+        decimal? Longitude);
+
+    private sealed record GpsTripStatusResponse(
+        Guid TripId,
+        string TripCode,
+        string? BoatCode,
+        string TripStatus,
+        string? StatusNote);
+
+    private sealed record GpsTripStopStatusResponse(
+        Guid TripId,
+        string TripCode,
+        string? BoatCode,
+        Guid TripStopId,
+        Guid StationId,
+        string StationCode,
+        string StationName,
+        int StopOrder,
+        string StopStatus,
+        DateTimeOffset? ActualArrivalTime,
+        DateTimeOffset? ActualDepartureTime,
+        string TripStatus);
 
     private sealed record StopGpsSessionResponse(Guid SessionId, string Status, int RecordedPointCount);
 
