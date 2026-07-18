@@ -2,13 +2,17 @@ using System.Text.Json.Serialization;
 
 namespace SaigonWaterbus.Application.Bookings;
 
+// ServiceType/RouteType: dịch vụ của đơn (Waterbus | Sightseeing | Charter) suy từ route của
+// chuyến — FE dựa vào đây để render đúng màn hình (tour ngắm cảnh đi nguyên chuyến, không có chặng).
 public sealed record BookingListItemDto(
     Guid BookingId,
     string BookingCode,
     DateTimeOffset BookedAt,
     string BookingStatus,
     decimal TotalAmount,
-    int ItemCount);
+    int ItemCount,
+    string ServiceType,
+    string? RouteType);
 
 public sealed record BookingDetailDto(
     Guid BookingId,
@@ -26,6 +30,8 @@ public sealed record BookingDetailDto(
     string? BookingQrToken,
     DateTimeOffset? HoldExpiresAt,
     IReadOnlyList<BookingPaymentDto> Payments,
+    string ServiceType,
+    string? RouteType,
     string? ReturnTripCode = null,
     DateTimeOffset? ReturnDeparture = null);
 

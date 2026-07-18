@@ -119,6 +119,27 @@ public class CreateBookingCommandValidatorTests
         result.Errors.ShouldContain(e => e.ErrorMessage.Contains("seatNumber"));
     }
 
+    [Test]
+    public void ItemWithoutStationCodesIsValid()
+    {
+        // Chuyến ngắm cảnh đi nguyên chuyến không gửi trạm; bắt buộc/khác nhau enforce ở handler
+        // vì validator không biết chuyến nào bán theo chặng.
+        var result = Validator.Validate(
+            Command(Adult("A1") with { FromStationCode = null, ToStationCode = null }));
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
+    public void ItemWithSameFromAndToStationIsValid()
+    {
+        // Tuyến vòng lặp có bến đầu = bến cuối nên không còn chặn ở validator.
+        var result = Validator.Validate(
+            Command(Adult("A1") with { FromStationCode = "BD", ToStationCode = "BD" }));
+
+        result.IsValid.ShouldBeTrue();
+    }
+
     private static CreateBookingCommand Command(params BookingItemRequest[] items) =>
         new("TR-TEST", items, null);
 

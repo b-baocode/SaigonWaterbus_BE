@@ -14,11 +14,14 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Bookings;
 
+// FromStationCode/ToStationCode: chặng khách đi — bắt buộc trên chuyến bán vé theo chặng
+// (waterbus thường); bỏ trống trên chuyến đi nguyên chuyến (ngắm cảnh vòng lặp), BE tự lấy
+// bến đầu → bến cuối của tuyến.
 public sealed record BookingItemRequest(
     string? SeatNumber,
     string TicketTypeCode,
-    string FromStationCode,
-    string ToStationCode,
+    string? FromStationCode,
+    string? ToStationCode,
     string PassengerName,
     string? PassengerPhone,
     int? BirthYear,
@@ -99,9 +102,10 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
         item.RuleFor(x => x.BirthYear).NotNull()
             .When(x => IsInfant(x.TicketTypeCode))
             .WithMessage("birthYear là bắt buộc với vé INFANT (trẻ dưới 2 tuổi) để khai báo và lưu hành khách.");
-        item.RuleFor(x => x.FromStationCode).NotEmpty().MaximumLength(50);
-        item.RuleFor(x => x.ToStationCode).NotEmpty().MaximumLength(50)
-            .NotEqual(x => x.FromStationCode).WithMessage("From and To stations must be different.");
+        // Bắt buộc / phải khác nhau chỉ áp dụng cho chuyến bán theo chặng — validator không biết
+        // trip nào nên rule đó enforce ở handler (xem ResolveLegAsync).
+        item.RuleFor(x => x.FromStationCode).MaximumLength(50);
+        item.RuleFor(x => x.ToStationCode).MaximumLength(50);
         item.RuleFor(x => x.PassengerName).NotEmpty().MaximumLength(150);
         item.RuleFor(x => x.PassengerPhone).MaximumLength(20).When(x => x.PassengerPhone is not null);
         item.RuleFor(x => x.PassengerEmail).EmailAddress().MaximumLength(255)
@@ -448,30 +452,48 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         // Trạm lên/xuống resolve trước để biết chặng của từng item — trip Regular bán ghế
         // theo chặng nên mọi check ghế (trùng ghế, occupancy, pre-hold) và giá đều theo chặng.
-        var routeStopByStationCode = trip.Route.RouteStops
-            .ToDictionary(
-                rs => rs.Station.StationCode.ToUpperInvariant(),
-                rs => rs);
-
         var itemSegments = new List<(BookingItemRequest Item, RouteStop FromStop, RouteStop ToStop)>();
-        foreach (var item in items)
+        if (usesSegments)
         {
-            var fromCode = item.FromStationCode.Trim().ToUpperInvariant();
-            var toCode = item.ToStationCode.Trim().ToUpperInvariant();
+            foreach (var item in items)
+            {
+                // Bắt buộc ở đây thay vì validator: chỉ chuyến bán theo chặng mới cần trạm lên/xuống.
+                if (string.IsNullOrWhiteSpace(item.FromStationCode)
+                    || string.IsNullOrWhiteSpace(item.ToStationCode))
+                    throw new ValidationException([new ValidationFailure(
+                        string.IsNullOrWhiteSpace(item.FromStationCode)
+                            ? nameof(BookingItemRequest.FromStationCode)
+                            : nameof(BookingItemRequest.ToStationCode),
+                        "fromStationCode và toStationCode là bắt buộc trên chuyến bán vé theo chặng.")]);
 
-            if (!routeStopByStationCode.TryGetValue(fromCode, out var fromStop))
-                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
-                    $"Station '{fromCode}' is not a stop on this trip.")]);
+                // Dùng chung resolver với giữ ghế / sơ đồ ghế — tuyến có thể ghé cùng một bến nhiều
+                // lần (vòng lặp Regular) nên không index route stop theo station code được.
+                var (fromStop, toStop) = Trips.TripSegmentSupport.ResolveStops(
+                    trip.Route.RouteStops,
+                    item.FromStationCode,
+                    item.ToStationCode,
+                    nameof(BookingItemRequest.FromStationCode),
+                    nameof(BookingItemRequest.ToStationCode));
 
-            if (!routeStopByStationCode.TryGetValue(toCode, out var toStop))
-                throw new ValidationException([new ValidationFailure(nameof(item.ToStationCode),
-                    $"Station '{toCode}' is not a stop on this trip.")]);
+                itemSegments.Add((item, fromStop, toStop));
+            }
+        }
+        else
+        {
+            // Chuyến đi nguyên chuyến (ngắm cảnh): bỏ qua trạm client gửi, dùng bến đầu → bến cuối
+            // của tuyến. Tuyến ngắm cảnh chỉ có đúng hai bến và cả hai là một bến, nên KHÔNG được
+            // index route stop theo station code — cùng một station nằm ở hai stop order.
+            var orderedStops = trip.Route.RouteStops.OrderBy(rs => rs.StopOrder).ToList();
+            if (orderedStops.Count < 2)
+                throw new ValidationException([new ValidationFailure(tripCodePropertyName,
+                    "Tuyến của chuyến này chưa có đủ bến để bán vé.")]);
 
-            if (fromStop.StopOrder >= toStop.StopOrder)
-                throw new ValidationException([new ValidationFailure(nameof(item.FromStationCode),
-                    $"Station '{fromCode}' must come before '{toCode}' on the route.")]);
-
-            itemSegments.Add((item, fromStop, toStop));
+            var firstStop = orderedStops[0];
+            var lastStop = orderedStops[^1];
+            foreach (var item in items)
+            {
+                itemSegments.Add((item, firstStop, lastStop));
+            }
         }
 
         // Trùng ghế trong cùng chiều: trip Regular cho phép hai vé cùng ghế nếu chặng không

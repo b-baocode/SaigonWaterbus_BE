@@ -4,9 +4,13 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.BookingHistory;
 
+// Type: cách lưu đơn (StandardBooking | CharterBooking).
+// ServiceType: dịch vụ khách mua (Waterbus | Sightseeing | Charter) — FE dùng để hiện đúng nhãn
+// và màn chi tiết; một StandardBooking có thể là vé waterbus thường hoặc tour ngắm cảnh.
 public sealed record BookingHistoryItemDto(
     Guid Id,
     string Type,
+    string ServiceType,
     string Code,
     DateTimeOffset CreatedAt,
     DateOnly? DepartureDate,
@@ -103,6 +107,7 @@ public sealed class GetMyBookingHistoryQueryHandler
         return new BookingHistoryItemDto(
             booking.Id,
             StandardBookingType,
+            Bookings.BookingServiceTypes.Resolve(booking.Trip?.Route.RouteType),
             booking.BookingCode,
             booking.Created,
             departure.HasValue ? DateOnly.FromDateTime(departure.Value.LocalDateTime) : null,
@@ -120,6 +125,7 @@ public sealed class GetMyBookingHistoryQueryHandler
         new(
             booking.Id,
             CharterBookingType,
+            Bookings.BookingServiceTypes.Charter,
             booking.BookingCode,
             booking.Created,
             booking.DepartureDate,

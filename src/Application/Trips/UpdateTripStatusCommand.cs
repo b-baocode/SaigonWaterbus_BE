@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -69,6 +70,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
     internal static TripDetailDto ToDetailDto(Trip trip, Booking? sourceBooking = null) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
+        trip.Route.RouteType,
+        DistanceFareSupport.UsesDistanceFare(trip.TripType, trip.Route.RouteType),
         trip.DepartureTime, trip.ArrivalTime,
         trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
         TripStopScheduleSupport.BuildStopDtos(trip),

@@ -100,6 +100,8 @@ public sealed class Trips : IEndpointGroup
                 "Tra ve toan bo ghe active cua tau theo deck/row/column kem trang thai theo chuyen.",
                 "Query ?fromStationCode=&toStationCode=: chang khach dinh di — trang thai ghe tinh theo chang do "
                 + "(trip Regular ban ghe theo chang: ghe chi Booked/Held neu co ve/luot giu giao chang). Bo trong = xem ca tuyen.",
+                "routeType / sellsBySegment: sellsBySegment=true thi FE phai hoi ben len/xuong va gui fromStationCode/toStationCode "
+                + "khi dat ve; false (vd routeType=SightseeingLoop) la di nguyen chuyen, khong hoi va khong gui ben.",
                 "status: Available | Held | HeldByMe | Booked | Blocked.",
                 "basePrice: ghe STANDARD tren trip Regular = gia theo quang duong cua chang (GET /api/fare-policy); "
                 + "ghe khac = gia goc theo loai ghe. Gia ve = basePrice x he so loai ve (GET /api/ticket-types).",

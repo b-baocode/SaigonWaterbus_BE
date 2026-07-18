@@ -23,6 +23,8 @@ public sealed record TripSeatMapDto(
     Guid? BoatId,
     string? BoatName,
     DateTimeOffset DepartureTime,
+    string RouteType,
+    bool SellsBySegment,
     int TotalSeats,
     int AvailableSeats,
     int HoldTtlSeconds,
@@ -33,6 +35,7 @@ public sealed record TripSeatMapDto(
 
 // FromStationCode/ToStationCode: chặng khách định đi — trạng thái ghế và giá (trip Regular)
 // tính theo chặng đó; bỏ trống = xem cả tuyến (ghế bận nếu có bất kỳ vé nào trên trip).
+// SellsBySegment cho FE biết có phải hỏi trạm lên/xuống hay không (false = đi nguyên chuyến).
 public sealed record GetTripSeatMapQuery(
     Guid TripId,
     string? FromStationCode = null,
@@ -78,10 +81,14 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             trip, request.FromStationCode, request.ToStationCode,
             nameof(request.FromStationCode), nameof(request.ToStationCode));
 
+        var routeType = trip.Route.RouteType;
+        var sellsBySegment = DistanceFareSupport.UsesDistanceFare(trip.TripType, routeType);
+
         if (!trip.BoatId.HasValue)
         {
             return new TripSeatMapDto(
                 trip.Id, trip.TripCode, null, null, trip.DepartureTime,
+                routeType, sellsBySegment,
                 0, 0, (int)BookingSeatOccupancySupport.SeatPreHoldDuration.TotalSeconds, []);
         }
 
@@ -152,6 +159,8 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             trip.BoatId,
             trip.Boat?.Name,
             trip.DepartureTime,
+            routeType,
+            sellsBySegment,
             seatDtos.Count,
             seatDtos.Count(x => x.Status == StatusAvailable),
             (int)BookingSeatOccupancySupport.SeatPreHoldDuration.TotalSeconds,

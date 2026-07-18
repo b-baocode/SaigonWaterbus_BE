@@ -135,6 +135,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                     x.RefundProcessedByUserId,
                     x.RefundedAt))
                 .ToList(),
+            BookingServiceTypes.Resolve(booking.Trip?.Route.RouteType),
+            booking.Trip?.Route.RouteType,
             booking.ReturnTrip?.TripCode,
             booking.ReturnTrip?.DepartureTime);
     }

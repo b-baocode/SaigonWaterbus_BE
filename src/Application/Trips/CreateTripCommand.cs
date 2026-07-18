@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -175,6 +176,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         return new TripDetailDto(
             trip.Id, trip.TripCode,
             route.Id, route.RouteName,
+            route.RouteType,
+            DistanceFareSupport.UsesDistanceFare(trip.TripType, route.RouteType),
             trip.DepartureTime, trip.ArrivalTime,
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
             TripStopScheduleSupport.BuildStopDtos(trip));

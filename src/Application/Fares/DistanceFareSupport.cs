@@ -15,9 +15,15 @@ public static class DistanceFareSupport
 
     /// <summary>Trip có dùng giá theo quãng đường không (waterbus thường, không phải sightseeing/charter).</summary>
     public static bool UsesDistanceFare(Trip trip) =>
-        string.Equals(trip.TripType, TripTypes.Regular, StringComparison.OrdinalIgnoreCase)
-        && trip.Route is not null
-        && string.Equals(trip.Route.RouteType, RouteTypes.Regular, StringComparison.OrdinalIgnoreCase);
+        trip.Route is not null && UsesDistanceFare(trip.TripType, trip.Route.RouteType);
+
+    /// <summary>
+    /// Bán vé theo chặng hay đi nguyên chuyến — dùng khi chỉ có tripType/routeType rời (chưa load
+    /// navigation Route). Chỉ waterbus thường mới bán theo chặng; sightseeing/charter đi nguyên chuyến.
+    /// </summary>
+    public static bool UsesDistanceFare(string tripType, string routeType) =>
+        string.Equals(tripType, TripTypes.Regular, StringComparison.OrdinalIgnoreCase)
+        && string.Equals(routeType, RouteTypes.Regular, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Km giữa hai trạm theo lộ trình. Trả về null nếu admin chưa nhập đủ km cho mọi chặng

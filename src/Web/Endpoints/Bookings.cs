@@ -54,7 +54,9 @@ public sealed class Bookings : IEndpointGroup
                 "Bearer token",
                 null,
                 "Tra ve tat ca booking cua user dang dang nhap, moi nhat truoc.",
-                "itemCount: so ve con hieu luc (chua bi cancel)."));
+                "itemCount: so ve con hieu luc (chua bi cancel).",
+                "serviceType = Waterbus | Sightseeing (dich vu khach mua, suy tu routeType cua chuyen); "
+                + "FE dung de hien dung nhan va man chi tiet."));
 
         group.MapGet(GetBookingDetail, "{id:guid}")
             .RequireAuthorization()
@@ -63,6 +65,8 @@ public sealed class Bookings : IEndpointGroup
                 "Bearer token",
                 null,
                 "Tra ve day du thong tin booking kem danh sach ve (hanh khach, cho, gio len/xuong).",
+                "serviceType = Waterbus | Sightseeing, routeType = routeType goc cua tuyen (Regular | SightseeingLoop); "
+                + "tour ngam canh di nguyen chuyen nen ga len = ga xuong.",
                 "Tra ve 404 neu booking khong thuoc ve user dang dang nhap."));
 
         group.MapPost(CancelBooking, "{id:guid}/cancel")
@@ -129,7 +133,9 @@ public sealed class Bookings : IEndpointGroup
                 "INFANT bat buoc khai bao birthYear (tre duoi 2 tuoi tinh theo ngay khoi hanh chuyen).",
                 "Moi INFANT khong chiem ghe phai co it nhat mot hanh khach nguoi lon co ghe di kem trong cung booking.",
                 "fromStationCode / toStationCode: lay tu GET /api/trips/{id} → stops[].stationCode.",
-                "fromStationCode phai co stop_order nho hon toStationCode.",
+                "Chi bat buoc tren chuyen ban ve theo chang (sellsBySegment=true trong GET /api/trips/{id} hoac /seats); "
+                    + "chuyen ngam canh (routeType=SightseeingLoop) di nguyen chuyen nen BO TRONG ca hai, BE tu lay ben dau → ben cuoi cua tuyen.",
+                "fromStationCode phai co stop_order nho hon toStationCode (chuyen ban theo chang).",
                 "Toi da 10 ghe trong 1 lan dat.",
                 "Gia tu dong tinh theo gia cua seatTypeCode cua ghe x ticket type modifier.",
                 "passengerEmail (optional): hanh khach co email se nhan rieng ve dien tu (QR) cua minh sau khi thanh toan.",

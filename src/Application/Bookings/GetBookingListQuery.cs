@@ -23,17 +23,33 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
         var userId = _userContext.UserId
             ?? throw new ValidationException([]);
 
-        return await _context.Set<Booking>()
+        // RouteType lấy ở DB, ServiceType map trong bộ nhớ (BookingServiceTypes.Resolve không dịch được sang SQL).
+        var rows = await _context.Set<Booking>()
             .Where(b => b.BookingType == Booking.SeatBookingType)
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.Created)
+            .Select(b => new
+            {
+                b.Id,
+                b.BookingCode,
+                b.Created,
+                b.BookingStatus,
+                b.TotalAmount,
+                ItemCount = b.Passengers.Count,
+                RouteType = b.Trip != null ? b.Trip.Route.RouteType : null
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
             .Select(b => new BookingListItemDto(
                 b.Id,
                 b.BookingCode,
                 b.Created,
                 b.BookingStatus.ToString(),
                 b.TotalAmount,
-                b.Passengers.Count))
-            .ToListAsync(cancellationToken);
+                b.ItemCount,
+                BookingServiceTypes.Resolve(b.RouteType),
+                b.RouteType))
+            .ToList();
     }
 }

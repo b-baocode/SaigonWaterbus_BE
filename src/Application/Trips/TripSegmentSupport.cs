@@ -44,31 +44,54 @@ public static class TripSegmentSupport
         var routeStops = trip.Route?.RouteStops
             ?? throw new InvalidOperationException("Trip.Route.RouteStops must be loaded to resolve a segment.");
 
-        var fromCode = fromStationCode!.Trim().ToUpperInvariant();
-        var toCode = toStationCode!.Trim().ToUpperInvariant();
-
-        var fromStop = routeStops.FirstOrDefault(rs =>
-            rs.Station.StationCode.Equals(fromCode, StringComparison.OrdinalIgnoreCase));
-        if (fromStop is null)
-        {
-            throw new ValidationException([new ValidationFailure(fromPropertyName,
-                $"Station '{fromCode}' is not a stop on this trip.")]);
-        }
-
-        var toStop = routeStops.FirstOrDefault(rs =>
-            rs.Station.StationCode.Equals(toCode, StringComparison.OrdinalIgnoreCase));
-        if (toStop is null)
-        {
-            throw new ValidationException([new ValidationFailure(toPropertyName,
-                $"Station '{toCode}' is not a stop on this trip.")]);
-        }
-
-        if (fromStop.StopOrder >= toStop.StopOrder)
-        {
-            throw new ValidationException([new ValidationFailure(fromPropertyName,
-                $"Station '{fromCode}' must come before '{toCode}' on the route.")]);
-        }
+        var (fromStop, toStop) = ResolveStops(
+            routeStops, fromStationCode!, toStationCode!, fromPropertyName, toPropertyName);
 
         return new Segment(fromStop.StopOrder, toStop.StopOrder, fromStop, toStop);
     }
+
+    /// <summary>
+    /// Trạm lên/xuống trên route stops. Một tuyến có thể ghé CÙNG MỘT BẾN nhiều lần (tuyến đi vòng
+    /// về lại bến đầu), nên không index được theo station code. Cả hai đầu đều lấy lần ghé SỚM NHẤT:
+    /// trạm lên là lần ghé đầu tiên, trạm xuống là lần ghé đầu tiên SAU trạm lên — khách xuống ngay
+    /// lần đầu tàu tới bến đích, nên chặng ngắn nhất, tiền vé thấp nhất và ghế bị chiếm ít nhất.
+    /// Tuyến ghé mỗi bến một lần cho kết quả y hệt cách cũ.
+    /// </summary>
+    public static (RouteStop From, RouteStop To) ResolveStops(
+        IEnumerable<RouteStop> routeStops,
+        string fromStationCode,
+        string toStationCode,
+        string fromPropertyName,
+        string toPropertyName)
+    {
+        var ordered = routeStops.OrderBy(rs => rs.StopOrder).ToList();
+        var fromCode = fromStationCode.Trim();
+        var toCode = toStationCode.Trim();
+
+        var fromStop = ordered.FirstOrDefault(rs => IsStation(rs, fromCode));
+        if (fromStop is null)
+        {
+            throw new ValidationException([new ValidationFailure(fromPropertyName,
+                $"Station '{fromCode.ToUpperInvariant()}' is not a stop on this trip.")]);
+        }
+
+        var toStop = ordered.FirstOrDefault(rs => IsStation(rs, toCode) && rs.StopOrder > fromStop.StopOrder);
+        if (toStop is null)
+        {
+            if (!ordered.Any(rs => IsStation(rs, toCode)))
+            {
+                throw new ValidationException([new ValidationFailure(toPropertyName,
+                    $"Station '{toCode.ToUpperInvariant()}' is not a stop on this trip.")]);
+            }
+
+            throw new ValidationException([new ValidationFailure(fromPropertyName,
+                $"Station '{fromCode.ToUpperInvariant()}' must come before "
+                + $"'{toCode.ToUpperInvariant()}' on the route.")]);
+        }
+
+        return (fromStop, toStop);
+    }
+
+    private static bool IsStation(RouteStop routeStop, string stationCode) =>
+        routeStop.Station.StationCode.Equals(stationCode, StringComparison.OrdinalIgnoreCase);
 }

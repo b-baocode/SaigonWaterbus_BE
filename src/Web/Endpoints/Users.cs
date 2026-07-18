@@ -82,6 +82,8 @@ public sealed class Users : IEndpointGroup
                 null,
                 "Trả về lịch sử chung gồm booking vé thường và charter booking thuê nguyên tàu của user đang đăng nhập.",
                 "Charter booking có thể có nhiều ticket/QR sau khi booking đã thanh toán đủ và đã nhập danh sách hành khách.",
+                "type = StandardBooking | CharterBooking (cách lưu đơn); serviceType = Waterbus | Sightseeing | Charter "
+                + "(dịch vụ khách mua) — một StandardBooking có thể là vé waterbus thường hoặc tour ngắm cảnh.",
                 "detailEndpoint cho biết API chi tiết cần gọi tiếp theo cho từng loại booking."));
 
         groupBuilder.MapGet(GetById, "detail/{userId:guid}")
