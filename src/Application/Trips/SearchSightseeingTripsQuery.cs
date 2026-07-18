@@ -1,3 +1,4 @@
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
@@ -29,6 +30,8 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
     public async Task<IReadOnlyList<TripSummaryDto>> Handle(SearchSightseeingTripsQuery request, CancellationToken cancellationToken)
     {
         var now = _timeProvider.GetUtcNow();
+        // Ẩn các chuyến đã qua hạn bán vé (đóng bán trước giờ khởi hành) — khớp với chặn ở tạo booking.
+        var bookingCutoff = now + BookingExpirationPolicy.BookingCutoffBeforeDeparture;
 
         var trips = await _context.Set<Trip>()
             .Include(t => t.Route)
@@ -37,7 +40,7 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                      && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
                      && t.TripStatus == TripStatus.Scheduled
-                     && t.DepartureTime > now)
+                     && t.DepartureTime > bookingCutoff)
             .ToListAsync(cancellationToken);
 
         if (trips.Count == 0)

@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Promotions;
@@ -376,9 +377,13 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             throw new ValidationException([new ValidationFailure(tripCodePropertyName,
                 "Trip charter không bán vé lẻ.")]);
 
-        if (trip.TripStatus != TripStatus.Scheduled || trip.DepartureTime <= now)
+        if (trip.TripStatus != TripStatus.Scheduled)
             throw new ValidationException([new ValidationFailure(tripCodePropertyName,
                 "Trip is not available for booking.")]);
+
+        if (trip.DepartureTime <= now + BookingExpirationPolicy.BookingCutoffBeforeDeparture)
+            throw new ValidationException([new ValidationFailure(tripCodePropertyName,
+                $"Đã ngừng bán vé cho chuyến này (đóng bán trước {BookingExpirationPolicy.BookingCutoffBeforeDeparture.TotalMinutes:0} phút so với giờ khởi hành).")]);
 
         if (!trip.BoatId.HasValue)
             throw new ValidationException([new ValidationFailure(tripCodePropertyName,

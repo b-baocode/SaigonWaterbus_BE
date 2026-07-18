@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -64,10 +65,16 @@ internal static class TripSeatResolutionSupport
             .SingleOrDefaultAsync(t => t.Id == tripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
-        if (trip.TripStatus != TripStatus.Scheduled || trip.DepartureTime <= now)
+        if (trip.TripStatus != TripStatus.Scheduled)
         {
             throw new ValidationException([new ValidationFailure("tripId",
                 "Trip is not available for booking.")]);
+        }
+
+        if (trip.DepartureTime <= now + BookingExpirationPolicy.BookingCutoffBeforeDeparture)
+        {
+            throw new ValidationException([new ValidationFailure("tripId",
+                $"Đã ngừng bán vé cho chuyến này (đóng bán trước {BookingExpirationPolicy.BookingCutoffBeforeDeparture.TotalMinutes:0} phút so với giờ khởi hành).")]);
         }
 
         if (!trip.BoatId.HasValue)
