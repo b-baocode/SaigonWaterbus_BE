@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Web.Hubs;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
@@ -250,6 +251,17 @@ public sealed class Tracking : IEndpointGroup
             """,
             cancellationToken);
 
+        var tripStatusChanged = false;
+        if (trip.Value is not null
+            && trip.Value.TripStatus is TripStatus.Scheduled or TripStatus.Boarding or TripStatus.Delayed)
+        {
+            trip.Value.TripStatus = TripStatus.InProgress;
+            trip.Value.StatusNote = string.IsNullOrWhiteSpace(trip.Value.StatusNote)
+                ? "GPS đã bắt đầu gửi vị trí cho chuyến."
+                : trip.Value.StatusNote;
+            tripStatusChanged = true;
+        }
+
         if (session.Value is not null)
         {
             dbContext.GpsTrackPoints.Add(new GpsTrackPoint
@@ -274,7 +286,10 @@ public sealed class Tracking : IEndpointGroup
                 SignalStrength = request.SignalStrength,
                 GpsFixQuality = gpsFixQuality
             });
+        }
 
+        if (session.Value is not null || tripStatusChanged)
+        {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
