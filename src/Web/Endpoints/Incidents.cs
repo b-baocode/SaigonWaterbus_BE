@@ -1,11 +1,17 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Domain.Enums;
+using SaigonWaterbus.Infrastructure.Options;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
 public sealed class Incidents : IEndpointGroup
 {
+    private const string LiveHookSecretHeaderName = "X-Live-Hook-Secret";
+
     public static string RoutePrefix => "/api/incidents";
 
     private const string CreateIncidentExample =
@@ -43,6 +49,17 @@ public sealed class Incidents : IEndpointGroup
           "replacementBoatId": "00000000-0000-0000-0000-000000000000",
           "delayMinutes": 30,
           "note": "Dieu tau cuu ho va tau thay the ho tro khach tai vi tri su co."
+        }
+        """;
+
+    private const string CompleteRescueMissionExample =
+        """
+        {
+          "incidentId": "00000000-0000-0000-0000-000000000000",
+          "boatCode": "WB_005",
+          "rescueBoatCode": "SOS_001",
+          "completedAt": "2026-07-18T10:30:00+07:00",
+          "note": "Tau da duoc keo ve ben."
         }
         """;
 
@@ -96,6 +113,16 @@ public sealed class Incidents : IEndpointGroup
                 ResolveIncidentExample,
                 "resolutionNote bat buoc.",
                 "boatStatus/tripStatus optional de cap nhat trang thai sau khi xu ly."));
+
+        group.MapPost(CompleteRescueMission, "rescue-mission-completed")
+            .AllowAnonymous()
+            .WithSummary("GPS callback khi tau cuu ho keo tau loi ve ben xong")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS service",
+                CompleteRescueMissionExample,
+                $"Header bat buoc: {LiveHookSecretHeaderName}.",
+                "BE verify incidentId, boatCode, rescueBoatCode truoc khi cap nhat.",
+                "Khi hop le: incident Resolved, tau loi UnderMaintenance, tau cuu ho Active."));
     }
 
     private static async Task<IResult> GetIncidentList(
@@ -158,6 +185,41 @@ public sealed class Incidents : IEndpointGroup
                 request.TripStatus),
             cancellationToken));
 
+    private static async Task<IResult> CompleteRescueMission(
+        ISender sender,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        CompleteRescueMissionRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        return Results.Ok(await sender.Send(
+            new CompleteRescueMissionCommand(
+                request.IncidentId,
+                request.BoatCode,
+                request.RescueBoatCode,
+                request.CompletedAt,
+                request.Note),
+            cancellationToken));
+    }
+
+    private static bool IsValidLiveHookSecret(string? expectedSecret, string? actualSecret)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSecret) || string.IsNullOrWhiteSpace(actualSecret))
+        {
+            return false;
+        }
+
+        var expectedBytes = Encoding.UTF8.GetBytes(expectedSecret.Trim());
+        var actualBytes = Encoding.UTF8.GetBytes(actualSecret.Trim());
+        return expectedBytes.Length == actualBytes.Length
+            && CryptographicOperations.FixedTimeEquals(expectedBytes, actualBytes);
+    }
+
     public sealed record CreateIncidentRequest(
         Guid BoatId,
         Guid? TripId,
@@ -178,4 +240,11 @@ public sealed class Incidents : IEndpointGroup
         string ResolutionNote,
         BoatStatus? BoatStatus,
         TripStatus? TripStatus);
+
+    public sealed record CompleteRescueMissionRequest(
+        Guid IncidentId,
+        string BoatCode,
+        string RescueBoatCode,
+        DateTimeOffset? CompletedAt,
+        string? Note);
 }
