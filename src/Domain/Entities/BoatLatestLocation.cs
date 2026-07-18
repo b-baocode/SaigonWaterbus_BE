@@ -10,9 +10,15 @@ public class BoatLatestLocation
 
     public Guid? TripId { get; set; }
 
+    public Guid? NextStationId { get; set; }
+
     public decimal Latitude { get; set; }
 
     public decimal Longitude { get; set; }
+
+    public decimal? RemainingDistanceKmToNextStation { get; set; }
+
+    public int? RemainingMinutesToNextStation { get; set; }
 
     public decimal? SpeedKmh { get; set; }
 
@@ -45,4 +51,6 @@ public class BoatLatestLocation
     public Route? Route { get; set; }
 
     public Trip? Trip { get; set; }
+
+    public Station? NextStation { get; set; }
 }

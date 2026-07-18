@@ -1,4 +1,5 @@
 using SaigonWaterbus.Domain.Common;
+using SaigonWaterbus.Domain.Constants;
 
 namespace SaigonWaterbus.Domain.Entities;
 
@@ -14,6 +15,9 @@ public class TripStop : BaseGuidAuditableEntity
     public int StayDurationMinutes { get; set; }
     public DateTimeOffset? PlannedArrivalTime { get; set; }
     public DateTimeOffset? PlannedDepartureTime { get; set; }
+    public DateTimeOffset? ActualArrivalTime { get; set; }
+    public DateTimeOffset? ActualDepartureTime { get; set; }
+    public string StopStatus { get; set; } = TripStopStatuses.Scheduled;
     public string? Note { get; set; }
 
     public Trip Trip { get; set; } = null!;
