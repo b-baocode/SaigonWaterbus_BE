@@ -29,7 +29,8 @@ public sealed record AuthUserDto(
     StaffType? StaffType,
     IReadOnlyCollection<AuthRoleDto> Roles,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    IReadOnlyCollection<AuthStationAssignmentDto>? StationAssignments);
+    IReadOnlyCollection<AuthStationAssignmentDto>? StationAssignments,
+    int PointBalance = 0);
 
 public sealed record AuthTokensDto(
     string AccessToken,

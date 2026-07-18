@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -634,6 +635,12 @@ public sealed class QuoteCharterBookingCommandHandler
 
             conflict.BookingStatus = BookingStatus.Expired;
             conflict.HoldExpiresAt = null;
+            await PointSupport.ReturnRedeemedPointsAsync(
+                _context,
+                conflict,
+                $"Hoàn điểm do charter booking {conflict.BookingCode} hết hạn giữ tàu",
+                now,
+                cancellationToken);
         }
 
         var previousBoatIds = CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking);

@@ -7,6 +7,7 @@ using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
@@ -20,7 +21,8 @@ public sealed record CreatePaymentCommand(
     Guid BookingId,
     BookingPaymentOption PaymentOption = BookingPaymentOption.Full,
     decimal? DepositPercent = null,
-    string? PromotionCode = null)
+    string? PromotionCode = null,
+    int? PointsToUse = null)
     : IRequest<PaymentDto>;
 
 public sealed class CreatePaymentCommandValidator : AbstractValidator<CreatePaymentCommand>
@@ -37,6 +39,10 @@ public sealed class CreatePaymentCommandValidator : AbstractValidator<CreatePaym
         RuleFor(x => x.PromotionCode)
             .MaximumLength(50)
             .When(x => x.PromotionCode is not null);
+        RuleFor(x => x.PointsToUse)
+            .GreaterThanOrEqualTo(0)
+            .When(x => x.PointsToUse.HasValue)
+            .WithMessage("Số điểm sử dụng không được âm.");
     }
 }
 
@@ -106,6 +112,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                 _context,
                 _tripSeatNotifier,
                 booking,
+                _timeProvider.GetUtcNow(),
                 cancellationToken);
             throw new ValidationException([new ValidationFailure("booking",
                 "Booking đã hết hạn giữ chỗ (15 phút). Vui lòng đặt vé lại.")]);
@@ -116,6 +123,13 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             _userContext,
             booking,
             request.PromotionCode,
+            now,
+            cancellationToken);
+
+        await PaymentSupport.ApplyPointsForCheckoutAsync(
+            _context,
+            booking,
+            request.PointsToUse,
             now,
             cancellationToken);
 
@@ -649,6 +663,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         payment.RefundedAt = now;
 
         PaymentSupport.ApplyRefundStatus(payment.Booking);
+        await PointSupport.ApplyRefundPointAdjustmentsAsync(_context, payment.Booking, now, cancellationToken);
         await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -731,6 +746,7 @@ public sealed class ManualRefundPaymentCommandHandler : IRequestHandler<ManualRe
         payment.RefundedAt = request.RefundedAt ?? now;
 
         PaymentSupport.ApplyRefundStatus(payment.Booking);
+        await PointSupport.ApplyRefundPointAdjustmentsAsync(_context, payment.Booking, now, cancellationToken);
         await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -1126,12 +1142,109 @@ internal static class PaymentSupport
         booking.PromotionId = promotion?.Id;
         booking.Promotion = promotion;
         booking.DiscountAmount = promotion is null ? 0 : discount;
-        booking.TotalAmount = booking.SubtotalAmount - booking.DiscountAmount;
+        RecalculateUnpaidTotals(booking);
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Áp dụng số point khách muốn dùng ngay tại màn checkout (chạy SAU khi áp promotion).
+    /// PointsToUse: null = giữ nguyên (nhưng vẫn kẹp lại nếu bill giảm do đổi promotion),
+    /// 0 = bỏ dùng point, N = dùng đúng N point. Balance bị trừ/hoàn ngay tại đây để
+    /// tránh double-spend qua nhiều booking song song; booking chết sẽ được hoàn lại.
+    /// </summary>
+    public static async Task ApplyPointsForCheckoutAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        int? pointsToUse,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var billAmount = booking.SubtotalAmount - booking.DiscountAmount;
+        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(billAmount);
+        var targetPoints = pointsToUse ?? Math.Min(booking.PointsUsed, maxRedeemable);
+        var hasLockedPayment = booking.Payments.Any(x =>
+            IsPayOsPayment(x) && (IsPending(x.PaymentStatus) || IsPaid(x.PaymentStatus)));
+
+        if (targetPoints == booking.PointsUsed)
+        {
+            // Quote/promotion có thể vừa ghi đè TotalAmount mà không biết tới điểm — đồng bộ lại nếu lệch.
+            var expectedTotal = Math.Max(0, booking.SubtotalAmount - booking.DiscountAmount - booking.PointsUsed);
+            if (booking.PointsUsed > 0 && booking.TotalAmount != expectedTotal && !hasLockedPayment)
+            {
+                RecalculateUnpaidTotals(booking);
+                await context.SaveChangesAsync(cancellationToken);
+            }
+
+            return;
+        }
+        if (hasLockedPayment)
+        {
+            throw new ValidationException([new ValidationFailure("pointsToUse",
+                "Không thể đổi số điểm sử dụng khi booking đã có payment đang chờ hoặc đã thanh toán.")]);
+        }
+
+        if (!booking.UserId.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure("pointsToUse",
+                "Chỉ tài khoản đăng nhập mới dùng được điểm tích lũy.")]);
+        }
+
+        var user = await context.Set<User>()
+            .SingleOrDefaultAsync(u => u.Id == booking.UserId.Value, cancellationToken)
+            ?? throw new ValidationException([new ValidationFailure("pointsToUse",
+                "Không tìm thấy tài khoản để trừ điểm.")]);
+
+        if (targetPoints > maxRedeemable)
+        {
+            throw new ValidationException([new ValidationFailure("pointsToUse",
+                $"Điểm chỉ được trả tối đa 50% giá trị đơn ({maxRedeemable} điểm cho đơn này).")]);
+        }
+
+        // Điểm đang giữ trên booking này sẽ được hoàn trước khi trừ theo số mới.
+        if (targetPoints > user.PointBalance + booking.PointsUsed)
+        {
+            throw new ValidationException([new ValidationFailure("pointsToUse",
+                $"Số dư điểm không đủ (hiện có {user.PointBalance + booking.PointsUsed} điểm khả dụng cho đơn này).")]);
+        }
+
+        if (booking.PointsUsed > 0)
+        {
+            PointSupport.AddTransaction(
+                context,
+                user,
+                booking.Id,
+                PointTransactionTypes.RedeemCancelled,
+                booking.PointsUsed,
+                $"Hoàn điểm do thay đổi mức sử dụng tại checkout booking {booking.BookingCode}",
+                now);
+        }
+
+        if (targetPoints > 0)
+        {
+            PointSupport.AddTransaction(
+                context,
+                user,
+                booking.Id,
+                PointTransactionTypes.Redeem,
+                -targetPoints,
+                $"Dùng điểm thanh toán booking {booking.BookingCode}",
+                now);
+        }
+
+        booking.PointsUsed = targetPoints;
+        RecalculateUnpaidTotals(booking);
+
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>Tính lại tổng phải trả khi booking chưa có payment khóa: Total = Subtotal - Discount - PointsUsed.</summary>
+    private static void RecalculateUnpaidTotals(Booking booking)
+    {
+        booking.TotalAmount = Math.Max(0, booking.SubtotalAmount - booking.DiscountAmount - booking.PointsUsed);
         booking.DepositAmount = 0;
         booking.RemainingAmount = booking.TotalAmount;
         booking.PaymentStatus = UnpaidBookingPaymentStatus;
-
-        await context.SaveChangesAsync(cancellationToken);
     }
 
     public static PaymentPlan ResolvePaymentPlan(
@@ -1463,6 +1576,10 @@ internal static class PaymentSupport
             return;
         }
 
+        // Tích điểm 1% theo từng payment thành công (guard wasPaid phía trên đảm bảo chỉ chạy 1 lần/payment).
+        // Phần trả bằng point đã bị trừ khỏi TotalAmount trước khi tạo payment nên không được tích điểm.
+        await AwardPointsForPaidPaymentAsync(context, booking, payment, cancellationToken);
+
         // In-app notification lưu DB trước khi gửi email: email (Brevo) có thể lỗi nhưng thông báo vẫn còn.
         var inAppNotification = NotificationSupport.AddBookingPaymentSucceededNotification(
             context, booking, payment, payment.PaidAt.Value);
@@ -1495,6 +1612,42 @@ internal static class PaymentSupport
         var notification = CreatePaymentSucceededNotification(booking, payment);
 
         await paymentNotificationSender.SendPaymentSucceededAsync(notification, cancellationToken);
+    }
+
+    private static async Task AwardPointsForPaidPaymentAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        Payment payment,
+        CancellationToken cancellationToken)
+    {
+        if (!booking.UserId.HasValue)
+        {
+            return;
+        }
+
+        var earnedPoints = PointSupport.CalculateEarnedPoints(payment.Amount);
+        if (earnedPoints <= 0)
+        {
+            return;
+        }
+
+        var user = await context.Set<User>()
+            .SingleOrDefaultAsync(u => u.Id == booking.UserId.Value, cancellationToken);
+        if (user is null)
+        {
+            return;
+        }
+
+        PointSupport.AddTransaction(
+            context,
+            user,
+            booking.Id,
+            PointTransactionTypes.Earn,
+            earnedPoints,
+            $"Tích điểm 1% thanh toán booking {booking.BookingCode}",
+            payment.PaidAt!.Value);
+        booking.PointsEarned += earnedPoints;
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     public static PaymentSucceededNotification CreatePaymentSucceededNotification(

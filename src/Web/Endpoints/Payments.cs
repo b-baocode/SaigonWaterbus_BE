@@ -13,7 +13,8 @@ public sealed class Payments : IEndpointGroup
           "bookingId": "00000000-0000-0000-0000-000000000000",
           "paymentOption": "Deposit",
           "depositPercent": 50,
-          "promotionCode": "WELCOME10"
+          "promotionCode": "WELCOME10",
+          "pointsToUse": 5000
         }
         """;
 
@@ -50,6 +51,9 @@ public sealed class Payments : IEndpointGroup
                 "Charter booking ho tro Deposit, Full hoac Remaining.",
                 "promotionCode: tuy chon; cho phep nhap/ap ma giam gia ngay tai man thanh toan truoc khi tao link PayOS.",
                 "Khong the doi promotionCode khi booking da co payment Pending/Paid.",
+                "pointsToUse: tuy chon; 1 point = 1 VND, tru truc tiep vao tong tien (sau giam gia), toi da 50% gia tri don.",
+                "pointsToUse=null giu nguyen muc diem dang dung, pointsToUse=0 bo dung diem. Khong doi duoc khi da co payment Pending/Paid.",
+                "Diem bi tru ngay khi ap; booking het han/huy/hoan tien se tu hoan diem lai.",
                 "Sau khi da dat coc, gui paymentOption=Remaining de tao payment phan con lai.",
                 "De tuong thich nguoc, Full sau khi da dat coc cung se thanh toan phan con lai."));
 
@@ -110,7 +114,8 @@ public sealed class Payments : IEndpointGroup
             request.BookingId,
             request.PaymentOption,
             request.DepositPercent,
-            request.PromotionCode), ct));
+            request.PromotionCode,
+            request.PointsToUse), ct));
 
     private static async Task<IResult> SyncPayment(ISender sender, Guid paymentId, CancellationToken ct) =>
         Results.Ok(await sender.Send(new SyncPaymentCommand(paymentId), ct));

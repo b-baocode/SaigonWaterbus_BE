@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -15,10 +16,17 @@ public static class BookingHoldExpirySupport
         IApplicationDbContext context,
         ITripSeatNotifier notifier,
         Booking booking,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         // Lượt khuyến mãi suy ra từ bookings — Expired tự nhả lượt, không cần bookkeeping.
         booking.BookingStatus = BookingStatus.Expired;
+        await PointSupport.ReturnRedeemedPointsAsync(
+            context,
+            booking,
+            $"Hoàn điểm do booking {booking.BookingCode} hết hạn giữ chỗ",
+            now,
+            cancellationToken);
 
         await context.SaveChangesAsync(cancellationToken);
         await NotifySeatsReleasedAsync(context, notifier, booking, cancellationToken);
@@ -49,6 +57,12 @@ public static class BookingHoldExpirySupport
         foreach (var booking in overdueBookings)
         {
             booking.BookingStatus = BookingStatus.Expired;
+            await PointSupport.ReturnRedeemedPointsAsync(
+                context,
+                booking,
+                $"Hoàn điểm do booking {booking.BookingCode} hết hạn giữ chỗ",
+                now,
+                cancellationToken);
         }
 
         await context.SaveChangesAsync(cancellationToken);

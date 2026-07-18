@@ -154,7 +154,8 @@ internal static class AuthSupport
                 roleDtos,
                 CreateStationAssignmentDtos(
                     user,
-                    roles.Any(r => r.SystemName is Roles.StaffSystemName or Roles.ManagerSystemName))),
+                    roles.Any(r => r.SystemName is Roles.StaffSystemName or Roles.ManagerSystemName)),
+                user.PointBalance),
             new AuthTokensDto(
                 accessToken.Token,
                 accessToken.ExpiresAt,
@@ -202,7 +203,8 @@ internal static class AuthSupport
             user.Status,
             user.StaffType,
             [new AuthRoleDto(user.Role.Code, user.Role.SystemName, user.Role.DisplayName)],
-            CreateStationAssignmentDtos(user, IsStaff(user) || IsManager(user)));
+            CreateStationAssignmentDtos(user, IsStaff(user) || IsManager(user)),
+            user.PointBalance);
     }
 
     private static IReadOnlyCollection<AuthStationAssignmentDto>? CreateStationAssignmentDtos(

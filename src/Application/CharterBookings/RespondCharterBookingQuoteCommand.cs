@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -121,6 +122,16 @@ public sealed class RespondCharterBookingQuoteCommandHandler
                 throw new ValidationException([new ValidationFailure(nameof(request.Action),
                     "Hành động phản hồi báo giá không hợp lệ.")]);
         }
+
+        // Báo giá bị từ chối/đổi thì bill cũ không còn — hoàn lại điểm đã giữ cho booking này.
+        await PointSupport.ReturnRedeemedPointsAsync(
+            _context,
+            booking,
+            request.Action == CharterBookingQuoteResponseAction.RequestChanges
+                ? $"Hoàn điểm do yêu cầu chỉnh sửa báo giá booking {booking.BookingCode}"
+                : $"Hoàn điểm do từ chối báo giá booking {booking.BookingCode}",
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
         await ReleaseHeldBoatsAsync(

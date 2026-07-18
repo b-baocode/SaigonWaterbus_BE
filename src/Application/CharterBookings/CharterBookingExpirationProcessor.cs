@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -140,6 +141,13 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
             {
                 ticket.TicketStatus = TicketStatus.Expired;
             }
+
+            await PointSupport.ReturnRedeemedPointsAsync(
+                _context,
+                booking,
+                $"Hoàn điểm do charter booking {booking.BookingCode} hết hạn",
+                now,
+                cancellationToken);
 
             if (previousDepartureDate.HasValue && previousRentalUnit.HasValue && previousDurationValue > 0)
             {

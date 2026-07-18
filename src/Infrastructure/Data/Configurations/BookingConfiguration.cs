@@ -56,8 +56,8 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.DepositAmount).HasColumnName("deposit_amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.RemainingAmount).HasColumnName("remaining_amount").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
-        builder.Ignore(x => x.PointsUsed);
-        builder.Ignore(x => x.PointsEarned);
+        builder.Property(x => x.PointsUsed).HasColumnName("points_used").HasDefaultValue(0).IsRequired();
+        builder.Property(x => x.PointsEarned).HasColumnName("points_earned").HasDefaultValue(0).IsRequired();
         builder.Property(x => x.BoatId).HasColumnName("boat_id");
         builder.Property(x => x.FromStationId).HasColumnName("custom_from_station_id");
         builder.Property(x => x.ToStationId).HasColumnName("custom_to_station_id");

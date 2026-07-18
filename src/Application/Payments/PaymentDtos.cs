@@ -13,7 +13,8 @@ public sealed record CreatePaymentRequest(
     Guid BookingId,
     BookingPaymentOption PaymentOption = BookingPaymentOption.Full,
     decimal? DepositPercent = null,
-    string? PromotionCode = null);
+    string? PromotionCode = null,
+    int? PointsToUse = null);
 
 public sealed record PaymentDto(
     Guid PaymentId,

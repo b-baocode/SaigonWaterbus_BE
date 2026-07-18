@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -70,6 +71,12 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
 
         // Lượt khuyến mãi được suy ra từ bookings — đổi status sang Cancelled là tự nhả, không cần bookkeeping.
         booking.BookingStatus = BookingStatus.Cancelled;
+        await PointSupport.ReturnRedeemedPointsAsync(
+            _context,
+            booking,
+            $"Hoàn điểm do booking {booking.BookingCode} bị hủy",
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
 

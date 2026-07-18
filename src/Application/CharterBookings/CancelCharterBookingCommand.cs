@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -21,17 +22,20 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
     private readonly IBoatHoldService _boatHoldService;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     public CancelCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
+        TimeProvider timeProvider,
         IBoatHoldService? boatHoldService = null,
         ICharterBookingRealtimeNotifier? realtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
+        _timeProvider = timeProvider;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
@@ -64,6 +68,13 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
         {
             ticket.TicketStatus = TicketStatus.Cancelled;
         }
+
+        await PointSupport.ReturnRedeemedPointsAsync(
+            _context,
+            booking,
+            $"Hoàn điểm do charter booking {booking.BookingCode} bị hủy",
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
 
         await CharterBookingTripSupport.CancelLinkedTripsAsync(
             _context,
