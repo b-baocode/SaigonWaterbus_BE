@@ -22,6 +22,13 @@ public sealed class Tracking : IEndpointGroup
     private const int MaxRemainingMinutesToNextStation = 24 * 60;
     private const decimal MaxRemainingDistanceKmToNextStation = 10_000m;
     private const string OpenIncidentStatus = "Open";
+    private const string MovementStatusMoving = "Moving";
+    private const string MovementStatusAtStation = "AtStation";
+    private const string MovementStatusBoarding = "Boarding";
+    private const string MovementStatusScheduled = "Scheduled";
+    private const string MovementStatusDelayed = "Delayed";
+    private const string MovementStatusCompleted = "Completed";
+    private const string MovementStatusCancelled = "Cancelled";
 
     private const string LocationExample =
         """
@@ -360,6 +367,17 @@ public sealed class Tracking : IEndpointGroup
             dbContext,
             gpsDevice.BoatId,
             cancellationToken);
+        var tripStops = trip.Value is null
+            ? []
+            : await LoadTripStopsAsync(dbContext, trip.Value.Id, cancellationToken);
+        var currentStop = ResolveCurrentStop(tripStops);
+        var lastStopEvent = ResolveLastStopEvent(tripStops);
+        var movementStatus = ResolveTrackingMovementStatus(
+            trip.Value,
+            tripStops,
+            status,
+            request.SpeedKmh,
+            now);
 
         await PublishBoatLocationAsync(
             trackingHubContext,
@@ -372,12 +390,20 @@ public sealed class Tracking : IEndpointGroup
                 gpsDevice.DeviceId,
                 request.MessageId,
                 routeId,
-                route.Value?.RouteCode,
+                route.Value?.RouteCode ?? trip.Value?.Route.RouteCode,
                 trip.Value?.Id,
                 trip.Value?.TripCode,
+                movementStatus,
+                currentStop?.StationId,
+                currentStop?.Station?.StationCode,
+                currentStop?.Station?.StationName,
                 resolvedNextStation?.Id,
                 resolvedNextStation?.StationCode,
                 resolvedNextStation?.StationName,
+                lastStopEvent.Event,
+                lastStopEvent.OccurredAt,
+                ResolveScheduledDepartureAt(trip.Value, currentStop),
+                ResolveMinutesUntilDeparture(trip.Value, currentStop, now),
                 request.RemainingDistanceKmToNextStation,
                 request.RemainingMinutesToNextStation,
                 writeLat,
@@ -410,6 +436,8 @@ public sealed class Tracking : IEndpointGroup
             .Include(x => x.Boat)
             .Include(x => x.Route)
             .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
+                    .ThenInclude(x => x.Station)
             .Include(x => x.NextStation)
             .OrderBy(x => x.Boat.Code)
             .ToListAsync(cancellationToken);
@@ -438,6 +466,8 @@ public sealed class Tracking : IEndpointGroup
             .Include(x => x.Boat)
             .Include(x => x.Route)
             .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
+                    .ThenInclude(x => x.Station)
             .Include(x => x.NextStation)
             .Where(x => x.Boat.Code == normalizedBoatCode)
             .FirstOrDefaultAsync(cancellationToken);
@@ -570,6 +600,7 @@ public sealed class Tracking : IEndpointGroup
         }
 
         var trip = await dbContext.Set<Trip>()
+            .Include(x => x.Route)
             .FirstOrDefaultAsync(x => x.Id == tripId.Value, cancellationToken);
         return trip is null ? LookupResult<Trip>.Missing() : LookupResult<Trip>.Found(trip);
     }
@@ -681,6 +712,137 @@ public sealed class Tracking : IEndpointGroup
 
     private static bool IsBehindExpectedStop(TripStop requestedStop, TripStop? expectedStop) =>
         expectedStop is not null && requestedStop.StopOrder < expectedStop.StopOrder;
+
+    private static async Task<IReadOnlyList<TripStop>> LoadTripStopsAsync(
+        ApplicationDbContext dbContext,
+        Guid tripId,
+        CancellationToken cancellationToken) =>
+        await dbContext.Set<TripStop>()
+            .AsNoTracking()
+            .Include(x => x.Station)
+            .Where(x => x.TripId == tripId)
+            .OrderBy(x => x.StopOrder)
+            .ToListAsync(cancellationToken);
+
+    private static TripStop? ResolveCurrentStop(IReadOnlyList<TripStop> tripStops) =>
+        tripStops
+            .Where(x => string.Equals(x.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
+                && x.ActualDepartureTime is null)
+            .OrderByDescending(x => x.ActualArrivalTime ?? DateTimeOffset.MinValue)
+            .ThenByDescending(x => x.StopOrder)
+            .FirstOrDefault();
+
+    private static StopEventInfo ResolveLastStopEvent(IReadOnlyList<TripStop> tripStops)
+    {
+        StopEventInfo latest = new(null, null);
+        foreach (var stop in tripStops)
+        {
+            latest = Max(latest, new StopEventInfo(TripStopStatuses.Arrived, stop.ActualArrivalTime));
+            latest = Max(latest, new StopEventInfo(TripStopStatuses.Departed, stop.ActualDepartureTime));
+            if (string.Equals(stop.StopStatus, TripStopStatuses.Arriving, StringComparison.OrdinalIgnoreCase))
+            {
+                latest = Max(latest, new StopEventInfo(TripStopStatuses.Arriving, ResolveAuditTime(stop)));
+            }
+            else if (string.Equals(stop.StopStatus, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase))
+            {
+                latest = Max(latest, new StopEventInfo(TripStopStatuses.Skipped, stop.ActualDepartureTime ?? ResolveAuditTime(stop)));
+            }
+        }
+
+        return latest;
+    }
+
+    private static StopEventInfo Max(StopEventInfo left, StopEventInfo right)
+    {
+        if (right.OccurredAt is null)
+        {
+            return left;
+        }
+
+        if (left.OccurredAt is null || right.OccurredAt > left.OccurredAt)
+        {
+            return right;
+        }
+
+        return left;
+    }
+
+    private static DateTimeOffset? ResolveAuditTime(TripStop stop)
+    {
+        if (stop.LastModified != default)
+        {
+            return stop.LastModified;
+        }
+
+        return stop.Created == default ? null : stop.Created;
+    }
+
+    private static string ResolveTrackingMovementStatus(
+        Trip? trip,
+        IReadOnlyList<TripStop> tripStops,
+        string gpsStatus,
+        decimal? speedKmh,
+        DateTimeOffset now)
+    {
+        if (trip?.TripStatus == TripStatus.Cancelled)
+        {
+            return MovementStatusCancelled;
+        }
+
+        if (trip?.TripStatus == TripStatus.Completed)
+        {
+            return MovementStatusCompleted;
+        }
+
+        if (tripStops.Any(x => string.Equals(x.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
+            && x.ActualDepartureTime is null))
+        {
+            return MovementStatusAtStation;
+        }
+
+        if (tripStops.Any(x => string.Equals(x.StopStatus, TripStopStatuses.Arriving, StringComparison.OrdinalIgnoreCase)))
+        {
+            return TripStopStatuses.Arriving;
+        }
+
+        if (trip?.TripStatus == TripStatus.Boarding)
+        {
+            return MovementStatusBoarding;
+        }
+
+        if (trip?.TripStatus == TripStatus.Delayed)
+        {
+            return MovementStatusDelayed;
+        }
+
+        if (IsMovingGpsStatus(gpsStatus) || speedKmh is > MovingSpeedThresholdKmh || trip?.TripStatus == TripStatus.InProgress)
+        {
+            return MovementStatusMoving;
+        }
+
+        return trip is not null && now < trip.DepartureTime
+            ? MovementStatusScheduled
+            : gpsStatus;
+    }
+
+    private static DateTimeOffset? ResolveScheduledDepartureAt(Trip? trip, TripStop? currentStop) =>
+        currentStop?.PlannedDepartureTime ?? trip?.DepartureTime;
+
+    private static int? ResolveMinutesUntilDeparture(Trip? trip, TripStop? currentStop, DateTimeOffset now)
+    {
+        if (trip is null || trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
+        {
+            return null;
+        }
+
+        var scheduledDepartureAt = ResolveScheduledDepartureAt(trip, currentStop);
+        if (!scheduledDepartureAt.HasValue || scheduledDepartureAt.Value <= now)
+        {
+            return null;
+        }
+
+        return Math.Max(0, (int)Math.Ceiling((scheduledDepartureAt.Value - now).TotalMinutes));
+    }
 
     private static async Task<CapturedRouteSessionLookup> ResolveCapturedRouteSessionAsync(
         ApplicationDbContext dbContext,
@@ -884,8 +1046,15 @@ public sealed class Tracking : IEndpointGroup
     private static BoatLatestLocationDto ToLatestLocationDto(
         BoatLatestLocation location,
         DateTimeOffset now,
-        ActiveIncidentTrackingDto? activeIncident) =>
-        new(
+        ActiveIncidentTrackingDto? activeIncident)
+    {
+        var tripStops = location.Trip?.TripStops
+            .OrderBy(x => x.StopOrder)
+            .ToArray() ?? [];
+        var currentStop = ResolveCurrentStop(tripStops);
+        var lastStopEvent = ResolveLastStopEvent(tripStops);
+
+        return new(
             location.BoatId,
             location.Boat.Code,
             location.Boat.Name,
@@ -894,9 +1063,22 @@ public sealed class Tracking : IEndpointGroup
             location.Route?.RouteCode,
             location.TripId,
             location.Trip?.TripCode,
+            ResolveTrackingMovementStatus(
+                location.Trip,
+                tripStops,
+                location.Status,
+                location.SpeedKmh,
+                now),
+            currentStop?.StationId,
+            currentStop?.Station?.StationCode,
+            currentStop?.Station?.StationName,
             location.NextStationId,
             location.NextStation?.StationCode,
             location.NextStation?.StationName,
+            lastStopEvent.Event,
+            lastStopEvent.OccurredAt,
+            ResolveScheduledDepartureAt(location.Trip, currentStop),
+            ResolveMinutesUntilDeparture(location.Trip, currentStop, now),
             location.RemainingDistanceKmToNextStation,
             location.RemainingMinutesToNextStation,
             location.Latitude,
@@ -914,6 +1096,7 @@ public sealed class Tracking : IEndpointGroup
             location.GpsFixQuality,
             activeIncident,
             now - location.ReceivedAt <= TimeSpan.FromSeconds(OnlineThresholdSeconds));
+    }
 
     private static async Task<Dictionary<Guid, ActiveIncidentTrackingDto>> LoadActiveIncidentsByBoatAsync(
         IApplicationDbContext dbContext,
@@ -1052,9 +1235,17 @@ public sealed class Tracking : IEndpointGroup
         string? RouteCode,
         Guid? TripId,
         string? TripCode,
+        string MovementStatus,
+        Guid? CurrentStationId,
+        string? CurrentStationCode,
+        string? CurrentStationName,
         Guid? NextStationId,
         string? NextStationCode,
         string? NextStationName,
+        string? LastStopEvent,
+        DateTimeOffset? LastStopEventAt,
+        DateTimeOffset? ScheduledDepartureAt,
+        int? MinutesUntilDeparture,
         decimal? RemainingDistanceKmToNextStation,
         int? RemainingMinutesToNextStation,
         decimal Lat,
@@ -1084,9 +1275,17 @@ public sealed class Tracking : IEndpointGroup
         string? RouteCode,
         Guid? TripId,
         string? TripCode,
+        string MovementStatus,
+        Guid? CurrentStationId,
+        string? CurrentStationCode,
+        string? CurrentStationName,
         Guid? NextStationId,
         string? NextStationCode,
         string? NextStationName,
+        string? LastStopEvent,
+        DateTimeOffset? LastStopEventAt,
+        DateTimeOffset? ScheduledDepartureAt,
+        int? MinutesUntilDeparture,
         decimal? RemainingDistanceKmToNextStation,
         int? RemainingMinutesToNextStation,
         decimal Lat,
@@ -1114,6 +1313,8 @@ public sealed class Tracking : IEndpointGroup
         string ResolutionStatus,
         Guid? ReplacementBoatId,
         string? ReplacementBoatName);
+
+    private sealed record StopEventInfo(string? Event, DateTimeOffset? OccurredAt);
 
     private sealed record LookupResult<T>(T? Value, bool NotFound)
         where T : class
