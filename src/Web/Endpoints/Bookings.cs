@@ -45,6 +45,26 @@ public sealed class Bookings : IEndpointGroup
         }
         """;
 
+    private const string CreateCounterBookingExample =
+        """
+        {
+          "tripCode": "TR-20260610-R01-BD-LD-1234",
+          "items": [
+            {
+              "seatNumber": "A1",
+              "ticketTypeCode": "ADULT",
+              "fromStationCode": "BD",
+              "toStationCode": "TADA",
+              "passengerName": "Nguyen Van A"
+            }
+          ],
+          "contactName": "Nguyen Van A",
+          "contactPhone": "0901234567",
+          "contactEmail": null,
+          "paymentMethod": "Cash"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetBookings, string.Empty)
@@ -143,6 +163,24 @@ public sealed class Bookings : IEndpointGroup
                 "returnTripCode va returnItems phai di cung nhau; returnItems theo cung rule voi items (toi da 10 ghe/chieu, INFANT tinh theo tung chieu).",
                 "bookingStatus sau khi tao: PendingPayment; ghe duoc giu 15 phut (holdExpiresAt), qua han booking tu Expired va nha ghe ca 2 chieu.",
                 "Tra ve 400 neu ghe da bi dat hoac dang duoc nguoi khac tam giu (race condition)."));
+
+        group.MapPost(CreateCounterBooking, "counter")
+            .RequireAuthorization()
+            .WithSummary("Ban ve tai quay (staff)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Chi Staff",
+                CreateCounterBookingExample,
+                "Staff dat ve ho khach mua truc tiep tai quay; khach KHONG can co tai khoan.",
+                "items / returnItems / ticketTypeCode / fromStationCode / toStationCode: giong het POST /api/bookings.",
+                "contactName + contactPhone bat buoc (staff nhap); contactEmail optional - co email thi khach nhan email ve dien tu.",
+                "paymentMethod = Cash: ghi nhan thu tien mat ngay -> booking Confirmed, phat hanh ve/QR va gui email ngay trong 1 lan goi.",
+                "paymentMethod = PayOs: tra ve checkoutUrl + qrCode cho khach quet; ve chi phat hanh sau khi PayOS bao da thanh toan. "
+                    + "Staff theo doi bang POST /api/payments/{paymentId}/sync; qua 15 phut (holdExpiresAt) chua tra thi booking het han va nha ghe.",
+                "Ban duoc CA KHI TAU DA KHOI HANH: bo han dong ban truoc gio chay, chap nhan chuyen Scheduled/Boarding/Delayed/InProgress; "
+                    + "chi tu choi chuyen da Completed hoac Cancelled.",
+                "Ghe van kiem tra nhu binh thuong: da ban / dang duoc nguoi khac giu tren chang giao nhau se bi tu choi.",
+                "Khong ho tro ma khuyen mai va diem tich luy (booking khach vang lai khong gan tai khoan).",
+                "Don 0d (toan ve mien phi SENIOR/DISABLED/INFANT) luon ghi nhan nhu thu tai quay du chon paymentMethod nao."));
     }
 
     private static async Task<IResult> GetBookings(ISender sender, CancellationToken ct) =>
@@ -159,6 +197,10 @@ public sealed class Bookings : IEndpointGroup
 
     private static async Task<IResult> CreateBooking(
         ISender sender, CreateBookingCommand command, CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> CreateCounterBooking(
+        ISender sender, CreateCounterBookingCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> GetBookingManifestByCode(

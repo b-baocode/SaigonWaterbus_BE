@@ -15,6 +15,9 @@ public class Booking : BaseGuidAuditableEntity
     public Guid? ReturnTripId { get; set; }
     public Guid? CharterRouteId { get; set; }
     public Guid? AssignedManagerId { get; set; }
+
+    /// <summary>Staff bán vé tại quầy. Khác null = booking bán tại quầy (khách có thể không có tài khoản).</summary>
+    public Guid? SoldByStaffId { get; set; }
     public string BookingType { get; set; } = SeatBookingType;
     public string BookingCode { get; set; } = null!;
     public string? CharterBookingQrToken { get; set; }
@@ -57,6 +60,7 @@ public class Booking : BaseGuidAuditableEntity
     public Trip? ReturnTrip { get; set; }
     public Route? CharterRoute { get; set; }
     public User? AssignedManager { get; set; }
+    public User? SoldByStaff { get; set; }
     public Boat? Boat { get; set; }
     public Station? FromStation { get; set; }
     public Station? ToStation { get; set; }

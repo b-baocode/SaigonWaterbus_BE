@@ -32,6 +32,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.ReturnTripId).HasColumnName("return_trip_id");
         builder.Property(x => x.CharterRouteId).HasColumnName("charter_route_id");
         builder.Property(x => x.AssignedManagerId).HasColumnName("assigned_manager_id");
+        builder.Property(x => x.SoldByStaffId).HasColumnName("sold_by_staff_id");
         builder.Property(x => x.BookingCode).HasColumnName("booking_code").HasMaxLength(50).IsRequired();
         builder.Property(x => x.CharterBookingQrToken).HasColumnName("charter_booking_qr_token").HasMaxLength(100);
         builder.Property(x => x.ContactName).HasColumnName("contact_name").HasMaxLength(150).IsRequired();
@@ -101,6 +102,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasIndex(x => x.CharterRouteId);
         builder.HasIndex(x => x.AssignedManagerId);
         builder.HasIndex(x => x.ReturnTripId);
+        builder.HasIndex(x => x.SoldByStaffId);
 
         builder.HasOne(x => x.User).WithMany().HasForeignKey(x => x.UserId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Promotion).WithMany(p => p.Bookings).HasForeignKey(x => x.PromotionId).OnDelete(DeleteBehavior.SetNull);
@@ -108,6 +110,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasOne(x => x.ReturnTrip).WithMany().HasForeignKey(x => x.ReturnTripId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.CharterRoute).WithMany().HasForeignKey(x => x.CharterRouteId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.AssignedManager).WithMany().HasForeignKey(x => x.AssignedManagerId).OnDelete(DeleteBehavior.SetNull);
+        builder.HasOne(x => x.SoldByStaff).WithMany().HasForeignKey(x => x.SoldByStaffId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Boat).WithMany().HasForeignKey(x => x.BoatId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.FromStation).WithMany().HasForeignKey(x => x.FromStationId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.ToStation).WithMany().HasForeignKey(x => x.ToStationId).OnDelete(DeleteBehavior.SetNull);

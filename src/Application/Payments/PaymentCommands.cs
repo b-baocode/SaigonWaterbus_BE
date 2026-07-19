@@ -148,10 +148,11 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         var paidAmount = PaymentSupport.GetPaidAmount(booking);
         if (paidAmount >= booking.TotalAmount)
         {
+            // Đã thu đủ (online hoặc tiền mặt tại quầy) — trả về payment gần nhất thay vì tạo link mới.
             var latestPaidPayment = booking.Payments
-                .Where(PaymentSupport.IsPayOsPayment)
+                .Where(x => PaymentSupport.IsSettlementPayment(x) && PaymentSupport.IsPaid(x.PaymentStatus))
                 .OrderByDescending(x => x.Created)
-                .First(x => PaymentSupport.IsPaid(x.PaymentStatus));
+                .First();
             return PaymentSupport.ToDto(booking, latestPaidPayment);
         }
 
@@ -757,6 +758,10 @@ public sealed class ManualRefundPaymentCommandHandler : IRequestHandler<ManualRe
 internal static class PaymentSupport
 {
     public const string PayOsProvider = "PayOS";
+
+    /// <summary>Payment thu tại quầy (staff thu tiền mặt) — không đi qua cổng thanh toán.</summary>
+    public const string CounterProvider = "Counter";
+    public const string CashPaymentMethod = "Cash";
     public const string PendingStatus = "Pending";
     public const string PaidStatus = "Paid";
     public const string CancelledStatus = "Cancelled";
@@ -928,7 +933,7 @@ internal static class PaymentSupport
 
         var booking = await query.SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
-        if (booking.UserId != userId)
+        if (!CanCurrentUserActOnBooking(booking, userId))
         {
             throw new NotFoundException("Booking not found.");
         }
@@ -961,7 +966,7 @@ internal static class PaymentSupport
 
         var payment = await query.SingleOrDefaultAsync(x => x.Id == paymentId, cancellationToken)
             ?? throw new NotFoundException("Payment not found.");
-        if (payment.Booking.UserId != userId)
+        if (!CanCurrentUserActOnBooking(payment.Booking, userId))
         {
             throw new NotFoundException("Payment not found.");
         }
@@ -1021,13 +1026,20 @@ internal static class PaymentSupport
                 && x.Provider == PayOsProvider,
                 cancellationToken)
             ?? throw new NotFoundException("Payment not found.");
-        if (payment.Booking.UserId != userId)
+        if (!CanCurrentUserActOnBooking(payment.Booking, userId))
         {
             throw new NotFoundException("Payment not found.");
         }
 
         return payment;
     }
+
+    /// <summary>
+    /// Chủ booking thao tác được trên booking của mình; booking bán tại quầy (khách vãng lai không có
+    /// tài khoản) thì staff đã bán vé là người thao tác — nếu không sẽ không ai tạo/đồng bộ được thanh toán.
+    /// </summary>
+    private static bool CanCurrentUserActOnBooking(Booking booking, Guid userId) =>
+        booking.UserId == userId || booking.SoldByStaffId == userId;
 
     public static void EnsureCanCreatePayment(Booking booking, DateTimeOffset now)
     {
@@ -1080,7 +1092,7 @@ internal static class PaymentSupport
 
         var normalizedCode = PromotionSupport.NormalizeCode(promotionCode);
         var hasLockedPayment = booking.Payments.Any(x =>
-            IsPayOsPayment(x) && (IsPending(x.PaymentStatus) || IsPaid(x.PaymentStatus)));
+            IsSettlementPayment(x) && (IsPending(x.PaymentStatus) || IsPaid(x.PaymentStatus)));
         if (hasLockedPayment && string.IsNullOrWhiteSpace(normalizedCode))
         {
             throw new ValidationException([new ValidationFailure(nameof(promotionCode),
@@ -1164,7 +1176,7 @@ internal static class PaymentSupport
         var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(billAmount);
         var targetPoints = pointsToUse ?? Math.Min(booking.PointsUsed, maxRedeemable);
         var hasLockedPayment = booking.Payments.Any(x =>
-            IsPayOsPayment(x) && (IsPending(x.PaymentStatus) || IsPaid(x.PaymentStatus)));
+            IsSettlementPayment(x) && (IsPending(x.PaymentStatus) || IsPaid(x.PaymentStatus)));
 
         if (targetPoints == booking.PointsUsed)
         {
@@ -1353,6 +1365,17 @@ internal static class PaymentSupport
     public static bool IsPayOsPayment(Payment payment) =>
         string.Equals(payment.Provider, PayOsProvider, StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsCounterPayment(Payment payment) =>
+        string.Equals(payment.Provider, CounterProvider, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Payment được tính vào số tiền đã thu của booking: PayOS (online) và thu tại quầy (tiền mặt).
+    /// Dùng cho mọi phép cộng tiền/hoàn tiền; các chỗ chỉ liên quan tới cổng PayOS (đồng bộ trạng thái,
+    /// hết hạn link thanh toán) vẫn lọc riêng bằng <see cref="IsPayOsPayment"/>.
+    /// </summary>
+    public static bool IsSettlementPayment(Payment payment) =>
+        IsPayOsPayment(payment) || IsCounterPayment(payment);
+
     public static bool IsPending(string status) =>
         string.Equals(status, PendingStatus, StringComparison.OrdinalIgnoreCase);
 
@@ -1408,7 +1431,7 @@ internal static class PaymentSupport
 
     public static decimal GetPaidAmount(Booking booking) =>
         booking.Payments
-            .Where(x => IsPayOsPayment(x) && IsPaid(x.PaymentStatus))
+            .Where(x => IsSettlementPayment(x) && IsPaid(x.PaymentStatus))
             .Sum(x => x.Amount);
 
     public static void RestorePaymentSummaryFromPaidPayments(Booking booking)
@@ -1505,7 +1528,7 @@ internal static class PaymentSupport
     {
         var paidAmount = GetPaidAmount(booking);
         var refundedAmount = booking.Payments
-            .Where(IsPayOsPayment)
+            .Where(IsSettlementPayment)
             .Sum(x => x.RefundAmount);
 
         if (refundedAmount <= 0)
@@ -1517,7 +1540,7 @@ internal static class PaymentSupport
         {
             booking.PaymentStatus = RefundedBookingPaymentStatus;
             booking.BookingStatus = BookingStatus.Refunded;
-            foreach (var payment in booking.Payments.Where(x => IsPayOsPayment(x) && IsPaid(x.PaymentStatus)))
+            foreach (var payment in booking.Payments.Where(x => IsSettlementPayment(x) && IsPaid(x.PaymentStatus)))
             {
                 if (payment.RefundAmount >= payment.Amount)
                 {
