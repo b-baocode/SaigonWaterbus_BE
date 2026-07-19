@@ -141,6 +141,7 @@ public sealed class Trips : IEndpointGroup
                 "Tau phai Status=Active va SeatsConfigured=true, va co it nhat 1 ghe active; neu khong tra 400.",
                 "CHAN TRUNG LICH TAU: mot tau khong duoc gan 2 chuyen chong gio (ke ca khac tuyen); giua 2 chuyen phai cach it nhat 15 phut quay dau -> neu khong tra 400.",
                 "departureTime phai lon hon thoi diem hien tai.",
+                "operatingDate phai khop ngay cua departureTime theo gio Viet Nam (+07); lech ngay tra 400.",
                 "seatTypePrices (optional): chot gia ve theo loai ghe cho rieng chuyen nay (bus sightseeing tuy chinh gia).",
                 "Loai ghe khong nhap gia se tu dong lay gia goc tu GET /api/seat-types dien vao trip_seats.",
                 "Gia ve khi dat = trip_seats.price x he so loai ve (ADULT x1; INFANT/SENIOR/DISABLED mien phi, chi ghe STANDARD).",
@@ -159,9 +160,10 @@ public sealed class Trips : IEndpointGroup
                 "seatTypePrices (optional): chot gia ve theo loai ghe cho tat ca chuyen duoc tao trong dot nay.",
                 "Loai ghe khong nhap gia se lay gia goc tu GET /api/seat-types.",
                 "Neu chuyen da ton tai (cung tuyen + cung gio), tu dong bo qua (skip).",
+                "Gio khoi hanh da troi qua (so voi hien tai) cung bi bo qua, dem vao skippedPast.",
                 "CHAN TRUNG LICH TAU: chuyen nao lam tau chong gio voi chuyen khac (ke ca chuyen vua sinh trong cung lo) se bi bo qua va dem vao skippedBoatBusy. Giua 2 chuyen cua cung tau phai cach it nhat 15 phut quay dau.",
                 "Vi du: route dai 3h41 ma dat departureTimes cach nhau 2h thi cac chuyen sau se bi skippedBoatBusy - can gian gio hoac dung tau khac.",
-                "Tra ve: { created, skipped, skippedBoatBusy, createdTripCodes }."));
+                "Tra ve: { created, skipped, skippedBoatBusy, skippedPast, createdTripCodes }."));
 
         group.MapPatch(UpdateTripStatus, "{id:guid}/status")
             .RequireAuthorization()

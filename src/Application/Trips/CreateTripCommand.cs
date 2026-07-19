@@ -100,12 +100,24 @@ internal static class TripSeatPricingSupport
 
 public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand, TripDetailDto>
 {
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+
     private readonly IApplicationDbContext _context;
 
     public CreateTripCommandHandler(IApplicationDbContext context) => _context = context;
 
     public async Task<TripDetailDto> Handle(CreateTripCommand request, CancellationToken cancellationToken)
     {
+        // operatingDate nhập tay riêng với departureTime nên phải check khớp ngày (theo giờ VN),
+        // không thì trip nằm sai ngày trong các query lọc theo operating_date.
+        var vietnamDepartureDate = DateOnly.FromDateTime(
+            request.DepartureTime.ToOffset(VietnamOffset).Date);
+        if (vietnamDepartureDate != request.OperatingDate)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.OperatingDate),
+                $"operatingDate ({request.OperatingDate:dd/MM/yyyy}) không khớp ngày khởi hành theo giờ Việt Nam ({vietnamDepartureDate:dd/MM/yyyy}).")]);
+        }
+
         var routeCode = request.RouteCode.Trim().ToUpperInvariant();
 
         var route = await _context.Set<Route>()

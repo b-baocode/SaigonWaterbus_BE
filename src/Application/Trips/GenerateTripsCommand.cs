@@ -21,6 +21,7 @@ public sealed record GenerateTripsResult(
     int Created,
     int Skipped,
     int SkippedBoatBusy,
+    int SkippedPast,
     IReadOnlyList<string> CreatedTripCodes);
 
 public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTripsCommand>
@@ -127,6 +128,8 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
         var tripSeatsToAdd = new List<TripSeat>();
         var createdCodes = new List<string>();
         int skipped = 0;
+        int skippedPast = 0;
+        var now = DateTimeOffset.UtcNow;
 
         for (var date = request.FromDate; date <= request.ToDate; date = date.AddDays(1))
         {
@@ -139,6 +142,14 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     date.Year, date.Month, date.Day,
                     time.Hour, time.Minute, 0,
                     VietnamOffset).ToUniversalTime();
+
+                // Cùng chuẩn với tạo lẻ (departureTime > now): không sinh chuyến đã trôi qua,
+                // nhưng batch thì skip đếm riêng thay vì fail cả lô.
+                if (departureTime <= now)
+                {
+                    skippedPast++;
+                    continue;
+                }
 
                 if (existingDepartures.Contains(departureTime))
                 {
@@ -195,6 +206,6 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        return new GenerateTripsResult(tripsToAdd.Count, skipped, skippedBoatBusy, createdCodes);
+        return new GenerateTripsResult(tripsToAdd.Count, skipped, skippedBoatBusy, skippedPast, createdCodes);
     }
 }
