@@ -28,6 +28,8 @@ public sealed record OperationScheduleItemDto(
     string ToLocation,
     DateOnly OperatingDate,
     DateTimeOffset StartAt,
+    DateTimeOffset ScheduledDepartureAt,
+    int? MinutesUntilDeparture,
     DateTimeOffset EndAt,
     string Status,
     string ScheduleState,
@@ -49,6 +51,7 @@ public sealed record OperationScheduleItemDto(
     Guid? NextStationId,
     string? NextStationCode,
     string? NextStationName,
+    string? LastStopEvent,
     DateTimeOffset? LastStopEventAt,
     DateTimeOffset? NextPlannedArrivalAt,
     decimal? LatestLatitude,
@@ -161,7 +164,7 @@ public sealed class GetOperationScheduleQueryHandler
         var nextStation = nextStop is null && nextRouteStop is null
             ? null
             : ToStationInfo(nextStop, nextRouteStop);
-        var lastStopEventAt = ResolveLastStopEventAt(tripStops);
+        var lastStopEvent = ResolveLastStopEvent(tripStops);
         var latestGpsAt = latestLocation?.ReceivedAt;
         var isGpsOnline = latestLocation is not null
             && now - latestLocation.ReceivedAt <= TimeSpan.FromSeconds(GpsOnlineThresholdSeconds);
@@ -187,6 +190,8 @@ public sealed class GetOperationScheduleQueryHandler
             toStation.LocationName,
             trip.OperatingDate,
             trip.DepartureTime,
+            ResolveScheduledDepartureAt(trip, currentStop),
+            ResolveMinutesUntilDeparture(trip, currentStop, now),
             trip.ArrivalTime,
             trip.TripStatus.ToString(),
             trip.TripStatus == TripStatus.Cancelled
@@ -210,7 +215,8 @@ public sealed class GetOperationScheduleQueryHandler
             nextStation?.StationId,
             nextStation?.StationCode,
             nextStation?.LocationName,
-            lastStopEventAt,
+            lastStopEvent.Event,
+            lastStopEvent.OccurredAt,
             nextStop?.PlannedArrivalTime ?? nextStop?.PlannedDepartureTime,
             latestLocation?.Latitude,
             latestLocation?.Longitude,
@@ -295,16 +301,68 @@ public sealed class GetOperationScheduleQueryHandler
             : null;
     }
 
-    private static DateTimeOffset? ResolveLastStopEventAt(IReadOnlyList<TripStop> tripStops)
+    private static StopEventInfo ResolveLastStopEvent(IReadOnlyList<TripStop> tripStops)
     {
-        DateTimeOffset? lastEventAt = null;
+        StopEventInfo latest = new(null, null);
         foreach (var stop in tripStops)
         {
-            lastEventAt = Max(lastEventAt, stop.ActualArrivalTime);
-            lastEventAt = Max(lastEventAt, stop.ActualDepartureTime);
+            latest = Max(latest, new StopEventInfo(TripStopStatuses.Arrived, stop.ActualArrivalTime));
+            latest = Max(latest, new StopEventInfo(TripStopStatuses.Departed, stop.ActualDepartureTime));
+            if (string.Equals(stop.StopStatus, TripStopStatuses.Arriving, StringComparison.OrdinalIgnoreCase))
+            {
+                latest = Max(latest, new StopEventInfo(TripStopStatuses.Arriving, ResolveAuditTime(stop)));
+            }
+            else if (string.Equals(stop.StopStatus, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase))
+            {
+                latest = Max(latest, new StopEventInfo(TripStopStatuses.Skipped, stop.ActualDepartureTime ?? ResolveAuditTime(stop)));
+            }
         }
 
-        return lastEventAt;
+        return latest;
+    }
+
+    private static StopEventInfo Max(StopEventInfo left, StopEventInfo right)
+    {
+        if (right.OccurredAt is null)
+        {
+            return left;
+        }
+
+        if (left.OccurredAt is null || right.OccurredAt > left.OccurredAt)
+        {
+            return right;
+        }
+
+        return left;
+    }
+
+    private static DateTimeOffset? ResolveAuditTime(TripStop stop)
+    {
+        if (stop.LastModified != default)
+        {
+            return stop.LastModified;
+        }
+
+        return stop.Created == default ? null : stop.Created;
+    }
+
+    private static DateTimeOffset ResolveScheduledDepartureAt(Trip trip, TripStop? currentStop) =>
+        currentStop?.PlannedDepartureTime ?? trip.DepartureTime;
+
+    private static int? ResolveMinutesUntilDeparture(Trip trip, TripStop? currentStop, DateTimeOffset now)
+    {
+        if (trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
+        {
+            return null;
+        }
+
+        var scheduledDepartureAt = ResolveScheduledDepartureAt(trip, currentStop);
+        if (scheduledDepartureAt <= now)
+        {
+            return null;
+        }
+
+        return Math.Max(0, (int)Math.Ceiling((scheduledDepartureAt - now).TotalMinutes));
     }
 
     private static DateTimeOffset? Max(DateTimeOffset? left, DateTimeOffset? right)
@@ -391,6 +449,8 @@ public sealed class GetOperationScheduleQueryHandler
         Guid? StationId,
         string? StationCode,
         string LocationName);
+
+    private sealed record StopEventInfo(string? Event, DateTimeOffset? OccurredAt);
 }
 
 [Authorize(Roles = "Admin,Manager,Staff")]
