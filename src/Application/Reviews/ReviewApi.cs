@@ -145,7 +145,7 @@ public sealed class CreateTripReviewCommandHandler : IRequestHandler<CreateTripR
             TripId = trip.Id,
             Rating = request.Rating,
             Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim(),
-            Status = ReviewStatuses.Published
+            Status = ReviewStatuses.Hidden
         };
         _context.Set<Review>().Add(review);
         await _context.SaveChangesAsync(cancellationToken);
