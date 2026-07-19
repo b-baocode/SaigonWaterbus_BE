@@ -24,6 +24,11 @@ public sealed class ReviewConfiguration : IEntityTypeConfiguration<Review>
         builder.Ignore(x => x.LastModified);
         builder.Ignore(x => x.LastModifiedBy);
 
+        // Mỗi khách chỉ được 1 review / 1 trip (Postgres cho phép nhiều NULL trip_id nên không chặn review cũ không gắn trip).
+        builder.HasIndex(x => new { x.CustomerId, x.TripId })
+            .IsUnique()
+            .HasDatabaseName("ux_reviews_customer_trip");
+
         builder.HasOne(x => x.Customer).WithMany().HasForeignKey(x => x.CustomerId).OnDelete(DeleteBehavior.Restrict);
         builder.HasOne(x => x.Booking).WithMany().HasForeignKey(x => x.BookingId).OnDelete(DeleteBehavior.SetNull);
         builder.HasOne(x => x.Trip).WithMany().HasForeignKey(x => x.TripId).OnDelete(DeleteBehavior.SetNull);

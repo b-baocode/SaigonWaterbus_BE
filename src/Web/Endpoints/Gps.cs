@@ -5,6 +5,8 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -529,6 +531,7 @@ public sealed class Gps : IEndpointGroup
         ApplicationDbContext dbContext,
         TimeProvider timeProvider,
         IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        INotificationRealtimeNotifier notificationRealtimeNotifier,
         [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
         Guid tripId,
         CompleteGpsTripRequest request,
@@ -541,6 +544,7 @@ public sealed class Gps : IEndpointGroup
 
         var trip = await dbContext.Trips
             .Include(x => x.Boat)
+            .Include(x => x.Route)
             .SingleOrDefaultAsync(x => x.Id == tripId, cancellationToken);
         if (trip is null)
         {
@@ -560,11 +564,16 @@ public sealed class Gps : IEndpointGroup
 
         if (trip.TripStatus != TripStatus.Completed)
         {
+            var oldStatus = trip.TripStatus;
             var completedAt = request.CompletedAt?.ToUniversalTime() ?? timeProvider.GetUtcNow();
             trip.TripStatus = TripStatus.Completed;
             trip.StatusNote = NormalizeOptionalText(request.Note)
                 ?? $"GPS đã hoàn tất chuyến lúc {completedAt:O}.";
+            var reviewInvites = await NotificationSupport.AddTripCompletedReviewInviteNotificationsAsync(
+                dbContext, trip, oldStatus, completedAt, cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
+            await NotificationSupport.PublishCreatedAsync(
+                notificationRealtimeNotifier, reviewInvites, cancellationToken);
         }
 
         return Results.Ok(new GpsTripStatusResponse(

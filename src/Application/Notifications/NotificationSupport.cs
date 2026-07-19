@@ -12,6 +12,7 @@ public static class NotificationTypes
     public const string TripCancelled = "trip_cancelled";
     public const string TripDelayed = "trip_delayed";
     public const string TripReminder = "trip_reminder";
+    public const string TripCompleted = "trip_completed";
     public const string PromotionNew = "promotion_new";
 }
 
@@ -151,6 +152,69 @@ public static class NotificationSupport
                 Type = isCancelled ? NotificationTypes.TripCancelled : NotificationTypes.TripDelayed,
                 RelatedEntityType = NotificationRelatedEntityTypes.Booking,
                 RelatedEntityId = booking.Id,
+                CreatedAt = now
+            };
+            context.Set<Notification>().Add(notification);
+            created.Add(notification);
+        }
+
+        return created;
+    }
+
+    /// <summary>
+    /// Chuyến vừa chuyển sang Completed → mời khách có booking Confirmed/Completed trên chuyến
+    /// vào đánh giá. RelatedEntity là trip để client mở thẳng màn đánh giá chuyến đó; dedup theo
+    /// (user, trip) nên chuyến bị đổi trạng thái qua lại không bắn trùng. Caller chịu trách nhiệm SaveChanges.
+    /// </summary>
+    public static async Task<IReadOnlyList<Notification>> AddTripCompletedReviewInviteNotificationsAsync(
+        IApplicationDbContext context,
+        Trip trip,
+        TripStatus oldStatus,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (trip.TripStatus == oldStatus || trip.TripStatus != TripStatus.Completed)
+        {
+            return [];
+        }
+
+        var userIds = await context.Set<Booking>()
+            .Where(b => b.UserId != null
+                && (b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Completed)
+                && (b.TripId == trip.Id
+                    || b.ReturnTripId == trip.Id
+                    || b.Passengers.Any(p => p.TripId == trip.Id)
+                    || (trip.SourceBookingId != null && b.Id == trip.SourceBookingId)))
+            .Select(b => b.UserId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        if (userIds.Count == 0)
+        {
+            return [];
+        }
+
+        var alreadyInvitedUserIds = await context.Set<Notification>()
+            .Where(n => n.Type == NotificationTypes.TripCompleted
+                && n.RelatedEntityId == trip.Id
+                && userIds.Contains(n.UserId))
+            .Select(n => n.UserId)
+            .ToListAsync(cancellationToken);
+
+        var tripLabel = DescribeTrip(trip);
+        var departureText = FormatVietnamTime(trip.DepartureTime);
+        var body = $"{tripLabel} khởi hành lúc {departureText} đã hoàn thành. "
+            + "Hãy đánh giá trải nghiệm để giúp chúng tôi phục vụ tốt hơn.";
+        var created = new List<Notification>();
+        foreach (var userId in userIds.Except(alreadyInvitedUserIds))
+        {
+            var notification = new Notification
+            {
+                UserId = userId,
+                Title = "Đánh giá chuyến đi của bạn",
+                Body = body,
+                Type = NotificationTypes.TripCompleted,
+                RelatedEntityType = NotificationRelatedEntityTypes.Trip,
+                RelatedEntityId = trip.Id,
                 CreatedAt = now
             };
             context.Set<Notification>().Add(notification);
