@@ -11,7 +11,7 @@ public class Route : BaseGuidAuditableEntity
     public string RouteType { get; set; } = RouteTypes.Regular;
     public string? Description { get; set; }
     public decimal? BaseDistanceKm { get; set; }
-    public int? EstimatedDurationMin { get; set; }
+    public decimal? EstimatedDurationMin { get; set; }
     public string Status { get; set; } = "Active";
     public bool IsBookable { get; set; } = true;
     public LineString? RouteGeometry { get; set; }

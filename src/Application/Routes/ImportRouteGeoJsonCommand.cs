@@ -309,7 +309,7 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
                 : null);
     }
 
-    private static int ResolveEstimatedDurationMinutes(
+    private static decimal ResolveEstimatedDurationMinutes(
         IReadOnlyList<ResolvedRouteSegment> segments,
         decimal distanceKm)
     {
@@ -324,7 +324,7 @@ public sealed class ImportRouteGeoJsonCommandHandler : IRequestHandler<ImportRou
             return explicitDurations.Sum();
         }
 
-        return Math.Max(1, (int)Math.Round((double)distanceKm / DefaultRouteSpeedKmh * 60));
+        return decimal.Round(distanceKm / DefaultRouteSpeedKmh * 60m, 2);
     }
 
     private static LineString BuildRouteGeometry(IReadOnlyList<ResolvedRouteSegment> segments)

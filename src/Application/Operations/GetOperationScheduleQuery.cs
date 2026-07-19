@@ -130,7 +130,8 @@ public sealed class GetOperationScheduleQueryHandler
             .Select(trip =>
             {
                 latestLocations.TryGetValue(trip.BoatId ?? Guid.Empty, out var latestLocation);
-                return ToOperationScheduleItem(trip, latestLocation, now);
+                var tripLatestLocation = latestLocation?.TripId == trip.Id ? latestLocation : null;
+                return ToOperationScheduleItem(trip, tripLatestLocation, now);
             })
             .ToArray();
     }

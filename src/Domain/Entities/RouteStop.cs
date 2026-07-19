@@ -7,7 +7,7 @@ public class RouteStop : BaseGuidAuditableEntity
     public Guid RouteId { get; set; }
     public Guid StationId { get; set; }
     public int StopOrder { get; set; }
-    public int? StandardTravelMin { get; set; }
+    public decimal? StandardTravelMin { get; set; }
 
     /// <summary>
     /// Quãng đường (km) từ trạm liền trước theo lộ trình sông; null cho trạm đầu tuyến

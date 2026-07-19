@@ -12,14 +12,14 @@ namespace SaigonWaterbus.Application.Routes;
 public sealed record CreateRouteFromStationsStopRequest(
     Guid StationId,
     int StopOrder,
-    int? StandardTravelMin = null);
+    decimal? StandardTravelMin = null);
 
 public sealed record RouteComposedLegDto(
     int LegOrder,
     string FromStationName,
     string ToStationName,
     decimal DistanceKm,
-    int TravelMinutes,
+    decimal TravelMinutes,
     Guid SourceRouteId,
     string SourceRouteCode,
     string SourceRouteName);
@@ -94,7 +94,7 @@ public sealed class CreateRouteFromStationsCommandHandler
             RouteType = routeType,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim(),
             BaseDistanceKm = (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2),
-            EstimatedDurationMin = legs.Sum(x => x.TravelMinutes),
+            EstimatedDurationMin = decimal.Round(legs.Sum(x => x.TravelMinutes), 2),
             Status = "Active",
             IsBookable = RouteTypes.IsBookableByDefault(routeType),
             RouteGeometry = routeGeometry
@@ -268,7 +268,7 @@ public sealed class CreateRouteFromStationsCommandHandler
         Station fromStation,
         Station toStation,
         int legOrder,
-        int? requestedTravelMin)
+        decimal? requestedTravelMin)
     {
         foreach (var route in candidateRoutes)
         {
@@ -292,11 +292,37 @@ public sealed class CreateRouteFromStationsCommandHandler
                 toStation,
                 coordinates,
                 distanceKm,
-                requestedTravelMin ?? CharterBookingRoutePricingSupport.EstimateTravelMinutes(distanceKm),
+                requestedTravelMin
+                    ?? ResolveConfiguredTravelMinutes(route, fromStation.Id, toStation.Id)
+                    ?? CharterBookingRoutePricingSupport.EstimateTravelMinutes(distanceKm),
                 route);
         }
 
         return null;
+    }
+
+    private static decimal? ResolveConfiguredTravelMinutes(Route route, Guid fromStationId, Guid toStationId)
+    {
+        var orderedStops = route.RouteStops
+            .OrderBy(stop => stop.StopOrder)
+            .ToList();
+        var fromStop = orderedStops.FirstOrDefault(stop => stop.StationId == fromStationId);
+        var toStop = orderedStops.FirstOrDefault(stop => stop.StationId == toStationId);
+        if (fromStop is null || toStop is null || fromStop.StopOrder == toStop.StopOrder)
+        {
+            return null;
+        }
+
+        var fromOrder = Math.Min(fromStop.StopOrder, toStop.StopOrder);
+        var toOrder = Math.Max(fromStop.StopOrder, toStop.StopOrder);
+        var travelMinutes = orderedStops
+            .Where(stop => stop.StopOrder > fromOrder && stop.StopOrder <= toOrder)
+            .Select(stop => stop.StandardTravelMin)
+            .ToList();
+
+        return travelMinutes.Count > 0 && travelMinutes.All(value => value.HasValue)
+            ? decimal.Round(travelMinutes.Sum(value => value!.Value), 2)
+            : null;
     }
 
     private static LineString BuildComposedGeometry(IReadOnlyList<ComposedLeg> legs)
@@ -330,6 +356,7 @@ public sealed class CreateRouteFromStationsCommandHandler
         Station ToStation,
         Coordinate[] Coordinates,
         decimal DistanceKm,
-        int TravelMinutes,
+        decimal TravelMinutes,
         Route SourceRoute);
+
 }

@@ -132,7 +132,7 @@ internal static class CharterBookingRoutePlanSupport
         var composedCoordinates = new List<Coordinate>();
         var composedStops = new List<ComposedStopDraft>();
         decimal totalDistanceKm = 0;
-        var totalTravelMinutes = 0;
+        var totalTravelMinutes = 0m;
         var selectedLegs = new List<SelectedRouteLeg>();
 
         for (var i = 0; i < legs.Count; i++)
@@ -391,7 +391,7 @@ internal static class CharterBookingRoutePlanSupport
         return true;
     }
 
-    private static int ResolveTravelMinutes(Route route, RouteStop fromStop, RouteStop toStop, decimal distanceKm)
+    private static decimal ResolveTravelMinutes(Route route, RouteStop fromStop, RouteStop toStop, decimal distanceKm)
     {
         var stops = route.RouteStops
             .OrderBy(x => x.StopOrder)
@@ -403,8 +403,8 @@ internal static class CharterBookingRoutePlanSupport
             .Sum(x => x!.Value);
 
         return configured > 0
-            ? configured
-            : Math.Max(1, (int)Math.Ceiling(distanceKm / AverageSpeedKmh * 60));
+            ? decimal.Round(configured, 2)
+            : decimal.Round(distanceKm / AverageSpeedKmh * 60, 2);
     }
 
     private static RoutePointProjection ProjectPointToLine(LineString line, Station station)
@@ -527,7 +527,7 @@ internal static class CharterBookingRoutePlanSupport
 
     public sealed record ItineraryLeg(int LegOrder, Station From, Station To);
 
-    private sealed record ComposedStopDraft(Station Station, int? StandardTravelMin);
+    private sealed record ComposedStopDraft(Station Station, decimal? StandardTravelMin);
 
     private sealed record SelectedRouteLeg(
         Route Route,
@@ -535,7 +535,7 @@ internal static class CharterBookingRoutePlanSupport
         RouteStop ToStop,
         IReadOnlyList<Coordinate> SegmentCoordinates,
         decimal DistanceKm,
-        int TravelMinutes);
+        decimal TravelMinutes);
 
     private readonly record struct RouteSegment(IReadOnlyList<Coordinate> Coordinates, decimal DistanceKm);
 

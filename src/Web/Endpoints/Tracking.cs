@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
@@ -13,6 +14,11 @@ namespace SaigonWaterbus.Web.Endpoints;
 public sealed class Tracking : IEndpointGroup
 {
     private const int OnlineThresholdSeconds = 60;
+    private const int TripBoardingLeadMinutes = 10;
+    private const int TripStartToleranceMinutes = 2;
+    private const decimal MovingSpeedThresholdKmh = 0.5m;
+    private const double IdleJumpDistanceThresholdKm = 0.5d;
+    private static readonly TimeSpan IdleJumpWindow = TimeSpan.FromMinutes(5);
     private const int MaxRemainingMinutesToNextStation = 24 * 60;
     private const decimal MaxRemainingDistanceKmToNextStation = 10_000m;
     private const string OpenIncidentStatus = "Open";
@@ -170,12 +176,42 @@ public sealed class Tracking : IEndpointGroup
         {
             return nextStationLookup.Error;
         }
+        var resolvedNextStation = nextStationLookup.Value;
 
         var now = timeProvider.GetUtcNow();
         var recordedAt = request.RecordedAt.ToUniversalTime();
         var status = NormalizeOptionalText(request.Status) ?? "unknown";
         var direction = NormalizeOptionalText(request.Direction);
         var gpsFixQuality = NormalizeOptionalText(request.GpsFixQuality);
+
+        var previousLocation = await LoadPreviousLatestLocationAsync(
+            dbContext,
+            gpsDevice.BoatId,
+            cancellationToken);
+        var writeLat = request.Lat;
+        var writeLng = request.Lng;
+        var idleJumpHeld = ShouldHoldIdleJump(
+            previousLocation,
+            trip.Value,
+            status,
+            request.SpeedKmh,
+            request.Lat,
+            request.Lng,
+            now,
+            out var idleJumpDistanceKm);
+        if (idleJumpHeld && previousLocation is not null)
+        {
+            writeLat = previousLocation.Latitude;
+            writeLng = previousLocation.Longitude;
+            logger.LogInformation(
+                "Held idle GPS jump for boat {BoatCode}: {DistanceKm:F2}km from ({IncomingLat}, {IncomingLng}) to previous ({PreviousLat}, {PreviousLng}).",
+                gpsDevice.Boat.Code,
+                idleJumpDistanceKm,
+                request.Lat,
+                request.Lng,
+                previousLocation.Latitude,
+                previousLocation.Longitude);
+        }
 
         var deviceRows = await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"""
@@ -234,9 +270,9 @@ public sealed class Tracking : IEndpointGroup
                  {gpsDevice.Id},
                  {routeId},
                  {trip.Value?.Id},
-                 {request.NextStationId},
-                 {request.Lat},
-                 {request.Lng},
+                 {resolvedNextStation?.Id},
+                 {writeLat},
+                 {writeLng},
                  {request.RemainingDistanceKmToNextStation},
                  {request.RemainingMinutesToNextStation},
                  {request.SpeedKmh},
@@ -277,16 +313,7 @@ public sealed class Tracking : IEndpointGroup
             """,
             cancellationToken);
 
-        var tripStatusChanged = false;
-        if (trip.Value is not null
-            && trip.Value.TripStatus is TripStatus.Scheduled or TripStatus.Boarding or TripStatus.Delayed)
-        {
-            trip.Value.TripStatus = TripStatus.InProgress;
-            trip.Value.StatusNote = string.IsNullOrWhiteSpace(trip.Value.StatusNote)
-                ? "GPS đã bắt đầu gửi vị trí cho chuyến."
-                : trip.Value.StatusNote;
-            tripStatusChanged = true;
-        }
+        var tripStatusChanged = ApplyTripStatusFromLocation(trip.Value, status, request.SpeedKmh, now);
 
         if (session.Value is not null)
         {
@@ -348,13 +375,13 @@ public sealed class Tracking : IEndpointGroup
                 route.Value?.RouteCode,
                 trip.Value?.Id,
                 trip.Value?.TripCode,
-                request.NextStationId,
-                nextStationLookup.Value?.StationCode,
-                nextStationLookup.Value?.StationName,
+                resolvedNextStation?.Id,
+                resolvedNextStation?.StationCode,
+                resolvedNextStation?.StationName,
                 request.RemainingDistanceKmToNextStation,
                 request.RemainingMinutesToNextStation,
-                request.Lat,
-                request.Lng,
+                writeLat,
+                writeLng,
                 request.SpeedKmh,
                 request.Heading,
                 request.AccuracyMeters,
@@ -554,6 +581,45 @@ public sealed class Tracking : IEndpointGroup
         Guid? routeId,
         CancellationToken cancellationToken)
     {
+        if (trip is not null)
+        {
+            var tripStops = await dbContext.Set<TripStop>()
+                .AsNoTracking()
+                .Include(x => x.Station)
+                .Where(x => x.TripId == trip.Id)
+                .OrderBy(x => x.StopOrder)
+                .ToListAsync(cancellationToken);
+            var expectedNextStop = ResolveExpectedNextTripStop(tripStops);
+            if (!nextStationId.HasValue)
+            {
+                return expectedNextStop is null
+                    ? NextStationLookup.Empty()
+                    : NextStationLookup.Found(expectedNextStop.Station);
+            }
+
+            var requestedTripStop = tripStops.FirstOrDefault(x => x.StationId == nextStationId.Value);
+            if (requestedTripStop is not null)
+            {
+                if (IsBehindExpectedStop(requestedTripStop, expectedNextStop))
+                {
+                    return expectedNextStop is null
+                        ? NextStationLookup.Empty()
+                        : NextStationLookup.Found(expectedNextStop.Station);
+                }
+
+                return NextStationLookup.Found(requestedTripStop.Station);
+            }
+
+            var belongsToRoute = await dbContext.RouteStops
+                .AsNoTracking()
+                .AnyAsync(x => x.RouteId == trip.RouteId && x.StationId == nextStationId.Value, cancellationToken);
+            if (!belongsToRoute)
+            {
+                return NextStationLookup.Failed(
+                    Results.BadRequest(new { message = "nextStationId không thuộc trip đang gửi GPS." }));
+            }
+        }
+
         if (!nextStationId.HasValue)
         {
             return NextStationLookup.Empty();
@@ -566,27 +632,6 @@ public sealed class Tracking : IEndpointGroup
         {
             return NextStationLookup.Failed(
                 Results.NotFound(new { message = "nextStationId không tồn tại." }));
-        }
-
-        if (trip is not null)
-        {
-            var belongsToTrip = await dbContext.Set<TripStop>()
-                .AsNoTracking()
-                .AnyAsync(x => x.TripId == trip.Id && x.StationId == nextStationId.Value, cancellationToken);
-            if (!belongsToTrip)
-            {
-                belongsToTrip = await dbContext.RouteStops
-                    .AsNoTracking()
-                    .AnyAsync(x => x.RouteId == trip.RouteId && x.StationId == nextStationId.Value, cancellationToken);
-            }
-
-            if (!belongsToTrip)
-            {
-                return NextStationLookup.Failed(
-                    Results.BadRequest(new { message = "nextStationId không thuộc trip đang gửi GPS." }));
-            }
-
-            return NextStationLookup.Found(station);
         }
 
         if (routeId.HasValue)
@@ -603,6 +648,39 @@ public sealed class Tracking : IEndpointGroup
 
         return NextStationLookup.Found(station);
     }
+
+    private static TripStop? ResolveExpectedNextTripStop(IReadOnlyList<TripStop> tripStops)
+    {
+        if (tripStops.Count == 0)
+        {
+            return null;
+        }
+
+        var currentStop = tripStops
+            .Where(x => string.Equals(x.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
+                && x.ActualDepartureTime is null)
+            .OrderByDescending(x => x.StopOrder)
+            .FirstOrDefault();
+        if (currentStop is not null)
+        {
+            return currentStop;
+        }
+
+        var lastDepartedOrder = tripStops
+            .Where(x => x.ActualDepartureTime is not null
+                || string.Equals(x.StopStatus, TripStopStatuses.Departed, StringComparison.OrdinalIgnoreCase))
+            .Select(x => (int?)x.StopOrder)
+            .Max();
+        if (lastDepartedOrder.HasValue)
+        {
+            return tripStops.FirstOrDefault(x => x.StopOrder > lastDepartedOrder.Value);
+        }
+
+        return tripStops.FirstOrDefault(x => x.ActualArrivalTime is null);
+    }
+
+    private static bool IsBehindExpectedStop(TripStop requestedStop, TripStop? expectedStop) =>
+        expectedStop is not null && requestedStop.StopOrder < expectedStop.StopOrder;
 
     private static async Task<CapturedRouteSessionLookup> ResolveCapturedRouteSessionAsync(
         ApplicationDbContext dbContext,
@@ -665,6 +743,140 @@ public sealed class Tracking : IEndpointGroup
     private static bool IsRecording(string status) =>
         string.Equals(status, "Recording", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "recording", StringComparison.OrdinalIgnoreCase);
+
+    private static async Task<PreviousLatestLocationSnapshot?> LoadPreviousLatestLocationAsync(
+        ApplicationDbContext dbContext,
+        Guid boatId,
+        CancellationToken cancellationToken) =>
+        await dbContext.BoatLatestLocations
+            .AsNoTracking()
+            .Where(x => x.BoatId == boatId)
+            .Select(x => new PreviousLatestLocationSnapshot(
+                x.RouteId,
+                x.TripId,
+                x.Latitude,
+                x.Longitude,
+                x.SpeedKmh,
+                x.Status,
+                x.ReceivedAt,
+                x.Sequence))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    private static bool ShouldHoldIdleJump(
+        PreviousLatestLocationSnapshot? previousLocation,
+        Trip? trip,
+        string gpsStatus,
+        decimal? speedKmh,
+        decimal incomingLat,
+        decimal incomingLng,
+        DateTimeOffset now,
+        out double distanceKm)
+    {
+        distanceKm = 0d;
+        if (previousLocation is null
+            || trip is not null
+            || previousLocation.TripId.HasValue
+            || now - previousLocation.ReceivedAt > IdleJumpWindow)
+        {
+            return false;
+        }
+
+        if (!IsIdleGpsStatus(gpsStatus)
+            || !IsIdleGpsStatus(previousLocation.Status)
+            || speedKmh.GetValueOrDefault() > MovingSpeedThresholdKmh
+            || previousLocation.SpeedKmh.GetValueOrDefault() > MovingSpeedThresholdKmh)
+        {
+            return false;
+        }
+
+        distanceKm = CalculateDistanceKm(
+            previousLocation.Latitude,
+            previousLocation.Longitude,
+            incomingLat,
+            incomingLng);
+        return distanceKm > IdleJumpDistanceThresholdKm;
+    }
+
+    private static bool IsIdleGpsStatus(string status) =>
+        string.Equals(status, "idle", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "docked", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "stopped", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "waiting", StringComparison.OrdinalIgnoreCase);
+
+    private static double CalculateDistanceKm(
+        decimal startLat,
+        decimal startLng,
+        decimal endLat,
+        decimal endLng)
+    {
+        const double earthRadiusKm = 6371d;
+        var dLat = ToRadians(endLat - startLat);
+        var dLng = ToRadians(endLng - startLng);
+        var lat1 = ToRadians(startLat);
+        var lat2 = ToRadians(endLat);
+
+        var a = Math.Sin(dLat / 2d) * Math.Sin(dLat / 2d)
+            + Math.Cos(lat1) * Math.Cos(lat2) * Math.Sin(dLng / 2d) * Math.Sin(dLng / 2d);
+        var c = 2d * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1d - a));
+        return earthRadiusKm * c;
+    }
+
+    private static double ToRadians(decimal degrees) => (double)degrees * Math.PI / 180d;
+
+    private static bool ApplyTripStatusFromLocation(
+        Trip? trip,
+        string gpsStatus,
+        decimal? speedKmh,
+        DateTimeOffset now)
+    {
+        if (trip is null || trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
+        {
+            return false;
+        }
+
+        var isMoving = IsMovingGpsStatus(gpsStatus) || speedKmh is > MovingSpeedThresholdKmh;
+        if (isMoving && now >= trip.DepartureTime.AddMinutes(-TripStartToleranceMinutes))
+        {
+            return SetTripStatus(
+                trip,
+                TripStatus.InProgress,
+                "GPS xác nhận tàu đã bắt đầu di chuyển.");
+        }
+
+        if (trip.TripStatus is TripStatus.Scheduled or TripStatus.Delayed
+            && now >= trip.DepartureTime.AddMinutes(-TripBoardingLeadMinutes))
+        {
+            return SetTripStatus(
+                trip,
+                TripStatus.Boarding,
+                "GPS đã nhận lịch và tàu đang chuẩn bị khởi hành.");
+        }
+
+        return false;
+    }
+
+    private static bool IsMovingGpsStatus(string status) =>
+        string.Equals(status, "moving", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "departed", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "in_progress", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, "inprogress", StringComparison.OrdinalIgnoreCase);
+
+    private static bool SetTripStatus(
+        Trip trip,
+        TripStatus status,
+        string statusNote)
+    {
+        if (trip.TripStatus == status)
+        {
+            return false;
+        }
+
+        trip.TripStatus = status;
+        trip.StatusNote = string.IsNullOrWhiteSpace(trip.StatusNote)
+            ? statusNote
+            : trip.StatusNote;
+        return true;
+    }
 
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
@@ -820,6 +1032,16 @@ public sealed class Tracking : IEndpointGroup
         Guid? RouteId,
         Guid? TripId,
         DateTimeOffset ReceivedAt);
+
+    private sealed record PreviousLatestLocationSnapshot(
+        Guid? RouteId,
+        Guid? TripId,
+        decimal Latitude,
+        decimal Longitude,
+        decimal? SpeedKmh,
+        string Status,
+        DateTimeOffset ReceivedAt,
+        long Sequence);
 
     private sealed record BoatLatestLocationDto(
         Guid BoatId,

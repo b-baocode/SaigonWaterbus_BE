@@ -15,7 +15,9 @@ public sealed class RouteStopConfiguration : IEntityTypeConfiguration<RouteStop>
         builder.Property(x => x.RouteId).HasColumnName("route_id").IsRequired();
         builder.Property(x => x.StationId).HasColumnName("station_id").IsRequired();
         builder.Property(x => x.StopOrder).HasColumnName("stop_order").IsRequired();
-        builder.Property(x => x.StandardTravelMin).HasColumnName("standard_travel_min");
+        builder.Property(x => x.StandardTravelMin)
+            .HasColumnName("standard_travel_min")
+            .HasColumnType("numeric(8,2)");
         builder.Property(x => x.DistanceFromPreviousKm)
             .HasColumnName("distance_from_previous_km")
             .HasColumnType("numeric(8,3)");

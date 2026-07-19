@@ -10,7 +10,7 @@ public sealed record UpdateRouteCommand(
     string RouteName,
     string? Description,
     decimal? BaseDistanceKm,
-    int? EstimatedDurationMin,
+    decimal? EstimatedDurationMin,
     string Status) : IRequest<RouteDto>;
 
 public sealed class UpdateRouteCommandValidator : AbstractValidator<UpdateRouteCommand>

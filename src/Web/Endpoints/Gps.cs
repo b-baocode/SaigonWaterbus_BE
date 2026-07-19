@@ -2,6 +2,7 @@ using System.Security.Cryptography;
 using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Domain.Constants;
@@ -9,6 +10,7 @@ using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Infrastructure.Options;
+using SaigonWaterbus.Web.Hubs;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -22,7 +24,7 @@ public sealed class Gps : IEndpointGroup
     private const int MaxScheduleLookBehindMinutes = 12 * 60;
     private const double StationMatchThresholdMeters = 500;
     private const double FallbackSpeedKmh = 16;
-    private const int DefaultTripStopTravelMinutes = 15;
+    private const decimal DefaultTripStopTravelMinutes = 15m;
 
     private const string StartSessionExample =
         """
@@ -346,7 +348,9 @@ public sealed class Gps : IEndpointGroup
 
         var routeGeometry = coordinateResult.Geometry!;
         var baseDistanceKm = (decimal)Math.Round(CalculateLengthKm(routeGeometry), 2);
-        var estimatedDurationMin = EstimateDurationMin(baseDistanceKm, request.AverageSpeedKmh ?? coordinateResult.AverageSpeedKmh);
+        var fallbackEstimatedDurationMin = EstimateDurationMin(
+            baseDistanceKm,
+            request.AverageSpeedKmh ?? coordinateResult.AverageSpeedKmh);
         var status = NormalizeOptionalText(request.Status) ?? "Active";
 
         var routeStopResolution = request.Stops is { Count: > 0 }
@@ -360,7 +364,7 @@ public sealed class Gps : IEndpointGroup
                 request.EndStationId ?? session?.EndStationId,
                 coordinateResult.StartCoordinate!,
                 coordinateResult.EndCoordinate!,
-                estimatedDurationMin,
+                fallbackEstimatedDurationMin,
                 cancellationToken);
 
         if (routeStopResolution.Error is not null)
@@ -368,6 +372,8 @@ public sealed class Gps : IEndpointGroup
             return routeStopResolution.Error;
         }
 
+        var estimatedDurationMin = SumRouteStopTravelMinutes(routeStopResolution.Stops)
+            ?? fallbackEstimatedDurationMin;
         var routeType = InferRouteType(routeStopResolution.Stops);
         var reverseRouteRequest = ResolveReverseRouteRequest(request, routeCode!, routeType, routeStopResolution.Stops);
         if (reverseRouteRequest.Errors.Count > 0)
@@ -573,6 +579,8 @@ public sealed class Gps : IEndpointGroup
         ApplicationDbContext dbContext,
         TimeProvider timeProvider,
         IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        IHubContext<TrackingHub> trackingHubContext,
+        ILogger<Gps> logger,
         [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
         Guid tripId,
         Guid stationId,
@@ -617,15 +625,11 @@ public sealed class Gps : IEndpointGroup
 
         var occurredAt = request.OccurredAt?.ToUniversalTime() ?? timeProvider.GetUtcNow();
         ApplyTripStopEvent(tripStop, eventType, occurredAt, request.Note);
-        if (trip.TripStatus is TripStatus.Scheduled or TripStatus.Boarding or TripStatus.Delayed)
-        {
-            trip.TripStatus = TripStatus.InProgress;
-            trip.StatusNote ??= "GPS đã cập nhật trạng thái bến cho chuyến.";
-        }
+        ApplyTripStatusFromStopEvent(trip, tripStop, eventType);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
-        return Results.Ok(new GpsTripStopStatusResponse(
+        var response = new GpsTripStopStatusResponse(
             trip.Id,
             trip.TripCode,
             trip.Boat?.Code,
@@ -637,7 +641,40 @@ public sealed class Gps : IEndpointGroup
             tripStop.StopStatus,
             tripStop.ActualArrivalTime,
             tripStop.ActualDepartureTime,
-            trip.TripStatus.ToString()));
+            trip.TripStatus.ToString());
+
+        await PublishTripStopUpdatedAsync(
+            trackingHubContext,
+            logger,
+            new TripStopUpdatedRealtimeDto(
+                trip.Id,
+                trip.TripCode,
+                trip.TripType,
+                trip.BoatId,
+                trip.Boat?.Code,
+                trip.Boat?.Name,
+                trip.RouteId,
+                trip.Route.RouteCode,
+                trip.Route.RouteName,
+                tripStop.Id,
+                tripStop.StationId,
+                tripStop.Station.StationCode,
+                tripStop.Station.StationName,
+                tripStop.StopOrder,
+                eventType,
+                tripStop.StopStatus,
+                tripStop.PlannedArrivalTime,
+                tripStop.PlannedDepartureTime,
+                tripStop.ActualArrivalTime,
+                tripStop.ActualDepartureTime,
+                trip.TripStatus.ToString(),
+                occurredAt,
+                request.Lat,
+                request.Lng,
+                NormalizeOptionalText(request.Note)),
+            cancellationToken);
+
+        return Results.Ok(response);
     }
 
     private static Dictionary<string, string[]> ValidateStartSessionRequest(
@@ -1116,7 +1153,7 @@ public sealed class Gps : IEndpointGroup
             routeStops.Add(new RouteStopDraft(
                 stationsById[requestStop.StationId],
                 orderedStops[i].StopOrder,
-                requestStop.StandardTravelMin,
+                i == 0 ? null : NormalizeTravelMinutes(requestStop.StandardTravelMin),
                 requestStop.IsPickupAllowed ?? i < orderedStops.Count - 1,
                 requestStop.IsDropoffAllowed ?? i > 0));
         }
@@ -1130,7 +1167,7 @@ public sealed class Gps : IEndpointGroup
         Guid? requestedEndStationId,
         Coordinate startCoordinate,
         Coordinate endCoordinate,
-        int? estimatedDurationMin,
+        decimal? estimatedDurationMin,
         CancellationToken cancellationToken)
     {
         var stationResolution = await ResolveRouteStopStationsAsync(
@@ -1232,7 +1269,7 @@ public sealed class Gps : IEndpointGroup
     private static IReadOnlyList<RouteStopDraft> BuildFallbackRouteStops(
         StationSummary? startStation,
         StationSummary? endStation,
-        int? estimatedDurationMin)
+        decimal? estimatedDurationMin)
     {
         var stops = new List<RouteStopDraft>();
 
@@ -1288,6 +1325,22 @@ public sealed class Gps : IEndpointGroup
             .ToArray();
 
         return new LineString(coordinates) { SRID = routeGeometry.SRID };
+    }
+
+    private static decimal? SumRouteStopTravelMinutes(IReadOnlyList<RouteStopDraft> routeStops)
+    {
+        var legMinutes = routeStops
+            .OrderBy(x => x.StopOrder)
+            .Skip(1)
+            .Select(x => x.StandardTravelMin)
+            .ToArray();
+
+        if (legMinutes.Length == 0 || legMinutes.Any(x => !x.HasValue))
+        {
+            return null;
+        }
+
+        return decimal.Round(legMinutes.Sum(x => x!.Value), 2);
     }
 
     private static IReadOnlyList<GpsRouteStopResponse> AddRouteStops(
@@ -1521,7 +1574,7 @@ public sealed class Gps : IEndpointGroup
             else
             {
                 plannedArrival = previousDeparture.AddMinutes(
-                    routeStops[i].StandardTravelMin ?? DefaultTripStopTravelMinutes);
+                    (double)(routeStops[i].StandardTravelMin ?? DefaultTripStopTravelMinutes));
                 plannedDeparture = i == routeStops.Count - 1 ? null : plannedArrival;
                 previousDeparture = plannedDeparture ?? plannedArrival.Value;
             }
@@ -1562,6 +1615,82 @@ public sealed class Gps : IEndpointGroup
         }
     }
 
+    private static void ApplyTripStatusFromStopEvent(
+        Trip trip,
+        TripStop tripStop,
+        string eventType)
+    {
+        if (trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
+        {
+            return;
+        }
+
+        if (eventType is TripStopStatuses.Departed)
+        {
+            SetTripStatus(
+                trip,
+                TripStatus.InProgress,
+                "GPS xác nhận tàu đã rời bến.");
+            return;
+        }
+
+        if (tripStop.StopOrder == 1
+            && eventType is TripStopStatuses.Arriving or TripStopStatuses.Arrived)
+        {
+            SetTripStatus(
+                trip,
+                TripStatus.Boarding,
+                "GPS xác nhận tàu đã ở bến đầu và đang chuẩn bị khởi hành.");
+            return;
+        }
+
+        if (eventType is TripStopStatuses.Arriving or TripStopStatuses.Arrived or TripStopStatuses.Skipped)
+        {
+            SetTripStatus(
+                trip,
+                TripStatus.InProgress,
+                "GPS đã cập nhật trạng thái bến cho chuyến.");
+        }
+    }
+
+    private static void SetTripStatus(
+        Trip trip,
+        TripStatus status,
+        string statusNote)
+    {
+        if (trip.TripStatus == status)
+        {
+            return;
+        }
+
+        trip.TripStatus = status;
+        trip.StatusNote ??= statusNote;
+    }
+
+    private static async Task PublishTripStopUpdatedAsync(
+        IHubContext<TrackingHub> trackingHubContext,
+        ILogger logger,
+        TripStopUpdatedRealtimeDto payload,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await trackingHubContext.Clients.All.SendAsync(
+                TrackingHub.TripStopUpdatedEventName,
+                payload,
+                cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                ex,
+                "Failed to broadcast trip stop event {EventType} for trip {TripCode} station {StationCode}.",
+                payload.Event,
+                payload.TripCode,
+                payload.StationCode);
+        }
+    }
+
     private static double CalculateLengthKm(LineString line)
     {
         double total = 0;
@@ -1573,11 +1702,16 @@ public sealed class Gps : IEndpointGroup
         return total / 1000.0;
     }
 
-    private static int EstimateDurationMin(decimal distanceKm, decimal? averageSpeedKmh)
+    private static decimal EstimateDurationMin(decimal distanceKm, decimal? averageSpeedKmh)
     {
-        var speedKmh = averageSpeedKmh is > 0m ? (double)averageSpeedKmh.Value : FallbackSpeedKmh;
-        return Math.Max(1, (int)Math.Ceiling((double)distanceKm / speedKmh * 60));
+        var speedKmh = averageSpeedKmh is > 0m ? averageSpeedKmh.Value : (decimal)FallbackSpeedKmh;
+        return decimal.Round(distanceKm / speedKmh * 60m, 2);
     }
+
+    private static decimal? NormalizeTravelMinutes(decimal? minutes) =>
+        minutes.HasValue
+            ? decimal.Round(minutes.Value, 2)
+            : null;
 
     private static double DistanceMeters(Coordinate a, Coordinate b) =>
         HaversineMeters(a.Y, a.X, b.Y, b.X);
@@ -1645,7 +1779,7 @@ public sealed class Gps : IEndpointGroup
     public sealed record GpsRouteStopRequest(
         Guid StationId,
         int? StopOrder,
-        int? StandardTravelMin,
+        decimal? StandardTravelMin,
         bool? IsPickupAllowed,
         bool? IsDropoffAllowed);
 
@@ -1681,7 +1815,7 @@ public sealed class Gps : IEndpointGroup
         string TripStatus,
         string? StatusNote,
         decimal? BaseDistanceKm,
-        int? EstimatedDurationMin,
+        decimal? EstimatedDurationMin,
         IReadOnlyList<double[]>? RouteGeometry,
         IReadOnlyList<GpsTripScheduleStopResponse> Stops);
 
@@ -1720,6 +1854,33 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset? ActualDepartureTime,
         string TripStatus);
 
+    private sealed record TripStopUpdatedRealtimeDto(
+        Guid TripId,
+        string TripCode,
+        string TripType,
+        Guid? BoatId,
+        string? BoatCode,
+        string? BoatName,
+        Guid RouteId,
+        string RouteCode,
+        string RouteName,
+        Guid TripStopId,
+        Guid StationId,
+        string StationCode,
+        string StationName,
+        int StopOrder,
+        string Event,
+        string StopStatus,
+        DateTimeOffset? PlannedArrivalTime,
+        DateTimeOffset? PlannedDepartureTime,
+        DateTimeOffset? ActualArrivalTime,
+        DateTimeOffset? ActualDepartureTime,
+        string TripStatus,
+        DateTimeOffset OccurredAt,
+        decimal? Lat,
+        decimal? Lng,
+        string? Note);
+
     private sealed record StopGpsSessionResponse(Guid SessionId, string Status, int RecordedPointCount);
 
     private sealed record CreatedGpsRouteResponse(
@@ -1728,7 +1889,7 @@ public sealed class Gps : IEndpointGroup
         string RouteName,
         string RouteType,
         decimal BaseDistanceKm,
-        int? EstimatedDurationMin,
+        decimal? EstimatedDurationMin,
         int PointCount,
         string Status,
         IReadOnlyList<GpsRouteStopResponse> Stops);
@@ -1739,7 +1900,7 @@ public sealed class Gps : IEndpointGroup
         string RouteName,
         string RouteType,
         decimal BaseDistanceKm,
-        int? EstimatedDurationMin,
+        decimal? EstimatedDurationMin,
         int PointCount,
         string Status,
         IReadOnlyList<GpsRouteStopResponse> Stops,
@@ -1751,7 +1912,7 @@ public sealed class Gps : IEndpointGroup
         string StationCode,
         string StationName,
         int StopOrder,
-        int? StandardTravelMin,
+        decimal? StandardTravelMin,
         bool IsPickupAllowed,
         bool IsDropoffAllowed);
 
@@ -1821,7 +1982,7 @@ public sealed class Gps : IEndpointGroup
     private sealed record RouteStopDraft(
         StationSummary Station,
         int StopOrder,
-        int? StandardTravelMin,
+        decimal? StandardTravelMin,
         bool IsPickupAllowed,
         bool IsDropoffAllowed);
 

@@ -147,7 +147,7 @@ public sealed record CharterBookingRouteCandidateDto(
     string RouteName,
     string RouteType,
     decimal? DistanceKm,
-    int? EstimatedDurationMin,
+    decimal? EstimatedDurationMin,
     int FromStopOrder,
     int ToStopOrder,
     string RouteLabel = "",

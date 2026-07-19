@@ -73,7 +73,8 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
         var baseDistanceKm = routeGeometry is not null
             ? (decimal)Math.Round(RouteGeoJsonImportSupport.CalculateLengthKm(routeGeometry), 2)
             : SumIfAllPresent(orderedSources.Select(route => route.BaseDistanceKm));
-        var estimatedDurationMin = SumIfAllPresent(orderedSources.Select(route => route.EstimatedDurationMin));
+        var estimatedDurationMin = SumComposedTravelMinutes(composedStops)
+            ?? SumIfAllPresent(orderedSources.Select(route => route.EstimatedDurationMin));
 
         var route = new Route
         {
@@ -244,11 +245,15 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
             : null;
     }
 
-    private static int? SumIfAllPresent(IEnumerable<int?> values)
+    private static decimal? SumComposedTravelMinutes(IReadOnlyList<RouteStopDraft> stops)
     {
-        var list = values.ToList();
-        return list.All(value => value.HasValue)
-            ? list.Sum(value => value!.Value)
+        var travelMinutes = stops
+            .Skip(1)
+            .Select(stop => stop.StandardTravelMin)
+            .ToList();
+
+        return travelMinutes.Count > 0 && travelMinutes.All(value => value.HasValue)
+            ? decimal.Round(travelMinutes.Sum(value => value!.Value), 2)
             : null;
     }
 
@@ -259,5 +264,5 @@ public sealed class CreateRouteFromRoutesCommandHandler : IRequestHandler<Create
                 .Select(coordinate => new[] { coordinate.X, coordinate.Y })
                 .ToList();
 
-    private sealed record RouteStopDraft(Station Station, int? StandardTravelMin, decimal? DistanceFromPreviousKm);
+    private sealed record RouteStopDraft(Station Station, decimal? StandardTravelMin, decimal? DistanceFromPreviousKm);
 }

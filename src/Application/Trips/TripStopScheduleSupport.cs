@@ -21,7 +21,7 @@ internal sealed record TripStopDraft(
 internal static class TripStopScheduleSupport
 {
     /// <summary>Thoi gian chay mac dinh giua 2 ben khi route stop chua co standard_travel_min.</summary>
-    public const int DefaultTravelMinutes = 15;
+    public const decimal DefaultTravelMinutes = 15m;
 
     /// <summary>
     /// Lich trinh waterbus thuong tu route stops: standardTravelMin cua stop i la phut chay
@@ -46,7 +46,7 @@ internal static class TripStopScheduleSupport
             else
             {
                 plannedArrival = previousDeparture.AddMinutes(
-                    orderedStops[i].StandardTravelMin ?? DefaultTravelMinutes);
+                    (double)(orderedStops[i].StandardTravelMin ?? DefaultTravelMinutes));
                 plannedDeparture = i == orderedStops.Count - 1 ? null : plannedArrival;
                 previousDeparture = plannedDeparture ?? plannedArrival.Value;
             }

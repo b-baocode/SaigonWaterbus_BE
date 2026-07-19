@@ -235,7 +235,7 @@ public static class DemoScheduleSeedData
             var routeStop = routeStops[i];
             if (i > 0)
             {
-                runningArrival = runningArrival.AddMinutes(routeStop.StandardTravelMin ?? 1);
+                runningArrival = runningArrival.AddMinutes((double)(routeStop.StandardTravelMin ?? 1m));
             }
 
             if (i == 0)

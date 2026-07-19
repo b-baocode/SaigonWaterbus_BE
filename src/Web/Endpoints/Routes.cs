@@ -183,7 +183,7 @@ public sealed class Routes : IEndpointGroup
         return Results.NoContent();
     }
 
-    public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, int? EstimatedDurationMin, string Status);
-    public sealed record UpdateRouteStopRequest(int? StandardTravelMin, decimal? DistanceFromPreviousKm, bool IsPickupAllowed, bool IsDropoffAllowed);
+    public sealed record UpdateRouteRequest(string RouteName, string? Description, decimal? BaseDistanceKm, decimal? EstimatedDurationMin, string Status);
+    public sealed record UpdateRouteStopRequest(decimal? StandardTravelMin, decimal? DistanceFromPreviousKm, bool IsPickupAllowed, bool IsDropoffAllowed);
 
 }

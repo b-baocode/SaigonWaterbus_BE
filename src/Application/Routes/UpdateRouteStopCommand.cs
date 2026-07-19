@@ -8,7 +8,7 @@ namespace SaigonWaterbus.Application.Routes;
 public sealed record UpdateRouteStopCommand(
     Guid RouteId,
     Guid RouteStopId,
-    int? StandardTravelMin,
+    decimal? StandardTravelMin,
     decimal? DistanceFromPreviousKm,
     bool IsPickupAllowed,
     bool IsDropoffAllowed) : IRequest<RouteStopDto>;
@@ -19,6 +19,9 @@ public sealed class UpdateRouteStopCommandValidator : AbstractValidator<UpdateRo
     {
         RuleFor(x => x.RouteId).NotEmpty();
         RuleFor(x => x.RouteStopId).NotEmpty();
+        RuleFor(x => x.StandardTravelMin)
+            .Must(x => x is null or > 0)
+            .WithMessage("standardTravelMin phai lon hon 0 neu duoc gui.");
         RuleFor(x => x.DistanceFromPreviousKm)
             .Must(x => x is null or (> 0 and <= 999))
             .WithMessage("distanceFromPreviousKm phai lon hon 0 va toi da 999 km.");

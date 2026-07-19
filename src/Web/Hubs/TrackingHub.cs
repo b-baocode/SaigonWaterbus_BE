@@ -9,6 +9,7 @@ namespace SaigonWaterbus.Web.Hubs;
 public sealed class TrackingHub : Hub
 {
     public const string BoatLocationEventName = "boatLocation";
+    public const string TripStopUpdatedEventName = "tripStopUpdated";
 
     public static string BoatGroupName(Guid boatId) => $"boat:{boatId:N}";
 
