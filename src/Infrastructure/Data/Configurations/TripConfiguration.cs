@@ -58,7 +58,6 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
         {
             TripStatus.InProgress => "Departed",
             TripStatus.Completed => "Arrived",
-            TripStatus.Delayed => "Scheduled",
             _ => status.ToString()
         };
 

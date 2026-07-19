@@ -51,7 +51,7 @@ public sealed class Trips : IEndpointGroup
                 "Admin, Manager hoac Staff",
                 null,
                 "Query params (tat ca optional): operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeCode (string), status (string), tripType (string), routeType (string).",
-                "status hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
+                "status hop le: Scheduled | Boarding | InProgress | Completed | Delayed | Cancelled.",
                 "tripType hop le: Regular | Charter. Trip charter sinh tu charter booking (xem sourceBookingId).",
                 "routeType hop le: Regular | SightseeingLoop | Charter | CharterReference. Dung de tach chuyen waterbus thuong, ngam canh, charter va route nguon.",
                 "Sap xep: ngay moi nhat → gio khoi hanh tang dan."));
@@ -169,8 +169,9 @@ public sealed class Trips : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoac Staff",
                 UpdateStatusExample,
-                "tripStatus hop le: Scheduled | Boarding | Departed | Arrived | Cancelled.",
-                "statusNote: ghi chu kem theo (optional)."));
+                "tripStatus hop le: Scheduled | Boarding | InProgress | Completed | Delayed | Cancelled.",
+                "statusNote: ghi chu kem theo (optional).",
+                "Delayed: he thong tu bao khach co booking tren chuyen (in-app + SignalR); GPS thay tau chay se tu chuyen lai Boarding/InProgress."));
     }
 
     private static async Task<IResult> GetTripList(
