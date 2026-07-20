@@ -93,6 +93,70 @@ public class CreateIncidentCommandTests
     }
 
     [Test]
+    public async Task IncidentWithoutTripIdUsesLatestGpsTripForBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var boat = Boat("WB-01");
+        var route = Route("R1");
+        var trip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = "TR-20300101-01",
+            OperatingDate = new DateOnly(2030, 1, 1),
+            DepartureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)),
+            ArrivalTime = new DateTimeOffset(2030, 1, 1, 8, 30, 0, TimeSpan.FromHours(7)),
+            CapacitySnapshot = 20,
+            TripStatus = TripStatus.InProgress
+        };
+        var now = new DateTimeOffset(2030, 1, 1, 8, 10, 0, TimeSpan.FromHours(7));
+        context.AddRange(
+            boat,
+            route,
+            trip,
+            new BoatLatestLocation
+            {
+                BoatId = boat.Id,
+                GpsDeviceId = Guid.NewGuid(),
+                TripId = trip.Id,
+                Latitude = 10.7765m,
+                Longitude = 106.7065m,
+                RecordedAt = now.AddSeconds(-5),
+                ReceivedAt = now.AddSeconds(-3),
+                UpdatedAt = now.AddSeconds(-3)
+            });
+        await context.SaveChangesAsync();
+
+        var handler = new CreateIncidentCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new CreateIncidentCommand(
+                boat.Id,
+                TripId: null,
+                "MechanicalFailure",
+                "Tau bi hong khi dang chay trip.",
+                "Medium",
+                null),
+            CancellationToken.None);
+
+        result.TripId.ShouldBe(trip.Id);
+        result.TripCode.ShouldBe(trip.TripCode);
+
+        var savedIncident = context.Incidents.Single();
+        savedIncident.TripId.ShouldBe(trip.Id);
+
+        var savedTrip = context.Trips.Single();
+        savedTrip.TripStatus.ShouldBe(TripStatus.Delayed);
+        savedTrip.StatusNote.ShouldBe("Incident MechanicalFailure: Tau bi hong khi dang chay trip.");
+    }
+
+    [Test]
     public async Task ManagerCanDispatchRescueBoatForIncidentWithoutPassengers()
     {
         await using var context = SeatFlowTestData.CreateContext();

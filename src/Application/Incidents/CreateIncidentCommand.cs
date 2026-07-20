@@ -29,6 +29,8 @@ public sealed class CreateIncidentCommandValidator : AbstractValidator<CreateInc
 
 public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateIncidentCommand, IncidentDto>
 {
+    private static readonly TimeSpan LatestTripInferenceWindow = TimeSpan.FromMinutes(15);
+
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
@@ -60,6 +62,7 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
             .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy tàu.");
 
+        var now = _timeProvider.GetUtcNow();
         Trip? trip = null;
         if (request.TripId.HasValue)
         {
@@ -74,8 +77,15 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
                     "Chuyến tàu không thuộc tàu được báo sự cố.")]);
             }
         }
+        else
+        {
+            trip = await ResolveLatestRunningTripAsync(
+                _context,
+                boat.Id,
+                now,
+                cancellationToken);
+        }
 
-        var now = _timeProvider.GetUtcNow();
         var severity = NormalizeOptional(request.Severity);
         var incident = new Incident
         {
@@ -119,6 +129,33 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
 
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static async Task<Trip?> ResolveLatestRunningTripAsync(
+        IApplicationDbContext context,
+        Guid boatId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var latestLocation = await context.BoatLatestLocations
+            .AsNoTracking()
+            .Where(x => x.BoatId == boatId)
+            .Select(x => new { x.TripId, x.ReceivedAt })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (latestLocation is null
+            || !latestLocation.TripId.HasValue
+            || now - latestLocation.ReceivedAt > LatestTripInferenceWindow)
+        {
+            return null;
+        }
+
+        return await context.Set<Trip>()
+            .SingleOrDefaultAsync(x => x.Id == latestLocation.TripId.Value
+                && x.BoatId == boatId
+                && x.TripStatus != TripStatus.Completed
+                && x.TripStatus != TripStatus.Cancelled,
+                cancellationToken);
+    }
 
     private static bool IsCritical(string? severity) =>
         string.Equals(severity, IncidentSupport.CriticalSeverity, StringComparison.OrdinalIgnoreCase)
