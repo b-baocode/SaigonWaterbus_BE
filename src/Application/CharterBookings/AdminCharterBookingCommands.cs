@@ -123,17 +123,20 @@ public sealed class UpdateCharterBookingStatusCommandHandler
     private readonly IUserContext _userContext;
     private readonly IBoatHoldService _boatHoldService;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly TimeProvider _timeProvider;
 
     public UpdateCharterBookingStatusCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IBoatHoldService? boatHoldService = null,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        TimeProvider? timeProvider = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<CharterBookingDetailDto> Handle(
@@ -167,6 +170,16 @@ public sealed class UpdateCharterBookingStatusCommandHandler
             await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
                 _context,
                 booking,
+                cancellationToken);
+        }
+
+        if (booking.BookingStatus == BookingStatus.Completed)
+        {
+            // Charter đã phục vụ xong → tích điểm (idempotent nên gọi lại không cộng trùng).
+            await PointSupport.AwardCompletionPointsAsync(
+                _context,
+                booking,
+                _timeProvider.GetUtcNow(),
                 cancellationToken);
         }
 

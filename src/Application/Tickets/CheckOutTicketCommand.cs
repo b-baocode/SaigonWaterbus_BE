@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -79,7 +80,7 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
         ticket.CheckedOutByUserId = currentUser.Id;
         ticket.CheckedOutByUser = currentUser;
 
-        await CompleteBookingIfAllTicketsCheckedOutAsync(ticket, cancellationToken);
+        await CompleteBookingIfAllTicketsCheckedOutAsync(ticket, now, cancellationToken);
 
         await TicketScanHistorySupport.AddEventAsync(
             _context,
@@ -102,6 +103,7 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
 
     private async Task CompleteBookingIfAllTicketsCheckedOutAsync(
         Domain.Entities.Ticket ticket,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var hasRemainingUsableTicket = await _context.Tickets.AnyAsync(
@@ -122,6 +124,13 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
                     ticket.Booking,
                     cancellationToken);
             }
+
+            // Toàn bộ vé đã check-out → khách dùng xong dịch vụ, giờ mới tích điểm.
+            await PointSupport.AwardCompletionPointsAsync(
+                _context,
+                ticket.Booking,
+                now,
+                cancellationToken);
         }
     }
 

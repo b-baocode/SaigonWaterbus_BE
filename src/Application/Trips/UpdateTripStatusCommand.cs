@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Notifications;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -66,6 +67,14 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             oldStatus,
             now,
             cancellationToken));
+
+        // Dịch vụ đã dùng xong → mới tích điểm (booking khứ hồi chờ đủ 2 chiều).
+        await PointSupport.AwardCompletionPointsForCompletedTripAsync(
+            _context,
+            trip,
+            oldStatus,
+            now,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(

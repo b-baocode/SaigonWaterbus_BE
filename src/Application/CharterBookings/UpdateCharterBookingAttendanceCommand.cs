@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -118,7 +119,7 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
 
         if (request.Action == CharterBookingAttendanceAction.CheckOut)
         {
-            await CompleteBookingIfAllTicketsCheckedOutAsync(booking, cancellationToken);
+            await CompleteBookingIfAllTicketsCheckedOutAsync(booking, now, cancellationToken);
         }
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -246,6 +247,7 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
 
     private async Task CompleteBookingIfAllTicketsCheckedOutAsync(
         Booking booking,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         var hasRemainingUsableTicket = booking.Tickets.Any(x =>
@@ -259,6 +261,12 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
             await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
                 _context,
                 booking,
+                cancellationToken);
+            // Khách đã xuống tàu hết → dịch vụ hoàn tất, giờ mới tích điểm.
+            await PointSupport.AwardCompletionPointsAsync(
+                _context,
+                booking,
+                now,
                 cancellationToken);
         }
     }

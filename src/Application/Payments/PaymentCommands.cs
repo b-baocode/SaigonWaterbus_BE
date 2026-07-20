@@ -1599,9 +1599,8 @@ internal static class PaymentSupport
             return;
         }
 
-        // Tích điểm 1% theo từng payment thành công (guard wasPaid phía trên đảm bảo chỉ chạy 1 lần/payment).
-        // Phần trả bằng point đã bị trừ khỏi TotalAmount trước khi tạo payment nên không được tích điểm.
-        await AwardPointsForPaidPaymentAsync(context, booking, payment, cancellationToken);
+        // KHÔNG tích điểm ở đây: điểm chỉ được cộng sau khi khách dùng xong dịch vụ
+        // (PointSupport.AwardCompletionPointsAsync), tránh khách tích điểm → tiêu điểm → hoàn tiền đơn gốc.
 
         // In-app notification lưu DB trước khi gửi email: email (Brevo) có thể lỗi nhưng thông báo vẫn còn.
         var inAppNotification = NotificationSupport.AddBookingPaymentSucceededNotification(
@@ -1635,42 +1634,6 @@ internal static class PaymentSupport
         var notification = CreatePaymentSucceededNotification(booking, payment);
 
         await paymentNotificationSender.SendPaymentSucceededAsync(notification, cancellationToken);
-    }
-
-    private static async Task AwardPointsForPaidPaymentAsync(
-        IApplicationDbContext context,
-        Booking booking,
-        Payment payment,
-        CancellationToken cancellationToken)
-    {
-        if (!booking.UserId.HasValue)
-        {
-            return;
-        }
-
-        var earnedPoints = PointSupport.CalculateEarnedPoints(payment.Amount);
-        if (earnedPoints <= 0)
-        {
-            return;
-        }
-
-        var user = await context.Set<User>()
-            .SingleOrDefaultAsync(u => u.Id == booking.UserId.Value, cancellationToken);
-        if (user is null)
-        {
-            return;
-        }
-
-        PointSupport.AddTransaction(
-            context,
-            user,
-            booking.Id,
-            PointTransactionTypes.Earn,
-            earnedPoints,
-            $"Tích điểm 1% thanh toán booking {booking.BookingCode}",
-            payment.PaidAt!.Value);
-        booking.PointsEarned += earnedPoints;
-        await context.SaveChangesAsync(cancellationToken);
     }
 
     public static PaymentSucceededNotification CreatePaymentSucceededNotification(
