@@ -10,8 +10,51 @@ on:
   workflow_dispatch:
 
 jobs:
+  test:
+    # Chay tren ubuntu vi GitHub Actions service container chi dung duoc tren Linux runner.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    services:
+      postgres:
+        # Anh postgis: migration co HasPostgresExtension("postgis") nen postgres thuan se fail.
+        image: postgis/postgis:17-3.5
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up .NET Core
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '9.x'
+
+      - name: dotnet test (unit)
+        run: dotnet test tests/Application.UnitTests/Application.UnitTests.csproj -c Release --nologo
+
+      - name: dotnet test (domain)
+        run: dotnet test tests/Domain.UnitTests/Domain.UnitTests.csproj -c Release --nologo
+
+      - name: dotnet test (integration)
+        env:
+          # Moi test tu tao database rieng waterbus_test_* tu connection nay roi xoa khi xong.
+          WATERBUS_TEST_DB: "Host=localhost;Port=5432;Database=postgres;Username=postgres;Password=postgres;"
+        run: dotnet test tests/Integration.Tests/Integration.Tests.csproj -c Release --nologo
+
   build:
     runs-on: windows-latest
+    needs: test
     permissions:
       contents: read #This is required for actions/checkout
 
