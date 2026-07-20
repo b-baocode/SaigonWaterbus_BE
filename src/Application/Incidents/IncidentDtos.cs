@@ -33,6 +33,8 @@ public sealed record IncidentDto(
     string? ReplacementTargetStationCode,
     string? ReplacementTargetStationName,
     int? ReplacementTargetStopOrder,
+    int ReplacementDelayMinutes,
+    DateTimeOffset? ReplacementEstimatedResumeAt,
     int OnboardPassengerCount,
     int FuturePassengerCount,
     string? ReplacementNote,

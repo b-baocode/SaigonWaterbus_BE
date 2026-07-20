@@ -24,6 +24,8 @@ public class Incident : BaseGuidEntity
     public string ReplacementMissionType { get; set; } = "None";
     public Guid? ReplacementTargetStationId { get; set; }
     public int? ReplacementTargetStopOrder { get; set; }
+    public int ReplacementDelayMinutes { get; set; }
+    public DateTimeOffset? ReplacementEstimatedResumeAt { get; set; }
     public int ActiveTicketCountSnapshot { get; set; }
     public int OnboardPassengerCountSnapshot { get; set; }
     public int FuturePassengerCountSnapshot { get; set; }

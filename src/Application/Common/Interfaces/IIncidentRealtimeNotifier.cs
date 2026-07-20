@@ -25,6 +25,8 @@ public sealed record IncidentRealtimeEvent(
     string? ReplacementMissionType = null,
     Guid? ReplacementTargetStationId = null,
     string? ReplacementTargetStationName = null,
+    int? ReplacementDelayMinutes = null,
+    DateTimeOffset? ReplacementEstimatedResumeAt = null,
     int? OnboardPassengerCount = null,
     int? FuturePassengerCount = null,
     string? ResolutionStatus = null,

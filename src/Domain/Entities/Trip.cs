@@ -15,6 +15,10 @@ public class Trip : BaseGuidAuditableEntity
     public string? ServicePeriod { get; set; }
     public DateTimeOffset DepartureTime { get; set; }
     public DateTimeOffset ArrivalTime { get; set; }
+    public int DelayMinutes { get; set; }
+    public string? DelayReason { get; set; }
+    public DateTimeOffset? AdjustedDepartureTime { get; set; }
+    public DateTimeOffset? AdjustedArrivalTime { get; set; }
     public int CapacitySnapshot { get; set; }
     public TripStatus TripStatus { get; set; } = TripStatus.Scheduled;
     public string? StatusNote { get; set; }

@@ -36,6 +36,10 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
             .IsRequired();
         builder.Property(x => x.ReplacementTargetStationId).HasColumnName("replacement_target_station_id");
         builder.Property(x => x.ReplacementTargetStopOrder).HasColumnName("replacement_target_stop_order");
+        builder.Property(x => x.ReplacementDelayMinutes)
+            .HasColumnName("replacement_delay_minutes")
+            .HasDefaultValue(0);
+        builder.Property(x => x.ReplacementEstimatedResumeAt).HasColumnName("replacement_estimated_resume_at");
         builder.Property(x => x.ActiveTicketCountSnapshot)
             .HasColumnName("active_ticket_count_snapshot")
             .HasDefaultValue(0);

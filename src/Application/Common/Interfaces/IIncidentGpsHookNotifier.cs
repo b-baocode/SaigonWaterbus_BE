@@ -20,6 +20,8 @@ public sealed record IncidentGpsHookNotification(
     int? ReplacementTargetStopOrder,
     decimal? ReplacementTargetLat,
     decimal? ReplacementTargetLng,
+    int ReplacementDelayMinutes,
+    DateTimeOffset? ReplacementEstimatedResumeAt,
     int OnboardPassengerCount,
     int FuturePassengerCount,
     decimal? Lat,

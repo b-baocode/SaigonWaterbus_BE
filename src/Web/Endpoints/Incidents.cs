@@ -105,7 +105,7 @@ public sealed class Incidents : IEndpointGroup
                 "Neu chua co khach tren tau nhung co khach cho o ben sau: replacementBoatId bat buoc, mission ContinueFromStation va co replacementTargetStation.",
                 "Neu khong co khach bi anh huong: chi gui rescueBoatId; replacementBoatId phai de null.",
                 "Tau thay the phai serviceType Passenger, Active, setup du ghe va khong trung tau cuu ho/tau gap su co.",
-                "delayMinutes chi anh huong trang thai trip khi incident co tripId."));
+                "delayMinutes la so phut tre du kien; BE luu replacementEstimatedResumeAt, trip adjustedStart/End va adjusted time cho cac stop con lai."));
 
         group.MapPatch(ResolveIncident, "{incidentId:guid}/resolve")
             .RequireAuthorization()

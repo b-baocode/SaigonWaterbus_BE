@@ -115,6 +115,8 @@ internal static class IncidentSupport
             incident.ReplacementTargetStation?.StationCode,
             incident.ReplacementTargetStation?.StationName,
             incident.ReplacementTargetStopOrder,
+            incident.ReplacementDelayMinutes,
+            incident.ReplacementEstimatedResumeAt,
             incident.OnboardPassengerCountSnapshot,
             incident.FuturePassengerCountSnapshot,
             incident.ReplacementNote,
@@ -142,6 +144,8 @@ internal static class IncidentSupport
             incident.ReplacementMissionType,
             incident.ReplacementTargetStationId,
             incident.ReplacementTargetStation?.StationName,
+            incident.ReplacementDelayMinutes,
+            incident.ReplacementEstimatedResumeAt,
             incident.OnboardPassengerCountSnapshot,
             incident.FuturePassengerCountSnapshot,
             incident.ResolutionStatus,
@@ -172,6 +176,8 @@ internal static class IncidentSupport
                 incident.ReplacementTargetStopOrder,
                 incident.ReplacementTargetStation?.Latitude,
                 incident.ReplacementTargetStation?.Longitude,
+                incident.ReplacementDelayMinutes,
+                incident.ReplacementEstimatedResumeAt,
                 incident.OnboardPassengerCountSnapshot,
                 incident.FuturePassengerCountSnapshot,
                 location?.Latitude,
@@ -212,7 +218,9 @@ internal static class IncidentSupport
                 TargetStationId: null,
                 TargetStationCode: null,
                 TargetStationName: null,
-                TargetStopOrder: null);
+                TargetStopOrder: null,
+                TargetPlannedArrivalAt: null,
+                TargetPlannedDepartureAt: null);
         }
 
         if (stops.Count == 0)
@@ -272,7 +280,9 @@ internal static class IncidentSupport
                 TargetStationId: null,
                 TargetStationCode: null,
                 TargetStationName: null,
-                TargetStopOrder: null);
+                TargetStopOrder: null,
+                TargetPlannedArrivalAt: null,
+                TargetPlannedDepartureAt: null);
         }
 
         if (onboardPassengerCount > 0)
@@ -285,7 +295,9 @@ internal static class IncidentSupport
                 TargetStationId: null,
                 TargetStationCode: null,
                 TargetStationName: null,
-                TargetStopOrder: null);
+                TargetStopOrder: null,
+                TargetPlannedArrivalAt: null,
+                TargetPlannedDepartureAt: null);
         }
 
         var targetStop = nextPassengerBoardingStopOrder.HasValue
@@ -302,7 +314,9 @@ internal static class IncidentSupport
             targetStop?.StationId,
             targetStop?.StationCode,
             targetStop?.StationName,
-            targetStop?.StopOrder);
+            targetStop?.StopOrder,
+            targetStop?.PlannedArrivalTime,
+            targetStop?.PlannedDepartureTime);
     }
 
     private static IncidentPassengerImpactPlan BuildUnknownProgressPlan(int activeTicketCount) =>
@@ -314,7 +328,9 @@ internal static class IncidentSupport
             TargetStationId: null,
             TargetStationCode: null,
             TargetStationName: null,
-            TargetStopOrder: null);
+            TargetStopOrder: null,
+            TargetPlannedArrivalAt: null,
+            TargetPlannedDepartureAt: null);
 
     private static async Task<IReadOnlyList<IncidentStopPlanItem>> LoadTripStopPlanAsync(
         IApplicationDbContext context,
@@ -331,6 +347,8 @@ internal static class IncidentSupport
                 x.Station.StationCode,
                 x.Station.StationName,
                 x.StopOrder,
+                x.PlannedArrivalTime,
+                x.PlannedDepartureTime,
                 x.StopStatus,
                 x.ActualArrivalTime,
                 x.ActualDepartureTime))
@@ -341,20 +359,26 @@ internal static class IncidentSupport
             return tripStops;
         }
 
-        return await context.Set<RouteStop>()
+        var routeStops = await context.Set<RouteStop>()
             .AsNoTracking()
             .Include(x => x.Station)
             .Where(x => x.RouteId == trip.RouteId)
             .OrderBy(x => x.StopOrder)
+            .ToListAsync(cancellationToken);
+
+        return SaigonWaterbus.Application.Trips.TripStopScheduleSupport
+            .BuildFromRouteStops(routeStops, trip.DepartureTime)
             .Select(x => new IncidentStopPlanItem(
                 x.StationId,
-                x.Station.StationCode,
-                x.Station.StationName,
+                x.Station?.StationCode ?? string.Empty,
+                x.Station?.StationName ?? string.Empty,
                 x.StopOrder,
+                x.PlannedArrivalTime,
+                x.PlannedDepartureTime,
                 null,
                 null,
                 null))
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 
     private static async Task<int?> ResolveCurrentProgressStopOrderAsync(
@@ -510,7 +534,9 @@ internal static class IncidentSupport
         Guid? TargetStationId,
         string? TargetStationCode,
         string? TargetStationName,
-        int? TargetStopOrder)
+        int? TargetStopOrder,
+        DateTimeOffset? TargetPlannedArrivalAt,
+        DateTimeOffset? TargetPlannedDepartureAt)
     {
         public static IncidentPassengerImpactPlan Empty { get; } = new(
             ActiveTicketCount: 0,
@@ -520,7 +546,9 @@ internal static class IncidentSupport
             TargetStationId: null,
             TargetStationCode: null,
             TargetStationName: null,
-            TargetStopOrder: null);
+            TargetStopOrder: null,
+            TargetPlannedArrivalAt: null,
+            TargetPlannedDepartureAt: null);
 
         public int AffectedPassengerCount => OnboardPassengerCount + FuturePassengerCount;
     }
@@ -530,6 +558,8 @@ internal static class IncidentSupport
         string StationCode,
         string StationName,
         int StopOrder,
+        DateTimeOffset? PlannedArrivalTime,
+        DateTimeOffset? PlannedDepartureTime,
         string? StopStatus,
         DateTimeOffset? ActualArrivalTime,
         DateTimeOffset? ActualDepartureTime);

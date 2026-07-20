@@ -313,6 +313,10 @@ public class CreateIncidentCommandTests
             CapacitySnapshot = 20,
             TripStatus = TripStatus.InProgress
         };
+        var stationATripStop = TripStop(trip, stationA, 1, null, trip.DepartureTime);
+        var stationBTripStop = TripStop(trip, stationB, 2, trip.DepartureTime.AddMinutes(15), trip.DepartureTime.AddMinutes(15));
+        var stationCTripStop = TripStop(trip, stationC, 3, trip.DepartureTime.AddMinutes(30), trip.DepartureTime.AddMinutes(30));
+        var stationDTripStop = TripStop(trip, stationD, 4, trip.DepartureTime.AddMinutes(45), null);
         var incident = new Incident
         {
             Boat = incidentBoat,
@@ -369,6 +373,10 @@ public class CreateIncidentCommandTests
             RouteStop(route, stationC, 3),
             RouteStop(route, stationD, 4),
             trip,
+            stationATripStop,
+            stationBTripStop,
+            stationCTripStop,
+            stationDTripStop,
             incident,
             booking,
             passenger,
@@ -410,19 +418,34 @@ public class CreateIncidentCommandTests
         result.ReplacementTargetStationId.ShouldBe(stationC.Id);
         result.ReplacementTargetStationName.ShouldBe("Ben C");
         result.ReplacementTargetStopOrder.ShouldBe(3);
+        result.ReplacementDelayMinutes.ShouldBe(15);
+        result.ReplacementEstimatedResumeAt.ShouldBe(stationCTripStop.PlannedDepartureTime!.Value.AddMinutes(15));
 
         var savedIncident = context.Incidents.Single();
         savedIncident.ReplacementMissionType.ShouldBe(IncidentReplacementMissionTypes.ContinueFromStation);
         savedIncident.ReplacementTargetStationId.ShouldBe(stationC.Id);
+        savedIncident.ReplacementDelayMinutes.ShouldBe(15);
+        savedIncident.ReplacementEstimatedResumeAt.ShouldBe(stationCTripStop.PlannedDepartureTime!.Value.AddMinutes(15));
         savedIncident.OnboardPassengerCountSnapshot.ShouldBe(0);
         savedIncident.FuturePassengerCountSnapshot.ShouldBe(1);
         savedIncident.ReplacementNote.ShouldNotBeNull();
         savedIncident.ReplacementNote.ShouldContain("Ben C");
 
+        var savedTrip = context.Trips.Single();
+        savedTrip.DelayMinutes.ShouldBe(15);
+        savedTrip.AdjustedDepartureTime.ShouldBe(trip.DepartureTime.AddMinutes(15));
+        savedTrip.AdjustedArrivalTime.ShouldBe(trip.ArrivalTime.AddMinutes(15));
+
+        var adjustedStationCStop = context.Set<TripStop>().Single(x => x.Id == stationCTripStop.Id);
+        adjustedStationCStop.AdjustedArrivalTime.ShouldBe(stationCTripStop.PlannedArrivalTime!.Value.AddMinutes(15));
+        adjustedStationCStop.AdjustedDepartureTime.ShouldBe(stationCTripStop.PlannedDepartureTime!.Value.AddMinutes(15));
+
         var notification = gpsHook.Notifications.Single();
         notification.ReplacementMissionType.ShouldBe(IncidentReplacementMissionTypes.ContinueFromStation);
         notification.ReplacementTargetStationId.ShouldBe(stationC.Id);
         notification.ReplacementTargetStationName.ShouldBe("Ben C");
+        notification.ReplacementDelayMinutes.ShouldBe(15);
+        notification.ReplacementEstimatedResumeAt.ShouldBe(stationCTripStop.PlannedDepartureTime!.Value.AddMinutes(15));
         notification.FuturePassengerCount.ShouldBe(1);
     }
 
@@ -547,6 +570,117 @@ public class CreateIncidentCommandTests
     }
 
     [Test]
+    public async Task DelayBelowFifteenMinutesDoesNotCascadeToFutureTrips()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var incidentBoat = Boat("WB-01");
+        var rescueBoat = RescueBoat("RS-01");
+        var route = Route("R1");
+        var trip = Trip(route, incidentBoat, "TR-1", new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
+        var futureTrip = Trip(route, incidentBoat, "TR-2", new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.FromHours(7)));
+        var incident = Incident(incidentBoat, trip);
+        context.AddRange(incidentBoat, rescueBoat, route, trip, futureTrip, incident);
+        await context.SaveChangesAsync();
+
+        var handler = new AssignReplacementBoatCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 8, 10, 0, TimeSpan.FromHours(7))));
+
+        await handler.Handle(
+            new AssignReplacementBoatCommand(
+                incident.Id,
+                rescueBoat.Id,
+                ReplacementBoatId: null,
+                DelayMinutes: 14,
+                Note: "Trễ nhẹ, không ảnh hưởng chuyến sau."),
+            CancellationToken.None);
+
+        var savedCurrentTrip = context.Trips.Single(x => x.Id == trip.Id);
+        savedCurrentTrip.DelayMinutes.ShouldBe(14);
+        savedCurrentTrip.TripStatus.ShouldBe(TripStatus.Delayed);
+
+        var savedFutureTrip = context.Trips.Single(x => x.Id == futureTrip.Id);
+        savedFutureTrip.DelayMinutes.ShouldBe(0);
+        savedFutureTrip.AdjustedDepartureTime.ShouldBeNull();
+        savedFutureTrip.AdjustedArrivalTime.ShouldBeNull();
+        savedFutureTrip.TripStatus.ShouldBe(TripStatus.Scheduled);
+    }
+
+    [Test]
+    public async Task DelayAtLeastFifteenMinutesCascadesToFutureTrips()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var incidentBoat = Boat("WB-01");
+        var otherBoat = Boat("WB-99");
+        var rescueBoat = RescueBoat("RS-01");
+        var route = Route("R1");
+        var otherRoute = Route("R2");
+        var trip = Trip(route, incidentBoat, "TR-1", new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
+        var futureTrip = Trip(route, incidentBoat, "TR-2", new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.FromHours(7)));
+        var sameBoatOtherRouteTrip = Trip(otherRoute, incidentBoat, "TR-OTHER-ROUTE", new DateTimeOffset(2030, 1, 1, 9, 15, 0, TimeSpan.FromHours(7)));
+        var sameRouteOtherBoatTrip = Trip(route, otherBoat, "TR-OTHER-BOAT", new DateTimeOffset(2030, 1, 1, 9, 30, 0, TimeSpan.FromHours(7)));
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var futureStopA = TripStop(futureTrip, stationA, 1, null, futureTrip.DepartureTime);
+        var futureStopB = TripStop(futureTrip, stationB, 2, futureTrip.ArrivalTime, null);
+        var incident = Incident(incidentBoat, trip);
+        context.AddRange(
+            incidentBoat,
+            otherBoat,
+            rescueBoat,
+            route,
+            otherRoute,
+            stationA,
+            stationB,
+            trip,
+            futureTrip,
+            sameBoatOtherRouteTrip,
+            sameRouteOtherBoatTrip,
+            futureStopA,
+            futureStopB,
+            incident);
+        await context.SaveChangesAsync();
+
+        var handler = new AssignReplacementBoatCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 8, 10, 0, TimeSpan.FromHours(7))));
+
+        await handler.Handle(
+            new AssignReplacementBoatCommand(
+                incident.Id,
+                rescueBoat.Id,
+                ReplacementBoatId: null,
+                DelayMinutes: 15,
+                Note: "Trễ vượt ngưỡng, ảnh hưởng chuyến sau."),
+            CancellationToken.None);
+
+        var savedFutureTrip = context.Trips.Single(x => x.Id == futureTrip.Id);
+        savedFutureTrip.DelayMinutes.ShouldBe(15);
+        savedFutureTrip.AdjustedDepartureTime.ShouldBe(futureTrip.DepartureTime.AddMinutes(15));
+        savedFutureTrip.AdjustedArrivalTime.ShouldBe(futureTrip.ArrivalTime.AddMinutes(15));
+        savedFutureTrip.TripStatus.ShouldBe(TripStatus.Delayed);
+
+        var savedFutureStopA = context.Set<TripStop>().Single(x => x.Id == futureStopA.Id);
+        savedFutureStopA.AdjustedDepartureTime.ShouldBe(futureStopA.PlannedDepartureTime!.Value.AddMinutes(15));
+        var savedFutureStopB = context.Set<TripStop>().Single(x => x.Id == futureStopB.Id);
+        savedFutureStopB.AdjustedArrivalTime.ShouldBe(futureStopB.PlannedArrivalTime!.Value.AddMinutes(15));
+
+        var savedSameBoatOtherRouteTrip = context.Trips.Single(x => x.Id == sameBoatOtherRouteTrip.Id);
+        savedSameBoatOtherRouteTrip.DelayMinutes.ShouldBe(0);
+        savedSameBoatOtherRouteTrip.TripStatus.ShouldBe(TripStatus.Scheduled);
+        savedSameBoatOtherRouteTrip.AdjustedDepartureTime.ShouldBeNull();
+
+        var savedSameRouteOtherBoatTrip = context.Trips.Single(x => x.Id == sameRouteOtherBoatTrip.Id);
+        savedSameRouteOtherBoatTrip.DelayMinutes.ShouldBe(0);
+        savedSameRouteOtherBoatTrip.TripStatus.ShouldBe(TripStatus.Scheduled);
+        savedSameRouteOtherBoatTrip.AdjustedDepartureTime.ShouldBeNull();
+    }
+
+    [Test]
     public async Task GpsCallbackCompletesRescueMissionAndMovesIncidentBoatToMaintenance()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -632,6 +766,35 @@ public class CreateIncidentCommandTests
             Status = "Active"
         };
 
+    private static Trip Trip(Route route, Boat boat, string tripCode, DateTimeOffset departureTime) =>
+        new()
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = tripCode,
+            OperatingDate = DateOnly.FromDateTime(departureTime.DateTime),
+            DepartureTime = departureTime,
+            ArrivalTime = departureTime.AddMinutes(30),
+            CapacitySnapshot = 20,
+            TripStatus = TripStatus.Scheduled
+        };
+
+    private static Incident Incident(Boat boat, Trip trip) =>
+        new()
+        {
+            Boat = boat,
+            BoatId = boat.Id,
+            Trip = trip,
+            TripId = trip.Id,
+            IncidentType = "MechanicalFailure",
+            Description = "Tau can cuu ho tren song.",
+            Severity = "High",
+            OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ResolutionStatus = IncidentSupport.OpenStatus
+        };
+
     private static Station Station(string code, string name) =>
         new()
         {
@@ -649,6 +812,23 @@ public class CreateIncidentCommandTests
             Station = station,
             StationId = station.Id,
             StopOrder = stopOrder
+        };
+
+    private static TripStop TripStop(
+        Trip trip,
+        Station station,
+        int stopOrder,
+        DateTimeOffset? plannedArrival,
+        DateTimeOffset? plannedDeparture) =>
+        new()
+        {
+            Trip = trip,
+            TripId = trip.Id,
+            Station = station,
+            StationId = station.Id,
+            StopOrder = stopOrder,
+            PlannedArrivalTime = plannedArrival,
+            PlannedDepartureTime = plannedDeparture
         };
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
