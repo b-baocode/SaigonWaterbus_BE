@@ -10,6 +10,19 @@ internal static class TripScheduleSupport
     public static readonly TimeSpan BoatTurnaroundBuffer = TimeSpan.FromMinutes(15);
 
     /// <summary>
+    /// Chuyen phai duoc tao truoc gio khoi hanh it nhat 6 tieng: dieu do, phan cong nhan su
+    /// va mo ban ve deu can thoi gian chuan bi, nen khong cho tao chuyen sat gio.
+    /// </summary>
+    public static readonly TimeSpan MinimumCreationLeadTime = TimeSpan.FromHours(6);
+
+    /// <summary>Gio khoi hanh qua sat (hoac da troi qua) so voi thoi diem tao chuyen.</summary>
+    public static bool IsTooSoonToCreate(DateTimeOffset departureTime, DateTimeOffset now) =>
+        departureTime < now.Add(MinimumCreationLeadTime);
+
+    public static string BuildTooSoonMessage() =>
+        $"Chuyến phải được tạo trước giờ khởi hành ít nhất {MinimumCreationLeadTime.TotalHours:0} tiếng.";
+
+    /// <summary>
     /// Hai chuyen co dung chung tau bi coi la xung dot khi khoang thoi gian cua chung
     /// giao nhau, HOAC khoang trong giua chung nho hon thoi gian quay dau.
     /// </summary>

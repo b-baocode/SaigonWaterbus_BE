@@ -21,6 +21,7 @@ public sealed record GenerateTripsResult(
     int Created,
     int Skipped,
     int SkippedBoatBusy,
+    /// <summary>Chuyến bị bỏ qua vì giờ chạy đã trôi qua hoặc cách hiện tại chưa đủ 6 tiếng.</summary>
     int SkippedPast,
     IReadOnlyList<string> CreatedTripCodes);
 
@@ -147,9 +148,9 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     time.Hour, time.Minute, 0,
                     VietnamOffset).ToUniversalTime();
 
-                // Cùng chuẩn với tạo lẻ (departureTime > now): không sinh chuyến đã trôi qua,
-                // nhưng batch thì skip đếm riêng thay vì fail cả lô.
-                if (departureTime <= now)
+                // Cùng chuẩn với tạo lẻ (phải trước giờ chạy tối thiểu 6 tiếng): không sinh chuyến
+                // đã trôi qua hoặc quá sát giờ, nhưng batch thì skip đếm riêng thay vì fail cả lô.
+                if (TripScheduleSupport.IsTooSoonToCreate(departureTime, now))
                 {
                     skippedPast++;
                     continue;

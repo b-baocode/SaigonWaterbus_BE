@@ -30,7 +30,12 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.DepartureTime).GreaterThan(DateTimeOffset.UtcNow);
+        // UtcNow lay trong lambda (khong phai luc dung validator) de moc 6 tieng luon tinh theo
+        // thoi diem goi API, ke ca khi validator duoc cache lai.
+        RuleFor(x => x.DepartureTime)
+            .Must(departureTime =>
+                !TripScheduleSupport.IsTooSoonToCreate(departureTime, DateTimeOffset.UtcNow))
+            .WithMessage(TripScheduleSupport.BuildTooSoonMessage());
         RuleFor(x => x.SeatTypePrices!)
             .SetValidator(new TripSeatTypePricesValidator())
             .When(x => x.SeatTypePrices is not null);
