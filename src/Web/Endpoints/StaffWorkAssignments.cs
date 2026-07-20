@@ -24,6 +24,31 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         }
         """;
 
+    private const string CreateBulkExample =
+        """
+        {
+          "staffUserId": "00000000-0000-0000-0000-000000000000",
+          "assignmentType": "Boat",
+          "boatId": "00000000-0000-0000-0000-000000000002",
+          "fromDate": "2026-07-01",
+          "toDate": "2026-07-31",
+          "startTime": "07:30:00",
+          "endTime": "15:00:00",
+          "daysOfWeek": [1, 2, 3, 4, 5],
+          "dutyRole": "OnBoard",
+          "note": "Ca sáng tháng 7"
+        }
+        """;
+
+    private const string ReplaceExample =
+        """
+        {
+          "replacementStaffUserId": "00000000-0000-0000-0000-000000000003",
+          "reason": "Nhân viên hiện tại nghỉ đột xuất",
+          "note": "Ca thay thế"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(ListStaffWorkAssignments, string.Empty)
@@ -46,7 +71,30 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 "Admin gán staff OnBoard vào Boat.",
                 "Manager gán staff Ground vào Station trong bến mình phụ trách.",
                 "Boat/Station: bắt buộc startAt và endAt.",
+                "Một ca lẻ tối đa 24 giờ. Nếu cần tạo lịch nhiều ngày/tháng, dùng POST /api/staff-assignments/bulk.",
                 "Backend chặn staff bị trùng ca."));
+
+        group.MapPost(CreateBulkStaffWorkAssignments, "bulk")
+            .RequireAuthorization()
+            .WithSummary("Tạo lịch phân ca lặp nhiều ngày")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc Manager",
+                CreateBulkExample,
+                "BE sinh từng bản ghi ca làm theo từng ngày trong khoảng fromDate/toDate.",
+                "daysOfWeek dùng chuẩn ISO: 1 = Thứ 2, 2 = Thứ 3, ..., 7 = Chủ nhật. Bỏ trống/null nghĩa là tạo tất cả các ngày.",
+                "Admin gán staff OnBoard vào Boat. Manager chỉ gán staff Ground vào Station thuộc bến mình phụ trách.",
+                "startTime/endTime là giờ Việt Nam; endTime nhỏ hơn hoặc bằng startTime nghĩa là ca qua đêm.",
+                "Mỗi ca sinh ra vẫn tối đa 24 giờ và BE chặn trùng ca."));
+
+        group.MapPost(ReplaceStaffWorkAssignment, "{assignmentId:guid}/replace")
+            .RequireAuthorization()
+            .WithSummary("Thay nhân viên của một ca làm")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc Manager",
+                ReplaceExample,
+                "BE đổi ca cũ sang status = Replaced và tạo ca mới cùng thời gian/cùng Boat hoặc Station cho nhân viên thay thế.",
+                "Dùng khi nhân viên tàu hoặc nhân viên bến đổi ca, nghỉ đột xuất, hoặc cần chuyển giao.",
+                "Ca đã Replaced không còn hiện trong lịch mobile/chuyến của nhân viên cũ."));
 
         group.MapDelete(DeleteStaffWorkAssignment, "{assignmentId:guid}")
             .RequireAuthorization()
@@ -107,6 +155,38 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 request.Note),
             cancellationToken));
 
+    private static async Task<IResult> CreateBulkStaffWorkAssignments(
+        ISender sender,
+        CreateBulkStaffWorkAssignmentsRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new CreateBulkStaffWorkAssignmentsCommand(
+                request.StaffUserId,
+                request.AssignmentType,
+                request.BoatId,
+                request.StationId,
+                request.FromDate,
+                request.ToDate,
+                request.StartTime,
+                request.EndTime,
+                request.DaysOfWeek,
+                request.DutyRole,
+                request.Note),
+            cancellationToken));
+
+    private static async Task<IResult> ReplaceStaffWorkAssignment(
+        ISender sender,
+        Guid assignmentId,
+        ReplaceStaffWorkAssignmentRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new ReplaceStaffWorkAssignmentCommand(
+                assignmentId,
+                request.ReplacementStaffUserId,
+                request.Reason,
+                request.Note),
+            cancellationToken));
+
     private static async Task<IResult> DeleteStaffWorkAssignment(
         ISender sender,
         Guid assignmentId,
@@ -149,6 +229,24 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         DateTimeOffset? StartAt = null,
         DateTimeOffset? EndAt = null,
         string? DutyRole = null,
+        string? Note = null);
+
+    public sealed record CreateBulkStaffWorkAssignmentsRequest(
+        Guid StaffUserId,
+        StaffWorkAssignmentType AssignmentType,
+        Guid? BoatId,
+        Guid? StationId,
+        DateOnly FromDate,
+        DateOnly ToDate,
+        TimeOnly StartTime,
+        TimeOnly EndTime,
+        IReadOnlyCollection<int>? DaysOfWeek = null,
+        string? DutyRole = null,
+        string? Note = null);
+
+    public sealed record ReplaceStaffWorkAssignmentRequest(
+        Guid ReplacementStaffUserId,
+        string? Reason = null,
         string? Note = null);
 
 }

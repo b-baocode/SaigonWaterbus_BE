@@ -44,6 +44,8 @@ internal static class CharterBookingRoutePricingSupport
     private const int FreeStayMinutesPerBooking = 30;
     private const double RouteProjectionThresholdMeters = 1_000;
     private const int DefaultRequestedDurationValue = 1;
+    private static readonly int OperatingDayMinutes =
+        (int)(CharterBookingTripSupport.OperatingDayEndTime - CharterBookingTripSupport.OperatingDayStartTime).TotalMinutes;
 
     public static BoatRentalUnit ResolveRentalUnit(Booking booking) =>
         booking.RentalUnit ?? BoatRentalUnit.Hour;
@@ -235,7 +237,7 @@ internal static class CharterBookingRoutePricingSupport
         var requestedMinutes = Math.Max(1, requestedDurationValue) * 60;
         if (rentalUnit == BoatRentalUnit.Day)
         {
-            return requestedMinutes;
+            return Math.Max(1, requestedDurationValue) * OperatingDayMinutes;
         }
 
         if (!routeEstimate.HasCompleteTravelTimeEstimate || routeEstimate.ChargeableDurationMinutes <= 0)

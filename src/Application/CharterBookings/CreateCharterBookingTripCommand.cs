@@ -66,11 +66,15 @@ public sealed class CreateCharterBookingTripCommandHandler
         var route = booking.CharterRoute ?? await ResolveLegacyMatchingRouteAsync(booking, cancellationToken);
 
         var departureTime = CharterBookingTripSupport.ResolveDepartureTimeUtc(booking);
-        var arrivalTime = CharterBookingTripSupport.ResolveArrivalTimeUtc(departureTime, booking);
-
-        var relatedRoutes = await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
-            _context, booking, cancellationToken);
+        var relatedRoutes = booking.CharterRoute is not null
+            ? [route]
+            : await CharterBookingRoutePricingSupport.LoadRelatedRoutesAsync(
+                _context, booking, cancellationToken);
         var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
+        var arrivalTime = CharterBookingTripSupport.ResolveArrivalTimeUtc(
+            departureTime,
+            booking,
+            routeEstimate);
         var tripStopDrafts = CharterBookingTripSupport.BuildTripStopSchedule(
             booking, departureTime, routeEstimate);
 

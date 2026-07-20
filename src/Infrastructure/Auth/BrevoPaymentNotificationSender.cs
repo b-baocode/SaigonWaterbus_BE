@@ -262,6 +262,8 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         var parameters = BuildTemplateParams(options, booking, boardingPass: null);
 
         var bookingQrImageUrl = CreateQrImageUrl(options.PublicApiBaseUrl, notification.BookingQrToken);
+        var primaryQrImageUrl = bookingQrImageUrl
+            ?? CreateQrImageUrl(options.PublicApiBaseUrl, notification.Tickets.FirstOrDefault()?.QrToken);
         var departureText = notification.DepartureTime.HasValue
             ? FormatDateTimeOffset(notification.DepartureTime.Value, "dd/MM/yyyy HH:mm")
             : null;
@@ -277,6 +279,10 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         parameters["toStationName"] = ResolveText(notification.ToStationName);
         parameters["bookingQrPayload"] = notification.BookingQrToken;
         parameters["bookingQrImageUrl"] = bookingQrImageUrl;
+        parameters["bookingQrCodeUrl"] = bookingQrImageUrl;
+        parameters["bookingQrUrl"] = bookingQrImageUrl;
+        parameters["qrImageUrl"] = primaryQrImageUrl;
+        parameters["qrCodeUrl"] = primaryQrImageUrl;
         parameters["passengerCount"] = notification.Tickets.Count.ToString(CultureInfo.InvariantCulture);
 
         // Vé khứ hồi: gắn tripCode cho từng vé để template phân biệt chiều; LEGS chứa từng chiều đầy đủ.
@@ -311,24 +317,31 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         }
 
         parameters["TICKETS"] = notification.Tickets
-            .Select(ticket => new Dictionary<string, object?>
+            .Select(ticket =>
             {
-                ["passengerName"] = ticket.PassengerName,
-                ["seatNumber"] = ticket.SeatCode,
-                ["ticketTypeName"] = ticket.TicketTypeName,
-                ["ticketCode"] = ticket.TicketCode,
-                ["qrPayload"] = ticket.QrToken,
-                ["qrImageUrl"] = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken),
-                ["tripCode"] = ticketTripCodes.TryGetValue(ticket.TicketCode, out var legTripCode)
-                    ? legTripCode
-                    : notification.TripCode,
-                // Chặng riêng của hành khách (ghế bán theo chặng); vé đi cả tuyến thì rơi về trạm đầu/cuối
-                // và giờ khởi hành của chuyến.
-                ["fromStationName"] = ResolveText(ticket.FromStationName ?? notification.FromStationName),
-                ["toStationName"] = ResolveText(ticket.ToStationName ?? notification.ToStationName),
-                ["departureTime"] = (ticket.DepartureTime ?? notification.DepartureTime) is { } boarding
-                    ? FormatDateTimeOffset(boarding, "dd/MM/yyyy HH:mm")
-                    : null
+                var ticketQrImageUrl = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken);
+                return new Dictionary<string, object?>
+                {
+                    ["passengerName"] = ticket.PassengerName,
+                    ["seatNumber"] = ticket.SeatCode,
+                    ["ticketTypeName"] = ticket.TicketTypeName,
+                    ["ticketCode"] = ticket.TicketCode,
+                    ["qrPayload"] = ticket.QrToken,
+                    ["qrImageUrl"] = ticketQrImageUrl,
+                    ["qrCodeUrl"] = ticketQrImageUrl,
+                    ["ticketQrImageUrl"] = ticketQrImageUrl,
+                    ["ticketQrCodeUrl"] = ticketQrImageUrl,
+                    ["tripCode"] = ticketTripCodes.TryGetValue(ticket.TicketCode, out var legTripCode)
+                        ? legTripCode
+                        : notification.TripCode,
+                    // Chặng riêng của hành khách (ghế bán theo chặng); vé đi cả tuyến thì rơi về trạm đầu/cuối
+                    // và giờ khởi hành của chuyến.
+                    ["fromStationName"] = ResolveText(ticket.FromStationName ?? notification.FromStationName),
+                    ["toStationName"] = ResolveText(ticket.ToStationName ?? notification.ToStationName),
+                    ["departureTime"] = (ticket.DepartureTime ?? notification.DepartureTime) is { } boarding
+                        ? FormatDateTimeOffset(boarding, "dd/MM/yyyy HH:mm")
+                        : null
+                };
             })
             .ToArray();
 

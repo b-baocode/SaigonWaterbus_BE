@@ -148,6 +148,179 @@ public class StaffWorkAssignmentTests
     }
 
     [Test]
+    public async Task AdminCanCreateBulkBoatAssignmentsForSelectedWeekdays()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var boat = Boat("WB-01");
+        context.Boats.Add(boat);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBulkStaffWorkAssignmentsCommandHandler(
+            context,
+            adminContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new CreateBulkStaffWorkAssignmentsCommand(
+                staffContext.UserId!.Value,
+                StaffWorkAssignmentType.Boat,
+                BoatId: boat.Id,
+                StationId: null,
+                FromDate: new DateOnly(2030, 1, 7),
+                ToDate: new DateOnly(2030, 1, 13),
+                StartTime: new TimeOnly(7, 30),
+                EndTime: new TimeOnly(15, 0),
+                DaysOfWeek: new[] { 1, 3, 5 },
+                DutyRole: "OnBoard"),
+            CancellationToken.None);
+
+        result.Count.ShouldBe(3);
+        result.Select(x => x.WorkingDate).ShouldBe([
+            new DateOnly(2030, 1, 7),
+            new DateOnly(2030, 1, 9),
+            new DateOnly(2030, 1, 11)
+        ]);
+        result.ShouldAllBe(x => x.Boat != null && x.Boat.BoatId == boat.Id);
+        result.ShouldAllBe(x => x.StartAt.ToOffset(TimeSpan.FromHours(7)).TimeOfDay == new TimeSpan(7, 30, 0));
+        result.ShouldAllBe(x => x.EndAt.ToOffset(TimeSpan.FromHours(7)).TimeOfDay == new TimeSpan(15, 0, 0));
+        context.StaffWorkAssignments.Count().ShouldBe(3);
+    }
+
+    [Test]
+    public async Task ManagerCanCreateBulkStationAssignmentsWithinManagedStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.Ground);
+        var station = Station("BD");
+        var managerUser = context.Users.Single(x => x.Id == managerContext.UserId!.Value);
+        var staffUser = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        context.Add(station);
+        context.Set<UserStationAssignment>().AddRange(
+            StationAssignment(managerUser, station, managerUser.Id),
+            StationAssignment(staffUser, station, managerUser.Id));
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBulkStaffWorkAssignmentsCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new CreateBulkStaffWorkAssignmentsCommand(
+                staffContext.UserId!.Value,
+                StaffWorkAssignmentType.Station,
+                BoatId: null,
+                StationId: station.Id,
+                FromDate: new DateOnly(2030, 1, 7),
+                ToDate: new DateOnly(2030, 1, 9),
+                StartTime: new TimeOnly(15, 30),
+                EndTime: new TimeOnly(23, 0),
+                DaysOfWeek: null,
+                DutyRole: "Gate"),
+            CancellationToken.None);
+
+        result.Count.ShouldBe(3);
+        result.ShouldAllBe(x => x.AssignmentType == StaffWorkAssignmentType.Station);
+        result.ShouldAllBe(x => x.Station != null && x.Station.StationId == station.Id);
+    }
+
+    [Test]
+    public async Task SingleAssignmentCannotSpanMultipleDays()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var boat = Boat("WB-01");
+        context.Boats.Add(boat);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateStaffWorkAssignmentCommandHandler(
+            context,
+            adminContext,
+            TimeProvider.System);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new CreateStaffWorkAssignmentCommand(
+                    staffContext.UserId!.Value,
+                    StaffWorkAssignmentType.Boat,
+                    BoatId: boat.Id,
+                    StartAt: new DateTimeOffset(2030, 1, 2, 8, 0, 0, TimeSpan.FromHours(7)),
+                    EndAt: new DateTimeOffset(2030, 1, 4, 16, 0, 0, TimeSpan.FromHours(7))),
+                CancellationToken.None));
+
+        exception.Errors["endAt"].Single().ShouldContain("bulk/recurring");
+    }
+
+    [Test]
+    public async Task AdminCanReplaceBoatAssignmentWithAnotherOnBoardStaff()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var originalStaffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var replacementStaffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var boat = Boat("WB-01");
+        context.Boats.Add(boat);
+        await context.SaveChangesAsync();
+
+        var createHandler = new CreateStaffWorkAssignmentCommandHandler(
+            context,
+            adminContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero)));
+        var created = await createHandler.Handle(
+            new CreateStaffWorkAssignmentCommand(
+                originalStaffContext.UserId!.Value,
+                StaffWorkAssignmentType.Boat,
+                BoatId: boat.Id,
+                StartAt: new DateTimeOffset(2030, 1, 3, 7, 30, 0, TimeSpan.FromHours(7)),
+                EndAt: new DateTimeOffset(2030, 1, 3, 15, 0, 0, TimeSpan.FromHours(7)),
+                DutyRole: "OnBoard"),
+            CancellationToken.None);
+
+        var now = new DateTimeOffset(2030, 1, 2, 0, 0, 0, TimeSpan.Zero);
+        var replaceHandler = new ReplaceStaffWorkAssignmentCommandHandler(
+            context,
+            adminContext,
+            new FixedTimeProvider(now));
+
+        var result = await replaceHandler.Handle(
+            new ReplaceStaffWorkAssignmentCommand(
+                created.AssignmentId,
+                replacementStaffContext.UserId!.Value,
+                Reason: "Đổi ca",
+                Note: "Nhân viên thay thế nhận ca"),
+            CancellationToken.None);
+
+        result.OriginalAssignment.Status.ShouldBe(StaffWorkAssignmentStatus.Replaced);
+        result.OriginalAssignment.ShiftState.ShouldBe("Replaced");
+        result.ReplacementAssignment.StaffUserId.ShouldBe(replacementStaffContext.UserId.Value);
+        result.ReplacementAssignment.Boat.ShouldNotBeNull().BoatId.ShouldBe(boat.Id);
+        result.ReplacementAssignment.StartAt.ShouldBe(created.StartAt);
+        result.ReplacementAssignment.EndAt.ShouldBe(created.EndAt);
+
+        var originalScheduleHandler = new GetMyStaffWorkAssignmentsQueryHandler(
+            context,
+            originalStaffContext,
+            new FixedTimeProvider(now));
+        var originalSchedule = await originalScheduleHandler.Handle(
+            new GetMyStaffWorkAssignmentsQuery(new DateOnly(2030, 1, 3), new DateOnly(2030, 1, 3)),
+            CancellationToken.None);
+        originalSchedule.ShouldBeEmpty();
+
+        var replacementScheduleHandler = new GetMyStaffWorkAssignmentsQueryHandler(
+            context,
+            replacementStaffContext,
+            new FixedTimeProvider(now));
+        var replacementSchedule = await replacementScheduleHandler.Handle(
+            new GetMyStaffWorkAssignmentsQuery(new DateOnly(2030, 1, 3), new DateOnly(2030, 1, 3)),
+            CancellationToken.None);
+        replacementSchedule.Single().StaffUserId.ShouldBe(replacementStaffContext.UserId.Value);
+    }
+
+    [Test]
     public async Task StaffCanSeeCurrentShift()
     {
         await using var context = SeatFlowTestData.CreateContext();

@@ -151,6 +151,7 @@ public sealed class CharterBookingsHub : Hub
                 .AnyAsync(
                     assignment => assignment.StaffUserId == actor.Id
                         && assignment.Status != StaffWorkAssignmentStatus.Cancelled
+                        && assignment.Status != StaffWorkAssignmentStatus.Replaced
                         && assignment.AssignmentType == StaffWorkAssignmentType.Boat
                         && assignment.BoatId.HasValue
                         && boatIds.Contains(assignment.BoatId.Value)

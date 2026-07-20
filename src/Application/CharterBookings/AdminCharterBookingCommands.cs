@@ -4,6 +4,7 @@ using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Promotions;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -627,34 +628,12 @@ public sealed class QuoteCharterBookingCommandHandler
         var selectedBoatIds = CharterBookingQuoteSupport.GetSelectedBoatIds(selectedBoats);
 
         var now = _timeProvider.GetUtcNow();
-
-        var conflicts = await CharterBookingQuerySupport.BuildBaseQuery(_context)
-            .Include(x => x.CharterBoats)
-            .Where(x => x.Id != booking.Id
-                && x.DepartureDate == booking.DepartureDate
-                && (x.BookingStatus == BookingStatus.Quoted || x.BookingStatus == BookingStatus.Confirmed)
-                && ((x.BoatId.HasValue && selectedBoatIds.Contains(x.BoatId.Value))
-                    || x.CharterBoats.Any(cb => selectedBoatIds.Contains(cb.BoatId))))
-            .ToListAsync(cancellationToken);
-
-        foreach (var conflict in conflicts)
-        {
-            if (conflict.BookingStatus == BookingStatus.Confirmed
-                || (conflict.HoldExpiresAt.HasValue && conflict.HoldExpiresAt.Value > now))
-            {
-                throw new ValidationException([new ValidationFailure(nameof(request.Boats),
-                    "Một trong các tàu đã được giữ cho booking khác trong ngày này.")]);
-            }
-
-            conflict.BookingStatus = BookingStatus.Expired;
-            conflict.HoldExpiresAt = null;
-            await PointSupport.ReturnRedeemedPointsAsync(
-                _context,
-                conflict,
-                $"Hoàn điểm do charter booking {conflict.BookingCode} hết hạn giữ tàu",
-                now,
-                cancellationToken);
-        }
+        await EnsureSelectedBoatsAreAvailableAsync(
+            booking,
+            selectedBoatIds,
+            now,
+            nameof(request.Boats),
+            cancellationToken);
 
         var previousBoatIds = CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking);
         var previousDepartureDate = booking.DepartureDate;
@@ -857,5 +836,78 @@ public sealed class QuoteCharterBookingCommandHandler
             booking.HoldExpiresAt,
             CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot),
             CharterBookingRoutePlanSupport.ToSelectedRouteDto(selectedRoute));
+    }
+
+    private async Task EnsureSelectedBoatsAreAvailableAsync(
+        Booking booking,
+        IReadOnlyList<Guid> selectedBoatIds,
+        DateTimeOffset now,
+        string errorFieldName,
+        CancellationToken cancellationToken)
+    {
+        var requestedWindow = CharterBookingTripSupport.ResolveRentalWindowUtc(booking);
+        var bufferedStart = requestedWindow.DepartureTime.Subtract(TripScheduleSupport.BoatTurnaroundBuffer);
+        var bufferedEnd = requestedWindow.ArrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
+
+        var tripConflict = await _context.Set<Trip>()
+            .AsNoTracking()
+            .Where(x => x.BoatId.HasValue
+                && selectedBoatIds.Contains(x.BoatId.Value)
+                && x.TripStatus != TripStatus.Cancelled
+                && x.DepartureTime < bufferedEnd
+                && bufferedStart < x.ArrivalTime)
+            .OrderBy(x => x.DepartureTime)
+            .Select(x => new { x.TripCode, x.DepartureTime, x.ArrivalTime })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (tripConflict is not null)
+        {
+            throw new ValidationException([new ValidationFailure(errorFieldName,
+                "Tàu đã có trip trùng giờ: "
+                + TripScheduleSupport.BuildConflictMessage(
+                    tripConflict.TripCode,
+                    tripConflict.DepartureTime,
+                    tripConflict.ArrivalTime))]);
+        }
+
+        var conflicts = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .Include(x => x.CharterBoats)
+            .Where(x => x.Id != booking.Id
+                && (x.BookingStatus == BookingStatus.Quoted || x.BookingStatus == BookingStatus.Confirmed)
+                && ((x.BoatId.HasValue && selectedBoatIds.Contains(x.BoatId.Value))
+                    || x.CharterBoats.Any(cb => selectedBoatIds.Contains(cb.BoatId))))
+            .ToListAsync(cancellationToken);
+
+        foreach (var conflict in conflicts)
+        {
+            if (conflict.BookingStatus == BookingStatus.Quoted
+                && (!conflict.HoldExpiresAt.HasValue || conflict.HoldExpiresAt.Value <= now))
+            {
+                conflict.BookingStatus = BookingStatus.Expired;
+                conflict.HoldExpiresAt = null;
+                await PointSupport.ReturnRedeemedPointsAsync(
+                    _context,
+                    conflict,
+                    $"Hoàn điểm do charter booking {conflict.BookingCode} hết hạn giữ tàu",
+                    now,
+                    cancellationToken);
+                continue;
+            }
+
+            var conflictWindow = CharterBookingTripSupport.ResolveRentalWindowUtc(conflict);
+            if (!CharterBookingTripSupport.HasScheduleOverlap(
+                    bufferedStart,
+                    bufferedEnd,
+                    conflictWindow.DepartureTime,
+                    conflictWindow.ArrivalTime))
+            {
+                continue;
+            }
+
+            throw new ValidationException([new ValidationFailure(errorFieldName,
+                $"Tàu đã được giữ/xác nhận cho charter booking {conflict.BookingCode} "
+                + $"trong khung {CharterBookingTripSupport.FormatVietnamWindow(conflictWindow)}. "
+                + "Vui lòng chọn tàu khác hoặc đổi giờ.")]);
+        }
     }
 }

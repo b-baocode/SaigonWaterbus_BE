@@ -195,8 +195,13 @@ public class CharterBookingRoutePricingSupportTests
             BoatRentalUnit.Day,
             requestedDurationValue: 2,
             estimate);
+        var dto = CharterBookingRoutePricingSupport.ToDto(
+            estimate,
+            BoatRentalUnit.Day,
+            requestedDurationValue: 2);
 
         chargeableDays.ShouldBe(2);
+        dto.ChargeableDurationMinutes.ShouldBe(1840);
     }
 
     [Test]

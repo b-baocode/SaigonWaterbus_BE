@@ -85,6 +85,93 @@ public class QuoteCharterBookingCommandTests
     }
 
     [Test]
+    public async Task QuoteRejectsSelectedBoatWhenConfirmedCharterBookingOverlaps()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m);
+        var booking = CharterBooking(1);
+        booking.AdultCount = 50;
+        booking.ChildCount = 0;
+        booking.PassengerCount = 50;
+        booking.RentalUnit = BoatRentalUnit.Hour;
+        booking.DurationValue = 1;
+        booking.StartTime = new TimeOnly(9, 0);
+        var conflict = CharterBooking(1);
+        conflict.AdultCount = 50;
+        conflict.ChildCount = 0;
+        conflict.PassengerCount = 50;
+        conflict.BookingStatus = BookingStatus.Confirmed;
+        conflict.BoatId = boat.Id;
+        conflict.RentalUnit = BoatRentalUnit.Hour;
+        conflict.DurationValue = 2;
+        conflict.StartTime = new TimeOnly(8, 0);
+        context.AddRange(boat, booking, conflict);
+        await context.SaveChangesAsync();
+
+        var handler = new QuoteCharterBookingCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new QuoteCharterBookingCommand(
+                    booking.Id,
+                    Boats: [new QuoteCharterBookingBoatRequest(1, boat.Id)]),
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(x => x.Contains(conflict.BookingCode) && x.Contains("đổi giờ"));
+    }
+
+    [Test]
+    public async Task QuoteRejectsSelectedBoatWhenExistingTripOverlaps()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m);
+        var route = RegularRoute();
+        var booking = CharterBooking(1);
+        booking.AdultCount = 50;
+        booking.ChildCount = 0;
+        booking.PassengerCount = 50;
+        booking.RentalUnit = BoatRentalUnit.Hour;
+        booking.DurationValue = 1;
+        booking.StartTime = new TimeOnly(9, 0);
+        var existingTrip = new Trip
+        {
+            RouteId = route.Id,
+            Route = route,
+            BoatId = boat.Id,
+            Boat = boat,
+            TripCode = "TR-EXISTING",
+            OperatingDate = booking.DepartureDate!.Value,
+            DepartureTime = new DateTimeOffset(2030, 1, 1, 8, 30, 0, TimeSpan.FromHours(7)),
+            ArrivalTime = new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.FromHours(7)),
+            CapacitySnapshot = boat.SeatCount,
+            TripStatus = TripStatus.Scheduled
+        };
+        context.AddRange(boat, route, booking, existingTrip);
+        await context.SaveChangesAsync();
+
+        var handler = new QuoteCharterBookingCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new QuoteCharterBookingCommand(
+                    booking.Id,
+                    Boats: [new QuoteCharterBookingBoatRequest(1, boat.Id)]),
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(x => x.Contains("TR-EXISTING"));
+    }
+
+    [Test]
     public async Task QuoteAddsRequiredCharterInsuranceFromActivePackage()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -310,6 +397,15 @@ public class QuoteCharterBookingCommandTests
             RequestedBoatDecks = string.Join(",", requestedBoatDecks),
             BookingStatus = BookingStatus.PendingQuote,
             PaymentStatus = "Unpaid"
+        };
+
+    private static Route RegularRoute() =>
+        new()
+        {
+            RouteCode = $"R{Guid.NewGuid():N}"[..12].ToUpperInvariant(),
+            RouteName = "Regular route",
+            RouteType = "Regular",
+            Status = "Active"
         };
 
     private static InsurancePackage CharterInsurancePackage(decimal unitPremiumAmount) =>

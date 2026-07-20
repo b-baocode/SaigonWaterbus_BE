@@ -9,6 +9,28 @@ namespace SaigonWaterbus.Application.CharterBookings;
 internal static class CharterBookingTripSupport
 {
     private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+    public static readonly TimeOnly OperatingDayStartTime = new(7, 40);
+    public static readonly TimeOnly OperatingDayEndTime = new(23, 0);
+
+    public static bool IsWithinOperatingStartWindow(TimeOnly startTime) =>
+        startTime >= OperatingDayStartTime && startTime < OperatingDayEndTime;
+
+    public static (DateTimeOffset DepartureTime, DateTimeOffset ArrivalTime) ResolveRentalWindowUtc(Booking booking)
+    {
+        var departureTime = ResolveDepartureTimeUtc(booking);
+        return (departureTime, ResolveArrivalTimeUtc(departureTime, booking));
+    }
+
+    public static bool HasScheduleOverlap(
+        DateTimeOffset startAt,
+        DateTimeOffset endAt,
+        DateTimeOffset otherStartAt,
+        DateTimeOffset otherEndAt) =>
+        startAt < otherEndAt && otherStartAt < endAt;
+
+    public static string FormatVietnamWindow((DateTimeOffset DepartureTime, DateTimeOffset ArrivalTime) window) =>
+        $"{window.DepartureTime.ToOffset(VietnamOffset):dd/MM/yyyy HH:mm} - "
+        + $"{window.ArrivalTime.ToOffset(VietnamOffset):dd/MM/yyyy HH:mm}";
 
     /// <summary>Chuoi ben cua booking theo thu tu: ben di -> cac diem dung -> ben den.</summary>
     public static IReadOnlyList<Guid> BuildStationSequence(Booking booking)
@@ -135,19 +157,37 @@ internal static class CharterBookingTripSupport
 
     public static DateTimeOffset ResolveDepartureTimeUtc(Booking booking)
     {
-        var startTime = booking.StartTime ?? new TimeOnly(0, 0);
+        var startTime = booking.StartTime ?? OperatingDayStartTime;
         return new DateTimeOffset(booking.DepartureDate!.Value.ToDateTime(startTime), VietnamOffset)
             .ToUniversalTime();
     }
 
     public static DateTimeOffset ResolveArrivalTimeUtc(DateTimeOffset departureTimeUtc, Booking booking)
     {
+        return ResolveArrivalTimeUtc(departureTimeUtc, booking, routeEstimate: null);
+    }
+
+    public static DateTimeOffset ResolveArrivalTimeUtc(
+        DateTimeOffset departureTimeUtc,
+        Booking booking,
+        CharterBookingRouteEstimate? routeEstimate)
+    {
         var rentalUnit = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
         var durationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
 
-        return rentalUnit == BoatRentalUnit.Day
-            ? departureTimeUtc.AddDays(durationValue)
-            : departureTimeUtc.AddHours(durationValue);
+        if (rentalUnit == BoatRentalUnit.Day)
+        {
+            var arrivalDate = booking.DepartureDate!.Value.AddDays(durationValue - 1);
+            return new DateTimeOffset(arrivalDate.ToDateTime(OperatingDayEndTime), VietnamOffset)
+                .ToUniversalTime();
+        }
+
+        if (routeEstimate is { HasCompleteTravelTimeEstimate: true, EstimatedDurationMinutes: > 0 })
+        {
+            return departureTimeUtc.AddMinutes(routeEstimate.EstimatedDurationMinutes);
+        }
+
+        return departureTimeUtc.AddHours(durationValue);
     }
 
     public static string BuildTripCode(Booking booking, int boatOrder) =>

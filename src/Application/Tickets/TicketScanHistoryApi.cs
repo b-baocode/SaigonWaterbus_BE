@@ -334,6 +334,7 @@ internal static class TicketScanHistorySupport
             .Include(x => x.Station)
             .Where(x => x.StaffUserId == actor.Id
                 && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
                 && x.StartAt <= serverTime
                 && x.EndAt >= serverTime)
             .OrderBy(x => x.StartAt)

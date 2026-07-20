@@ -122,6 +122,7 @@ public sealed class GetAssignedCharterBookingsQueryHandler
                 && _context.StaffWorkAssignments.Any(a =>
                         a.StaffUserId == actor.Id
                         && a.Status != StaffWorkAssignmentStatus.Cancelled
+                        && a.Status != StaffWorkAssignmentStatus.Replaced
                         && a.AssignmentType == StaffWorkAssignmentType.Boat
                         && a.BoatId.HasValue
                         && a.WorkingDate == x.DepartureDate.Value

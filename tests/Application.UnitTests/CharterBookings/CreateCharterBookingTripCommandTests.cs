@@ -181,6 +181,7 @@ public class CreateCharterBookingTripCommandTests
         var sourceRouteBC = GpsRouteWithStops("GPS-BC", stationB, stationC, travelMinutes: 25);
         var autoMatchedRoute = RouteWithStops("CH-AUTO", RouteTypes.CharterReference, stationA, stationB, stationC);
         var booking = ConfirmedCharterBooking(stationA, stationC, boat);
+        booking.DurationValue = 5;
         AddItineraryStop(booking, stationB, stopOrder: 1);
         context.AddRange(stationA, stationB, stationC, boat, sourceRouteAB, sourceRouteBC, autoMatchedRoute, booking);
         await context.SaveChangesAsync();
@@ -213,7 +214,11 @@ public class CreateCharterBookingTripCommandTests
         selectedRoute.RouteStops.Single(x => x.StopOrder == 1).StandardTravelMin.ShouldBeNull();
         selectedRoute.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin.ShouldBe(20);
         selectedRoute.RouteStops.Single(x => x.StopOrder == 3).StandardTravelMin.ShouldBe(25);
-        context.Set<Trip>().Single(x => x.SourceBookingId == booking.Id).RouteId.ShouldBe(selectedRoute.Id);
+        var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, [selectedRoute]);
+        var trip = context.Set<Trip>().Single(x => x.SourceBookingId == booking.Id);
+        trip.RouteId.ShouldBe(selectedRoute.Id);
+        trip.ArrivalTime.ShouldBe(trip.DepartureTime.AddMinutes(routeEstimate.EstimatedDurationMinutes));
+        trip.ArrivalTime.ShouldNotBe(trip.DepartureTime.AddHours(booking.DurationValue!.Value));
     }
 
     [Test]
@@ -296,7 +301,7 @@ public class CreateCharterBookingTripCommandTests
     }
 
     [Test]
-    public async Task DayRentalWithoutStartTimeUsesMidnightAndAddsDays()
+    public async Task DayRentalWithoutStartTimeUsesOperatingDayWindow()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
@@ -317,9 +322,10 @@ public class CreateCharterBookingTripCommandTests
             CancellationToken.None);
 
         var trip = context.Set<Trip>().Single(x => x.Id == result.Trips[0].TripId);
-        // 00:00 gio VN ngay 01/01 = 17:00 UTC ngay 31/12.
-        trip.DepartureTime.ShouldBe(new DateTimeOffset(2029, 12, 31, 17, 0, 0, TimeSpan.Zero));
-        trip.ArrivalTime.ShouldBe(trip.DepartureTime.AddDays(2));
+        // 07:40 gio VN ngay 01/01 = 00:40 UTC ngay 01/01.
+        trip.DepartureTime.ShouldBe(new DateTimeOffset(2030, 1, 1, 0, 40, 0, TimeSpan.Zero));
+        // 2 ngay van hanh ket thuc luc 23:00 gio VN ngay 02/01 = 16:00 UTC ngay 02/01.
+        trip.ArrivalTime.ShouldBe(new DateTimeOffset(2030, 1, 2, 16, 0, 0, TimeSpan.Zero));
     }
 
     [Test]

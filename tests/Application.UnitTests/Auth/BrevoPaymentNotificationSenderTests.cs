@@ -64,6 +64,53 @@ public class BrevoPaymentNotificationSenderTests
         attachment.GetProperty("content").GetString().ShouldBe("AQID");
     }
 
+    [Test]
+    public async Task ETicketUsesTemplate15AndIncludesQrUrlAliases()
+    {
+        var httpHandler = new CapturingHttpMessageHandler();
+        var sender = CreateSender(httpHandler);
+        var booking = CreateNotification(isFullyPaid: true);
+
+        await sender.SendETicketsAsync(
+            new ETicketNotification(
+                booking,
+                BookingQrToken: "booking-qr",
+                TripCode: "TR-001",
+                RouteName: "Bach Dang - Linh Dong",
+                DepartureTime: new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)),
+                ArrivalTime: new DateTimeOffset(2030, 1, 1, 8, 30, 0, TimeSpan.FromHours(7)),
+                FromStationName: "Bach Dang",
+                ToStationName: "Linh Dong",
+                Tickets:
+                [
+                    new ETicketPassenger(
+                        "Tran Thi B",
+                        "A1",
+                        "Nguoi lon",
+                        "TK123",
+                        "ticket-qr",
+                        "passenger@example.com")
+                ]),
+            CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
+        var root = payload.RootElement;
+        var parameters = root.GetProperty("params");
+        var ticket = parameters.GetProperty("TICKETS")[0];
+        root.GetProperty("templateId").GetInt32().ShouldBe(15);
+        parameters.GetProperty("bookingQrPayload").GetString().ShouldBe("booking-qr");
+        parameters.GetProperty("bookingQrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/booking-qr");
+        parameters.GetProperty("bookingQrCodeUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/booking-qr");
+        parameters.GetProperty("bookingQrUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/booking-qr");
+        parameters.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/booking-qr");
+        parameters.GetProperty("qrCodeUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/booking-qr");
+        ticket.GetProperty("qrPayload").GetString().ShouldBe("ticket-qr");
+        ticket.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+        ticket.GetProperty("qrCodeUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+        ticket.GetProperty("ticketQrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+        ticket.GetProperty("ticketQrCodeUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+    }
+
     private static BrevoPaymentNotificationSender CreateSender(CapturingHttpMessageHandler httpHandler) =>
         new(
             new TestHttpClientFactory(httpHandler),
@@ -78,7 +125,8 @@ public class BrevoPaymentNotificationSenderTests
                 CharterBookingQuoteTemplateId = 14,
                 CharterBookingConfirmationTemplateId = 13,
                 PaymentDepositTemplateId = 14,
-                PaymentFullTemplateId = 14
+                PaymentFullTemplateId = 14,
+                ETicketTemplateId = 15
             }),
             NullLogger<BrevoPaymentNotificationSender>.Instance);
 

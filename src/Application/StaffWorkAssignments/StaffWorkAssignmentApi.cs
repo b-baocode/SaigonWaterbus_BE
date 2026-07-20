@@ -43,6 +43,10 @@ public sealed record StaffCurrentShiftDto(
     StaffWorkAssignmentDto? CurrentShift,
     IReadOnlyList<StaffWorkAssignmentDto> TodayAssignments);
 
+public sealed record StaffWorkAssignmentReplacementDto(
+    StaffWorkAssignmentDto OriginalAssignment,
+    StaffWorkAssignmentDto ReplacementAssignment);
+
 public sealed record StaffAssignedTripDto(
     Guid TripId,
     string TripCode,
@@ -78,6 +82,27 @@ public sealed record CreateStaffWorkAssignmentCommand(
     string? DutyRole = null,
     string? Note = null) : IRequest<StaffWorkAssignmentDto>;
 
+[Authorize(Roles = "Admin,Manager")]
+public sealed record CreateBulkStaffWorkAssignmentsCommand(
+    Guid StaffUserId,
+    StaffWorkAssignmentType AssignmentType,
+    Guid? BoatId,
+    Guid? StationId,
+    DateOnly FromDate,
+    DateOnly ToDate,
+    TimeOnly StartTime,
+    TimeOnly EndTime,
+    IReadOnlyCollection<int>? DaysOfWeek,
+    string? DutyRole = null,
+    string? Note = null) : IRequest<IReadOnlyList<StaffWorkAssignmentDto>>;
+
+[Authorize(Roles = "Admin,Manager")]
+public sealed record ReplaceStaffWorkAssignmentCommand(
+    Guid AssignmentId,
+    Guid ReplacementStaffUserId,
+    string? Reason = null,
+    string? Note = null) : IRequest<StaffWorkAssignmentReplacementDto>;
+
 public sealed class CreateStaffWorkAssignmentCommandValidator : AbstractValidator<CreateStaffWorkAssignmentCommand>
 {
     public CreateStaffWorkAssignmentCommandValidator()
@@ -92,6 +117,46 @@ public sealed class CreateStaffWorkAssignmentCommandValidator : AbstractValidato
             .Must(x => !x.StartAt.HasValue || !x.EndAt.HasValue || x.EndAt.Value > x.StartAt.Value)
             .WithMessage("endAt phải lớn hơn startAt.")
             .OverridePropertyName(nameof(CreateStaffWorkAssignmentCommand.EndAt));
+    }
+}
+
+public sealed class CreateBulkStaffWorkAssignmentsCommandValidator
+    : AbstractValidator<CreateBulkStaffWorkAssignmentsCommand>
+{
+    public CreateBulkStaffWorkAssignmentsCommandValidator()
+    {
+        RuleFor(x => x.StaffUserId).NotEmpty();
+        RuleFor(x => x.AssignmentType).IsInEnum();
+        RuleFor(x => x.DutyRole).MaximumLength(80).When(x => x.DutyRole is not null);
+        RuleFor(x => x.Note).MaximumLength(500).When(x => x.Note is not null);
+        RuleFor(x => x.FromDate)
+            .NotEmpty()
+            .WithMessage("fromDate là bắt buộc.");
+        RuleFor(x => x.ToDate)
+            .NotEmpty()
+            .WithMessage("toDate là bắt buộc.");
+        RuleFor(x => x.ToDate)
+            .GreaterThanOrEqualTo(x => x.FromDate)
+            .WithMessage("toDate phải lớn hơn hoặc bằng fromDate.");
+        RuleFor(x => x)
+            .Must(x => x.FromDate.AddDays(93) >= x.ToDate)
+            .WithMessage("Khoảng tạo lịch lặp không được vượt quá 93 ngày.")
+            .OverridePropertyName(nameof(CreateBulkStaffWorkAssignmentsCommand.ToDate));
+        RuleForEach(x => x.DaysOfWeek)
+            .InclusiveBetween(1, 7)
+            .WithMessage("daysOfWeek chỉ nhận 1-7, trong đó 1 là Thứ 2 và 7 là Chủ nhật.");
+    }
+}
+
+public sealed class ReplaceStaffWorkAssignmentCommandValidator
+    : AbstractValidator<ReplaceStaffWorkAssignmentCommand>
+{
+    public ReplaceStaffWorkAssignmentCommandValidator()
+    {
+        RuleFor(x => x.AssignmentId).NotEmpty();
+        RuleFor(x => x.ReplacementStaffUserId).NotEmpty();
+        RuleFor(x => x.Reason).MaximumLength(500).When(x => x.Reason is not null);
+        RuleFor(x => x.Note).MaximumLength(500).When(x => x.Note is not null);
     }
 }
 
@@ -168,6 +233,214 @@ public sealed class CreateStaffWorkAssignmentCommandHandler
             assignment.Id,
             _timeProvider.GetUtcNow(),
             cancellationToken);
+    }
+}
+
+public sealed class CreateBulkStaffWorkAssignmentsCommandHandler
+    : IRequestHandler<CreateBulkStaffWorkAssignmentsCommand, IReadOnlyList<StaffWorkAssignmentDto>>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public CreateBulkStaffWorkAssignmentsCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<IReadOnlyList<StaffWorkAssignmentDto>> Handle(
+        CreateBulkStaffWorkAssignmentsCommand request,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        var staff = await StaffWorkAssignmentSupport.LoadAssignableStaffAsync(
+            _context, request.StaffUserId, nameof(request.StaffUserId), cancellationToken);
+
+        var occurrences = StaffWorkAssignmentSupport.BuildRecurringShiftOccurrences(
+            request.FromDate,
+            request.ToDate,
+            request.StartTime,
+            request.EndTime,
+            request.DaysOfWeek);
+        if (occurrences.Count == 0)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.DaysOfWeek),
+                "Không có ngày nào phù hợp với daysOfWeek trong khoảng đã chọn.")]);
+        }
+
+        var firstOccurrence = occurrences[0];
+        var resolved = await StaffWorkAssignmentSupport.ResolveTargetAsync(
+            _context,
+            request.AssignmentType,
+            request.BoatId,
+            request.StationId,
+            firstOccurrence.StartAt,
+            firstOccurrence.EndAt,
+            cancellationToken);
+
+        await StaffWorkAssignmentSupport.EnsureActorCanAssignAsync(
+            _context,
+            actor,
+            staff,
+            resolved,
+            cancellationToken);
+
+        await StaffWorkAssignmentSupport.EnsureStaffHasNoTimeConflictAsync(
+            _context,
+            staff.Id,
+            occurrences.Select(x => (x.StartAt, x.EndAt)).ToList(),
+            cancellationToken);
+
+        var assignedAt = _timeProvider.GetUtcNow();
+        var assignments = occurrences
+            .Select(occurrence => StaffWorkAssignmentSupport.CreateAssignment(
+                staff.Id,
+                resolved,
+                occurrence.StartAt,
+                occurrence.EndAt,
+                actor.Id,
+                assignedAt,
+                request.DutyRole,
+                request.Note))
+            .ToArray();
+
+        _context.StaffWorkAssignments.AddRange(assignments);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var assignmentIds = assignments.Select(x => x.Id).ToArray();
+        var savedAssignments = await StaffWorkAssignmentSupport.BuildDtoQuery(_context)
+            .Where(x => assignmentIds.Contains(x.Id))
+            .OrderBy(x => x.StartAt)
+            .ToListAsync(cancellationToken);
+
+        var now = _timeProvider.GetUtcNow();
+        return savedAssignments.Select(x => StaffWorkAssignmentSupport.ToDto(x, now)).ToList();
+    }
+}
+
+public sealed class ReplaceStaffWorkAssignmentCommandHandler
+    : IRequestHandler<ReplaceStaffWorkAssignmentCommand, StaffWorkAssignmentReplacementDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public ReplaceStaffWorkAssignmentCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<StaffWorkAssignmentReplacementDto> Handle(
+        ReplaceStaffWorkAssignmentCommand request,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        var assignment = await _context.StaffWorkAssignments
+            .Include(x => x.StaffUser)
+            .Include(x => x.Boat)
+            .Include(x => x.Station)
+            .SingleOrDefaultAsync(x => x.Id == request.AssignmentId, cancellationToken)
+            ?? throw new NotFoundException("Không tìm thấy phân công ca làm.");
+
+        await StaffWorkAssignmentSupport.EnsureActorCanManageExistingAssignmentAsync(
+            _context,
+            actor,
+            assignment,
+            cancellationToken);
+
+        if (assignment.Status is StaffWorkAssignmentStatus.Cancelled or StaffWorkAssignmentStatus.Replaced)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.AssignmentId),
+                "Ca này đã bị hủy hoặc đã được thay thế.")]);
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        if (assignment.EndAt <= now)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.AssignmentId),
+                "Không thể thay thế ca đã kết thúc.")]);
+        }
+
+        if (assignment.StaffUserId == request.ReplacementStaffUserId)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.ReplacementStaffUserId),
+                "Nhân viên thay thế không được trùng với nhân viên hiện tại.")]);
+        }
+
+        var replacementStaff = await StaffWorkAssignmentSupport.LoadAssignableStaffAsync(
+            _context,
+            request.ReplacementStaffUserId,
+            nameof(request.ReplacementStaffUserId),
+            cancellationToken);
+        var resolved = new StaffWorkAssignmentSupport.ResolvedAssignmentTarget(
+            assignment.AssignmentType,
+            assignment.Boat,
+            assignment.Station,
+            assignment.StartAt,
+            assignment.EndAt);
+
+        await StaffWorkAssignmentSupport.EnsureActorCanAssignAsync(
+            _context,
+            actor,
+            replacementStaff,
+            resolved,
+            cancellationToken);
+
+        await StaffWorkAssignmentSupport.EnsureStaffHasNoTimeConflictAsync(
+            _context,
+            replacementStaff.Id,
+            assignment.StartAt,
+            assignment.EndAt,
+            null,
+            cancellationToken);
+
+        assignment.Status = StaffWorkAssignmentStatus.Replaced;
+        assignment.Note = StaffWorkAssignmentSupport.AppendReplacementNote(
+            assignment.Note,
+            replacementStaff.FullName,
+            request.Reason);
+
+        var replacement = StaffWorkAssignmentSupport.CreateAssignment(
+            replacementStaff.Id,
+            resolved,
+            assignment.StartAt,
+            assignment.EndAt,
+            actor.Id,
+            now,
+            assignment.DutyRole,
+            string.IsNullOrWhiteSpace(request.Note)
+                ? $"Thay thế ca của {assignment.StaffUser.FullName}."
+                : request.Note);
+
+        _context.StaffWorkAssignments.Add(replacement);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var originalDto = await StaffWorkAssignmentSupport.LoadDtoAsync(
+            _context,
+            assignment.Id,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+        var replacementDto = await StaffWorkAssignmentSupport.LoadDtoAsync(
+            _context,
+            replacement.Id,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+
+        return new StaffWorkAssignmentReplacementDto(originalDto, replacementDto);
     }
 }
 
@@ -309,7 +582,8 @@ public sealed class GetMyStaffWorkAssignmentsQueryHandler
             .Where(x => x.StaffUserId == actor.Id
                 && x.WorkingDate >= request.FromDate
                 && x.WorkingDate <= request.ToDate
-                && x.Status != StaffWorkAssignmentStatus.Cancelled)
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced)
             .OrderBy(x => x.StartAt)
             .ToListAsync(cancellationToken);
 
@@ -352,7 +626,8 @@ public sealed class GetMyCurrentStaffShiftQueryHandler
         var todayAssignments = await StaffWorkAssignmentSupport.BuildDtoQuery(_context)
             .Where(x => x.StaffUserId == actor.Id
                 && x.WorkingDate == today
-                && x.Status != StaffWorkAssignmentStatus.Cancelled)
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced)
             .OrderBy(x => x.StartAt)
             .ToListAsync(cancellationToken);
 
@@ -406,6 +681,7 @@ public sealed class GetMyStaffTripsQueryHandler
             .Where(x => x.StaffUserId == actor.Id
                 && x.WorkingDate == request.Date
                 && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
                 && ((x.AssignmentType == StaffWorkAssignmentType.Boat && x.BoatId.HasValue)
                     || (x.AssignmentType == StaffWorkAssignmentType.Station && x.StationId.HasValue)))
             .OrderBy(x => x.StartAt)
@@ -567,6 +843,7 @@ public sealed class DeleteStaffWorkAssignmentCommandHandler
 public static class StaffWorkAssignmentSupport
 {
     private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+    private static readonly TimeSpan MaxSingleAssignmentDuration = TimeSpan.FromHours(24);
 
     public sealed record ResolvedAssignmentTarget(
         StaffWorkAssignmentType AssignmentType,
@@ -727,6 +1004,7 @@ public static class StaffWorkAssignmentSupport
         var hasConflict = await context.StaffWorkAssignments.AnyAsync(
             x => x.StaffUserId == staffUserId
                 && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
                 && (!excludingAssignmentId.HasValue || x.Id != excludingAssignmentId.Value)
                 && x.StartAt < endAt
                 && startAt < x.EndAt,
@@ -737,6 +1015,105 @@ public static class StaffWorkAssignmentSupport
                 nameof(CreateStaffWorkAssignmentCommand.StaffUserId),
                 "Staff này đã có ca làm trùng thời gian.")]);
         }
+    }
+
+    public static async Task EnsureStaffHasNoTimeConflictAsync(
+        IApplicationDbContext context,
+        Guid staffUserId,
+        IReadOnlyCollection<(DateTimeOffset StartAt, DateTimeOffset EndAt)> occurrences,
+        CancellationToken cancellationToken)
+    {
+        if (occurrences.Count == 0)
+        {
+            return;
+        }
+
+        var windowStart = occurrences.Min(x => x.StartAt);
+        var windowEnd = occurrences.Max(x => x.EndAt);
+        var conflicts = await context.StaffWorkAssignments
+            .AsNoTracking()
+            .Where(x => x.StaffUserId == staffUserId
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
+                && x.StartAt < windowEnd
+                && windowStart < x.EndAt)
+            .Select(x => new { x.StartAt, x.EndAt })
+            .ToListAsync(cancellationToken);
+
+        var conflictedOccurrence = occurrences.FirstOrDefault(occurrence =>
+            conflicts.Any(conflict => conflict.StartAt < occurrence.EndAt && occurrence.StartAt < conflict.EndAt));
+        if (conflictedOccurrence != default)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(CreateBulkStaffWorkAssignmentsCommand.StaffUserId),
+                $"Staff này đã có ca làm trùng thời gian vào {conflictedOccurrence.StartAt.ToOffset(VietnamOffset):dd/MM/yyyy HH:mm}.")]);
+        }
+    }
+
+    public static StaffWorkAssignment CreateAssignment(
+        Guid staffUserId,
+        ResolvedAssignmentTarget target,
+        DateTimeOffset startAt,
+        DateTimeOffset endAt,
+        Guid assignedByUserId,
+        DateTimeOffset assignedAt,
+        string? dutyRole,
+        string? note) =>
+        new()
+        {
+            StaffUserId = staffUserId,
+            AssignmentType = target.AssignmentType,
+            BoatId = target.Boat?.Id,
+            StationId = target.Station?.Id,
+            WorkingDate = ResolveWorkingDate(startAt),
+            StartAt = startAt,
+            EndAt = endAt,
+            DutyRole = string.IsNullOrWhiteSpace(dutyRole) ? null : dutyRole.Trim(),
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = assignedByUserId,
+            AssignedAt = assignedAt,
+            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim()
+        };
+
+    public static IReadOnlyList<(DateTimeOffset StartAt, DateTimeOffset EndAt)> BuildRecurringShiftOccurrences(
+        DateOnly fromDate,
+        DateOnly toDate,
+        TimeOnly startTime,
+        TimeOnly endTime,
+        IReadOnlyCollection<int>? daysOfWeek)
+    {
+        var selectedDays = NormalizeDaysOfWeek(daysOfWeek);
+        var occurrences = new List<(DateTimeOffset StartAt, DateTimeOffset EndAt)>();
+
+        for (var date = fromDate; date <= toDate; date = date.AddDays(1))
+        {
+            if (selectedDays.Count > 0 && !selectedDays.Contains(ToIsoDayOfWeek(date.DayOfWeek)))
+            {
+                continue;
+            }
+
+            var startAt = new DateTimeOffset(date.ToDateTime(startTime), VietnamOffset).ToUniversalTime();
+            var endDate = endTime <= startTime ? date.AddDays(1) : date;
+            var endAt = new DateTimeOffset(endDate.ToDateTime(endTime), VietnamOffset).ToUniversalTime();
+            EnsureValidTimeRange(startAt, endAt);
+            occurrences.Add((startAt, endAt));
+        }
+
+        return occurrences;
+    }
+
+    public static string AppendReplacementNote(
+        string? currentNote,
+        string replacementStaffName,
+        string? reason)
+    {
+        var replacementText = string.IsNullOrWhiteSpace(reason)
+            ? $"Đã thay thế bởi {replacementStaffName}."
+            : $"Đã thay thế bởi {replacementStaffName}. Lý do: {reason.Trim()}";
+
+        return string.IsNullOrWhiteSpace(currentNote)
+            ? replacementText
+            : $"{currentNote.Trim()} {replacementText}";
     }
 
     public static IQueryable<StaffWorkAssignment> BuildDtoQuery(IApplicationDbContext context) =>
@@ -798,6 +1175,11 @@ public static class StaffWorkAssignmentSupport
         if (assignment.Status == StaffWorkAssignmentStatus.Cancelled)
         {
             return "Cancelled";
+        }
+
+        if (assignment.Status == StaffWorkAssignmentStatus.Replaced)
+        {
+            return "Replaced";
         }
 
         if (now > assignment.EndAt)
@@ -911,7 +1293,7 @@ public static class StaffWorkAssignmentSupport
             endAt.Value.ToUniversalTime());
     }
 
-    private static void EnsureValidTimeRange(DateTimeOffset startAt, DateTimeOffset endAt)
+    public static void EnsureValidTimeRange(DateTimeOffset startAt, DateTimeOffset endAt)
     {
         if (endAt <= startAt)
         {
@@ -919,5 +1301,38 @@ public static class StaffWorkAssignmentSupport
                 nameof(CreateStaffWorkAssignmentCommand.EndAt),
                 "endAt phải lớn hơn startAt.")]);
         }
+
+        if (endAt - startAt > MaxSingleAssignmentDuration)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(CreateStaffWorkAssignmentCommand.EndAt),
+                "Một ca lẻ không được kéo dài quá 24 giờ. Nếu muốn tạo lịch nhiều ngày, hãy dùng API bulk/recurring.")]);
+        }
     }
+
+    private static IReadOnlySet<int> NormalizeDaysOfWeek(IReadOnlyCollection<int>? daysOfWeek)
+    {
+        if (daysOfWeek is null || daysOfWeek.Count == 0)
+        {
+            return new HashSet<int>();
+        }
+
+        var normalized = new HashSet<int>();
+        foreach (var day in daysOfWeek)
+        {
+            if (day is < 1 or > 7)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(CreateBulkStaffWorkAssignmentsCommand.DaysOfWeek),
+                    "daysOfWeek chỉ nhận 1-7, trong đó 1 là Thứ 2 và 7 là Chủ nhật.")]);
+            }
+
+            normalized.Add(day);
+        }
+
+        return normalized;
+    }
+
+    private static int ToIsoDayOfWeek(DayOfWeek dayOfWeek) =>
+        dayOfWeek == DayOfWeek.Sunday ? 7 : (int)dayOfWeek;
 }

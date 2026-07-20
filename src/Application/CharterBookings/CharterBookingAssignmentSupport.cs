@@ -122,6 +122,7 @@ internal static class CharterBookingAssignmentSupport
         return await context.StaffWorkAssignments.AnyAsync(
             assignment => assignment.StaffUserId == staffUserId
                 && assignment.Status != StaffWorkAssignmentStatus.Cancelled
+                && assignment.Status != StaffWorkAssignmentStatus.Replaced
                 && assignment.AssignmentType == StaffWorkAssignmentType.Boat
                 && assignment.BoatId.HasValue
                 && selectedBoatIds.Contains(assignment.BoatId.Value)

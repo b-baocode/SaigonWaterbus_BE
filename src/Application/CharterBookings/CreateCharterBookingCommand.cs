@@ -38,6 +38,10 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.DurationValue!.Value).GreaterThan(0).LessThanOrEqualTo(60)
             .When(x => x.DurationValue.HasValue)
             .WithMessage("Thời lượng thuê phải từ 1 đến 60.");
+        RuleFor(x => x.StartTime!.Value)
+            .Must(CharterBookingTripSupport.IsWithinOperatingStartWindow)
+            .When(x => x.StartTime.HasValue)
+            .WithMessage("Giờ bắt đầu charter phải nằm trong khung 07:40 đến trước 23:00.");
         RuleFor(x => x.AdultCount).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
             .WithMessage("Số người lớn phải từ 0 đến 1000.");
         RuleFor(x => x.ChildCount).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
