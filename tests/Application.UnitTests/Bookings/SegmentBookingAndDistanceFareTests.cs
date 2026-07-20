@@ -105,6 +105,42 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task CancellingSegmentBookingReleasesOnlyThatSegment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var trip = await SeedThreeStopTripAsync(context, "TR-SEG-4", withDistances: true);
+        var handler = CreateHandler(context, userContext);
+
+        // Ghế A1 có 2 vé trên 2 chặng không giao nhau: BB→HB và HB→LT.
+        await handler.Handle(
+            new CreateBookingCommand("TR-SEG-4", [Adult("A1", "BB", "HB")], null),
+            CancellationToken.None);
+        var tail = await handler.Handle(
+            new CreateBookingCommand("TR-SEG-4", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+
+        var notifier = new RecordingTripSeatNotifier();
+        var cancelHandler = new CancelBookingCommandHandler(
+            context, userContext, new FixedTimeProvider(Now), notifier);
+        await cancelHandler.Handle(new CancelBookingCommand(tail.BookingId), CancellationToken.None);
+
+        // Chỉ chặng HB→LT được nhả, KHÔNG phải cả trip (null/null) — vé BB→HB vẫn đang giữ ghế.
+        var change = notifier.Published.SelectMany(p => p.Changes).Single();
+        change.SeatCode.ShouldBe("A1");
+        change.Status.ShouldBe("Available");
+        change.FromStopOrder.ShouldBe(2);
+        change.ToStopOrder.ShouldBe(3);
+
+        // Sơ đồ ghế chặng BB→HB vẫn phải báo A1 đã bán.
+        var seatMapHandler = new GetTripSeatMapQueryHandler(
+            context, userContext, new FixedTimeProvider(Now));
+        var headView = await seatMapHandler.Handle(
+            new GetTripSeatMapQuery(trip.Trip.Id, "BB", "HB"), CancellationToken.None);
+        headView.Seats.Single(s => s.SeatNumber == "A1").Status.ShouldBe("Booked");
+    }
+
+    [Test]
     public async Task DistanceFarePricesEachItemBySegmentKm()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -404,6 +440,20 @@ public class SegmentBookingAndDistanceFareTests
         DistanceFareSupport.TryComputeSegmentDistanceKm(stops, 1, 3).ShouldBeNull();
         DistanceFareSupport.TryComputeSegmentDistanceKm(stops, 2, 3).ShouldBeNull();
         DistanceFareSupport.TryComputeSegmentDistanceKm(stops, 2, 2).ShouldBeNull();
+    }
+
+    private sealed class RecordingTripSeatNotifier : ITripSeatNotifier
+    {
+        public List<(Guid TripId, IReadOnlyList<TripSeatStatusChange> Changes)> Published { get; } = [];
+
+        public Task PublishSeatStatusChangedAsync(
+            Guid tripId,
+            IReadOnlyList<TripSeatStatusChange> changes,
+            CancellationToken cancellationToken)
+        {
+            Published.Add((tripId, changes));
+            return Task.CompletedTask;
+        }
     }
 
     private static CreateBookingCommandHandler CreateHandler(

@@ -80,18 +80,7 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        // Nhả ghế theo trip của từng ghế — booking khứ hồi giữ ghế trên 2 trip.
-        var releasedSeats = await _context.Set<BookingPassenger>()
-            .Where(p => p.BookingId == booking.Id && p.TripSeatId.HasValue)
-            .Select(p => new { p.TripSeat!.TripId, p.TripSeat.Seat.Code })
-            .ToListAsync(cancellationToken);
-        foreach (var tripGroup in releasedSeats.GroupBy(s => s.TripId))
-        {
-            await _tripSeatNotifier.PublishSeatStatusChangedAsync(
-                tripGroup.Key,
-                tripGroup.Select(s => s.Code).Distinct()
-                    .Select(code => new TripSeatStatusChange(code, "Available")).ToList(),
-                cancellationToken);
-        }
+        await SeatReleaseNotificationSupport.NotifyBookingSeatsReleasedAsync(
+            _context, _tripSeatNotifier, booking.Id, cancellationToken);
     }
 }
