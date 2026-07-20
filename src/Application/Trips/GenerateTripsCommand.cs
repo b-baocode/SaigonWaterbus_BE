@@ -79,6 +79,10 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
                 "Boat must be active and have configured seats.")]);
 
+        if (!BoatRouteCompatibilitySupport.IsCompatible(route.RouteType, boat.SeatSetupType))
+            throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
+                BoatRouteCompatibilitySupport.BuildIncompatibleMessage(route.RouteType, boat.SeatSetupType))]);
+
         var activeSeats = await _context.Set<Seat>()
             .Where(x => x.BoatId == boat.Id && x.IsActive)
             .ToListAsync(cancellationToken);

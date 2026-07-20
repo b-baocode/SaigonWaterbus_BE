@@ -78,6 +78,33 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task SeatBookedOnWholeRouteIsLockedForTailSegmentOfAnotherCustomer()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var trip = await SeedThreeStopTripAsync(context, "TR-SEG-3", withDistances: true);
+        var handler = CreateHandler(context, userContext);
+
+        // Khách 1 đi cả tuyến BB→LT ghế A1.
+        await handler.Handle(
+            new CreateBookingCommand("TR-SEG-3", [Adult("A1", "BB", "LT")], null),
+            CancellationToken.None);
+
+        // Khách 2 đi HB→LT — giao chặng với khách 1 → phải bị chặn.
+        var exception = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new CreateBookingCommand("TR-SEG-3", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None));
+        exception.Errors.SelectMany(x => x.Value).ShouldContain(m => m.Contains("already booked"));
+
+        // Và sơ đồ ghế của chặng HB→LT cũng phải báo A1 đã bán.
+        var seatMapHandler = new GetTripSeatMapQueryHandler(
+            context, userContext, new FixedTimeProvider(Now));
+        var tailView = await seatMapHandler.Handle(
+            new GetTripSeatMapQuery(trip.Trip.Id, "HB", "LT"), CancellationToken.None);
+        tailView.Seats.Single(s => s.SeatNumber == "A1").Status.ShouldBe("Booked");
+    }
+
+    [Test]
     public async Task DistanceFarePricesEachItemBySegmentKm()
     {
         await using var context = SeatFlowTestData.CreateContext();

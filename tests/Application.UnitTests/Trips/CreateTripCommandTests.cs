@@ -2,6 +2,7 @@ using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
@@ -238,7 +239,66 @@ public class CreateTripCommandTests
         context.Set<TripStop>().Count(x => x.TripId == result.TripId).ShouldBe(2);
     }
 
-    private static Boat BoatWithSeats(string code, int seatCount, int inactiveSeatCount = 0)
+    [Test]
+    public async Task CreateTripRejectsStandardBoatOnSightseeingRoute()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        route.RouteType = RouteTypes.SightseeingLoop;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context)
+                .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None));
+
+        exception.Errors["boatCode"][0].ShouldContain("ngắm cảnh");
+    }
+
+    [Test]
+    public async Task CreateTripRejectsSightseeingBoatOnRegularRoute()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3, seatSetupType: SeatSetupType.StandardAndVip);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context)
+                .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None));
+
+        exception.Errors["boatCode"][0].ShouldContain("Tuyến thường");
+    }
+
+    [Test]
+    public async Task CreateTripAllowsVipBoatOnSightseeingRoute()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        route.RouteType = RouteTypes.SightseeingLoop;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3, seatSetupType: SeatSetupType.StandardAndVip);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var result = await new CreateTripCommandHandler(context)
+            .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
+
+        result.CapacitySnapshot.ShouldBe(3);
+    }
+
+    private static Boat BoatWithSeats(
+        string code,
+        int seatCount,
+        int inactiveSeatCount = 0,
+        SeatSetupType seatSetupType = SeatSetupType.FullStandard)
     {
         var boat = new Boat
         {
@@ -247,7 +307,7 @@ public class CreateTripCommandTests
             Status = BoatStatus.Active,
             SeatCount = seatCount,
             NumberOfDecks = 1,
-            SeatSetupType = SeatSetupType.FullStandard,
+            SeatSetupType = seatSetupType,
             SeatsConfigured = true
         };
 
