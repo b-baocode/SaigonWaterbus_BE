@@ -64,7 +64,10 @@ internal sealed class BookingLegResolver
     {
         var tripCode = rawTripCode.Trim().ToUpperInvariant();
 
+        // TripStops cần cho hạn đóng bán theo bến khách lên (giờ dự kiến từng bến đã chốt khi tạo
+        // chuyến); trip cũ chưa có trip_stops thì suy từ RouteStops.
         var trip = await _context.Set<Trip>()
+            .Include(t => t.TripStops)
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
@@ -75,7 +78,7 @@ internal sealed class BookingLegResolver
             throw new ValidationException([new ValidationFailure(tripCodePropertyName,
                 "Trip charter không bán vé lẻ.")]);
 
-        EnsureTripSellable(trip, now, tripCodePropertyName, allowDepartedTrip);
+        EnsureTripSellable(trip, tripCodePropertyName, allowDepartedTrip);
 
         if (!trip.BoatId.HasValue)
             throw new ValidationException([new ValidationFailure(tripCodePropertyName,
@@ -182,6 +185,13 @@ internal sealed class BookingLegResolver
             {
                 itemSegments.Add((item, firstStop, lastStop));
             }
+        }
+
+        // Hạn đóng bán theo bến khách LÊN (không phải bến đầu tuyến) — chỉ áp cho khách tự đặt;
+        // staff bán tại quầy vẫn bán được cả khi tàu đã rời bến.
+        if (!allowDepartedTrip)
+        {
+            EnsureSegmentsWithinCutoff(trip, itemSegments, now, tripCodePropertyName);
         }
 
         // Trùng ghế trong cùng chiều: trip Regular cho phép hai vé cùng ghế nếu chặng không
@@ -508,9 +518,26 @@ internal sealed class BookingLegResolver
     /// Khách tự đặt: chỉ chuyến Scheduled và còn trước hạn đóng bán. Bán tại quầy: staff bán được
     /// tới lúc chuyến kết thúc (kể cả tàu đã rời bến), chỉ chặn chuyến đã Completed/Cancelled.
     /// </summary>
+    /// <summary>
+    /// Mỗi vé phải còn trước hạn đóng bán tính theo giờ tàu rời BẾN KHÁCH LÊN. Một booking có
+    /// nhiều chặng khác nhau thì xét từng vé — chặng lên sớm có thể đã đóng bán trong khi chặng
+    /// lên muộn vẫn mở.
+    /// </summary>
+    private static void EnsureSegmentsWithinCutoff(
+        Trip trip,
+        IReadOnlyList<(BookingItemRequest Item, RouteStop FromStop, RouteStop ToStop)> itemSegments,
+        DateTimeOffset now,
+        string tripCodePropertyName)
+    {
+        var closedSegment = itemSegments.FirstOrDefault(x =>
+            Trips.BookingCutoffSupport.IsPastCutoff(trip, x.FromStop.StopOrder, x.ToStop.StopOrder, now));
+        if (closedSegment.Item is not null)
+            throw new ValidationException([new ValidationFailure(tripCodePropertyName,
+                Trips.BookingCutoffSupport.CutoffMessage())]);
+    }
+
     private static void EnsureTripSellable(
         Trip trip,
-        DateTimeOffset now,
         string tripCodePropertyName,
         bool allowDepartedTrip)
     {
@@ -520,10 +547,8 @@ internal sealed class BookingLegResolver
                 throw new ValidationException([new ValidationFailure(tripCodePropertyName,
                     "Trip is not available for booking.")]);
 
-            if (trip.DepartureTime <= now + BookingExpirationPolicy.BookingCutoffBeforeDeparture)
-                throw new ValidationException([new ValidationFailure(tripCodePropertyName,
-                    $"Đã ngừng bán vé cho chuyến này (đóng bán trước {BookingExpirationPolicy.BookingCutoffBeforeDeparture.TotalMinutes:0} phút so với giờ khởi hành).")]);
-
+            // Hạn đóng bán KHÔNG kiểm ở đây: nó tính theo bến khách lên, mà chặng chỉ resolve
+            // được sau bước này — xem EnsureSegmentsWithinCutoff.
             return;
         }
 

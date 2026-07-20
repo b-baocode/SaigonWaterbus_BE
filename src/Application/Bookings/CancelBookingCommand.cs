@@ -54,17 +54,28 @@ public sealed class CancelBookingCommandHandler : IRequestHandler<CancelBookingC
         if (booking.BookingStatus == BookingStatus.Cancelled)
             throw new ValidationException([new ValidationFailure(nameof(request.BookingId), "Booking is already cancelled.")]);
 
-        // Booking khứ hồi: không cho hủy nếu bất kỳ chiều nào đã khởi hành.
-        var legTripIds = new List<Guid>();
-        if (booking.TripId.HasValue) legTripIds.Add(booking.TripId.Value);
-        if (booking.ReturnTripId.HasValue) legTripIds.Add(booking.ReturnTripId.Value);
+        // Không cho hủy nếu khách đã lên tàu ở bất kỳ chiều nào — mốc là giờ tàu rời BẾN KHÁCH LÊN,
+        // không phải giờ rời bến đầu tuyến: khách lên bến giữa vẫn hủy được sau khi tàu đã xuất bến.
+        var now = _timeProvider.GetUtcNow();
+        var passengerLegs = await _context.Set<BookingPassenger>()
+            .Where(p => p.BookingId == booking.Id && p.TripId.HasValue)
+            .Select(p => new { TripId = p.TripId!.Value, p.FromStopOrder, p.ToStopOrder })
+            .ToListAsync(cancellationToken);
 
-        if (legTripIds.Count > 0)
+        if (passengerLegs.Count > 0)
         {
-            var now = _timeProvider.GetUtcNow();
-            var hasDepartedLeg = await _context.Set<Trip>()
-                .AnyAsync(t => legTripIds.Contains(t.Id) && t.DepartureTime <= now, cancellationToken);
-            if (hasDepartedLeg)
+            var legTripIds = passengerLegs.Select(p => p.TripId).Distinct().ToList();
+            var trips = await _context.Set<Trip>()
+                .Include(t => t.TripStops)
+                .Include(t => t.Route)
+                    .ThenInclude(r => r.RouteStops)
+                .Where(t => legTripIds.Contains(t.Id))
+                .ToDictionaryAsync(t => t.Id, cancellationToken);
+
+            var hasBoardedLeg = passengerLegs.Any(p =>
+                trips.TryGetValue(p.TripId, out var trip)
+                && Trips.BookingCutoffSupport.ResolveBoardingTime(trip, p.FromStopOrder, p.ToStopOrder) <= now);
+            if (hasBoardedLeg)
                 throw new ValidationException([new ValidationFailure(nameof(request.BookingId),
                     "Cannot cancel a booking after the trip has departed.")]);
         }

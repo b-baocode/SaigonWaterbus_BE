@@ -31,7 +31,10 @@ public sealed record TripSeatMapDto(
     IReadOnlyList<TripSeatMapSeatDto> Seats,
     string? FromStationCode = null,
     string? ToStationCode = null,
-    decimal? SegmentDistanceKm = null);
+    decimal? SegmentDistanceKm = null,
+    // true = đã quá hạn bán vé cho chặng đang xem (tính theo giờ tàu rời bến lên) hoặc chuyến
+    // không còn nhận đặt. FE nên khoá thao tác chọn ghế — gọi giữ ghế lúc này sẽ bị từ chối.
+    bool IsBookingClosed = false);
 
 // FromStationCode/ToStationCode: chặng khách định đi — trạng thái ghế và giá (trip Regular)
 // tính theo chặng đó; bỏ trống = xem cả tuyến (ghế bận nếu có bất kỳ vé nào trên trip).
@@ -68,9 +71,11 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
 
     public async Task<TripSeatMapDto> Handle(GetTripSeatMapQuery request, CancellationToken cancellationToken)
     {
+        // TripStops cần cho hạn bán vé theo bến khách lên — xem BookingCutoffSupport.
         var trip = await _context.Set<Trip>()
             .AsNoTracking()
             .Include(t => t.Boat)
+            .Include(t => t.TripStops)
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
@@ -81,6 +86,15 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             trip, request.FromStationCode, request.ToStationCode,
             nameof(request.FromStationCode), nameof(request.ToStationCode));
 
+        // Sơ đồ ghế vẫn xem được sau khi đóng bán (khách tra cứu vé đã mua), chỉ báo cờ để FE
+        // khoá thao tác chọn ghế thay vì để họ chọn xong mới bị từ chối ở bước giữ ghế.
+        var isBookingClosed = trip.TripStatus != Domain.Enums.TripStatus.Scheduled
+            || BookingCutoffSupport.IsPastCutoff(
+                trip,
+                segment.IsFullTrip ? null : segment.FromStopOrder,
+                segment.IsFullTrip ? null : segment.ToStopOrder,
+                _timeProvider.GetUtcNow());
+
         var routeType = trip.Route.RouteType;
         var sellsBySegment = DistanceFareSupport.UsesDistanceFare(trip.TripType, routeType);
 
@@ -89,7 +103,8 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             return new TripSeatMapDto(
                 trip.Id, trip.TripCode, null, null, trip.DepartureTime,
                 routeType, sellsBySegment,
-                0, 0, (int)BookingSeatOccupancySupport.SeatPreHoldDuration.TotalSeconds, []);
+                0, 0, (int)BookingSeatOccupancySupport.SeatPreHoldDuration.TotalSeconds, [],
+                IsBookingClosed: isBookingClosed);
         }
 
         var seats = await _context.Set<Seat>()
@@ -167,7 +182,8 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             seatDtos,
             segment.FromStop?.Station.StationCode,
             segment.ToStop?.Station.StationCode,
-            distanceKm);
+            distanceKm,
+            isBookingClosed);
     }
 
     private static decimal ResolveBasePrice(Seat seat, TripSeat? tripSeat, decimal? distanceFare)

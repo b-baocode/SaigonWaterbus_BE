@@ -5,13 +5,16 @@ using SaigonWaterbus.Domain.Enums;
 namespace SaigonWaterbus.Application.Notifications;
 
 /// <summary>
-/// Nhắc khách trước giờ khởi hành: quét chuyến Scheduled/Boarding khởi hành trong vòng
-/// <see cref="ReminderLeadTime"/> tới, tạo thông báo cho user có booking Confirmed trên chuyến
-/// (mỗi user mỗi chuyến đúng 1 lần — dedup bằng notification type + related trip id đã lưu).
+/// Nhắc khách trước giờ lên tàu: tạo thông báo cho user có booking Confirmed khi tới gần
+/// <see cref="ReminderLeadTime"/> trước giờ tàu rời BẾN KHÁCH LÊN (không phải bến đầu tuyến —
+/// khách lên bến giữa trước đây bị nhắc quá sớm và nhận sai giờ). Mỗi user mỗi chuyến đúng 1 lần
+/// — dedup bằng notification type + related trip id đã lưu.
 /// </summary>
 public static class TripReminderSupport
 {
     public static readonly TimeSpan ReminderLeadTime = TimeSpan.FromMinutes(60);
+
+    private sealed record DueReminder(Guid UserId, Guid TripId, DateTimeOffset BoardingTime, string? StationName);
 
     public static async Task<int> AddDueTripRemindersAsync(
         IApplicationDbContext context,
@@ -20,18 +23,30 @@ public static class TripReminderSupport
         INotificationRealtimeNotifier? realtimeNotifier = null)
     {
         var windowEnd = now + ReminderLeadTime;
-        var dueTrips = await context.Set<Trip>()
+
+        // Quét mọi chuyến CHƯA kết thúc, không chỉ chuyến chưa rời bến đầu: khách lên bến giữa
+        // vẫn cần được nhắc sau khi tàu đã xuất bến. Lọc theo giờ lên tàu làm ở dưới.
+        var candidateTrips = await context.Set<Trip>()
             .Include(t => t.Route)
-            .Where(t => t.DepartureTime > now
-                && t.DepartureTime <= windowEnd
-                && (t.TripStatus == TripStatus.Scheduled || t.TripStatus == TripStatus.Boarding))
+                .ThenInclude(r => r.RouteStops)
+            .Include(t => t.TripStops)
+            .Where(t => t.ArrivalTime > now
+                && (t.TripStatus == TripStatus.Scheduled
+                    || t.TripStatus == TripStatus.Boarding
+                    || t.TripStatus == TripStatus.InProgress
+                    || t.TripStatus == TripStatus.Delayed))
             .ToListAsync(cancellationToken);
-        if (dueTrips.Count == 0)
+        if (candidateTrips.Count == 0)
         {
             return 0;
         }
 
+        var dueTrips = candidateTrips;
         var tripIds = dueTrips.Select(t => t.Id).ToList();
+        var tripsById = dueTrips.ToDictionary(t => t.Id);
+
+        // Ai đi chuyến nào: vẫn suy từ Booking.TripId/ReturnTripId để booking cũ chưa có
+        // booking_passengers.trip_id không bị bỏ sót nhắc.
         var seatBookings = await context.Set<Booking>()
             .Where(b => b.UserId != null
                 && b.BookingStatus == BookingStatus.Confirmed
@@ -40,8 +55,8 @@ public static class TripReminderSupport
             .Select(b => new { UserId = b.UserId!.Value, b.TripId, b.ReturnTripId })
             .ToListAsync(cancellationToken);
 
-        var pairs = new HashSet<(Guid UserId, Guid TripId)>();
         var tripIdSet = tripIds.ToHashSet();
+        var pairs = new HashSet<(Guid UserId, Guid TripId)>();
         foreach (var booking in seatBookings)
         {
             if (booking.TripId.HasValue && tripIdSet.Contains(booking.TripId.Value))
@@ -53,6 +68,50 @@ public static class TripReminderSupport
             {
                 pairs.Add((booking.UserId, booking.ReturnTripId.Value));
             }
+        }
+
+        // Chặng của khách quyết định giờ LÊN TÀU. Một user có thể có nhiều vé trên cùng chuyến
+        // (đi cùng gia đình) → lấy chặng lên SỚM NHẤT.
+        var passengerLegs = await context.Set<BookingPassenger>()
+            .Where(p => p.TripId != null
+                && tripIds.Contains(p.TripId.Value)
+                && p.Booking.UserId != null
+                && p.Booking.BookingStatus == BookingStatus.Confirmed)
+            .Select(p => new
+            {
+                UserId = p.Booking.UserId!.Value,
+                TripId = p.TripId!.Value,
+                p.FromStopOrder,
+                p.ToStopOrder,
+                StationName = p.FromStation != null ? p.FromStation.StationName : null
+            })
+            .ToListAsync(cancellationToken);
+
+        var boardingByPair = new Dictionary<(Guid UserId, Guid TripId), (DateTimeOffset Time, string? Station)>();
+        foreach (var leg in passengerLegs)
+        {
+            var boarding = Trips.BookingCutoffSupport.ResolveBoardingTime(
+                tripsById[leg.TripId], leg.FromStopOrder, leg.ToStopOrder);
+            var key = (leg.UserId, leg.TripId);
+            if (!boardingByPair.TryGetValue(key, out var existing) || boarding < existing.Time)
+            {
+                boardingByPair[key] = (boarding, leg.StationName);
+            }
+        }
+
+        var dueByPair = new Dictionary<(Guid UserId, Guid TripId), DueReminder>();
+        foreach (var pair in pairs)
+        {
+            // Không có dòng passenger nào (dữ liệu cũ) → rơi về giờ rời bến đầu như trước.
+            var (boarding, station) = boardingByPair.TryGetValue(pair, out var found)
+                ? found
+                : (tripsById[pair.TripId].DepartureTime, null);
+            if (boarding <= now || boarding > windowEnd)
+            {
+                continue;
+            }
+
+            dueByPair[pair] = new DueReminder(pair.UserId, pair.TripId, boarding, station);
         }
 
         // Chuyến charter sinh từ booking: nhắc chủ booking đó (liên kết qua SourceBookingId,
@@ -72,13 +131,20 @@ public static class TripReminderSupport
                 .ToDictionaryAsync(b => b.Id, b => b.UserId, cancellationToken);
             foreach (var trip in dueTrips)
             {
+                // Charter thuê trọn tàu: khách đi từ bến đầu nên mốc vẫn là giờ khởi hành chuyến.
                 if (trip.SourceBookingId.HasValue
+                    && trip.DepartureTime > now
+                    && trip.DepartureTime <= windowEnd
                     && sourceBookingUsers.TryGetValue(trip.SourceBookingId.Value, out var userId))
                 {
-                    pairs.Add((userId, trip.Id));
+                    dueByPair.TryAdd(
+                        (userId, trip.Id),
+                        new DueReminder(userId, trip.Id, trip.DepartureTime, null));
                 }
             }
         }
+
+        pairs = dueByPair.Keys.ToHashSet();
 
         if (pairs.Count == 0)
         {
@@ -96,26 +162,29 @@ public static class TripReminderSupport
             .Select(n => (n.UserId, n.RelatedEntityId!.Value))
             .ToHashSet();
 
-        var tripsById = dueTrips.ToDictionary(t => t.Id);
         var created = new List<Notification>();
-        foreach (var (userId, tripId) in pairs)
+        foreach (var due in dueByPair.Values)
         {
-            if (alreadyReminded.Contains((userId, tripId)))
+            if (alreadyReminded.Contains((due.UserId, due.TripId)))
             {
                 continue;
             }
 
-            var trip = tripsById[tripId];
+            var trip = tripsById[due.TripId];
+            // Giờ và bến của CHÍNH khách đó, không phải giờ rời bến đầu tuyến.
+            var placeText = string.IsNullOrWhiteSpace(due.StationName)
+                ? "bến"
+                : $"bến {due.StationName.Trim()}";
             var notification = new Notification
             {
-                UserId = userId,
-                Title = "Sắp đến giờ khởi hành",
-                Body = $"{NotificationSupport.DescribeTrip(trip)} sẽ khởi hành lúc "
-                    + $"{NotificationSupport.FormatVietnamTime(trip.DepartureTime)}. "
-                    + "Vui lòng có mặt tại bến trước 15 phút.",
+                UserId = due.UserId,
+                Title = "Sắp đến giờ lên tàu",
+                Body = $"{NotificationSupport.DescribeTrip(trip)} sẽ rời {placeText} lúc "
+                    + $"{NotificationSupport.FormatVietnamTime(due.BoardingTime)}. "
+                    + "Vui lòng có mặt trước 15 phút.",
                 Type = NotificationTypes.TripReminder,
                 RelatedEntityType = NotificationRelatedEntityTypes.Trip,
-                RelatedEntityId = tripId,
+                RelatedEntityId = due.TripId,
                 CreatedAt = now
             };
             context.Set<Notification>().Add(notification);

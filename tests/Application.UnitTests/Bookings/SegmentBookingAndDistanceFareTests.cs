@@ -1,5 +1,6 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Trips;
@@ -138,6 +139,81 @@ public class SegmentBookingAndDistanceFareTests
         var headView = await seatMapHandler.Handle(
             new GetTripSeatMapQuery(trip.Trip.Id, "BB", "HB"), CancellationToken.None);
         headView.Seats.Single(s => s.SeatNumber == "A1").Status.ShouldBe("Booked");
+    }
+
+    [Test]
+    public async Task BookingCutoffFollowsBoardingStationNotFirstStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-CUT-1", withDistances: true);
+
+        // Chuyến rời BB lúc Now+2h; mặc định 15 phút/chặng → tàu rời HB lúc Now+2h15.
+        // Cửa sổ "BB đã đóng nhưng HB còn mở" là [BB−cutoff, HB−cutoff), rộng đúng bằng 15 phút
+        // chạy giữa hai bến bất kể cutoff bao nhiêu. Lấy điểm giữa để test không bám vào con số
+        // cụ thể của BookingCutoffBeforeDeparture, cũng không rơi vào biên.
+        var cutoff = BookingExpirationPolicy.BookingCutoffBeforeDeparture;
+        var afterFirstStationCutoff = Now.AddHours(2)
+            .Subtract(cutoff)
+            .AddMinutes((double)TripStopScheduleSupport.DefaultTravelMinutes / 2);
+        var handler = CreateHandler(context, userContext, afterFirstStationCutoff);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new CreateBookingCommand("TR-CUT-1", [Adult("A1", "BB", "HB")], null),
+            CancellationToken.None));
+        exception.Errors.SelectMany(x => x.Value).ShouldContain(m => m.Contains("ngừng bán vé"));
+
+        // Bến lên muộn hơn vẫn bán được — trước đây bị chặn oan vì tính theo bến đầu tuyến.
+        var late = await handler.Handle(
+            new CreateBookingCommand("TR-CUT-1", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+        late.BookingId.ShouldNotBe(Guid.Empty);
+    }
+
+    [Test]
+    public async Task CancelIsAllowedUntilBoardingStationNotFirstStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-CUT-2", withDistances: true);
+
+        // Đặt vé chặng HB→LT từ sớm (còn trong hạn bán).
+        var booked = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand("TR-CUT-2", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+
+        // Tàu đã rời BB (bến đầu) nhưng chưa tới HB → khách vẫn phải hủy được.
+        var afterFirstStationDeparture = Now.AddHours(2).AddMinutes(1);
+        var cancelHandler = new CancelBookingCommandHandler(
+            context, userContext, new FixedTimeProvider(afterFirstStationDeparture));
+        await cancelHandler.Handle(new CancelBookingCommand(booked.BookingId), CancellationToken.None);
+
+        var cancelled = context.Set<Booking>().Single(b => b.Id == booked.BookingId);
+        cancelled.BookingStatus.ShouldBe(BookingStatus.Cancelled);
+    }
+
+    [Test]
+    public async Task SeatMapFlagsBookingClosedPerBoardingStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var trip = await SeedThreeStopTripAsync(context, "TR-CUT-3", withDistances: true);
+
+        // Cùng mốc như test hạn bán: BB đã đóng, HB còn mở.
+        var cutoff = BookingExpirationPolicy.BookingCutoffBeforeDeparture;
+        var afterFirstStationCutoff = Now.AddHours(2)
+            .Subtract(cutoff)
+            .AddMinutes((double)TripStopScheduleSupport.DefaultTravelMinutes / 2);
+        var handler = new GetTripSeatMapQueryHandler(
+            context, userContext, new FixedTimeProvider(afterFirstStationCutoff));
+
+        var closed = await handler.Handle(
+            new GetTripSeatMapQuery(trip.Trip.Id, "BB", "HB"), CancellationToken.None);
+        closed.IsBookingClosed.ShouldBeTrue();
+
+        var open = await handler.Handle(
+            new GetTripSeatMapQuery(trip.Trip.Id, "HB", "LT"), CancellationToken.None);
+        open.IsBookingClosed.ShouldBeFalse();
     }
 
     [Test]
@@ -458,13 +534,14 @@ public class SegmentBookingAndDistanceFareTests
 
     private static CreateBookingCommandHandler CreateHandler(
         ApplicationDbContext context,
-        TestUserContext userContext) =>
+        TestUserContext userContext,
+        DateTimeOffset? now = null) =>
         new(
             context,
             userContext,
             new SequentialBookingCodeGenerator(),
             new FixedFareCalculator(10000m),
-            new FixedTimeProvider(Now));
+            new FixedTimeProvider(now ?? Now));
 
     private static BookingItemRequest Adult(string seat, string from, string to) =>
         new(seat, "ADULT", from, to, "Nguyen Van A", null, null, null, null, null);

@@ -210,6 +210,52 @@ public class TripNotificationTests
     }
 
     [Test]
+    public async Task ReminderUsesBoardingStationTimeNotFirstStationDeparture()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+
+        // Chuyến rời bến đầu sau 2h; mỗi chặng 15 phút → bến thứ 3 (stop order 3) lúc +2h30.
+        var trip = CreateTrip(Now.AddHours(2));
+        var stationA = new Station { StationCode = "AAA", StationName = "Bến A" };
+        var stationB = new Station { StationCode = "BBB", StationName = "Bến B" };
+        var stationC = new Station { StationCode = "CCC", StationName = "Bến C" };
+        context.AddRange(stationA, stationB, stationC);
+        trip.Route.RouteStops.Add(new RouteStop { Route = trip.Route, Station = stationA, StationId = stationA.Id, StopOrder = 1 });
+        trip.Route.RouteStops.Add(new RouteStop { Route = trip.Route, Station = stationB, StationId = stationB.Id, StopOrder = 2 });
+        trip.Route.RouteStops.Add(new RouteStop { Route = trip.Route, Station = stationC, StationId = stationC.Id, StopOrder = 3 });
+        trip.ArrivalTime = Now.AddHours(2).AddMinutes(30);
+        context.Add(trip);
+        await context.SaveChangesAsync();
+
+        var user = Guid.NewGuid();
+        var booking = CreateBooking(user, tripId: trip.Id, bookingCode: "BK-SEG");
+        booking.Passengers.Add(new BookingPassenger
+        {
+            FullName = "Nguyen Van A",
+            TripId = trip.Id,
+            FromStationId = stationC.Id,
+            FromStopOrder = 3,
+            ToStopOrder = 3
+        });
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        // Quét lúc còn 60 phút trước giờ rời BẾN ĐẦU: khách lên bến C còn 90 phút nữa → chưa nhắc.
+        (await TripReminderSupport.AddDueTripRemindersAsync(context, Now.AddHours(1), CancellationToken.None))
+            .ShouldBe(0);
+
+        // Quét lúc còn 60 phút trước giờ tàu tới BẾN C (Now+1h30) → nhắc, và nội dung phải ghi
+        // giờ + tên bến của khách, không phải giờ rời bến đầu.
+        (await TripReminderSupport.AddDueTripRemindersAsync(
+                context, Now.AddHours(1).AddMinutes(30), CancellationToken.None))
+            .ShouldBe(1);
+
+        var notification = context.Set<Notification>().Single();
+        notification.UserId.ShouldBe(user);
+        notification.Body.ShouldNotBeNull().ShouldContain("Bến C");
+    }
+
+    [Test]
     public async Task ReminderSkipsCancelledTripsAndIncludesCharterSourceBooking()
     {
         await using var context = SeatFlowTestData.CreateContext();

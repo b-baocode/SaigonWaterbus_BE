@@ -58,7 +58,9 @@ internal static class TripSeatResolutionSupport
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
+        // TripStops cần cho hạn đóng bán theo bến khách lên — xem BookingCutoffSupport.
         var trip = await context.Set<Trip>()
+            .Include(t => t.TripStops)
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
@@ -71,11 +73,7 @@ internal static class TripSeatResolutionSupport
                 "Trip is not available for booking.")]);
         }
 
-        if (trip.DepartureTime <= now + BookingExpirationPolicy.BookingCutoffBeforeDeparture)
-        {
-            throw new ValidationException([new ValidationFailure("tripId",
-                $"Đã ngừng bán vé cho chuyến này (đóng bán trước {BookingExpirationPolicy.BookingCutoffBeforeDeparture.TotalMinutes:0} phút so với giờ khởi hành).")]);
-        }
+        // Hạn đóng bán kiểm sau khi resolve chặng (giờ rời bến khách lên), không kiểm ở đây.
 
         if (!trip.BoatId.HasValue)
         {
@@ -179,6 +177,16 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
             ? TripSegmentSupport.Resolve(trip, request.FromStationCode, request.ToStationCode,
                 nameof(request.FromStationCode), nameof(request.ToStationCode))
             : TripSegmentSupport.FullTrip;
+
+        // Hạn đóng bán theo giờ tàu rời bến khách LÊN, không phải bến đầu tuyến.
+        if (BookingCutoffSupport.IsPastCutoff(
+                trip,
+                segment.IsFullTrip ? null : segment.FromStopOrder,
+                segment.IsFullTrip ? null : segment.ToStopOrder,
+                now))
+        {
+            throw new ValidationException([new ValidationFailure("tripId", BookingCutoffSupport.CutoffMessage())]);
+        }
 
         var resolvedSeats = await TripSeatResolutionSupport.ResolveTripSeatsAsync(
             _context, trip, request.SeatNumbers, cancellationToken);

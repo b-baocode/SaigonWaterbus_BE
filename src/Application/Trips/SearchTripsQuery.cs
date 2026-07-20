@@ -60,7 +60,9 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                      && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
                      && t.TripStatus == TripStatus.Scheduled
-                     && t.DepartureTime > bookingCutoff);
+                     // Chỉ loại chuyến đã chạy xong. Hạn đóng bán tính theo giờ rời BẾN KHÁCH LÊN
+                     // (không biểu diễn được trong SQL) nên lọc sau khi có giờ từng bến.
+                     && t.ArrivalTime > now);
 
         var trips = await tripQuery.ToListAsync(cancellationToken);
 
@@ -192,7 +194,11 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 fromStopDeparture, toStopArrival,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString());
-        }).ToList();
+        })
+        // Ẩn chuyến đã qua hạn bán vé TẠI BẾN KHÁCH LÊN — khớp với chặn ở giữ ghế và tạo booking.
+        .Where(dto => dto.FromStopScheduledDeparture is null
+                   || dto.FromStopScheduledDeparture > bookingCutoff)
+        .ToList();
     }
 
     private static (DateTimeOffset? FromStopDeparture, DateTimeOffset? ToStopArrival) ResolveSegmentTimes(
