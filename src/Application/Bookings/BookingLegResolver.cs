@@ -25,6 +25,9 @@ internal sealed record ResolvedItem(
     RouteStop FromStop,
     RouteStop ToStop);
 
+/// <summary>Một ghế + chặng cần chiếm. Chặng full trip dùng cho vé sightseeing.</summary>
+internal sealed record SeatSegmentRequest(Guid TripSeatId, string SeatCode, int FromStopOrder, int ToStopOrder);
+
 /// <summary>
 /// Resolve một chiều của booking thường: kiểm tra chuyến, loại vé, ghế (trùng chặng, đã bán,
 /// đang pre-hold) và tính giá. Dùng chung cho khách tự đặt online (<see cref="CreateBookingCommand"/>)
@@ -229,45 +232,19 @@ internal sealed class BookingLegResolver
             throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
                 $"Seat '{missingSeatInTrip.Code}' is not available on this trip.")]);
 
-        // Ghế đã có vé: chỉ chặn khi vé đang chiếm ghế GIAO CHẶNG với item (trip Regular);
-        // vé cũ / trip sightseeing không có stop order được coi là chiếm ghế cả trip.
-        var requestedTripSeatIds = tripSeatsBySeatId.Values.Select(x => x.Id).ToList();
-        var occupyingPassengers = await _context.Set<BookingPassenger>()
-            .Where(x => x.TripSeatId.HasValue
-                     && requestedTripSeatIds.Contains(x.TripSeatId.Value))
-            .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
-            .Select(x => new { TripSeatId = x.TripSeatId!.Value, x.FromStopOrder, x.ToStopOrder })
-            .ToListAsync(cancellationToken);
+        var seatedRequests = itemSegments
+            .Where(x => !string.IsNullOrWhiteSpace(x.Item.SeatNumber))
+            .Select(x =>
+            {
+                var seat = seatsByCode[NormalizeSeatCode(x.Item.SeatNumber!)];
+                var (fromOrder, toOrder) = usesSegments
+                    ? (x.FromStop.StopOrder, x.ToStop.StopOrder)
+                    : (BookingSeatOccupancySupport.FullTripFromOrder, BookingSeatOccupancySupport.FullTripToOrder);
+                return new SeatSegmentRequest(tripSeatsBySeatId[seat.Id].Id, seat.Code, fromOrder, toOrder);
+            })
+            .ToList();
 
-        var heldSeats = await _seatHoldService.GetHeldSeatsAsync(trip.Id, cancellationToken);
-
-        foreach (var (item, fromStop, toStop) in itemSegments)
-        {
-            if (string.IsNullOrWhiteSpace(item.SeatNumber))
-                continue;
-
-            var seat = seatsByCode[NormalizeSeatCode(item.SeatNumber)];
-            var tripSeat = tripSeatsBySeatId[seat.Id];
-            var (fromOrder, toOrder) = usesSegments
-                ? (fromStop.StopOrder, toStop.StopOrder)
-                : (BookingSeatOccupancySupport.FullTripFromOrder, BookingSeatOccupancySupport.FullTripToOrder);
-
-            var occupied = occupyingPassengers.Any(p =>
-                p.TripSeatId == tripSeat.Id
-                && BookingSeatOccupancySupport.SegmentsOverlap(
-                    p.FromStopOrder ?? int.MinValue, p.ToStopOrder ?? int.MaxValue, fromOrder, toOrder));
-            if (occupied)
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                    $"Seat '{seat.Code}' is already booked.")]);
-
-            var heldByOther = heldSeats.TryGetValue(tripSeat.Id, out var holds)
-                && holds.Any(h => h.UserId != holderId
-                    && BookingSeatOccupancySupport.SegmentsOverlap(
-                        h.FromStopOrder, h.ToStopOrder, fromOrder, toOrder));
-            if (heldByOther)
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
-                    $"Seat '{seat.Code}' is being held by another customer.")]);
-        }
+        await EnsureSeatsAvailableAsync(trip.Id, seatedRequests, holderId, now, cancellationToken);
 
         var resolvedItems = new List<ResolvedItem>();
         foreach (var (item, fromStop, toStop) in itemSegments)
@@ -395,6 +372,102 @@ internal sealed class BookingLegResolver
                 });
             }
         }
+    }
+
+    /// <summary>
+    /// Ghế đã có vé: chỉ chặn khi vé đang chiếm ghế GIAO CHẶNG với item (trip Regular); vé cũ /
+    /// trip sightseeing không có stop order được coi là chiếm ghế cả trip. Ngoài ra chặn ghế đang
+    /// được KHÁCH KHÁC pre-hold trên chặng giao nhau.
+    ///
+    /// Chạy hai lần: lần đầu lúc resolve (báo lỗi sớm, chưa tốn transaction), lần hai bên trong
+    /// transaction sau khi đã khoá trip_seats — xem <see cref="EnsureSeatsStillAvailableAsync"/>.
+    /// </summary>
+    public async Task EnsureSeatsAvailableAsync(
+        Guid tripId,
+        IReadOnlyList<SeatSegmentRequest> seatedRequests,
+        Guid holderId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (seatedRequests.Count == 0)
+        {
+            return;
+        }
+
+        var tripSeatIds = seatedRequests.Select(x => x.TripSeatId).Distinct().ToList();
+        var occupyingPassengers = await _context.Set<BookingPassenger>()
+            .Where(x => x.TripSeatId.HasValue && tripSeatIds.Contains(x.TripSeatId.Value))
+            .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
+            .Select(x => new { TripSeatId = x.TripSeatId!.Value, x.FromStopOrder, x.ToStopOrder })
+            .ToListAsync(cancellationToken);
+
+        var heldSeats = await _seatHoldService.GetHeldSeatsAsync(tripId, cancellationToken);
+
+        foreach (var request in seatedRequests)
+        {
+            var occupied = occupyingPassengers.Any(p =>
+                p.TripSeatId == request.TripSeatId
+                && BookingSeatOccupancySupport.SegmentsOverlap(
+                    p.FromStopOrder ?? int.MinValue, p.ToStopOrder ?? int.MaxValue,
+                    request.FromStopOrder, request.ToStopOrder));
+            if (occupied)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    $"Seat '{request.SeatCode}' is already booked.")]);
+
+            var heldByOther = heldSeats.TryGetValue(request.TripSeatId, out var holds)
+                && holds.Any(h => h.UserId != holderId
+                    && BookingSeatOccupancySupport.SegmentsOverlap(
+                        h.FromStopOrder, h.ToStopOrder, request.FromStopOrder, request.ToStopOrder));
+            if (heldByOther)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
+                    $"Seat '{request.SeatCode}' is being held by another customer.")]);
+        }
+    }
+
+    /// <summary>
+    /// Chốt ghế bên trong transaction: khoá hàng trip_seats rồi kiểm tra lại. Hai request song song
+    /// cùng ghế sẽ bị tuần tự hoá tại đây, request sau đọc được vé của request trước và bị chặn —
+    /// nếu không, cả hai đều đọc thấy "trống" ở bước resolve và cùng insert.
+    /// </summary>
+    public static async Task EnsureSeatsStillAvailableAsync(
+        IApplicationDbContext context,
+        BookingLegResolver resolver,
+        IReadOnlyList<ResolvedLeg> legs,
+        Guid holderId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var seatedByTrip = legs
+            .Select(leg => (leg.Trip, Seats: SeatSegmentsOf(leg)))
+            .Where(x => x.Seats.Count > 0)
+            .ToList();
+        if (seatedByTrip.Count == 0)
+        {
+            return;
+        }
+
+        await context.LockTripSeatsAsync(
+            seatedByTrip.SelectMany(x => x.Seats).Select(x => x.TripSeatId).ToList(),
+            cancellationToken);
+
+        foreach (var (trip, seats) in seatedByTrip)
+        {
+            await resolver.EnsureSeatsAvailableAsync(trip.Id, seats, holderId, now, cancellationToken);
+        }
+    }
+
+    private static List<SeatSegmentRequest> SeatSegmentsOf(ResolvedLeg leg)
+    {
+        var usesSegments = DistanceFareSupport.UsesDistanceFare(leg.Trip);
+        return leg.ItemPrices
+            .Select(x => x.Resolved)
+            .Where(x => x.Seat is not null && x.TripSeat is not null)
+            .Select(x => new SeatSegmentRequest(
+                x.TripSeat!.Id,
+                x.Seat!.Code,
+                usesSegments ? x.FromStop.StopOrder : BookingSeatOccupancySupport.FullTripFromOrder,
+                usesSegments ? x.ToStop.StopOrder : BookingSeatOccupancySupport.FullTripToOrder))
+            .ToList();
     }
 
     /// <summary>Ghế đã thành vé: nhả pre-hold của người đặt và báo sơ đồ ghế realtime là đã bán.</summary>

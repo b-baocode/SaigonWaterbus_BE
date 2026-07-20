@@ -100,6 +100,23 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         });
     }
 
+    /// <summary>
+    /// ORDER BY trip_seat_id để mọi request khoá theo cùng một thứ tự — tránh deadlock khi
+    /// hai booking cùng đụng một tập ghế nhưng liệt kê ngược nhau.
+    /// </summary>
+    public async Task LockTripSeatsAsync(IReadOnlyList<Guid> tripSeatIds, CancellationToken cancellationToken)
+    {
+        if (tripSeatIds.Count == 0 || !Database.IsNpgsql())
+        {
+            return;
+        }
+
+        await Database.ExecuteSqlRawAsync(
+            "SELECT 1 FROM trip_seats WHERE trip_seat_id = ANY({0}) ORDER BY trip_seat_id FOR UPDATE",
+            [tripSeatIds.Distinct().ToArray()],
+            cancellationToken);
+    }
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);

@@ -183,7 +183,17 @@ public sealed class CreateCounterBookingCommandHandler
 
         try
         {
-            await _context.SaveChangesAsync(cancellationToken);
+            await _context.ExecuteInTransactionAsync(
+                async ct =>
+                {
+                    // Chốt ghế: khoá trip_seats rồi kiểm tra lại trước khi insert — chặn quầy và
+                    // khách online cùng bán một ghế trong cùng khoảnh khắc.
+                    await BookingLegResolver.EnsureSeatsStillAvailableAsync(
+                        _context, _legResolver, legs, staff.Id, now, ct);
+
+                    await _context.SaveChangesAsync(ct);
+                },
+                cancellationToken);
         }
         catch (DbUpdateException)
         {

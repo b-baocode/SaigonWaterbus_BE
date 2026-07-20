@@ -235,6 +235,11 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             await _context.ExecuteInTransactionAsync(
                 async ct =>
                 {
+                    // Chốt ghế: khoá trip_seats rồi kiểm tra lại trước khi insert — chặn hai request
+                    // song song cùng đọc thấy ghế trống ở bước resolve rồi cùng đặt.
+                    await BookingLegResolver.EnsureSeatsStillAvailableAsync(
+                        _context, _legResolver, legs, userId, now, ct);
+
                     // Khoá + kiểm tra + tính giảm giá dưới cùng transaction để không vượt hạn mức khi nhiều đơn cùng dùng một mã.
                     if (!string.IsNullOrWhiteSpace(request.PromotionCode))
                     {

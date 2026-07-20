@@ -49,5 +49,12 @@ public interface IApplicationDbContext
         Func<CancellationToken, Task<TResult>> operation,
         CancellationToken cancellationToken);
 
+    /// <summary>
+    /// Khoá các hàng trip_seats (SELECT … FOR UPDATE) để tuần tự hoá việc bán cùng một ghế.
+    /// Phải gọi TRONG transaction — khoá được giữ tới khi commit. Provider không quan hệ
+    /// (test in-memory) thì đây là no-op.
+    /// </summary>
+    Task LockTripSeatsAsync(IReadOnlyList<Guid> tripSeatIds, CancellationToken cancellationToken);
+
     Task<int> SaveChangesAsync(CancellationToken cancellationToken);
 }
