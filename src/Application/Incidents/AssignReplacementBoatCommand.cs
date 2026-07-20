@@ -74,23 +74,19 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             ?? throw new NotFoundException("Không tìm thấy tàu cứu hộ.");
         EnsureRescueBoatReady(rescueBoat);
 
-        var activeTicketCount = 0;
-        Boat? replacementBoat = null;
-        if (incident.Trip is not null)
-        {
-            activeTicketCount = await IncidentSupport.CountActiveTicketsAsync(
-                _context,
-                incident.Trip.Id,
-                cancellationToken);
-        }
+        var passengerImpact = await IncidentSupport.BuildPassengerImpactPlanAsync(
+            _context,
+            incident,
+            cancellationToken);
 
-        if (activeTicketCount > 0)
+        Boat? replacementBoat = null;
+        if (passengerImpact.AffectedPassengerCount > 0)
         {
             if (!request.ReplacementBoatId.HasValue)
             {
                 throw new ValidationException([new ValidationFailure(
                     nameof(request.ReplacementBoatId),
-                    $"Chuyến có {activeTicketCount} vé/khách đang hiệu lực nên phải chọn tàu chở khách thay thế.")]);
+                    BuildReplacementRequiredMessage(passengerImpact))]);
             }
 
             if (request.ReplacementBoatId.Value == incident.BoatId)
@@ -113,11 +109,11 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                 ?? throw new NotFoundException("Không tìm thấy tàu thay thế.");
             EnsurePassengerReplacementBoatReady(replacementBoat);
 
-            if (replacementBoat.SeatCount < activeTicketCount)
+            if (replacementBoat.SeatCount < passengerImpact.AffectedPassengerCount)
             {
                 throw new ValidationException([new ValidationFailure(
                     nameof(request.ReplacementBoatId),
-                    $"Tàu thay thế không đủ ghế. Cần tối thiểu {activeTicketCount} ghế.")]);
+                    $"Tàu thay thế không đủ ghế. Cần tối thiểu {passengerImpact.AffectedPassengerCount} ghế cho khách bị ảnh hưởng.")]);
             }
         }
         else if (request.ReplacementBoatId.HasValue)
@@ -138,7 +134,14 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         incident.ReplacementAssignedAt = replacementBoat is null ? null : assignedAt;
         incident.ReplacementAssignedByUserId = replacementBoat is null ? null : actor.Id;
         incident.ReplacementAssignedByUser = replacementBoat is null ? null : actor;
-        incident.ReplacementNote = NormalizeNote(request.Note);
+        incident.ReplacementMissionType = passengerImpact.ReplacementMissionType;
+        incident.ReplacementTargetStationId = passengerImpact.TargetStationId;
+        incident.ReplacementTargetStopOrder = passengerImpact.TargetStopOrder;
+        incident.ActiveTicketCountSnapshot = passengerImpact.ActiveTicketCount;
+        incident.OnboardPassengerCountSnapshot = passengerImpact.OnboardPassengerCount;
+        incident.FuturePassengerCountSnapshot = passengerImpact.FuturePassengerCount;
+        incident.ReplacementNote = NormalizeNote(request.Note)
+            ?? BuildDefaultReplacementNote(passengerImpact, replacementBoat);
 
         if (incident.Trip is not null && replacementBoat is not null)
         {
@@ -146,9 +149,14 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             incident.Trip.Boat = replacementBoat;
             if (incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
             {
-                incident.Trip.TripStatus = request.DelayMinutes.GetValueOrDefault() > 0
-                    ? TripStatus.Delayed
-                    : TripStatus.Scheduled;
+                if (request.DelayMinutes.GetValueOrDefault() > 0)
+                {
+                    incident.Trip.TripStatus = TripStatus.Delayed;
+                }
+                else if (incident.Trip.TripStatus == TripStatus.Delayed)
+                {
+                    incident.Trip.TripStatus = TripStatus.Scheduled;
+                }
             }
 
             incident.Trip.StatusNote = incident.ReplacementNote
@@ -158,9 +166,6 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         await _context.SaveChangesAsync(cancellationToken);
 
         incident = await LoadIncidentQuery().SingleAsync(x => x.Id == request.IncidentId, cancellationToken);
-        activeTicketCount = incident.TripId.HasValue
-            ? await IncidentSupport.CountActiveTicketsAsync(_context, incident.TripId.Value, cancellationToken)
-            : 0;
         await IncidentSupport.PublishGpsHookAsync(
             _context,
             _gpsHookNotifier,
@@ -170,7 +175,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         await _realtimeNotifier.PublishChangedAsync(
             IncidentSupport.ToRealtimeEvent(incident, IncidentSupport.RescueDispatchedEvent, incident.RescueDispatchedAt),
             cancellationToken);
-        return IncidentSupport.ToDto(incident, activeTicketCount);
+        return IncidentSupport.ToDto(incident, incident.ActiveTicketCountSnapshot);
     }
 
     private static void EnsureRescueBoatReady(Boat rescueBoat)
@@ -198,6 +203,44 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     private static string? NormalizeNote(string? note) =>
         string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
+    private static string BuildReplacementRequiredMessage(IncidentSupport.IncidentPassengerImpactPlan passengerImpact)
+    {
+        if (passengerImpact.OnboardPassengerCount > 0)
+        {
+            return $"Có {passengerImpact.OnboardPassengerCount} khách đang ở trên tàu nên phải chọn tàu chở khách thay thế.";
+        }
+
+        if (passengerImpact.TargetStationName is not null)
+        {
+            return $"Có {passengerImpact.FuturePassengerCount} khách chờ ở bến {passengerImpact.TargetStationName} nên phải chọn tàu chở khách thay thế.";
+        }
+
+        return $"Chuyến có {passengerImpact.AffectedPassengerCount} khách bị ảnh hưởng nên phải chọn tàu chở khách thay thế.";
+    }
+
+    private static string? BuildDefaultReplacementNote(
+        IncidentSupport.IncidentPassengerImpactPlan passengerImpact,
+        Boat? replacementBoat)
+    {
+        if (replacementBoat is null)
+        {
+            return null;
+        }
+
+        if (passengerImpact.ReplacementMissionType == IncidentReplacementMissionTypes.TransferAtIncidentLocation)
+        {
+            return $"Đã điều tàu {replacementBoat.Name} tới vị trí sự cố để chuyển {passengerImpact.OnboardPassengerCount} khách đang trên tàu.";
+        }
+
+        if (passengerImpact.ReplacementMissionType == IncidentReplacementMissionTypes.ContinueFromStation
+            && passengerImpact.TargetStationName is not null)
+        {
+            return $"Đã điều tàu {replacementBoat.Name} tới bến {passengerImpact.TargetStationName} để đón {passengerImpact.FuturePassengerCount} khách chờ đi tiếp.";
+        }
+
+        return $"Đã điều tàu {replacementBoat.Name} thay thế cho {passengerImpact.AffectedPassengerCount} khách bị ảnh hưởng.";
+    }
+
     private IQueryable<Incident> LoadIncidentQuery() =>
         _context.Incidents
             .Include(x => x.Boat)
@@ -209,5 +252,6 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
+            .Include(x => x.ReplacementTargetStation)
             .Include(x => x.Resolver);
 }

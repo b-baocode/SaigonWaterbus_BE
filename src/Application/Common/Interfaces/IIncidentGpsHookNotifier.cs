@@ -13,6 +13,15 @@ public sealed record IncidentGpsHookNotification(
     string BoatCode,
     string? RescueBoatCode,
     string? ReplacementBoatCode,
+    string ReplacementMissionType,
+    Guid? ReplacementTargetStationId,
+    string? ReplacementTargetStationCode,
+    string? ReplacementTargetStationName,
+    int? ReplacementTargetStopOrder,
+    decimal? ReplacementTargetLat,
+    decimal? ReplacementTargetLng,
+    int OnboardPassengerCount,
+    int FuturePassengerCount,
     decimal? Lat,
     decimal? Lng);
 

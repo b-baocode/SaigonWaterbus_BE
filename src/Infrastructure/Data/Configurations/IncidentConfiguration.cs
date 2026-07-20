@@ -29,6 +29,22 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         builder.Property(x => x.ReplacementBoatId).HasColumnName("replacement_boat_id");
         builder.Property(x => x.ReplacementAssignedAt).HasColumnName("replacement_assigned_at");
         builder.Property(x => x.ReplacementAssignedByUserId).HasColumnName("replacement_assigned_by_user_id");
+        builder.Property(x => x.ReplacementMissionType)
+            .HasColumnName("replacement_mission_type")
+            .HasMaxLength(50)
+            .HasDefaultValue("None")
+            .IsRequired();
+        builder.Property(x => x.ReplacementTargetStationId).HasColumnName("replacement_target_station_id");
+        builder.Property(x => x.ReplacementTargetStopOrder).HasColumnName("replacement_target_stop_order");
+        builder.Property(x => x.ActiveTicketCountSnapshot)
+            .HasColumnName("active_ticket_count_snapshot")
+            .HasDefaultValue(0);
+        builder.Property(x => x.OnboardPassengerCountSnapshot)
+            .HasColumnName("onboard_passenger_count_snapshot")
+            .HasDefaultValue(0);
+        builder.Property(x => x.FuturePassengerCountSnapshot)
+            .HasColumnName("future_passenger_count_snapshot")
+            .HasDefaultValue(0);
         builder.Property(x => x.ReplacementNote).HasColumnName("replacement_note").HasMaxLength(1000);
         builder.Property(x => x.ResolutionNote).HasColumnName("resolution_note").HasMaxLength(1000);
         builder.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
@@ -43,6 +59,7 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         builder.HasIndex(x => x.RescueDispatchedByUserId);
         builder.HasIndex(x => x.ReplacementBoatId);
         builder.HasIndex(x => x.ReplacementAssignedByUserId);
+        builder.HasIndex(x => x.ReplacementTargetStationId);
         builder.HasIndex(x => x.ResolvedByUserId);
 
         builder.HasOne(x => x.Boat)
@@ -88,6 +105,11 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         builder.HasOne(x => x.ReplacementAssignedByUser)
             .WithMany()
             .HasForeignKey(x => x.ReplacementAssignedByUserId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.ReplacementTargetStation)
+            .WithMany()
+            .HasForeignKey(x => x.ReplacementTargetStationId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.Resolver)

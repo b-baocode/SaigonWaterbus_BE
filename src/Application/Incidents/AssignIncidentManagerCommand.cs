@@ -77,5 +77,6 @@ public sealed class AssignIncidentManagerCommandHandler : IRequestHandler<Assign
             .Include(x => x.AssignedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
+            .Include(x => x.ReplacementTargetStation)
             .Include(x => x.Resolver);
 }

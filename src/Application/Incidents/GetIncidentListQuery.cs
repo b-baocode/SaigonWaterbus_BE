@@ -34,6 +34,7 @@ public sealed class GetIncidentListQueryHandler : IRequestHandler<GetIncidentLis
             .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
+            .Include(x => x.ReplacementTargetStation)
             .Include(x => x.Resolver)
             .AsNoTracking();
 
