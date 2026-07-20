@@ -100,10 +100,12 @@ public sealed class Incidents : IEndpointGroup
                 "Admin hoặc Manager",
                 AssignReplacementBoatExample,
                 "rescueBoatId bat buoc, phai la tau serviceType Rescue dang Active.",
-                "Neu trip co ve/khach dang hieu luc, replacementBoatId bat buoc va backend cap nhat trip.BoatId sang tau thay the.",
-                "Neu khong co khach can chuyen, chi gui rescueBoatId; replacementBoatId phai de null.",
+                "BE tinh khach bi anh huong theo vi tri tau: onboardPassengerCount va futurePassengerCount.",
+                "Neu co khach dang tren tau: replacementBoatId bat buoc, mission TransferAtIncidentLocation.",
+                "Neu chua co khach tren tau nhung co khach cho o ben sau: replacementBoatId bat buoc, mission ContinueFromStation va co replacementTargetStation.",
+                "Neu khong co khach bi anh huong: chi gui rescueBoatId; replacementBoatId phai de null.",
                 "Tau thay the phai serviceType Passenger, Active, setup du ghe va khong trung tau cuu ho/tau gap su co.",
-                "delayMinutes chi anh huong trang thai trip khi incident co tripId."));
+                "delayMinutes la so phut tre du kien; BE luu replacementEstimatedResumeAt, trip adjustedStart/End va adjusted time cho cac stop con lai."));
 
         group.MapPatch(ResolveIncident, "{incidentId:guid}/resolve")
             .RequireAuthorization()

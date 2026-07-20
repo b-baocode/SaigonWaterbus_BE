@@ -22,6 +22,13 @@ public sealed record IncidentRealtimeEvent(
     string? RescueBoatName = null,
     Guid? ReplacementBoatId = null,
     string? ReplacementBoatName = null,
+    string? ReplacementMissionType = null,
+    Guid? ReplacementTargetStationId = null,
+    string? ReplacementTargetStationName = null,
+    int? ReplacementDelayMinutes = null,
+    DateTimeOffset? ReplacementEstimatedResumeAt = null,
+    int? OnboardPassengerCount = null,
+    int? FuturePassengerCount = null,
     string? ResolutionStatus = null,
     DateTimeOffset? OccurredAt = null);
 

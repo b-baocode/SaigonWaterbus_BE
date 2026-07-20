@@ -21,6 +21,14 @@ public class Incident : BaseGuidEntity
     public Guid? ReplacementBoatId { get; set; }
     public DateTimeOffset? ReplacementAssignedAt { get; set; }
     public Guid? ReplacementAssignedByUserId { get; set; }
+    public string ReplacementMissionType { get; set; } = "None";
+    public Guid? ReplacementTargetStationId { get; set; }
+    public int? ReplacementTargetStopOrder { get; set; }
+    public int ReplacementDelayMinutes { get; set; }
+    public DateTimeOffset? ReplacementEstimatedResumeAt { get; set; }
+    public int ActiveTicketCountSnapshot { get; set; }
+    public int OnboardPassengerCountSnapshot { get; set; }
+    public int FuturePassengerCountSnapshot { get; set; }
     public string? ReplacementNote { get; set; }
     public string? ResolutionNote { get; set; }
     public DateTimeOffset? ResolvedAt { get; set; }
@@ -35,5 +43,6 @@ public class Incident : BaseGuidEntity
     public User? RescueDispatchedByUser { get; set; }
     public Boat? ReplacementBoat { get; set; }
     public User? ReplacementAssignedByUser { get; set; }
+    public Station? ReplacementTargetStation { get; set; }
     public User? Resolver { get; set; }
 }

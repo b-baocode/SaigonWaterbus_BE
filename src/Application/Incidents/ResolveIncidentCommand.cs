@@ -62,6 +62,7 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
+            .Include(x => x.ReplacementTargetStation)
             .Include(x => x.Resolver)
             .SingleOrDefaultAsync(x => x.Id == request.IncidentId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy sự cố.");

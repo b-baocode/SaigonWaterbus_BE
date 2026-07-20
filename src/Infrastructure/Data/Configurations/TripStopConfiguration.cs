@@ -21,6 +21,8 @@ public sealed class TripStopConfiguration : IEntityTypeConfiguration<TripStop>
             .IsRequired();
         builder.Property(x => x.PlannedArrivalTime).HasColumnName("planned_arrival_time");
         builder.Property(x => x.PlannedDepartureTime).HasColumnName("planned_departure_time");
+        builder.Property(x => x.AdjustedArrivalTime).HasColumnName("adjusted_arrival_time");
+        builder.Property(x => x.AdjustedDepartureTime).HasColumnName("adjusted_departure_time");
         builder.Property(x => x.ActualArrivalTime).HasColumnName("actual_arrival_time");
         builder.Property(x => x.ActualDepartureTime).HasColumnName("actual_departure_time");
         builder.Property(x => x.StopStatus)

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720014217_AddIncidentPassengerImpactPlan")]
+    partial class AddIncidentPassengerImpactPlan
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -509,10 +512,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("return_trip_id");
 
-                    b.Property<Guid?>("SoldByStaffId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("sold_by_staff_id");
-
                     b.Property<string>("SpecialRequests")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
@@ -564,8 +563,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("PromotionId");
 
                     b.HasIndex("ReturnTripId");
-
-                    b.HasIndex("SoldByStaffId");
 
                     b.HasIndex("ToStationId");
 
@@ -1195,16 +1192,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<Guid?>("ReplacementBoatId")
                         .HasColumnType("uuid")
                         .HasColumnName("replacement_boat_id");
-
-                    b.Property<int>("ReplacementDelayMinutes")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("replacement_delay_minutes");
-
-                    b.Property<DateTimeOffset?>("ReplacementEstimatedResumeAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("replacement_estimated_resume_at");
 
                     b.Property<string>("ReplacementMissionType")
                         .IsRequired()
@@ -2656,14 +2643,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("trip_id");
 
-                    b.Property<DateTimeOffset?>("AdjustedArrivalTime")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("adjusted_arrival_time");
-
-                    b.Property<DateTimeOffset?>("AdjustedDepartureTime")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("adjusted_departure_time");
-
                     b.Property<DateTimeOffset>("ArrivalTime")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("arrival_time");
@@ -2679,17 +2658,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset>("Created")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
-
-                    b.Property<int>("DelayMinutes")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer")
-                        .HasDefaultValue(0)
-                        .HasColumnName("delay_minutes");
-
-                    b.Property<string>("DelayReason")
-                        .HasMaxLength(500)
-                        .HasColumnType("character varying(500)")
-                        .HasColumnName("delay_reason");
 
                     b.Property<DateTimeOffset>("DepartureTime")
                         .HasColumnType("timestamp with time zone")
@@ -2804,14 +2772,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset?>("ActualDepartureTime")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("actual_departure_time");
-
-                    b.Property<DateTimeOffset?>("AdjustedArrivalTime")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("adjusted_arrival_time");
-
-                    b.Property<DateTimeOffset?>("AdjustedDepartureTime")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("adjusted_departure_time");
 
                     b.Property<DateTimeOffset>("Created")
                         .HasColumnType("timestamp with time zone")
@@ -3216,11 +3176,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasForeignKey("ReturnTripId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "SoldByStaff")
-                        .WithMany()
-                        .HasForeignKey("SoldByStaffId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SaigonWaterbus.Domain.Entities.Station", "ToStation")
                         .WithMany()
                         .HasForeignKey("ToStationId")
@@ -3247,8 +3202,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Promotion");
 
                     b.Navigation("ReturnTrip");
-
-                    b.Navigation("SoldByStaff");
 
                     b.Navigation("ToStation");
 

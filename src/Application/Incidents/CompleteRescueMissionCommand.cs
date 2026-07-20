@@ -147,5 +147,6 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
             .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
+            .Include(x => x.ReplacementTargetStation)
             .Include(x => x.Resolver);
 }

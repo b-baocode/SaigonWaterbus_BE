@@ -201,10 +201,10 @@ public sealed class GetOperationScheduleQueryHandler
             OperationPaymentStages.NotRequired,
             null,
             false,
-            0,
-            null,
-            null,
-            null,
+            trip.DelayMinutes,
+            trip.DelayReason,
+            trip.AdjustedDepartureTime,
+            trip.AdjustedArrivalTime,
             firstTripStop?.ActualDepartureTime ?? firstTripStop?.ActualArrivalTime,
             lastTripStop?.ActualArrivalTime ?? lastTripStop?.ActualDepartureTime,
             now,
@@ -217,7 +217,10 @@ public sealed class GetOperationScheduleQueryHandler
             nextStation?.LocationName,
             lastStopEvent.Event,
             lastStopEvent.OccurredAt,
-            nextStop?.PlannedArrivalTime ?? nextStop?.PlannedDepartureTime,
+            nextStop?.AdjustedArrivalTime
+                ?? nextStop?.AdjustedDepartureTime
+                ?? nextStop?.PlannedArrivalTime
+                ?? nextStop?.PlannedDepartureTime,
             latestLocation?.Latitude,
             latestLocation?.Longitude,
             latestLocation?.SpeedKmh,
@@ -347,7 +350,10 @@ public sealed class GetOperationScheduleQueryHandler
     }
 
     private static DateTimeOffset ResolveScheduledDepartureAt(Trip trip, TripStop? currentStop) =>
-        currentStop?.PlannedDepartureTime ?? trip.DepartureTime;
+        currentStop?.AdjustedDepartureTime
+        ?? currentStop?.PlannedDepartureTime
+        ?? trip.AdjustedDepartureTime
+        ?? trip.DepartureTime;
 
     private static int? ResolveMinutesUntilDeparture(Trip trip, TripStop? currentStop, DateTimeOffset now)
     {

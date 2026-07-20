@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260720021110_AddIncidentDelayResumeSchedule")]
+    partial class AddIncidentDelayResumeSchedule
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -509,10 +512,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("return_trip_id");
 
-                    b.Property<Guid?>("SoldByStaffId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("sold_by_staff_id");
-
                     b.Property<string>("SpecialRequests")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
@@ -564,8 +563,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("PromotionId");
 
                     b.HasIndex("ReturnTripId");
-
-                    b.HasIndex("SoldByStaffId");
 
                     b.HasIndex("ToStationId");
 
@@ -3216,11 +3213,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasForeignKey("ReturnTripId")
                         .OnDelete(DeleteBehavior.SetNull);
 
-                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "SoldByStaff")
-                        .WithMany()
-                        .HasForeignKey("SoldByStaffId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("SaigonWaterbus.Domain.Entities.Station", "ToStation")
                         .WithMany()
                         .HasForeignKey("ToStationId")
@@ -3247,8 +3239,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Promotion");
 
                     b.Navigation("ReturnTrip");
-
-                    b.Navigation("SoldByStaff");
 
                     b.Navigation("ToStation");
 

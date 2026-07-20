@@ -826,7 +826,10 @@ public sealed class Tracking : IEndpointGroup
     }
 
     private static DateTimeOffset? ResolveScheduledDepartureAt(Trip? trip, TripStop? currentStop) =>
-        currentStop?.PlannedDepartureTime ?? trip?.DepartureTime;
+        currentStop?.AdjustedDepartureTime
+        ?? currentStop?.PlannedDepartureTime
+        ?? trip?.AdjustedDepartureTime
+        ?? trip?.DepartureTime;
 
     private static int? ResolveMinutesUntilDeparture(Trip? trip, TripStop? currentStop, DateTimeOffset now)
     {
