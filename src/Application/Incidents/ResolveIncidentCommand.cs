@@ -88,6 +88,10 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             }
 
             incident.Boat.Status = request.BoatStatus.Value;
+            if (request.BoatStatus.Value == BoatStatus.UnderMaintenance)
+            {
+                await ClearBoatLiveTripAsync(incident.BoatId, resolvedAt, cancellationToken);
+            }
         }
 
         if (request.TripStatus.HasValue && incident.Trip is not null)
@@ -111,5 +115,28 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             ? await IncidentSupport.CountActiveTicketsAsync(_context, incident.TripId.Value, cancellationToken)
             : 0;
         return IncidentSupport.ToDto(incident, activeTicketCount);
+    }
+
+    private async Task ClearBoatLiveTripAsync(
+        Guid boatId,
+        DateTimeOffset clearedAt,
+        CancellationToken cancellationToken)
+    {
+        var latestLocation = await _context.BoatLatestLocations
+            .SingleOrDefaultAsync(x => x.BoatId == boatId, cancellationToken);
+        if (latestLocation is null)
+        {
+            return;
+        }
+
+        latestLocation.RouteId = null;
+        latestLocation.TripId = null;
+        latestLocation.NextStationId = null;
+        latestLocation.RemainingDistanceKmToNextStation = null;
+        latestLocation.RemainingMinutesToNextStation = null;
+        latestLocation.SpeedKmh = 0;
+        latestLocation.Status = "maintenance";
+        latestLocation.ReceivedAt = clearedAt;
+        latestLocation.UpdatedAt = clearedAt;
     }
 }

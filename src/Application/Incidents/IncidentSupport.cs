@@ -166,6 +166,8 @@ internal static class IncidentSupport
             new IncidentGpsHookNotification(
                 eventType,
                 incident.Id,
+                incident.TripId,
+                incident.Trip?.TripCode,
                 incident.Boat.Code,
                 incident.RescueBoat?.Code,
                 incident.ReplacementBoat?.Code,
@@ -208,20 +210,6 @@ internal static class IncidentSupport
             context,
             trip.Id,
             cancellationToken);
-        if (activeTicketSegments.Count == 0)
-        {
-            return new IncidentPassengerImpactPlan(
-                ActiveTicketCount: 0,
-                OnboardPassengerCount: 0,
-                FuturePassengerCount: 0,
-                IncidentReplacementMissionTypes.None,
-                TargetStationId: null,
-                TargetStationCode: null,
-                TargetStationName: null,
-                TargetStopOrder: null,
-                TargetPlannedArrivalAt: null,
-                TargetPlannedDepartureAt: null);
-        }
 
         if (stops.Count == 0)
         {
@@ -272,17 +260,33 @@ internal static class IncidentSupport
         var affectedPassengerCount = onboardPassengerCount + futurePassengerCount;
         if (affectedPassengerCount == 0)
         {
+            var nextServiceStop = ResolveNextServiceStop(stops, progressStopOrder);
+            if (nextServiceStop is null)
+            {
+                return new IncidentPassengerImpactPlan(
+                    activeTicketSegments.Count,
+                    OnboardPassengerCount: 0,
+                    FuturePassengerCount: 0,
+                    IncidentReplacementMissionTypes.None,
+                    TargetStationId: null,
+                    TargetStationCode: null,
+                    TargetStationName: null,
+                    TargetStopOrder: null,
+                    TargetPlannedArrivalAt: null,
+                    TargetPlannedDepartureAt: null);
+            }
+
             return new IncidentPassengerImpactPlan(
                 activeTicketSegments.Count,
                 OnboardPassengerCount: 0,
                 FuturePassengerCount: 0,
-                IncidentReplacementMissionTypes.None,
-                TargetStationId: null,
-                TargetStationCode: null,
-                TargetStationName: null,
-                TargetStopOrder: null,
-                TargetPlannedArrivalAt: null,
-                TargetPlannedDepartureAt: null);
+                IncidentReplacementMissionTypes.ContinueFromStation,
+                nextServiceStop.StationId,
+                nextServiceStop.StationCode,
+                nextServiceStop.StationName,
+                nextServiceStop.StopOrder,
+                nextServiceStop.PlannedArrivalTime,
+                nextServiceStop.PlannedDepartureTime);
         }
 
         if (onboardPassengerCount > 0)
@@ -318,6 +322,15 @@ internal static class IncidentSupport
             targetStop?.PlannedArrivalTime,
             targetStop?.PlannedDepartureTime);
     }
+
+    private static IncidentStopPlanItem? ResolveNextServiceStop(
+        IReadOnlyList<IncidentStopPlanItem> stops,
+        int progressStopOrder) =>
+        stops
+            .Where(x => x.StopOrder > progressStopOrder
+                && !string.Equals(x.StopStatus, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.StopOrder)
+            .FirstOrDefault();
 
     private static IncidentPassengerImpactPlan BuildUnknownProgressPlan(int activeTicketCount) =>
         new(

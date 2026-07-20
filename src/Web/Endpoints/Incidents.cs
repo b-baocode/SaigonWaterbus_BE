@@ -82,7 +82,7 @@ public sealed class Incidents : IEndpointGroup
                 CreateIncidentExample,
                 "boatId bat buoc. tripId optional neu su co xay ra trong mot chuyen cu the.",
                 "Khi tao su co, tau duoc chuyen sang Incident.",
-                "Neu co tripId: severity High/Critical se Cancelled trip; muc khac se Delayed trip."));
+                "Neu co tripId: trip chuyen sang Delayed de cho Admin/Manager dieu tau va nhap delay; BE khong tu Cancelled theo severity."));
 
         group.MapPatch(AssignManager, "{incidentId:guid}/assign-manager")
             .RequireAuthorization()
@@ -101,11 +101,14 @@ public sealed class Incidents : IEndpointGroup
                 AssignReplacementBoatExample,
                 "rescueBoatId bat buoc, phai la tau serviceType Rescue dang Active.",
                 "BE tinh khach bi anh huong theo vi tri tau: onboardPassengerCount va futurePassengerCount.",
+                "Neu su co co tripId: replacementBoatId bat buoc du co khach hay chua, de tau Passenger thay the tiep tuc hanh trinh.",
                 "Neu co khach dang tren tau: replacementBoatId bat buoc, mission TransferAtIncidentLocation.",
                 "Neu chua co khach tren tau nhung co khach cho o ben sau: replacementBoatId bat buoc, mission ContinueFromStation va co replacementTargetStation.",
-                "Neu khong co khach bi anh huong: chi gui rescueBoatId; replacementBoatId phai de null.",
+                "Neu khong co khach bi anh huong nhung trip con hanh trinh: mission ContinueFromStation toi ben tiep theo.",
+                "Neu su co khong co tripId: chi gui rescueBoatId; replacementBoatId phai de null.",
                 "Tau thay the phai serviceType Passenger, Active, setup du ghe va khong trung tau cuu ho/tau gap su co.",
-                "delayMinutes la so phut tre du kien; BE luu replacementEstimatedResumeAt, trip adjustedStart/End va adjusted time cho cac stop con lai."));
+                "delayMinutes la so phut Admin/Manager nhap luc dieu tau; vi du 5 thi trip cong 5 phut, TripStatus Delayed va adjusted time cho cac stop con lai.",
+                "Neu delayMinutes >= 15, BE day delay sang cac chuyen sau cua cung tau gap su co, cung route va cung ngay van hanh."));
 
         group.MapPatch(ResolveIncident, "{incidentId:guid}/resolve")
             .RequireAuthorization()

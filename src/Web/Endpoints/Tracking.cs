@@ -122,6 +122,16 @@ public sealed class Tracking : IEndpointGroup
             return Results.BadRequest(new { message = "boatCode không khớp với thiết bị GPS đã đăng ký." });
         }
 
+        if (gpsDevice.Boat.Status is BoatStatus.UnderMaintenance or BoatStatus.Inactive or BoatStatus.Retired)
+        {
+            return Results.Conflict(new
+            {
+                accepted = false,
+                message = "Tàu không ở trạng thái vận hành nên backend không nhận GPS chạy tuyến.",
+                boatStatus = gpsDevice.Boat.Status.ToString()
+            });
+        }
+
         if (gpsDevice.LastSequence.HasValue && request.Sequence <= gpsDevice.LastSequence.Value)
         {
             return Results.Conflict(new

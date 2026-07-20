@@ -5,6 +5,7 @@ using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.UnitTests.Incidents;
 
@@ -46,7 +47,7 @@ public class CreateIncidentCommandTests
     }
 
     [Test]
-    public async Task HighSeverityIncidentCancelsRelatedTrip()
+    public async Task HighSeverityIncidentDelaysRelatedTrip()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
@@ -86,7 +87,7 @@ public class CreateIncidentCommandTests
         result.TripId.ShouldBe(trip.Id);
 
         var savedTrip = context.Trips.Single();
-        savedTrip.TripStatus.ShouldBe(TripStatus.Cancelled);
+        savedTrip.TripStatus.ShouldBe(TripStatus.Delayed);
         savedTrip.StatusNote.ShouldBe("Incident MechanicalFailure: Tau bi hong dong co tren chuyen.");
         context.Boats.Single().Status.ShouldBe(BoatStatus.Incident);
         context.Boats.Single().MaintenanceStartedAt.ShouldBeNull();
@@ -261,6 +262,8 @@ public class CreateIncidentCommandTests
         var notification = gpsHook.Notifications.Single();
         notification.Event.ShouldBe(IncidentSupport.RescueDispatchedEvent);
         notification.IncidentId.ShouldBe(incident.Id);
+        notification.TripId.ShouldBeNull();
+        notification.TripCode.ShouldBeNull();
         notification.BoatCode.ShouldBe("WB_001");
         notification.RescueBoatCode.ShouldBe("RS_001");
         notification.ReplacementBoatCode.ShouldBeNull();
@@ -505,6 +508,8 @@ public class CreateIncidentCommandTests
         adjustedStationCStop.AdjustedDepartureTime.ShouldBe(stationCTripStop.PlannedDepartureTime!.Value.AddMinutes(15));
 
         var notification = gpsHook.Notifications.Single();
+        notification.TripId.ShouldBe(trip.Id);
+        notification.TripCode.ShouldBe(trip.TripCode);
         notification.ReplacementMissionType.ShouldBe(IncidentReplacementMissionTypes.ContinueFromStation);
         notification.ReplacementTargetStationId.ShouldBe(stationC.Id);
         notification.ReplacementTargetStationName.ShouldBe("Ben C");
@@ -514,12 +519,13 @@ public class CreateIncidentCommandTests
     }
 
     [Test]
-    public async Task CompletedPastPassengersDoNotRequireReplacementBoat()
+    public async Task TripWithNoRemainingPassengersStillRequiresReplacementBoatToContinueService()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
         var incidentBoat = Boat("WB-01");
         var rescueBoat = RescueBoat("RS-01");
+        var replacementBoat = Boat("WB-02");
         var route = Route("R1");
         var stationA = Station("A", "Ben A");
         var stationB = Station("B", "Ben B");
@@ -582,6 +588,7 @@ public class CreateIncidentCommandTests
         context.AddRange(
             incidentBoat,
             rescueBoat,
+            replacementBoat,
             route,
             stationA,
             stationB,
@@ -613,24 +620,43 @@ public class CreateIncidentCommandTests
             managerContext,
             new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 2, 0, 0, TimeSpan.Zero)));
 
-        var result = await handler.Handle(
+        var validation = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
             new AssignReplacementBoatCommand(
                 incident.Id,
                 rescueBoat.Id,
                 ReplacementBoatId: null,
-                DelayMinutes: null,
-                Note: "Chi dieu tau cuu ho."),
+                DelayMinutes: 5,
+                Note: null),
+            CancellationToken.None));
+        validation.Errors["replacementBoatId"].Single().ShouldContain("Chuyến đang chạy");
+
+        var result = await handler.Handle(
+            new AssignReplacementBoatCommand(
+                incident.Id,
+                rescueBoat.Id,
+                replacementBoat.Id,
+                DelayMinutes: 5,
+                Note: null),
             CancellationToken.None);
 
         result.ActiveTicketCount.ShouldBe(1);
         result.OnboardPassengerCount.ShouldBe(0);
         result.FuturePassengerCount.ShouldBe(0);
-        result.ReplacementMissionType.ShouldBe(IncidentReplacementMissionTypes.None);
-        result.ReplacementBoatId.ShouldBeNull();
+        result.ReplacementMissionType.ShouldBe(IncidentReplacementMissionTypes.ContinueFromStation);
+        result.ReplacementTargetStationId.ShouldBe(stationC.Id);
+        result.ReplacementBoatId.ShouldBe(replacementBoat.Id);
 
         var savedIncident = context.Incidents.Single();
-        savedIncident.ReplacementBoatId.ShouldBeNull();
-        savedIncident.ReplacementMissionType.ShouldBe(IncidentReplacementMissionTypes.None);
+        savedIncident.ReplacementBoatId.ShouldBe(replacementBoat.Id);
+        savedIncident.ReplacementMissionType.ShouldBe(IncidentReplacementMissionTypes.ContinueFromStation);
+        savedIncident.ReplacementTargetStationId.ShouldBe(stationC.Id);
+
+        var savedTrip = context.Trips.Single();
+        savedTrip.BoatId.ShouldBe(replacementBoat.Id);
+        savedTrip.DelayMinutes.ShouldBe(5);
+        savedTrip.AdjustedDepartureTime.ShouldBe(trip.DepartureTime.AddMinutes(5));
+        savedTrip.AdjustedArrivalTime.ShouldBe(trip.ArrivalTime.AddMinutes(5));
+        savedTrip.TripStatus.ShouldBe(TripStatus.Delayed);
     }
 
     [Test]
@@ -640,11 +666,12 @@ public class CreateIncidentCommandTests
         var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
         var incidentBoat = Boat("WB-01");
         var rescueBoat = RescueBoat("RS-01");
+        var replacementBoat = Boat("WB-02");
         var route = Route("R1");
         var trip = Trip(route, incidentBoat, "TR-1", new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
         var futureTrip = Trip(route, incidentBoat, "TR-2", new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.FromHours(7)));
         var incident = Incident(incidentBoat, trip);
-        context.AddRange(incidentBoat, rescueBoat, route, trip, futureTrip, incident);
+        context.AddRange(incidentBoat, rescueBoat, replacementBoat, route, trip, futureTrip, incident);
         await context.SaveChangesAsync();
 
         var handler = new AssignReplacementBoatCommandHandler(
@@ -656,12 +683,13 @@ public class CreateIncidentCommandTests
             new AssignReplacementBoatCommand(
                 incident.Id,
                 rescueBoat.Id,
-                ReplacementBoatId: null,
+                replacementBoat.Id,
                 DelayMinutes: 14,
                 Note: "Trễ nhẹ, không ảnh hưởng chuyến sau."),
             CancellationToken.None);
 
         var savedCurrentTrip = context.Trips.Single(x => x.Id == trip.Id);
+        savedCurrentTrip.BoatId.ShouldBe(replacementBoat.Id);
         savedCurrentTrip.DelayMinutes.ShouldBe(14);
         savedCurrentTrip.TripStatus.ShouldBe(TripStatus.Delayed);
 
@@ -680,6 +708,7 @@ public class CreateIncidentCommandTests
         var incidentBoat = Boat("WB-01");
         var otherBoat = Boat("WB-99");
         var rescueBoat = RescueBoat("RS-01");
+        var replacementBoat = Boat("WB-02");
         var route = Route("R1");
         var otherRoute = Route("R2");
         var trip = Trip(route, incidentBoat, "TR-1", new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
@@ -695,6 +724,7 @@ public class CreateIncidentCommandTests
             incidentBoat,
             otherBoat,
             rescueBoat,
+            replacementBoat,
             route,
             otherRoute,
             stationA,
@@ -717,7 +747,7 @@ public class CreateIncidentCommandTests
             new AssignReplacementBoatCommand(
                 incident.Id,
                 rescueBoat.Id,
-                ReplacementBoatId: null,
+                replacementBoat.Id,
                 DelayMinutes: 15,
                 Note: "Trễ vượt ngưỡng, ảnh hưởng chuyến sau."),
             CancellationToken.None);

@@ -105,7 +105,7 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
         boat.Status = BoatStatus.Incident;
         if (trip is not null && trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
         {
-            trip.TripStatus = IsCritical(severity) ? TripStatus.Cancelled : TripStatus.Delayed;
+            trip.TripStatus = TripStatus.Delayed;
             trip.StatusNote = $"Incident {incident.IncidentType}: {incident.Description}";
         }
 
@@ -157,7 +157,4 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
                 cancellationToken);
     }
 
-    private static bool IsCritical(string? severity) =>
-        string.Equals(severity, IncidentSupport.CriticalSeverity, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(severity, IncidentSupport.HighSeverity, StringComparison.OrdinalIgnoreCase);
 }

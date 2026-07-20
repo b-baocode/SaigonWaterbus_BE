@@ -79,6 +79,7 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
         }
 
         incident.Boat.Status = BoatStatus.UnderMaintenance;
+        await ClearBoatLiveTripAsync(incident.BoatId, completedAt, cancellationToken);
         if (incident.RescueBoat is not null)
         {
             incident.RescueBoat.Status = BoatStatus.Active;
@@ -135,6 +136,29 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
 
     private static string? NormalizeNote(string? note) =>
         string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+
+    private async Task ClearBoatLiveTripAsync(
+        Guid boatId,
+        DateTimeOffset clearedAt,
+        CancellationToken cancellationToken)
+    {
+        var latestLocation = await _context.BoatLatestLocations
+            .SingleOrDefaultAsync(x => x.BoatId == boatId, cancellationToken);
+        if (latestLocation is null)
+        {
+            return;
+        }
+
+        latestLocation.RouteId = null;
+        latestLocation.TripId = null;
+        latestLocation.NextStationId = null;
+        latestLocation.RemainingDistanceKmToNextStation = null;
+        latestLocation.RemainingMinutesToNextStation = null;
+        latestLocation.SpeedKmh = 0;
+        latestLocation.Status = "maintenance";
+        latestLocation.ReceivedAt = clearedAt;
+        latestLocation.UpdatedAt = clearedAt;
+    }
 
     private IQueryable<Domain.Entities.Incident> LoadIncidentQuery() =>
         _context.Incidents

@@ -10,6 +10,8 @@ public interface IIncidentGpsHookNotifier
 public sealed record IncidentGpsHookNotification(
     string Event,
     Guid IncidentId,
+    Guid? TripId,
+    string? TripCode,
     string BoatCode,
     string? RescueBoatCode,
     string? ReplacementBoatCode,

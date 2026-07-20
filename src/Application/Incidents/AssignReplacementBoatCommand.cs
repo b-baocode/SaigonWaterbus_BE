@@ -82,13 +82,14 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             cancellationToken);
 
         Boat? replacementBoat = null;
-        if (passengerImpact.AffectedPassengerCount > 0)
+        var replacementRequired = incident.Trip is not null || passengerImpact.AffectedPassengerCount > 0;
+        if (replacementRequired)
         {
             if (!request.ReplacementBoatId.HasValue)
             {
                 throw new ValidationException([new ValidationFailure(
                     nameof(request.ReplacementBoatId),
-                    BuildReplacementRequiredMessage(passengerImpact))]);
+                    BuildReplacementRequiredMessage(passengerImpact, incident.Trip is not null))]);
             }
 
             if (request.ReplacementBoatId.Value == incident.BoatId)
@@ -122,7 +123,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         {
             throw new ValidationException([new ValidationFailure(
                 nameof(request.ReplacementBoatId),
-                "Sự cố không có khách cần chuyển nên chỉ chọn tàu cứu hộ.")]);
+                "Sự cố không có trip cần chạy tiếp nên chỉ chọn tàu cứu hộ.")]);
         }
 
         var assignedAt = _timeProvider.GetUtcNow();
@@ -162,10 +163,6 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                 if (delayMinutes > 0)
                 {
                     incident.Trip.TripStatus = TripStatus.Delayed;
-                }
-                else if (replacementBoat is not null && incident.Trip.TripStatus == TripStatus.Delayed)
-                {
-                    incident.Trip.TripStatus = TripStatus.Scheduled;
                 }
             }
 
@@ -230,16 +227,25 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     private static string? NormalizeNote(string? note) =>
         string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
-    private static string BuildReplacementRequiredMessage(IncidentSupport.IncidentPassengerImpactPlan passengerImpact)
+    private static string BuildReplacementRequiredMessage(
+        IncidentSupport.IncidentPassengerImpactPlan passengerImpact,
+        bool hasTrip)
     {
         if (passengerImpact.OnboardPassengerCount > 0)
         {
             return $"Có {passengerImpact.OnboardPassengerCount} khách đang ở trên tàu nên phải chọn tàu chở khách thay thế.";
         }
 
-        if (passengerImpact.TargetStationName is not null)
+        if (passengerImpact.FuturePassengerCount > 0 && passengerImpact.TargetStationName is not null)
         {
             return $"Có {passengerImpact.FuturePassengerCount} khách chờ ở bến {passengerImpact.TargetStationName} nên phải chọn tàu chở khách thay thế.";
+        }
+
+        if (hasTrip)
+        {
+            return passengerImpact.TargetStationName is null
+                ? "Chuyến đang chạy nên phải chọn tàu chở khách thay thế để tiếp tục hành trình."
+                : $"Chuyến đang chạy còn hành trình tới bến {passengerImpact.TargetStationName} nên phải chọn tàu chở khách thay thế.";
         }
 
         return $"Chuyến có {passengerImpact.AffectedPassengerCount} khách bị ảnh hưởng nên phải chọn tàu chở khách thay thế.";
@@ -262,10 +268,14 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         if (passengerImpact.ReplacementMissionType == IncidentReplacementMissionTypes.ContinueFromStation
             && passengerImpact.TargetStationName is not null)
         {
-            return $"Đã điều tàu {replacementBoat.Name} tới bến {passengerImpact.TargetStationName} để đón {passengerImpact.FuturePassengerCount} khách chờ đi tiếp.";
+            return passengerImpact.FuturePassengerCount > 0
+                ? $"Đã điều tàu {replacementBoat.Name} tới bến {passengerImpact.TargetStationName} để đón {passengerImpact.FuturePassengerCount} khách chờ đi tiếp."
+                : $"Đã điều tàu {replacementBoat.Name} tới bến {passengerImpact.TargetStationName} để tiếp tục hành trình.";
         }
 
-        return $"Đã điều tàu {replacementBoat.Name} thay thế cho {passengerImpact.AffectedPassengerCount} khách bị ảnh hưởng.";
+        return passengerImpact.AffectedPassengerCount > 0
+            ? $"Đã điều tàu {replacementBoat.Name} thay thế cho {passengerImpact.AffectedPassengerCount} khách bị ảnh hưởng."
+            : $"Đã điều tàu {replacementBoat.Name} thay thế để tiếp tục hành trình.";
     }
 
     private static DateTimeOffset? ResolveEstimatedResumeAt(
