@@ -67,7 +67,7 @@ internal static class TripSeatResolutionSupport
             .SingleOrDefaultAsync(t => t.Id == tripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
-        if (trip.TripStatus != TripStatus.Scheduled)
+        if (!TripBookingAvailabilitySupport.CanAcceptCustomerBooking(trip.TripStatus))
         {
             throw new ValidationException([new ValidationFailure("tripId",
                 "Trip is not available for booking.")]);

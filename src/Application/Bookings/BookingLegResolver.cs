@@ -50,8 +50,8 @@ internal sealed class BookingLegResolver
     }
 
     /// <param name="allowDepartedTrip">
-    /// true = bán vé tại quầy: bỏ hạn đóng bán trước giờ chạy và cho bán cả khi tàu đang chạy
-    /// (Boarding/InProgress/Delayed). false = khách tự đặt: chỉ chuyến Scheduled và còn trước hạn đóng bán.
+    /// true = bán vé tại quầy: bỏ hạn đóng bán trước giờ chạy và cho bán cả khi tàu đang chạy.
+    /// false = khách tự đặt: cho các trạng thái còn vận hành và còn trước hạn đóng bán theo bến lên.
     /// </param>
     public async Task<ResolvedLeg> ResolveAsync(
         string rawTripCode,
@@ -515,8 +515,8 @@ internal sealed class BookingLegResolver
     }
 
     /// <summary>
-    /// Khách tự đặt: chỉ chuyến Scheduled và còn trước hạn đóng bán. Bán tại quầy: staff bán được
-    /// tới lúc chuyến kết thúc (kể cả tàu đã rời bến), chỉ chặn chuyến đã Completed/Cancelled.
+    /// Khách tự đặt: cho các trạng thái còn vận hành và còn trước hạn đóng bán theo bến lên.
+    /// Bán tại quầy: staff bán được tới lúc chuyến kết thúc, chỉ chặn chuyến đã Completed/Cancelled.
     /// </summary>
     /// <summary>
     /// Mỗi vé phải còn trước hạn đóng bán tính theo giờ tàu rời BẾN KHÁCH LÊN. Một booking có
@@ -543,7 +543,7 @@ internal sealed class BookingLegResolver
     {
         if (!allowDepartedTrip)
         {
-            if (trip.TripStatus != TripStatus.Scheduled)
+            if (!Trips.TripBookingAvailabilitySupport.CanAcceptCustomerBooking(trip.TripStatus))
                 throw new ValidationException([new ValidationFailure(tripCodePropertyName,
                     "Trip is not available for booking.")]);
 

@@ -59,7 +59,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                      && t.Route.RouteType == RouteTypes.Regular
                      && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
-                     && t.TripStatus == TripStatus.Scheduled
+                     && TripBookingAvailabilitySupport.CustomerBookableStatuses.Contains(t.TripStatus)
                      // Chỉ loại chuyến đã chạy xong. Hạn đóng bán tính theo giờ rời BẾN KHÁCH LÊN
                      // (không biểu diễn được trong SQL) nên lọc sau khi có giờ từng bến.
                      && t.ArrivalTime > now);

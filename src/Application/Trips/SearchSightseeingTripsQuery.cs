@@ -39,7 +39,7 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                      && t.Route.IsBookable
                      && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
-                     && t.TripStatus == TripStatus.Scheduled
+                     && TripBookingAvailabilitySupport.CustomerBookableStatuses.Contains(t.TripStatus)
                      && t.DepartureTime > bookingCutoff)
             .ToListAsync(cancellationToken);
 

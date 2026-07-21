@@ -88,7 +88,7 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
 
         // Sơ đồ ghế vẫn xem được sau khi đóng bán (khách tra cứu vé đã mua), chỉ báo cờ để FE
         // khoá thao tác chọn ghế thay vì để họ chọn xong mới bị từ chối ở bước giữ ghế.
-        var isBookingClosed = trip.TripStatus != Domain.Enums.TripStatus.Scheduled
+        var isBookingClosed = !TripBookingAvailabilitySupport.CanAcceptCustomerBooking(trip.TripStatus)
             || BookingCutoffSupport.IsPastCutoff(
                 trip,
                 segment.IsFullTrip ? null : segment.FromStopOrder,

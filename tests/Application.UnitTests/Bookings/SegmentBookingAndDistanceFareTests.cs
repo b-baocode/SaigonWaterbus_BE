@@ -223,6 +223,34 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task BoardingTripStillAllowsLaterOpenBoardingStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-BOARD-1", withDistances: true);
+        seeded.Trip.TripStatus = TripStatus.Boarding;
+        await SeedTripStopsAsync(context, seeded.Trip);
+        await context.SaveChangesAsync();
+
+        var hb = context.Set<Station>().Single(s => s.StationCode == "HB");
+        var lt = context.Set<Station>().Single(s => s.StationCode == "LT");
+        var date = DateOnly.FromDateTime(Now.UtcDateTime);
+
+        var searchResults = await new SearchTripsQueryHandler(context, new FixedTimeProvider(Now))
+            .Handle(new SearchTripsQuery(hb.Id, lt.Id, date), CancellationToken.None);
+        searchResults.Select(x => x.TripCode).ShouldContain("TR-BOARD-1");
+
+        var seatMap = await new GetTripSeatMapQueryHandler(context, userContext, new FixedTimeProvider(Now))
+            .Handle(new GetTripSeatMapQuery(seeded.Trip.Id, "HB", "LT"), CancellationToken.None);
+        seatMap.IsBookingClosed.ShouldBeFalse();
+
+        var booking = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand("TR-BOARD-1", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+        booking.BookingId.ShouldNotBe(Guid.Empty);
+    }
+
+    [Test]
     public async Task DistanceFarePricesEachItemBySegmentKm()
     {
         await using var context = SeatFlowTestData.CreateContext();
