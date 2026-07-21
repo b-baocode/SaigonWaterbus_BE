@@ -30,7 +30,9 @@ public static class DependencyInjection
             ];
 
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+        builder.Services.AddMemoryCache();
         builder.Services.AddHttpContextAccessor();
+        builder.Services.AddSingleton<IEndpointResponseCache, RedisBackedEndpointResponseCache>();
         builder.Services.AddScoped<IUserContext, CurrentUser>();
         builder.Services.AddScoped<IClientInfoProvider, CurrentClientInfo>();
         builder.Services.AddScoped<ICharterBookingTicketPdfRenderer, QuestPdfCharterBookingTicketPdfRenderer>();

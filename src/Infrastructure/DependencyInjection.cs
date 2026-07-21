@@ -1,4 +1,5 @@
-﻿using Microsoft.EntityFrameworkCore;
+﻿using System.Net;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
@@ -180,7 +181,7 @@ public static class DependencyInjection
 
         builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
         {
-            var configurationOptions = ConfigurationOptions.Parse(redisOptions.ConnectionString);
+            var configurationOptions = CreateRedisConfigurationOptions(redisOptions.ConnectionString);
             configurationOptions.AbortOnConnectFail = false;
             configurationOptions.ClientName = string.IsNullOrWhiteSpace(configurationOptions.ClientName)
                 ? "saigon-waterbus-api"
@@ -188,6 +189,44 @@ public static class DependencyInjection
 
             return ConnectionMultiplexer.Connect(configurationOptions);
         });
+    }
+
+    private static ConfigurationOptions CreateRedisConfigurationOptions(string connectionString)
+    {
+        if (!Uri.TryCreate(connectionString, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != "redis" && uri.Scheme != "rediss"))
+        {
+            return ConfigurationOptions.Parse(connectionString);
+        }
+
+        var options = new ConfigurationOptions
+        {
+            Ssl = uri.Scheme == "rediss"
+        };
+
+        options.EndPoints.Add(uri.Host, uri.Port > 0 ? uri.Port : 6379);
+
+        if (!string.IsNullOrWhiteSpace(uri.UserInfo))
+        {
+            var parts = uri.UserInfo.Split(':', 2);
+            if (parts.Length == 2)
+            {
+                options.User = WebUtility.UrlDecode(parts[0]);
+                options.Password = WebUtility.UrlDecode(parts[1]);
+            }
+            else
+            {
+                options.Password = WebUtility.UrlDecode(parts[0]);
+            }
+        }
+
+        var databasePath = uri.AbsolutePath.Trim('/');
+        if (int.TryParse(databasePath, out var database))
+        {
+            options.DefaultDatabase = database;
+        }
+
+        return options;
     }
 
     private static void AddRedisBackedServices(IHostApplicationBuilder builder)

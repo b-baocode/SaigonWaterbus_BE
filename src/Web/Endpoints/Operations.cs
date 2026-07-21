@@ -3,11 +3,14 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Mvc;
 using SaigonWaterbus.Application.Operations;
+using SaigonWaterbus.Domain.Constants;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
 public sealed class Operations : IEndpointGroup
 {
+    private static readonly TimeSpan ScheduleCacheDuration = TimeSpan.FromSeconds(5);
+
     private const string DelayScheduleExample =
         """
         {
@@ -31,7 +34,10 @@ public sealed class Operations : IEndpointGroup
     public static void Map(RouteGroupBuilder groupBuilder)
     {
         groupBuilder.MapGet(GetSchedule, "schedule")
-            .RequireAuthorization()
+            .RequireAuthorization(policy => policy.RequireRole(
+                Roles.AdminName,
+                Roles.ManagerSystemName,
+                Roles.StaffSystemName))
             .WithSummary("Xem lịch vận hành chung")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
@@ -67,6 +73,7 @@ public sealed class Operations : IEndpointGroup
 
     private static async Task<IResult> GetSchedule(
         ISender sender,
+        IEndpointResponseCache responseCache,
         HttpRequest httpRequest,
         [FromQuery] string? fromDate,
         [FromQuery] string? toDate,
@@ -100,9 +107,17 @@ public sealed class Operations : IEndpointGroup
 
         var fromAt = ToVietnamStartOfDay(startDate);
         var toAt = ToVietnamStartOfDay(endDate.AddDays(1));
-        return Results.Ok(await sender.Send(
-            new GetOperationScheduleQuery(fromAt, toAt, includeCancelled),
-            cancellationToken));
+        var cacheKey = $"operations:schedule:{fromAt.UtcTicks}:{toAt.UtcTicks}:{includeCancelled}";
+        var schedule = await responseCache.GetOrCreateAsync(
+            cacheKey,
+            ScheduleCacheDuration,
+            async ct => (await sender.Send(
+                    new GetOperationScheduleQuery(fromAt, toAt, includeCancelled),
+                    ct))
+                .ToArray(),
+            cancellationToken);
+
+        return Results.Ok(schedule ?? []);
     }
 
     private static async Task<IResult> RefreshSchedule(
