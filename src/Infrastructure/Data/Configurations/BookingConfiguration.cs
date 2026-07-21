@@ -99,6 +99,12 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .HasDatabaseName("ux_bookings_boat_date_active")
             .IsUnique()
             .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
+        builder.HasIndex(x => new { x.BookingType, x.UserId, x.Created })
+            .HasDatabaseName("ix_bookings_type_customer_created");
+        builder.HasIndex(x => new { x.BookingType, x.BookingStatus, x.DepartureDate })
+            .HasDatabaseName("ix_bookings_type_status_departure_date");
+        builder.HasIndex(x => new { x.BookingType, x.DepartureDate, x.BoatId })
+            .HasDatabaseName("ix_bookings_type_departure_boat");
         builder.HasIndex(x => x.CharterRouteId);
         builder.HasIndex(x => x.AssignedManagerId);
         builder.HasIndex(x => x.ReturnTripId);

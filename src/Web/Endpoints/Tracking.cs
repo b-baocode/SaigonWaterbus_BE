@@ -13,7 +13,7 @@ namespace SaigonWaterbus.Web.Endpoints;
 
 public sealed class Tracking : IEndpointGroup
 {
-    private static readonly TimeSpan LatestLocationCacheDuration = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan LatestLocationCacheDuration = TimeSpan.FromSeconds(5);
 
     private const int OnlineThresholdSeconds = 60;
     private const int TripBoardingLeadMinutes = 10;

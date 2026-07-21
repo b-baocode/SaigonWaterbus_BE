@@ -3,6 +3,7 @@ using System.Text.Json.Serialization;
 using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -31,6 +32,22 @@ public static class DependencyInjection
 
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
         builder.Services.AddMemoryCache();
+        builder.Services.AddResponseCompression(options =>
+        {
+            options.EnableForHttps = true;
+            options.Providers.Add<BrotliCompressionProvider>();
+            options.Providers.Add<GzipCompressionProvider>();
+            options.MimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(
+            [
+                "application/json",
+                "application/problem+json",
+                "application/vnd.api+json"
+            ]);
+        });
+        builder.Services.Configure<BrotliCompressionProviderOptions>(options =>
+            options.Level = System.IO.Compression.CompressionLevel.Fastest);
+        builder.Services.Configure<GzipCompressionProviderOptions>(options =>
+            options.Level = System.IO.Compression.CompressionLevel.Fastest);
         builder.Services.AddHttpContextAccessor();
         builder.Services.AddSingleton<IEndpointResponseCache, RedisBackedEndpointResponseCache>();
         builder.Services.AddScoped<IUserContext, CurrentUser>();

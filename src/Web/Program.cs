@@ -169,6 +169,7 @@ if (!app.Environment.IsDevelopment())
     app.UseHttpsRedirection();
 }
 app.UseCors("FrontendClientPolicy");
+app.UseResponseCompression();
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -33,7 +33,7 @@ public sealed class GetAdminCharterBookingListQueryHandler
         await AuthSupport.EnsureCurrentUserIsAdminAsync(_context, _userContext, cancellationToken);
 
         return await CharterBookingQuerySupport.BuildBaseQuery(_context)
-            .Include(x => x.AssignedManager)
+            .AsNoTracking()
             .OrderByDescending(x => x.Created)
             .Select(x => new AdminCharterBookingListItemDto(
                 x.Id,

@@ -26,21 +26,85 @@ public sealed class GetCharterBookingListQueryHandler
         var userId = _userContext.UserId
             ?? throw new ValidationException([]);
 
-        var bookings = await CharterBookingQuerySupport.BuildBaseQuery(_context)
-            .Include(b => b.Boat)
-            .Include(b => b.FromStation)
-            .Include(b => b.ToStation)
+        var rows = await CharterBookingQuerySupport.BuildBaseQuery(_context)
+            .AsNoTracking()
             .Where(b => b.UserId == userId)
             .OrderByDescending(b => b.Created)
+            .Select(b => new CharterBookingListItemRow(
+                b.Id,
+                b.BookingCode,
+                b.BookingStatus,
+                b.PaymentStatus,
+                b.DepartureDate,
+                b.StartTime,
+                b.RentalUnit,
+                b.DurationValue,
+                b.AdultCount,
+                b.ChildCount,
+                b.PassengerCount,
+                b.FromStation != null ? b.FromStation.StationName : null,
+                b.ToStation != null ? b.ToStation.StationName : null,
+                b.Boat != null ? b.Boat.Name : null,
+                b.SubtotalAmount,
+                b.TotalAmount,
+                b.RequestedBoatDecks,
+                b.RequestedBoatTypes,
+                b.PreferredSeatSetupType,
+                b.HoldExpiresAt))
             .ToListAsync(cancellationToken);
 
-        return bookings.Select(CharterBookingListItemMapper.ToDto).ToList();
+        return rows.Select(CharterBookingListItemMapper.ToDto).ToList();
     }
 }
+
+internal sealed record CharterBookingListItemRow(
+    Guid Id,
+    string BookingCode,
+    BookingStatus BookingStatus,
+    string PaymentStatus,
+    DateOnly? DepartureDate,
+    TimeOnly? StartTime,
+    BoatRentalUnit? RentalUnit,
+    int? DurationValue,
+    int? AdultCount,
+    int? ChildCount,
+    int? PassengerCount,
+    string? FromStationName,
+    string? ToStationName,
+    string? BoatName,
+    decimal SubtotalAmount,
+    decimal TotalAmount,
+    string? RequestedBoatDecks,
+    string? RequestedBoatTypes,
+    SeatSetupType? PreferredSeatSetupType,
+    DateTimeOffset? HoldExpiresAt);
 
 internal static class CharterBookingListItemMapper
 {
     public static CharterBookingListItemDto ToDto(Booking booking) =>
+        ToDto(new CharterBookingListItemRow(
+            booking.Id,
+            booking.BookingCode,
+            booking.BookingStatus,
+            booking.PaymentStatus,
+            booking.DepartureDate,
+            booking.StartTime,
+            booking.RentalUnit,
+            booking.DurationValue,
+            booking.AdultCount,
+            booking.ChildCount,
+            booking.PassengerCount,
+            booking.FromStation?.StationName,
+            booking.ToStation?.StationName,
+            booking.Boat?.Name,
+            booking.SubtotalAmount,
+            booking.TotalAmount,
+            booking.RequestedBoatDecks,
+            booking.RequestedBoatTypes,
+            booking.PreferredSeatSetupType,
+            booking.HoldExpiresAt));
+
+    public static CharterBookingListItemDto ToDto(CharterBookingListItemRow booking) =>
         new(
             booking.Id,
             booking.BookingCode,
@@ -53,9 +117,9 @@ internal static class CharterBookingListItemMapper
             booking.AdultCount.GetValueOrDefault(),
             booking.ChildCount.GetValueOrDefault(),
             booking.PassengerCount.GetValueOrDefault(),
-            booking.FromStation?.StationName,
-            booking.ToStation?.StationName,
-            booking.Boat?.Name,
+            booking.FromStationName,
+            booking.ToStationName,
+            booking.BoatName,
             booking.BookingStatus == BookingStatus.PendingQuote ? null : booking.SubtotalAmount,
             booking.BookingStatus == BookingStatus.PendingQuote ? null : booking.TotalAmount,
             ToRequestedBoatDtos(booking.RequestedBoatDecks, booking.RequestedBoatTypes, booking.PreferredSeatSetupType),
