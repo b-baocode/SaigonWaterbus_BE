@@ -193,7 +193,9 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 t.DepartureTime, t.ArrivalTime,
                 fromStopDeparture, toStopArrival,
                 Math.Max(0, available), capacity,
-                minPrice, t.TripStatus.ToString());
+                minPrice, t.TripStatus.ToString(),
+                IsBookingClosed: false,
+                IsBookable: available > 0);
         })
         // Ẩn chuyến đã qua hạn bán vé TẠI BẾN KHÁCH LÊN — khớp với chặn ở giữ ghế và tạo booking.
         .Where(dto => dto.FromStopScheduledDeparture is null

@@ -12,7 +12,10 @@ public sealed record TripSummaryDto(
     int AvailableSeats,
     int TotalSeats,
     decimal? MinPrice,
-    string TripStatus);
+    string TripStatus,
+    bool IsBookingClosed = false,
+    bool IsBookable = true,
+    string? BookingClosedReason = null);
 
 public sealed record TripDetailDto(
     Guid TripId,

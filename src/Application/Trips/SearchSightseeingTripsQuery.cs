@@ -113,7 +113,9 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                 t.DepartureTime, t.ArrivalTime,
                 t.DepartureTime, t.ArrivalTime,
                 Math.Max(0, available), capacity,
-                minPrice, t.TripStatus.ToString());
+                minPrice, t.TripStatus.ToString(),
+                IsBookingClosed: false,
+                IsBookable: available > 0);
         }).ToList();
     }
 }

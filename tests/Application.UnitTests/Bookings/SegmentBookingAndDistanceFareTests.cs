@@ -238,7 +238,11 @@ public class SegmentBookingAndDistanceFareTests
 
         var searchResults = await new SearchTripsQueryHandler(context, new FixedTimeProvider(Now))
             .Handle(new SearchTripsQuery(hb.Id, lt.Id, date), CancellationToken.None);
-        searchResults.Select(x => x.TripCode).ShouldContain("TR-BOARD-1");
+        var searchTrip = searchResults.Single(x => x.TripCode == "TR-BOARD-1");
+        searchTrip.AvailableSeats.ShouldBe(2);
+        searchTrip.IsBookingClosed.ShouldBeFalse();
+        searchTrip.IsBookable.ShouldBeTrue();
+        searchTrip.TripStatus.ShouldBe(TripStatus.Boarding.ToString());
 
         var seatMap = await new GetTripSeatMapQueryHandler(context, userContext, new FixedTimeProvider(Now))
             .Handle(new GetTripSeatMapQuery(seeded.Trip.Id, "HB", "LT"), CancellationToken.None);

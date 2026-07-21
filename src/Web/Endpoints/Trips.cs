@@ -70,6 +70,7 @@ public sealed class Trips : IEndpointGroup
                 "Chi tra ve chuyen waterbus thuong (routeType=Regular, tripType=Regular); chuyen charter khong xuat hien.",
                 "Chuyen ngam canh tim bang GET /api/trips/search/sightseeing (khong can chon ben).",
                 "Chi tra ve chuyen co tripStatus=Scheduled/Boarding/InProgress/Delayed va chặng còn trước giờ rời bến lên tối thiểu 10 phút.",
+                "FE dùng isBookable/isBookingClosed trong response để enable/disable chọn chuyến; không khóa chỉ vì tripStatus=Boarding/InProgress.",
                 "availableSeats = so ghe con trong tren CHANG tim kiem (ghe ban theo chang, xem ghi chu seat map)."));
 
         group.MapGet(SearchSightseeingTrips, "search/sightseeing")
@@ -80,6 +81,7 @@ public sealed class Trips : IEndpointGroup
                 null,
                 "Query params: operatingDate (dd/MM/yyyy, dd-MM-yyyy hoac yyyy-MM-dd). Khong can fromStationId/toStationId vi tuyen ngam canh la vong lap: ben bat dau = ben ket thuc.",
                 "Chi tra ve chuyen co route routeType=SightseeingLoop, tripStatus=Scheduled/Boarding/InProgress/Delayed va còn trước giờ rời bến lên tối thiểu 10 phút.",
+                "FE dùng isBookable/isBookingClosed trong response để enable/disable chọn chuyến; không khóa chỉ vì tripStatus=Boarding/InProgress.",
                 "Ghe ban nguyen chuyen (khong theo chang): availableSeats = tong ghe active - so ghe da co ve/dang giu.",
                 "minPrice = gia ghe re nhat da chot trong trip_seats x he so loai ve re nhat.",
                 "fromStopScheduledDeparture/toStopScheduledArrival = gio khoi hanh/ket thuc cua nguyen chuyen."));
