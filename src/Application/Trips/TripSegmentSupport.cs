@@ -92,6 +92,11 @@ public static class TripSegmentSupport
         return (fromStop, toStop);
     }
 
-    private static bool IsStation(RouteStop routeStop, string stationCode) =>
-        routeStop.Station.StationCode.Equals(stationCode, StringComparison.OrdinalIgnoreCase);
+    private static bool IsStation(RouteStop routeStop, string stationIdentifier)
+    {
+        var station = routeStop.Station;
+        return station.StationCode.Equals(stationIdentifier, StringComparison.OrdinalIgnoreCase)
+            || station.StationName.Equals(stationIdentifier, StringComparison.OrdinalIgnoreCase)
+            || station.Id.ToString().Equals(stationIdentifier, StringComparison.OrdinalIgnoreCase);
+    }
 }

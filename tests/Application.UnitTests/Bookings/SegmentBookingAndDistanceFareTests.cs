@@ -255,6 +255,23 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task SeatMapAcceptsStationNameOrIdWhenResolvingSegment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-SEG-ID", withDistances: true);
+        var hb = context.Set<Station>().Single(s => s.StationCode == "HB");
+        var lt = context.Set<Station>().Single(s => s.StationCode == "LT");
+
+        var seatMap = await new GetTripSeatMapQueryHandler(context, userContext, new FixedTimeProvider(Now))
+            .Handle(new GetTripSeatMapQuery(seeded.Trip.Id, hb.StationName, lt.Id.ToString()), CancellationToken.None);
+
+        seatMap.FromStationCode.ShouldBe("HB");
+        seatMap.ToStationCode.ShouldBe("LT");
+        seatMap.IsBookingClosed.ShouldBeFalse();
+    }
+
+    [Test]
     public async Task DistanceFarePricesEachItemBySegmentKm()
     {
         await using var context = SeatFlowTestData.CreateContext();

@@ -104,7 +104,7 @@ public sealed class Trips : IEndpointGroup
                 "Anonymous (dang nhap de thay ghe minh dang giu = HeldByMe)",
                 null,
                 "Tra ve toan bo ghe active cua tau theo deck/row/column kem trang thai theo chuyen.",
-                "Query ?fromStationCode=&toStationCode=: chang khach dinh di — trang thai ghe tinh theo chang do "
+                "Query ?fromStationCode=&toStationCode=: chấp nhận stationCode, stationId hoặc stationName; khuyến nghị dùng stationCode. Chặng khách định đi — trạng thái ghế tính theo chặng đó "
                 + "(trip Regular ban ghe theo chang: ghe chi Booked/Held neu co ve/luot giu giao chang). Bo trong = xem ca tuyen.",
                 "routeType / sellsBySegment: sellsBySegment=true thi FE phai hoi ben len/xuong va gui fromStationCode/toStationCode "
                 + "khi dat ve; false (vd routeType=SightseeingLoop) la di nguyen chuyen, khong hoi va khong gui ben.",

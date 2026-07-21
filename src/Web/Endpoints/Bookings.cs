@@ -156,7 +156,7 @@ public sealed class Bookings : IEndpointGroup
                 "Ve co ghe cua INFANT/SENIOR/DISABLED chi ap dung ghe STANDARD (waterbus thuong); tren sightseeing (ghe CABIN/RIVER/SKY) se bi tu choi.",
                 "INFANT bat buoc khai bao birthYear (tre duoi 2 tuoi tinh theo ngay khoi hanh chuyen).",
                 "Moi INFANT khong chiem ghe phai co it nhat mot hanh khach nguoi lon co ghe di kem trong cung booking.",
-                "fromStationCode / toStationCode: lay tu GET /api/trips/{id} → stops[].stationCode.",
+                "fromStationCode / toStationCode: khuyến nghị lấy từ GET /api/trips/{id} → stops[].stationCode; BE cũng chấp nhận stationId hoặc stationName.",
                 "Chi bat buoc tren chuyen ban ve theo chang (sellsBySegment=true trong GET /api/trips/{id} hoac /seats); "
                     + "chuyen ngam canh (routeType=SightseeingLoop) di nguyen chuyen nen BO TRONG ca hai, BE tu lay ben dau → ben cuoi cua tuyen.",
                 "fromStationCode phai co stop_order nho hon toStationCode (chuyen ban theo chang).",
