@@ -24,7 +24,16 @@ public sealed class Payments : IEndpointGroup
           "reason": "Customer refund",
           "bankBin": "970422",
           "accountNumber": "123456789",
-          "accountName": "NGUYEN VAN A"
+          "accountName": "NGUYEN VAN A",
+          "otpChallengeId": "00000000-0000-0000-0000-000000000000",
+          "otpCode": "123456"
+        }
+        """;
+
+    private const string RequestRefundOtpExample =
+        """
+        {
+          "otpChannel": "phone"
         }
         """;
 
@@ -76,6 +85,16 @@ public sealed class Payments : IEndpointGroup
                 "Vi du: POST /api/payments/order-code/123456/sync.",
                 "Endpoint cu POST /api/payments/{paymentId}/sync van dung paymentId noi bo trong database."));
 
+        group.MapPost(RequestRefundOtp, "{paymentId:guid}/refund/otp")
+            .RequireAuthorization()
+            .WithSummary("Gui OTP hoan tien")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                RequestRefundOtpExample,
+                "Gui OTP cho chu payment truoc khi tao lenh hoan tien.",
+                "otpChannel optional: phone hoac email. Mac dinh uu tien so dien thoai Viet Nam da xac thuc, neu khong co thi dung email.",
+                "Response tra ve challengeId, maskedDestination, expiresAt, resendAvailableAt; dung challengeId + otpCode cho API refund."));
+
         group.MapPost(RefundPayment, "{paymentId:guid}/refund")
             .RequireAuthorization()
             .WithSummary("Hoan tien payment")
@@ -83,6 +102,7 @@ public sealed class Payments : IEndpointGroup
                 "Bearer token",
                 RefundPaymentExample,
                 "Tao lenh payout PayOS de hoan tien payment da thanh toan.",
+                "Bat buoc goi POST /api/payments/{paymentId}/refund/otp truoc, sau do gui otpChallengeId va otpCode trong request nay.",
                 "Khong nhan amount tu client; backend tu tinh so tien hoan tu payment.Amount, payment.RefundAmount va chinh sach hoan tien."));
 
         group.MapPost(ManualRefundPayment, "{paymentId:guid}/manual-refund")
@@ -123,6 +143,15 @@ public sealed class Payments : IEndpointGroup
     private static async Task<IResult> SyncPaymentByOrderCode(ISender sender, long orderCode, CancellationToken ct) =>
         Results.Ok(await sender.Send(new SyncPaymentByOrderCodeCommand(orderCode), ct));
 
+    private static async Task<IResult> RequestRefundOtp(
+        ISender sender,
+        Guid paymentId,
+        RequestRefundOtpRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new RequestRefundOtpCommand(
+            paymentId,
+            request.OtpChannel), ct));
+
     private static async Task<IResult> RefundPayment(
         ISender sender,
         Guid paymentId,
@@ -133,7 +162,9 @@ public sealed class Payments : IEndpointGroup
             request.Reason,
             request.BankBin,
             request.AccountNumber,
-            request.AccountName), ct));
+            request.AccountName,
+            request.OtpChallengeId,
+            request.OtpCode), ct));
 
     private static async Task<IResult> ManualRefundPayment(
         ISender sender,

@@ -12,6 +12,12 @@ namespace SaigonWaterbus.Application.UnitTests.Trips;
 public class CreateTripCommandTests
 {
     [Test]
+    public void TripCreationLeadTimeIsTwentyMinutes()
+    {
+        TripScheduleSupport.MinimumCreationLeadTime.ShouldBe(TimeSpan.FromMinutes(20));
+    }
+
+    [Test]
     public async Task CreateTripRejectsSameRouteDepartureAtSameTime()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -240,6 +246,73 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task CreateTripUsesRouteIdAndStopStayDurationWhenBuildingTripStops()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var stationC = Station("C", "Ben C");
+        var route = Route("R1", stationA, stationB, stationC);
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 20;
+        route.RouteStops.Single(x => x.StopOrder == 3).StandardTravelMin = 20;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var result = await new CreateTripCommandHandler(context)
+            .Handle(
+                new CreateTripCommand(
+                    RouteCode: null,
+                    BoatCode: "BOAT-1",
+                    OperatingDate: DateOnly.FromDateTime(departureTime.Date),
+                    DepartureTime: departureTime,
+                    RouteId: route.Id,
+                    Stops: [new CreateTripStopScheduleInput(2, 5)]),
+                CancellationToken.None);
+
+        result.RouteId.ShouldBe(route.Id);
+        result.ArrivalTime.ShouldBe(departureTime.ToUniversalTime().AddMinutes(45));
+        result.Stops.Select(x => x.StopOrder).ShouldBe([1, 2, 3]);
+        result.Stops[1].StayDurationMinutes.ShouldBe(5);
+        result.Stops[1].ScheduledArrival.ShouldBe(departureTime.ToUniversalTime().AddMinutes(20));
+        result.Stops[1].ScheduledDeparture.ShouldBe(departureTime.ToUniversalTime().AddMinutes(25));
+        result.Stops[2].ScheduledArrival.ShouldBe(departureTime.ToUniversalTime().AddMinutes(45));
+        context.Set<TripStop>().Single(x => x.TripId == result.TripId && x.StopOrder == 2)
+            .StayDurationMinutes.ShouldBe(5);
+    }
+
+    [Test]
+    public async Task CreateTripRequiresStayDurationForEveryIntermediateRegularStop()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route(
+            "R1",
+            Station("A", "Ben A"),
+            Station("B", "Ben B"),
+            Station("C", "Ben C"),
+            Station("D", "Ben D"));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context).Handle(
+                new CreateTripCommand(
+                    RouteCode: "R1",
+                    BoatCode: "BOAT-1",
+                    OperatingDate: DateOnly.FromDateTime(departureTime.Date),
+                    DepartureTime: departureTime,
+                    Stops: [new CreateTripStopScheduleInput(2, 0)]),
+                CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x).ShouldContain(x => x.Contains("stopOrder: 3"));
+    }
+
+    [Test]
     public async Task CreateTripRejectsStandardBoatOnSightseeingRoute()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -337,7 +410,7 @@ public class CreateTripCommandTests
             Status = StationStatus.Active
         };
 
-    private static Route Route(string code, Station from, Station to)
+    private static Route Route(string code, params Station[] stations)
     {
         var route = new Route
         {
@@ -345,25 +418,20 @@ public class CreateTripCommandTests
             RouteName = code,
             Status = "Active"
         };
-        route.RouteStops =
-        [
-            new RouteStop
+
+        var stopOrder = 1;
+        foreach (var station in stations)
+        {
+            route.RouteStops.Add(new RouteStop
             {
                 Route = route,
-                Station = from,
-                StationId = from.Id,
-                StopOrder = 1,
-                StandardTravelMin = 15
-            },
-            new RouteStop
-            {
-                Route = route,
-                Station = to,
-                StationId = to.Id,
-                StopOrder = 2,
-                StandardTravelMin = 15
-            }
-        ];
+                Station = station,
+                StationId = station.Id,
+                StopOrder = stopOrder,
+                StandardTravelMin = stopOrder == 1 ? null : 15
+            });
+            stopOrder++;
+        }
 
         return route;
     }

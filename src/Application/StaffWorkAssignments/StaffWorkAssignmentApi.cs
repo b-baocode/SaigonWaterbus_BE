@@ -25,6 +25,7 @@ public sealed record StaffWorkAssignmentDto(
     string? Note,
     StaffWorkAssignmentBoatDto? Boat,
     StaffWorkAssignmentStationDto? Station,
+    StaffWorkAssignmentTripStopDto? TripStop,
     Guid AssignedByUserId,
     string AssignedByName,
     DateTimeOffset AssignedAt);
@@ -38,6 +39,14 @@ public sealed record StaffWorkAssignmentStationDto(
     Guid StationId,
     string StationCode,
     string StationName);
+
+public sealed record StaffWorkAssignmentTripStopDto(
+    Guid TripStopId,
+    Guid TripId,
+    string TripCode,
+    int StopOrder,
+    DateTimeOffset? ScheduledArrival,
+    DateTimeOffset? ScheduledDeparture);
 
 public sealed record StaffCurrentShiftDto(
     StaffWorkAssignmentDto? CurrentShift,
@@ -69,7 +78,11 @@ public sealed record StaffAssignedTripDto(
     string AssignmentShiftState,
     Guid? StationId,
     string? StationCode,
-    string? StationName);
+    string? StationName,
+    Guid? TripStopId = null,
+    int? StopOrder = null,
+    DateTimeOffset? StopScheduledArrival = null,
+    DateTimeOffset? StopScheduledDeparture = null);
 
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateStaffWorkAssignmentCommand(
@@ -77,6 +90,7 @@ public sealed record CreateStaffWorkAssignmentCommand(
     StaffWorkAssignmentType AssignmentType,
     Guid? BoatId = null,
     Guid? StationId = null,
+    Guid? TripStopId = null,
     DateTimeOffset? StartAt = null,
     DateTimeOffset? EndAt = null,
     string? DutyRole = null,
@@ -190,6 +204,7 @@ public sealed class CreateStaffWorkAssignmentCommandHandler
             request.AssignmentType,
             request.BoatId,
             request.StationId,
+            request.TripStopId,
             request.StartAt,
             request.EndAt,
             cancellationToken);
@@ -215,6 +230,7 @@ public sealed class CreateStaffWorkAssignmentCommandHandler
             AssignmentType = resolved.AssignmentType,
             BoatId = resolved.Boat?.Id,
             StationId = resolved.Station?.Id,
+            TripStopId = resolved.TripStop?.Id,
             WorkingDate = StaffWorkAssignmentSupport.ResolveWorkingDate(resolved.StartAt),
             StartAt = resolved.StartAt,
             EndAt = resolved.EndAt,
@@ -280,6 +296,7 @@ public sealed class CreateBulkStaffWorkAssignmentsCommandHandler
             request.AssignmentType,
             request.BoatId,
             request.StationId,
+            tripStopId: null,
             firstOccurrence.StartAt,
             firstOccurrence.EndAt,
             cancellationToken);
@@ -350,6 +367,7 @@ public sealed class ReplaceStaffWorkAssignmentCommandHandler
             .Include(x => x.StaffUser)
             .Include(x => x.Boat)
             .Include(x => x.Station)
+            .Include(x => x.TripStop)
             .SingleOrDefaultAsync(x => x.Id == request.AssignmentId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy phân công ca làm.");
 
@@ -390,6 +408,7 @@ public sealed class ReplaceStaffWorkAssignmentCommandHandler
             assignment.AssignmentType,
             assignment.Boat,
             assignment.Station,
+            assignment.TripStop,
             assignment.StartAt,
             assignment.EndAt);
 
@@ -452,6 +471,7 @@ public sealed record GetStaffWorkAssignmentsQuery(
     StaffWorkAssignmentType? AssignmentType = null,
     Guid? BoatId = null,
     Guid? StationId = null,
+    Guid? TripStopId = null,
     StaffWorkAssignmentStatus? Status = null) : IRequest<IReadOnlyList<StaffWorkAssignmentDto>>;
 
 public sealed class GetStaffWorkAssignmentsQueryValidator : AbstractValidator<GetStaffWorkAssignmentsQuery>
@@ -505,6 +525,8 @@ public sealed class GetStaffWorkAssignmentsQueryHandler
             query = query.Where(x => x.BoatId == request.BoatId.Value);
         if (request.StationId.HasValue)
             query = query.Where(x => x.StationId == request.StationId.Value);
+        if (request.TripStopId.HasValue)
+            query = query.Where(x => x.TripStopId == request.TripStopId.Value);
         if (request.Status.HasValue)
             query = query.Where(x => x.Status == request.Status.Value);
 
@@ -678,6 +700,7 @@ public sealed class GetMyStaffTripsQueryHandler
             .AsNoTracking()
             .Include(x => x.Boat)
             .Include(x => x.Station)
+            .Include(x => x.TripStop)
             .Where(x => x.StaffUserId == actor.Id
                 && x.WorkingDate == request.Date
                 && x.Status != StaffWorkAssignmentStatus.Cancelled
@@ -700,6 +723,7 @@ public sealed class GetMyStaffTripsQueryHandler
             .Include(x => x.Route)
                 .ThenInclude(x => x.RouteStops)
                     .ThenInclude(x => x.Station)
+            .Include(x => x.TripStops)
             .Where(x => x.TripStatus != TripStatus.Cancelled
                 && x.DepartureTime < windowEnd
                 && windowStart < x.ArrivalTime)
@@ -737,6 +761,8 @@ public sealed class GetMyStaffTripsQueryHandler
             StaffWorkAssignmentType.Boat => trip.BoatId.HasValue
                 && assignment.BoatId.HasValue
                 && trip.BoatId.Value == assignment.BoatId.Value,
+            StaffWorkAssignmentType.Station when assignment.TripStopId.HasValue =>
+                trip.TripStops.Any(stop => stop.Id == assignment.TripStopId.Value),
             StaffWorkAssignmentType.Station => assignment.StationId.HasValue
                 && trip.Route.RouteStops.Any(stop => stop.StationId == assignment.StationId.Value),
             _ => false
@@ -751,6 +777,7 @@ public sealed class GetMyStaffTripsQueryHandler
         var station = assignment.AssignmentType == StaffWorkAssignmentType.Station
             ? assignment.Station
             : null;
+        var tripStop = assignment.TripStop;
 
         return new StaffAssignedTripDto(
             trip.Id,
@@ -774,7 +801,11 @@ public sealed class GetMyStaffTripsQueryHandler
             StaffWorkAssignmentSupport.ResolveShiftState(assignment, now),
             station?.Id,
             station?.StationCode,
-            station?.StationName);
+            station?.StationName,
+            tripStop?.Id,
+            tripStop?.StopOrder,
+            tripStop?.PlannedArrivalTime,
+            tripStop?.PlannedDepartureTime);
     }
 
     private static bool TimeRangesOverlap(
@@ -849,6 +880,7 @@ public static class StaffWorkAssignmentSupport
         StaffWorkAssignmentType AssignmentType,
         Boat? Boat,
         Station? Station,
+        TripStop? TripStop,
         DateTimeOffset StartAt,
         DateTimeOffset EndAt);
 
@@ -881,6 +913,7 @@ public static class StaffWorkAssignmentSupport
         StaffWorkAssignmentType assignmentType,
         Guid? boatId,
         Guid? stationId,
+        Guid? tripStopId,
         DateTimeOffset? startAt,
         DateTimeOffset? endAt,
         CancellationToken cancellationToken)
@@ -888,9 +921,9 @@ public static class StaffWorkAssignmentSupport
         return assignmentType switch
         {
             StaffWorkAssignmentType.Boat => await ResolveBoatTargetAsync(
-                context, boatId, stationId, startAt, endAt, cancellationToken),
+                context, boatId, stationId, tripStopId, startAt, endAt, cancellationToken),
             StaffWorkAssignmentType.Station => await ResolveStationTargetAsync(
-                context, boatId, stationId, startAt, endAt, cancellationToken),
+                context, boatId, stationId, tripStopId, startAt, endAt, cancellationToken),
             _ => throw new ValidationException([new ValidationFailure(
                 nameof(CreateStaffWorkAssignmentCommand.AssignmentType),
                 "assignmentType không hợp lệ.")])
@@ -1065,6 +1098,7 @@ public static class StaffWorkAssignmentSupport
             AssignmentType = target.AssignmentType,
             BoatId = target.Boat?.Id,
             StationId = target.Station?.Id,
+            TripStopId = target.TripStop?.Id,
             WorkingDate = ResolveWorkingDate(startAt),
             StartAt = startAt,
             EndAt = endAt,
@@ -1122,7 +1156,9 @@ public static class StaffWorkAssignmentSupport
             .Include(x => x.StaffUser)
             .Include(x => x.AssignedByUser)
             .Include(x => x.Boat)
-            .Include(x => x.Station);
+            .Include(x => x.Station)
+            .Include(x => x.TripStop)
+                .ThenInclude(x => x!.Trip);
 
     public static async Task<StaffWorkAssignmentDto> LoadDtoAsync(
         IApplicationDbContext context,
@@ -1163,6 +1199,15 @@ public static class StaffWorkAssignmentSupport
                     assignment.Station.Id,
                     assignment.Station.StationCode,
                     assignment.Station.StationName),
+            assignment.TripStop is null
+                ? null
+                : new StaffWorkAssignmentTripStopDto(
+                    assignment.TripStop.Id,
+                    assignment.TripStop.TripId,
+                    assignment.TripStop.Trip.TripCode,
+                    assignment.TripStop.StopOrder,
+                    assignment.TripStop.PlannedArrivalTime,
+                    assignment.TripStop.PlannedDepartureTime),
             assignment.AssignedByUserId,
             assignment.AssignedByUser.FullName,
             assignment.AssignedAt);
@@ -1199,6 +1244,7 @@ public static class StaffWorkAssignmentSupport
         IApplicationDbContext context,
         Guid? boatId,
         Guid? stationId,
+        Guid? tripStopId,
         DateTimeOffset? startAt,
         DateTimeOffset? endAt,
         CancellationToken cancellationToken)
@@ -1208,6 +1254,13 @@ public static class StaffWorkAssignmentSupport
             throw new ValidationException([new ValidationFailure(
                 nameof(CreateStaffWorkAssignmentCommand.StationId),
                 "Không gửi stationId khi assignmentType = Boat.")]);
+        }
+
+        if (tripStopId.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(CreateStaffWorkAssignmentCommand.TripStopId),
+                "Không gửi tripStopId khi assignmentType = Boat.")]);
         }
 
         if (!boatId.HasValue)
@@ -1240,6 +1293,7 @@ public static class StaffWorkAssignmentSupport
             StaffWorkAssignmentType.Boat,
             boat,
             null,
+            null,
             startAt.Value.ToUniversalTime(),
             endAt.Value.ToUniversalTime());
     }
@@ -1248,6 +1302,7 @@ public static class StaffWorkAssignmentSupport
         IApplicationDbContext context,
         Guid? boatId,
         Guid? stationId,
+        Guid? tripStopId,
         DateTimeOffset? startAt,
         DateTimeOffset? endAt,
         CancellationToken cancellationToken)
@@ -1259,16 +1314,39 @@ public static class StaffWorkAssignmentSupport
                 "Không gửi boatId khi assignmentType = Station.")]);
         }
 
+        TripStop? tripStop = null;
+        if (tripStopId.HasValue)
+        {
+            tripStop = await context.Set<TripStop>()
+                .Include(x => x.Station)
+                .Include(x => x.Trip)
+                .SingleOrDefaultAsync(x => x.Id == tripStopId.Value, cancellationToken)
+                ?? throw new NotFoundException("Không tìm thấy trip stop.");
+
+            if (stationId.HasValue && stationId.Value != tripStop.StationId)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(CreateStaffWorkAssignmentCommand.StationId),
+                    "stationId phải khớp với bến của tripStopId.")]);
+            }
+
+            stationId = tripStop.StationId;
+        }
+
         if (!stationId.HasValue)
         {
             throw new ValidationException([new ValidationFailure(
                 nameof(CreateStaffWorkAssignmentCommand.StationId),
-                "stationId là bắt buộc khi assignmentType = Station.")]);
+                "stationId hoặc tripStopId là bắt buộc khi assignmentType = Station.")]);
         }
 
-        var station = await context.Set<Station>()
-            .SingleOrDefaultAsync(x => x.Id == stationId.Value, cancellationToken)
-            ?? throw new NotFoundException("Không tìm thấy bến.");
+        var station = tripStop?.Station;
+        if (station is null)
+        {
+            station = await context.Set<Station>()
+                .SingleOrDefaultAsync(x => x.Id == stationId.Value, cancellationToken)
+                ?? throw new NotFoundException("Không tìm thấy bến.");
+        }
 
         if (station.Status != StationStatus.Active)
         {
@@ -1289,6 +1367,7 @@ public static class StaffWorkAssignmentSupport
             StaffWorkAssignmentType.Station,
             null,
             station,
+            tripStop,
             startAt.Value.ToUniversalTime(),
             endAt.Value.ToUniversalTime());
     }

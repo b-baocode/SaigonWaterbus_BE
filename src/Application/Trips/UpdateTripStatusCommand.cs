@@ -41,6 +41,7 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
     public async Task<TripDetailDto> Handle(UpdateTripStatusCommand request, CancellationToken cancellationToken)
     {
         var trip = await _context.Set<Trip>()
+            .Include(t => t.Boat)
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
@@ -84,17 +85,30 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         return ToDetailDto(trip, sourceBooking);
     }
 
-    internal static TripDetailDto ToDetailDto(Trip trip, Booking? sourceBooking = null) => new(
+    internal static TripDetailDto ToDetailDto(
+        Trip trip,
+        Booking? sourceBooking = null,
+        IReadOnlyList<TripStopDto>? stops = null,
+        IReadOnlyList<TripStaffAssignmentDto>? onBoardStaff = null) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
         trip.Route.RouteType,
         DistanceFareSupport.UsesDistanceFare(trip.TripType, trip.Route.RouteType),
         trip.DepartureTime, trip.ArrivalTime,
         trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
-        TripStopScheduleSupport.BuildStopDtos(trip),
+        stops ?? TripStopScheduleSupport.BuildStopDtos(trip),
         trip.TripType,
         trip.SourceBookingId,
-        sourceBooking?.BookingCode);
+        sourceBooking?.BookingCode,
+        trip.Boat is null
+            ? null
+            : new TripBoatDto(
+                trip.Boat.Id,
+                trip.Boat.Name,
+                trip.Boat.Code,
+                trip.CapacitySnapshot,
+                trip.Boat.Status.ToString()),
+        onBoardStaff ?? []);
 
     private async Task<Booking?> LoadSourceBookingAsync(Trip trip, CancellationToken cancellationToken)
     {

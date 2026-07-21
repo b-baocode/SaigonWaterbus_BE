@@ -18,6 +18,8 @@ public class TicketScanEvent : BaseGuidAuditableEntity
 
     public Guid? StationId { get; set; }
 
+    public Guid? TripStopId { get; set; }
+
     public TicketScanAction Action { get; set; }
 
     public TicketScanResult Result { get; set; }
@@ -53,4 +55,6 @@ public class TicketScanEvent : BaseGuidAuditableEntity
     public Boat? Boat { get; set; }
 
     public Station? Station { get; set; }
+
+    public TripStop? TripStop { get; set; }
 }

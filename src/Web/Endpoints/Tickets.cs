@@ -17,7 +17,7 @@ public sealed class Tickets : IEndpointGroup
                 "Bearer token",
                 null,
                 "Nhan ticketCode hoac qrToken.",
-                "Query optional: source=Qr|Manual|Override, clientOperationId, deviceTime, note.",
+                "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
                 "Admin/Manager/Staff xem duoc moi ve.",
                 "Customer chi xem duoc ve thuoc booking cua minh.",
                 "Charter booking sinh ve theo tung hanh khach sau khi da thanh toan du va nhap danh sach hanh khach."));
@@ -29,7 +29,7 @@ public sealed class Tickets : IEndpointGroup
                 "Bearer token",
                 null,
                 "Nhan ticketCode hoac qrToken.",
-                "Query optional: source=Qr|Manual|Override, clientOperationId, deviceTime, note.",
+                "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
                 "Chi Admin/Manager/Staff duoc check-in.",
                 "Ticket phai Active, booking phai Confirmed va da thanh toan du.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedInAt/checkedInBy."));
@@ -41,7 +41,7 @@ public sealed class Tickets : IEndpointGroup
                 "Bearer token",
                 null,
                 "Nhan ticketCode hoac qrToken.",
-                "Query optional: source=Qr|Manual|Override, clientOperationId, deviceTime, note.",
+                "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
                 "Chi Admin/Manager/Staff duoc check-out.",
                 "Ticket phai da CheckedIn truoc do.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedOutAt/checkedOutBy."));
@@ -81,36 +81,39 @@ public sealed class Tickets : IEndpointGroup
         ISender sender,
         string codeOrToken,
         TicketScanSource? source,
+        Guid? tripStopId,
         string? clientOperationId,
         DateTimeOffset? deviceTime,
         string? note,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(
-            new ScanTicketQuery(codeOrToken, CreateMetadata(source, clientOperationId, deviceTime, note)),
+            new ScanTicketQuery(codeOrToken, CreateMetadata(source, tripStopId, clientOperationId, deviceTime, note)),
             ct));
 
     private static async Task<IResult> CheckInTicket(
         ISender sender,
         string codeOrToken,
         TicketScanSource? source,
+        Guid? tripStopId,
         string? clientOperationId,
         DateTimeOffset? deviceTime,
         string? note,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(
-            new CheckInTicketCommand(codeOrToken, CreateMetadata(source, clientOperationId, deviceTime, note)),
+            new CheckInTicketCommand(codeOrToken, CreateMetadata(source, tripStopId, clientOperationId, deviceTime, note)),
             ct));
 
     private static async Task<IResult> CheckOutTicket(
         ISender sender,
         string codeOrToken,
         TicketScanSource? source,
+        Guid? tripStopId,
         string? clientOperationId,
         DateTimeOffset? deviceTime,
         string? note,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(
-            new CheckOutTicketCommand(codeOrToken, CreateMetadata(source, clientOperationId, deviceTime, note)),
+            new CheckOutTicketCommand(codeOrToken, CreateMetadata(source, tripStopId, clientOperationId, deviceTime, note)),
             ct));
 
     private static async Task<IResult> GetTicketScanHistory(
@@ -141,8 +144,14 @@ public sealed class Tickets : IEndpointGroup
 
     private static TicketScanRequestMetadata CreateMetadata(
         TicketScanSource? source,
+        Guid? tripStopId,
         string? clientOperationId,
         DateTimeOffset? deviceTime,
         string? note) =>
-        new(source ?? TicketScanSource.Qr, clientOperationId, deviceTime, note);
+        new(
+            source ?? TicketScanSource.Qr,
+            TripStopId: tripStopId,
+            ClientOperationId: clientOperationId,
+            DeviceTime: deviceTime,
+            Note: note);
 }

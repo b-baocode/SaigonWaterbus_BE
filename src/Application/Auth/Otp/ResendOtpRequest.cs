@@ -60,7 +60,11 @@ public sealed class ResendOtpRequestUseCase
             ?? throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Không tìm thấy yêu cầu xác thực OTP.");
 
         var purpose = challenge.Purpose;
-        if (purpose is not (OtpPurpose.Register or OtpPurpose.ForgotPassword or OtpPurpose.EmailChange or OtpPurpose.PhoneChange))
+        if (purpose is not (OtpPurpose.Register
+            or OtpPurpose.ForgotPassword
+            or OtpPurpose.EmailChange
+            or OtpPurpose.PhoneChange
+            or OtpPurpose.Refund))
         {
             throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Yêu cầu OTP này không hỗ trợ gửi lại.");
         }
@@ -73,7 +77,7 @@ public sealed class ResendOtpRequestUseCase
                 throw AuthSupport.CreateValidationException(nameof(request.ChallengeId), "Tài khoản đã hoàn tất xác thực OTP.");
             }
         }
-        else if (purpose is OtpPurpose.EmailChange or OtpPurpose.PhoneChange)
+        else if (purpose is OtpPurpose.EmailChange or OtpPurpose.PhoneChange or OtpPurpose.Refund)
         {
             if (_userContext.UserId != user.Id)
             {

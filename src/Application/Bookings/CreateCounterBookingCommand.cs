@@ -1,6 +1,7 @@
 using System.Globalization;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Payments;
@@ -37,7 +38,8 @@ public sealed record CounterBookingResult(
     string? QrCode,
     DateTimeOffset? PaidAt,
     Guid? ReturnTripId = null,
-    string? ReturnTripCode = null);
+    string? ReturnTripCode = null,
+    BookingInsuranceDto? Insurance = null);
 
 /// <summary>
 /// Bán vé tại quầy: staff đặt hộ khách vãng lai (không cần tài khoản) và thu tiền ngay.
@@ -52,7 +54,9 @@ public sealed record CreateCounterBookingCommand(
     string? ContactEmail = null,
     CounterPaymentMethod PaymentMethod = CounterPaymentMethod.Cash,
     string? ReturnTripCode = null,
-    IReadOnlyList<BookingItemRequest>? ReturnItems = null) : IRequest<CounterBookingResult>;
+    IReadOnlyList<BookingItemRequest>? ReturnItems = null,
+    bool? InsuranceSelected = null,
+    Guid? InsurancePackageId = null) : IRequest<CounterBookingResult>;
 
 public sealed class CreateCounterBookingCommandValidator : AbstractValidator<CreateCounterBookingCommand>
 {
@@ -71,6 +75,9 @@ public sealed class CreateCounterBookingCommandValidator : AbstractValidator<Cre
             .Must(items => items.Count <= 10)
             .WithMessage("Maximum 10 items per booking.")
             .When(x => x.ReturnItems is not null);
+        RuleFor(x => x.InsurancePackageId)
+            .NotEmpty()
+            .When(x => x.InsurancePackageId.HasValue);
     }
 }
 
@@ -147,8 +154,22 @@ public sealed class CreateCounterBookingCommandHandler
                 "returnTripCode là bắt buộc khi có returnItems (vé khứ hồi).")]);
         }
 
-        var subtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
+        var legs = new List<ResolvedLeg> { outboundLeg };
+        if (returnLeg is not null)
+        {
+            legs.Add(returnLeg);
+        }
+
+        var ticketSubtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
             + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
+        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveSeatBookingInsuranceSnapshotAsync(
+            _context,
+            request.InsuranceSelected,
+            request.InsurancePackageId,
+            legs.Sum(x => x.ItemPrices.Count),
+            now,
+            cancellationToken);
+        var subtotal = ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m);
 
         // Khách vãng lai: booking không gắn user nên không tích/dùng điểm và không áp mã khuyến mãi
         // (mã khuyến mãi kiểm tra hạn mức theo từng tài khoản).
@@ -169,14 +190,9 @@ public sealed class CreateCounterBookingCommandHandler
             DiscountAmount = 0,
             TotalAmount = subtotal,
             RemainingAmount = subtotal,
+            InsuranceSnapshot = insuranceSnapshot,
             HoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration)
         };
-
-        var legs = new List<ResolvedLeg> { outboundLeg };
-        if (returnLeg is not null)
-        {
-            legs.Add(returnLeg);
-        }
 
         BookingLegResolver.AddPassengers(booking, legs);
         _context.Set<Booking>().Add(booking);
@@ -277,7 +293,9 @@ public sealed class CreateCounterBookingCommandHandler
             booking.Passengers.Count, booking.HoldExpiresAt,
             payment.Id, payment.PaymentCode, paymentMethod,
             payment.CheckoutUrl, payment.QrCode, payment.PaidAt,
-            booking.ReturnTripId, returnLeg?.Trip.TripCode);
+            booking.ReturnTripId,
+            returnLeg?.Trip.TripCode,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
 
     private static CounterBookingResult ToResult(
         Booking booking,
@@ -291,5 +309,7 @@ public sealed class CreateCounterBookingCommandHandler
             booking.Passengers.Count, booking.HoldExpiresAt,
             payment.PaymentId, payment.PaymentCode, paymentMethod,
             payment.CheckoutUrl, payment.QrCode, payment.PaidAt,
-            booking.ReturnTripId, returnLeg?.Trip.TripCode);
+            booking.ReturnTripId,
+            returnLeg?.Trip.TripCode,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
 }

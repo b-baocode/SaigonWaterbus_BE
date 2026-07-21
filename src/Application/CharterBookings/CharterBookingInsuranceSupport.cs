@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -12,9 +13,10 @@ internal static class CharterBookingInsuranceSupport
         bool? insuranceSelected,
         Guid? insurancePackageId,
         BookingInsuranceSnapshot? currentSnapshot,
-        int insuredSeatQuantity,
+        int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string bookingType = Booking.CharterBookingType)
     {
         if (insuranceSelected == false)
         {
@@ -31,9 +33,10 @@ internal static class CharterBookingInsuranceSupport
             return await CreateSelectedInsuranceSnapshotAsync(
                 context,
                 insurancePackageId,
-                insuredSeatQuantity,
+                insuredPassengerQuantity,
                 quotedAt,
-                cancellationToken);
+                cancellationToken,
+                bookingType);
         }
 
         if (insurancePackageId.HasValue)
@@ -41,22 +44,66 @@ internal static class CharterBookingInsuranceSupport
             return await CreateSelectedInsuranceSnapshotAsync(
                 context,
                 insurancePackageId,
-                insuredSeatQuantity,
+                insuredPassengerQuantity,
                 quotedAt,
-                cancellationToken);
+                cancellationToken,
+                bookingType);
         }
 
         return currentSnapshot is null
             ? null
-            : UpdateQuantity(currentSnapshot, insuredSeatQuantity, quotedAt);
+            : UpdateQuantity(currentSnapshot, insuredPassengerQuantity, quotedAt);
+    }
+
+    public static async Task<BookingInsuranceSnapshot?> ResolveSeatBookingInsuranceSnapshotAsync(
+        IApplicationDbContext context,
+        bool? insuranceSelected,
+        Guid? insurancePackageId,
+        int insuredPassengerQuantity,
+        DateTimeOffset quotedAt,
+        CancellationToken cancellationToken)
+    {
+        if (insuranceSelected == false)
+        {
+            return null;
+        }
+
+        if (insurancePackageId.HasValue || insuranceSelected == true)
+        {
+            if (insuranceSelected == true && !insurancePackageId.HasValue)
+            {
+                return await ResolveDefaultInsuranceSnapshotAsync(
+                    context,
+                    Booking.SeatBookingType,
+                    insuredPassengerQuantity,
+                    quotedAt,
+                    cancellationToken);
+            }
+
+            return await CreateSelectedInsuranceSnapshotAsync(
+                context,
+                insurancePackageId,
+                insuredPassengerQuantity,
+                quotedAt,
+                cancellationToken,
+                Booking.SeatBookingType);
+        }
+
+        return await ResolveDefaultInsuranceSnapshotAsync(
+            context,
+            Booking.SeatBookingType,
+            insuredPassengerQuantity,
+            quotedAt,
+            cancellationToken);
     }
 
     public static async Task<BookingInsuranceSnapshot?> CreateSelectedInsuranceSnapshotAsync(
         IApplicationDbContext context,
         Guid? insurancePackageId,
-        int insuredSeatQuantity,
+        int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string bookingType = Booking.CharterBookingType)
     {
         if (!insurancePackageId.HasValue)
         {
@@ -73,15 +120,15 @@ internal static class CharterBookingInsuranceSupport
             throw CreateInsuranceValidation("Không tìm thấy gói bảo hiểm đã chọn.");
         }
 
-        if (!string.Equals(package.BookingType, Booking.CharterBookingType, StringComparison.Ordinal)
+        if (!string.Equals(package.BookingType, bookingType, StringComparison.Ordinal)
             || !package.IsActive)
         {
-            throw CreateInsuranceValidation("Gói bảo hiểm đã chọn không khả dụng cho charter booking.");
+            throw CreateInsuranceValidation(CreateUnavailablePackageMessage(bookingType));
         }
 
-        if (insuredSeatQuantity < 0)
+        if (insuredPassengerQuantity < 0)
         {
-            throw CreateInsuranceValidation("Không xác định được số ghế tính bảo hiểm cho booking thuê tàu.");
+            throw CreateInsuranceValidation(CreateInvalidQuantityMessage(bookingType));
         }
 
         return new BookingInsuranceSnapshot
@@ -98,8 +145,8 @@ internal static class CharterBookingInsuranceSupport
             Currency = package.Currency,
             Conditions = package.Conditions,
             TermsUrl = package.TermsUrl,
-            Quantity = insuredSeatQuantity,
-            TotalAmount = package.UnitPremiumAmount * insuredSeatQuantity,
+            Quantity = insuredPassengerQuantity,
+            TotalAmount = package.UnitPremiumAmount * insuredPassengerQuantity,
             QuotedAt = quotedAt
         };
     }
@@ -107,14 +154,13 @@ internal static class CharterBookingInsuranceSupport
     public static async Task<BookingInsuranceSnapshot?> ResolveQuoteInsuranceSnapshotAsync(
         IApplicationDbContext context,
         BookingInsuranceSnapshot? requestedSnapshot,
-        IReadOnlyList<QuoteBoatSelection> selectedBoats,
+        int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken)
     {
-        var insuredSeatQuantity = selectedBoats.Sum(x => x.Boat.SeatCount);
-        if (insuredSeatQuantity <= 0)
+        if (insuredPassengerQuantity <= 0)
         {
-            throw CreateInsuranceValidation("Không xác định được tổng số ghế của tàu để tính bảo hiểm thuê tàu.");
+            throw CreateInsuranceValidation("Không xác định được số hành khách để tính bảo hiểm thuê tàu.");
         }
 
         var package = await ResolveQuoteInsurancePackageAsync(
@@ -126,7 +172,31 @@ internal static class CharterBookingInsuranceSupport
             return null;
         }
 
-        return CreateSnapshot(package, insuredSeatQuantity, quotedAt);
+        return CreateSnapshot(package, insuredPassengerQuantity, quotedAt);
+    }
+
+    public static decimal ApplyPassengerQuantityIncrease(
+        Booking booking,
+        int insuredPassengerQuantity,
+        DateTimeOffset quotedAt)
+    {
+        if (booking.InsuranceSnapshot is null || insuredPassengerQuantity <= booking.InsuranceSnapshot.Quantity)
+        {
+            return 0m;
+        }
+
+        var previousTotal = booking.InsuranceSnapshot.TotalAmount;
+        UpdateQuantity(booking.InsuranceSnapshot, insuredPassengerQuantity, quotedAt);
+        var additionalAmount = booking.InsuranceSnapshot.TotalAmount - previousTotal;
+        if (additionalAmount <= 0)
+        {
+            return 0m;
+        }
+
+        booking.SubtotalAmount += additionalAmount;
+        booking.TotalAmount += additionalAmount;
+        PaymentSupport.RestorePaymentSummaryFromPaidPayments(booking);
+        return additionalAmount;
     }
 
     public static CharterBookingInsuranceDto? ToDto(BookingInsuranceSnapshot? snapshot) =>
@@ -151,16 +221,16 @@ internal static class CharterBookingInsuranceSupport
 
     private static BookingInsuranceSnapshot UpdateQuantity(
         BookingInsuranceSnapshot snapshot,
-        int insuredSeatQuantity,
+        int insuredPassengerQuantity,
         DateTimeOffset quotedAt)
     {
-        if (insuredSeatQuantity < 0)
+        if (insuredPassengerQuantity < 0)
         {
-            throw CreateInsuranceValidation("Không xác định được số ghế tính bảo hiểm cho booking thuê tàu.");
+            throw CreateInsuranceValidation(CreateInvalidQuantityMessage(snapshot.BookingType));
         }
 
-        snapshot.Quantity = insuredSeatQuantity;
-        snapshot.TotalAmount = snapshot.UnitPremiumAmount * insuredSeatQuantity;
+        snapshot.Quantity = insuredPassengerQuantity;
+        snapshot.TotalAmount = snapshot.UnitPremiumAmount * insuredPassengerQuantity;
         snapshot.QuotedAt = quotedAt;
         return snapshot;
     }
@@ -199,7 +269,7 @@ internal static class CharterBookingInsuranceSupport
 
     private static BookingInsuranceSnapshot CreateSnapshot(
         InsurancePackage package,
-        int insuredSeatQuantity,
+        int insuredPassengerQuantity,
         DateTimeOffset quotedAt) =>
         new()
         {
@@ -215,10 +285,35 @@ internal static class CharterBookingInsuranceSupport
             Currency = package.Currency,
             Conditions = package.Conditions,
             TermsUrl = package.TermsUrl,
-            Quantity = insuredSeatQuantity,
-            TotalAmount = package.UnitPremiumAmount * insuredSeatQuantity,
+            Quantity = insuredPassengerQuantity,
+            TotalAmount = package.UnitPremiumAmount * insuredPassengerQuantity,
             QuotedAt = quotedAt
         };
+
+    private static async Task<BookingInsuranceSnapshot?> ResolveDefaultInsuranceSnapshotAsync(
+        IApplicationDbContext context,
+        string bookingType,
+        int insuredPassengerQuantity,
+        DateTimeOffset quotedAt,
+        CancellationToken cancellationToken)
+    {
+        if (insuredPassengerQuantity < 0)
+        {
+            throw CreateInsuranceValidation(CreateInvalidQuantityMessage(bookingType));
+        }
+
+        var package = await context.Set<InsurancePackage>()
+            .AsNoTracking()
+            .Where(x => x.BookingType == bookingType && x.IsActive)
+            .OrderByDescending(x => x.IsRequired)
+            .ThenBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Code)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return package is null
+            ? null
+            : CreateSnapshot(package, insuredPassengerQuantity, quotedAt);
+    }
 
     private static System.Linq.Expressions.Expression<Func<InsurancePackage, bool>> IsActiveCharterInsurancePackageExpression() =>
         package => package.BookingType == Booking.CharterBookingType && package.IsActive;
@@ -226,6 +321,16 @@ internal static class CharterBookingInsuranceSupport
     private static bool IsActiveCharterInsurancePackage(InsurancePackage package) =>
         string.Equals(package.BookingType, Booking.CharterBookingType, StringComparison.Ordinal)
         && package.IsActive;
+
+    private static string CreateUnavailablePackageMessage(string bookingType) =>
+        Booking.IsCharterBookingType(bookingType)
+            ? "Gói bảo hiểm đã chọn không khả dụng cho charter booking."
+            : "Gói bảo hiểm đã chọn không khả dụng cho booking thường.";
+
+    private static string CreateInvalidQuantityMessage(string bookingType) =>
+        Booking.IsCharterBookingType(bookingType)
+            ? "Không xác định được số hành khách tính bảo hiểm cho booking thuê tàu."
+            : "Không xác định được số hành khách tính bảo hiểm cho booking thường.";
 
     private static ValidationException CreateInsuranceValidation(string message) =>
         new([new ValidationFailure("insurancePackageId", message)]);

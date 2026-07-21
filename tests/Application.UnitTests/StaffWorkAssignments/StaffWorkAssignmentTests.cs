@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.StaffWorkAssignments;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -470,6 +471,99 @@ public class StaffWorkAssignmentTests
         trip.StationId.ShouldBe(assignedStation.Id);
     }
 
+    [Test]
+    public async Task TripDetailReturnsBoatStaffScannerAndBoardingCountsByTripStop()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var onBoardStaffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var groundStaffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.Ground);
+        var admin = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
+        var onBoardStaff = context.Users.Single(x => x.Id == onBoardStaffContext.UserId!.Value);
+        var groundStaff = context.Users.Single(x => x.Id == groundStaffContext.UserId!.Value);
+        var boat = Boat("WB-01");
+        var stationA = Station("A");
+        var stationB = Station("B");
+        var stationC = Station("C");
+        var route = Route("R1", stationA, stationB, stationC);
+        var departure = new DateTimeOffset(2030, 1, 2, 8, 0, 0, TimeSpan.FromHours(7)).ToUniversalTime();
+        var arrival = departure.AddHours(1);
+        var trip = Trip("T-DETAIL", route, boat, departure, arrival);
+        var stopA = TripStop(trip, stationA, 1, departure, departure);
+        var stopB = TripStop(trip, stationB, 2, departure.AddMinutes(20), departure.AddMinutes(20));
+        var stopC = TripStop(trip, stationC, 3, arrival, arrival);
+        trip.TripStops.Add(stopA);
+        trip.TripStops.Add(stopB);
+        trip.TripStops.Add(stopC);
+        var onBoardAssignment = Assignment(
+            onBoardStaff,
+            admin,
+            StaffWorkAssignmentType.Boat,
+            departure.AddMinutes(-10),
+            arrival.AddMinutes(10),
+            boat,
+            station: null,
+            tripStop: null);
+        var scannerAssignment = Assignment(
+            groundStaff,
+            admin,
+            StaffWorkAssignmentType.Station,
+            departure.AddMinutes(10),
+            departure.AddMinutes(35),
+            boat: null,
+            stationB,
+            stopB);
+        var booking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            Trip = trip,
+            TripId = trip.Id,
+            BookingCode = "BK-DETAIL",
+            ContactName = "Passenger",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        booking.Passengers.Add(new BookingPassenger
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            Trip = trip,
+            TripId = trip.Id,
+            FullName = "Passenger B",
+            FromStationId = stationB.Id,
+            ToStationId = stationC.Id,
+            FromStopOrder = 2,
+            ToStopOrder = 3,
+            PassengerType = "ADULT"
+        });
+        context.AddRange(
+            boat,
+            stationA,
+            stationB,
+            stationC,
+            route,
+            trip,
+            onBoardAssignment,
+            scannerAssignment,
+            booking);
+        await context.SaveChangesAsync();
+
+        var result = await new GetTripDetailQueryHandler(context, new FixedTimeProvider(departure.AddMinutes(15)))
+            .Handle(new GetTripDetailQuery(trip.Id), CancellationToken.None);
+
+        result.Boat.ShouldNotBeNull().VesselId.ShouldBe(boat.Id);
+        result.OnBoardStaff.ShouldNotBeNull().Single().StaffUserId.ShouldBe(onBoardStaff.Id);
+        var stopBDto = result.Stops.Single(x => x.TripStopId == stopB.Id);
+        stopBDto.BoardingPassengerCount.ShouldBe(1);
+        stopBDto.ScanningStaff.ShouldNotBeNull().Single().StaffUserId.ShouldBe(groundStaff.Id);
+        result.Stops.Single(x => x.TripStopId == stopA.Id).BoardingPassengerCount.ShouldBe(0);
+    }
+
     private static Boat Boat(string code) =>
         new()
         {
@@ -535,6 +629,52 @@ public class StaffWorkAssignmentTests
             DepartureTime = departureTime,
             ArrivalTime = arrivalTime,
             CapacitySnapshot = boat.SeatCount
+        };
+
+    private static TripStop TripStop(
+        Trip trip,
+        Station station,
+        int stopOrder,
+        DateTimeOffset plannedArrival,
+        DateTimeOffset plannedDeparture) =>
+        new()
+        {
+            Trip = trip,
+            TripId = trip.Id,
+            Station = station,
+            StationId = station.Id,
+            StopOrder = stopOrder,
+            PlannedArrivalTime = stopOrder == 1 ? null : plannedArrival,
+            PlannedDepartureTime = stopOrder == 3 ? null : plannedDeparture
+        };
+
+    private static StaffWorkAssignment Assignment(
+        User staff,
+        User assignedBy,
+        StaffWorkAssignmentType assignmentType,
+        DateTimeOffset startAt,
+        DateTimeOffset endAt,
+        Boat? boat,
+        Station? station,
+        TripStop? tripStop) =>
+        new()
+        {
+            StaffUser = staff,
+            StaffUserId = staff.Id,
+            AssignedByUser = assignedBy,
+            AssignedByUserId = assignedBy.Id,
+            AssignmentType = assignmentType,
+            Boat = boat,
+            BoatId = boat?.Id,
+            Station = station,
+            StationId = station?.Id,
+            TripStop = tripStop,
+            TripStopId = tripStop?.Id,
+            WorkingDate = DateOnly.FromDateTime(startAt.ToOffset(TimeSpan.FromHours(7)).DateTime),
+            StartAt = startAt,
+            EndAt = endAt,
+            AssignedAt = startAt.AddHours(-1),
+            Status = StaffWorkAssignmentStatus.Scheduled
         };
 
     private static UserStationAssignment StationAssignment(User user, Station station, Guid assignedByUserId) =>

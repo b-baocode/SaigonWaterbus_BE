@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -12,25 +13,35 @@ namespace SaigonWaterbus.Application.Trips;
 /// <summary>Giá vé theo loại ghế cho riêng chuyến này (ghi vào trip_seats.price).</summary>
 public sealed record TripSeatTypePriceInput(string SeatTypeCode, decimal Price);
 
+/// <summary>Override thời gian dừng tại một bến khi tạo trip từ route stops.</summary>
+public sealed record CreateTripStopScheduleInput(int StopOrder, int StayDurationMinutes);
+
 /// <summary>
 /// Tao chuyen tau. BoatCode BAT BUOC: trip luon gan tau de sinh trip_seats (khong co ghe thi khong ban ve duoc).
 /// CapacitySnapshot tu dong lay theo so ghe active cua tau, khong cho nhap tay.
 /// </summary>
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateTripCommand(
-    string RouteCode,
+    string? RouteCode,
     string BoatCode,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime,
-    IReadOnlyList<TripSeatTypePriceInput>? SeatTypePrices = null) : IRequest<TripDetailDto>;
+    IReadOnlyList<TripSeatTypePriceInput>? SeatTypePrices = null,
+    Guid? RouteId = null,
+    IReadOnlyList<CreateTripStopScheduleInput>? Stops = null) : IRequest<TripDetailDto>;
 
 public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCommand>
 {
     public CreateTripCommandValidator()
     {
-        RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.RouteCode).MaximumLength(50).When(x => x.RouteCode is not null);
+        RuleFor(x => x.RouteId).NotEmpty().When(x => x.RouteId.HasValue);
+        RuleFor(x => x)
+            .Must(x => x.RouteId.HasValue || !string.IsNullOrWhiteSpace(x.RouteCode))
+            .WithMessage("routeId hoặc routeCode là bắt buộc.")
+            .OverridePropertyName(nameof(CreateTripCommand.RouteId));
         RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
-        // UtcNow lay trong lambda (khong phai luc dung validator) de moc 6 tieng luon tinh theo
+        // UtcNow lay trong lambda (khong phai luc dung validator) de moc lead time luon tinh theo
         // thoi diem goi API, ke ca khi validator duoc cache lai.
         RuleFor(x => x.DepartureTime)
             .Must(departureTime =>
@@ -39,6 +50,19 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
         RuleFor(x => x.SeatTypePrices!)
             .SetValidator(new TripSeatTypePricesValidator())
             .When(x => x.SeatTypePrices is not null);
+        RuleFor(x => x.Stops!)
+            .Must(stops => stops.Select(x => x.StopOrder).Distinct().Count() == stops.Count)
+            .WithMessage("stops không được trùng stopOrder.")
+            .When(x => x.Stops is not null);
+        RuleForEach(x => x.Stops).ChildRules(stop =>
+        {
+            stop.RuleFor(x => x.StopOrder)
+                .GreaterThan(0)
+                .WithMessage("stopOrder phải lớn hơn 0.");
+            stop.RuleFor(x => x.StayDurationMinutes)
+                .InclusiveBetween(0, 24 * 60)
+                .WithMessage("stayDurationMinutes phải từ 0 đến 1440 phút.");
+        });
     }
 }
 
@@ -123,21 +147,18 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
                 $"operatingDate ({request.OperatingDate:dd/MM/yyyy}) không khớp ngày khởi hành theo giờ Việt Nam ({vietnamDepartureDate:dd/MM/yyyy}).")]);
         }
 
-        var routeCode = request.RouteCode.Trim().ToUpperInvariant();
-
-        var route = await _context.Set<Route>()
-            .Include(r => r.RouteStops.OrderBy(rs => rs.StopOrder))
-                .ThenInclude(rs => rs.Station)
-            .SingleOrDefaultAsync(r => r.RouteCode == routeCode && r.Status == "Active" && r.IsBookable, cancellationToken)
-            ?? throw new NotFoundException($"Route '{routeCode}' not found, inactive, or not bookable.");
+        var route = await ResolveRouteAsync(request, cancellationToken);
 
         if (route.RouteStops.Count < 2)
-            throw new ValidationException([new ValidationFailure(nameof(request.RouteCode), "Route must have at least 2 stops.")]);
+            throw new ValidationException([new ValidationFailure(nameof(request.RouteId), "Route must have at least 2 stops.")]);
 
         var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
 
         var departureTime = request.DepartureTime.ToUniversalTime();
-        var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(route.RouteStops, departureTime);
+        var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
+            route.RouteStops,
+            departureTime,
+            ResolveStayDurationMinutesByStopOrder(route, request.Stops));
         var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
         await EnsureNoRouteDepartureConflictAsync(route.Id, departureTime, cancellationToken);
@@ -201,7 +222,105 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             DistanceFareSupport.UsesDistanceFare(trip.TripType, route.RouteType),
             trip.DepartureTime, trip.ArrivalTime,
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
-            TripStopScheduleSupport.BuildStopDtos(trip));
+            TripStopScheduleSupport.BuildStopDtos(trip),
+            Boat: new TripBoatDto(
+                boat.Id,
+                boat.Name,
+                boat.Code,
+                trip.CapacitySnapshot,
+                boat.Status.ToString()),
+            OnBoardStaff: []);
+    }
+
+    private async Task<Route> ResolveRouteAsync(
+        CreateTripCommand request,
+        CancellationToken cancellationToken)
+    {
+        var query = _context.Set<Route>()
+            .Include(r => r.RouteStops.OrderBy(rs => rs.StopOrder))
+                .ThenInclude(rs => rs.Station)
+            .Where(r => r.Status == "Active" && r.IsBookable);
+
+        if (request.RouteId.HasValue)
+        {
+            return await query.SingleOrDefaultAsync(r => r.Id == request.RouteId.Value, cancellationToken)
+                ?? throw new NotFoundException($"Route '{request.RouteId.Value}' not found, inactive, or not bookable.");
+        }
+
+        var routeCode = request.RouteCode?.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(routeCode))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.RouteId),
+                "routeId hoặc routeCode là bắt buộc.")]);
+        }
+
+        return await query.SingleOrDefaultAsync(r => r.RouteCode == routeCode, cancellationToken)
+            ?? throw new NotFoundException($"Route '{routeCode}' not found, inactive, or not bookable.");
+    }
+
+    private static IReadOnlyDictionary<int, int>? ResolveStayDurationMinutesByStopOrder(
+        Route route,
+        IReadOnlyList<CreateTripStopScheduleInput>? stops)
+    {
+        if (stops is not { Count: > 0 })
+        {
+            return null;
+        }
+
+        var orderedStops = route.RouteStops.OrderBy(x => x.StopOrder).ToList();
+        var routeStopOrders = orderedStops.Select(x => x.StopOrder).ToHashSet();
+        var firstStopOrder = orderedStops[0].StopOrder;
+        var lastStopOrder = orderedStops[^1].StopOrder;
+        var intermediateStopOrders = orderedStops
+            .Where(x => x.StopOrder != firstStopOrder && x.StopOrder != lastStopOrder)
+            .Select(x => x.StopOrder)
+            .ToList();
+        var requiresExplicitStayDurations = route.RouteType == RouteTypes.Regular
+            && intermediateStopOrders.Count > 0;
+
+        if (requiresExplicitStayDurations && stops is not { Count: > 0 })
+        {
+            throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
+                "stops là bắt buộc với tuyến thường có bến giữa; nhập stayDurationMinutes cho từng bến giữa tuyến.")]);
+        }
+
+        var result = new Dictionary<int, int>();
+
+        foreach (var stop in stops ?? [])
+        {
+            if (!routeStopOrders.Contains(stop.StopOrder))
+            {
+                throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
+                    $"stopOrder {stop.StopOrder} không thuộc route đã chọn.")]);
+            }
+
+            if (stop.StopOrder == firstStopOrder || stop.StopOrder == lastStopOrder)
+            {
+                if (stop.StayDurationMinutes != 0)
+                {
+                    throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
+                        "stayDurationMinutes chỉ áp dụng cho các bến giữa tuyến.")]);
+                }
+
+                continue;
+            }
+
+            result[stop.StopOrder] = stop.StayDurationMinutes;
+        }
+
+        if (requiresExplicitStayDurations)
+        {
+            var missingStopOrders = intermediateStopOrders
+                .Where(stopOrder => !result.ContainsKey(stopOrder))
+                .ToList();
+            if (missingStopOrders.Count > 0)
+            {
+                throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
+                    $"Thiếu stayDurationMinutes cho bến giữa stopOrder: {string.Join(", ", missingStopOrders)}.")]);
+            }
+        }
+
+        return result.Count == 0 ? null : result;
     }
 
     /// <summary>

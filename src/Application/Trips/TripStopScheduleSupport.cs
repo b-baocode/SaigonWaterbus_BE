@@ -29,7 +29,8 @@ internal static class TripStopScheduleSupport
     /// </summary>
     public static IReadOnlyList<TripStopDraft> BuildFromRouteStops(
         IEnumerable<RouteStop> routeStops,
-        DateTimeOffset departureTimeUtc)
+        DateTimeOffset departureTimeUtc,
+        IReadOnlyDictionary<int, int>? stayDurationMinutesByStopOrder = null)
     {
         var orderedStops = routeStops.OrderBy(x => x.StopOrder).ToList();
         var drafts = new List<TripStopDraft>();
@@ -47,21 +48,49 @@ internal static class TripStopScheduleSupport
             {
                 plannedArrival = previousDeparture.AddMinutes(
                     (double)(orderedStops[i].StandardTravelMin ?? DefaultTravelMinutes));
-                plannedDeparture = i == orderedStops.Count - 1 ? null : plannedArrival;
+                var stayDurationMinutes = ResolveStayDurationMinutes(
+                    orderedStops[i].StopOrder,
+                    isFirstStop: false,
+                    isLastStop: i == orderedStops.Count - 1,
+                    stayDurationMinutesByStopOrder);
+                plannedDeparture = i == orderedStops.Count - 1
+                    ? null
+                    : plannedArrival.Value.AddMinutes(stayDurationMinutes);
                 previousDeparture = plannedDeparture ?? plannedArrival.Value;
             }
 
+            var draftStayDurationMinutes = ResolveStayDurationMinutes(
+                orderedStops[i].StopOrder,
+                isFirstStop: i == 0,
+                isLastStop: i == orderedStops.Count - 1,
+                stayDurationMinutesByStopOrder);
             drafts.Add(new TripStopDraft(
                 orderedStops[i].StationId,
                 orderedStops[i].Station,
-                i + 1,
-                StayDurationMinutes: 0,
+                orderedStops[i].StopOrder,
+                draftStayDurationMinutes,
                 Note: null,
                 plannedArrival,
                 plannedDeparture));
         }
 
         return drafts;
+    }
+
+    private static int ResolveStayDurationMinutes(
+        int stopOrder,
+        bool isFirstStop,
+        bool isLastStop,
+        IReadOnlyDictionary<int, int>? stayDurationMinutesByStopOrder)
+    {
+        if (isFirstStop || isLastStop || stayDurationMinutesByStopOrder is null)
+        {
+            return 0;
+        }
+
+        return stayDurationMinutesByStopOrder.TryGetValue(stopOrder, out var minutes)
+            ? minutes
+            : 0;
     }
 
     public static DateTimeOffset ComputeArrivalTimeUtc(
@@ -149,25 +178,37 @@ internal static class TripStopScheduleSupport
     /// Stops[] cua TripDetailDto: uu tien trip_stops da luu (co gio den/di va thoi gian dung);
     /// trip cu chua co trip_stops thi suy tu route stops nhu truoc.
     /// </summary>
-    public static List<TripStopDto> BuildStopDtos(Trip trip)
+    public static List<TripStopDto> BuildStopDtos(
+        Trip trip,
+        IReadOnlyDictionary<Guid, int>? boardingPassengerCountsByTripStopId = null,
+        IReadOnlyDictionary<Guid, IReadOnlyList<TripStaffAssignmentDto>>? scanningStaffByTripStopId = null)
     {
         if (trip.TripStops.Count > 0)
         {
             return trip.TripStops
                 .OrderBy(x => x.StopOrder)
-                .Select(x => new TripStopDto(
-                    x.Id,
-                    x.StationId,
-                    x.Station?.StationName ?? string.Empty,
-                    x.Station?.StationCode ?? string.Empty,
-                    x.StopOrder,
-                    x.PlannedArrivalTime ?? x.PlannedDepartureTime,
-                    x.PlannedDepartureTime ?? x.PlannedArrivalTime,
-                    x.ActualArrivalTime,
-                    x.ActualDepartureTime,
-                    x.StopStatus,
-                    x.StayDurationMinutes,
-                    x.Note))
+                .Select(x =>
+                {
+                    var scanningStaff = scanningStaffByTripStopId is not null
+                        && scanningStaffByTripStopId.TryGetValue(x.Id, out var staff)
+                            ? staff
+                            : [];
+                    return new TripStopDto(
+                        x.Id,
+                        x.StationId,
+                        x.Station?.StationName ?? string.Empty,
+                        x.Station?.StationCode ?? string.Empty,
+                        x.StopOrder,
+                        x.PlannedArrivalTime ?? x.PlannedDepartureTime,
+                        x.PlannedDepartureTime ?? x.PlannedArrivalTime,
+                        x.ActualArrivalTime,
+                        x.ActualDepartureTime,
+                        x.StopStatus,
+                        x.StayDurationMinutes,
+                        x.Note,
+                        boardingPassengerCountsByTripStopId?.GetValueOrDefault(x.Id) ?? 0,
+                        scanningStaff);
+                })
                 .ToList();
         }
 
@@ -185,7 +226,9 @@ internal static class TripStopScheduleSupport
                 null,
                 TripStopStatuses.Scheduled,
                 draft.StayDurationMinutes,
-                draft.Note))
+                draft.Note,
+                0,
+                []))
             .ToList();
     }
 }

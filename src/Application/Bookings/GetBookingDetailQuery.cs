@@ -138,6 +138,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             BookingServiceTypes.Resolve(booking.Trip?.Route.RouteType),
             booking.Trip?.Route.RouteType,
             booking.ReturnTrip?.TripCode,
-            booking.ReturnTrip?.DepartureTime);
+            booking.ReturnTrip?.DepartureTime,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
     }
 }

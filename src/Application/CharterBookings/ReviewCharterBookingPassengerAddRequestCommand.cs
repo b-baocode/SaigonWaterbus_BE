@@ -105,11 +105,22 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
             passenger.ReviewNote = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim();
         }
 
+        var approvedPassengers = booking.Passengers
+            .Where(CharterBookingPassengerSupport.IsApproved)
+            .ToList();
+        booking.PassengerCount = approvedPassengers.Count;
+        booking.AdultCount = CharterBookingPassengerSupport.CountAdults(approvedPassengers);
+        booking.ChildCount = CharterBookingPassengerSupport.CountChildren(approvedPassengers);
+
         var ticketResult = await CharterBookingTicketSupport.EnsurePassengerTicketsAsync(
             _context,
             booking,
             _timeProvider,
             cancellationToken);
+        CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
+            booking,
+            approvedPassengers.Count,
+            now);
 
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
@@ -194,7 +205,10 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
         CancellationToken cancellationToken)
     {
         var ticket = ticketResult?.CreatedTickets.FirstOrDefault();
-        if (ticket is null || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        if (ticket is null
+            || string.IsNullOrWhiteSpace(booking.ContactEmail)
+            || !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount > 0)
         {
             return;
         }

@@ -200,18 +200,18 @@ public class QuoteCharterBookingCommandTests
 
         result.Insurance.ShouldNotBeNull();
         result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        result.Insurance.Quantity.ShouldBe(120);
-        result.Insurance.TotalAmount.ShouldBe(1_200_000m);
-        result.SubtotalAmount.ShouldBe(4_200_000m);
-        result.TotalAmount.ShouldBe(4_200_000m);
+        result.Insurance.Quantity.ShouldBe(101);
+        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
+        result.SubtotalAmount.ShouldBe(4_010_000m);
+        result.TotalAmount.ShouldBe(4_010_000m);
 
         var savedBooking = await context.Set<Booking>()
             .SingleAsync(x => x.Id == booking.Id);
 
         savedBooking.InsuranceSnapshot.ShouldNotBeNull();
-        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(120);
-        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_200_000m);
-        savedBooking.TotalAmount.ShouldBe(4_200_000m);
+        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(101);
+        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_010_000m);
+        savedBooking.TotalAmount.ShouldBe(4_010_000m);
     }
 
     [Test]
@@ -243,18 +243,18 @@ public class QuoteCharterBookingCommandTests
 
         result.Insurance.ShouldNotBeNull();
         result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        result.Insurance.Quantity.ShouldBe(120);
-        result.Insurance.TotalAmount.ShouldBe(1_200_000m);
-        result.SubtotalAmount.ShouldBe(4_200_000m);
-        result.TotalAmount.ShouldBe(4_200_000m);
+        result.Insurance.Quantity.ShouldBe(101);
+        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
+        result.SubtotalAmount.ShouldBe(4_010_000m);
+        result.TotalAmount.ShouldBe(4_010_000m);
 
         var savedBooking = await context.Set<Booking>()
             .SingleAsync(x => x.Id == booking.Id);
 
         savedBooking.InsuranceSnapshot.ShouldNotBeNull();
-        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(120);
-        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_200_000m);
-        savedBooking.TotalAmount.ShouldBe(4_200_000m);
+        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(101);
+        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_010_000m);
+        savedBooking.TotalAmount.ShouldBe(4_010_000m);
     }
 
     [Test]
@@ -332,10 +332,10 @@ public class QuoteCharterBookingCommandTests
         result.Insurance.ShouldNotBeNull();
         result.Insurance.Selected.ShouldBeTrue();
         result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        result.Insurance.Quantity.ShouldBe(120);
-        result.Insurance.TotalAmount.ShouldBe(1_200_000m);
-        result.SubtotalAmount.ShouldBe(4_200_000m);
-        result.TotalAmount.ShouldBe(4_200_000m);
+        result.Insurance.Quantity.ShouldBe(101);
+        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
+        result.SubtotalAmount.ShouldBe(4_010_000m);
+        result.TotalAmount.ShouldBe(4_010_000m);
     }
 
     [Test]

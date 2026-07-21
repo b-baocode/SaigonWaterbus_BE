@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common;
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Promotions;
@@ -40,7 +41,8 @@ public sealed record CreateBookingResult(
     int ItemCount,
     DateTimeOffset? HoldExpiresAt,
     Guid? ReturnTripId = null,
-    string? ReturnTripCode = null);
+    string? ReturnTripCode = null,
+    BookingInsuranceDto? Insurance = null);
 
 // Vé khứ hồi: truyền thêm ReturnTripCode + ReturnItems — hai chiều độc lập (trip, ghế, hành khách riêng),
 // tổng tiền = cộng hai chiều, promotion áp trên cả booking.
@@ -49,7 +51,9 @@ public sealed record CreateBookingCommand(
     IReadOnlyList<BookingItemRequest> Items,
     string? PromotionCode,
     string? ReturnTripCode = null,
-    IReadOnlyList<BookingItemRequest>? ReturnItems = null) : IRequest<CreateBookingResult>;
+    IReadOnlyList<BookingItemRequest>? ReturnItems = null,
+    bool? InsuranceSelected = null,
+    Guid? InsurancePackageId = null) : IRequest<CreateBookingResult>;
 
 public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBookingCommand>
 {
@@ -90,6 +94,10 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             .Must(HasSeatedCompanionForEachLapInfant)
             .WithMessage(LapInfantCompanionMessage)
             .When(x => x.ReturnItems is { Count: > 0 });
+
+        RuleFor(x => x.InsurancePackageId)
+            .NotEmpty()
+            .When(x => x.InsurancePackageId.HasValue);
     }
 
     private static void ApplyItemRules(InlineValidator<BookingItemRequest> item)
@@ -190,8 +198,22 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         }
 
         var trip = outboundLeg.Trip;
-        var subtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
+        var legs = new List<ResolvedLeg> { outboundLeg };
+        if (returnLeg is not null)
+        {
+            legs.Add(returnLeg);
+        }
+
+        var ticketSubtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
             + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
+        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveSeatBookingInsuranceSnapshotAsync(
+            _context,
+            request.InsuranceSelected,
+            request.InsurancePackageId,
+            legs.Sum(x => x.ItemPrices.Count),
+            now,
+            cancellationToken);
+        var subtotal = ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m);
 
         var user = await _context.Users
             .AsNoTracking()
@@ -211,14 +233,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             SubtotalAmount = subtotal,
             DiscountAmount = 0,
             TotalAmount = subtotal,
+            InsuranceSnapshot = insuranceSnapshot,
             HoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration)
         };
-
-        var legs = new List<ResolvedLeg> { outboundLeg };
-        if (returnLeg is not null)
-        {
-            legs.Add(returnLeg);
-        }
 
         BookingLegResolver.AddPassengers(booking, legs);
 
@@ -284,6 +301,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             booking.SubtotalAmount, booking.DiscountAmount, booking.TotalAmount,
             booking.BookingStatus.ToString(), booking.Passengers.Count,
             booking.HoldExpiresAt,
-            booking.ReturnTripId, returnLeg?.Trip.TripCode);
+            booking.ReturnTripId,
+            returnLeg?.Trip.TripCode,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
     }
 }

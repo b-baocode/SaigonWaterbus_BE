@@ -30,7 +30,28 @@ public sealed record TripDetailDto(
     IReadOnlyList<TripStopDto> Stops,
     string TripType = "Regular",
     Guid? SourceBookingId = null,
-    string? SourceBookingCode = null);
+    string? SourceBookingCode = null,
+    TripBoatDto? Boat = null,
+    IReadOnlyList<TripStaffAssignmentDto>? OnBoardStaff = null);
+
+public sealed record TripBoatDto(
+    Guid VesselId,
+    string VesselName,
+    string VesselCode,
+    int Capacity,
+    string Status);
+
+public sealed record TripStaffAssignmentDto(
+    Guid AssignmentId,
+    Guid StaffUserId,
+    string StaffName,
+    string? StaffType,
+    string AssignmentType,
+    DateTimeOffset StartAt,
+    DateTimeOffset EndAt,
+    string Status,
+    string ShiftState,
+    string? DutyRole);
 
 public sealed record TripStopDto(
     Guid TripStopId,
@@ -44,4 +65,6 @@ public sealed record TripStopDto(
     DateTimeOffset? ActualDeparture,
     string StopStatus,
     int StayDurationMinutes = 0,
-    string? Note = null);
+    string? Note = null,
+    int BoardingPassengerCount = 0,
+    IReadOnlyList<TripStaffAssignmentDto>? ScanningStaff = null);

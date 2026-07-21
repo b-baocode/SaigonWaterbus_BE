@@ -16,6 +16,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         {
           "staffUserId": "00000000-0000-0000-0000-000000000000",
           "assignmentType": "Station",
+          "tripStopId": "00000000-0000-0000-0000-000000000004",
           "stationId": "00000000-0000-0000-0000-000000000001",
           "startAt": "2026-07-13T08:00:00+07:00",
           "endAt": "2026-07-13T16:00:00+07:00",
@@ -57,7 +58,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoặc Manager",
                 null,
-                "Query optional: fromDate, toDate, staffUserId, assignmentType, boatId, stationId, status.",
+                "Query optional: fromDate, toDate, staffUserId, assignmentType, boatId, stationId, tripStopId, status.",
                 "assignmentType: Boat | Station.",
                 "Admin xem tất cả. Manager chỉ xem phân công Station trong các bến mình phụ trách.",
                 "Dùng cho màn quản lý phân công nhân viên."));
@@ -70,7 +71,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 CreateExample,
                 "Admin gán staff OnBoard vào Boat.",
                 "Manager gán staff Ground vào Station trong bến mình phụ trách.",
-                "Boat/Station: bắt buộc startAt và endAt.",
+                "Boat/Station: bắt buộc startAt và endAt. Với nhân viên quét vé tại trạm, gửi tripStopId; BE tự kiểm stationId khớp bến của trip_stop.",
                 "Một ca lẻ tối đa 24 giờ. Nếu cần tạo lịch nhiều ngày/tháng, dùng POST /api/staff-assignments/bulk.",
                 "Backend chặn staff bị trùng ca."));
 
@@ -114,6 +115,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         StaffWorkAssignmentType? assignmentType,
         Guid? boatId,
         Guid? stationId,
+        Guid? tripStopId,
         StaffWorkAssignmentStatus? status,
         CancellationToken cancellationToken)
     {
@@ -135,6 +137,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 assignmentType,
                 boatId,
                 stationId,
+                tripStopId,
                 status),
             cancellationToken));
     }
@@ -149,6 +152,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 request.AssignmentType,
                 request.BoatId,
                 request.StationId,
+                request.TripStopId,
                 request.StartAt,
                 request.EndAt,
                 request.DutyRole,
@@ -226,6 +230,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         StaffWorkAssignmentType AssignmentType,
         Guid? BoatId = null,
         Guid? StationId = null,
+        Guid? TripStopId = null,
         DateTimeOffset? StartAt = null,
         DateTimeOffset? EndAt = null,
         string? DutyRole = null,

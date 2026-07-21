@@ -117,11 +117,19 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
         CharterBookingTicketSupport.CancelTicketsBeforeReplacingPassengers(booking);
         _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);
         booking.Passengers = passengers;
+        booking.PassengerCount = passengers.Count;
+        booking.AdultCount = CharterBookingPassengerSupport.CountAdults(passengers);
+        booking.ChildCount = CharterBookingPassengerSupport.CountChildren(passengers);
+
         var ticketResult = await CharterBookingTicketSupport.EnsurePassengerTicketsAsync(
             _context,
             booking,
             _timeProvider,
             cancellationToken);
+        CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
+            booking,
+            passengers.Count,
+            now);
 
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
@@ -161,7 +169,10 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
         CancellationToken cancellationToken)
     {
         var ticket = ticketResult?.CreatedTickets.FirstOrDefault();
-        if (ticket is null || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        if (ticket is null
+            || string.IsNullOrWhiteSpace(booking.ContactEmail)
+            || !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount > 0)
         {
             return;
         }

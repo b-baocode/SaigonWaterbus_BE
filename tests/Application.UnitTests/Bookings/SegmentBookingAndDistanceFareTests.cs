@@ -142,6 +142,12 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public void BookingCutoffBeforeBoardingStationDepartureIsTenMinutes()
+    {
+        BookingExpirationPolicy.BookingCutoffBeforeDeparture.ShouldBe(TimeSpan.FromMinutes(10));
+    }
+
+    [Test]
     public async Task BookingCutoffFollowsBoardingStationNotFirstStation()
     {
         await using var context = SeatFlowTestData.CreateContext();

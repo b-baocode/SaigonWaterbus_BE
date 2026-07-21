@@ -532,7 +532,7 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
         var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotAsync(
             _context,
             booking.InsuranceSnapshot,
-            selectedBoats,
+            booking.PassengerCount.GetValueOrDefault(),
             now,
             cancellationToken);
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
@@ -668,7 +668,7 @@ public sealed class QuoteCharterBookingCommandHandler
         var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotAsync(
             _context,
             booking.InsuranceSnapshot,
-            selectedBoats,
+            booking.PassengerCount.GetValueOrDefault(),
             now,
             cancellationToken);
         var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)

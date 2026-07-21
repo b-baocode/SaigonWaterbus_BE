@@ -20,6 +20,7 @@ public sealed class StaffWorkAssignmentConfiguration : IEntityTypeConfiguration<
             .IsRequired();
         builder.Property(x => x.BoatId).HasColumnName("boat_id");
         builder.Property(x => x.StationId).HasColumnName("station_id");
+        builder.Property(x => x.TripStopId).HasColumnName("trip_stop_id");
         builder.Property(x => x.WorkingDate).HasColumnName("working_date").HasColumnType("date").IsRequired();
         builder.Property(x => x.StartAt).HasColumnName("start_at").IsRequired();
         builder.Property(x => x.EndAt).HasColumnName("end_at").IsRequired();
@@ -41,6 +42,7 @@ public sealed class StaffWorkAssignmentConfiguration : IEntityTypeConfiguration<
         builder.HasIndex(x => new { x.StaffUserId, x.WorkingDate, x.Status });
         builder.HasIndex(x => new { x.AssignmentType, x.BoatId, x.Status });
         builder.HasIndex(x => new { x.AssignmentType, x.StationId, x.Status });
+        builder.HasIndex(x => new { x.AssignmentType, x.TripStopId, x.Status });
         builder.HasIndex(x => x.AssignedByUserId);
 
         builder.HasOne(x => x.StaffUser)
@@ -63,6 +65,11 @@ public sealed class StaffWorkAssignmentConfiguration : IEntityTypeConfiguration<
         builder.HasOne(x => x.Station)
             .WithMany()
             .HasForeignKey(x => x.StationId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.TripStop)
+            .WithMany()
+            .HasForeignKey(x => x.TripStopId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }

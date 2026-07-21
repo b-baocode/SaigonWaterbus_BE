@@ -30,6 +30,8 @@ public sealed class Bookings : IEndpointGroup
             }
           ],
           "promotionCode": null,
+          "insuranceSelected": true,
+          "insurancePackageId": "00000000-0000-0000-0000-000000000000",
           "returnTripCode": "TR-20260610-R01-LD-BD-5678",
           "returnItems": [
             {
@@ -61,6 +63,8 @@ public sealed class Bookings : IEndpointGroup
           "contactName": "Nguyen Van A",
           "contactPhone": "0901234567",
           "contactEmail": null,
+          "insuranceSelected": true,
+          "insurancePackageId": "00000000-0000-0000-0000-000000000000",
           "paymentMethod": "Cash"
         }
         """;
@@ -161,6 +165,7 @@ public sealed class Bookings : IEndpointGroup
                 "passengerEmail (optional): hanh khach co email se nhan rieng ve dien tu (QR) cua minh sau khi thanh toan.",
                 "Ve khu hoi (optional): truyen them returnTripCode + returnItems de mua ve 2 chieu trong 1 booking; hai chieu doc lap (trip, ghe, hanh khach rieng), khong giam gia, tong tien = cong 2 chieu.",
                 "returnTripCode va returnItems phai di cung nhau; returnItems theo cung rule voi items (toi da 10 ghe/chieu, INFANT tinh theo tung chieu).",
+                "Bao hiem: neu co goi SeatBooking active/default, BE tu cong phi bao hiem theo so passenger item. Gui insuranceSelected=false de khong chon; gui insurancePackageId de chon goi cu the.",
                 "bookingStatus sau khi tao: PendingPayment; ghe duoc giu 15 phut (holdExpiresAt), qua han booking tu Expired va nha ghe ca 2 chieu.",
                 "Tra ve 400 neu ghe da bi dat hoac dang duoc nguoi khac tam giu (race condition)."));
 
@@ -180,6 +185,7 @@ public sealed class Bookings : IEndpointGroup
                     + "chi tu choi chuyen da Completed hoac Cancelled.",
                 "Ghe van kiem tra nhu binh thuong: da ban / dang duoc nguoi khac giu tren chang giao nhau se bi tu choi.",
                 "Khong ho tro ma khuyen mai va diem tich luy (booking khach vang lai khong gan tai khoan).",
+                "Bao hiem SeatBooking active/default duoc cong theo so passenger item; gui insuranceSelected=false de khong chon.",
                 "Don 0d (toan ve mien phi SENIOR/DISABLED/INFANT) luon ghi nhan nhu thu tai quay du chon paymentMethod nao."));
     }
 

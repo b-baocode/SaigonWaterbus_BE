@@ -62,11 +62,15 @@ public sealed record PaymentDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? RefundedAt);
 
+public sealed record RequestRefundOtpRequest(string? OtpChannel = null);
+
 public sealed record RefundPaymentRequest(
     string Reason,
     string BankBin,
     string AccountNumber,
-    string AccountName);
+    string AccountName,
+    Guid OtpChallengeId,
+    string OtpCode);
 
 public sealed record ManualRefundPaymentRequest(
     string Reason,

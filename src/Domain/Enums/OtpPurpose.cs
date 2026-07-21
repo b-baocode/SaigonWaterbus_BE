@@ -5,5 +5,6 @@ public enum OtpPurpose
     Register = 1,
     ForgotPassword = 2,
     EmailChange = 3,
-    PhoneChange = 4
+    PhoneChange = 4,
+    Refund = 5
 }

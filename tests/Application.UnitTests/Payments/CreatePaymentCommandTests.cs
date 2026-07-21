@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -665,43 +666,21 @@ public class CreatePaymentCommandTests
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
         var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
-        var booking = new Booking
-        {
-            UserId = userId,
-            BookingCode = "BK-REFUND-FAIL",
-            ContactName = "Nguyen Van A",
-            ContactPhone = "0900000000",
-            BookingStatus = BookingStatus.Confirmed,
-            PaymentStatus = "Paid",
-            SubtotalAmount = 10000,
-            TotalAmount = 10000,
-            DepositAmount = 10000,
-            RemainingAmount = 0
-        };
-        var payment = new Payment
-        {
-            Booking = booking,
-            PaymentCode = "2000000",
-            Provider = "PayOS",
-            Amount = 10000,
-            Currency = "VND",
-            PaymentMethod = "PayOS",
-            PaymentPurpose = "Full",
-            PaymentStatus = "Paid",
-            PaidAt = now.AddDays(-1)
-        };
+        var (booking, payment) = PaidCharterBooking(userId, "BK-REFUND-FAIL", now);
+        payment.PaymentCode = "2000000";
         context.AddRange(booking, payment);
         await context.SaveChangesAsync();
 
-        var handler = new RefundPaymentCommandHandler(
+        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
             context,
-            new TestUserContext(userId),
-            new TestPaymentGateway(refundException: new PaymentGatewayException("PayOS payout failed")),
-            new FixedTimeProvider(now));
+            userId,
+            payment,
+            now,
+            new TestPaymentGateway(refundException: new PaymentGatewayException("PayOS payout failed")));
 
         await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
-                new RefundPaymentCommand(payment.Id, "Customer refund", "970422", "123456789", "NGUYEN VAN A"),
+                CreateRefundCommand(payment, otpChallenge, "Customer refund"),
                 CancellationToken.None));
 
         payment.RefundRequestedAmount.ShouldBe(10000);
@@ -711,6 +690,76 @@ public class CreatePaymentCommandTests
         payment.RefundStatus.ShouldBe("Failed");
         payment.RefundFailureReason.ShouldBe("PayOS payout failed");
         payment.RefundProcessedByUserId.ShouldBe(userId);
+    }
+
+    [Test]
+    public async Task RequestRefundOtpDefaultsToVerifiedVietnamPhone()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(
+            context,
+            userId,
+            email: "nguyenvana@example.com",
+            phoneNumber: "0901234567",
+            phoneVerifiedAt: now.AddDays(-1));
+        var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-PHONE", now);
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var emailSender = new TestOtpSender();
+        var smsSender = new TestSmsOtpSender();
+        var handler = CreateRequestRefundOtpHandler(context, user.Id, now, emailSender, smsSender);
+
+        var result = await handler.Handle(new RequestRefundOtpCommand(payment.Id), CancellationToken.None);
+
+        result.Channel.ShouldBe(OtpChannel.Phone);
+        result.MaskedDestination.ShouldBe("masked-phone:+84901234567");
+        smsSender.SentPhoneNumbers.ShouldBe(["+84901234567"]);
+        emailSender.SentEmails.ShouldBeEmpty();
+
+        var challenge = await context.Set<OtpChallenge>()
+            .SingleAsync(x => x.UserId == user.Id && x.Purpose == OtpPurpose.Refund);
+        challenge.Channel.ShouldBe(OtpChannel.Phone);
+        challenge.Email.ShouldBe("+84901234567");
+        challenge.PendingPhoneNumber.ShouldBe(payment.Id.ToString("N"));
+        challenge.ExpiresAt.ShouldBe(now.AddMinutes(5));
+        challenge.ResendAvailableAt.ShouldBe(now.AddSeconds(30));
+    }
+
+    [Test]
+    public async Task RequestRefundOtpCanUseEmailWhenRequested()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(
+            context,
+            userId,
+            email: "nguyenvana@example.com",
+            phoneNumber: "0901234567",
+            phoneVerifiedAt: now.AddDays(-1));
+        var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-EMAIL", now);
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var emailSender = new TestOtpSender();
+        var smsSender = new TestSmsOtpSender();
+        var handler = CreateRequestRefundOtpHandler(context, user.Id, now, emailSender, smsSender);
+
+        var result = await handler.Handle(
+            new RequestRefundOtpCommand(payment.Id, "email"),
+            CancellationToken.None);
+
+        result.Channel.ShouldBe(OtpChannel.Email);
+        result.MaskedDestination.ShouldBe("masked-email:nguyenvana@example.com");
+        emailSender.SentEmails.ShouldBe(["nguyenvana@example.com"]);
+        smsSender.SentPhoneNumbers.ShouldBeEmpty();
+
+        var challenge = await context.Set<OtpChallenge>()
+            .SingleAsync(x => x.UserId == user.Id && x.Purpose == OtpPurpose.Refund);
+        challenge.Channel.ShouldBe(OtpChannel.Email);
+        challenge.Email.ShouldBe("nguyenvana@example.com");
+        challenge.PendingPhoneNumber.ShouldBe(payment.Id.ToString("N"));
     }
 
     [Test]
@@ -724,15 +773,15 @@ public class CreatePaymentCommandTests
         context.AddRange(trip.Route, trip, booking, payment);
         await context.SaveChangesAsync();
 
-        var handler = new RefundPaymentCommandHandler(
+        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
             context,
-            new TestUserContext(userId),
-            new TestPaymentGateway(),
-            new FixedTimeProvider(now));
+            userId,
+            payment,
+            now);
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
-                new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+                CreateRefundCommand(payment, otpChallenge),
                 CancellationToken.None));
 
         exception.Errors["refund"].Single().ShouldContain("không hỗ trợ hoàn tiền");
@@ -742,7 +791,7 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
-    public async Task RefundSightseeingBookingRefunds100PercentWhenMoreThan3DaysBeforeDeparture()
+    public async Task RefundIsRejectedForSightseeingRouteBooking()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
@@ -752,70 +801,101 @@ public class CreatePaymentCommandTests
         context.AddRange(trip.Route, trip, booking, payment);
         await context.SaveChangesAsync();
 
-        var handler = new RefundPaymentCommandHandler(
+        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
             context,
-            new TestUserContext(userId),
-            new TestPaymentGateway(),
-            new FixedTimeProvider(now));
+            userId,
+            payment,
+            now);
 
-        var result = await handler.Handle(
-            new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
-            CancellationToken.None);
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CreateRefundCommand(payment, otpChallenge),
+                CancellationToken.None));
 
-        result.RefundAmount.ShouldBe(10000);
-        payment.RefundAmount.ShouldBe(10000);
-        booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
-        booking.PaymentStatus.ShouldBe("Refunded");
+        exception.Errors["refund"].Single().ShouldContain("không hỗ trợ hoàn tiền");
+        payment.RefundAmount.ShouldBe(0);
+        payment.RefundStatus.ShouldBeNull();
+        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
     }
 
     [Test]
-    public async Task RefundSightseeingBookingRefunds70PercentWithin3Days()
+    public async Task RequestRefundOtpIsRejectedForSightseeingRouteBooking()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
         var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
         var trip = TripOnRoute("SightseeingLoop", now.AddDays(2));
         var (booking, payment) = PaidSeatBooking(userId, trip, "BK-REFUND-SS70", now);
+        var user = SeedCustomer(context, userId, "nguyenvana@example.com");
         context.AddRange(trip.Route, trip, booking, payment);
         await context.SaveChangesAsync();
-
-        var handler = new RefundPaymentCommandHandler(
+        var handler = CreateRequestRefundOtpHandler(
             context,
-            new TestUserContext(userId),
-            new TestPaymentGateway(),
-            new FixedTimeProvider(now));
+            userId,
+            now,
+            new TestOtpSender(),
+            new TestSmsOtpSender());
 
-        var result = await handler.Handle(
-            new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
-            CancellationToken.None);
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new RequestRefundOtpCommand(payment.Id), CancellationToken.None));
 
-        result.RefundAmount.ShouldBe(7000);
-        booking.PaymentStatus.ShouldBe("PartiallyRefunded");
+        user.Id.ShouldBe(userId);
+        exception.Errors["refund"].Single().ShouldContain("không hỗ trợ hoàn tiền");
     }
 
     [Test]
-    public async Task RefundSightseeingBookingIsRejectedUnder24Hours()
+    public async Task RefundCharterBookingIsRejectedUnder24Hours()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
         var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
-        var trip = TripOnRoute("SightseeingLoop", now.AddHours(5));
-        var (booking, payment) = PaidSeatBooking(userId, trip, "BK-REFUND-SS0", now);
-        context.AddRange(trip.Route, trip, booking, payment);
+        var (booking, payment) = PaidCharterBooking(userId, "BK-REFUND-CHARTER0", now, now.AddHours(5));
+        context.AddRange(booking, payment);
         await context.SaveChangesAsync();
 
-        var handler = new RefundPaymentCommandHandler(
+        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
             context,
-            new TestUserContext(userId),
-            new TestPaymentGateway(),
-            new FixedTimeProvider(now));
+            userId,
+            payment,
+            now);
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
-                new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+                CreateRefundCommand(payment, otpChallenge),
                 CancellationToken.None));
 
         exception.Errors["refund"].Single().ShouldContain("dưới 24 giờ");
+    }
+
+    [Test]
+    public async Task RefundIsRejectedWhenOtpChallengeBelongsToDifferentPayment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var (firstBooking, firstPayment) = PaidCharterBooking(userId, "BK-REFUND-OTP-ONE", now);
+        var (secondBooking, secondPayment) = PaidCharterBooking(userId, "BK-REFUND-OTP-TWO", now);
+        context.AddRange(
+            firstBooking,
+            firstPayment,
+            secondBooking,
+            secondPayment);
+        await context.SaveChangesAsync();
+        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
+            context,
+            userId,
+            secondPayment,
+            now);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CreateRefundCommand(firstPayment, otpChallenge),
+                CancellationToken.None));
+
+        exception.Errors["challengeId"].Single().ShouldContain("không khớp payment cần hoàn");
+        firstPayment.RefundAmount.ShouldBe(0);
+        firstPayment.RefundStatus.ShouldBeNull();
+        firstBooking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
     }
 
     [Test]
@@ -855,18 +935,112 @@ public class CreatePaymentCommandTests
         context.AddRange(booking, payment);
         await context.SaveChangesAsync();
 
-        var handler = new RefundPaymentCommandHandler(
+        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
             context,
-            new TestUserContext(userId),
-            new TestPaymentGateway(),
-            new FixedTimeProvider(now));
+            userId,
+            payment,
+            now);
 
         var result = await handler.Handle(
-            new RefundPaymentCommand(payment.Id, "Doi lich", "970422", "123456789", "NGUYEN VAN A"),
+            CreateRefundCommand(payment, otpChallenge),
             CancellationToken.None);
 
         result.RefundAmount.ShouldBe(10000);
         booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
+    }
+
+    private const string RefundOtpCode = "123456";
+
+    private static RequestRefundOtpCommandHandler CreateRequestRefundOtpHandler(
+        IApplicationDbContext context,
+        Guid userId,
+        DateTimeOffset now,
+        TestOtpSender emailSender,
+        TestSmsOtpSender smsSender) =>
+        new(
+            context,
+            new TestUserContext(userId),
+            new TestSecretHasher(),
+            new TestOtpCodeService(),
+            emailSender,
+            smsSender,
+            new TestOtpPolicy(),
+            new FixedTimeProvider(now));
+
+    private static async Task<(RefundPaymentCommandHandler Handler, OtpChallenge Challenge)> CreateRefundHandlerAsync(
+        IApplicationDbContext context,
+        Guid userId,
+        Payment payment,
+        DateTimeOffset now,
+        ICharterBookingPaymentGateway? gateway = null)
+    {
+        var secretHasher = new TestSecretHasher();
+        var challenge = new OtpChallenge
+        {
+            UserId = userId,
+            Purpose = OtpPurpose.Refund,
+            Channel = OtpChannel.Email,
+            Email = "nguyenvana@example.com",
+            PendingPhoneNumber = payment.Id.ToString("N"),
+            CodeHash = secretHasher.Hash(RefundOtpCode),
+            ExpiresAt = now.AddMinutes(5),
+            ResendAvailableAt = now.AddSeconds(30),
+            MaxAttempts = 3
+        };
+
+        context.Set<OtpChallenge>().Add(challenge);
+        await context.SaveChangesAsync(CancellationToken.None);
+
+        return (
+            new RefundPaymentCommandHandler(
+                context,
+                new TestUserContext(userId),
+                gateway ?? new TestPaymentGateway(),
+                secretHasher,
+                new FixedTimeProvider(now)),
+            challenge);
+    }
+
+    private static RefundPaymentCommand CreateRefundCommand(
+        Payment payment,
+        OtpChallenge challenge,
+        string reason = "Doi lich") =>
+        new(
+            payment.Id,
+            reason,
+            "970422",
+            "123456789",
+            "NGUYEN VAN A",
+            challenge.Id,
+            RefundOtpCode);
+
+    private static User SeedCustomer(
+        Infrastructure.Data.ApplicationDbContext context,
+        Guid userId,
+        string email,
+        string? phoneNumber = null,
+        DateTimeOffset? phoneVerifiedAt = null)
+    {
+        var role = new Role
+        {
+            Code = Roles.CustomerCode,
+            SystemName = Roles.CustomerSystemName,
+            DisplayName = "Customer"
+        };
+        var user = new User
+        {
+            Id = userId,
+            FullName = "Nguyen Van A",
+            Email = email,
+            NormalizedEmail = email.ToUpperInvariant(),
+            PhoneNumber = phoneNumber,
+            NormalizedPhoneNumber = phoneNumber,
+            PhoneVerifiedAt = phoneVerifiedAt,
+            Role = role,
+            Status = UserStatus.Active
+        };
+        context.AddRange(role, user);
+        return user;
     }
 
     private static Trip TripOnRoute(string routeType, DateTimeOffset departureTime)
@@ -923,6 +1097,106 @@ public class CreatePaymentCommandTests
             PaidAt = now.AddDays(-1)
         };
         return (booking, payment);
+    }
+
+    private static (Booking Booking, Payment Payment) PaidCharterBooking(
+        Guid userId,
+        string bookingCode,
+        DateTimeOffset now,
+        DateTimeOffset? departureTime = null)
+    {
+        var resolvedDeparture = departureTime ?? now.AddDays(5);
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingType = Booking.CharterBookingType,
+            BookingCode = bookingCode,
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            DepartureDate = DateOnly.FromDateTime(resolvedDeparture.UtcDateTime),
+            StartTime = TimeOnly.FromDateTime(resolvedDeparture.UtcDateTime),
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            DepositAmount = 10000,
+            RemainingAmount = 0
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = $"30001{Math.Abs(bookingCode.GetHashCode()) % 100:D2}",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddDays(-1)
+        };
+        return (booking, payment);
+    }
+
+    private sealed class TestSecretHasher : ISecretHasher
+    {
+        public string Hash(string secret) => $"hash:{secret}";
+
+        public bool Verify(string secret, string hash) =>
+            string.Equals(hash, Hash(secret), StringComparison.Ordinal);
+    }
+
+    private sealed class TestOtpCodeService : IOtpCodeService
+    {
+        public string GenerateCode() => RefundOtpCode;
+
+        public string MaskEmail(string email) => $"masked-email:{email}";
+
+        public string MaskPhone(string phoneNumber) => $"masked-phone:{phoneNumber}";
+    }
+
+    private sealed class TestOtpSender : IOtpSender
+    {
+        public List<string> SentEmails { get; } = [];
+
+        public Task SendAsync(
+            string email,
+            string code,
+            OtpPurpose purpose,
+            string? recipientName,
+            CancellationToken cancellationToken)
+        {
+            code.ShouldBe(RefundOtpCode);
+            purpose.ShouldBe(OtpPurpose.Refund);
+            SentEmails.Add(email);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestSmsOtpSender : ISmsOtpSender
+    {
+        public List<string> SentPhoneNumbers { get; } = [];
+
+        public Task SendAsync(
+            string phoneNumber,
+            string code,
+            OtpPurpose purpose,
+            string? recipientName,
+            CancellationToken cancellationToken)
+        {
+            code.ShouldBe(RefundOtpCode);
+            purpose.ShouldBe(OtpPurpose.Refund);
+            SentPhoneNumbers.Add(phoneNumber);
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class TestOtpPolicy : IOtpPolicy
+    {
+        public int ExpirationMinutes => 5;
+
+        public int ResendSeconds => 30;
+
+        public int MaxAttempts => 3;
     }
 
     [Test]

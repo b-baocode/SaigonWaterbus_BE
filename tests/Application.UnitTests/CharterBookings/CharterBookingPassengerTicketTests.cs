@@ -85,7 +85,7 @@ public class CharterBookingPassengerTicketTests
                 ]),
             CancellationToken.None);
 
-        result.PassengerCount.ShouldBe(2);
+        result.PassengerCount.ShouldBe(3);
         result.RegisteredPassengerCount.ShouldBe(3);
         result.AdultCount.ShouldBe(3);
         result.TicketCount.ShouldBe(3);

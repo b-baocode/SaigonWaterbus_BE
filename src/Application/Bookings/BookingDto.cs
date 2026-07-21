@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Bookings;
 
@@ -33,7 +34,52 @@ public sealed record BookingDetailDto(
     string ServiceType,
     string? RouteType,
     string? ReturnTripCode = null,
-    DateTimeOffset? ReturnDeparture = null);
+    DateTimeOffset? ReturnDeparture = null,
+    BookingInsuranceDto? Insurance = null);
+
+public sealed record BookingInsuranceDto(
+    Guid InsurancePackageId,
+    string Code,
+    string Name,
+    string BookingType,
+    bool IsRequired,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ProviderName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ProviderLogoUrl,
+    decimal UnitPremiumAmount,
+    decimal CoverageAmount,
+    string Currency,
+    int Quantity,
+    decimal TotalAmount,
+    IReadOnlyList<string> Conditions,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TermsUrl,
+    DateTimeOffset QuotedAt,
+    bool Selected = true);
+
+internal static class BookingInsuranceDtoMapper
+{
+    public static BookingInsuranceDto? ToDto(BookingInsuranceSnapshot? snapshot) =>
+        snapshot is null
+            ? null
+            : new BookingInsuranceDto(
+                snapshot.InsurancePackageId,
+                snapshot.Code,
+                snapshot.Name,
+                snapshot.BookingType,
+                snapshot.IsRequired,
+                snapshot.ProviderName,
+                snapshot.ProviderLogoUrl,
+                snapshot.UnitPremiumAmount,
+                snapshot.CoverageAmount,
+                snapshot.Currency,
+                snapshot.Quantity,
+                snapshot.TotalAmount,
+                snapshot.Conditions,
+                snapshot.TermsUrl,
+                snapshot.QuotedAt);
+}
 
 public sealed record BookingPaymentDto(
     Guid PaymentId,

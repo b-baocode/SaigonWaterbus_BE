@@ -218,7 +218,7 @@ public sealed class CreateCharterBookingCommandHandler
             request.InsuranceSelected,
             request.InsurancePackageId,
             currentSnapshot: null,
-            insuredSeatQuantity: 0,
+            insuredPassengerQuantity: passengerCount,
             now,
             cancellationToken);
 

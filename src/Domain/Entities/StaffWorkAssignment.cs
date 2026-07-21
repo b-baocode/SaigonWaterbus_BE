@@ -12,6 +12,8 @@ public class StaffWorkAssignment : BaseAuditableEntity
 
     public Guid? StationId { get; set; }
 
+    public Guid? TripStopId { get; set; }
+
     public DateOnly WorkingDate { get; set; }
 
     public DateTimeOffset StartAt { get; set; }
@@ -35,4 +37,6 @@ public class StaffWorkAssignment : BaseAuditableEntity
     public Boat? Boat { get; set; }
 
     public Station? Station { get; set; }
+
+    public TripStop? TripStop { get; set; }
 }

@@ -28,6 +28,8 @@ public sealed record TicketScanEventDto(
     Guid? StationId,
     string? StationCode,
     string? StationName,
+    Guid? TripStopId,
+    int? StopOrder,
     string Action,
     string Result,
     string Source,
@@ -42,6 +44,7 @@ public sealed record TicketScanEventDto(
 
 public sealed record TicketScanRequestMetadata(
     TicketScanSource Source = TicketScanSource.Qr,
+    Guid? TripStopId = null,
     string? ClientOperationId = null,
     DateTimeOffset? DeviceTime = null,
     string? Note = null);
@@ -188,7 +191,8 @@ internal static class TicketScanHistorySupport
             .Include(x => x.PerformedByUser)
             .Include(x => x.StaffWorkAssignment)
             .Include(x => x.Boat)
-            .Include(x => x.Station);
+            .Include(x => x.Station)
+            .Include(x => x.TripStop);
 
     public static TicketScanEventDto ToDto(TicketScanEvent scanEvent) =>
         new(
@@ -209,6 +213,8 @@ internal static class TicketScanHistorySupport
             scanEvent.StationId,
             scanEvent.Station?.StationCode,
             scanEvent.Station?.StationName,
+            scanEvent.TripStopId,
+            scanEvent.TripStop?.StopOrder,
             scanEvent.Action.ToString(),
             scanEvent.Result.ToString(),
             scanEvent.Source.ToString(),
@@ -258,9 +264,9 @@ internal static class TicketScanHistorySupport
         string? failureReason,
         CancellationToken cancellationToken)
     {
-        var staffContext = await ResolveStaffContextAsync(context, actor, ticket, serverTime, cancellationToken);
+        var staffContext = await ResolveStaffContextAsync(context, actor, ticket, metadata, serverTime, cancellationToken);
         var booking = ticket?.Booking;
-        var trip = booking?.Trip;
+        var trip = ticket?.BookingPassenger?.Trip ?? booking?.Trip;
         var normalizedCodeOrToken = NormalizeCodeOrToken(codeOrToken);
 
         var scanEvent = new TicketScanEvent
@@ -272,6 +278,7 @@ internal static class TicketScanHistorySupport
             StaffWorkAssignmentId = staffContext?.AssignmentId,
             BoatId = staffContext?.BoatId ?? trip?.BoatId ?? booking?.BoatId,
             StationId = staffContext?.StationId,
+            TripStopId = staffContext?.TripStopId ?? metadata.TripStopId,
             Action = action,
             Result = result,
             FailureReason = NormalizeOptionalText(failureReason, 500),
@@ -321,6 +328,7 @@ internal static class TicketScanHistorySupport
         IApplicationDbContext context,
         User actor,
         Ticket? ticket,
+        TicketScanRequestMetadata metadata,
         DateTimeOffset serverTime,
         CancellationToken cancellationToken)
     {
@@ -332,6 +340,7 @@ internal static class TicketScanHistorySupport
         var activeAssignments = await context.StaffWorkAssignments
             .AsNoTracking()
             .Include(x => x.Station)
+            .Include(x => x.TripStop)
             .Where(x => x.StaffUserId == actor.Id
                 && x.Status != StaffWorkAssignmentStatus.Cancelled
                 && x.Status != StaffWorkAssignmentStatus.Replaced
@@ -346,20 +355,30 @@ internal static class TicketScanHistorySupport
         }
 
         var assignment = ticket is null
-            ? activeAssignments.First()
-            : FindBestMatchingAssignment(activeAssignments, ticket);
+            ? FindBestMatchingAssignment(activeAssignments, metadata.TripStopId)
+            : FindBestMatchingAssignment(activeAssignments, ticket, metadata.TripStopId);
 
         return assignment is null
             ? null
-            : new ResolvedStaffScanContext(assignment.Id, assignment.BoatId, assignment.StationId);
+            : new ResolvedStaffScanContext(assignment.Id, assignment.BoatId, assignment.StationId, assignment.TripStopId);
     }
 
     private static StaffWorkAssignment? FindBestMatchingAssignment(
         IReadOnlyList<StaffWorkAssignment> assignments,
-        Ticket ticket)
+        Guid? requestedTripStopId) =>
+        requestedTripStopId.HasValue
+            ? assignments.FirstOrDefault(x => x.TripStopId == requestedTripStopId.Value)
+                ?? assignments.FirstOrDefault()
+            : assignments.FirstOrDefault();
+
+    private static StaffWorkAssignment? FindBestMatchingAssignment(
+        IReadOnlyList<StaffWorkAssignment> assignments,
+        Ticket ticket,
+        Guid? requestedTripStopId)
     {
         var booking = ticket.Booking;
-        var trip = booking.Trip;
+        var trip = ticket.BookingPassenger?.Trip ?? booking.Trip;
+        var boardingTripStop = ResolveBoardingTripStop(ticket, trip);
         var routeStationIds = trip?.Route.RouteStops.Select(x => x.StationId).ToHashSet() ?? [];
         var charterStationIds = new[] { booking.FromStationId, booking.ToStationId }
             .Where(x => x.HasValue)
@@ -367,8 +386,16 @@ internal static class TicketScanHistorySupport
             .ToHashSet();
 
         return assignments
-            .Where(assignment => AssignmentMatchesTicket(assignment, booking, trip, routeStationIds, charterStationIds))
+            .Where(assignment => AssignmentMatchesTicket(
+                assignment,
+                booking,
+                trip,
+                boardingTripStop,
+                requestedTripStopId,
+                routeStationIds,
+                charterStationIds))
             .OrderBy(assignment => assignment.AssignmentType == StaffWorkAssignmentType.Boat ? 0 : 1)
+            .ThenByDescending(assignment => assignment.TripStopId.HasValue)
             .ThenBy(assignment => assignment.StartAt)
             .FirstOrDefault()
             ?? assignments.FirstOrDefault();
@@ -378,6 +405,8 @@ internal static class TicketScanHistorySupport
         StaffWorkAssignment assignment,
         Booking booking,
         Trip? trip,
+        TripStop? boardingTripStop,
+        Guid? requestedTripStopId,
         IReadOnlySet<Guid> routeStationIds,
         IReadOnlySet<Guid> charterStationIds)
     {
@@ -391,11 +420,30 @@ internal static class TicketScanHistorySupport
 
         if (assignment.AssignmentType == StaffWorkAssignmentType.Station && assignment.StationId.HasValue)
         {
+            if (assignment.TripStopId.HasValue)
+            {
+                return requestedTripStopId.HasValue
+                    ? assignment.TripStopId.Value == requestedTripStopId.Value
+                    : boardingTripStop is not null && assignment.TripStopId.Value == boardingTripStop.Id;
+            }
+
             return routeStationIds.Contains(assignment.StationId.Value)
                 || charterStationIds.Contains(assignment.StationId.Value);
         }
 
         return false;
+    }
+
+    private static TripStop? ResolveBoardingTripStop(Ticket ticket, Trip? trip)
+    {
+        if (trip is null || trip.TripStops.Count == 0)
+        {
+            return null;
+        }
+
+        var fromStopOrder = ticket.BookingPassenger?.FromStopOrder
+            ?? trip.TripStops.Min(x => x.StopOrder);
+        return trip.TripStops.FirstOrDefault(x => x.StopOrder == fromStopOrder);
     }
 
     private static string? NormalizeCodeOrToken(string value)
@@ -423,5 +471,6 @@ internal static class TicketScanHistorySupport
     private sealed record ResolvedStaffScanContext(
         Guid AssignmentId,
         Guid? BoatId,
-        Guid? StationId);
+        Guid? StationId,
+        Guid? TripStopId);
 }

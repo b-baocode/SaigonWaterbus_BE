@@ -43,6 +43,13 @@ public class CreateCharterBookingTripCommandTests
         trip.DepartureTime.ShouldBe(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero));
         // Thue theo gio, durationValue = 3.
         trip.ArrivalTime.ShouldBe(trip.DepartureTime.AddHours(3));
+        var tripStops = context.Set<TripStop>()
+            .Where(x => x.TripId == trip.Id)
+            .OrderBy(x => x.StopOrder)
+            .ToList();
+        tripStops.Count.ShouldBe(3);
+        tripStops.Select(x => x.StationId).ShouldBe([stationA.Id, stationB.Id, stationC.Id]);
+        tripStops[1].StayDurationMinutes.ShouldBe(20);
         context.Set<CharterBookingBoat>().Single().TripId.ShouldBe(trip.Id);
         context.Set<Booking>().Single(x => x.Id == booking.Id).TripId.ShouldBe(trip.Id);
     }

@@ -10,6 +10,7 @@ using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Tickets;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -564,12 +565,199 @@ public sealed class HandlePaymentWebhookCommandHandler
     }
 }
 
+public sealed record RequestRefundOtpCommand(Guid PaymentId, string? OtpChannel = null)
+    : IRequest<OtpChallengeDto>;
+
+public sealed class RequestRefundOtpCommandValidator : AbstractValidator<RequestRefundOtpCommand>
+{
+    public RequestRefundOtpCommandValidator()
+    {
+        RuleFor(x => x.PaymentId).NotEmpty();
+        RuleFor(x => x.OtpChannel)
+            .MaximumLength(20)
+            .When(x => x.OtpChannel is not null);
+    }
+}
+
+public sealed class RequestRefundOtpCommandHandler
+    : IRequestHandler<RequestRefundOtpCommand, OtpChallengeDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly ISecretHasher _secretHasher;
+    private readonly IOtpCodeService _otpCodeService;
+    private readonly IOtpSender _otpSender;
+    private readonly ISmsOtpSender _smsOtpSender;
+    private readonly IOtpPolicy _otpPolicy;
+    private readonly IOtpCache _otpCache;
+    private readonly TimeProvider _timeProvider;
+
+    public RequestRefundOtpCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        ISecretHasher secretHasher,
+        IOtpCodeService otpCodeService,
+        IOtpSender otpSender,
+        ISmsOtpSender smsOtpSender,
+        IOtpPolicy otpPolicy,
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
+    {
+        _context = context;
+        _userContext = userContext;
+        _secretHasher = secretHasher;
+        _otpCodeService = otpCodeService;
+        _otpSender = otpSender;
+        _smsOtpSender = smsOtpSender;
+        _otpPolicy = otpPolicy;
+        _timeProvider = timeProvider;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
+    }
+
+    public async Task<OtpChallengeDto> Handle(RequestRefundOtpCommand request, CancellationToken cancellationToken)
+    {
+        var payment = await PaymentSupport.GetOwnedPaymentAsync(
+            _context,
+            _userContext,
+            request.PaymentId,
+            includeBookingPayments: true,
+            cancellationToken);
+
+        if (!PaymentSupport.IsPaid(payment.PaymentStatus))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(payment.PaymentStatus),
+                "Chỉ có thể yêu cầu OTP hoàn tiền cho payment đã thanh toán.")]);
+        }
+
+        var now = _timeProvider.GetUtcNow();
+        await PaymentSupport.ResolvePolicyRefundAmountAsync(_context, payment, now, cancellationToken);
+
+        var userId = _userContext.UserId
+            ?? throw new UnauthorizedAccessException();
+        var user = await _context.Set<User>()
+            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
+            ?? throw new NotFoundException("Current user was not found.");
+        AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
+
+        var otpChannel = ResolveRefundOtpChannel(user, request.OtpChannel);
+        var destination = ResolveRefundOtpDestination(user, otpChannel);
+        var normalizedDestination = otpChannel == OtpChannel.Phone
+            ? PhoneRules.ToInternationalFormat(destination)
+            : destination.Trim();
+
+        var challengeResult = await _context.ExecuteInTransactionAsync(async ct =>
+        {
+            await AuthSupport.RetirePendingOtpChallengesAsync(
+                _context,
+                user.Id,
+                OtpPurpose.Refund,
+                now,
+                ct);
+
+            var otpCode = _otpCodeService.GenerateCode();
+            var challenge = new OtpChallenge
+            {
+                UserId = user.Id,
+                Purpose = OtpPurpose.Refund,
+                Channel = otpChannel,
+                Email = normalizedDestination,
+                PendingPhoneNumber = PaymentSupport.CreateRefundOtpPaymentKey(payment.Id),
+                CodeHash = _secretHasher.Hash(otpCode),
+                ExpiresAt = now.AddMinutes(_otpPolicy.ExpirationMinutes),
+                ResendAvailableAt = now.AddSeconds(_otpPolicy.ResendSeconds),
+                MaxAttempts = _otpPolicy.MaxAttempts
+            };
+
+            _context.Set<OtpChallenge>().Add(challenge);
+            await _context.SaveChangesAsync(ct);
+            await _otpCache.StoreAsync(challenge, challenge.CodeHash, ct);
+
+            return (
+                Id: challenge.Id,
+                Destination: normalizedDestination,
+                Code: otpCode,
+                ExpiresAt: challenge.ExpiresAt,
+                ResendAvailableAt: challenge.ResendAvailableAt);
+        }, cancellationToken);
+
+        if (otpChannel == OtpChannel.Email)
+        {
+            await _otpSender.SendAsync(
+                challengeResult.Destination,
+                challengeResult.Code,
+                OtpPurpose.Refund,
+                user.FullName,
+                cancellationToken);
+        }
+        else
+        {
+            await _smsOtpSender.SendAsync(
+                challengeResult.Destination,
+                challengeResult.Code,
+                OtpPurpose.Refund,
+                user.FullName,
+                cancellationToken);
+        }
+
+        return new OtpChallengeDto(
+            challengeResult.Id,
+            otpChannel == OtpChannel.Email
+                ? _otpCodeService.MaskEmail(challengeResult.Destination)
+                : _otpCodeService.MaskPhone(challengeResult.Destination),
+            challengeResult.ExpiresAt,
+            challengeResult.ResendAvailableAt)
+        {
+            Channel = otpChannel
+        };
+    }
+
+    private static OtpChannel ResolveRefundOtpChannel(User user, string? requestedChannel)
+    {
+        var defaultChannel = !string.IsNullOrWhiteSpace(user.PhoneNumber)
+            && user.PhoneVerifiedAt.HasValue
+            && PhoneRules.IsVietnamPhone(user.PhoneNumber)
+                ? OtpChannel.Phone
+                : OtpChannel.Email;
+
+        return AuthSupport.ResolveOtpChannel(
+            requestedChannel,
+            defaultChannel,
+            "otpChannel");
+    }
+
+    private static string ResolveRefundOtpDestination(User user, OtpChannel otpChannel)
+    {
+        if (otpChannel == OtpChannel.Email)
+        {
+            if (string.IsNullOrWhiteSpace(user.Email))
+            {
+                throw AuthSupport.CreateValidationException("otpChannel",
+                    "Tài khoản chưa có email để nhận OTP hoàn tiền.");
+            }
+
+            return user.Email;
+        }
+
+        if (string.IsNullOrWhiteSpace(user.PhoneNumber)
+            || !user.PhoneVerifiedAt.HasValue
+            || !PhoneRules.IsVietnamPhone(user.PhoneNumber))
+        {
+            throw AuthSupport.CreateValidationException("otpChannel",
+                "Tài khoản chưa có số điện thoại Việt Nam đã xác thực để nhận OTP hoàn tiền.");
+        }
+
+        return user.PhoneNumber;
+    }
+}
+
 public sealed record RefundPaymentCommand(
     Guid PaymentId,
     string Reason,
     string BankBin,
     string AccountNumber,
-    string AccountName)
+    string AccountName,
+    Guid OtpChallengeId,
+    string OtpCode)
     : IRequest<PaymentDto>;
 
 public sealed class RefundPaymentCommandValidator : AbstractValidator<RefundPaymentCommand>
@@ -581,6 +769,11 @@ public sealed class RefundPaymentCommandValidator : AbstractValidator<RefundPaym
         RuleFor(x => x.BankBin).NotEmpty().Length(6).Matches("^[0-9]{6}$");
         RuleFor(x => x.AccountNumber).NotEmpty().MaximumLength(50).Matches("^[0-9]+$");
         RuleFor(x => x.AccountName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.OtpChallengeId).NotEmpty();
+        RuleFor(x => x.OtpCode)
+            .NotEmpty()
+            .Length(4, 10)
+            .WithMessage("Mã OTP không hợp lệ.");
     }
 }
 
@@ -589,18 +782,24 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly ICharterBookingPaymentGateway _paymentGateway;
+    private readonly ISecretHasher _secretHasher;
+    private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
 
     public RefundPaymentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         ICharterBookingPaymentGateway paymentGateway,
-        TimeProvider timeProvider)
+        ISecretHasher secretHasher,
+        TimeProvider timeProvider,
+        IOtpCache? otpCache = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
+        _secretHasher = secretHasher;
         _timeProvider = timeProvider;
+        _otpCache = otpCache ?? NullOtpCache.Instance;
     }
 
     public async Task<PaymentDto> Handle(RefundPaymentCommand request, CancellationToken cancellationToken)
@@ -624,6 +823,8 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
             payment,
             now,
             cancellationToken);
+        await VerifyRefundOtpAsync(payment, request.OtpChallengeId, request.OtpCode, now, cancellationToken);
+
         var referenceId = PaymentSupport.CreateRefundReference(payment, now);
         payment.RefundStatus = PaymentSupport.RefundPendingStatus;
         payment.RefundRequestedAmount = refundAmount;
@@ -669,6 +870,74 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         await _context.SaveChangesAsync(cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
+    }
+
+    private async Task VerifyRefundOtpAsync(
+        Payment payment,
+        Guid challengeId,
+        string code,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var userId = _userContext.UserId
+            ?? throw new UnauthorizedAccessException();
+
+        var challenge = await _context.Set<OtpChallenge>()
+            .SingleOrDefaultAsync(
+                x => x.Id == challengeId
+                  && x.Purpose == OtpPurpose.Refund
+                  && x.UserId == userId,
+                cancellationToken)
+            ?? throw AuthSupport.CreateValidationException(nameof(challengeId),
+                "Không tìm thấy yêu cầu xác thực OTP hoàn tiền.");
+
+        challenge = await AuthSupport.ResolveLatestPendingOtpChallengeAsync(
+            _context,
+            challenge,
+            OtpPurpose.Refund,
+            cancellationToken);
+
+        if (!string.Equals(
+                challenge.PendingPhoneNumber,
+                PaymentSupport.CreateRefundOtpPaymentKey(payment.Id),
+                StringComparison.Ordinal))
+        {
+            throw AuthSupport.CreateValidationException(nameof(challengeId),
+                "OTP hoàn tiền không khớp payment cần hoàn.");
+        }
+
+        if (challenge.ConsumedAt.HasValue)
+        {
+            throw AuthSupport.CreateValidationException(nameof(code), "OTP đã được sử dụng.");
+        }
+
+        if (challenge.ExpiresAt <= now)
+        {
+            challenge.ConsumedAt = now;
+            await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+            throw AuthSupport.CreateValidationException(nameof(code), "OTP đã hết hạn, vui lòng yêu cầu OTP hoàn tiền lại.");
+        }
+
+        var codeHash = await _otpCache.GetCodeHashAsync(challenge.Id, cancellationToken) ?? challenge.CodeHash;
+        if (!_secretHasher.Verify(code, codeHash))
+        {
+            challenge.AttemptCount += 1;
+
+            if (challenge.AttemptCount >= challenge.MaxAttempts)
+            {
+                challenge.ConsumedAt = now;
+                await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            throw AuthSupport.CreateValidationException(nameof(code), "OTP không hợp lệ.");
+        }
+
+        challenge.AttemptCount += 1;
+        challenge.ConsumedAt = now;
+        await _otpCache.RemoveAsync(challenge.Id, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 }
 
@@ -841,37 +1110,19 @@ internal static class PaymentSupport
         }
     }
 
-    /// <summary>
-    /// Vé tuyến thường (route Regular) không hỗ trợ hoàn tiền — chỉ vé sightseeing được hoàn
-    /// theo chính sách. Charter không đi qua check này (giữ nguyên chính sách hiện tại).
-    /// </summary>
-    private static async Task EnsureSeatBookingRouteIsRefundableAsync(
+    /// <summary>Booking thường và sightseeing không hỗ trợ hoàn tiền; policy refund chỉ còn áp cho charter.</summary>
+    private static Task EnsureSeatBookingRouteIsRefundableAsync(
         IApplicationDbContext context,
         Booking booking,
         CancellationToken cancellationToken)
     {
         if (Booking.IsCharterBookingType(booking.BookingType))
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var legTripIds = new List<Guid>();
-        if (booking.TripId.HasValue) legTripIds.Add(booking.TripId.Value);
-        if (booking.ReturnTripId.HasValue) legTripIds.Add(booking.ReturnTripId.Value);
-        if (legTripIds.Count == 0)
-        {
-            return;
-        }
-
-        var hasRegularLeg = await context.Set<Trip>()
-            .AnyAsync(
-                t => legTripIds.Contains(t.Id) && t.Route.RouteType == Domain.Constants.RouteTypes.Regular,
-                cancellationToken);
-        if (hasRegularLeg)
-        {
-            throw new ValidationException([new ValidationFailure("refund",
-                "Vé tuyến thường không hỗ trợ hoàn tiền; chỉ vé sightseeing được hoàn theo chính sách.")]);
-        }
+        throw new ValidationException([new ValidationFailure("refund",
+            "Booking thường và sightseeing không hỗ trợ hoàn tiền.")]);
     }
 
     private static async Task<DateTimeOffset?> ResolveDepartureAsync(
@@ -1358,6 +1609,9 @@ internal static class PaymentSupport
 
     public static string CreateRefundReference(Payment payment, DateTimeOffset now) =>
         $"RF{now.ToUnixTimeMilliseconds()}{payment.Id.ToString("N")[..8]}";
+
+    public static string CreateRefundOtpPaymentKey(Guid paymentId) =>
+        paymentId.ToString("N");
 
     public static string CreateManualRefundReference(Payment payment, DateTimeOffset now) =>
         $"MRF{now.ToUnixTimeMilliseconds()}{payment.Id.ToString("N")[..8]}";

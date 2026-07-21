@@ -19,6 +19,7 @@ public sealed class TicketScanEventConfiguration : IEntityTypeConfiguration<Tick
         builder.Property(x => x.StaffWorkAssignmentId).HasColumnName("staff_work_assignment_id");
         builder.Property(x => x.BoatId).HasColumnName("boat_id");
         builder.Property(x => x.StationId).HasColumnName("station_id");
+        builder.Property(x => x.TripStopId).HasColumnName("trip_stop_id");
         builder.Property(x => x.Action)
             .HasColumnName("action")
             .HasConversion<string>()
@@ -60,6 +61,7 @@ public sealed class TicketScanEventConfiguration : IEntityTypeConfiguration<Tick
         builder.HasIndex(x => new { x.TripId, x.ServerTime });
         builder.HasIndex(x => x.BookingId);
         builder.HasIndex(x => x.StaffWorkAssignmentId);
+        builder.HasIndex(x => x.TripStopId);
         builder.HasIndex(x => x.ClientOperationId);
 
         builder.HasOne(x => x.Ticket)
@@ -96,6 +98,11 @@ public sealed class TicketScanEventConfiguration : IEntityTypeConfiguration<Tick
         builder.HasOne(x => x.Station)
             .WithMany()
             .HasForeignKey(x => x.StationId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.TripStop)
+            .WithMany()
+            .HasForeignKey(x => x.TripStopId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 }
