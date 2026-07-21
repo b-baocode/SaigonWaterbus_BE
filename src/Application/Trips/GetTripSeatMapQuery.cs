@@ -82,9 +82,11 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
-        var segment = TripSegmentSupport.Resolve(
+        var now = _timeProvider.GetUtcNow();
+        var segment = TripSegmentSupport.ResolveOpenOrFirst(
             trip, request.FromStationCode, request.ToStationCode,
-            nameof(request.FromStationCode), nameof(request.ToStationCode));
+            nameof(request.FromStationCode), nameof(request.ToStationCode),
+            now);
 
         // Sơ đồ ghế vẫn xem được sau khi đóng bán (khách tra cứu vé đã mua), chỉ báo cờ để FE
         // khoá thao tác chọn ghế thay vì để họ chọn xong mới bị từ chối ở bước giữ ghế.
@@ -93,7 +95,7 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                 trip,
                 segment.IsFullTrip ? null : segment.FromStopOrder,
                 segment.IsFullTrip ? null : segment.ToStopOrder,
-                _timeProvider.GetUtcNow());
+                now);
 
         var routeType = trip.Route.RouteType;
         var sellsBySegment = DistanceFareSupport.UsesDistanceFare(trip.TripType, routeType);
@@ -119,7 +121,6 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             .Where(x => x.TripId == trip.Id && seatIds.Contains(x.SeatId))
             .ToDictionaryAsync(x => x.SeatId, cancellationToken);
 
-        var now = _timeProvider.GetUtcNow();
         var tripSeatIds = tripSeatsBySeatId.Values.Select(x => x.Id).ToList();
         var occupiedTripSeatIds = (await _context.Set<BookingPassenger>()
                 .Where(x => x.TripSeatId.HasValue && tripSeatIds.Contains(x.TripSeatId.Value))

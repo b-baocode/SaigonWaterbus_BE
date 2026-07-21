@@ -159,14 +159,15 @@ internal sealed class BookingLegResolver
 
                 // Dùng chung resolver với giữ ghế / sơ đồ ghế — tuyến có thể ghé cùng một bến nhiều
                 // lần (vòng lặp Regular) nên không index route stop theo station code được.
-                var (fromStop, toStop) = Trips.TripSegmentSupport.ResolveStops(
-                    trip.Route.RouteStops,
+                var segment = Trips.TripSegmentSupport.ResolveOpenOrFirst(
+                    trip,
                     item.FromStationCode,
                     item.ToStationCode,
                     nameof(BookingItemRequest.FromStationCode),
-                    nameof(BookingItemRequest.ToStationCode));
+                    nameof(BookingItemRequest.ToStationCode),
+                    now);
 
-                itemSegments.Add((item, fromStop, toStop));
+                itemSegments.Add((item, segment.FromStop!, segment.ToStop!));
             }
         }
         else

@@ -174,8 +174,8 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
         }
 
         var segment = usesSegments
-            ? TripSegmentSupport.Resolve(trip, request.FromStationCode, request.ToStationCode,
-                nameof(request.FromStationCode), nameof(request.ToStationCode))
+            ? TripSegmentSupport.ResolveOpenOrFirst(trip, request.FromStationCode, request.ToStationCode,
+                nameof(request.FromStationCode), nameof(request.ToStationCode), now)
             : TripSegmentSupport.FullTrip;
 
         // Hạn đóng bán theo giờ tàu rời bến khách LÊN, không phải bến đầu tuyến.

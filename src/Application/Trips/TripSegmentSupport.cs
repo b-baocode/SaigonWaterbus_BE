@@ -50,6 +50,43 @@ public static class TripSegmentSupport
         return new Segment(fromStop.StopOrder, toStop.StopOrder, fromStop, toStop);
     }
 
+    public static Segment ResolveOpenOrFirst(
+        Trip trip,
+        string? fromStationCode,
+        string? toStationCode,
+        string fromPropertyName,
+        string toPropertyName,
+        DateTimeOffset now)
+    {
+        var hasFrom = !string.IsNullOrWhiteSpace(fromStationCode);
+        var hasTo = !string.IsNullOrWhiteSpace(toStationCode);
+
+        if (!hasFrom && !hasTo)
+        {
+            return FullTrip;
+        }
+
+        if (!hasFrom || !hasTo)
+        {
+            throw new ValidationException([new ValidationFailure(
+                hasFrom ? toPropertyName : fromPropertyName,
+                "Phải truyền cả trạm lên và trạm xuống (hoặc bỏ trống cả hai).")]);
+        }
+
+        var routeStops = trip.Route?.RouteStops
+            ?? throw new InvalidOperationException("Trip.Route.RouteStops must be loaded to resolve a segment.");
+        var candidates = ResolveStopCandidates(
+            routeStops, fromStationCode!, toStationCode!, fromPropertyName, toPropertyName);
+        var selected = candidates.FirstOrDefault(x =>
+            !BookingCutoffSupport.IsPastCutoff(trip, x.From.StopOrder, x.To.StopOrder, now));
+        if (selected.From is null)
+        {
+            selected = candidates[0];
+        }
+
+        return new Segment(selected.From.StopOrder, selected.To.StopOrder, selected.From, selected.To);
+    }
+
     /// <summary>
     /// Trạm lên/xuống trên route stops. Một tuyến có thể ghé CÙNG MỘT BẾN nhiều lần (tuyến đi vòng
     /// về lại bến đầu), nên không index được theo station code. Cả hai đầu đều lấy lần ghé SỚM NHẤT:
@@ -64,21 +101,40 @@ public static class TripSegmentSupport
         string fromPropertyName,
         string toPropertyName)
     {
+        var candidates = ResolveStopCandidates(
+            routeStops, fromStationCode, toStationCode, fromPropertyName, toPropertyName);
+        return candidates[0];
+    }
+
+    public static IReadOnlyList<(RouteStop From, RouteStop To)> ResolveStopCandidates(
+        IEnumerable<RouteStop> routeStops,
+        string fromStationCode,
+        string toStationCode,
+        string fromPropertyName,
+        string toPropertyName)
+    {
         var ordered = routeStops.OrderBy(rs => rs.StopOrder).ToList();
         var fromCode = fromStationCode.Trim();
         var toCode = toStationCode.Trim();
 
-        var fromStop = ordered.FirstOrDefault(rs => IsStation(rs, fromCode));
-        if (fromStop is null)
+        var fromStops = ordered.Where(rs => IsStation(rs, fromCode)).ToList();
+        if (fromStops.Count == 0)
         {
             throw new ValidationException([new ValidationFailure(fromPropertyName,
                 $"Station '{fromCode.ToUpperInvariant()}' is not a stop on this trip.")]);
         }
 
-        var toStop = ordered.FirstOrDefault(rs => IsStation(rs, toCode) && rs.StopOrder > fromStop.StopOrder);
-        if (toStop is null)
+        var hasToStation = ordered.Any(rs => IsStation(rs, toCode));
+        var candidates = fromStops
+            .Select(fromStop => (
+                From: fromStop,
+                To: ordered.FirstOrDefault(rs => IsStation(rs, toCode) && rs.StopOrder > fromStop.StopOrder)))
+            .Where(x => x.To is not null)
+            .Select(x => (x.From, x.To!))
+            .ToList();
+        if (candidates.Count == 0)
         {
-            if (!ordered.Any(rs => IsStation(rs, toCode)))
+            if (!hasToStation)
             {
                 throw new ValidationException([new ValidationFailure(toPropertyName,
                     $"Station '{toCode.ToUpperInvariant()}' is not a stop on this trip.")]);
@@ -89,7 +145,7 @@ public static class TripSegmentSupport
                 + $"'{toCode.ToUpperInvariant()}' on the route.")]);
         }
 
-        return (fromStop, toStop);
+        return candidates;
     }
 
     private static bool IsStation(RouteStop routeStop, string stationIdentifier)

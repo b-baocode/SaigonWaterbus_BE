@@ -47,6 +47,22 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         if (validRouteIds.Count == 0)
             return [];
 
+        var searchSegmentsByRouteId = validRouteIds
+            .GroupBy(x => new { x.RouteId, FromOrder = x.FromStop.StopOrder })
+            .Select(g => new
+            {
+                g.Key.RouteId,
+                Segment = new SearchSegment(g.Key.FromOrder, g.Min(x => x.ToStop.StopOrder))
+            })
+            .GroupBy(x => x.RouteId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<SearchSegment>)g
+                    .Select(x => x.Segment)
+                    .OrderBy(x => x.FromOrder)
+                    .ThenBy(x => x.ToOrder)
+                    .ToList());
+
         var routeIds = validRouteIds.Select(x => x.RouteId).ToList();
 
         var tripQuery = _context.Set<Trip>()
@@ -68,14 +84,6 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         var tripIds = trips.Select(t => t.Id).ToList();
 
-        // Chặng tìm kiếm (stop order) theo từng route — ghế bán theo chặng nên chỗ trống
-        // của một chuyến phụ thuộc đoạn khách muốn đi.
-        var searchSegmentByRouteId = validRouteIds
-            .GroupBy(x => x.RouteId)
-            .ToDictionary(
-                g => g.Key,
-                g => (FromOrder: g.First().FromStop.StopOrder, ToOrder: g.First().ToStop.StopOrder));
-
         // Đếm theo trip của từng ghế (TripSeat.TripId) thay vì Booking.TripId — booking khứ hồi
         // có ghế trên 2 trip. Chỉ đếm hành khách chiếm ghế (INFANT ngồi cùng người lớn không trừ chỗ),
         // và chỉ tính ghế có vé GIAO CHẶNG tìm kiếm (vé cũ không có chặng = chiếm cả trip).
@@ -91,18 +99,9 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 p.ToStopOrder
             })
             .ToListAsync(cancellationToken);
-
-        var routeIdByTripId = trips.ToDictionary(t => t.Id, t => t.RouteId);
-        var bookedCounts = occupyingPassengers
-            .Where(p =>
-            {
-                var segment = searchSegmentByRouteId[routeIdByTripId[p.TripId]];
-                return Bookings.BookingSeatOccupancySupport.SegmentsOverlap(
-                    p.FromStopOrder ?? int.MinValue, p.ToStopOrder ?? int.MaxValue,
-                    segment.FromOrder, segment.ToOrder);
-            })
+        var occupyingPassengersByTripId = occupyingPassengers
             .GroupBy(p => p.TripId)
-            .ToDictionary(g => g.Key, g => g.Select(p => p.TripSeatId).Distinct().Count());
+            .ToDictionary(g => g.Key, g => g.ToList());
 
         // Giờ đi/đến theo CHẶNG tìm kiếm: lấy từ trip_stops (giờ dự kiến từng bến của chuyến);
         // trip cũ chưa có trip_stops thì suy từ route stops như BuildStopDtos.
@@ -160,7 +159,21 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
-            var booked = bookedCounts.GetValueOrDefault(t.Id, 0);
+            var selectedSegment = ResolveOpenSearchSegment(
+                t, searchSegmentsByRouteId[t.RouteId], tripStopsByTripId, bookingCutoff);
+            if (selectedSegment is null)
+            {
+                return null;
+            }
+
+            var tripPassengers = occupyingPassengersByTripId.GetValueOrDefault(t.Id) ?? [];
+            var booked = tripPassengers
+                .Where(p => Bookings.BookingSeatOccupancySupport.SegmentsOverlap(
+                    p.FromStopOrder ?? int.MinValue, p.ToStopOrder ?? int.MaxValue,
+                    selectedSegment.Segment.FromOrder, selectedSegment.Segment.ToOrder))
+                .Select(p => p.TripSeatId)
+                .Distinct()
+                .Count();
             seatStats.TryGetValue(t.BoatId ?? Guid.Empty, out var stats);
             var capacity = stats?.ActiveSeatCount ?? t.CapacitySnapshot;
             var available = capacity - booked;
@@ -168,9 +181,8 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             decimal? segmentFare = null;
             if (farePolicy is not null && Fares.DistanceFareSupport.UsesDistanceFare(t))
             {
-                var segment = searchSegmentByRouteId[t.RouteId];
                 var distanceKm = Fares.DistanceFareSupport.TryComputeSegmentDistanceKm(
-                    t.Route.RouteStops, segment.FromOrder, segment.ToOrder);
+                    t.Route.RouteStops, selectedSegment.Segment.FromOrder, selectedSegment.Segment.ToOrder);
                 if (distanceKm.HasValue)
                 {
                     segmentFare = Fares.DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value);
@@ -183,29 +195,48 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                     : stats?.MinSeatPrice is > 0 ? stats.MinSeatPrice.Value : (decimal?)null);
             var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
 
-            // Giờ đi tại bến lên + giờ đến tại bến xuống của CHẶNG khách tìm — không phải
-            // giờ đầu/cuối của nguyên chuyến.
-            var (fromStopDeparture, toStopArrival) = ResolveSegmentTimes(
-                t, searchSegmentByRouteId[t.RouteId], tripStopsByTripId);
-
             return new TripSummaryDto(
                 t.Id, t.TripCode, t.Route.RouteName, t.Route.RouteType,
                 t.DepartureTime, t.ArrivalTime,
-                fromStopDeparture, toStopArrival,
+                selectedSegment.FromStopDeparture, selectedSegment.ToStopArrival,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString(),
                 IsBookingClosed: false,
                 IsBookable: available > 0);
         })
-        // Ẩn chuyến đã qua hạn bán vé TẠI BẾN KHÁCH LÊN — khớp với chặn ở giữ ghế và tạo booking.
-        .Where(dto => dto.FromStopScheduledDeparture is null
-                   || dto.FromStopScheduledDeparture > bookingCutoff)
+        .Where(dto => dto is not null)
+        .Select(dto => dto!)
         .ToList();
+    }
+
+    private sealed record SearchSegment(int FromOrder, int ToOrder);
+
+    private sealed record ResolvedSearchSegment(
+        SearchSegment Segment,
+        DateTimeOffset? FromStopDeparture,
+        DateTimeOffset? ToStopArrival);
+
+    private static ResolvedSearchSegment? ResolveOpenSearchSegment(
+        Trip trip,
+        IReadOnlyList<SearchSegment> segments,
+        IReadOnlyDictionary<Guid, Dictionary<int, (DateTimeOffset? Arrival, DateTimeOffset? Departure)>> tripStopsByTripId,
+        DateTimeOffset bookingCutoff)
+    {
+        foreach (var segment in segments)
+        {
+            var (fromStopDeparture, toStopArrival) = ResolveSegmentTimes(trip, segment, tripStopsByTripId);
+            if (fromStopDeparture is null || fromStopDeparture > bookingCutoff)
+            {
+                return new ResolvedSearchSegment(segment, fromStopDeparture, toStopArrival);
+            }
+        }
+
+        return null;
     }
 
     private static (DateTimeOffset? FromStopDeparture, DateTimeOffset? ToStopArrival) ResolveSegmentTimes(
         Trip trip,
-        (int FromOrder, int ToOrder) segment,
+        SearchSegment segment,
         IReadOnlyDictionary<Guid, Dictionary<int, (DateTimeOffset? Arrival, DateTimeOffset? Departure)>> tripStopsByTripId)
     {
         if (tripStopsByTripId.TryGetValue(trip.Id, out var stopsByOrder))

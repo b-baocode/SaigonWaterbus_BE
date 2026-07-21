@@ -386,7 +386,7 @@ public class SegmentBookingAndDistanceFareTests
     public async Task SearchTripsReturnsSegmentTimesFromTripStops()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        await SeatFlowTestData.SeedCustomerAsync(context);
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
         var seeded = await SeedThreeStopTripAsync(context, "TR-TIME-1", withDistances: true);
         var trip = seeded.Trip;
 
@@ -418,6 +418,78 @@ public class SegmentBookingAndDistanceFareTests
             .Single(x => x.TripCode == "TR-TIME-1");
         head.FromStopScheduledDeparture.ShouldBe(dep);
         head.ToStopScheduledArrival.ShouldBe(dep.AddMinutes(20));
+    }
+
+    [Test]
+    public async Task SearchTripsUsesNextOpenSegmentWhenStationsRepeat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var bb = await GetOrCreateStationAsync(context, "BB");
+        var hb = await GetOrCreateStationAsync(context, "HB");
+        var lt = await GetOrCreateStationAsync(context, "LT");
+
+        var route = new Route
+        {
+            RouteCode = "R-REPEAT",
+            RouteName = "Repeated stops",
+            RouteType = RouteTypes.Regular,
+            IsBookable = true
+        };
+        route.RouteStops.Add(new RouteStop { Route = route, Station = bb, StationId = bb.Id, StopOrder = 1 });
+        route.RouteStops.Add(new RouteStop { Route = route, Station = hb, StationId = hb.Id, StopOrder = 2, DistanceFromPreviousKm = 1 });
+        route.RouteStops.Add(new RouteStop { Route = route, Station = bb, StationId = bb.Id, StopOrder = 3, DistanceFromPreviousKm = 1 });
+        route.RouteStops.Add(new RouteStop { Route = route, Station = lt, StationId = lt.Id, StopOrder = 4, DistanceFromPreviousKm = 1 });
+        route.RouteStops.Add(new RouteStop { Route = route, Station = hb, StationId = hb.Id, StopOrder = 5, DistanceFromPreviousKm = 1 });
+        route.RouteStops.Add(new RouteStop { Route = route, Station = lt, StationId = lt.Id, StopOrder = 6, DistanceFromPreviousKm = 1 });
+
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, BoatStatus.Active);
+        boat.SeatCount = 1;
+        var seat = new Seat { Boat = boat, BoatId = boat.Id, Code = "A1", Deck = 1, Row = "A", Column = 1 };
+        var trip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = "TR-REPEAT",
+            TripType = TripTypes.Regular,
+            OperatingDate = DateOnly.FromDateTime(Now.UtcDateTime),
+            DepartureTime = Now,
+            ArrivalTime = Now.AddMinutes(31),
+            CapacitySnapshot = 1,
+            TripStatus = TripStatus.InProgress
+        };
+        var tripSeat = new TripSeat { Trip = trip, TripId = trip.Id, Seat = seat, SeatId = seat.Id, Price = 10000m };
+        context.AddRange(route, boat, seat, trip, tripSeat);
+        context.AddRange(
+            new TripStop { Trip = trip, TripId = trip.Id, Station = bb, StationId = bb.Id, StopOrder = 1, PlannedDepartureTime = Now },
+            new TripStop { Trip = trip, TripId = trip.Id, Station = hb, StationId = hb.Id, StopOrder = 2, PlannedArrivalTime = Now.AddMinutes(1), PlannedDepartureTime = Now.AddMinutes(1) },
+            new TripStop { Trip = trip, TripId = trip.Id, Station = bb, StationId = bb.Id, StopOrder = 3, PlannedArrivalTime = Now.AddMinutes(2), PlannedDepartureTime = Now.AddMinutes(2) },
+            new TripStop { Trip = trip, TripId = trip.Id, Station = lt, StationId = lt.Id, StopOrder = 4, PlannedArrivalTime = Now.AddMinutes(5), PlannedDepartureTime = Now.AddMinutes(5) },
+            new TripStop { Trip = trip, TripId = trip.Id, Station = hb, StationId = hb.Id, StopOrder = 5, PlannedArrivalTime = Now.AddMinutes(30), PlannedDepartureTime = Now.AddMinutes(30) },
+            new TripStop { Trip = trip, TripId = trip.Id, Station = lt, StationId = lt.Id, StopOrder = 6, PlannedArrivalTime = Now.AddMinutes(31) });
+        await context.SaveChangesAsync();
+
+        var results = await new SearchTripsQueryHandler(context, new FixedTimeProvider(Now))
+            .Handle(new SearchTripsQuery(hb.Id, lt.Id, DateOnly.FromDateTime(Now.UtcDateTime)), CancellationToken.None);
+
+        var result = results.Single(x => x.TripCode == "TR-REPEAT");
+        result.FromStopScheduledDeparture.ShouldBe(Now.AddMinutes(30));
+        result.ToStopScheduledArrival.ShouldBe(Now.AddMinutes(31));
+        result.AvailableSeats.ShouldBe(1);
+        result.IsBookable.ShouldBeTrue();
+
+        var seatMap = await new GetTripSeatMapQueryHandler(context, userContext, new FixedTimeProvider(Now))
+            .Handle(new GetTripSeatMapQuery(trip.Id, "HB", "LT"), CancellationToken.None);
+        seatMap.IsBookingClosed.ShouldBeFalse();
+
+        var booking = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand("TR-REPEAT", [Adult("A1", "HB", "LT")], null),
+            CancellationToken.None);
+        var passenger = context.Set<BookingPassenger>().Single(x => x.BookingId == booking.BookingId);
+        passenger.FromStopOrder.ShouldBe(5);
+        passenger.ToStopOrder.ShouldBe(6);
     }
 
     [Test]

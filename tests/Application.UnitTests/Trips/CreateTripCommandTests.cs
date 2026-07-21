@@ -367,6 +367,95 @@ public class CreateTripCommandTests
         result.CapacitySnapshot.ShouldBe(3);
     }
 
+    [Test]
+    public async Task RunningTripVisibilityDependsOnBoardingStopAndStatus()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var stationC = Station("C", "Ben C");
+        var route = Route("R1", stationA, stationB, stationC);
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var operatingDate = DateOnly.FromDateTime(departureTime.Date);
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var created = await new CreateTripCommandHandler(context)
+            .Handle(
+                new CreateTripCommand(
+                    "R1",
+                    "BOAT-1",
+                    operatingDate,
+                    departureTime,
+                    Stops: [new CreateTripStopScheduleInput(2, 0)]),
+                CancellationToken.None);
+
+        created.TripStatus.ShouldBe(nameof(TripStatus.Scheduled));
+
+        var preDepartureSearch = await new SearchTripsQueryHandler(
+                context,
+                new FixedTimeProvider(departureTime.ToUniversalTime().AddMinutes(-30)))
+            .Handle(new SearchTripsQuery(stationA.Id, stationB.Id, operatingDate), CancellationToken.None);
+        preDepartureSearch.ShouldContain(x => x.TripId == created.TripId);
+
+        var runningNow = departureTime.ToUniversalTime().AddMinutes(1);
+        var running = await new UpdateTripStatusCommandHandler(context, new FixedTimeProvider(runningNow))
+            .Handle(new UpdateTripStatusCommand(created.TripId, TripStatus.InProgress, null), CancellationToken.None);
+        running.TripStatus.ShouldBe(nameof(TripStatus.InProgress));
+
+        var adminList = await new GetTripListQueryHandler(context)
+            .Handle(new GetTripListQuery(operatingDate, null, null), CancellationToken.None);
+        adminList.Single(x => x.TripId == created.TripId).TripStatus.ShouldBe(nameof(TripStatus.InProgress));
+
+        var runningSearchFromDepartedStop = await new SearchTripsQueryHandler(context, new FixedTimeProvider(runningNow))
+            .Handle(new SearchTripsQuery(stationA.Id, stationB.Id, operatingDate), CancellationToken.None);
+        runningSearchFromDepartedStop.Any(x => x.TripId == created.TripId).ShouldBeFalse();
+
+        var runningSearchFromNextStop = await new SearchTripsQueryHandler(context, new FixedTimeProvider(runningNow))
+            .Handle(new SearchTripsQuery(stationB.Id, stationC.Id, operatingDate), CancellationToken.None);
+        runningSearchFromNextStop.ShouldContain(x => x.TripId == created.TripId);
+
+        var closedDepartedStopSeatMap = await new GetTripSeatMapQueryHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(runningNow))
+            .Handle(new GetTripSeatMapQuery(created.TripId, "A", "B"), CancellationToken.None);
+        closedDepartedStopSeatMap.IsBookingClosed.ShouldBeTrue();
+
+        var openNextStopSeatMap = await new GetTripSeatMapQueryHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(runningNow))
+            .Handle(new GetTripSeatMapQuery(created.TripId, "B", "C"), CancellationToken.None);
+        openNextStopSeatMap.IsBookingClosed.ShouldBeFalse();
+
+        var withinNextStopCutoff = departureTime.ToUniversalTime().AddMinutes(6);
+        var cutoffSearchFromNextStop = await new SearchTripsQueryHandler(context, new FixedTimeProvider(withinNextStopCutoff))
+            .Handle(new SearchTripsQuery(stationB.Id, stationC.Id, operatingDate), CancellationToken.None);
+        cutoffSearchFromNextStop.Any(x => x.TripId == created.TripId).ShouldBeFalse();
+
+        var cutoffNextStopSeatMap = await new GetTripSeatMapQueryHandler(
+                context,
+                customerContext,
+                new FixedTimeProvider(withinNextStopCutoff))
+            .Handle(new GetTripSeatMapQuery(created.TripId, "B", "C"), CancellationToken.None);
+        cutoffNextStopSeatMap.IsBookingClosed.ShouldBeTrue();
+
+        await new UpdateTripStatusCommandHandler(context, new FixedTimeProvider(runningNow.AddMinutes(30)))
+            .Handle(new UpdateTripStatusCommand(created.TripId, TripStatus.Completed, null), CancellationToken.None);
+
+        var completedCustomerSearch = await new SearchTripsQueryHandler(context, new FixedTimeProvider(runningNow))
+            .Handle(new SearchTripsQuery(stationB.Id, stationC.Id, operatingDate), CancellationToken.None);
+        completedCustomerSearch.Any(x => x.TripId == created.TripId).ShouldBeFalse();
+
+        adminList = await new GetTripListQueryHandler(context)
+            .Handle(new GetTripListQuery(operatingDate, null, null), CancellationToken.None);
+        adminList.Single(x => x.TripId == created.TripId).TripStatus.ShouldBe(nameof(TripStatus.Completed));
+    }
+
     private static Boat BoatWithSeats(
         string code,
         int seatCount,
