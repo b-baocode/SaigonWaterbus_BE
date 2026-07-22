@@ -134,6 +134,11 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             now,
             cancellationToken);
 
+        if (PaymentSupport.IsFreeRegularBooking(booking))
+        {
+            return await CompleteFreeRegularBookingAsync(booking, now, cancellationToken);
+        }
+
         var existingPendingPayment = booking.Payments
             .Where(PaymentSupport.IsPayOsPayment)
             .OrderByDescending(x => x.Created)
@@ -238,6 +243,60 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             booking,
             payment,
             wasPaid,
+            cancellationToken,
+            _bookingTicketPdfRenderer,
+            _notificationRealtimeNotifier);
+
+        return PaymentSupport.ToDto(booking, payment);
+    }
+
+    private async Task<PaymentDto> CompleteFreeRegularBookingAsync(
+        Booking booking,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var existingPaidPayment = booking.Payments
+            .Where(x => PaymentSupport.IsSettlementPayment(x) && PaymentSupport.IsPaid(x.PaymentStatus))
+            .OrderByDescending(x => x.Created)
+            .FirstOrDefault();
+        if (existingPaidPayment is not null)
+        {
+            return PaymentSupport.ToDto(booking, existingPaidPayment);
+        }
+
+        var payment = new Payment
+        {
+            BookingId = booking.Id,
+            PaymentCode = await PaymentSupport.GenerateInternalPaymentCodeAsync(
+                _context,
+                "FREE",
+                now,
+                cancellationToken),
+            Provider = PaymentSupport.FreeProvider,
+            Amount = 0,
+            Currency = booking.Currency,
+            PaymentMethod = PaymentSupport.FreePaymentMethod,
+            PaymentPurpose = PaymentSupport.FullPurpose,
+            PaymentStatus = PaymentSupport.PendingStatus
+        };
+        booking.Payments.Add(payment);
+        _context.Set<Payment>().Add(payment);
+
+        PaymentSupport.ApplyPaymentStatus(
+            booking,
+            payment,
+            PaymentSupport.PaidStatus,
+            paymentLinkId: null,
+            checkoutUrl: null,
+            now);
+        await _context.SaveChangesAsync(cancellationToken);
+        await PaymentSupport.SendPaymentNotificationIfPaidAsync(
+            _context,
+            _timeProvider,
+            _paymentNotificationSender,
+            booking,
+            payment,
+            wasPaid: false,
             cancellationToken,
             _bookingTicketPdfRenderer,
             _notificationRealtimeNotifier);
@@ -1030,7 +1089,10 @@ internal static class PaymentSupport
 
     /// <summary>Payment thu tại quầy (staff thu tiền mặt) — không đi qua cổng thanh toán.</summary>
     public const string CounterProvider = "Counter";
+    /// <summary>Payment 0đ của booking thường — hoàn tất nội bộ, không đi qua PayOS.</summary>
+    public const string FreeProvider = "System";
     public const string CashPaymentMethod = "Cash";
+    public const string FreePaymentMethod = "Free";
     public const string PendingStatus = "Pending";
     public const string PaidStatus = "Paid";
     public const string CancelledStatus = "Cancelled";
@@ -1321,12 +1383,16 @@ internal static class PaymentSupport
                 "Không thể tạo thanh toán cho booking đã hoàn tất, đã hoàn tiền hoặc đã hết hạn giữ chỗ.")]);
         }
 
-        if (booking.TotalAmount <= 0)
+        if (booking.TotalAmount < 0
+            || (booking.TotalAmount == 0 && Booking.IsCharterBookingType(booking.BookingType)))
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.TotalAmount),
                 "Booking chưa có số tiền cần thanh toán.")]);
         }
     }
+
+    public static bool IsFreeRegularBooking(Booking booking) =>
+        !Booking.IsCharterBookingType(booking.BookingType) && booking.TotalAmount == 0;
 
     public static async Task ApplyPromotionForCheckoutAsync(
         IApplicationDbContext context,
@@ -1594,6 +1660,26 @@ internal static class PaymentSupport
             "Không thể tạo mã thanh toán duy nhất. Vui lòng thử lại.")]);
     }
 
+    public static async Task<string> GenerateInternalPaymentCodeAsync(
+        IApplicationDbContext context,
+        string prefix,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var baseCode = $"{prefix}{now.ToUnixTimeMilliseconds().ToString(CultureInfo.InvariantCulture)}";
+        for (var attempt = 0; attempt < 100; attempt++)
+        {
+            var paymentCode = $"{baseCode}{attempt:D2}";
+            if (!await context.Set<Payment>().AnyAsync(x => x.PaymentCode == paymentCode, cancellationToken))
+            {
+                return paymentCode;
+            }
+        }
+
+        throw new ValidationException([new ValidationFailure("payment",
+            "Không thể tạo mã thanh toán duy nhất. Vui lòng thử lại.")]);
+    }
+
     public static long ToPayOsAmount(decimal amount, string propertyName, string errorMessage)
     {
         if (amount <= 0 || decimal.Truncate(amount) != amount || amount > long.MaxValue)
@@ -1622,13 +1708,16 @@ internal static class PaymentSupport
     public static bool IsCounterPayment(Payment payment) =>
         string.Equals(payment.Provider, CounterProvider, StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsFreePayment(Payment payment) =>
+        string.Equals(payment.Provider, FreeProvider, StringComparison.OrdinalIgnoreCase);
+
     /// <summary>
     /// Payment được tính vào số tiền đã thu của booking: PayOS (online) và thu tại quầy (tiền mặt).
     /// Dùng cho mọi phép cộng tiền/hoàn tiền; các chỗ chỉ liên quan tới cổng PayOS (đồng bộ trạng thái,
     /// hết hạn link thanh toán) vẫn lọc riêng bằng <see cref="IsPayOsPayment"/>.
     /// </summary>
     public static bool IsSettlementPayment(Payment payment) =>
-        IsPayOsPayment(payment) || IsCounterPayment(payment);
+        IsPayOsPayment(payment) || IsCounterPayment(payment) || IsFreePayment(payment);
 
     public static bool IsPending(string status) =>
         string.Equals(status, PendingStatus, StringComparison.OrdinalIgnoreCase);

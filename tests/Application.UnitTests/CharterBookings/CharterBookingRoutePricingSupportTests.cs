@@ -174,6 +174,116 @@ public class CharterBookingRoutePricingSupportTests
     }
 
     [Test]
+    public void EstimateRouteUsesConfiguredSpeedAndBuffer()
+    {
+        var fromStation = new Station
+        {
+            StationName = "Bến A",
+            Latitude = 10,
+            Longitude = 106
+        };
+        var toStation = new Station
+        {
+            StationName = "Bến B",
+            Latitude = 10,
+            Longitude = 106.001m
+        };
+        var route = new Route
+        {
+            RouteCode = "R-CONFIG",
+            RouteName = "Bến A - Bến B",
+            RouteGeometry = new LineString(
+            [
+                new Coordinate(106, 10),
+                new Coordinate(106.001, 10)
+            ]),
+            RouteStops =
+            [
+                new RouteStop { Station = fromStation, StationId = fromStation.Id, StopOrder = 1 },
+                new RouteStop { Station = toStation, StationId = toStation.Id, StopOrder = 2 }
+            ]
+        };
+        var booking = new Booking
+        {
+            FromStation = fromStation,
+            ToStation = toStation
+        };
+        var options = new CharterRouteEstimateOptions
+        {
+            AverageSpeedKmh = 60m,
+            BufferPercent = 0m,
+            MinimumBufferMinutes = 4,
+            FixedBufferMinutes = 2,
+            FreeStayMinutesPerBooking = 30
+        };
+
+        var estimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, [route], options);
+
+        var travelMinutes = estimate.Legs.Single().TravelMinutes!.Value;
+        travelMinutes.ShouldBe(1m);
+        estimate.EstimatedBufferMinutes.ShouldBe(6m);
+        estimate.EstimatedDurationMinutes.ShouldBe(travelMinutes + 6);
+    }
+
+    [Test]
+    public void EstimateRouteUsesGpsConfiguredTravelMinutesWithoutAddingBufferAgain()
+    {
+        var fromStation = new Station
+        {
+            StationName = "Thủ Thiêm",
+            Latitude = 10.7767m,
+            Longitude = 106.7096303m
+        };
+        var toStation = new Station
+        {
+            StationName = "Bạch Đằng",
+            Latitude = 10.7752301m,
+            Longitude = 106.7072821m
+        };
+        var route = new Route
+        {
+            RouteCode = "TT-BD",
+            RouteName = "Thủ Thiêm - Bạch Đằng",
+            RouteGeometry = new LineString(
+            [
+                new Coordinate(106.7096303, 10.7767),
+                new Coordinate(106.7072821, 10.7752301)
+            ]),
+            RouteStops =
+            [
+                new RouteStop { Station = fromStation, StationId = fromStation.Id, StopOrder = 1 },
+                new RouteStop
+                {
+                    Station = toStation,
+                    StationId = toStation.Id,
+                    StopOrder = 2,
+                    StandardTravelMin = 5.4m
+                }
+            ]
+        };
+        var booking = new Booking
+        {
+            FromStation = fromStation,
+            ToStation = toStation
+        };
+        var options = new CharterRouteEstimateOptions
+        {
+            AverageSpeedKmh = 4m,
+            BufferPercent = 0.10m,
+            MinimumBufferMinutes = 4,
+            FixedBufferMinutes = 2
+        };
+
+        var estimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, [route], options);
+
+        estimate.Legs.Single().TravelMinutes.ShouldBe(5.4m);
+        estimate.EstimatedTravelMinutes.ShouldBe(5.4m);
+        estimate.EstimatedBufferMinutes.ShouldBe(0m);
+        estimate.EstimatedDurationMinutes.ShouldBe(5.4m);
+        estimate.ChargeableDurationMinutes.ShouldBe(5.4m);
+    }
+
+    [Test]
     public void HourlyRentalKeepsRequestedHoursWhenRequestedDurationIsLonger()
     {
         var estimate = RouteEstimate(125);

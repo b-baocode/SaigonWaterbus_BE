@@ -181,7 +181,8 @@ internal static class TripStopScheduleSupport
     public static List<TripStopDto> BuildStopDtos(
         Trip trip,
         IReadOnlyDictionary<Guid, int>? boardingPassengerCountsByTripStopId = null,
-        IReadOnlyDictionary<Guid, IReadOnlyList<TripStaffAssignmentDto>>? scanningStaffByTripStopId = null)
+        IReadOnlyDictionary<Guid, IReadOnlyList<TripStaffAssignmentDto>>? scanningStaffByTripStopId = null,
+        IReadOnlyDictionary<Guid, TripStopPassengerCounts>? passengerCountsByTripStopId = null)
     {
         if (trip.TripStops.Count > 0)
         {
@@ -193,6 +194,8 @@ internal static class TripStopScheduleSupport
                         && scanningStaffByTripStopId.TryGetValue(x.Id, out var staff)
                             ? staff
                             : [];
+                    var passengerCounts = passengerCountsByTripStopId?.GetValueOrDefault(x.Id);
+                    var stationImageUrls = TripMediaSupport.CreateStationImageUrls(x.Station);
                     return new TripStopDto(
                         x.Id,
                         x.StationId,
@@ -206,29 +209,54 @@ internal static class TripStopScheduleSupport
                         x.StopStatus,
                         x.StayDurationMinutes,
                         x.Note,
-                        boardingPassengerCountsByTripStopId?.GetValueOrDefault(x.Id) ?? 0,
-                        scanningStaff);
+                        passengerCounts?.BoardingPassengerCount
+                            ?? boardingPassengerCountsByTripStopId?.GetValueOrDefault(x.Id)
+                            ?? 0,
+                        scanningStaff,
+                        passengerCounts?.AlightingPassengerCount ?? 0,
+                        passengerCounts?.OnboardPassengerCount ?? 0,
+                        passengerCounts?.SegmentPassengerCount ?? 0,
+                        stationImageUrls.FirstOrDefault(),
+                        stationImageUrls,
+                        x.Station?.Address,
+                        x.Station?.Latitude,
+                        x.Station?.Longitude,
+                        x.Station?.HasWaitingArea,
+                        x.Station?.HasParking,
+                        x.Station?.HasTicketCounter);
                 })
                 .ToList();
         }
 
         var orderedRouteStops = trip.Route.RouteStops.OrderBy(x => x.StopOrder).ToList();
         return BuildFromRouteStops(orderedRouteStops, trip.DepartureTime)
-            .Select((draft, index) => new TripStopDto(
-                orderedRouteStops[index].Id,
-                draft.StationId,
-                draft.Station?.StationName ?? string.Empty,
-                draft.Station?.StationCode ?? string.Empty,
-                draft.StopOrder,
-                draft.PlannedArrivalTime ?? draft.PlannedDepartureTime,
-                draft.PlannedDepartureTime ?? draft.PlannedArrivalTime,
-                null,
-                null,
-                TripStopStatuses.Scheduled,
-                draft.StayDurationMinutes,
-                draft.Note,
-                0,
-                []))
+            .Select((draft, index) =>
+            {
+                var stationImageUrls = TripMediaSupport.CreateStationImageUrls(draft.Station);
+                return new TripStopDto(
+                    orderedRouteStops[index].Id,
+                    draft.StationId,
+                    draft.Station?.StationName ?? string.Empty,
+                    draft.Station?.StationCode ?? string.Empty,
+                    draft.StopOrder,
+                    draft.PlannedArrivalTime ?? draft.PlannedDepartureTime,
+                    draft.PlannedDepartureTime ?? draft.PlannedArrivalTime,
+                    null,
+                    null,
+                    TripStopStatuses.Scheduled,
+                    draft.StayDurationMinutes,
+                    draft.Note,
+                    0,
+                    [],
+                    StationImageUrl: stationImageUrls.FirstOrDefault(),
+                    StationImageUrls: stationImageUrls,
+                    StationAddress: draft.Station?.Address,
+                    Latitude: draft.Station?.Latitude,
+                    Longitude: draft.Station?.Longitude,
+                    HasWaitingArea: draft.Station?.HasWaitingArea,
+                    HasParking: draft.Station?.HasParking,
+                    HasTicketCounter: draft.Station?.HasTicketCounter);
+            })
             .ToList();
     }
 }

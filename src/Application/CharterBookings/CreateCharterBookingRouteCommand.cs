@@ -20,7 +20,7 @@ public sealed record CharterBookingRouteSourceLegDto(
     string FromStationName,
     string ToStationName,
     decimal? DistanceKm,
-    int? TravelMinutes,
+    decimal? TravelMinutes,
     int StayMinutesAtFromStation,
     Guid? SourceRouteId,
     string? SourceRouteCode,

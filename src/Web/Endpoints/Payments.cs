@@ -63,6 +63,7 @@ public sealed class Payments : IEndpointGroup
                 "pointsToUse: tuy chon; 1 point = 1 VND, tru truc tiep vao tong tien (sau giam gia), toi da 50% gia tri don.",
                 "pointsToUse=null giu nguyen muc diem dang dung, pointsToUse=0 bo dung diem. Khong doi duoc khi da co payment Pending/Paid.",
                 "Diem bi tru ngay khi ap; booking het han/huy/hoan tien se tu hoan diem lai.",
+                "Booking thuong co tong tien 0đ (vd ve dac biet mien phi) se tu hoan tat thanh toan noi bo: response paymentStatus=Paid va khong co checkoutUrl, FE khong dieu huong PayOS.",
                 "Sau khi da dat coc, gui paymentOption=Remaining de tao payment phan con lai.",
                 "De tuong thich nguoc, Full sau khi da dat coc cung se thanh toan phan con lai."));
 

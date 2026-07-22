@@ -83,7 +83,7 @@ public sealed record CharterBookingRouteLegEstimateDto(
     string FromStationName,
     string ToStationName,
     decimal? DistanceKm,
-    int? TravelMinutes,
+    decimal? TravelMinutes,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     Guid? MatchedRouteId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -94,14 +94,14 @@ public sealed record CharterBookingRouteLegEstimateDto(
 public sealed record CharterBookingRouteEstimateDto(
     IReadOnlyList<CharterBookingRouteLegEstimateDto> Legs,
     decimal? TotalDistanceKm,
-    int EstimatedTravelMinutes,
+    decimal EstimatedTravelMinutes,
     int EstimatedStayMinutes,
     int FreeStayMinutes,
     int ChargeableStayMinutes,
-    int EstimatedBufferMinutes,
-    int EstimatedDurationMinutes,
+    decimal EstimatedBufferMinutes,
+    decimal EstimatedDurationMinutes,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    int? ChargeableDurationMinutes,
+    decimal? ChargeableDurationMinutes,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     decimal? ChargeableDurationValue,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

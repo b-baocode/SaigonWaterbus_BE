@@ -223,13 +223,12 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             trip.DepartureTime, trip.ArrivalTime,
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
             TripStopScheduleSupport.BuildStopDtos(trip),
-            Boat: new TripBoatDto(
-                boat.Id,
-                boat.Name,
-                boat.Code,
-                trip.CapacitySnapshot,
-                boat.Status.ToString()),
-            OnBoardStaff: []);
+            Boat: TripMediaSupport.ToBoatDto(boat, trip.CapacitySnapshot),
+            OnBoardStaff: [],
+            RouteCode: route.RouteCode,
+            FromStation: TripMediaSupport.ResolveFromStation(trip),
+            ToStation: TripMediaSupport.ResolveToStation(trip),
+            StopCount: trip.TripStops.Count);
     }
 
     private async Task<Route> ResolveRouteAsync(

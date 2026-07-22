@@ -134,7 +134,7 @@ internal static class CharterBookingTripSupport
             {
                 var travelMinutes = legsAligned ? legs[i - 1].TravelMinutes : null;
                 plannedArrival = previousDeparture.HasValue && travelMinutes.HasValue
-                    ? previousDeparture.Value.AddMinutes(travelMinutes.Value)
+                    ? previousDeparture.Value.AddMinutes((double)travelMinutes.Value)
                     : null;
                 plannedDeparture = i == points.Count - 1
                     ? null
@@ -184,7 +184,7 @@ internal static class CharterBookingTripSupport
 
         if (routeEstimate is { HasCompleteTravelTimeEstimate: true, EstimatedDurationMinutes: > 0 })
         {
-            return departureTimeUtc.AddMinutes(routeEstimate.EstimatedDurationMinutes);
+            return departureTimeUtc.AddMinutes((double)routeEstimate.EstimatedDurationMinutes);
         }
 
         return departureTimeUtc.AddHours(durationValue);

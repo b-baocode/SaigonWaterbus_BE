@@ -2,6 +2,7 @@ using Microsoft.Extensions.Logging;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -61,7 +62,8 @@ public sealed record OperationScheduleItemDto(
     DateTimeOffset? LatestGpsAt,
     decimal? RemainingDistanceKmToNextStation,
     int? RemainingMinutesToNextStation,
-    bool IsGpsOnline);
+    bool IsGpsOnline,
+    TripStopDwellCountdownDto? DwellCountdown = null);
 
 [Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record GetOperationScheduleQuery(
@@ -169,6 +171,7 @@ public sealed class GetOperationScheduleQueryHandler
         var isGpsOnline = latestLocation is not null
             && now - latestLocation.ReceivedAt <= TimeSpan.FromSeconds(GpsOnlineThresholdSeconds);
         var movementStatus = ResolveMovementStatus(trip, tripStops, latestLocation, isGpsOnline, now);
+        var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(trip, currentStop, now);
 
         return new OperationScheduleItemDto(
             trip.Id,
@@ -228,7 +231,8 @@ public sealed class GetOperationScheduleQueryHandler
             latestGpsAt,
             latestLocation?.RemainingDistanceKmToNextStation,
             latestLocation?.RemainingMinutesToNextStation,
-            isGpsOnline);
+            isGpsOnline,
+            dwellCountdown);
     }
 
     private static string BuildTitle(Trip trip) =>

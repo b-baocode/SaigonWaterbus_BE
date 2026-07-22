@@ -472,7 +472,7 @@ public class StaffWorkAssignmentTests
     }
 
     [Test]
-    public async Task TripDetailReturnsBoatStaffScannerAndBoardingCountsByTripStop()
+    public async Task TripDetailReturnsStaffAndPassengerCountsByTripStopAndSegment()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -534,6 +534,19 @@ public class StaffWorkAssignmentTests
             BookingId = booking.Id,
             Trip = trip,
             TripId = trip.Id,
+            FullName = "Passenger A C",
+            FromStationId = stationA.Id,
+            ToStationId = stationC.Id,
+            FromStopOrder = 1,
+            ToStopOrder = 3,
+            PassengerType = "ADULT"
+        });
+        booking.Passengers.Add(new BookingPassenger
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            Trip = trip,
+            TripId = trip.Id,
             FullName = "Passenger B",
             FromStationId = stationB.Id,
             ToStationId = stationC.Id,
@@ -558,10 +571,27 @@ public class StaffWorkAssignmentTests
 
         result.Boat.ShouldNotBeNull().VesselId.ShouldBe(boat.Id);
         result.OnBoardStaff.ShouldNotBeNull().Single().StaffUserId.ShouldBe(onBoardStaff.Id);
+        result.TotalPassengerCount.ShouldBe(2);
+        var stopADto = result.Stops.Single(x => x.TripStopId == stopA.Id);
         var stopBDto = result.Stops.Single(x => x.TripStopId == stopB.Id);
+        var stopCDto = result.Stops.Single(x => x.TripStopId == stopC.Id);
+        stopADto.BoardingPassengerCount.ShouldBe(1);
+        stopADto.AlightingPassengerCount.ShouldBe(0);
+        stopADto.OnboardPassengerCount.ShouldBe(1);
+        stopADto.SegmentPassengerCount.ShouldBe(1);
         stopBDto.BoardingPassengerCount.ShouldBe(1);
+        stopBDto.AlightingPassengerCount.ShouldBe(0);
+        stopBDto.OnboardPassengerCount.ShouldBe(2);
+        stopBDto.SegmentPassengerCount.ShouldBe(2);
         stopBDto.ScanningStaff.ShouldNotBeNull().Single().StaffUserId.ShouldBe(groundStaff.Id);
-        result.Stops.Single(x => x.TripStopId == stopA.Id).BoardingPassengerCount.ShouldBe(0);
+        stopCDto.BoardingPassengerCount.ShouldBe(0);
+        stopCDto.AlightingPassengerCount.ShouldBe(2);
+        stopCDto.OnboardPassengerCount.ShouldBe(0);
+        stopCDto.SegmentPassengerCount.ShouldBe(0);
+
+        var list = await new GetTripListQueryHandler(context, new FixedTimeProvider(departure.AddMinutes(15)))
+            .Handle(new GetTripListQuery(null, null, null), CancellationToken.None);
+        list.Single(x => x.TripId == trip.Id).TotalPassengerCount.ShouldBe(2);
     }
 
     private static Boat Boat(string code) =>

@@ -15,10 +15,23 @@ public sealed class Points : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "1 point = 1 VND. Tich 1% gia tri moi payment thanh toan thanh cong.",
+                "1 point = 1 VND. Tich 1% so tien thuc tra sau khi dich vu hoan tat (trip Completed / charter Completed).",
+                "So tien thuc tra = payment Paid - refundAmount; diem da tich luu trong booking.pointsEarned va khong cong lap.",
                 "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100).",
                 "transactionType: Earn (tich diem), Redeem (dung diem), RedeemCancelled (doi muc dung tai checkout), RedeemReturned (hoan diem do booking het han/huy/hoan tien), EarnRevoked (thu hoi diem do hoan tien).",
                 "Diem duoc dung toi da 50% gia tri don tai buoc tao thanh toan (pointsToUse)."));
+
+        group.MapPost(BackfillCompletedBookingPoints, "admin/backfill-completed-bookings")
+            .RequireAuthorization()
+            .WithSummary("Admin cong diem bu cho booking da hoan tat")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Chay mot lan sau khi bat tinh diem de cong bu cho booking cu.",
+                "Chi xu ly booking co userId, pointsEarned=0 va dich vu da hoan tat.",
+                "Booking thuong: bookingStatus=Completed hoac tat ca trip lien quan da Completed.",
+                "Charter: bookingStatus=Completed.",
+                "Ghi point_transactions va tang users.point_balance; goi lai khong cong lap."));
     }
 
     private static async Task<IResult> GetMyPoints(
@@ -27,4 +40,9 @@ public sealed class Points : IEndpointGroup
         int? pageSize,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetMyPointsQuery(page ?? 1, pageSize ?? 20), ct));
+
+    private static async Task<IResult> BackfillCompletedBookingPoints(
+        ISender sender,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new BackfillCompletedBookingPointsCommand(), ct));
 }

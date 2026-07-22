@@ -79,6 +79,7 @@ public sealed class Bookings : IEndpointGroup
                 null,
                 "Tra ve tat ca booking cua user dang dang nhap, moi nhat truoc.",
                 "itemCount: so ve con hieu luc (chua bi cancel).",
+                "pointsUsed/pointsEarned va insurance duoc tra kem de FE hien nhanh tren danh sach.",
                 "serviceType = Waterbus | Sightseeing (dich vu khach mua, suy tu routeType cua chuyen); "
                 + "FE dung de hien dung nhan va man chi tiet."));
 

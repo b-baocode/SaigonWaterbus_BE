@@ -21,7 +21,10 @@ public sealed record BookingHistoryItemDto(
     string Status,
     decimal? TotalAmount,
     string? Currency,
-    string DetailEndpoint);
+    string DetailEndpoint,
+    int PointsUsed = 0,
+    int PointsEarned = 0,
+    Bookings.BookingInsuranceDto? Insurance = null);
 
 public sealed record GetMyBookingHistoryQuery : IRequest<IReadOnlyList<BookingHistoryItemDto>>;
 
@@ -118,7 +121,10 @@ public sealed class GetMyBookingHistoryQueryHandler
             booking.BookingStatus.ToString(),
             booking.TotalAmount,
             DefaultCurrency,
-            $"/api/bookings/{booking.Id}");
+            $"/api/bookings/{booking.Id}",
+            booking.PointsUsed,
+            booking.PointsEarned,
+            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
     }
 
     private static BookingHistoryItemDto CreateCharterBookingHistoryItem(Booking booking) =>
@@ -136,5 +142,8 @@ public sealed class GetMyBookingHistoryQueryHandler
             booking.BookingStatus.ToString(),
             booking.TotalAmount,
             booking.Currency,
-            $"/api/charter-bookings/{booking.Id}");
+            $"/api/charter-bookings/{booking.Id}",
+            booking.PointsUsed,
+            booking.PointsEarned,
+            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
 }

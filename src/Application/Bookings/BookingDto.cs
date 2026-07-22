@@ -13,7 +13,10 @@ public sealed record BookingListItemDto(
     decimal TotalAmount,
     int ItemCount,
     string ServiceType,
-    string? RouteType);
+    string? RouteType,
+    int PointsUsed = 0,
+    int PointsEarned = 0,
+    BookingInsuranceDto? Insurance = null);
 
 public sealed record BookingDetailDto(
     Guid BookingId,

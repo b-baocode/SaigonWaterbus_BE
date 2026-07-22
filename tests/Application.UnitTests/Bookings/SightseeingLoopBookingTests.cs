@@ -108,11 +108,20 @@ public class SightseeingLoopBookingTests
         await handler.Handle(
             new CreateBookingCommand("TR-SIG-7", [Adult("A1") with { FromStationCode = "BB", ToStationCode = "LT" }], null),
             CancellationToken.None);
+        var loopBookingEntity = context.Set<Booking>().Single(x => x.Id == loopBooking.BookingId);
+        loopBookingEntity.PointsUsed = 120;
+        loopBookingEntity.PointsEarned = 75;
+        loopBookingEntity.InsuranceSnapshot = InsuranceSnapshot();
+        await context.SaveChangesAsync();
 
         var list = await new GetBookingListQueryHandler(context, userContext)
             .Handle(new GetBookingListQuery(), CancellationToken.None);
-        list.Single(x => x.BookingId == loopBooking.BookingId).ServiceType
-            .ShouldBe(BookingServiceTypes.Sightseeing);
+        var loopListItem = list.Single(x => x.BookingId == loopBooking.BookingId);
+        loopListItem.ServiceType.ShouldBe(BookingServiceTypes.Sightseeing);
+        loopListItem.PointsUsed.ShouldBe(120);
+        loopListItem.PointsEarned.ShouldBe(75);
+        loopListItem.Insurance.ShouldNotBeNull();
+        loopListItem.Insurance.Code.ShouldBe("INS-SEAT");
         list.Single(x => x.BookingId != loopBooking.BookingId).ServiceType
             .ShouldBe(BookingServiceTypes.Waterbus);
 
@@ -120,6 +129,10 @@ public class SightseeingLoopBookingTests
             .Handle(new GetBookingDetailQuery(loopBooking.BookingId), CancellationToken.None);
         detail.ServiceType.ShouldBe(BookingServiceTypes.Sightseeing);
         detail.RouteType.ShouldBe(RouteTypes.SightseeingLoop);
+        detail.PointsUsed.ShouldBe(120);
+        detail.PointsEarned.ShouldBe(75);
+        detail.Insurance.ShouldNotBeNull();
+        detail.Insurance.Code.ShouldBe("INS-SEAT");
     }
 
     [Test]
@@ -129,8 +142,13 @@ public class SightseeingLoopBookingTests
         var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
         await SeedLoopTripAsync(context, "TR-SIG-8");
 
-        await CreateHandler(context, userContext).Handle(
+        var created = await CreateHandler(context, userContext).Handle(
             new CreateBookingCommand("TR-SIG-8", [Adult("A1")], null), CancellationToken.None);
+        var booking = context.Set<Booking>().Single(x => x.Id == created.BookingId);
+        booking.PointsUsed = 60;
+        booking.PointsEarned = 30;
+        booking.InsuranceSnapshot = InsuranceSnapshot();
+        await context.SaveChangesAsync();
 
         var items = await new Application.BookingHistory.GetMyBookingHistoryQueryHandler(context, userContext)
             .Handle(new Application.BookingHistory.GetMyBookingHistoryQuery(), CancellationToken.None);
@@ -138,6 +156,10 @@ public class SightseeingLoopBookingTests
         var item = items.ShouldHaveSingleItem();
         item.Type.ShouldBe("StandardBooking");
         item.ServiceType.ShouldBe(BookingServiceTypes.Sightseeing);
+        item.PointsUsed.ShouldBe(60);
+        item.PointsEarned.ShouldBe(30);
+        item.Insurance.ShouldNotBeNull();
+        item.Insurance.Code.ShouldBe("INS-SEAT");
     }
 
     [Test]
@@ -221,6 +243,23 @@ public class SightseeingLoopBookingTests
 
     private static BookingItemRequest Adult(string seat) =>
         new(seat, "ADULT", null, null, "Nguyen Van A", null, null, null, null, null);
+
+    private static BookingInsuranceSnapshot InsuranceSnapshot() =>
+        new()
+        {
+            InsurancePackageId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            Code = "INS-SEAT",
+            Name = "Seat insurance",
+            BookingType = Booking.SeatBookingType,
+            IsRequired = false,
+            UnitPremiumAmount = 10000m,
+            CoverageAmount = 100000000m,
+            Currency = "VND",
+            Quantity = 1,
+            TotalAmount = 10000m,
+            Conditions = ["Valid for one passenger"],
+            QuotedAt = Now
+        };
 
     private sealed record SeededLoopTrip(Trip Trip, Guid TerminalStationId);
 

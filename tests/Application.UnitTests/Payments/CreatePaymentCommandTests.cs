@@ -117,6 +117,114 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task RegularZeroAmountBookingCompletesWithoutPayOsAndIssuesTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var userId = userContext.UserId!.Value;
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingCode = "BK-FREE",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 0,
+            TotalAmount = 0,
+            RemainingAmount = 0,
+            HoldExpiresAt = now.AddMinutes(15)
+        };
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            FullName = "Nguyen Van A",
+            PassengerType = "INFANT",
+            UnitPrice = 0
+        };
+        context.AddRange(booking, passenger);
+        await context.SaveChangesAsync();
+        var gateway = new TestPaymentGateway();
+
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            gateway,
+            new TestPaymentNotificationSender(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(new CreatePaymentCommand(booking.Id), CancellationToken.None);
+
+        result.Amount.ShouldBe(0);
+        result.Provider.ShouldBe("System");
+        result.PaymentMethod.ShouldBe("Free");
+        result.PaymentStatus.ShouldBe("Paid");
+        result.BookingStatus.ShouldBe(BookingStatus.Confirmed.ToString());
+        result.BookingPaymentStatus.ShouldBe("Paid");
+        result.BookingRemainingAmount.ShouldBe(0);
+        result.CheckoutUrl.ShouldBeNull();
+        result.PaidAt.ShouldBe(now);
+        gateway.CreateRequests.ShouldBeEmpty();
+
+        var payment = context.Set<Payment>().Single();
+        payment.Amount.ShouldBe(0);
+        payment.Provider.ShouldBe("System");
+        payment.PaymentMethod.ShouldBe("Free");
+        payment.PaymentStatus.ShouldBe("Paid");
+        payment.PaidAt.ShouldBe(now);
+        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
+        booking.PaymentStatus.ShouldBe("Paid");
+        context.Tickets.Count().ShouldBe(1);
+        context.Tickets.Single().BookingPassengerId.ShouldBe(passenger.Id);
+    }
+
+    [Test]
+    public async Task CharterZeroAmountBookingStillRequiresPositivePaymentAmount()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = userId,
+            BookingCode = "CB-FREE-REJECT",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.Quoted,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 0,
+            TotalAmount = 0,
+            RemainingAmount = 0,
+            HoldExpiresAt = now.AddHours(1)
+        };
+        context.Add(booking);
+        await context.SaveChangesAsync();
+        var gateway = new TestPaymentGateway();
+
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            gateway,
+            new TestPaymentNotificationSender(),
+            new FixedTimeProvider(now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CreatePaymentCommand(booking.Id), CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain("Booking chưa có số tiền cần thanh toán.");
+        gateway.CreateRequests.ShouldBeEmpty();
+        context.Set<Payment>().Count().ShouldBe(0);
+    }
+
+    [Test]
     public async Task RegularBookingAppliesPromotionWhenCreatingPayment()
     {
         await using var context = SeatFlowTestData.CreateContext();

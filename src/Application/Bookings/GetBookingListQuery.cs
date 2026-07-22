@@ -35,6 +35,9 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
                 b.Created,
                 b.BookingStatus,
                 b.TotalAmount,
+                b.PointsUsed,
+                b.PointsEarned,
+                b.InsuranceSnapshot,
                 ItemCount = b.Passengers.Count,
                 RouteType = b.Trip != null ? b.Trip.Route.RouteType : null
             })
@@ -49,7 +52,10 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
                 b.TotalAmount,
                 b.ItemCount,
                 BookingServiceTypes.Resolve(b.RouteType),
-                b.RouteType))
+                b.RouteType,
+                b.PointsUsed,
+                b.PointsEarned,
+                BookingInsuranceDtoMapper.ToDto(b.InsuranceSnapshot)))
             .ToList();
     }
 }

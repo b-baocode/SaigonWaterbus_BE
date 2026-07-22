@@ -56,13 +56,17 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
                     .ThenBy(x => x.StaffUser.FullName)
                     .Select(x => ToStaffDto(x, now))
                     .ToList());
-        var boardingCounts = await LoadBoardingPassengerCountsAsync(trip, now, cancellationToken);
+        var passengerCounts = await LoadPassengerCountsAsync(trip, now, cancellationToken);
 
         return UpdateTripStatusCommandHandler.ToDetailDto(
             trip,
             sourceBooking,
-            TripStopScheduleSupport.BuildStopDtos(trip, boardingCounts, scanningStaffByTripStopId),
-            onBoardStaff);
+            TripStopScheduleSupport.BuildStopDtos(
+                trip,
+                scanningStaffByTripStopId: scanningStaffByTripStopId,
+                passengerCountsByTripStopId: passengerCounts.ByTripStopId),
+            onBoardStaff,
+            passengerCounts.TotalPassengerCount);
     }
 
     private async Task<IReadOnlyList<StaffWorkAssignment>> LoadTripAssignmentsAsync(
@@ -86,31 +90,82 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             .ToListAsync(cancellationToken);
     }
 
-    private async Task<IReadOnlyDictionary<Guid, int>> LoadBoardingPassengerCountsAsync(
+    private async Task<TripPassengerCounts> LoadPassengerCountsAsync(
         Trip trip,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
         if (trip.TripStops.Count == 0)
         {
-            return new Dictionary<Guid, int>();
+            return new TripPassengerCounts(new Dictionary<Guid, TripStopPassengerCounts>(), 0);
         }
 
-        var firstStop = trip.TripStops.OrderBy(x => x.StopOrder).First();
-        var tripStopIdByOrder = trip.TripStops.ToDictionary(x => x.StopOrder, x => x.Id);
+        var orderedStops = trip.TripStops
+            .OrderBy(x => x.StopOrder)
+            .ToList();
+        var firstStopOrder = orderedStops.First().StopOrder;
+        var lastStopOrder = orderedStops.Last().StopOrder;
+        var tripStopByOrder = orderedStops.ToDictionary(x => x.StopOrder);
+        var mutableCountsByOrder = orderedStops.ToDictionary(
+            x => x.StopOrder,
+            _ => new MutableTripStopPassengerCounts());
         var passengers = await _context.Set<BookingPassenger>()
             .AsNoTracking()
             .Where(x => x.TripId == trip.Id || (!x.TripId.HasValue && x.Booking.TripId == trip.Id))
             .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
-            .Select(x => new { x.FromStopOrder })
+            .Select(x => new { x.FromStopOrder, x.ToStopOrder })
             .ToListAsync(cancellationToken);
 
-        return passengers
-            .Select(x => tripStopIdByOrder.TryGetValue(x.FromStopOrder ?? firstStop.StopOrder, out var tripStopId)
-                ? tripStopId
-                : firstStop.Id)
-            .GroupBy(x => x)
-            .ToDictionary(x => x.Key, x => x.Count());
+        foreach (var passenger in passengers)
+        {
+            var fromStopOrder = Math.Max(passenger.FromStopOrder ?? firstStopOrder, firstStopOrder);
+            var toStopOrder = Math.Min(passenger.ToStopOrder ?? lastStopOrder, lastStopOrder);
+
+            if (toStopOrder <= fromStopOrder)
+            {
+                continue;
+            }
+
+            var boardingStopOrder = tripStopByOrder.ContainsKey(fromStopOrder)
+                ? fromStopOrder
+                : firstStopOrder;
+            var alightingStopOrder = tripStopByOrder.ContainsKey(toStopOrder)
+                ? toStopOrder
+                : lastStopOrder;
+
+            mutableCountsByOrder[boardingStopOrder].BoardingPassengerCount++;
+            mutableCountsByOrder[alightingStopOrder].AlightingPassengerCount++;
+
+            foreach (var stop in orderedStops.Where(x => x.StopOrder >= fromStopOrder && x.StopOrder < toStopOrder))
+            {
+                mutableCountsByOrder[stop.StopOrder].OnboardPassengerCount++;
+                mutableCountsByOrder[stop.StopOrder].SegmentPassengerCount++;
+            }
+        }
+
+        return new TripPassengerCounts(
+            mutableCountsByOrder.ToDictionary(
+                x => tripStopByOrder[x.Key].Id,
+                x => x.Value.ToDto()),
+            passengers.Count);
+    }
+
+    private sealed record TripPassengerCounts(
+        IReadOnlyDictionary<Guid, TripStopPassengerCounts> ByTripStopId,
+        int TotalPassengerCount);
+
+    private sealed class MutableTripStopPassengerCounts
+    {
+        public int BoardingPassengerCount { get; set; }
+        public int AlightingPassengerCount { get; set; }
+        public int OnboardPassengerCount { get; set; }
+        public int SegmentPassengerCount { get; set; }
+
+        public TripStopPassengerCounts ToDto() => new(
+            BoardingPassengerCount,
+            AlightingPassengerCount,
+            OnboardPassengerCount,
+            SegmentPassengerCount);
     }
 
     private static TripStaffAssignmentDto ToStaffDto(

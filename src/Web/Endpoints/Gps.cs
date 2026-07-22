@@ -7,6 +7,8 @@ using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
+using SaigonWaterbus.Application.Points;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -571,6 +573,12 @@ public sealed class Gps : IEndpointGroup
                 ?? $"GPS đã hoàn tất chuyến lúc {completedAt:O}.";
             var reviewInvites = await NotificationSupport.AddTripCompletedReviewInviteNotificationsAsync(
                 dbContext, trip, oldStatus, completedAt, cancellationToken);
+            await PointSupport.AwardCompletionPointsForCompletedTripAsync(
+                dbContext,
+                trip,
+                oldStatus,
+                completedAt,
+                cancellationToken);
             await dbContext.SaveChangesAsync(cancellationToken);
             await NotificationSupport.PublishCreatedAsync(
                 notificationRealtimeNotifier, reviewInvites, cancellationToken);
@@ -634,7 +642,11 @@ public sealed class Gps : IEndpointGroup
 
         var occurredAt = request.OccurredAt?.ToUniversalTime() ?? timeProvider.GetUtcNow();
         ApplyTripStopEvent(tripStop, eventType, occurredAt, request.Note);
-        ApplyTripStatusFromStopEvent(trip, tripStop, eventType);
+        ApplyTripStatusFromStopEvent(trip, tripStop, eventType, occurredAt);
+        var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
+            trip,
+            tripStop,
+            occurredAt);
 
         await dbContext.SaveChangesAsync(cancellationToken);
 
@@ -650,7 +662,8 @@ public sealed class Gps : IEndpointGroup
             tripStop.StopStatus,
             tripStop.ActualArrivalTime,
             tripStop.ActualDepartureTime,
-            trip.TripStatus.ToString());
+            trip.TripStatus.ToString(),
+            dwellCountdown);
 
         await PublishTripStopUpdatedAsync(
             trackingHubContext,
@@ -680,7 +693,8 @@ public sealed class Gps : IEndpointGroup
                 occurredAt,
                 request.Lat,
                 request.Lng,
-                NormalizeOptionalText(request.Note)),
+                NormalizeOptionalText(request.Note),
+                dwellCountdown),
             cancellationToken);
 
         return Results.Ok(response);
@@ -1627,7 +1641,8 @@ public sealed class Gps : IEndpointGroup
     private static void ApplyTripStatusFromStopEvent(
         Trip trip,
         TripStop tripStop,
-        string eventType)
+        string eventType,
+        DateTimeOffset occurredAt)
     {
         if (trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
         {
@@ -1646,6 +1661,11 @@ public sealed class Gps : IEndpointGroup
         if (tripStop.StopOrder == 1
             && eventType is TripStopStatuses.Arriving or TripStopStatuses.Arrived)
         {
+            if (!TripStatusTransitionSupport.CanMarkBoarding(trip, tripStop, occurredAt))
+            {
+                return;
+            }
+
             SetTripStatus(
                 trip,
                 TripStatus.Boarding,
@@ -1861,7 +1881,8 @@ public sealed class Gps : IEndpointGroup
         string StopStatus,
         DateTimeOffset? ActualArrivalTime,
         DateTimeOffset? ActualDepartureTime,
-        string TripStatus);
+        string TripStatus,
+        TripStopDwellCountdownDto? DwellCountdown = null);
 
     private sealed record TripStopUpdatedRealtimeDto(
         Guid TripId,
@@ -1888,7 +1909,8 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset OccurredAt,
         decimal? Lat,
         decimal? Lng,
-        string? Note);
+        string? Note,
+        TripStopDwellCountdownDto? DwellCountdown = null);
 
     private sealed record StopGpsSessionResponse(Guid SessionId, string Status, int RecordedPointCount);
 

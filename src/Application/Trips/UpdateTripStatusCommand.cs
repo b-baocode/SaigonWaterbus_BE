@@ -89,7 +89,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         Trip trip,
         Booking? sourceBooking = null,
         IReadOnlyList<TripStopDto>? stops = null,
-        IReadOnlyList<TripStaffAssignmentDto>? onBoardStaff = null) => new(
+        IReadOnlyList<TripStaffAssignmentDto>? onBoardStaff = null,
+        int totalPassengerCount = 0) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
         trip.Route.RouteType,
@@ -100,15 +101,13 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         trip.TripType,
         trip.SourceBookingId,
         sourceBooking?.BookingCode,
-        trip.Boat is null
-            ? null
-            : new TripBoatDto(
-                trip.Boat.Id,
-                trip.Boat.Name,
-                trip.Boat.Code,
-                trip.CapacitySnapshot,
-                trip.Boat.Status.ToString()),
-        onBoardStaff ?? []);
+        TripMediaSupport.ToBoatDto(trip.Boat, trip.CapacitySnapshot),
+        onBoardStaff ?? [],
+        totalPassengerCount,
+        trip.Route.RouteCode,
+        TripMediaSupport.ResolveFromStation(trip),
+        TripMediaSupport.ResolveToStation(trip),
+        stops?.Count ?? (trip.TripStops.Count > 0 ? trip.TripStops.Count : trip.Route.RouteStops.Count));
 
     private async Task<Booking?> LoadSourceBookingAsync(Trip trip, CancellationToken cancellationToken)
     {

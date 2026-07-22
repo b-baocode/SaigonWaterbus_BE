@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
@@ -162,6 +163,9 @@ public static class DependencyInjection
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
         builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
         builder.Services.Configure<IncidentGpsHookOptions>(builder.Configuration.GetSection(IncidentGpsHookOptions.SectionName));
+        builder.Services.Configure<CharterRouteEstimateOptions>(builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName));
+        CharterRouteEstimateOptionsSetup.ConfigureDefaults(
+            builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName).Get<CharterRouteEstimateOptions>());
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<CharterBookingExpirationHostedService>();

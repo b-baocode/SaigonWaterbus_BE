@@ -102,6 +102,50 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task CreateTripReturnsBoatAndStationMedia()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        stationA.ImageUrl = "https://example.test/stations/a-main.jpg";
+        stationA.ImageUrls = ["https://example.test/stations/a-main.jpg", "https://example.test/stations/a-side.jpg"];
+        stationA.Address = "Ben A address";
+        stationA.Latitude = 10.1m;
+        stationA.Longitude = 106.1m;
+        stationA.HasWaitingArea = true;
+        var stationB = Station("B", "Ben B");
+        stationB.ImageUrl = "https://example.test/stations/b-main.jpg";
+        var route = Route("R1", stationA, stationB);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        boat.ImageUrl = "https://example.test/boats/main.jpg";
+        boat.ImageUrls = ["https://example.test/boats/main.jpg", "https://example.test/boats/deck.jpg"];
+        boat.RegistrationNumber = "SG-001";
+        boat.Description = "Tau waterbus test";
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var result = await new CreateTripCommandHandler(context)
+            .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
+
+        result.RouteCode.ShouldBe("R1");
+        result.StopCount.ShouldBe(2);
+        result.Boat.ShouldNotBeNull();
+        result.Boat.ImageUrl.ShouldBe("https://example.test/boats/main.jpg");
+        result.Boat.ImageUrls.ShouldBe(["https://example.test/boats/main.jpg", "https://example.test/boats/deck.jpg"]);
+        result.Boat.RegistrationNumber.ShouldBe("SG-001");
+        result.FromStation.ShouldNotBeNull();
+        result.FromStation.ImageUrl.ShouldBe("https://example.test/stations/a-main.jpg");
+        result.FromStation.ImageUrls.ShouldBe(["https://example.test/stations/a-main.jpg", "https://example.test/stations/a-side.jpg"]);
+        result.FromStation.Address.ShouldBe("Ben A address");
+        result.FromStation.Latitude.ShouldBe(10.1m);
+        result.ToStation.ShouldNotBeNull();
+        result.ToStation.ImageUrl.ShouldBe("https://example.test/stations/b-main.jpg");
+        result.Stops.First().StationImageUrl.ShouldBe("https://example.test/stations/a-main.jpg");
+        result.Stops.First().StationImageUrls.ShouldBe(["https://example.test/stations/a-main.jpg", "https://example.test/stations/a-side.jpg"]);
+    }
+
+    [Test]
     public async Task CreateTripFailsWhenBoatHasNoActiveSeats()
     {
         await using var context = SeatFlowTestData.CreateContext();

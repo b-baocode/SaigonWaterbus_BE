@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -16,8 +17,6 @@ public sealed class Tracking : IEndpointGroup
     private static readonly TimeSpan LatestLocationCacheDuration = TimeSpan.FromSeconds(5);
 
     private const int OnlineThresholdSeconds = 60;
-    private const int TripBoardingLeadMinutes = 10;
-    private const int TripStartToleranceMinutes = 2;
     private const decimal MovingSpeedThresholdKmh = 0.5m;
     private const double IdleJumpDistanceThresholdKm = 0.5d;
     private static readonly TimeSpan IdleJumpWindow = TimeSpan.FromMinutes(5);
@@ -92,6 +91,16 @@ public sealed class Tracking : IEndpointGroup
                 "Anonymous",
                 null,
                 "boatCode là tham số động, ví dụ WB_01."));
+
+        group.MapGet(GetLatestBoatLocationByTripId, "trips/{tripId:guid}/latest")
+            .AllowAnonymous()
+            .WithSummary("Lấy vị trí live tracking theo trip")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "FE gọi khi nhấn vào một trip để biết tàu nào được gán và vị trí mới nhất của tàu đó.",
+                "hasLiveLocationForTrip=true khi bản tin GPS mới nhất của tàu đang gắn đúng tripId này.",
+                "Nếu latestLocation=null nghĩa là tàu chưa gửi GPS; vẫn trả boat để FE hiển thị tàu được phân công."));
     }
 
     private static async Task<IResult> ReceiveLocation(
@@ -390,6 +399,10 @@ public sealed class Tracking : IEndpointGroup
             status,
             request.SpeedKmh,
             now);
+        var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
+            trip.Value,
+            currentStop,
+            now);
 
         await PublishBoatLocationAsync(
             trackingHubContext,
@@ -414,7 +427,7 @@ public sealed class Tracking : IEndpointGroup
                 resolvedNextStation?.StationName,
                 lastStopEvent.Event,
                 lastStopEvent.OccurredAt,
-                ResolveScheduledDepartureAt(trip.Value, currentStop),
+                TripStatusTransitionSupport.ResolveScheduledDepartureAt(trip.Value, currentStop),
                 ResolveMinutesUntilDeparture(trip.Value, currentStop, now),
                 request.RemainingDistanceKmToNextStation,
                 request.RemainingMinutesToNextStation,
@@ -432,7 +445,10 @@ public sealed class Tracking : IEndpointGroup
                 request.SignalStrength,
                 gpsFixQuality,
                 activeIncident,
-                IsOnline: true),
+                IsOnline: true,
+                DwellCountdown: dwellCountdown,
+                BoatImageUrl: CreateBoatImageUrls(gpsDevice.Boat).FirstOrDefault(),
+                BoatImageUrls: CreateBoatImageUrls(gpsDevice.Boat)),
             cancellationToken);
 
         return Results.Ok(acceptedResponse);
@@ -510,6 +526,29 @@ public sealed class Tracking : IEndpointGroup
             : Results.Ok(location);
     }
 
+    private static async Task<IResult> GetLatestBoatLocationByTripId(
+        ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
+        IEndpointResponseCache responseCache,
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var cacheKey = $"tracking:trips:{tripId:N}:latest";
+        var tripLocation = await responseCache.GetOrCreateAsync(
+            cacheKey,
+            LatestLocationCacheDuration,
+            ct => LoadLatestBoatLocationDtoByTripIdAsync(
+                dbContext,
+                timeProvider,
+                tripId,
+                ct),
+            cancellationToken);
+
+        return tripLocation is null
+            ? Results.NotFound(new { message = "Trip không tồn tại." })
+            : Results.Ok(tripLocation);
+    }
+
     private static async Task<BoatLatestLocationDto?> LoadLatestBoatLocationDtoByCodeAsync(
         IApplicationDbContext dbContext,
         TimeProvider timeProvider,
@@ -539,6 +578,56 @@ public sealed class Tracking : IEndpointGroup
             cancellationToken);
 
         return ToLatestLocationDto(location, now, activeIncident);
+    }
+
+    private static async Task<TripLatestTrackingDto?> LoadLatestBoatLocationDtoByTripIdAsync(
+        ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
+        Guid tripId,
+        CancellationToken cancellationToken)
+    {
+        var now = timeProvider.GetUtcNow();
+        var trip = await dbContext.Trips
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .SingleOrDefaultAsync(x => x.Id == tripId, cancellationToken);
+        if (trip is null)
+        {
+            return null;
+        }
+
+        BoatLatestLocationDto? latestLocation = null;
+        if (trip.BoatId.HasValue)
+        {
+            var location = await dbContext.BoatLatestLocations
+                .AsNoTracking()
+                .Include(x => x.Boat)
+                .Include(x => x.Route)
+                .Include(x => x.Trip)
+                    .ThenInclude(x => x!.TripStops)
+                        .ThenInclude(x => x.Station)
+                .Include(x => x.NextStation)
+                .SingleOrDefaultAsync(x => x.BoatId == trip.BoatId.Value, cancellationToken);
+
+            if (location is not null)
+            {
+                var activeIncident = await LoadActiveIncidentForBoatAsync(
+                    dbContext,
+                    location.BoatId,
+                    cancellationToken);
+                latestLocation = ToLatestLocationDto(location, now, activeIncident);
+            }
+        }
+
+        return new TripLatestTrackingDto(
+            trip.Id,
+            trip.TripCode,
+            trip.TripStatus.ToString(),
+            trip.BoatId,
+            ToTripBoatDto(trip.Boat, trip.CapacitySnapshot),
+            latestLocation,
+            latestLocation?.TripId == trip.Id,
+            latestLocation?.IsOnline ?? false);
     }
 
     private static Dictionary<string, string[]> ValidateLocationRequest(
@@ -881,12 +970,6 @@ public sealed class Tracking : IEndpointGroup
             : gpsStatus;
     }
 
-    private static DateTimeOffset? ResolveScheduledDepartureAt(Trip? trip, TripStop? currentStop) =>
-        currentStop?.AdjustedDepartureTime
-        ?? currentStop?.PlannedDepartureTime
-        ?? trip?.AdjustedDepartureTime
-        ?? trip?.DepartureTime;
-
     private static int? ResolveMinutesUntilDeparture(Trip? trip, TripStop? currentStop, DateTimeOffset now)
     {
         if (trip is null || trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
@@ -894,7 +977,7 @@ public sealed class Tracking : IEndpointGroup
             return null;
         }
 
-        var scheduledDepartureAt = ResolveScheduledDepartureAt(trip, currentStop);
+        var scheduledDepartureAt = TripStatusTransitionSupport.ResolveScheduledDepartureAt(trip, currentStop);
         if (!scheduledDepartureAt.HasValue || scheduledDepartureAt.Value <= now)
         {
             return null;
@@ -1056,7 +1139,7 @@ public sealed class Tracking : IEndpointGroup
         }
 
         var isMoving = IsMovingGpsStatus(gpsStatus) || speedKmh is > MovingSpeedThresholdKmh;
-        if (isMoving && now >= trip.DepartureTime.AddMinutes(-TripStartToleranceMinutes))
+        if (isMoving && TripStatusTransitionSupport.CanMarkInProgressFromMovement(trip, now))
         {
             return SetTripStatus(
                 trip,
@@ -1065,7 +1148,7 @@ public sealed class Tracking : IEndpointGroup
         }
 
         if (trip.TripStatus is TripStatus.Scheduled or TripStatus.Delayed
-            && now >= trip.DepartureTime.AddMinutes(-TripBoardingLeadMinutes))
+            && TripStatusTransitionSupport.CanMarkBoarding(trip, currentStop: null, now))
         {
             return SetTripStatus(
                 trip,
@@ -1112,6 +1195,10 @@ public sealed class Tracking : IEndpointGroup
             .ToArray() ?? [];
         var currentStop = ResolveCurrentStop(tripStops);
         var lastStopEvent = ResolveLastStopEvent(tripStops);
+        var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
+            location.Trip,
+            currentStop,
+            now);
 
         return new(
             location.BoatId,
@@ -1136,7 +1223,7 @@ public sealed class Tracking : IEndpointGroup
             location.NextStation?.StationName,
             lastStopEvent.Event,
             lastStopEvent.OccurredAt,
-            ResolveScheduledDepartureAt(location.Trip, currentStop),
+            TripStatusTransitionSupport.ResolveScheduledDepartureAt(location.Trip, currentStop),
             ResolveMinutesUntilDeparture(location.Trip, currentStop, now),
             location.RemainingDistanceKmToNextStation,
             location.RemainingMinutesToNextStation,
@@ -1154,8 +1241,47 @@ public sealed class Tracking : IEndpointGroup
             location.SignalStrength,
             location.GpsFixQuality,
             activeIncident,
-            now - location.ReceivedAt <= TimeSpan.FromSeconds(OnlineThresholdSeconds));
+            now - location.ReceivedAt <= TimeSpan.FromSeconds(OnlineThresholdSeconds),
+            dwellCountdown,
+            CreateBoatImageUrls(location.Boat).FirstOrDefault(),
+            CreateBoatImageUrls(location.Boat));
     }
+
+    private static TripBoatDto? ToTripBoatDto(Boat? boat, int capacity)
+    {
+        if (boat is null)
+        {
+            return null;
+        }
+
+        var imageUrls = CreateBoatImageUrls(boat);
+        return new TripBoatDto(
+            boat.Id,
+            boat.Name,
+            boat.Code,
+            capacity,
+            boat.Status.ToString(),
+            imageUrls.FirstOrDefault(),
+            imageUrls,
+            boat.RegistrationNumber,
+            boat.ServiceType.ToString(),
+            boat.NumberOfDecks,
+            boat.MaxSpeedKmh,
+            boat.YearBuilt,
+            boat.Description);
+    }
+
+    private static IReadOnlyList<string> CreateBoatImageUrls(Boat boat) =>
+        boat.ImageUrls.Length > 0
+            ? boat.ImageUrls
+                .Where(url => !string.IsNullOrWhiteSpace(url))
+                .Select(url => url.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Take(3)
+                .ToArray()
+            : string.IsNullOrWhiteSpace(boat.ImageUrl)
+                ? []
+                : [boat.ImageUrl.Trim()];
 
     private static async Task<Dictionary<Guid, ActiveIncidentTrackingDto>> LoadActiveIncidentsByBoatAsync(
         IApplicationDbContext dbContext,
@@ -1321,7 +1447,20 @@ public sealed class Tracking : IEndpointGroup
         int? SignalStrength,
         string? GpsFixQuality,
         ActiveIncidentTrackingDto? ActiveIncident,
-        bool IsOnline);
+        bool IsOnline,
+        TripStopDwellCountdownDto? DwellCountdown = null,
+        string? BoatImageUrl = null,
+        IReadOnlyList<string>? BoatImageUrls = null);
+
+    public sealed record TripLatestTrackingDto(
+        Guid TripId,
+        string TripCode,
+        string TripStatus,
+        Guid? BoatId,
+        TripBoatDto? Boat,
+        BoatLatestLocationDto? LatestLocation,
+        bool HasLiveLocationForTrip,
+        bool IsBoatOnline);
 
     private sealed record BoatLocationRealtimeDto(
         Guid BoatId,
@@ -1361,7 +1500,10 @@ public sealed class Tracking : IEndpointGroup
         int? SignalStrength,
         string? GpsFixQuality,
         ActiveIncidentTrackingDto? ActiveIncident,
-        bool IsOnline);
+        bool IsOnline,
+        TripStopDwellCountdownDto? DwellCountdown = null,
+        string? BoatImageUrl = null,
+        IReadOnlyList<string>? BoatImageUrls = null);
 
     public sealed record ActiveIncidentTrackingDto(
         Guid IncidentId,

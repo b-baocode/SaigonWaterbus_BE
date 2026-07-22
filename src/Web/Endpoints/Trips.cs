@@ -58,6 +58,8 @@ public sealed class Trips : IEndpointGroup
                 "status hop le: Scheduled | Boarding | InProgress | Completed | Delayed | Cancelled.",
                 "tripType hop le: Regular | Charter. Trip charter sinh tu charter booking (xem sourceBookingId).",
                 "routeType hop le: Regular | SightseeingLoop | Charter | CharterReference. Dung de tach chuyen waterbus thuong, ngam canh, charter va route nguon.",
+                "totalPassengerCount = so khach cua chuyen, moi BookingPassenger chi dem 1 lan.",
+                "Response co boatId/boatCode/boatName/boatImageUrl/boatImageUrls, fromStation/toStation, stopCount va sourceBookingCode de FE render card trip day du.",
                 "Sap xep: ngay moi nhat → gio khoi hanh tang dan."));
 
         group.MapGet(SearchTrips, "search")
@@ -92,7 +94,9 @@ public sealed class Trips : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Tra ve TripDetailDto kem thong tin tau, staff tren tau, stops[] sap xep theo stop_order, staff quet ve va boardingPassengerCount tung ben.",
+                "Tra ve TripDetailDto kem thong tin tau, staff tren tau, totalPassengerCount va stops[] sap xep theo stop_order.",
+                "boat co imageUrl/imageUrls va thong tin tau; fromStation/toStation va moi stop co stationImageUrl/stationImageUrls, address, toa do va tien ich ben.",
+                "Moi stop co boardingPassengerCount, alightingPassengerCount, onboardPassengerCount va segmentPassengerCount; khach di A->C dem 1 lan trong totalPassengerCount nhung tinh vao ca doan A-B va B-C.",
                 "stops[] lay tu bang trip_stops (lich trinh da luu khi tao trip): gio den/di du kien tung ben, stayDurationMinutes va note (trip charter co thoi gian dung theo yeu cau booking).",
                 "Trip cu tao truoc khi co trip_stops -> BE tu suy lich trinh tu route stops + gio khoi hanh nhu truoc.",
                 "Ben dau chi co gio di, ben cuoi chi co gio den."));

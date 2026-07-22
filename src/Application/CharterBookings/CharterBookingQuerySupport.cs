@@ -39,8 +39,8 @@ internal static class CharterBookingQuerySupport
         var selectedChargeableDurationValue = selectedBoatDtos.FirstOrDefault()?.ChargeableDurationValue;
         var selectedChargeableDurationMinutes =
             selectedChargeableDurationValue.HasValue && rentalUnitForEstimate == Domain.Enums.BoatRentalUnit.Hour
-                ? (int)Math.Ceiling(selectedChargeableDurationValue.Value * 60m)
-                : (int?)null;
+                ? decimal.Ceiling(selectedChargeableDurationValue.Value * 60m)
+                : (decimal?)null;
         var hasSelectedQuotePricing = selectedChargeableDurationValue.HasValue;
 
         var ticketDtos = CharterBookingTicketSupport.GetDisplayTickets(booking.Tickets)

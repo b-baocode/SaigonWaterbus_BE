@@ -35,14 +35,40 @@ public sealed record TripDetailDto(
     Guid? SourceBookingId = null,
     string? SourceBookingCode = null,
     TripBoatDto? Boat = null,
-    IReadOnlyList<TripStaffAssignmentDto>? OnBoardStaff = null);
+    IReadOnlyList<TripStaffAssignmentDto>? OnBoardStaff = null,
+    int TotalPassengerCount = 0,
+    string? RouteCode = null,
+    TripRouteEndpointDto? FromStation = null,
+    TripRouteEndpointDto? ToStation = null,
+    int StopCount = 0);
 
 public sealed record TripBoatDto(
     Guid VesselId,
     string VesselName,
     string VesselCode,
     int Capacity,
-    string Status);
+    string Status,
+    string? ImageUrl = null,
+    IReadOnlyList<string>? ImageUrls = null,
+    string? RegistrationNumber = null,
+    string? ServiceType = null,
+    int? NumberOfDecks = null,
+    int? MaxSpeedKmh = null,
+    int? YearBuilt = null,
+    string? Description = null);
+
+public sealed record TripRouteEndpointDto(
+    Guid StationId,
+    string StationCode,
+    string StationName,
+    string? ImageUrl,
+    IReadOnlyList<string> ImageUrls,
+    string? Address = null,
+    decimal? Latitude = null,
+    decimal? Longitude = null,
+    bool? HasWaitingArea = null,
+    bool? HasParking = null,
+    bool? HasTicketCounter = null);
 
 public sealed record TripStaffAssignmentDto(
     Guid AssignmentId,
@@ -70,4 +96,21 @@ public sealed record TripStopDto(
     int StayDurationMinutes = 0,
     string? Note = null,
     int BoardingPassengerCount = 0,
-    IReadOnlyList<TripStaffAssignmentDto>? ScanningStaff = null);
+    IReadOnlyList<TripStaffAssignmentDto>? ScanningStaff = null,
+    int AlightingPassengerCount = 0,
+    int OnboardPassengerCount = 0,
+    int SegmentPassengerCount = 0,
+    string? StationImageUrl = null,
+    IReadOnlyList<string>? StationImageUrls = null,
+    string? StationAddress = null,
+    decimal? Latitude = null,
+    decimal? Longitude = null,
+    bool? HasWaitingArea = null,
+    bool? HasParking = null,
+    bool? HasTicketCounter = null);
+
+public sealed record TripStopPassengerCounts(
+    int BoardingPassengerCount,
+    int AlightingPassengerCount,
+    int OnboardPassengerCount,
+    int SegmentPassengerCount);

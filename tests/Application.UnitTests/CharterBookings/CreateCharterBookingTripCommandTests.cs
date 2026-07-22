@@ -224,7 +224,7 @@ public class CreateCharterBookingTripCommandTests
         var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, [selectedRoute]);
         var trip = context.Set<Trip>().Single(x => x.SourceBookingId == booking.Id);
         trip.RouteId.ShouldBe(selectedRoute.Id);
-        trip.ArrivalTime.ShouldBe(trip.DepartureTime.AddMinutes(routeEstimate.EstimatedDurationMinutes));
+        trip.ArrivalTime.ShouldBe(trip.DepartureTime.AddMinutes((double)routeEstimate.EstimatedDurationMinutes));
         trip.ArrivalTime.ShouldNotBe(trip.DepartureTime.AddHours(booking.DurationValue!.Value));
     }
 
