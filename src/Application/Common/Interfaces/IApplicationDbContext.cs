@@ -36,6 +36,8 @@ public interface IApplicationDbContext
 
     DbSet<InsurancePackage> InsurancePackages { get; }
 
+    DbSet<FareAdjustment> FareAdjustments { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

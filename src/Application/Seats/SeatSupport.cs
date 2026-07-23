@@ -6,7 +6,13 @@ using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Seats;
 
-public sealed record SeatTypeDto(Guid SeatTypeId, string SeatTypeCode, string SeatTypeName, decimal BasePrice);
+public sealed record SeatTypeDto(
+    Guid SeatTypeId,
+    string SeatTypeCode,
+    string SeatTypeName,
+    decimal BasePrice,
+    string PricingMode,
+    string? PriceNote = null);
 
 public sealed record SeatDto(
     Guid SeatId,
@@ -51,6 +57,9 @@ internal static class SeatSupport
     public const string CabinSeatTypeName = "Cabin";
     public const string RiverSeatTypeName = "River";
     public const string SkySeatTypeName = "Sky";
+    public const string DistanceFarePricingMode = "DistanceFareForRegular";
+    public const string SeatTypeBasePricePricingMode = "SeatTypeBasePrice";
+    public const string StandardSeatTypeCode = "STANDARD";
 
     public static async Task EnsureCurrentUserCanManageSeatsAsync(
         IApplicationDbContext context,
@@ -82,6 +91,19 @@ internal static class SeatSupport
 
     public static string SeatCode(int deck, string row, int column) =>
         $"{deck}-{row}{column}";
+
+    public static bool IsDistanceFareSeatTypeCode(string seatTypeCode) =>
+        string.Equals(seatTypeCode, StandardSeatTypeCode, StringComparison.OrdinalIgnoreCase);
+
+    public static string GetPricingMode(string seatTypeCode) =>
+        IsDistanceFareSeatTypeCode(seatTypeCode)
+            ? DistanceFarePricingMode
+            : SeatTypeBasePricePricingMode;
+
+    public static string? GetPriceNote(string seatTypeCode) =>
+        IsDistanceFareSeatTypeCode(seatTypeCode)
+            ? "Waterbus thường tính theo /api/fare-policy và km trên route; basePrice của STANDARD chỉ là dữ liệu legacy, không dùng để tính booking thường."
+            : "Dùng làm giá gốc cho ghế sightseeing/custom, sau đó áp phụ thu cuối tuần/lễ/đặc biệt nếu có.";
 
     public static SeatDto CreateSeatDto(Seat seat) =>
         new(
@@ -268,11 +290,17 @@ internal static class SeatSupport
 
     public static SeatTypeDto BuildSeatTypeDto(Seat seat) =>
         seat.SeatType is { } st
-            ? new(st.Id, st.Code, st.Name, st.BasePrice)
+            ? new(st.Id, st.Code, st.Name, st.BasePrice, GetPricingMode(st.Code), GetPriceNote(st.Code))
             : BuildSeatTypeDtoFromCode(seat.SeatTypeCode);
 
     public static SeatTypeDto BuildSeatTypeDtoFromCode(string seatTypeCode) =>
-        new(Guid.Empty, seatTypeCode, SeatTypeNameFromCode(seatTypeCode), SeatTypePricing.GetBasePrice(seatTypeCode));
+        new(
+            Guid.Empty,
+            seatTypeCode,
+            SeatTypeNameFromCode(seatTypeCode),
+            SeatTypePricing.GetBasePrice(seatTypeCode),
+            GetPricingMode(seatTypeCode),
+            GetPriceNote(seatTypeCode));
 
     public static decimal GetBasePrice(Seat seat) =>
         seat.SeatType?.BasePrice ?? SeatTypePricing.GetBasePrice(seat.SeatTypeCode);

@@ -1,3 +1,5 @@
+using SaigonWaterbus.Application.Fares;
+
 namespace SaigonWaterbus.Application.Trips;
 
 public sealed record TripSummaryDto(
@@ -15,7 +17,8 @@ public sealed record TripSummaryDto(
     string TripStatus,
     bool IsBookingClosed = false,
     bool IsBookable = true,
-    string? BookingClosedReason = null);
+    string? BookingClosedReason = null,
+    EffectiveFareAdjustmentDto? FareAdjustment = null);
 
 public sealed record TripDetailDto(
     Guid TripId,

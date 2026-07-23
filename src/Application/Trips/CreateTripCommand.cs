@@ -1,7 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
-using SaigonWaterbus.Application.Seats;
+using SaigonWaterbus.Application.StaffWorkAssignments;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -9,9 +9,6 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Trips;
-
-/// <summary>Giá vé theo loại ghế cho riêng chuyến này (ghi vào trip_seats.price).</summary>
-public sealed record TripSeatTypePriceInput(string SeatTypeCode, decimal Price);
 
 /// <summary>Override thời gian dừng tại một bến khi tạo trip từ route stops.</summary>
 public sealed record CreateTripStopScheduleInput(int StopOrder, int StayDurationMinutes);
@@ -26,7 +23,6 @@ public sealed record CreateTripCommand(
     string BoatCode,
     DateOnly OperatingDate,
     DateTimeOffset DepartureTime,
-    IReadOnlyList<TripSeatTypePriceInput>? SeatTypePrices = null,
     Guid? RouteId = null,
     IReadOnlyList<CreateTripStopScheduleInput>? Stops = null) : IRequest<TripDetailDto>;
 
@@ -47,9 +43,6 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
             .Must(departureTime =>
                 !TripScheduleSupport.IsTooSoonToCreate(departureTime, DateTimeOffset.UtcNow))
             .WithMessage(TripScheduleSupport.BuildTooSoonMessage());
-        RuleFor(x => x.SeatTypePrices!)
-            .SetValidator(new TripSeatTypePricesValidator())
-            .When(x => x.SeatTypePrices is not null);
         RuleFor(x => x.Stops!)
             .Must(stops => stops.Select(x => x.StopOrder).Distinct().Count() == stops.Count)
             .WithMessage("stops không được trùng stopOrder.")
@@ -63,67 +56,6 @@ public sealed class CreateTripCommandValidator : AbstractValidator<CreateTripCom
                 .InclusiveBetween(0, 24 * 60)
                 .WithMessage("stayDurationMinutes phải từ 0 đến 1440 phút.");
         });
-    }
-}
-
-public sealed class TripSeatTypePricesValidator : AbstractValidator<IReadOnlyList<TripSeatTypePriceInput>>
-{
-    public TripSeatTypePricesValidator()
-    {
-        RuleFor(x => x)
-            .Must(list => list
-                .Select(p => p.SeatTypeCode.Trim().ToUpperInvariant())
-                .Distinct()
-                .Count() == list.Count)
-            .WithMessage("seatTypePrices không được trùng seatTypeCode.");
-        RuleForEach(x => x).ChildRules(item =>
-        {
-            item.RuleFor(p => p.SeatTypeCode).NotEmpty().MaximumLength(50);
-            item.RuleFor(p => p.Price)
-                .GreaterThan(0).WithMessage("Giá vé phải lớn hơn 0.")
-                .LessThanOrEqualTo(100_000_000)
-                .Must(p => decimal.Truncate(p) == p).WithMessage("Giá vé phải là số nguyên VND.");
-        });
-    }
-}
-
-internal static class TripSeatPricingSupport
-{
-    /// <summary>
-    /// Tính giá cho từng ghế của chuyến: ưu tiên giá admin nhập theo loại ghế,
-    /// không nhập thì lấy giá gốc từ seat type (DB seat_types, fallback bảng cứng).
-    /// </summary>
-    public static async Task<Func<Seat, decimal?>> BuildSeatPriceResolverAsync(
-        IApplicationDbContext context,
-        IReadOnlyList<TripSeatTypePriceInput>? seatTypePrices,
-        IReadOnlyCollection<Seat> boatSeats,
-        CancellationToken cancellationToken)
-    {
-        var basePrices = await SeatTypeBasePriceSupport.GetBasePricesAsync(context, cancellationToken);
-
-        var overrides = new Dictionary<string, decimal>(StringComparer.OrdinalIgnoreCase);
-        if (seatTypePrices is not null)
-        {
-            var boatSeatTypeCodes = boatSeats
-                .Select(x => x.SeatTypeCode)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            foreach (var input in seatTypePrices)
-            {
-                var code = input.SeatTypeCode.Trim().ToUpperInvariant();
-                if (!boatSeatTypeCodes.Contains(code))
-                {
-                    throw new ValidationException([new ValidationFailure("seatTypePrices",
-                        $"Tàu này không có ghế loại '{code}'.")]);
-                }
-
-                overrides[code] = input.Price;
-            }
-        }
-
-        return seat =>
-            overrides.TryGetValue(seat.SeatTypeCode, out var overridePrice) ? overridePrice
-            : basePrices.TryGetValue(seat.SeatTypeCode, out var basePrice) ? basePrice
-            : null;
     }
 }
 
@@ -187,6 +119,8 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
                 "Boat has no active seats.")]);
 
         await EnsureBoatIsFreeAsync(boat.Id, departureTime, arrivalTime, cancellationToken);
+        await OnBoardStaffTripSupport.EnsureBoatHasRequiredOnBoardStaffAsync(
+            _context, boat.Id, departureTime, arrivalTime, nameof(request.BoatCode), cancellationToken);
 
         var trip = new Trip
         {
@@ -204,16 +138,16 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         trip.Route = route;
         TripStopScheduleSupport.CreateTripStops(trip, stopDrafts);
 
-        var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
-            _context, request.SeatTypePrices, activeSeats, cancellationToken);
         _context.Set<TripSeat>().AddRange(activeSeats.Select(s => new TripSeat
         {
             TripId = trip.Id,
             SeatId = s.Id,
-            Price = resolveSeatPrice(s)
+            Price = null
         }));
 
         await _context.SaveChangesAsync(cancellationToken);
+        var onBoardStaff = await OnBoardStaffTripSupport.LoadTripOnBoardStaffAsync(
+            _context, trip, DateTimeOffset.UtcNow, cancellationToken);
 
         return new TripDetailDto(
             trip.Id, trip.TripCode,
@@ -224,7 +158,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
             TripStopScheduleSupport.BuildStopDtos(trip),
             Boat: TripMediaSupport.ToBoatDto(boat, trip.CapacitySnapshot),
-            OnBoardStaff: [],
+            OnBoardStaff: onBoardStaff,
             RouteCode: route.RouteCode,
             FromStation: TripMediaSupport.ResolveFromStation(trip),
             ToStation: TripMediaSupport.ResolveToStation(trip),

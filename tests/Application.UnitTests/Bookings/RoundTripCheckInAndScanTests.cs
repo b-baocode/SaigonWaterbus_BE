@@ -20,6 +20,7 @@ public class RoundTripCheckInAndScanTests
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Booking.Trip!.BoatId!.Value);
         var handler = new CheckInAllBookingTicketsCommandHandler(
             context, staffContext, new FixedTimeProvider(Now));
 
@@ -45,6 +46,7 @@ public class RoundTripCheckInAndScanTests
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Booking.Trip!.BoatId!.Value);
         var handler = new CheckInAllBookingTicketsCommandHandler(
             context, staffContext, new FixedTimeProvider(Now));
 
@@ -75,6 +77,7 @@ public class RoundTripCheckInAndScanTests
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Booking.Trip!.BoatId!.Value);
         var handler = new ScanTicketQueryHandler(context, staffContext, new FixedTimeProvider(Now));
 
         var result = await handler.Handle(
@@ -97,8 +100,17 @@ public class RoundTripCheckInAndScanTests
     /// <summary>Booking khứ hồi Confirmed + Paid với 1 hành khách/chiều, mỗi người 1 vé Active + QR chung.</summary>
     private static async Task<SeededRoundTrip> SeedConfirmedRoundTripBookingAsync(ApplicationDbContext context)
     {
-        var outboundTrip = CreateTrip("TR-OUT", Now.AddHours(2));
-        var returnTrip = CreateTrip("TR-RET", Now.AddHours(6));
+        var boat = new Boat
+        {
+            Code = "BOAT-ROUND",
+            Name = "Round trip boat",
+            Status = BoatStatus.Active,
+            SeatCount = 2,
+            NumberOfDecks = 1,
+            SeatsConfigured = true
+        };
+        var outboundTrip = CreateTrip("TR-OUT", Now.AddHours(2), boat);
+        var returnTrip = CreateTrip("TR-RET", Now.AddHours(6), boat);
 
         var booking = new Booking
         {
@@ -137,7 +149,7 @@ public class RoundTripCheckInAndScanTests
         var returnTicket = CreateTicket(booking, returnPassenger, "TK-RET-01");
 
         context.AddRange(
-            outboundTrip, returnTrip, booking,
+            boat, outboundTrip, returnTrip, booking,
             outboundPassenger, returnPassenger,
             outboundTicket, returnTicket);
         await context.SaveChangesAsync();
@@ -145,9 +157,31 @@ public class RoundTripCheckInAndScanTests
         return new SeededRoundTrip(booking, outboundTicket, returnTicket);
     }
 
-    private static Trip CreateTrip(string tripCode, DateTimeOffset departureTime) =>
+    private static async Task AddOnBoardAssignmentAsync(
+        ApplicationDbContext context,
+        Guid staffUserId,
+        Guid boatId)
+    {
+        context.StaffWorkAssignments.Add(new StaffWorkAssignment
+        {
+            StaffUserId = staffUserId,
+            AssignmentType = StaffWorkAssignmentType.Boat,
+            BoatId = boatId,
+            WorkingDate = DateOnly.FromDateTime(Now.UtcDateTime),
+            StartAt = Now.AddHours(-1),
+            EndAt = Now.AddHours(12),
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = staffUserId,
+            AssignedAt = Now.AddHours(-2)
+        });
+        await context.SaveChangesAsync();
+    }
+
+    private static Trip CreateTrip(string tripCode, DateTimeOffset departureTime, Boat boat) =>
         new()
         {
+            Boat = boat,
+            BoatId = boat.Id,
             Route = new Route
             {
                 RouteCode = $"R-{tripCode}",

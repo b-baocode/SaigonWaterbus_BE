@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Constants;
@@ -116,13 +117,6 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                     ts => ts.StopOrder,
                     ts => (Arrival: ts.PlannedArrivalTime, Departure: ts.PlannedDepartureTime)));
 
-        // Giá min theo chuyến: ưu tiên giá đã chốt trong trip_seats (đặt khi tạo trip).
-        var tripSeatMinPrices = await _context.Set<TripSeat>()
-            .Where(ts => tripIds.Contains(ts.TripId) && ts.Price != null && ts.Price > 0)
-            .GroupBy(ts => ts.TripId)
-            .Select(g => new { TripId = g.Key, MinPrice = g.Min(x => x.Price!.Value) })
-            .ToDictionaryAsync(x => x.TripId, x => x.MinPrice, cancellationToken);
-
         var boatIds = trips
             .Where(x => x.BoatId.HasValue)
             .Select(x => x.BoatId!.Value)
@@ -151,11 +145,16 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             .Where(x => x.PriceModifier > 0)
             .Min(x => x.PriceModifier);
 
-        // Trip Regular tính giá theo quãng đường: giá "từ" = giá chặng tìm kiếm (nếu tuyến đã
-        // nhập đủ km); fallback giá theo loại ghế như cũ khi thiếu km.
+        // Trip Regular tính giá theo quãng đường: giá "từ" = giá chặng tìm kiếm. Nếu tuyến chưa
+        // nhập đủ km thì không fallback giá ghế STANDARD legacy, mà trả chuyến ở trạng thái
+        // không bookable để FE/admin biết cần cập nhật route.
         var farePolicy = trips.Any(Fares.DistanceFareSupport.UsesDistanceFare)
             ? await Fares.DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken)
             : null;
+        var fareAdjustments = await FareAdjustmentSupport.GetEffectiveAdjustmentsAsync(
+            _context,
+            trips.Select(x => x.OperatingDate).ToArray(),
+            cancellationToken);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
@@ -177,23 +176,34 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             seatStats.TryGetValue(t.BoatId ?? Guid.Empty, out var stats);
             var capacity = stats?.ActiveSeatCount ?? t.CapacitySnapshot;
             var available = capacity - booked;
+            fareAdjustments.TryGetValue(t.OperatingDate, out var fareAdjustment);
 
             decimal? segmentFare = null;
+            var missingDistanceFare = false;
             if (farePolicy is not null && Fares.DistanceFareSupport.UsesDistanceFare(t))
             {
                 var distanceKm = Fares.DistanceFareSupport.TryComputeSegmentDistanceKm(
                     t.Route.RouteStops, selectedSegment.Segment.FromOrder, selectedSegment.Segment.ToOrder);
                 if (distanceKm.HasValue)
                 {
-                    segmentFare = Fares.DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value);
+                    segmentFare = FareAdjustmentSupport.ApplySurcharge(
+                        Fares.DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value),
+                        fareAdjustment);
+                }
+                else
+                {
+                    missingDistanceFare = true;
                 }
             }
 
-            var minBasePrice = segmentFare
-                ?? (tripSeatMinPrices.TryGetValue(t.Id, out var tripSeatMin)
-                    ? tripSeatMin
-                    : stats?.MinSeatPrice is > 0 ? stats.MinSeatPrice.Value : (decimal?)null);
+            var minBasePrice = missingDistanceFare
+                ? null
+                : segmentFare
+                    ?? (stats?.MinSeatPrice is > 0
+                        ? FareAdjustmentSupport.ApplySurcharge(stats.MinSeatPrice.Value, fareAdjustment)
+                        : null);
             var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
+            var isBookable = available > 0 && !missingDistanceFare;
 
             return new TripSummaryDto(
                 t.Id, t.TripCode, t.Route.RouteName, t.Route.RouteType,
@@ -201,8 +211,10 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 selectedSegment.FromStopDeparture, selectedSegment.ToStopArrival,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString(),
-                IsBookingClosed: false,
-                IsBookable: available > 0);
+                IsBookingClosed: missingDistanceFare,
+                IsBookable: isBookable,
+                BookingClosedReason: missingDistanceFare ? Fares.DistanceFareSupport.MissingDistanceReason : null,
+                FareAdjustment: fareAdjustment);
         })
         .Where(dto => dto is not null)
         .Select(dto => dto!)

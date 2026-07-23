@@ -13,7 +13,9 @@ public sealed record SeatTypeAdminDto(
     decimal BasePrice,
     string Currency,
     bool IsActive,
-    int DisplayOrder);
+    int DisplayOrder,
+    string PricingMode,
+    string? PriceNote = null);
 
 /// <summary>Giá gốc theo loại ghế: đọc từ bảng seat_types, thiếu dòng nào thì fallback bảng cứng SeatTypePricing.</summary>
 internal static class SeatTypeBasePriceSupport
@@ -69,14 +71,30 @@ public sealed class GetSeatTypeListQueryHandler
         {
             return rows
                 .Select(x => new SeatTypeAdminDto(
-                    x.Id, x.Code, x.Name, x.BasePrice, x.Currency, x.IsActive, x.DisplayOrder))
+                    x.Id,
+                    x.Code,
+                    x.Name,
+                    x.BasePrice,
+                    x.Currency,
+                    x.IsActive,
+                    x.DisplayOrder,
+                    SeatSupport.GetPricingMode(x.Code),
+                    SeatSupport.GetPriceNote(x.Code)))
                 .ToList();
         }
 
         // DB chưa seed: trả về danh mục mặc định trong code.
         return SeatTypeBasePriceSupport.KnownCodes
             .Select((code, index) => new SeatTypeAdminDto(
-                null, code, code, SeatTypePricing.GetBasePrice(code), "VND", true, index + 1))
+                null,
+                code,
+                code,
+                SeatTypePricing.GetBasePrice(code),
+                "VND",
+                true,
+                index + 1,
+                SeatSupport.GetPricingMode(code),
+                SeatSupport.GetPriceNote(code)))
             .ToList();
     }
 }
@@ -117,6 +135,11 @@ public sealed class CreateSeatTypeCommandHandler : IRequestHandler<CreateSeatTyp
         CancellationToken cancellationToken)
     {
         var code = request.Code.Trim().Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+        if (SeatSupport.IsDistanceFareSeatTypeCode(code))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.Code),
+                "STANDARD là loại ghế Waterbus thường. Giá vé Waterbus tính theo /api/fare-policy và km trên route, không tạo/chỉnh STANDARD tại /api/seat-types.")]);
+        }
 
         if (await _context.Set<SeatType>().AnyAsync(x => x.Code == code, cancellationToken))
         {
@@ -146,7 +169,9 @@ public sealed class CreateSeatTypeCommandHandler : IRequestHandler<CreateSeatTyp
             seatType.BasePrice,
             seatType.Currency,
             seatType.IsActive,
-            seatType.DisplayOrder);
+            seatType.DisplayOrder,
+            SeatSupport.GetPricingMode(seatType.Code),
+            SeatSupport.GetPriceNote(seatType.Code));
     }
 }
 
@@ -178,6 +203,11 @@ public sealed class UpdateSeatTypePriceCommandHandler
         CancellationToken cancellationToken)
     {
         var code = request.Code.Trim().Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
+        if (SeatSupport.IsDistanceFareSeatTypeCode(code))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.Code),
+                "STANDARD là loại ghế Waterbus thường. Giá vé Waterbus tính theo /api/fare-policy và km trên route, không chỉnh tại /api/seat-types.")]);
+        }
 
         var seatType = await _context.Set<SeatType>()
             .SingleOrDefaultAsync(x => x.Code == code, cancellationToken);
@@ -227,6 +257,8 @@ public sealed class UpdateSeatTypePriceCommandHandler
             seatType.BasePrice,
             seatType.Currency,
             seatType.IsActive,
-            seatType.DisplayOrder);
+            seatType.DisplayOrder,
+            SeatSupport.GetPricingMode(seatType.Code),
+            SeatSupport.GetPriceNote(seatType.Code));
     }
 }

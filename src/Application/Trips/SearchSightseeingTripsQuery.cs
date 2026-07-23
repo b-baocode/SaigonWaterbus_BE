@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Constants;
@@ -11,7 +12,7 @@ namespace SaigonWaterbus.Application.Trips;
 /// <summary>
 /// Tìm chuyến ngắm cảnh (route SightseeingLoop) theo ngày khởi hành.
 /// Tuyến vòng lặp có bến đầu = bến cuối nên không cần chọn chặng đi;
-/// ghế bán nguyên chuyến, giá chốt theo trip_seats (không tính theo quãng đường).
+/// ghế bán nguyên chuyến, giá lấy theo loại ghế hiện hành (không tính theo quãng đường).
 /// </summary>
 public sealed record SearchSightseeingTripsQuery(
     DateOnly OperatingDate) : IRequest<IReadOnlyList<TripSummaryDto>>;
@@ -59,13 +60,6 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
             .GroupBy(p => p.TripId)
             .ToDictionary(g => g.Key, g => g.Select(p => p.TripSeatId).Distinct().Count());
 
-        // Giá min theo chuyến: ưu tiên giá đã chốt trong trip_seats (đặt khi tạo trip).
-        var tripSeatMinPrices = await _context.Set<TripSeat>()
-            .Where(ts => tripIds.Contains(ts.TripId) && ts.Price != null && ts.Price > 0)
-            .GroupBy(ts => ts.TripId)
-            .Select(g => new { TripId = g.Key, MinPrice = g.Min(x => x.Price!.Value) })
-            .ToDictionaryAsync(x => x.TripId, x => x.MinPrice, cancellationToken);
-
         var boatIds = trips
             .Where(x => x.BoatId.HasValue)
             .Select(x => x.BoatId!.Value)
@@ -94,6 +88,10 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
         var minModifier = TicketTypePricing.All
             .Where(x => x.PriceModifier > 0)
             .Min(x => x.PriceModifier);
+        var fareAdjustments = await FareAdjustmentSupport.GetEffectiveAdjustmentsAsync(
+            _context,
+            trips.Select(x => x.OperatingDate).ToArray(),
+            cancellationToken);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
@@ -101,10 +99,11 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
             seatStats.TryGetValue(t.BoatId ?? Guid.Empty, out var stats);
             var capacity = stats?.ActiveSeatCount ?? t.CapacitySnapshot;
             var available = capacity - booked;
+            fareAdjustments.TryGetValue(t.OperatingDate, out var fareAdjustment);
 
-            var minBasePrice = tripSeatMinPrices.TryGetValue(t.Id, out var tripSeatMin)
-                ? tripSeatMin
-                : stats?.MinSeatPrice is > 0 ? stats.MinSeatPrice.Value : (decimal?)null;
+            var minBasePrice = stats?.MinSeatPrice is > 0
+                ? FareAdjustmentSupport.ApplySurcharge(stats.MinSeatPrice.Value, fareAdjustment)
+                : (decimal?)null;
             var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
 
             // Tuyến vòng lặp đi nguyên chuyến: giờ lên = giờ khởi hành, giờ về = giờ kết thúc.
@@ -115,7 +114,8 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString(),
                 IsBookingClosed: false,
-                IsBookable: available > 0);
+                IsBookable: available > 0,
+                FareAdjustment: fareAdjustment);
         }).ToList();
     }
 }

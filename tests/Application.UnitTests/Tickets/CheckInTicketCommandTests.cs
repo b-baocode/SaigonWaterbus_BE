@@ -20,6 +20,7 @@ public class CheckInTicketCommandTests
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
         var ticket = await SeedRegularBookingTicketAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(1));
         var handler = new CheckInTicketCommandHandler(
             context,
             staffContext,
@@ -50,6 +51,30 @@ public class CheckInTicketCommandTests
         scanEvent.ServerTime.ShouldBe(now);
         scanEvent.TicketStatusBefore.ShouldBe(TicketStatus.Active);
         scanEvent.TicketStatusAfter.ShouldBe(TicketStatus.CheckedIn);
+        scanEvent.StaffWorkAssignmentId.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task StaffWithoutActiveBoatAssignmentCannotCheckInTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context);
+        var handler = new CheckInTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var ex = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        ex.Errors["staffWorkAssignment"].Single().ShouldContain("chưa có ca OnBoard");
+
+        var scanEvent = context.TicketScanEvents.Single();
+        scanEvent.Result.ShouldBe(TicketScanResult.Failed);
+        scanEvent.FailureReason.ShouldNotBeNull();
+        scanEvent.FailureReason.ShouldContain("chưa có ca OnBoard");
     }
 
     [Test]
@@ -107,6 +132,7 @@ public class CheckInTicketCommandTests
             context,
             TicketStatus.CheckedIn,
             checkedInAt);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, checkedInAt.AddHours(-1), checkedOutAt.AddHours(1));
         var handler = new CheckOutTicketCommandHandler(
             context,
             staffContext,
@@ -146,6 +172,7 @@ public class CheckInTicketCommandTests
             context,
             TicketStatus.CheckedIn,
             checkedInAt);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, firstTicket, checkedInAt.AddHours(-1), checkedInAt.AddHours(2));
         var secondTicket = await AddTicketToBookingAsync(
             context,
             firstTicket.Booking,
@@ -178,6 +205,7 @@ public class CheckInTicketCommandTests
             context,
             TicketStatus.CheckedIn,
             checkedInAt);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, activeTicket, checkedInAt.AddHours(-1), checkedInAt.AddHours(2));
         await AddTicketToBookingAsync(
             context,
             activeTicket.Booking,
@@ -398,6 +426,31 @@ public class CheckInTicketCommandTests
         context.AddRange(booking, passenger, ticket);
         await context.SaveChangesAsync();
         return ticket;
+    }
+
+    private static async Task AddOnBoardAssignmentAsync(
+        DbContext context,
+        Guid staffUserId,
+        Ticket ticket,
+        DateTimeOffset startAt,
+        DateTimeOffset endAt)
+    {
+        var boatId = ticket.BookingPassenger?.Trip?.BoatId
+            ?? ticket.Booking.Trip?.BoatId
+            ?? throw new InvalidOperationException("Ticket test data must have a boat.");
+        context.Set<StaffWorkAssignment>().Add(new StaffWorkAssignment
+        {
+            StaffUserId = staffUserId,
+            AssignmentType = StaffWorkAssignmentType.Boat,
+            BoatId = boatId,
+            WorkingDate = new DateOnly(2030, 1, 1),
+            StartAt = startAt,
+            EndAt = endAt,
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = staffUserId,
+            AssignedAt = startAt.AddHours(-1)
+        });
+        await context.SaveChangesAsync();
     }
 
     private static async Task<Ticket> AddTicketToBookingAsync(

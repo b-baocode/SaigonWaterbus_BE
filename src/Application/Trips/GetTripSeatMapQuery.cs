@@ -3,7 +3,9 @@ using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Domain.Entities;
+using FluentValidation.Results;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Trips;
 
@@ -34,7 +36,8 @@ public sealed record TripSeatMapDto(
     decimal? SegmentDistanceKm = null,
     // true = đã quá hạn bán vé cho chặng đang xem (tính theo giờ tàu rời bến lên) hoặc chuyến
     // không còn nhận đặt. FE nên khoá thao tác chọn ghế — gọi giữ ghế lúc này sẽ bị từ chối.
-    bool IsBookingClosed = false);
+    bool IsBookingClosed = false,
+    EffectiveFareAdjustmentDto? FareAdjustment = null);
 
 // FromStationCode/ToStationCode: chặng khách định đi — trạng thái ghế và giá (trip Regular)
 // tính theo chặng đó; bỏ trống = xem cả tuyến (ghế bận nếu có bất kỳ vé nào trên trip).
@@ -134,7 +137,10 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
         var currentUserId = _userContext.UserId;
 
         // Giá theo km cho ghế STANDARD trên trip Regular: theo chặng đang xem,
-        // hoặc cả tuyến khi không truyền chặng. Thiếu km → null, fallback giá theo loại ghế.
+        // hoặc cả tuyến khi không truyền chặng. Thiếu km thì báo lỗi để FE/admin sửa route,
+        // không trả giá STANDARD legacy.
+        var fareAdjustment = await FareAdjustmentSupport.GetEffectiveAdjustmentAsync(
+            _context, trip.OperatingDate, cancellationToken);
         decimal? distanceKm = null;
         decimal? distanceFare = null;
         if (DistanceFareSupport.UsesDistanceFare(trip) && trip.Route is not null)
@@ -143,11 +149,20 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             var fromOrder = segment.IsFullTrip ? routeStops.Min(rs => rs.StopOrder) : segment.FromStopOrder;
             var toOrder = segment.IsFullTrip ? routeStops.Max(rs => rs.StopOrder) : segment.ToStopOrder;
             distanceKm = DistanceFareSupport.TryComputeSegmentDistanceKm(routeStops, fromOrder, toOrder);
-            if (distanceKm.HasValue)
+            if (!distanceKm.HasValue)
             {
-                var policy = await DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken);
-                distanceFare = DistanceFareSupport.CalculateFare(policy, distanceKm.Value);
+                throw new ValidationException(
+                [
+                    new ValidationFailure(
+                        DistanceFareSupport.MissingDistancePropertyName,
+                        DistanceFareSupport.MissingDistanceReason)
+                ]);
             }
+
+            var policy = await DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken);
+            distanceFare = FareAdjustmentSupport.ApplySurcharge(
+                DistanceFareSupport.CalculateFare(policy, distanceKm.Value),
+                fareAdjustment);
         }
 
         var seatDtos = seats
@@ -164,7 +179,7 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                     seat.Column,
                     seat.SeatTypeCode,
                     seat.SeatType?.Name,
-                    ResolveBasePrice(seat, tripSeat, distanceFare),
+                    ResolveBasePrice(seat, distanceFare, fareAdjustment),
                     ResolveStatus(tripSeat, occupiedTripSeatIds, heldSeats, currentUserId, segment));
             })
             .ToList();
@@ -184,10 +199,14 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             segment.FromStop?.Station.StationCode,
             segment.ToStop?.Station.StationCode,
             distanceKm,
-            isBookingClosed);
+            isBookingClosed,
+            fareAdjustment);
     }
 
-    private static decimal ResolveBasePrice(Seat seat, TripSeat? tripSeat, decimal? distanceFare)
+    private static decimal ResolveBasePrice(
+        Seat seat,
+        decimal? distanceFare,
+        EffectiveFareAdjustmentDto? fareAdjustment)
     {
         if (distanceFare.HasValue
             && seat.SeatTypeCode.Equals(DistanceFareSupport.DistanceFareSeatTypeCode, StringComparison.OrdinalIgnoreCase))
@@ -195,17 +214,19 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             return distanceFare.Value;
         }
 
-        if (tripSeat?.Price is > 0)
-        {
-            return tripSeat.Price.Value;
-        }
-
+        decimal basePrice;
         if (seat.SeatType is not null)
         {
-            return seat.SeatType.BasePrice;
+            basePrice = seat.SeatType.BasePrice;
+        }
+        else
+        {
+            basePrice = SeatTypePricing.TryGetBasePrice(seat.SeatTypeCode, out var fallbackBasePrice)
+                ? fallbackBasePrice
+                : 0;
         }
 
-        return SeatTypePricing.TryGetBasePrice(seat.SeatTypeCode, out var basePrice) ? basePrice : 0;
+        return FareAdjustmentSupport.ApplySurcharge(basePrice, fareAdjustment);
     }
 
     private static string ResolveStatus(

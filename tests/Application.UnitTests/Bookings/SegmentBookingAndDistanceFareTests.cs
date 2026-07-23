@@ -302,19 +302,47 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
-    public async Task MissingDistanceFallsBackToSeatTypeFare()
+    public async Task MissingDistanceRejectsRegularBookingInsteadOfFallingBackToSeatTypeFare()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
         await SeedThreeStopTripAsync(context, "TR-FARE-2", withDistances: false);
         var handler = CreateHandler(context, userContext);
 
-        var result = await handler.Handle(
+        var exception = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
             new CreateBookingCommand("TR-FARE-2", [Adult("A1", "BB", "LT")], null),
-            CancellationToken.None);
+            CancellationToken.None));
 
-        // Tuyến chưa nhập km → dùng giá theo loại ghế (FixedFareCalculator = 10000).
-        result.SubtotalAmount.ShouldBe(10000m);
+        // Tuyến Waterbus thường thiếu km phải bị chặn, không được fallback FixedFareCalculator/giá STANDARD.
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("chưa nhập đủ số km"));
+    }
+
+    [Test]
+    public async Task MissingDistanceMarksSearchUnavailableAndSeatMapRejects()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var trip = await SeedThreeStopTripAsync(context, "TR-FARE-3", withDistances: false);
+        var bb = context.Set<Station>().Single(s => s.StationCode == "BB");
+        var lt = context.Set<Station>().Single(s => s.StationCode == "LT");
+        var date = DateOnly.FromDateTime(Now.UtcDateTime);
+
+        var searchResults = await new SearchTripsQueryHandler(context, new FixedTimeProvider(Now))
+            .Handle(new SearchTripsQuery(bb.Id, lt.Id, date), CancellationToken.None);
+        var searchTrip = searchResults.Single(x => x.TripCode == "TR-FARE-3");
+        searchTrip.MinPrice.ShouldBeNull();
+        searchTrip.IsBookable.ShouldBeFalse();
+        searchTrip.IsBookingClosed.ShouldBeTrue();
+        searchTrip.BookingClosedReason.ShouldNotBeNull();
+        searchTrip.BookingClosedReason!.ShouldContain("chưa nhập đủ số km");
+
+        var seatMapHandler = new GetTripSeatMapQueryHandler(
+            context, userContext, new FixedTimeProvider(Now));
+        var exception = await Should.ThrowAsync<ValidationException>(() => seatMapHandler.Handle(
+            new GetTripSeatMapQuery(trip.Trip.Id, "BB", "LT"), CancellationToken.None));
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("chưa nhập đủ số km"));
     }
 
     [Test]
@@ -558,6 +586,7 @@ public class SegmentBookingAndDistanceFareTests
         };
         context.Add(ticket);
         await context.SaveChangesAsync();
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Trip.BoatId!.Value);
 
         var dto = await new Application.Tickets.ScanTicketQueryHandler(
                 context, staffContext, new FixedTimeProvider(Now))
@@ -751,6 +780,26 @@ public class SegmentBookingAndDistanceFareTests
         context.Add(station);
         await context.SaveChangesAsync();
         return station;
+    }
+
+    private static async Task AddOnBoardAssignmentAsync(
+        ApplicationDbContext context,
+        Guid staffUserId,
+        Guid boatId)
+    {
+        context.StaffWorkAssignments.Add(new StaffWorkAssignment
+        {
+            StaffUserId = staffUserId,
+            AssignmentType = StaffWorkAssignmentType.Boat,
+            BoatId = boatId,
+            WorkingDate = DateOnly.FromDateTime(Now.UtcDateTime),
+            StartAt = Now.AddHours(-1),
+            EndAt = Now.AddHours(4),
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = staffUserId,
+            AssignedAt = Now.AddHours(-2)
+        });
+        await context.SaveChangesAsync();
     }
 
     private sealed class SequentialBookingCodeGenerator : IBookingCodeGenerator

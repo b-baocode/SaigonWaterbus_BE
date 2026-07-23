@@ -19,6 +19,7 @@ public sealed class Tickets : IEndpointGroup
                 "Nhan ticketCode hoac qrToken.",
                 "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
                 "Admin/Manager/Staff xem duoc moi ve.",
+                "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Customer chi xem duoc ve thuoc booking cua minh.",
                 "Charter booking sinh ve theo tung hanh khach sau khi da thanh toan du va nhap danh sach hanh khach."));
 
@@ -31,6 +32,7 @@ public sealed class Tickets : IEndpointGroup
                 "Nhan ticketCode hoac qrToken.",
                 "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
                 "Chi Admin/Manager/Staff duoc check-in.",
+                "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Ticket phai Active, booking phai Confirmed va da thanh toan du.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedInAt/checkedInBy."));
 
@@ -43,6 +45,7 @@ public sealed class Tickets : IEndpointGroup
                 "Nhan ticketCode hoac qrToken.",
                 "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
                 "Chi Admin/Manager/Staff duoc check-out.",
+                "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Ticket phai da CheckedIn truoc do.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedOutAt/checkedOutBy."));
 

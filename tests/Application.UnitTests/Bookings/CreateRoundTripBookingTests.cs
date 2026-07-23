@@ -257,7 +257,14 @@ public class CreateRoundTripBookingTests
             IsBookable = true
         };
         route.RouteStops.Add(new RouteStop { Route = route, Station = fromStation, StationId = fromStation.Id, StopOrder = 1 });
-        route.RouteStops.Add(new RouteStop { Route = route, Station = toStation, StationId = toStation.Id, StopOrder = 2 });
+        route.RouteStops.Add(new RouteStop
+        {
+            Route = route,
+            Station = toStation,
+            StationId = toStation.Id,
+            StopOrder = 2,
+            DistanceFromPreviousKm = 3m
+        });
 
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, BoatStatus.Active);
         boat.SeatCount = 2;

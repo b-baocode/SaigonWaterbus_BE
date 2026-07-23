@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -105,6 +106,12 @@ public sealed class CheckInAllBookingTicketsCommandHandler
         }
 
         var now = _timeProvider.GetUtcNow();
+        foreach (var trip in ResolveTargetTrips(booking, activeTickets))
+        {
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTripAsync(
+                _context, currentUser, trip, now, cancellationToken);
+        }
+
         foreach (var ticket in activeTickets)
         {
             ticket.TicketStatus = TicketStatus.CheckedIn;
@@ -117,5 +124,26 @@ public sealed class CheckInAllBookingTicketsCommandHandler
         var refreshed = await BookingManifestSupport.BuildQuery(_context)
             .SingleAsync(x => x.Id == booking.Id, cancellationToken);
         return BookingManifestSupport.ToDto(refreshed);
+    }
+
+    private static IReadOnlyList<Trip> ResolveTargetTrips(
+        Booking booking,
+        IReadOnlyList<Ticket> tickets)
+    {
+        var trips = new Dictionary<Guid, Trip>();
+        foreach (var ticket in tickets)
+        {
+            var tripId = ticket.BookingPassenger?.TripId ?? booking.TripId;
+            if (tripId == booking.TripId && booking.Trip is not null)
+            {
+                trips[booking.Trip.Id] = booking.Trip;
+            }
+            else if (tripId == booking.ReturnTripId && booking.ReturnTrip is not null)
+            {
+                trips[booking.ReturnTrip.Id] = booking.ReturnTrip;
+            }
+        }
+
+        return trips.Values.ToList();
     }
 }

@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
@@ -50,16 +51,24 @@ public sealed class FareCalculator : IFareCalculator
 
     private async Task<decimal> ResolveBasePriceAsync(Seat seat, Guid? tripId, CancellationToken cancellationToken)
     {
+        var basePrice = seat.SeatType?.BasePrice ?? SeatTypePricing.GetBasePrice(seat.SeatTypeCode);
+
         if (tripId.HasValue)
         {
-            var tripSeat = await _context.Set<TripSeat>()
+            var operatingDate = await _context.Set<Trip>()
                 .AsNoTracking()
-                .FirstOrDefaultAsync(ts => ts.TripId == tripId.Value && ts.SeatId == seat.Id, cancellationToken);
+                .Where(x => x.Id == tripId.Value)
+                .Select(x => (DateOnly?)x.OperatingDate)
+                .SingleOrDefaultAsync(cancellationToken);
 
-            if (tripSeat?.Price is > 0)
-                return tripSeat.Price.Value;
+            if (operatingDate.HasValue)
+            {
+                var adjustment = await FareAdjustmentSupport.GetEffectiveAdjustmentAsync(
+                    _context, operatingDate.Value, cancellationToken);
+                return FareAdjustmentSupport.ApplySurcharge(basePrice, adjustment);
+            }
         }
 
-        return seat.SeatType?.BasePrice ?? SeatTypePricing.GetBasePrice(seat.SeatTypeCode);
+        return basePrice;
     }
 }

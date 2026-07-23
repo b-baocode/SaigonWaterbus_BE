@@ -55,6 +55,8 @@ public sealed class CheckInTicketCommandHandler : IRequestHandler<CheckInTicketC
             ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
             ticketStatusBefore = ticket.TicketStatus;
             EnsureTicketCanBeCheckedIn(ticket);
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTicketAsync(
+                _context, currentUser, ticket, now, cancellationToken);
         }
         catch (Exception exception) when (TicketScanHistorySupport.IsLoggableFailure(exception))
         {

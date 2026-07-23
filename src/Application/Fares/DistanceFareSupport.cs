@@ -12,6 +12,9 @@ namespace SaigonWaterbus.Application.Fares;
 public static class DistanceFareSupport
 {
     public const string DistanceFareSeatTypeCode = "STANDARD";
+    public const string MissingDistancePropertyName = "distanceFromPreviousKm";
+    public const string MissingDistanceReason =
+        "Tuyến Waterbus thường chưa nhập đủ số km cho chặng này. Vui lòng cập nhật distanceFromPreviousKm của các bến trên tuyến trước khi bán vé.";
 
     /// <summary>Trip có dùng giá theo quãng đường không (waterbus thường, không phải sightseeing/charter).</summary>
     public static bool UsesDistanceFare(Trip trip) =>
@@ -27,7 +30,7 @@ public static class DistanceFareSupport
 
     /// <summary>
     /// Km giữa hai trạm theo lộ trình. Trả về null nếu admin chưa nhập đủ km cho mọi chặng
-    /// trong khoảng (caller fallback về giá theo loại ghế).
+    /// trong khoảng (caller phải chặn bán vé Waterbus thường, không fallback giá ghế).
     /// </summary>
     public static decimal? TryComputeSegmentDistanceKm(
         IEnumerable<RouteStop> routeStops,

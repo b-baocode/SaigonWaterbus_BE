@@ -58,6 +58,8 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
             ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
             ticketStatusBefore = ticket.TicketStatus;
             EnsureTicketCanBeCheckedOut(ticket);
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTicketAsync(
+                _context, currentUser, ticket, now, cancellationToken);
         }
         catch (Exception exception) when (TicketScanHistorySupport.IsLoggableFailure(exception))
         {

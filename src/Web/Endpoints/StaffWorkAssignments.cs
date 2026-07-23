@@ -71,7 +71,8 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 CreateExample,
                 "Admin gán staff OnBoard vào Boat.",
                 "Manager gán staff Ground vào Station trong bến mình phụ trách.",
-                "Boat/Station: bắt buộc startAt và endAt. Với nhân viên quét vé tại trạm, gửi tripStopId; BE tự kiểm stationId khớp bến của trip_stop.",
+                "Boat/Station: bắt buộc startAt và endAt. Muốn tạo trip cho một tàu thì phải có ít nhất 2 ca Boat của staff OnBoard phủ toàn bộ thời gian chuyến.",
+                "Staff check/scan vé lấy từ ca Boat trên tàu; không cần gán tripStop riêng cho nhân viên check vé.",
                 "Một ca lẻ tối đa 24 giờ. Nếu cần tạo lịch nhiều ngày/tháng, dùng POST /api/staff-assignments/bulk.",
                 "Backend chặn staff bị trùng ca."));
 
@@ -84,6 +85,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 "BE sinh từng bản ghi ca làm theo từng ngày trong khoảng fromDate/toDate.",
                 "daysOfWeek dùng chuẩn ISO: 1 = Thứ 2, 2 = Thứ 3, ..., 7 = Chủ nhật. Bỏ trống/null nghĩa là tạo tất cả các ngày.",
                 "Admin gán staff OnBoard vào Boat. Manager chỉ gán staff Ground vào Station thuộc bến mình phụ trách.",
+                "Để tạo/generate trip, FE/admin cần tạo đủ 2 staff OnBoard cho cùng boat và khung giờ phủ chuyến.",
                 "startTime/endTime là giờ Việt Nam; endTime nhỏ hơn hoặc bằng startTime nghĩa là ca qua đêm.",
                 "Mỗi ca sinh ra vẫn tối đa 24 giờ và BE chặn trùng ca."));
 

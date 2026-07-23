@@ -131,6 +131,7 @@ public sealed class Bookings : IEndpointGroup
                 null,
                 "Check-in mot luot toan bo ve Active cua booking thuong.",
                 "Booking khu hoi: truyen query ?tripCode=<chuyen dang boarding> de chi check-in ve chieu do; bo trong se check-in tat ca.",
+                "Neu nguoi goi la Staff thi phai la nhan vien OnBoard co ca assignmentType=Boat dang active tren dung tau cua tung chieu check-in.",
                 "Yeu cau booking da Confirmed va thanh toan du.",
                 "Tra ve manifest moi sau khi check-in."));
 

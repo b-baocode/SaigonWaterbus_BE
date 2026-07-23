@@ -44,18 +44,26 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             .Where(x => x.AssignmentType == StaffWorkAssignmentType.Boat)
             .OrderBy(x => x.StartAt)
             .ThenBy(x => x.StaffUser.FullName)
-            .Select(x => ToStaffDto(x, now))
+            .Select(x => OnBoardStaffTripSupport.ToTripStaffDto(x, now))
             .ToList();
         var scanningStaffByTripStopId = assignments
-            .Where(x => x.AssignmentType == StaffWorkAssignmentType.Station && x.TripStopId.HasValue)
-            .GroupBy(x => x.TripStopId!.Value)
+            .Where(x => x.AssignmentType == StaffWorkAssignmentType.Station && x.TripStopId.HasValue);
+        var scanningStaffByStop = trip.TripStops
             .ToDictionary(
-                g => g.Key,
-                g => (IReadOnlyList<TripStaffAssignmentDto>)g
-                    .OrderBy(x => x.StartAt)
-                    .ThenBy(x => x.StaffUser.FullName)
-                    .Select(x => ToStaffDto(x, now))
-                    .ToList());
+                x => x.Id,
+                _ => (IReadOnlyList<TripStaffAssignmentDto>)onBoardStaff);
+        if (onBoardStaff.Count == 0)
+        {
+            scanningStaffByStop = scanningStaffByTripStopId
+                .GroupBy(x => x.TripStopId!.Value)
+                .ToDictionary(
+                    g => g.Key,
+                    g => (IReadOnlyList<TripStaffAssignmentDto>)g
+                        .OrderBy(x => x.StartAt)
+                        .ThenBy(x => x.StaffUser.FullName)
+                        .Select(x => OnBoardStaffTripSupport.ToTripStaffDto(x, now))
+                        .ToList());
+        }
         var passengerCounts = await LoadPassengerCountsAsync(trip, now, cancellationToken);
 
         return UpdateTripStatusCommandHandler.ToDetailDto(
@@ -63,7 +71,7 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             sourceBooking,
             TripStopScheduleSupport.BuildStopDtos(
                 trip,
-                scanningStaffByTripStopId: scanningStaffByTripStopId,
+                scanningStaffByTripStopId: scanningStaffByStop,
                 passengerCountsByTripStopId: passengerCounts.ByTripStopId),
             onBoardStaff,
             passengerCounts.TotalPassengerCount);
@@ -168,18 +176,4 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             SegmentPassengerCount);
     }
 
-    private static TripStaffAssignmentDto ToStaffDto(
-        StaffWorkAssignment assignment,
-        DateTimeOffset now) =>
-        new(
-            assignment.Id,
-            assignment.StaffUserId,
-            assignment.StaffUser.FullName,
-            assignment.StaffUser.StaffType?.ToString(),
-            assignment.AssignmentType.ToString(),
-            assignment.StartAt,
-            assignment.EndAt,
-            assignment.Status.ToString(),
-            StaffWorkAssignmentSupport.ResolveShiftState(assignment, now),
-            assignment.DutyRole);
 }

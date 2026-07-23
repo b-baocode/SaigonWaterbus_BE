@@ -44,6 +44,8 @@ public sealed class ScanTicketQueryHandler : IRequestHandler<ScanTicketQuery, Ti
         {
             ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
             TicketScanSupport.EnsureCanViewTicket(currentUser, ticket);
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTicketAsync(
+                _context, currentUser, ticket, now, cancellationToken);
         }
         catch (Exception exception) when (
             TicketScanHistorySupport.IsOperationalUser(currentUser)

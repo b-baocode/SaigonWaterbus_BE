@@ -583,7 +583,7 @@ public class StaffWorkAssignmentTests
         stopBDto.AlightingPassengerCount.ShouldBe(0);
         stopBDto.OnboardPassengerCount.ShouldBe(2);
         stopBDto.SegmentPassengerCount.ShouldBe(2);
-        stopBDto.ScanningStaff.ShouldNotBeNull().Single().StaffUserId.ShouldBe(groundStaff.Id);
+        stopBDto.ScanningStaff.ShouldNotBeNull().Single().StaffUserId.ShouldBe(onBoardStaff.Id);
         stopCDto.BoardingPassengerCount.ShouldBe(0);
         stopCDto.AlightingPassengerCount.ShouldBe(2);
         stopCDto.OnboardPassengerCount.ShouldBe(0);

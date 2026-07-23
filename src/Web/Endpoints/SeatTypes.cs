@@ -31,9 +31,9 @@ public sealed class SeatTypes : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Tra ve 4 loai ghe: STANDARD (bus thuong), CABIN / RIVER / SKY (bus sightseeing) kem gia goc.",
-                "Gia goc doc tu bang seat_types (duoc seed tu dong khi khoi dong); admin chinh bang PUT /api/seat-types/{code}.",
-                "Gia ve thuc te cua tung chuyen nam trong trip_seats.price (chot khi tao trip)."));
+                "Tra ve loai ghe kem pricingMode de FE biet cach hien thi gia.",
+                "STANDARD co pricingMode=DistanceFareForRegular: Waterbus thuong tinh theo /api/fare-policy + km tren route, khong lay basePrice STANDARD.",
+                "CABIN/RIVER/SKY/custom co pricingMode=SeatTypeBasePrice: sightseeing tinh theo basePrice loai ghe + fareAdjustment neu ngay chay la cuoi tuan/le/dac biet."));
 
         group.MapPost(CreateSeatType, string.Empty)
             .RequireAuthorization()
@@ -52,8 +52,9 @@ public sealed class SeatTypes : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoac Manager",
                 UpdatePriceExample,
-                "code: STANDARD | CABIN | RIVER | SKY.",
-                "Gia goc moi chi ap dung cho cac trip TAO SAU thoi diem chinh; trip da tao giu nguyen gia da chot trong trip_seats.",
+                "Dung cho CABIN | RIVER | SKY | loai ghe custom cua sightseeing.",
+                "Khong dung cho STANDARD; gia Waterbus thuong chinh bang PUT /api/fare-policy va km tren route stops.",
+                "Gia goc moi ap dung cho tat ca booking sightseeing tao sau thoi diem chinh, ke ca trip da tao nhung chua booking.",
                 "basePrice: so nguyen VND, > 0."));
     }
 

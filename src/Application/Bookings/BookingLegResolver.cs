@@ -278,9 +278,11 @@ internal sealed class BookingLegResolver
         }
 
         // Giá: ghế STANDARD trên trip Regular tính theo quãng đường của chặng
-        // (GET /api/fare-policy); tuyến chưa nhập đủ km thì fallback giá theo loại ghế
-        // để không chặn booking. Ghế sightseeing giữ nguyên giá theo loại ghế.
+        // (GET /api/fare-policy). Nếu tuyến chưa nhập đủ km thì chặn bán để tránh lấy nhầm
+        // giá loại ghế STANDARD legacy. Phụ thu cuối tuần/lễ/đặc biệt áp theo ngày chạy của trip.
         FarePolicyDto? farePolicy = null;
+        var fareAdjustment = await FareAdjustmentSupport.GetEffectiveAdjustmentAsync(
+            _context, trip.OperatingDate, cancellationToken);
         var itemPrices = new List<(ResolvedItem Resolved, decimal UnitPrice)>();
         foreach (var resolved in resolvedItems)
         {
@@ -292,16 +294,26 @@ internal sealed class BookingLegResolver
             }
             else
             {
-                var distanceKm = usesSegments && resolved.Seat.SeatTypeCode.Equals(
-                        DistanceFareSupport.DistanceFareSeatTypeCode, StringComparison.OrdinalIgnoreCase)
-                    ? DistanceFareSupport.TryComputeSegmentDistanceKm(
-                        trip.Route.RouteStops, resolved.FromStop.StopOrder, resolved.ToStop.StopOrder)
-                    : null;
+                var isDistanceFareSeat = usesSegments && resolved.Seat.SeatTypeCode.Equals(
+                    DistanceFareSupport.DistanceFareSeatTypeCode, StringComparison.OrdinalIgnoreCase);
 
-                if (distanceKm.HasValue)
+                if (isDistanceFareSeat)
                 {
+                    var distanceKm = DistanceFareSupport.TryComputeSegmentDistanceKm(
+                        trip.Route.RouteStops, resolved.FromStop.StopOrder, resolved.ToStop.StopOrder);
+                    if (!distanceKm.HasValue)
+                    {
+                        throw new ValidationException(
+                        [
+                            new ValidationFailure(
+                                DistanceFareSupport.MissingDistancePropertyName,
+                                DistanceFareSupport.MissingDistanceReason)
+                        ]);
+                    }
+
                     farePolicy ??= await DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken);
-                    unitPrice = DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value)
+                    var baseFare = DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value);
+                    unitPrice = FareAdjustmentSupport.ApplySurcharge(baseFare, fareAdjustment)
                         * resolved.TicketType.PriceModifier;
                 }
                 else

@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.StaffWorkAssignments;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -14,8 +15,7 @@ public sealed record GenerateTripsCommand(
     IReadOnlyList<TimeOnly> DepartureTimes,
     DateOnly FromDate,
     DateOnly ToDate,
-    IReadOnlyList<int>? DaysOfWeek = null,
-    IReadOnlyList<TripSeatTypePriceInput>? SeatTypePrices = null) : IRequest<GenerateTripsResult>;
+    IReadOnlyList<int>? DaysOfWeek = null) : IRequest<GenerateTripsResult>;
 
 public sealed record GenerateTripsResult(
     int Created,
@@ -23,7 +23,8 @@ public sealed record GenerateTripsResult(
     int SkippedBoatBusy,
     /// <summary>Chuyến bị bỏ qua vì giờ chạy đã trôi qua hoặc cách hiện tại chưa đủ lead time tối thiểu.</summary>
     int SkippedPast,
-    IReadOnlyList<string> CreatedTripCodes);
+    IReadOnlyList<string> CreatedTripCodes,
+    int SkippedMissingOnBoardStaff = 0);
 
 public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTripsCommand>
 {
@@ -43,9 +44,6 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
             .Must(days => days == null || (days.Count > 0 && days.All(d => d is >= 0 and <= 6)))
             .WithMessage("DaysOfWeek values must be 0–6 (0=Sunday, 6=Saturday).")
             .When(x => x.DaysOfWeek is not null);
-        RuleFor(x => x.SeatTypePrices!)
-            .SetValidator(new TripSeatTypePricesValidator())
-            .When(x => x.SeatTypePrices is not null);
     }
 }
 
@@ -126,14 +124,12 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
 
         var skippedBoatBusy = 0;
 
-        var resolveSeatPrice = await TripSeatPricingSupport.BuildSeatPriceResolverAsync(
-            _context, request.SeatTypePrices, activeSeats, cancellationToken);
-
         var tripsToAdd = new List<Trip>();
         var tripSeatsToAdd = new List<TripSeat>();
         var createdCodes = new List<string>();
         int skipped = 0;
         int skippedPast = 0;
+        int skippedMissingOnBoardStaff = 0;
         var now = DateTimeOffset.UtcNow;
 
         for (var date = request.FromDate; date <= request.ToDate; date = date.AddDays(1))
@@ -173,6 +169,13 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     continue;
                 }
 
+                if (!await OnBoardStaffTripSupport.HasRequiredOnBoardStaffAsync(
+                        _context, boat.Id, departureTime, arrivalTime, cancellationToken))
+                {
+                    skippedMissingOnBoardStaff++;
+                    continue;
+                }
+
                 var tripCode = $"TR-{date:yyyyMMdd}-{routeCode}-{time:HHmm}";
 
                 var trip = new Trip
@@ -197,7 +200,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     {
                         TripId = trip.Id,
                         SeatId = seat.Id,
-                        Price = resolveSeatPrice(seat)
+                        Price = null
                     });
 
                 createdCodes.Add(tripCode);
@@ -211,6 +214,12 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        return new GenerateTripsResult(tripsToAdd.Count, skipped, skippedBoatBusy, skippedPast, createdCodes);
+        return new GenerateTripsResult(
+            tripsToAdd.Count,
+            skipped,
+            skippedBoatBusy,
+            skippedPast,
+            createdCodes,
+            skippedMissingOnBoardStaff);
     }
 }

@@ -5,6 +5,7 @@ using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
+using SaigonWaterbus.Infrastructure.Data;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Trips;
@@ -74,6 +75,7 @@ public class CreateTripCommandTests
 
         context.AddRange(route, existingTrip, boat);
         await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
 
         var result = await new CreateTripCommandHandler(context)
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
@@ -93,12 +95,15 @@ public class CreateTripCommandTests
 
         context.AddRange(route, boat);
         await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
 
         var result = await new CreateTripCommandHandler(context)
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
 
         result.CapacitySnapshot.ShouldBe(3);
         context.Set<TripSeat>().Count(x => x.TripId == result.TripId).ShouldBe(3);
+        result.OnBoardStaff.ShouldNotBeNull();
+        result.OnBoardStaff.Count.ShouldBe(2);
     }
 
     [Test]
@@ -124,6 +129,7 @@ public class CreateTripCommandTests
 
         context.AddRange(route, boat);
         await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
 
         var result = await new CreateTripCommandHandler(context)
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
@@ -143,6 +149,24 @@ public class CreateTripCommandTests
         result.ToStation.ImageUrl.ShouldBe("https://example.test/stations/b-main.jpg");
         result.Stops.First().StationImageUrl.ShouldBe("https://example.test/stations/a-main.jpg");
         result.Stops.First().StationImageUrls.ShouldBe(["https://example.test/stations/a-main.jpg", "https://example.test/stations/a-side.jpg"]);
+    }
+
+    [Test]
+    public async Task CreateTripFailsWhenBoatDoesNotHaveTwoOnBoardStaff()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context)
+                .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None));
+
+        exception.Errors["boatCode"].Single().ShouldContain("ít nhất 2 nhân viên OnBoard");
     }
 
     [Test]
@@ -261,6 +285,7 @@ public class CreateTripCommandTests
 
         // Chuyen truoc ket thuc 09:00; chuyen moi khoi hanh 09:20 -> cach 20 phut >= 15 phut.
         var farEnough = existingDeparture.AddHours(1).AddMinutes(20);
+        await AddRequiredOnBoardStaffAsync(context, boat, farEnough);
 
         var result = await new CreateTripCommandHandler(context)
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(farEnough.Date), farEnough), CancellationToken.None);
@@ -278,6 +303,7 @@ public class CreateTripCommandTests
 
         context.AddRange(route, boat);
         await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
 
         var result = await new CreateTripCommandHandler(context)
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
@@ -304,6 +330,7 @@ public class CreateTripCommandTests
 
         context.AddRange(route, boat);
         await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
 
         var result = await new CreateTripCommandHandler(context)
             .Handle(
@@ -404,6 +431,7 @@ public class CreateTripCommandTests
 
         context.AddRange(route, boat);
         await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
 
         var result = await new CreateTripCommandHandler(context)
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
@@ -426,6 +454,7 @@ public class CreateTripCommandTests
 
         context.AddRange(route, boat);
         await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
 
         var created = await new CreateTripCommandHandler(context)
             .Handle(
@@ -535,6 +564,39 @@ public class CreateTripCommandTests
         return boat;
     }
 
+    private static async Task AddRequiredOnBoardStaffAsync(
+        ApplicationDbContext context,
+        Boat boat,
+        DateTimeOffset departureTime)
+    {
+        var firstStaff = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var secondStaff = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var startAt = departureTime.AddHours(-1).ToUniversalTime();
+        var endAt = departureTime.AddHours(6).ToUniversalTime();
+        context.StaffWorkAssignments.AddRange(
+            OnBoardAssignment(firstStaff.UserId!.Value, boat.Id, startAt, endAt),
+            OnBoardAssignment(secondStaff.UserId!.Value, boat.Id, startAt, endAt));
+        await context.SaveChangesAsync();
+    }
+
+    private static StaffWorkAssignment OnBoardAssignment(
+        Guid staffUserId,
+        Guid boatId,
+        DateTimeOffset startAt,
+        DateTimeOffset endAt) =>
+        new()
+        {
+            StaffUserId = staffUserId,
+            AssignmentType = StaffWorkAssignmentType.Boat,
+            BoatId = boatId,
+            WorkingDate = DateOnly.FromDateTime(startAt.ToOffset(TimeSpan.FromHours(7)).Date),
+            StartAt = startAt,
+            EndAt = endAt,
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = staffUserId,
+            AssignedAt = startAt.AddHours(-1)
+        };
+
     private static Station Station(string code, string name) =>
         new()
         {
@@ -561,7 +623,8 @@ public class CreateTripCommandTests
                 Station = station,
                 StationId = station.Id,
                 StopOrder = stopOrder,
-                StandardTravelMin = stopOrder == 1 ? null : 15
+                StandardTravelMin = stopOrder == 1 ? null : 15,
+                DistanceFromPreviousKm = stopOrder == 1 ? null : 3m
             });
             stopOrder++;
         }
