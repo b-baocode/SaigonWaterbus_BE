@@ -24,7 +24,9 @@ public sealed record BookingHistoryItemDto(
     string DetailEndpoint,
     int PointsUsed = 0,
     int PointsEarned = 0,
-    Bookings.BookingInsuranceDto? Insurance = null);
+    Bookings.BookingInsuranceDto? Insurance = null,
+    Guid? FromStationId = null,
+    Guid? ToStationId = null);
 
 public sealed record GetMyBookingHistoryQuery : IRequest<IReadOnlyList<BookingHistoryItemDto>>;
 
@@ -124,7 +126,9 @@ public sealed class GetMyBookingHistoryQueryHandler
             $"/api/bookings/{booking.Id}",
             booking.PointsUsed,
             booking.PointsEarned,
-            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
+            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            earliestBoarding?.FromStationId ?? firstStop?.StationId,
+            latestAlighting?.ToStationId ?? lastStop?.StationId);
     }
 
     private static BookingHistoryItemDto CreateCharterBookingHistoryItem(Booking booking) =>
@@ -145,5 +149,7 @@ public sealed class GetMyBookingHistoryQueryHandler
             $"/api/charter-bookings/{booking.Id}",
             booking.PointsUsed,
             booking.PointsEarned,
-            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
+            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            booking.FromStationId,
+            booking.ToStationId);
 }

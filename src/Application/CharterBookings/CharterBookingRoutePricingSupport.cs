@@ -29,7 +29,9 @@ internal sealed record CharterBookingRouteEstimate(
 
 internal sealed record CharterBookingRouteLegEstimate(
     int LegOrder,
+    Guid FromStationId,
     string FromStationName,
+    Guid ToStationId,
     string ToStationName,
     decimal? DistanceKm,
     decimal? TravelMinutes,
@@ -138,7 +140,9 @@ internal static class CharterBookingRoutePricingSupport
                 {
                     Leg = new CharterBookingRouteLegEstimate(
                         index + 1,
+                        leg.from.StationId,
                         leg.from.StationName,
+                        leg.to.StationId,
                         leg.to.StationName,
                         distanceKm,
                         travelMinutes,
@@ -315,7 +319,9 @@ internal static class CharterBookingRoutePricingSupport
         var legDtos = estimate.Legs
             .Select(x => new CharterBookingRouteLegEstimateDto(
                 x.LegOrder,
+                x.FromStationId,
                 x.FromStationName,
+                x.ToStationId,
                 x.ToStationName,
                 x.DistanceKm,
                 x.TravelMinutes,

@@ -80,7 +80,9 @@ public sealed record CharterBookingSelectedBoatDto(
 
 public sealed record CharterBookingRouteLegEstimateDto(
     int LegOrder,
+    Guid FromStationId,
     string FromStationName,
+    Guid ToStationId,
     string ToStationName,
     decimal? DistanceKm,
     decimal? TravelMinutes,
@@ -194,7 +196,8 @@ public sealed record AdminCharterBookingListItemDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? HoldExpiresAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CharterBookingUserAssignmentDto? AssignedManager = null);
+    CharterBookingUserAssignmentDto? AssignedManager = null,
+    Guid? BoatId = null);
 
 public sealed record CharterBookingListItemDto(
     Guid Id,
@@ -216,7 +219,10 @@ public sealed record CharterBookingListItemDto(
     decimal? FinalAmount,
     IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateTimeOffset? HoldExpiresAt);
+    DateTimeOffset? HoldExpiresAt,
+    Guid? FromStationId = null,
+    Guid? ToStationId = null,
+    Guid? BoatId = null);
 
 public sealed record CharterBookingListRequestedBoatDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -279,7 +285,8 @@ public sealed record CharterBookingDetailDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     Guid? InsurancePackageId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CharterBookingSelectedRouteDto? SelectedRoute = null);
+    CharterBookingSelectedRouteDto? SelectedRoute = null,
+    Guid? BoatId = null);
 
 public sealed record CharterBookingUserAssignmentDto(
     Guid UserId,
@@ -506,7 +513,8 @@ public sealed record CharterBookingManifestDto(
     int AdultCount,
     int ChildCount,
     CharterBookingTicketSummaryDto TicketSummary,
-    IReadOnlyList<CharterBookingManifestPassengerDto> Passengers);
+    IReadOnlyList<CharterBookingManifestPassengerDto> Passengers,
+    Guid? BoatId = null);
 
 public sealed record CharterBookingTicketSummaryDto(
     int TotalTickets,

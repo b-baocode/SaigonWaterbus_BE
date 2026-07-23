@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
@@ -23,10 +24,14 @@ public sealed record TripAdminListItemDto(
     int TotalPassengerCount = 0,
     string? SourceBookingCode = null,
     Guid? BoatId = null,
+    [property: JsonIgnore]
     string? BoatCode = null,
     string? BoatName = null,
+    [property: JsonIgnore]
     string? BoatStatus = null,
+    [property: JsonIgnore]
     string? BoatImageUrl = null,
+    [property: JsonIgnore]
     IReadOnlyList<string>? BoatImageUrls = null,
     TripRouteEndpointDto? FromStation = null,
     TripRouteEndpointDto? ToStation = null,

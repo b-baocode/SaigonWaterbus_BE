@@ -51,7 +51,7 @@ public sealed record TicketScanDto(
     DateTimeOffset? ScheduledArrival,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? BoatName,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    [property: JsonIgnore]
     string? VesselName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? FromStationName,
@@ -61,7 +61,10 @@ public sealed record TicketScanDto(
     string? SeatCode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     TicketScanPassengerDto? TicketPassenger,
-    IReadOnlyList<TicketScanPassengerDto> Passengers);
+    IReadOnlyList<TicketScanPassengerDto> Passengers,
+    Guid? FromStationId = null,
+    Guid? ToStationId = null,
+    Guid? BoatId = null);
 
 public sealed record TicketScanPassengerDto(
     Guid PassengerId,

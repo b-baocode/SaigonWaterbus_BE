@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SaigonWaterbus.Application.Routes;
 
 public sealed record RouteDto(
@@ -31,7 +33,7 @@ public sealed record RouteDetailDto(
 public sealed record RouteStopDto(
     Guid RouteStopId,
     Guid StationId,
-    string StationCode,
+    [property: JsonIgnore] string StationCode,
     string StationName,
     int StopOrder,
     decimal? StandardTravelMin,

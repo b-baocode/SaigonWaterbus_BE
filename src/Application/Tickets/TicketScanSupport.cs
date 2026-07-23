@@ -147,7 +147,10 @@ internal static class TicketScanSupport
             booking.Passengers
                 .OrderBy(x => x.FullName)
                 .Select(p => ToPassengerDto(p))
-                .ToList());
+                .ToList(),
+            booking.FromStationId,
+            booking.ToStationId,
+            booking.BoatId);
     }
 
     private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking)
@@ -167,6 +170,8 @@ internal static class TicketScanSupport
         // thấy đúng chỗ khách lên/xuống; dữ liệu cũ chưa lưu chặng thì rơi về đầu/cuối chuyến.
         var fromStationName = ticketPassenger?.FromStation?.StationName ?? fromStop?.Station.StationName;
         var toStationName = ticketPassenger?.ToStation?.StationName ?? toStop?.Station.StationName;
+        var fromStationId = ticketPassenger?.FromStationId ?? fromStop?.StationId;
+        var toStationId = ticketPassenger?.ToStationId ?? toStop?.StationId;
         var segmentTimes = trip is null
             ? default((DateTimeOffset Departure, DateTimeOffset Arrival)?)
             : Trips.TripStopScheduleSupport.ResolveSegmentTimes(
@@ -217,7 +222,10 @@ internal static class TicketScanSupport
             legPassengers
                 .OrderBy(x => x.FullName)
                 .Select(p => ToPassengerDto(p))
-                .ToList());
+                .ToList(),
+            fromStationId,
+            toStationId,
+            trip?.BoatId);
     }
 
     private static TicketScanPassengerDto? ToPassengerDtoOrNull(BookingPassenger? passenger) =>

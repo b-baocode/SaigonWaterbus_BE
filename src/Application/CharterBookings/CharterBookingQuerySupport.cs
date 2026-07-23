@@ -149,6 +149,7 @@ internal static class CharterBookingQuerySupport
                     booking.CharterRoute.RouteName,
                     booking.CharterRoute.RouteType,
                     RoutePresentationSupport.ResolveLabel(booking.CharterRoute.RouteType),
-                    RoutePresentationSupport.IsGeneratedForBooking(booking.CharterRoute)));
+                    RoutePresentationSupport.IsGeneratedForBooking(booking.CharterRoute)),
+            booking.BoatId);
     }
 }

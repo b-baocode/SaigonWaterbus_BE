@@ -137,4 +137,6 @@ public sealed record BookingItemDto(
     string ItemStatus,
     string? TicketCode,
     string? TicketQrToken,
-    string? TicketStatus);
+    string? TicketStatus,
+    Guid? FromStationId = null,
+    Guid? ToStationId = null);

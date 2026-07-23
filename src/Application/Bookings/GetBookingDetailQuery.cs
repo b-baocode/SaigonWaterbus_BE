@@ -71,6 +71,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             var stops = legTrip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
             var fromStop = stops.FirstOrDefault();
             var toStop = stops.LastOrDefault();
+            var fromStationId = i.FromStationId ?? fromStop?.StationId;
+            var toStationId = i.ToStationId ?? toStop?.StationId;
 
             // Giờ đi/đến theo CHẶNG của hành khách (trip_stops), không phải đầu/cuối nguyên chuyến.
             var segmentTimes = legTrip is null
@@ -95,7 +97,9 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 booking.BookingStatus.ToString(),
                 ticket?.TicketCode,
                 ticket?.QrToken,
-                ticket?.TicketStatus.ToString());
+                ticket?.TicketStatus.ToString(),
+                fromStationId,
+                toStationId);
         }).ToList();
 
         return new BookingDetailDto(
