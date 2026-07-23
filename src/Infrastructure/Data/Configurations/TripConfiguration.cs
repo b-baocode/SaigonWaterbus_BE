@@ -34,6 +34,12 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
             .HasColumnName("delay_minutes")
             .HasDefaultValue(0);
         builder.Property(x => x.DelayReason).HasColumnName("delay_reason").HasMaxLength(500);
+        builder.Property(x => x.DelayStartedAt).HasColumnName("delay_started_at");
+        builder.Property(x => x.DelayEndedAt).HasColumnName("delay_ended_at");
+        builder.Property(x => x.DelayStartStopOrder).HasColumnName("delay_start_stop_order");
+        builder.Property(x => x.DelayPropagationMinutes)
+            .HasColumnName("delay_propagation_minutes")
+            .HasDefaultValue(0);
         builder.Property(x => x.AdjustedDepartureTime).HasColumnName("adjusted_departure_time");
         builder.Property(x => x.AdjustedArrivalTime).HasColumnName("adjusted_arrival_time");
         builder.Property(x => x.CapacitySnapshot).HasColumnName("capacity").IsRequired();

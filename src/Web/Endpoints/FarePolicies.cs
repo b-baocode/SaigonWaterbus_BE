@@ -20,7 +20,6 @@ public sealed class FarePolicies : IEndpointGroup
         """
         {
           "surchargePercent": 20,
-          "roundingStep": 1000,
           "isActive": true
         }
         """;
@@ -32,7 +31,6 @@ public sealed class FarePolicies : IEndpointGroup
           "scope": "Holiday",
           "name": "Quoc khanh",
           "surchargePercent": 50,
-          "roundingStep": 1000,
           "isActive": true
         }
         """;
@@ -68,7 +66,7 @@ public sealed class FarePolicies : IEndpointGroup
                 null,
                 "Query optional: fromDate, toDate (yyyy-MM-dd).",
                 "Weekend la rule chung cho thu Bay/Chu nhat. Holiday/Special la ngay cu the FE tick tren calendar.",
-                "Gia ban = gia goc/chang x (1 + surchargePercent/100), lam tron len theo roundingStep."));
+                "Gia ban = gia goc/chang x (1 + surchargePercent/100), backend tu lam tron den 2 chu so thap phan."));
 
         group.MapGet(GetEffectiveFareAdjustment, "adjustments/effective")
             .AllowAnonymous()
@@ -87,7 +85,7 @@ public sealed class FarePolicies : IEndpointGroup
                 "Admin hoac Manager",
                 WeekendAdjustmentExample,
                 "Ap dung tu dong cho tat ca trip co operatingDate la thu Bay/Chu nhat, tru khi ngay do co Holiday/Special rieng.",
-                "surchargePercent=20 nghia la tang 20%. isActive=false de tat phu thu cuoi tuan."));
+                "surchargePercent=20 nghia la tang 20%; neu gui 12.345 backend luu 12.35. isActive=false de tat phu thu cuoi tuan."));
 
         group.MapPut(UpsertFareCalendarDay, "adjustments/calendar-day")
             .RequireAuthorization()

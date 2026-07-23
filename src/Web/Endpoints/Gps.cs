@@ -508,9 +508,13 @@ public sealed class Gps : IEndpointGroup
                 && x.Boat.Status == BoatStatus.Active
                 && x.TripStatus != TripStatus.Cancelled
                 && x.TripStatus != TripStatus.Completed
-                && ((x.DepartureTime >= windowStart && x.DepartureTime <= windowEnd)
+                && (((x.AdjustedDepartureTime ?? x.DepartureTime) >= windowStart
+                        && (x.AdjustedDepartureTime ?? x.DepartureTime) <= windowEnd)
                     || x.TripStatus == TripStatus.Boarding
-                    || x.TripStatus == TripStatus.InProgress));
+                    || x.TripStatus == TripStatus.InProgress
+                    || (x.TripStatus == TripStatus.Delayed
+                        && x.DelayStartedAt.HasValue
+                        && !x.DelayEndedAt.HasValue)));
 
         if (!string.IsNullOrWhiteSpace(normalizedBoatCode))
         {
@@ -518,7 +522,7 @@ public sealed class Gps : IEndpointGroup
         }
 
         var trips = await query
-            .OrderBy(x => x.DepartureTime)
+            .OrderBy(x => x.AdjustedDepartureTime ?? x.DepartureTime)
             .ThenBy(x => x.TripCode)
             .ToListAsync(cancellationToken);
 
@@ -663,7 +667,9 @@ public sealed class Gps : IEndpointGroup
             tripStop.ActualArrivalTime,
             tripStop.ActualDepartureTime,
             trip.TripStatus.ToString(),
-            dwellCountdown);
+            dwellCountdown,
+            tripStop.AdjustedArrivalTime,
+            tripStop.AdjustedDepartureTime);
 
         await PublishTripStopUpdatedAsync(
             trackingHubContext,
@@ -687,6 +693,8 @@ public sealed class Gps : IEndpointGroup
                 tripStop.StopStatus,
                 tripStop.PlannedArrivalTime,
                 tripStop.PlannedDepartureTime,
+                tripStop.AdjustedArrivalTime,
+                tripStop.AdjustedDepartureTime,
                 tripStop.ActualArrivalTime,
                 tripStop.ActualDepartureTime,
                 trip.TripStatus.ToString(),
@@ -1499,7 +1507,12 @@ public sealed class Gps : IEndpointGroup
             trip.Route.BaseDistanceKm,
             trip.Route.EstimatedDurationMin,
             ToRouteGeometryResponse(trip.Route.RouteGeometry),
-            ToGpsTripStopResponses(trip));
+            ToGpsTripStopResponses(trip),
+            trip.AdjustedDepartureTime,
+            trip.AdjustedArrivalTime,
+            trip.DelayMinutes,
+            trip.DelayReason,
+            TripDelaySupport.ToDelayInfoDto(trip));
 
     private static IReadOnlyList<double[]>? ToRouteGeometryResponse(LineString? routeGeometry) =>
         routeGeometry is null
@@ -1526,7 +1539,9 @@ public sealed class Gps : IEndpointGroup
                     x.ActualDepartureTime,
                     x.StopStatus,
                     x.Station.Latitude,
-                    x.Station.Longitude))
+                    x.Station.Longitude,
+                    x.AdjustedArrivalTime,
+                    x.AdjustedDepartureTime))
                 .ToArray();
         }
 
@@ -1645,6 +1660,11 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset occurredAt)
     {
         if (trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
+        {
+            return;
+        }
+
+        if (trip.DelayStartedAt.HasValue && !trip.DelayEndedAt.HasValue)
         {
             return;
         }
@@ -1846,7 +1866,12 @@ public sealed class Gps : IEndpointGroup
         decimal? BaseDistanceKm,
         decimal? EstimatedDurationMin,
         IReadOnlyList<double[]>? RouteGeometry,
-        IReadOnlyList<GpsTripScheduleStopResponse> Stops);
+        IReadOnlyList<GpsTripScheduleStopResponse> Stops,
+        DateTimeOffset? AdjustedDepartureTime = null,
+        DateTimeOffset? AdjustedArrivalTime = null,
+        int DelayMinutes = 0,
+        string? DelayReason = null,
+        TripDelayInfoDto? DelayInfo = null);
 
     private sealed record GpsTripScheduleStopResponse(
         Guid? TripStopId,
@@ -1860,7 +1885,9 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset? ActualDepartureTime,
         string StopStatus,
         decimal? Latitude,
-        decimal? Longitude);
+        decimal? Longitude,
+        DateTimeOffset? AdjustedArrivalTime = null,
+        DateTimeOffset? AdjustedDepartureTime = null);
 
     private sealed record GpsTripStatusResponse(
         Guid TripId,
@@ -1882,7 +1909,9 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset? ActualArrivalTime,
         DateTimeOffset? ActualDepartureTime,
         string TripStatus,
-        TripStopDwellCountdownDto? DwellCountdown = null);
+        TripStopDwellCountdownDto? DwellCountdown = null,
+        DateTimeOffset? AdjustedArrivalTime = null,
+        DateTimeOffset? AdjustedDepartureTime = null);
 
     private sealed record TripStopUpdatedRealtimeDto(
         Guid TripId,
@@ -1903,6 +1932,8 @@ public sealed class Gps : IEndpointGroup
         string StopStatus,
         DateTimeOffset? PlannedArrivalTime,
         DateTimeOffset? PlannedDepartureTime,
+        DateTimeOffset? AdjustedArrivalTime,
+        DateTimeOffset? AdjustedDepartureTime,
         DateTimeOffset? ActualArrivalTime,
         DateTimeOffset? ActualDepartureTime,
         string TripStatus,

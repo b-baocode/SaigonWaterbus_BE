@@ -125,8 +125,14 @@ internal static class TripStopScheduleSupport
             var toStop = toStopOrder.HasValue
                 ? trip.TripStops.FirstOrDefault(x => x.StopOrder == toStopOrder.Value)
                 : null;
-            fromDeparture = fromStop?.PlannedDepartureTime ?? fromStop?.PlannedArrivalTime;
-            toArrival = toStop?.PlannedArrivalTime ?? toStop?.PlannedDepartureTime;
+            fromDeparture = fromStop?.AdjustedDepartureTime
+                ?? fromStop?.PlannedDepartureTime
+                ?? fromStop?.AdjustedArrivalTime
+                ?? fromStop?.PlannedArrivalTime;
+            toArrival = toStop?.AdjustedArrivalTime
+                ?? toStop?.PlannedArrivalTime
+                ?? toStop?.AdjustedDepartureTime
+                ?? toStop?.PlannedDepartureTime;
         }
         else if (trip.Route is not null && trip.Route.RouteStops.Count > 0)
         {
@@ -202,8 +208,8 @@ internal static class TripStopScheduleSupport
                         x.Station?.StationName ?? string.Empty,
                         x.Station?.StationCode ?? string.Empty,
                         x.StopOrder,
-                        x.PlannedArrivalTime ?? x.PlannedDepartureTime,
-                        x.PlannedDepartureTime ?? x.PlannedArrivalTime,
+                        x.AdjustedArrivalTime ?? x.PlannedArrivalTime ?? x.AdjustedDepartureTime ?? x.PlannedDepartureTime,
+                        x.AdjustedDepartureTime ?? x.PlannedDepartureTime ?? x.AdjustedArrivalTime ?? x.PlannedArrivalTime,
                         x.ActualArrivalTime,
                         x.ActualDepartureTime,
                         x.StopStatus,
@@ -223,7 +229,11 @@ internal static class TripStopScheduleSupport
                         x.Station?.Longitude,
                         x.Station?.HasWaitingArea,
                         x.Station?.HasParking,
-                        x.Station?.HasTicketCounter);
+                        x.Station?.HasTicketCounter,
+                        x.PlannedArrivalTime,
+                        x.PlannedDepartureTime,
+                        x.AdjustedArrivalTime,
+                        x.AdjustedDepartureTime);
                 })
                 .ToList();
         }
@@ -255,7 +265,9 @@ internal static class TripStopScheduleSupport
                     Longitude: draft.Station?.Longitude,
                     HasWaitingArea: draft.Station?.HasWaitingArea,
                     HasParking: draft.Station?.HasParking,
-                    HasTicketCounter: draft.Station?.HasTicketCounter);
+                    HasTicketCounter: draft.Station?.HasTicketCounter,
+                    PlannedArrival: draft.PlannedArrivalTime,
+                    PlannedDeparture: draft.PlannedDepartureTime);
             })
             .ToList();
     }

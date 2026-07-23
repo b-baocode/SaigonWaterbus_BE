@@ -30,7 +30,8 @@ public sealed record TripAdminListItemDto(
     IReadOnlyList<string>? BoatImageUrls = null,
     TripRouteEndpointDto? FromStation = null,
     TripRouteEndpointDto? ToStation = null,
-    int StopCount = 0);
+    int StopCount = 0,
+    TripDelayInfoDto? DelayInfo = null);
 
 [Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record GetTripListQuery(
@@ -145,7 +146,8 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
                 boatImageUrls,
                 TripMediaSupport.ResolveFromStation(t),
                 TripMediaSupport.ResolveToStation(t),
-                t.TripStops.Count > 0 ? t.TripStops.Count : t.Route.RouteStops.Count);
+                t.TripStops.Count > 0 ? t.TripStops.Count : t.Route.RouteStops.Count,
+                TripDelaySupport.ToDelayInfoDto(t));
             })
             .ToList();
 

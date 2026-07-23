@@ -70,6 +70,29 @@ public class FareAdjustmentSupportTests
     }
 
     [Test]
+    public async Task AdjustmentRoundsPercentAndAdjustedPriceToTwoDecimals()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        context.Add(new FareAdjustment
+        {
+            Scope = FareAdjustmentScopes.Weekend,
+            Name = "Weekend",
+            SurchargePercent = 12.345m,
+            RoundingStep = 1000m,
+            IsActive = true
+        });
+        await context.SaveChangesAsync();
+
+        var adjustment = await FareAdjustmentSupport.GetEffectiveAdjustmentAsync(
+            context, new DateOnly(2026, 7, 25), CancellationToken.None);
+
+        adjustment.ShouldNotBeNull();
+        adjustment.SurchargePercent.ShouldBe(12.35m);
+        adjustment.Multiplier.ShouldBe(1.1235m);
+        FareAdjustmentSupport.ApplySurcharge(9_999.99m, adjustment).ShouldBe(11_234.99m);
+    }
+
+    [Test]
     public async Task FareCalculatorIgnoresTripSeatSnapshotAndAppliesCurrentAdjustment()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -135,5 +158,64 @@ public class FareAdjustmentSupportTests
             seat.Id, "ADULT", CancellationToken.None, trip.Id);
 
         price.ShouldBe(12_000m);
+    }
+
+    [Test]
+    public async Task UpsertWeekendAdjustmentHandlesDuplicateLegacyRows()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        context.AddRange(
+            new FareAdjustment
+            {
+                Scope = "weekend",
+                Name = "Old weekend",
+                SurchargePercent = 10m,
+                RoundingStep = 1000m,
+                IsActive = true
+            },
+            new FareAdjustment
+            {
+                Scope = FareAdjustmentScopes.Weekend,
+                Name = "Newer weekend",
+                SurchargePercent = 15m,
+                RoundingStep = 1000m,
+                IsActive = true
+            });
+        await context.SaveChangesAsync();
+
+        var result = await new UpsertWeekendFareAdjustmentCommandHandler(context)
+            .Handle(new UpsertWeekendFareAdjustmentCommand(20.126m), CancellationToken.None);
+
+        result.Scope.ShouldBe(FareAdjustmentScopes.Weekend);
+        result.SurchargePercent.ShouldBe(20.13m);
+        context.FareAdjustments
+            .Count(x => x.Date == null && x.Scope == FareAdjustmentScopes.Weekend)
+            .ShouldBe(1);
+        context.FareAdjustments.Count(x => x.Date == null).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task UpsertCalendarDayNormalizesExistingLegacyScope()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var date = new DateOnly(2026, 9, 2);
+        context.Add(new FareAdjustment
+        {
+            Scope = "holiday",
+            Date = date,
+            Name = "Old holiday",
+            SurchargePercent = 10m,
+            RoundingStep = 1000m,
+            IsActive = true
+        });
+        await context.SaveChangesAsync();
+
+        var result = await new UpsertFareCalendarDayCommandHandler(context)
+            .Handle(new UpsertFareCalendarDayCommand(date, FareAdjustmentScopes.Holiday, 50m), CancellationToken.None);
+
+        result.Scope.ShouldBe(FareAdjustmentScopes.Holiday);
+        result.SurchargePercent.ShouldBe(50m);
+        context.FareAdjustments.Count(x => x.Date == date).ShouldBe(1);
+        context.FareAdjustments.Single(x => x.Date == date).Scope.ShouldBe(FareAdjustmentScopes.Holiday);
     }
 }

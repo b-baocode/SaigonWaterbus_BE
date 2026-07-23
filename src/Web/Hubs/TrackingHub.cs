@@ -10,6 +10,7 @@ public sealed class TrackingHub : Hub
 {
     public const string BoatLocationEventName = "boatLocation";
     public const string TripStopUpdatedEventName = "tripStopUpdated";
+    public const string TripDelayUpdatedEventName = "tripDelayUpdated";
 
     public static string BoatGroupName(Guid boatId) => $"boat:{boatId:N}";
 

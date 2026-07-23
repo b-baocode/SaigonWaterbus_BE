@@ -13,7 +13,6 @@ public sealed record FareAdjustmentDto(
     string Name,
     decimal SurchargePercent,
     decimal Multiplier,
-    decimal RoundingStep,
     bool IsActive);
 
 public sealed record EffectiveFareAdjustmentDto(
@@ -21,14 +20,17 @@ public sealed record EffectiveFareAdjustmentDto(
     string Scope,
     string Name,
     decimal SurchargePercent,
-    decimal Multiplier,
-    decimal RoundingStep);
+    decimal Multiplier);
 
 public static class FareAdjustmentSupport
 {
-    private const decimal DefaultRoundingStep = 1000m;
+    private const int DecimalPlaces = 2;
 
-    public static decimal Multiplier(decimal surchargePercent) => (100m + surchargePercent) / 100m;
+    public static decimal NormalizePercent(decimal surchargePercent) =>
+        decimal.Round(surchargePercent, DecimalPlaces, MidpointRounding.AwayFromZero);
+
+    public static decimal Multiplier(decimal surchargePercent) =>
+        (100m + NormalizePercent(surchargePercent)) / 100m;
 
     public static decimal ApplySurcharge(decimal price, EffectiveFareAdjustmentDto? adjustment)
     {
@@ -38,17 +40,7 @@ public static class FareAdjustmentSupport
         }
 
         var adjusted = price * adjustment.Multiplier;
-        return RoundUp(adjusted, adjustment.RoundingStep);
-    }
-
-    public static decimal RoundUp(decimal amount, decimal roundingStep)
-    {
-        if (roundingStep <= 1)
-        {
-            return decimal.Ceiling(amount);
-        }
-
-        return decimal.Ceiling(amount / roundingStep) * roundingStep;
+        return decimal.Round(adjusted, DecimalPlaces, MidpointRounding.AwayFromZero);
     }
 
     public static async Task<EffectiveFareAdjustmentDto?> GetEffectiveAdjustmentAsync(
@@ -75,13 +67,14 @@ public static class FareAdjustmentSupport
             return null;
         }
 
-        var weekendAdjustment = await context.Set<FareAdjustment>()
+        var weekendAdjustments = await context.Set<FareAdjustment>()
             .AsNoTracking()
             .Where(x => x.IsActive
-                     && x.Date == null
-                     && x.Scope == FareAdjustmentScopes.Weekend)
+                     && x.Date == null)
             .OrderByDescending(x => x.Created)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
+        var weekendAdjustment = weekendAdjustments
+            .FirstOrDefault(x => FareAdjustmentScopes.Normalize(x.Scope) == FareAdjustmentScopes.Weekend);
 
         return weekendAdjustment is null ? null : ToEffectiveDto(operatingDate, weekendAdjustment);
     }
@@ -111,15 +104,16 @@ public static class FareAdjustmentSupport
                     .First());
 
         var hasWeekendDate = distinctDates.Any(x => x.DayOfWeek is DayOfWeek.Saturday or DayOfWeek.Sunday);
-        var weekendAdjustment = hasWeekendDate
+        var weekendAdjustments = hasWeekendDate
             ? await context.Set<FareAdjustment>()
                 .AsNoTracking()
                 .Where(x => x.IsActive
-                         && x.Date == null
-                         && x.Scope == FareAdjustmentScopes.Weekend)
+                         && x.Date == null)
                 .OrderByDescending(x => x.Created)
-                .FirstOrDefaultAsync(cancellationToken)
-            : null;
+                .ToListAsync(cancellationToken)
+            : [];
+        var weekendAdjustment = weekendAdjustments
+            .FirstOrDefault(x => FareAdjustmentScopes.Normalize(x.Scope) == FareAdjustmentScopes.Weekend);
 
         return distinctDates.ToDictionary(
             x => x,
@@ -140,25 +134,23 @@ public static class FareAdjustmentSupport
     public static FareAdjustmentDto ToDto(FareAdjustment adjustment) =>
         new(
             adjustment.Id,
-            adjustment.Scope,
+            FareAdjustmentScopes.Normalize(adjustment.Scope),
             adjustment.Date,
             adjustment.Name,
-            adjustment.SurchargePercent,
+            NormalizePercent(adjustment.SurchargePercent),
             Multiplier(adjustment.SurchargePercent),
-            adjustment.RoundingStep,
             adjustment.IsActive);
 
     private static EffectiveFareAdjustmentDto ToEffectiveDto(DateOnly operatingDate, FareAdjustment adjustment) =>
         new(
             operatingDate,
-            adjustment.Scope,
+            FareAdjustmentScopes.Normalize(adjustment.Scope),
             adjustment.Name,
-            adjustment.SurchargePercent,
-            Multiplier(adjustment.SurchargePercent),
-            adjustment.RoundingStep);
+            NormalizePercent(adjustment.SurchargePercent),
+            Multiplier(adjustment.SurchargePercent));
 
     private static int Priority(string scope) =>
-        scope switch
+        FareAdjustmentScopes.Normalize(scope) switch
         {
             FareAdjustmentScopes.Special => 3,
             FareAdjustmentScopes.Holiday => 2,
@@ -221,7 +213,6 @@ public sealed class GetEffectiveFareAdjustmentQueryHandler
 [Authorize(Roles = "Admin,Manager")]
 public sealed record UpsertWeekendFareAdjustmentCommand(
     decimal SurchargePercent,
-    decimal RoundingStep = 1000m,
     bool IsActive = true) : IRequest<FareAdjustmentDto>;
 
 public sealed class UpsertWeekendFareAdjustmentCommandValidator
@@ -229,9 +220,7 @@ public sealed class UpsertWeekendFareAdjustmentCommandValidator
 {
     public UpsertWeekendFareAdjustmentCommandValidator()
     {
-        FareAdjustmentValidationRules.Apply(
-            RuleFor(x => x.SurchargePercent),
-            RuleFor(x => x.RoundingStep));
+        FareAdjustmentValidationRules.Apply(RuleFor(x => x.SurchargePercent));
     }
 }
 
@@ -246,10 +235,12 @@ public sealed class UpsertWeekendFareAdjustmentCommandHandler
         UpsertWeekendFareAdjustmentCommand request,
         CancellationToken cancellationToken)
     {
-        var adjustment = await _context.Set<FareAdjustment>()
-            .SingleOrDefaultAsync(
-                x => x.Scope == FareAdjustmentScopes.Weekend && x.Date == null,
-                cancellationToken);
+        var adjustments = await _context.Set<FareAdjustment>()
+            .Where(x => x.Date == null)
+            .OrderByDescending(x => x.Created)
+            .ToListAsync(cancellationToken);
+        var adjustment = adjustments
+            .FirstOrDefault(x => FareAdjustmentScopes.Normalize(x.Scope) == FareAdjustmentScopes.Weekend);
 
         if (adjustment is null)
         {
@@ -260,9 +251,15 @@ public sealed class UpsertWeekendFareAdjustmentCommandHandler
             };
             _context.Set<FareAdjustment>().Add(adjustment);
         }
+        else
+        {
+            adjustment.Scope = FareAdjustmentScopes.Weekend;
+            FareAdjustmentDuplicateSupport.Remove(_context, adjustment, adjustments
+                .Where(x => FareAdjustmentScopes.Normalize(x.Scope) == FareAdjustmentScopes.Weekend)
+                .ToList());
+        }
 
-        adjustment.SurchargePercent = request.SurchargePercent;
-        adjustment.RoundingStep = request.RoundingStep;
+        adjustment.SurchargePercent = FareAdjustmentSupport.NormalizePercent(request.SurchargePercent);
         adjustment.IsActive = request.IsActive;
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -276,7 +273,6 @@ public sealed record UpsertFareCalendarDayCommand(
     string Scope,
     decimal SurchargePercent,
     string? Name = null,
-    decimal RoundingStep = 1000m,
     bool IsActive = true) : IRequest<FareAdjustmentDto>;
 
 public sealed class UpsertFareCalendarDayCommandValidator
@@ -294,9 +290,7 @@ public sealed class UpsertFareCalendarDayCommandValidator
             })
             .WithMessage("scope chỉ nhận Holiday hoặc Special cho ngày cụ thể.");
         RuleFor(x => x.Name).MaximumLength(150);
-        FareAdjustmentValidationRules.Apply(
-            RuleFor(x => x.SurchargePercent),
-            RuleFor(x => x.RoundingStep));
+        FareAdjustmentValidationRules.Apply(RuleFor(x => x.SurchargePercent));
     }
 }
 
@@ -312,8 +306,12 @@ public sealed class UpsertFareCalendarDayCommandHandler
         CancellationToken cancellationToken)
     {
         var scope = FareAdjustmentScopes.Normalize(request.Scope);
-        var adjustment = await _context.Set<FareAdjustment>()
-            .SingleOrDefaultAsync(x => x.Scope == scope && x.Date == request.Date, cancellationToken);
+        var adjustments = await _context.Set<FareAdjustment>()
+            .Where(x => x.Date == request.Date)
+            .OrderByDescending(x => x.Created)
+            .ToListAsync(cancellationToken);
+        var adjustment = adjustments
+            .FirstOrDefault(x => FareAdjustmentScopes.Normalize(x.Scope) == scope);
 
         if (adjustment is null)
         {
@@ -324,12 +322,19 @@ public sealed class UpsertFareCalendarDayCommandHandler
             };
             _context.Set<FareAdjustment>().Add(adjustment);
         }
+        else
+        {
+            adjustment.Scope = scope;
+            adjustment.Date = request.Date;
+            FareAdjustmentDuplicateSupport.Remove(_context, adjustment, adjustments
+                .Where(x => FareAdjustmentScopes.Normalize(x.Scope) == scope)
+                .ToList());
+        }
 
         adjustment.Name = string.IsNullOrWhiteSpace(request.Name)
             ? $"{scope} {request.Date:yyyy-MM-dd}"
             : request.Name.Trim();
-        adjustment.SurchargePercent = request.SurchargePercent;
-        adjustment.RoundingStep = request.RoundingStep;
+        adjustment.SurchargePercent = FareAdjustmentSupport.NormalizePercent(request.SurchargePercent);
         adjustment.IsActive = request.IsActive;
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -356,29 +361,44 @@ public sealed class DeleteFareCalendarDayCommandHandler
                 "scope chỉ nhận Holiday hoặc Special.")]);
         }
 
-        var adjustment = await _context.Set<FareAdjustment>()
-            .SingleOrDefaultAsync(x => x.Scope == scope && x.Date == request.Date, cancellationToken)
+        var adjustments = await _context.Set<FareAdjustment>()
+            .Where(x => x.Date == request.Date)
+            .OrderByDescending(x => x.Created)
+            .ToListAsync(cancellationToken);
+        var adjustment = adjustments
+            .FirstOrDefault(x => FareAdjustmentScopes.Normalize(x.Scope) == scope)
             ?? throw new NotFoundException("Fare adjustment not found.");
 
-        _context.Set<FareAdjustment>().Remove(adjustment);
+        _context.Set<FareAdjustment>().RemoveRange(adjustments
+            .Where(x => x.Id == adjustment.Id || FareAdjustmentScopes.Normalize(x.Scope) == scope));
         await _context.SaveChangesAsync(cancellationToken);
         return Unit.Value;
     }
 }
 
+file static class FareAdjustmentDuplicateSupport
+{
+    public static void Remove(
+        IApplicationDbContext context,
+        FareAdjustment keeper,
+        IReadOnlyCollection<FareAdjustment> candidates)
+    {
+        var duplicates = candidates
+            .Where(x => x.Id != keeper.Id)
+            .ToList();
+        if (duplicates.Count > 0)
+        {
+            context.Set<FareAdjustment>().RemoveRange(duplicates);
+        }
+    }
+}
+
 file static class FareAdjustmentValidationRules
 {
-    public static void Apply<T>(
-        IRuleBuilderInitial<T, decimal> surchargePercent,
-        IRuleBuilderInitial<T, decimal> roundingStep)
+    public static void Apply<T>(IRuleBuilderInitial<T, decimal> surchargePercent)
     {
         surchargePercent
             .InclusiveBetween(0, 1000)
-            .WithMessage("Phần trăm phụ thu phải từ 0 đến 1000.")
-            .Must(x => decimal.Round(x, 2) == x)
-            .WithMessage("Phần trăm phụ thu tối đa 2 chữ số thập phân.");
-        roundingStep
-            .Must(x => x is 1m or 100m or 500m or 1000m)
-            .WithMessage("Bước làm tròn chỉ nhận 1, 100, 500 hoặc 1000 VND.");
+            .WithMessage("Phần trăm phụ thu phải từ 0 đến 1000.");
     }
 }

@@ -108,14 +108,20 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         // trip cũ chưa có trip_stops thì suy từ route stops như BuildStopDtos.
         var tripStopsByTripId = (await _context.Set<TripStop>()
                 .Where(ts => tripIds.Contains(ts.TripId))
-                .Select(ts => new { ts.TripId, ts.StopOrder, ts.PlannedArrivalTime, ts.PlannedDepartureTime })
+                .Select(ts => new
+                {
+                    ts.TripId,
+                    ts.StopOrder,
+                    Arrival = ts.AdjustedArrivalTime ?? ts.PlannedArrivalTime,
+                    Departure = ts.AdjustedDepartureTime ?? ts.PlannedDepartureTime
+                })
                 .ToListAsync(cancellationToken))
             .GroupBy(ts => ts.TripId)
             .ToDictionary(
                 g => g.Key,
                 g => g.ToDictionary(
                     ts => ts.StopOrder,
-                    ts => (Arrival: ts.PlannedArrivalTime, Departure: ts.PlannedDepartureTime)));
+                    ts => (ts.Arrival, ts.Departure)));
 
         var boatIds = trips
             .Where(x => x.BoatId.HasValue)
@@ -214,7 +220,8 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 IsBookingClosed: missingDistanceFare,
                 IsBookable: isBookable,
                 BookingClosedReason: missingDistanceFare ? Fares.DistanceFareSupport.MissingDistanceReason : null,
-                FareAdjustment: fareAdjustment);
+                FareAdjustment: fareAdjustment,
+                DelayInfo: TripDelaySupport.ToDelayInfoDto(t));
         })
         .Where(dto => dto is not null)
         .Select(dto => dto!)

@@ -33,6 +33,19 @@ internal static class TripMediaSupport
 
     public static TripRouteEndpointDto? ResolveFromStation(Trip trip)
     {
+        var tripStop = trip.TripStops
+            .OrderBy(x => x.StopOrder)
+            .FirstOrDefault();
+        if (tripStop?.Station is not null)
+        {
+            return ToEndpointDto(
+                tripStop.Station,
+                tripStop.PlannedArrivalTime,
+                tripStop.PlannedDepartureTime,
+                tripStop.AdjustedArrivalTime,
+                tripStop.AdjustedDepartureTime);
+        }
+
         var routeStop = trip.Route.RouteStops
             .OrderBy(x => x.StopOrder)
             .FirstOrDefault();
@@ -41,14 +54,24 @@ internal static class TripMediaSupport
             return ToEndpointDto(routeStop.Station);
         }
 
-        var tripStop = trip.TripStops
-            .OrderBy(x => x.StopOrder)
-            .FirstOrDefault();
-        return tripStop?.Station is null ? null : ToEndpointDto(tripStop.Station);
+        return null;
     }
 
     public static TripRouteEndpointDto? ResolveToStation(Trip trip)
     {
+        var tripStop = trip.TripStops
+            .OrderByDescending(x => x.StopOrder)
+            .FirstOrDefault();
+        if (tripStop?.Station is not null)
+        {
+            return ToEndpointDto(
+                tripStop.Station,
+                tripStop.PlannedArrivalTime,
+                tripStop.PlannedDepartureTime,
+                tripStop.AdjustedArrivalTime,
+                tripStop.AdjustedDepartureTime);
+        }
+
         var routeStop = trip.Route.RouteStops
             .OrderByDescending(x => x.StopOrder)
             .FirstOrDefault();
@@ -57,13 +80,15 @@ internal static class TripMediaSupport
             return ToEndpointDto(routeStop.Station);
         }
 
-        var tripStop = trip.TripStops
-            .OrderByDescending(x => x.StopOrder)
-            .FirstOrDefault();
-        return tripStop?.Station is null ? null : ToEndpointDto(tripStop.Station);
+        return null;
     }
 
-    public static TripRouteEndpointDto ToEndpointDto(Station station)
+    public static TripRouteEndpointDto ToEndpointDto(
+        Station station,
+        DateTimeOffset? plannedArrival = null,
+        DateTimeOffset? plannedDeparture = null,
+        DateTimeOffset? adjustedArrival = null,
+        DateTimeOffset? adjustedDeparture = null)
     {
         var imageUrls = CreateStationImageUrls(station);
         return new TripRouteEndpointDto(
@@ -77,7 +102,11 @@ internal static class TripMediaSupport
             station.Longitude,
             station.HasWaitingArea,
             station.HasParking,
-            station.HasTicketCounter);
+            station.HasTicketCounter,
+            plannedArrival,
+            plannedDeparture,
+            adjustedArrival,
+            adjustedDeparture);
     }
 
     public static IReadOnlyList<string> CreateBoatImageUrls(Boat? boat)

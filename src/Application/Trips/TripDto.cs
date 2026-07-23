@@ -18,7 +18,17 @@ public sealed record TripSummaryDto(
     bool IsBookingClosed = false,
     bool IsBookable = true,
     string? BookingClosedReason = null,
-    EffectiveFareAdjustmentDto? FareAdjustment = null);
+    EffectiveFareAdjustmentDto? FareAdjustment = null,
+    TripDelayInfoDto? DelayInfo = null);
+
+public sealed record TripDelayInfoDto(
+    int DelayMinutes,
+    string? DelayReason,
+    bool IsDelayActive,
+    DateTimeOffset? DelayStartedAt,
+    DateTimeOffset? DelayEndedAt,
+    int? DelayStartStopOrder,
+    int DelayPropagationMinutes);
 
 public sealed record TripDetailDto(
     Guid TripId,
@@ -43,7 +53,8 @@ public sealed record TripDetailDto(
     string? RouteCode = null,
     TripRouteEndpointDto? FromStation = null,
     TripRouteEndpointDto? ToStation = null,
-    int StopCount = 0);
+    int StopCount = 0,
+    TripDelayInfoDto? DelayInfo = null);
 
 public sealed record TripBoatDto(
     Guid VesselId,
@@ -71,7 +82,11 @@ public sealed record TripRouteEndpointDto(
     decimal? Longitude = null,
     bool? HasWaitingArea = null,
     bool? HasParking = null,
-    bool? HasTicketCounter = null);
+    bool? HasTicketCounter = null,
+    DateTimeOffset? PlannedArrival = null,
+    DateTimeOffset? PlannedDeparture = null,
+    DateTimeOffset? AdjustedArrival = null,
+    DateTimeOffset? AdjustedDeparture = null);
 
 public sealed record TripStaffAssignmentDto(
     Guid AssignmentId,
@@ -110,7 +125,11 @@ public sealed record TripStopDto(
     decimal? Longitude = null,
     bool? HasWaitingArea = null,
     bool? HasParking = null,
-    bool? HasTicketCounter = null);
+    bool? HasTicketCounter = null,
+    DateTimeOffset? PlannedArrival = null,
+    DateTimeOffset? PlannedDeparture = null,
+    DateTimeOffset? AdjustedArrival = null,
+    DateTimeOffset? AdjustedDeparture = null);
 
 public sealed record TripStopPassengerCounts(
     int BoardingPassengerCount,

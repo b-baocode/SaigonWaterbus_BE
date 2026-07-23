@@ -107,7 +107,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         trip.Route.RouteCode,
         TripMediaSupport.ResolveFromStation(trip),
         TripMediaSupport.ResolveToStation(trip),
-        stops?.Count ?? (trip.TripStops.Count > 0 ? trip.TripStops.Count : trip.Route.RouteStops.Count));
+        stops?.Count ?? (trip.TripStops.Count > 0 ? trip.TripStops.Count : trip.Route.RouteStops.Count),
+        TripDelaySupport.ToDelayInfoDto(trip));
 
     private async Task<Booking?> LoadSourceBookingAsync(Trip trip, CancellationToken cancellationToken)
     {

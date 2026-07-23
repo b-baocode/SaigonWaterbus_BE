@@ -42,6 +42,21 @@ public sealed class Trips : IEndpointGroup
         }
         """;
 
+    private const string StartDelayExample =
+        """
+        {
+          "reason": "Tàu đang dừng xử lý sự cố tại bến Bạch Đằng",
+          "startStopOrder": 2
+        }
+        """;
+
+    private const string ResumeDelayExample =
+        """
+        {
+          "note": "Tàu tiếp tục hành trình"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetTripList, string.Empty)
@@ -183,6 +198,26 @@ public sealed class Trips : IEndpointGroup
                 "tripStatus hop le: Scheduled | Boarding | InProgress | Completed | Delayed | Cancelled.",
                 "statusNote: ghi chu kem theo (optional).",
                 "Delayed: he thong tu bao khach co booking tren chuyen (in-app + SignalR); GPS thay tau chay se tu chuyen lai Boarding/InProgress."));
+
+        group.MapPost(StartTripDelay, "{id:guid}/delay/start")
+            .RequireAuthorization()
+            .WithSummary("Nhan vien tren tau bat dau bao delay")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Manager hoac Staff OnBoard dang duoc phan ca tren tau",
+                StartDelayExample,
+                "Dung khi nhan vien tren tau bam nut Delay. Trip se co delayInfo.isDelayActive=true.",
+                "startStopOrder optional: ben bat dau delay. Neu FE khong gui, BE tu suy theo trip_stops actual/stopStatus.",
+                "Lenh nay chua cong phut delay vao lich. Phut delay duoc tinh khi goi /delay/resume."));
+
+        group.MapPost(ResumeTripDelay, "{id:guid}/delay/resume")
+            .RequireAuthorization()
+            .WithSummary("Nhan vien tren tau cho tau tiep tuc sau delay")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Manager hoac Staff OnBoard dang duoc phan ca tren tau",
+                ResumeDelayExample,
+                "Dung khi nhan vien bam tiep tuc. BE tinh so phut tu delayStartedAt den hien tai, cap nhat adjusted time cho cac ben con lai.",
+                "Neu tong delay > 15 phut thi cac trip sau cua cung boatId, cung operatingDate bi cong phan vuot 15 phut. Tau/route khac khong bi anh huong.",
+                "Response tra trip moi nhat + affectedTrips. Realtime SignalR /hubs/tracking event tripDelayUpdated gui theo boat group."));
     }
 
     private static async Task<IResult> GetTripList(
@@ -258,6 +293,16 @@ public sealed class Trips : IEndpointGroup
         Results.Ok(await sender.Send(new UpdateTripStatusCommand(id, req.TripStatus, req.StatusNote), ct));
 
     public sealed record UpdateTripStatusRequest(TripStatus TripStatus, string? StatusNote);
+
+    private static async Task<IResult> StartTripDelay(ISender sender, Guid id, StartTripDelayRequest req, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new StartTripDelayCommand(id, req.Reason, req.StartStopOrder), ct));
+
+    private static async Task<IResult> ResumeTripDelay(ISender sender, Guid id, ResumeTripDelayRequest req, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ResumeTripDelayCommand(id, req.Note), ct));
+
+    public sealed record StartTripDelayRequest(string? Reason, int? StartStopOrder = null);
+
+    public sealed record ResumeTripDelayRequest(string? Note);
 
     private static bool TryParseOptionalDateOnly(string? value, out DateOnly? date)
     {

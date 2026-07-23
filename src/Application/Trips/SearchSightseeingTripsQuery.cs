@@ -41,7 +41,7 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                      && t.TripType == TripTypes.Regular
                      && t.OperatingDate == request.OperatingDate
                      && TripBookingAvailabilitySupport.CustomerBookableStatuses.Contains(t.TripStatus)
-                     && t.DepartureTime > bookingCutoff)
+                     && (t.AdjustedDepartureTime ?? t.DepartureTime) > bookingCutoff)
             .ToListAsync(cancellationToken);
 
         if (trips.Count == 0)
@@ -110,12 +110,14 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
             return new TripSummaryDto(
                 t.Id, t.TripCode, t.Route.RouteName, t.Route.RouteType,
                 t.DepartureTime, t.ArrivalTime,
-                t.DepartureTime, t.ArrivalTime,
+                t.AdjustedDepartureTime ?? t.DepartureTime,
+                t.AdjustedArrivalTime ?? t.ArrivalTime,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString(),
                 IsBookingClosed: false,
                 IsBookable: available > 0,
-                FareAdjustment: fareAdjustment);
+                FareAdjustment: fareAdjustment,
+                DelayInfo: TripDelaySupport.ToDelayInfoDto(t));
         }).ToList();
     }
 }
