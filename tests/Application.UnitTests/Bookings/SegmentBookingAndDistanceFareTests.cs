@@ -148,6 +148,28 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task BookingHoldExpiresAtIsCappedByBoardingCutoff()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedThreeStopTripAsync(context, "TR-HOLD-CUT", withDistances: true);
+        var bookingDeadline = BookingCutoffSupport.ResolveBookingDeadline(seeded.Trip, 1, 2);
+        var bookingNow = bookingDeadline.AddMinutes(-2);
+        var handler = CreateHandler(context, userContext, bookingNow);
+
+        var result = await handler.Handle(
+            new CreateBookingCommand("TR-HOLD-CUT", [Adult("A1", "BB", "HB")], null),
+            CancellationToken.None);
+
+        result.HoldExpiresAt.ShouldBe(bookingDeadline);
+
+        var booking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
+        booking.HoldExpiresAt.ShouldBe(bookingDeadline);
+        booking.HoldExpiresAt!.Value.ShouldBeLessThan(
+            bookingNow.Add(BookingSeatOccupancySupport.BookingHoldDuration));
+    }
+
+    [Test]
     public async Task BookingCutoffFollowsBoardingStationNotFirstStation()
     {
         await using var context = SeatFlowTestData.CreateContext();

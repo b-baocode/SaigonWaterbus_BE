@@ -17,9 +17,13 @@ public static class BookingCutoffSupport
     public static DateTimeOffset ResolveBoardingTime(Trip trip, int? fromStopOrder, int? toStopOrder) =>
         TripStopScheduleSupport.ResolveSegmentTimes(trip, fromStopOrder, toStopOrder).Departure;
 
-    public static bool IsPastCutoff(Trip trip, int? fromStopOrder, int? toStopOrder, DateTimeOffset now) =>
+    /// <summary>Thời điểm cuối cùng booking online/giữ chỗ được phép chờ thanh toán cho chặng.</summary>
+    public static DateTimeOffset ResolveBookingDeadline(Trip trip, int? fromStopOrder, int? toStopOrder) =>
         ResolveBoardingTime(trip, fromStopOrder, toStopOrder)
-            <= now + BookingExpirationPolicy.BookingCutoffBeforeDeparture;
+            .Subtract(BookingExpirationPolicy.BookingCutoffBeforeDeparture);
+
+    public static bool IsPastCutoff(Trip trip, int? fromStopOrder, int? toStopOrder, DateTimeOffset now) =>
+        ResolveBookingDeadline(trip, fromStopOrder, toStopOrder) <= now;
 
     public static string CutoffMessage() =>
         $"Đã ngừng bán vé cho chặng này (đóng bán trước "

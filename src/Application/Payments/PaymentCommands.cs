@@ -107,16 +107,16 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
 
         PaymentSupport.EnsureCanCreatePayment(booking, now);
 
-        if (BookingSeatOccupancySupport.IsHoldExpired(booking, _timeProvider.GetUtcNow()))
+        if (BookingSeatOccupancySupport.IsHoldExpired(booking, now))
         {
             await BookingHoldExpirySupport.ExpireBookingAsync(
                 _context,
                 _tripSeatNotifier,
                 booking,
-                _timeProvider.GetUtcNow(),
+                now,
                 cancellationToken);
             throw new ValidationException([new ValidationFailure("booking",
-                "Booking đã hết hạn giữ chỗ (15 phút). Vui lòng đặt vé lại.")]);
+                "Booking đã hết hạn giữ chỗ. Vui lòng đặt vé lại.")]);
         }
 
         await PaymentSupport.ApplyPromotionForCheckoutAsync(

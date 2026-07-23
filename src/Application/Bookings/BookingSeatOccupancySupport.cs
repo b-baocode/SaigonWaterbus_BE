@@ -6,7 +6,7 @@ namespace SaigonWaterbus.Application.Bookings;
 
 /// <summary>
 /// Quy tắc chung xác định booking nào đang chiếm ghế của chuyến.
-/// Booking PendingPayment chỉ giữ ghế trong thời hạn HoldExpiresAt (15 phút);
+/// Booking PendingPayment chỉ giữ ghế trong thời hạn HoldExpiresAt (tối đa 15 phút);
 /// quá hạn thì ghế được coi là trống trở lại (job nền sẽ chuyển booking sang Expired).
 /// </summary>
 public static class BookingSeatOccupancySupport
