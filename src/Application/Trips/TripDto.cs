@@ -19,7 +19,9 @@ public sealed record TripSummaryDto(
     bool IsBookable = true,
     string? BookingClosedReason = null,
     EffectiveFareAdjustmentDto? FareAdjustment = null,
-    TripDelayInfoDto? DelayInfo = null);
+    TripDelayInfoDto? DelayInfo = null,
+    DateTimeOffset? AdjustedDepartureTime = null,
+    DateTimeOffset? AdjustedArrivalTime = null);
 
 public sealed record TripDelayInfoDto(
     int DelayMinutes,
@@ -54,7 +56,9 @@ public sealed record TripDetailDto(
     TripRouteEndpointDto? FromStation = null,
     TripRouteEndpointDto? ToStation = null,
     int StopCount = 0,
-    TripDelayInfoDto? DelayInfo = null);
+    TripDelayInfoDto? DelayInfo = null,
+    DateTimeOffset? AdjustedDepartureTime = null,
+    DateTimeOffset? AdjustedArrivalTime = null);
 
 public sealed record TripBoatDto(
     Guid VesselId,

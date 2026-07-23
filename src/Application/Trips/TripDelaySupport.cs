@@ -71,12 +71,21 @@ public static class TripDelaySupport
     {
         trip.DelayMinutes = delayMinutes;
         trip.DelayReason = delayMinutes > 0 ? reason : null;
-        trip.AdjustedDepartureTime = delayMinutes > 0
-            ? trip.DepartureTime.AddMinutes(delayMinutes)
-            : null;
-        trip.AdjustedArrivalTime = delayMinutes > 0
-            ? trip.ArrivalTime.AddMinutes(delayMinutes)
-            : null;
+
+        if (trip.TripStops.Count == 0)
+        {
+            var firstRouteStopOrder = trip.Route.RouteStops
+                .Select(x => x.StopOrder)
+                .DefaultIfEmpty(1)
+                .Min();
+            trip.AdjustedDepartureTime = delayMinutes > 0 && startStopOrder <= firstRouteStopOrder
+                ? trip.DepartureTime.AddMinutes(delayMinutes)
+                : trip.AdjustedDepartureTime;
+            trip.AdjustedArrivalTime = delayMinutes > 0
+                ? trip.ArrivalTime.AddMinutes(delayMinutes)
+                : null;
+            return;
+        }
 
         foreach (var stop in trip.TripStops.Where(x => x.StopOrder >= startStopOrder))
         {
@@ -92,6 +101,14 @@ public static class TripDelaySupport
                 ? stop.PlannedDepartureTime?.AddMinutes(delayMinutes)
                 : null;
         }
+
+        var orderedStops = trip.TripStops.OrderBy(x => x.StopOrder).ToList();
+        var firstStop = orderedStops.FirstOrDefault();
+        var lastStop = orderedStops.LastOrDefault();
+        trip.AdjustedDepartureTime = firstStop?.AdjustedDepartureTime;
+        trip.AdjustedArrivalTime = lastStop?.AdjustedArrivalTime
+            ?? lastStop?.AdjustedDepartureTime
+            ?? (delayMinutes > 0 ? trip.ArrivalTime.AddMinutes(delayMinutes) : null);
     }
 
     public static void AddDelayToFutureTrip(Trip trip, int additionalDelayMinutes, string reason)

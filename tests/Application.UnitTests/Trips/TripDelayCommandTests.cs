@@ -66,12 +66,20 @@ public class TripDelayCommandTests
 
         sourceTrip.DelayMinutes.ShouldBe(20);
         sourceTrip.DelayPropagationMinutes.ShouldBe(5);
+        sourceTrip.AdjustedDepartureTime.ShouldBeNull();
+        sourceTrip.AdjustedArrivalTime.ShouldBe(sourceTrip.ArrivalTime.AddMinutes(20));
         sourceTrip.TripStops.Single(x => x.StopOrder == 1).AdjustedDepartureTime.ShouldBeNull();
         var sourceStopB = sourceTrip.TripStops.Single(x => x.StopOrder == 2);
         sourceStopB.AdjustedArrivalTime.ShouldBe(sourceStopB.PlannedArrivalTime!.Value.AddMinutes(20));
         sourceStopB.AdjustedDepartureTime.ShouldBe(sourceStopB.PlannedDepartureTime!.Value.AddMinutes(20));
         var sourceStopC = sourceTrip.TripStops.Single(x => x.StopOrder == 3);
         sourceStopC.AdjustedArrivalTime.ShouldBe(sourceStopC.PlannedArrivalTime!.Value.AddMinutes(20));
+        resumed.Trip.AdjustedDepartureTime.ShouldBeNull();
+        resumed.Trip.AdjustedArrivalTime.ShouldBe(sourceTrip.ArrivalTime.AddMinutes(20));
+        resumed.Trip.Stops.Single(x => x.StopOrder == 3)
+            .ScheduledArrival.ShouldBe(sourceStopC.PlannedArrivalTime);
+        resumed.Trip.Stops.Single(x => x.StopOrder == 3)
+            .AdjustedArrival.ShouldBe(sourceStopC.PlannedArrivalTime!.Value.AddMinutes(20));
 
         futureSameBoat.DelayMinutes.ShouldBe(5);
         futureSameBoat.DelayReason!.ShouldContain("TR-SOURCE");

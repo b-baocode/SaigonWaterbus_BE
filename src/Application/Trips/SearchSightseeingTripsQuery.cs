@@ -117,7 +117,9 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                 IsBookingClosed: false,
                 IsBookable: available > 0,
                 FareAdjustment: fareAdjustment,
-                DelayInfo: TripDelaySupport.ToDelayInfoDto(t));
+                DelayInfo: TripDelaySupport.ToDelayInfoDto(t),
+                AdjustedDepartureTime: t.AdjustedDepartureTime,
+                AdjustedArrivalTime: t.AdjustedArrivalTime);
         }).ToList();
     }
 }

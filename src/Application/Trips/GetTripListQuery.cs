@@ -31,7 +31,9 @@ public sealed record TripAdminListItemDto(
     TripRouteEndpointDto? FromStation = null,
     TripRouteEndpointDto? ToStation = null,
     int StopCount = 0,
-    TripDelayInfoDto? DelayInfo = null);
+    TripDelayInfoDto? DelayInfo = null,
+    DateTimeOffset? AdjustedDepartureTime = null,
+    DateTimeOffset? AdjustedArrivalTime = null);
 
 [Authorize(Roles = "Admin,Manager,Staff")]
 public sealed record GetTripListQuery(
@@ -147,7 +149,9 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
                 TripMediaSupport.ResolveFromStation(t),
                 TripMediaSupport.ResolveToStation(t),
                 t.TripStops.Count > 0 ? t.TripStops.Count : t.Route.RouteStops.Count,
-                TripDelaySupport.ToDelayInfoDto(t));
+                TripDelaySupport.ToDelayInfoDto(t),
+                t.AdjustedDepartureTime,
+                t.AdjustedArrivalTime);
             })
             .ToList();
 

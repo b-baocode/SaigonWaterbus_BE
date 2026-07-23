@@ -221,7 +221,9 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 IsBookable: isBookable,
                 BookingClosedReason: missingDistanceFare ? Fares.DistanceFareSupport.MissingDistanceReason : null,
                 FareAdjustment: fareAdjustment,
-                DelayInfo: TripDelaySupport.ToDelayInfoDto(t));
+                DelayInfo: TripDelaySupport.ToDelayInfoDto(t),
+                AdjustedDepartureTime: t.AdjustedDepartureTime,
+                AdjustedArrivalTime: t.AdjustedArrivalTime);
         })
         .Where(dto => dto is not null)
         .Select(dto => dto!)
