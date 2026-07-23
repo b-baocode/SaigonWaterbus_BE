@@ -362,6 +362,25 @@ internal sealed class BookingLegResolver
                 $"Seat '{overlappingSeat.Seat!.Code}' is duplicated in this booking.")]);
     }
 
+    /// <summary>
+    /// Booking chỉ được giữ tối đa 15 phút và không được vượt hạn đóng bán của bất kỳ chặng nào
+    /// trong đơn. Ví dụ tàu rời bến lên 20:47, đóng bán trước 10 phút, thì hold muộn nhất là 20:37.
+    /// </summary>
+    public static DateTimeOffset ResolveHoldExpiresAt(IEnumerable<ResolvedLeg> legs, DateTimeOffset now)
+    {
+        var standardHoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration);
+        var segmentDeadline = legs
+            .SelectMany(leg => leg.ItemPrices.Select(x =>
+                Trips.BookingCutoffSupport.ResolveBookingDeadline(
+                    leg.Trip,
+                    x.Resolved.FromStop.StopOrder,
+                    x.Resolved.ToStop.StopOrder)))
+            .DefaultIfEmpty(standardHoldExpiresAt)
+            .Min();
+
+        return segmentDeadline < standardHoldExpiresAt ? segmentDeadline : standardHoldExpiresAt;
+    }
+
     /// <summary>Dựng BookingPassenger cho mọi chiều của booking (chiều đi + chiều về nếu có).</summary>
     public static void AddPassengers(Booking booking, IEnumerable<ResolvedLeg> legs)
     {

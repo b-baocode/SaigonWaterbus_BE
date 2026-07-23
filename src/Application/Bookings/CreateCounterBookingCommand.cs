@@ -159,6 +159,7 @@ public sealed class CreateCounterBookingCommandHandler
         {
             legs.Add(returnLeg);
         }
+        var holdExpiresAt = BookingLegResolver.ResolveHoldExpiresAt(legs, now);
 
         var ticketSubtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
             + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
@@ -191,7 +192,7 @@ public sealed class CreateCounterBookingCommandHandler
             TotalAmount = subtotal,
             RemainingAmount = subtotal,
             InsuranceSnapshot = insuranceSnapshot,
-            HoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration)
+            HoldExpiresAt = holdExpiresAt
         };
 
         BookingLegResolver.AddPassengers(booking, legs);

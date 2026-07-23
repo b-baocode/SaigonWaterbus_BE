@@ -42,6 +42,13 @@ public sealed class Trips : IEndpointGroup
         }
         """;
 
+    private const string CancelNoShowExample =
+        """
+        {
+          "statusNote": "Khách không có mặt tại bến"
+        }
+        """;
+
     private const string StartDelayExample =
         """
         {
@@ -199,6 +206,19 @@ public sealed class Trips : IEndpointGroup
                 "statusNote: ghi chu kem theo (optional).",
                 "Delayed: he thong tu bao khach co booking tren chuyen (in-app + SignalR); GPS thay tau chay se tu chuyen lai Boarding/InProgress."));
 
+        group.MapPost(CancelSightseeingTripNoShow, "{id:guid}/cancel-no-show")
+            .RequireAuthorization()
+            .WithSummary("Huy chuyen sightseeing vi khach khong den")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                CancelNoShowExample,
+                "Chi ap dung routeType=SightseeingLoop.",
+                "Dung khi chuyen co booking nhung khach khong co mat tai ben, admin/manager quyet dinh huy chuyen.",
+                "BE set tripStatus=Cancelled va statusNote mac dinh neu FE khong gui.",
+                "Cac ve Active cua chuyen se chuyen TicketStatus=Cancelled de khong check-in duoc sau do.",
+                "Booking/payment da thanh toan GIU NGUYEN; khong tu dong refund trong flow no-show.",
+                "Neu da co ve CheckedIn/CheckedOut thi tra 400, vi khong con dung nghia khach khong den."));
+
         group.MapPost(StartTripDelay, "{id:guid}/delay/start")
             .RequireAuthorization()
             .WithSummary("Nhan vien tren tau bat dau bao delay")
@@ -293,6 +313,15 @@ public sealed class Trips : IEndpointGroup
         Results.Ok(await sender.Send(new UpdateTripStatusCommand(id, req.TripStatus, req.StatusNote), ct));
 
     public sealed record UpdateTripStatusRequest(TripStatus TripStatus, string? StatusNote);
+
+    private static async Task<IResult> CancelSightseeingTripNoShow(
+        ISender sender,
+        Guid id,
+        CancelSightseeingTripNoShowRequest req,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CancelSightseeingTripNoShowCommand(id, req.StatusNote), ct));
+
+    public sealed record CancelSightseeingTripNoShowRequest(string? StatusNote);
 
     private static async Task<IResult> StartTripDelay(ISender sender, Guid id, StartTripDelayRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new StartTripDelayCommand(id, req.Reason, req.StartStopOrder), ct));

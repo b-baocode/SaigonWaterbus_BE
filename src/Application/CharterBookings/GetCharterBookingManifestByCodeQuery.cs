@@ -193,7 +193,8 @@ internal static class CharterBookingManifestSupport
                     ticketsByPassengerId.TryGetValue(passenger.Id, out var ticket);
                     return ToPassengerDto(passenger, ticket, canCheckInBooking);
                 })
-                .ToList());
+                .ToList(),
+            booking.BoatId);
     }
 
     public static IReadOnlyList<CharterBookingItineraryStopDto> ToItineraryStopDtos(Booking booking) =>

@@ -9,9 +9,8 @@ public static class BookingExpirationPolicy
     /// BookingCutoffSupport — không phải giờ rời bến đầu tuyến). Áp ở cả tạo booking,
     /// giữ ghế và tìm chuyến.
     ///
-    /// Lưu ý: mốc này NGẮN HƠN thời hạn giữ chỗ chờ thanh toán (15 phút), nên booking
-    /// đặt sát giờ có thể còn PendingPayment khi tàu đã rời bến lên. Ghế vẫn bị giữ tới hết 15
-    /// phút rồi mới nhả — lúc đó bán lại không còn ý nghĩa cho chặng đã qua.
+    /// Lưu ý: thời hạn giữ chỗ chờ thanh toán là tối đa 15 phút, nhưng khi đặt sát giờ thì
+    /// HoldExpiresAt phải bị cắt về mốc đóng bán này để ghế không bị giữ sau giờ lên tàu.
     /// </summary>
     public static TimeSpan BookingCutoffBeforeDeparture => TimeSpan.FromMinutes(10);
 

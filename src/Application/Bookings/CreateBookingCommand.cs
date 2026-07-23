@@ -203,6 +203,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         {
             legs.Add(returnLeg);
         }
+        var holdExpiresAt = BookingLegResolver.ResolveHoldExpiresAt(legs, now);
 
         var ticketSubtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
             + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
@@ -234,7 +235,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             DiscountAmount = 0,
             TotalAmount = subtotal,
             InsuranceSnapshot = insuranceSnapshot,
-            HoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration)
+            HoldExpiresAt = holdExpiresAt
         };
 
         BookingLegResolver.AddPassengers(booking, legs);

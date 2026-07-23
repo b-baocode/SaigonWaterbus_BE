@@ -56,7 +56,8 @@ public sealed class GetAdminCharterBookingListQueryHandler
                     : new CharterBookingUserAssignmentDto(
                         x.AssignedManager.Id,
                         x.AssignedManager.FullName,
-                        x.AssignedManager.UserCode)))
+                        x.AssignedManager.UserCode),
+                x.BoatId))
             .ToListAsync(cancellationToken);
     }
 }

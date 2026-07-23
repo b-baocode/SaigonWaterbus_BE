@@ -117,6 +117,44 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task RegularBookingPaymentLinkExpiresAtHoldDeadlineWhenHoldIsEarlier()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var holdExpiresAt = now.AddMinutes(2);
+        var booking = new Booking
+        {
+            UserId = userId,
+            BookingCode = "BK-HOLD-LIMIT",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000,
+            HoldExpiresAt = holdExpiresAt
+        };
+        context.Add(booking);
+        await context.SaveChangesAsync();
+        var gateway = new TestPaymentGateway();
+
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            gateway,
+            new TestPaymentNotificationSender(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(new CreatePaymentCommand(booking.Id), CancellationToken.None);
+
+        result.ExpiresAt.ShouldBe(holdExpiresAt);
+        gateway.CreateRequests.Single().ExpiredAt.ShouldBe(holdExpiresAt);
+        context.Set<Payment>().Single().ExpiresAt.ShouldBe(holdExpiresAt);
+    }
+
+    [Test]
     public async Task RegularZeroAmountBookingCompletesWithoutPayOsAndIssuesTicket()
     {
         await using var context = SeatFlowTestData.CreateContext();

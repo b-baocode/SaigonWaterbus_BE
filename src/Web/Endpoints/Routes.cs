@@ -50,6 +50,7 @@ public sealed class Routes : IEndpointGroup
         """
         {
           "standardTravelMin": 10,
+          "distanceFromPreviousKm": 2.5,
           "isPickupAllowed": true,
           "isDropoffAllowed": true
         }
@@ -119,7 +120,8 @@ public sealed class Routes : IEndpointGroup
                 "Admin",
                 UpdateStopExample,
                 "Khong doi duoc stationId hay stopOrder sau khi tao.",
-                "Dung API nay de chinh thoi gian di chuyen va quyen len/xuong."));
+                "Dung API nay de chinh thoi gian di chuyen, so km tu ben lien truoc va quyen len/xuong.",
+                "distanceFromPreviousKm bat buoc cho cac stop_order > 1 tren routeType=Regular neu muon ban ve waterbus tinh gia theo km; stop dau tien de null."));
 
         group.MapDelete(DeleteRoute, "{id:guid}")
             .RequireAuthorization()
