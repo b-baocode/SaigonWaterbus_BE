@@ -6,6 +6,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Infrastructure.Ai;
 using SaigonWaterbus.Infrastructure.Auth;
 using SaigonWaterbus.Infrastructure.Data;
 using SaigonWaterbus.Infrastructure.Data.Interceptors;
@@ -69,6 +70,8 @@ public static class DependencyInjection
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddHttpClient(PayOsHttpClientName);
+        builder.Services.AddHttpClient(GeminiChatCompletionService.HttpClientName);
+        builder.Services.AddScoped<IChatCompletionService, GeminiChatCompletionService>();
         builder.Services.AddHttpClient(IncidentGpsHookHttpClientName, (provider, client) =>
         {
             var options = provider.GetRequiredService<IOptions<IncidentGpsHookOptions>>().Value;
@@ -165,6 +168,7 @@ public static class DependencyInjection
         builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
         builder.Services.Configure<IncidentGpsHookOptions>(builder.Configuration.GetSection(IncidentGpsHookOptions.SectionName));
         builder.Services.Configure<CharterRouteEstimateOptions>(builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName));
+        builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection(GeminiOptions.SectionName));
         CharterRouteEstimateOptionsSetup.ConfigureDefaults(
             builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName).Get<CharterRouteEstimateOptions>());
 
