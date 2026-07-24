@@ -8,14 +8,17 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Trips;
 
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin")]
 public sealed record GenerateTripsCommand(
     string RouteCode,
     string BoatCode,
-    IReadOnlyList<TimeOnly> DepartureTimes,
+    IReadOnlyList<TimeOnly>? DepartureTimes,
     DateOnly FromDate,
     DateOnly ToDate,
-    IReadOnlyList<int>? DaysOfWeek = null) : IRequest<GenerateTripsResult>;
+    IReadOnlyList<int>? DaysOfWeek = null,
+    TimeOnly? StartTime = null,
+    TimeOnly? EndTime = null,
+    int? IntervalMinutes = null) : IRequest<GenerateTripsResult>;
 
 public sealed record GenerateTripsResult(
     int Created,
@@ -32,7 +35,22 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
     {
         RuleFor(x => x.RouteCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.DepartureTimes).NotEmpty().WithMessage("At least one departure time is required.");
+        RuleFor(x => x)
+            .Must(HasOneScheduleInput)
+            .WithMessage("Gui departureTimes hoac gui startTime/endTime/intervalMinutes de tao lien tuc.")
+            .OverridePropertyName(nameof(GenerateTripsCommand.DepartureTimes));
+        RuleFor(x => x)
+            .Must(x => !HasExplicitDepartureTimes(x) || !HasContinuousSchedule(x))
+            .WithMessage("Chi duoc gui mot trong hai cach: departureTimes hoac startTime/endTime/intervalMinutes.")
+            .OverridePropertyName(nameof(GenerateTripsCommand.DepartureTimes));
+        RuleFor(x => x.IntervalMinutes)
+            .GreaterThanOrEqualTo(5)
+            .When(x => x.IntervalMinutes.HasValue)
+            .WithMessage("IntervalMinutes phai >= 5.");
+        RuleFor(x => x)
+            .Must(x => !HasContinuousSchedule(x) || x.StartTime!.Value < x.EndTime!.Value)
+            .WithMessage("EndTime phai lon hon StartTime.")
+            .OverridePropertyName(nameof(GenerateTripsCommand.EndTime));
         RuleFor(x => x.FromDate).NotEmpty();
         RuleFor(x => x.ToDate)
             .NotEmpty()
@@ -45,6 +63,17 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
             .WithMessage("DaysOfWeek values must be 0–6 (0=Sunday, 6=Saturday).")
             .When(x => x.DaysOfWeek is not null);
     }
+
+    private static bool HasExplicitDepartureTimes(GenerateTripsCommand command) =>
+        command.DepartureTimes is { Count: > 0 };
+
+    private static bool HasContinuousSchedule(GenerateTripsCommand command) =>
+        command.StartTime.HasValue
+        && command.EndTime.HasValue
+        && command.IntervalMinutes.HasValue;
+
+    private static bool HasOneScheduleInput(GenerateTripsCommand command) =>
+        HasExplicitDepartureTimes(command) || HasContinuousSchedule(command);
 }
 
 public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsCommand, GenerateTripsResult>
@@ -99,6 +128,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             .Select(t => t.DepartureTime)
             .ToHashSetAsync(cancellationToken);
 
+        var departureTimes = ResolveDepartureTimes(request);
         var allowedDays = request.DaysOfWeek is { Count: > 0 }
             ? request.DaysOfWeek.Select(d => (DayOfWeek)d).ToHashSet()
             : null;
@@ -137,7 +167,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             if (allowedDays is not null && !allowedDays.Contains(date.DayOfWeek))
                 continue;
 
-            foreach (var time in request.DepartureTimes)
+            foreach (var time in departureTimes)
             {
                 var departureTime = new DateTimeOffset(
                     date.Year, date.Month, date.Day,
@@ -176,7 +206,10 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     continue;
                 }
 
-                var tripCode = $"TR-{date:yyyyMMdd}-{routeCode}-{time:HHmm}";
+                var tripCode = TripCodeSupport.BuildRegularOrSightseeingTripCode(
+                    route,
+                    date,
+                    time.ToString("HHmm"));
 
                 var trip = new Trip
                 {
@@ -221,5 +254,26 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             skippedPast,
             createdCodes,
             skippedMissingOnBoardStaff);
+    }
+
+    private static IReadOnlyList<TimeOnly> ResolveDepartureTimes(GenerateTripsCommand request)
+    {
+        if (request.DepartureTimes is { Count: > 0 })
+        {
+            return request.DepartureTimes
+                .Distinct()
+                .Order()
+                .ToList();
+        }
+
+        var times = new List<TimeOnly>();
+        var currentMinutes = request.StartTime!.Value.Hour * 60 + request.StartTime.Value.Minute;
+        var endMinutes = request.EndTime!.Value.Hour * 60 + request.EndTime.Value.Minute;
+        for (var minute = currentMinutes; minute <= endMinutes; minute += request.IntervalMinutes!.Value)
+        {
+            times.Add(TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minute)));
+        }
+
+        return times;
     }
 }

@@ -17,7 +17,7 @@ public sealed record CreateTripStopScheduleInput(int StopOrder, int StayDuration
 /// Tao chuyen tau. BoatCode BAT BUOC: trip luon gan tau de sinh trip_seats (khong co ghe thi khong ban ve duoc).
 /// CapacitySnapshot tu dong lay theo so ghe active cua tau, khong cho nhap tay.
 /// </summary>
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin")]
 public sealed record CreateTripCommand(
     string? RouteCode,
     string BoatCode,
@@ -84,7 +84,10 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteId), "Route must have at least 2 stops.")]);
 
-        var tripCode = $"TR-{request.OperatingDate:yyyyMMdd}-{route.RouteCode}-{Random.Shared.Next(1000, 9999)}";
+        var tripCode = TripCodeSupport.BuildRegularOrSightseeingTripCode(
+            route,
+            request.OperatingDate,
+            Random.Shared.Next(1000, 9999).ToString());
 
         var departureTime = request.DepartureTime.ToUniversalTime();
         var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(

@@ -9,7 +9,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Trips;
 
-[Authorize(Roles = "Admin,Manager")]
+[Authorize(Roles = "Admin")]
 public sealed record CancelSightseeingTripNoShowCommand(
     Guid TripId,
     string? StatusNote = null) : IRequest<TripDetailDto>;

@@ -191,7 +191,7 @@ internal static class CharterBookingTripSupport
     }
 
     public static string BuildTripCode(Booking booking, int boatOrder) =>
-        $"CH-{booking.DepartureDate!.Value:yyyyMMdd}-{booking.BookingCode}-{boatOrder}";
+        TripCodeSupport.BuildCharterBookingTripCode(booking, boatOrder);
 
     /// <summary>Huy cac trip da sinh tu charter booking (khi booking bi huy/hoan tien).</summary>
     public static async Task<int> CancelLinkedTripsAsync(

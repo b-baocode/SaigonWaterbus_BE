@@ -8,7 +8,7 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.Trips;
 
-[Authorize(Roles = "Admin,Manager,Staff")]
+[Authorize(Roles = "Admin,Staff")]
 public sealed record UpdateTripStatusCommand(
     Guid TripId,
     TripStatus TripStatus,
@@ -90,7 +90,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         Booking? sourceBooking = null,
         IReadOnlyList<TripStopDto>? stops = null,
         IReadOnlyList<TripStaffAssignmentDto>? onBoardStaff = null,
-        int totalPassengerCount = 0) => new(
+        int totalPassengerCount = 0,
+        TripIncidentInfoDto? incidentInfo = null) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
         trip.Route.RouteType,
@@ -110,7 +111,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         stops?.Count ?? (trip.TripStops.Count > 0 ? trip.TripStops.Count : trip.Route.RouteStops.Count),
         TripDelaySupport.ToDelayInfoDto(trip),
         trip.AdjustedDepartureTime,
-        trip.AdjustedArrivalTime);
+        trip.AdjustedArrivalTime,
+        incidentInfo);
 
     private async Task<Booking?> LoadSourceBookingAsync(Trip trip, CancellationToken cancellationToken)
     {

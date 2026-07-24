@@ -16,11 +16,15 @@ public sealed class GetPublishedBlogPostListQueryHandler
         GetPublishedBlogPostListQuery request,
         CancellationToken cancellationToken)
     {
-        return await _context.Set<BlogPost>()
+        var posts = await _context.Set<BlogPost>()
             .AsNoTracking()
+            .Include(x => x.Author)
             .Where(x => x.Status == BlogPostSupport.PublishedStatus)
             .OrderByDescending(x => x.PublishedAt ?? x.Created)
             .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        return posts
             .Select(x => new BlogPostSummaryDto(
                 x.Id,
                 x.Title,
@@ -28,12 +32,13 @@ public sealed class GetPublishedBlogPostListQueryHandler
                 x.Summary,
                 x.Category,
                 x.ImageUrl,
+                BlogPostSupport.CreateImageUrls(x),
                 x.ImageAltText,
                 x.Status,
                 x.PublishedAt,
                 x.Created,
                 x.AuthorId,
                 x.Author.FullName))
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 }

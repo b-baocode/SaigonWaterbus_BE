@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Application.StaffWorkAssignments;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -65,6 +66,7 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
                         .ToList());
         }
         var passengerCounts = await LoadPassengerCountsAsync(trip, now, cancellationToken);
+        var incidentInfo = await LoadIncidentInfoAsync(trip, cancellationToken);
 
         return UpdateTripStatusCommandHandler.ToDetailDto(
             trip,
@@ -74,7 +76,60 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
                 scanningStaffByTripStopId: scanningStaffByStop,
                 passengerCountsByTripStopId: passengerCounts.ByTripStopId),
             onBoardStaff,
-            passengerCounts.TotalPassengerCount);
+            passengerCounts.TotalPassengerCount,
+            incidentInfo);
+    }
+
+    private async Task<TripIncidentInfoDto?> LoadIncidentInfoAsync(
+        Trip trip,
+        CancellationToken cancellationToken)
+    {
+        var incident = await _context.Incidents
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .Include(x => x.RescueBoat)
+            .Include(x => x.ReplacementBoat)
+            .Include(x => x.ReplacementTargetStation)
+            .Where(x => x.TripId == trip.Id)
+            .OrderByDescending(x => x.ResolutionStatus == IncidentSupport.OpenStatus)
+            .ThenByDescending(x => x.OccurredAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+        if (incident is null)
+        {
+            return null;
+        }
+
+        return new TripIncidentInfoDto(
+            incident.Id,
+            incident.IncidentType,
+            incident.Severity,
+            incident.ResolutionStatus,
+            incident.OccurredAt,
+            incident.BoatId,
+            incident.Boat.Name,
+            incident.Boat.Code,
+            incident.RescueBoatId,
+            incident.RescueBoat?.Name,
+            incident.RescueBoat?.Code,
+            incident.ReplacementBoatId,
+            incident.ReplacementBoat?.Name,
+            incident.ReplacementBoat?.Code,
+            incident.ReplacementBoatId.HasValue && trip.BoatId == incident.ReplacementBoatId,
+            incident.ReplacementMissionType,
+            incident.ReplacementTargetStationId,
+            incident.ReplacementTargetStation?.StationCode,
+            incident.ReplacementTargetStation?.StationName,
+            incident.ReplacementTargetStopOrder,
+            incident.ReplacementDelayMinutes,
+            incident.ReplacementEstimatedResumeAt,
+            incident.ActiveTicketCountSnapshot,
+            incident.OnboardPassengerCountSnapshot,
+            incident.FuturePassengerCountSnapshot,
+            incident.ReplacementNote,
+            incident.RescueDispatchedAt,
+            incident.ReplacementAssignedAt,
+            incident.ResolvedAt);
     }
 
     private async Task<IReadOnlyList<StaffWorkAssignment>> LoadTripAssignmentsAsync(

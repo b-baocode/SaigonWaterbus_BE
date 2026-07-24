@@ -40,7 +40,7 @@ public sealed record TripAdminListItemDto(
     DateTimeOffset? AdjustedDepartureTime = null,
     DateTimeOffset? AdjustedArrivalTime = null);
 
-[Authorize(Roles = "Admin,Manager,Staff")]
+[Authorize(Roles = "Admin,Staff")]
 public sealed record GetTripListQuery(
     DateOnly? OperatingDate,
     string? RouteCode,

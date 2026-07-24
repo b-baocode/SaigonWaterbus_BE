@@ -1,7 +1,9 @@
 using Microsoft.Extensions.Logging;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -21,6 +23,12 @@ public sealed record OperationScheduleItemDto(
     Guid? RouteId,
     string? RouteCode,
     string? RouteName,
+    string RouteType,
+    string TripType,
+    string ServiceType,
+    bool SellsBySegment,
+    int CapacitySnapshot,
+    int TotalPassengerCount,
     Guid? FromStationId,
     string? FromStationCode,
     string FromLocation,
@@ -63,13 +71,32 @@ public sealed record OperationScheduleItemDto(
     decimal? RemainingDistanceKmToNextStation,
     int? RemainingMinutesToNextStation,
     bool IsGpsOnline,
-    TripStopDwellCountdownDto? DwellCountdown = null);
+    TripStopDwellCountdownDto? DwellCountdown = null,
+    IReadOnlyList<OperationScheduleStopDto>? Stops = null);
 
-[Authorize(Roles = "Admin,Manager,Staff")]
+public sealed record OperationScheduleStopDto(
+    Guid? TripStopId,
+    int StopOrder,
+    Guid StationId,
+    string? StationCode,
+    string StationName,
+    DateTimeOffset? ScheduledArrivalAt,
+    DateTimeOffset? ScheduledDepartureAt,
+    DateTimeOffset? AdjustedArrivalAt,
+    DateTimeOffset? AdjustedDepartureAt,
+    DateTimeOffset? ActualArrivalAt,
+    DateTimeOffset? ActualDepartureAt,
+    int StayDurationMinutes,
+    string? StopStatus);
+
+[Authorize(Roles = "Admin,Manager,Staff,Customer")]
 public sealed record GetOperationScheduleQuery(
     DateTimeOffset From,
     DateTimeOffset To,
-    bool IncludeCancelled = false) : IRequest<IReadOnlyList<OperationScheduleItemDto>>;
+    bool IncludeCancelled = false,
+    string? ServiceType = null,
+    string? RouteType = null,
+    Guid? StationId = null) : IRequest<IReadOnlyList<OperationScheduleItemDto>>;
 
 public sealed class GetOperationScheduleQueryHandler
     : IRequestHandler<GetOperationScheduleQuery, IReadOnlyList<OperationScheduleItemDto>>
@@ -77,13 +104,16 @@ public sealed class GetOperationScheduleQueryHandler
     private const int GpsOnlineThresholdSeconds = 60;
 
     private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
 
     public GetOperationScheduleQueryHandler(
         IApplicationDbContext context,
+        IUserContext userContext,
         TimeProvider timeProvider)
     {
         _context = context;
+        _userContext = userContext;
         _timeProvider = timeProvider;
     }
 
@@ -98,6 +128,14 @@ public sealed class GetOperationScheduleQueryHandler
             throw AuthSupport.CreateValidationException(nameof(request.To), "Khoảng thời gian lịch không hợp lệ.");
         }
 
+        var access = await ResolveAccessAsync(request, from, to, cancellationToken);
+        if (access.MaxDays.HasValue && (int)Math.Ceiling((to - from).TotalDays) > access.MaxDays.Value)
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(request.To),
+                $"Customer chỉ được xem lịch tối đa {access.MaxDays.Value} ngày.");
+        }
+
         var query = _context.Set<Trip>()
             .AsNoTracking()
             .Include(x => x.Boat)
@@ -108,9 +146,30 @@ public sealed class GetOperationScheduleQueryHandler
                 .ThenInclude(x => x.Station)
             .Where(x => x.DepartureTime < to && x.ArrivalTime >= from);
 
-        if (!request.IncludeCancelled)
+        var routeType = ResolveRouteType(request.RouteType);
+        if (routeType is not null)
+        {
+            query = query.Where(x => x.Route.RouteType == routeType);
+        }
+
+        var serviceType = access.ForcedServiceType ?? ResolveServiceType(request.ServiceType);
+        query = ApplyServiceTypeFilter(query, serviceType);
+
+        if (!request.IncludeCancelled || !access.CanIncludeCancelled)
         {
             query = query.Where(x => x.TripStatus != TripStatus.Cancelled);
+        }
+
+        if (access.AllowedStationIds is not null)
+        {
+            if (access.AllowedStationIds.Count == 0)
+            {
+                return [];
+            }
+
+            var stationIds = access.AllowedStationIds.ToArray();
+            query = query.Where(x => x.TripStops.Any(stop => stationIds.Contains(stop.StationId))
+                || x.Route.RouteStops.Any(stop => stationIds.Contains(stop.StationId)));
         }
 
         var trips = await query
@@ -129,14 +188,36 @@ public sealed class GetOperationScheduleQueryHandler
                 .AsNoTracking()
                 .Where(x => boatIds.Contains(x.BoatId))
                 .ToDictionaryAsync(x => x.BoatId, cancellationToken);
+        if (!access.CanViewLiveTelemetry)
+        {
+            latestLocations.Clear();
+        }
 
         var now = _timeProvider.GetUtcNow();
+        var tripIds = trips.Select(x => x.Id).ToArray();
+        var passengerCounts = tripIds.Length == 0
+            ? new Dictionary<Guid, int>()
+            : await _context.Set<BookingPassenger>()
+                .AsNoTracking()
+                .Where(x => (x.TripId.HasValue && tripIds.Contains(x.TripId.Value))
+                    || (!x.TripId.HasValue && x.Booking.TripId.HasValue && tripIds.Contains(x.Booking.TripId.Value)))
+                .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
+                .Select(x => new { TripId = x.TripId ?? x.Booking.TripId })
+                .Where(x => x.TripId.HasValue)
+                .GroupBy(x => x.TripId!.Value)
+                .Select(g => new { TripId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
+
         return trips
             .Select(trip =>
             {
                 latestLocations.TryGetValue(trip.BoatId ?? Guid.Empty, out var latestLocation);
                 var tripLatestLocation = latestLocation?.TripId == trip.Id ? latestLocation : null;
-                return ToOperationScheduleItem(trip, tripLatestLocation, now);
+                return ToOperationScheduleItem(
+                    trip,
+                    tripLatestLocation,
+                    now,
+                    passengerCounts.GetValueOrDefault(trip.Id));
             })
             .ToArray();
     }
@@ -144,7 +225,8 @@ public sealed class GetOperationScheduleQueryHandler
     private static OperationScheduleItemDto ToOperationScheduleItem(
         Trip trip,
         BoatLatestLocation? latestLocation,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        int totalPassengerCount)
     {
         var tripStops = trip.TripStops
             .OrderBy(x => x.StopOrder)
@@ -185,6 +267,12 @@ public sealed class GetOperationScheduleQueryHandler
             trip.RouteId,
             trip.Route.RouteCode,
             trip.Route.RouteName,
+            trip.Route.RouteType,
+            trip.TripType,
+            ResolveServiceType(trip),
+            DistanceFareSupport.UsesDistanceFare(trip.TripType, trip.Route.RouteType),
+            trip.CapacitySnapshot,
+            totalPassengerCount,
             fromStation.StationId,
             fromStation.StationCode,
             fromStation.LocationName,
@@ -232,7 +320,209 @@ public sealed class GetOperationScheduleQueryHandler
             latestLocation?.RemainingDistanceKmToNextStation,
             latestLocation?.RemainingMinutesToNextStation,
             isGpsOnline,
-            dwellCountdown);
+            dwellCountdown,
+            BuildStopDtos(tripStops, routeStops));
+    }
+
+    private static IReadOnlyList<OperationScheduleStopDto> BuildStopDtos(
+        IReadOnlyList<TripStop> tripStops,
+        IReadOnlyList<RouteStop> routeStops)
+    {
+        if (tripStops.Count > 0)
+        {
+            return tripStops
+                .OrderBy(x => x.StopOrder)
+                .Select(x => new OperationScheduleStopDto(
+                    x.Id,
+                    x.StopOrder,
+                    x.StationId,
+                    x.Station?.StationCode,
+                    x.Station?.StationName ?? "Chưa xác định",
+                    x.PlannedArrivalTime,
+                    x.PlannedDepartureTime,
+                    x.AdjustedArrivalTime,
+                    x.AdjustedDepartureTime,
+                    x.ActualArrivalTime,
+                    x.ActualDepartureTime,
+                    x.StayDurationMinutes,
+                    x.StopStatus))
+                .ToArray();
+        }
+
+        return routeStops
+            .OrderBy(x => x.StopOrder)
+            .Select(x => new OperationScheduleStopDto(
+                TripStopId: null,
+                x.StopOrder,
+                x.StationId,
+                x.Station?.StationCode,
+                x.Station?.StationName ?? "Chưa xác định",
+                ScheduledArrivalAt: null,
+                ScheduledDepartureAt: null,
+                AdjustedArrivalAt: null,
+                AdjustedDepartureAt: null,
+                ActualArrivalAt: null,
+                ActualDepartureAt: null,
+                StayDurationMinutes: 0,
+                StopStatus: null))
+            .ToArray();
+    }
+
+    private async Task<OperationScheduleAccess> ResolveAccessAsync(
+        GetOperationScheduleQuery request,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        if (AuthSupport.IsCustomer(actor))
+        {
+            return new OperationScheduleAccess(
+                ForcedServiceType: OperationServiceTypes.Booking,
+                AllowedStationIds: request.StationId.HasValue ? [request.StationId.Value] : null,
+                CanIncludeCancelled: false,
+                CanViewLiveTelemetry: false,
+                MaxDays: 7);
+        }
+
+        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor))
+        {
+            return new OperationScheduleAccess(
+                ForcedServiceType: null,
+                AllowedStationIds: request.StationId.HasValue ? [request.StationId.Value] : null,
+                CanIncludeCancelled: true,
+                CanViewLiveTelemetry: true,
+                MaxDays: null);
+        }
+
+        if (!AuthSupport.IsStaff(actor))
+        {
+            throw new ForbiddenAccessException();
+        }
+
+        if (actor.StaffType == StaffType.OnBoard)
+        {
+            return new OperationScheduleAccess(
+                ForcedServiceType: null,
+                AllowedStationIds: request.StationId.HasValue ? [request.StationId.Value] : null,
+                CanIncludeCancelled: true,
+                CanViewLiveTelemetry: true,
+                MaxDays: null);
+        }
+
+        var assignedStationIds = await LoadGroundStaffStationIdsAsync(actor.Id, from, to, cancellationToken);
+        if (request.StationId.HasValue && !assignedStationIds.Contains(request.StationId.Value))
+        {
+            throw new ForbiddenAccessException();
+        }
+
+        return new OperationScheduleAccess(
+            ForcedServiceType: null,
+            AllowedStationIds: request.StationId.HasValue ? [request.StationId.Value] : assignedStationIds,
+            CanIncludeCancelled: true,
+            CanViewLiveTelemetry: true,
+            MaxDays: null);
+    }
+
+    private async Task<IReadOnlyCollection<Guid>> LoadGroundStaffStationIdsAsync(
+        Guid staffUserId,
+        DateTimeOffset from,
+        DateTimeOffset to,
+        CancellationToken cancellationToken)
+    {
+        var permanentStationIds = await _context.Set<UserStationAssignment>()
+            .AsNoTracking()
+            .Where(x => x.UserId == staffUserId && x.IsActive)
+            .Select(x => x.StationId)
+            .ToListAsync(cancellationToken);
+
+        var activeWorkStationIds = await _context.StaffWorkAssignments
+            .AsNoTracking()
+            .Where(x => x.StaffUserId == staffUserId
+                && x.AssignmentType == StaffWorkAssignmentType.Station
+                && x.StationId.HasValue
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
+                && x.StartAt < to
+                && x.EndAt >= from)
+            .Select(x => x.StationId!.Value)
+            .ToListAsync(cancellationToken);
+
+        return permanentStationIds
+            .Concat(activeWorkStationIds)
+            .Distinct()
+            .ToArray();
+    }
+
+    private static IQueryable<Trip> ApplyServiceTypeFilter(
+        IQueryable<Trip> query,
+        string? serviceType)
+    {
+        return serviceType switch
+        {
+            OperationServiceTypes.Booking => query.Where(x => x.TripType == TripTypes.Regular
+                && (x.Route.RouteType == RouteTypes.Regular || x.Route.RouteType == RouteTypes.SightseeingLoop)),
+            OperationServiceTypes.Bus => query.Where(x => x.TripType == TripTypes.Regular
+                && x.Route.RouteType == RouteTypes.Regular),
+            OperationServiceTypes.Sightseeing => query.Where(x => x.TripType == TripTypes.Regular
+                && x.Route.RouteType == RouteTypes.SightseeingLoop),
+            OperationServiceTypes.Charter => query.Where(x => x.TripType == TripTypes.Charter
+                || x.Route.RouteType == RouteTypes.Charter
+                || x.Route.RouteType == RouteTypes.CharterReference),
+            _ => query
+        };
+    }
+
+    private static string? ResolveRouteType(string? routeType)
+    {
+        if (string.IsNullOrWhiteSpace(routeType))
+        {
+            return null;
+        }
+
+        if (!RouteTypes.IsValid(routeType))
+        {
+            throw AuthSupport.CreateValidationException(
+                nameof(GetOperationScheduleQuery.RouteType),
+                $"routeType chi nhan {RouteTypes.Regular}, {RouteTypes.SightseeingLoop}, {RouteTypes.Charter} hoac {RouteTypes.CharterReference}.");
+        }
+
+        return RouteTypes.Normalize(routeType);
+    }
+
+    private static string? ResolveServiceType(string? serviceType)
+    {
+        if (string.IsNullOrWhiteSpace(serviceType)
+            || string.Equals(serviceType, OperationServiceTypes.All, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var normalized = serviceType.Trim().ToLowerInvariant();
+        return normalized switch
+        {
+            OperationServiceTypes.Booking => OperationServiceTypes.Booking,
+            OperationServiceTypes.Bus => OperationServiceTypes.Bus,
+            OperationServiceTypes.Sightseeing => OperationServiceTypes.Sightseeing,
+            OperationServiceTypes.Charter => OperationServiceTypes.Charter,
+            _ => throw AuthSupport.CreateValidationException(
+                nameof(GetOperationScheduleQuery.ServiceType),
+                "serviceType chi nhan all, booking, bus, sightseeing hoac charter.")
+        };
+    }
+
+    private static string ResolveServiceType(Trip trip)
+    {
+        if (trip.TripType == TripTypes.Charter
+            || trip.Route.RouteType == RouteTypes.Charter
+            || trip.Route.RouteType == RouteTypes.CharterReference)
+        {
+            return "Charter";
+        }
+
+        return trip.Route.RouteType == RouteTypes.SightseeingLoop
+            ? "Sightseeing"
+            : "Bus";
     }
 
     private static string BuildTitle(Trip trip) =>
@@ -460,6 +750,13 @@ public sealed class GetOperationScheduleQueryHandler
         string? StationCode,
         string LocationName);
 
+    private sealed record OperationScheduleAccess(
+        string? ForcedServiceType,
+        IReadOnlyCollection<Guid>? AllowedStationIds,
+        bool CanIncludeCancelled,
+        bool CanViewLiveTelemetry,
+        int? MaxDays);
+
     private sealed record StopEventInfo(string? Event, DateTimeOffset? OccurredAt);
 }
 
@@ -565,6 +862,15 @@ internal static class OperationPaymentStages
     public const string DepositPaid = "DepositPaid";
     public const string FullyPaid = "FullyPaid";
     public const string Failed = "Failed";
+}
+
+internal static class OperationServiceTypes
+{
+    public const string All = "all";
+    public const string Booking = "booking";
+    public const string Bus = "bus";
+    public const string Sightseeing = "sightseeing";
+    public const string Charter = "charter";
 }
 
 internal static class OperationStatuses

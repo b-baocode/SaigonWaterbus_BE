@@ -27,7 +27,10 @@ public sealed class Trips : IEndpointGroup
         {
           "routeCode": "R01-BD-TD",
           "boatCode": "BOAT-01",
-          "departureTimes": ["06:00:00", "08:00:00", "10:00:00"],
+          "departureTimes": null,
+          "startTime": "06:00:00",
+          "endTime": "18:00:00",
+          "intervalMinutes": 30,
           "fromDate": "2026-07-01",
           "toDate": "2026-07-31",
           "daysOfWeek": [1, 2, 3, 4, 5]
@@ -70,7 +73,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Danh sach chuyen tau (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoac Staff",
+                "Admin hoac Staff",
                 null,
                 "Query params (tat ca optional): operatingDate (dd/MM/yyyy hoac dd-MM-yyyy), routeCode (string), status (string), tripType (string), routeType (string).",
                 "status hop le: Scheduled | Boarding | InProgress | Completed | Delayed | Cancelled.",
@@ -118,6 +121,7 @@ public sealed class Trips : IEndpointGroup
                 "Moi stop co boardingPassengerCount, alightingPassengerCount, onboardPassengerCount va segmentPassengerCount; khach di A->C dem 1 lan trong totalPassengerCount nhung tinh vao ca doan A-B va B-C.",
                 "stops[] lay tu bang trip_stops (lich trinh da luu khi tao trip): gio den/di du kien tung ben, stayDurationMinutes va note (trip charter co thoi gian dung theo yeu cau booking).",
                 "Trip cu tao truoc khi co trip_stops -> BE tu suy lich trinh tu route stops + gio khoi hanh nhu truoc.",
+                "incidentInfo neu co su co gan voi trip: gom tau goc bi su co, tau cuu ho, tau thay the, mission, so khach bi anh huong va delay de FE show banner.",
                 "Ben dau chi co gio di, ben cuoi chi co gio den."));
 
         group.MapGet(GetTripSeatMap, "{id:guid}/seats")
@@ -163,7 +167,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Tao chuyen tau moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoac Manager",
+                "Admin",
                 CreateTripExample,
                 "Gui routeId hoac routeCode. Route phai Active va co it nhat 2 ben dung.",
                 "boatCode BAT BUOC: trip luon gan tau de sinh trip_seats (khong co ghe thi khong ban ve duoc).",
@@ -176,18 +180,21 @@ public sealed class Trips : IEndpointGroup
                 "operatingDate phai khop ngay cua departureTime theo gio Viet Nam (+07); lech ngay tra 400.",
                 "Khong nhap gia theo tung trip. Gia ve lay tu GET/PUT /api/seat-types, GET/PUT /api/fare-policy va phu thu /api/fare-policy/adjustments.",
                 "Gia ve khi dat = gia goc/chang da ap phu thu x he so loai ve (ADULT x1; INFANT/SENIOR/DISABLED mien phi, chi ghe STANDARD).",
-                "tripCode tu sinh: TR-{yyyyMMdd}-{routeCode}-{4 so ngau nhien}."));
+                "tripCode tu sinh theo loai chuyen: BB-{yyyyMMdd}-{routeCode}-{4 so ngau nhien} cho bus, BS-{yyyyMMdd}-{routeCode}-{4 so ngau nhien} cho sightseeing. Charter booking sinh BR-{yyyyMMdd}-{bookingCode}-{boatOrder}."));
 
         group.MapPost(GenerateTrips, "generate")
             .RequireAuthorization()
             .WithSummary("Tao hang loat chuyen tau theo lich")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoac Manager",
+                "Admin",
                 GenerateTripsExample,
                 "routeCode, boatCode: bat buoc.",
-                "departureTimes: mang gio khoi hanh (gio Vietnam +07:00), dinh dang HH:mm:ss.",
+                "Cach 1: gui departureTimes: mang gio khoi hanh (gio Vietnam +07:00), dinh dang HH:mm:ss.",
+                "Cach 2: gui startTime/endTime/intervalMinutes de BE tu tao chuyen lien tuc trong khoang gio. Vi du 06:00-18:00 moi 30 phut.",
                 "fromDate / toDate: khoang ngay tao chuyen (toi da 365 ngay).",
                 "daysOfWeek (optional): [0=CN, 1=T2, ..., 6=T7]. Bo trong = tat ca cac ngay.",
+                "Dung duoc cho ca routeType=Regular va SightseeingLoop; routeCode quyet dinh loai chuyen.",
+                "tripCode sinh hang loat: BB-{yyyyMMdd}-{routeCode}-{HHmm} cho bus, BS-{yyyyMMdd}-{routeCode}-{HHmm} cho sightseeing.",
                 "Khong nhap gia theo tung dot generate. Gia chuyen tu dong lay theo chinh sach gia hien hanh luc FE xem/dat ve.",
                 "Neu chuyen da ton tai (cung tuyen + cung gio), tu dong bo qua (skip).",
                 "Gio khoi hanh da troi qua HOAC cach hien tai chua du 20 phut cung bi bo qua, dem vao skippedPast.",
@@ -200,7 +207,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat trang thai chuyen tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoac Staff",
+                "Admin hoac Staff",
                 UpdateStatusExample,
                 "tripStatus hop le: Scheduled | Boarding | InProgress | Completed | Delayed | Cancelled.",
                 "statusNote: ghi chu kem theo (optional).",
@@ -210,10 +217,10 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Huy chuyen sightseeing vi khach khong den")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoac Manager",
+                "Admin",
                 CancelNoShowExample,
                 "Chi ap dung routeType=SightseeingLoop.",
-                "Dung khi chuyen co booking nhung khach khong co mat tai ben, admin/manager quyet dinh huy chuyen.",
+                "Dung khi chuyen co booking nhung khach khong co mat tai ben, Admin quyet dinh huy chuyen.",
                 "BE set tripStatus=Cancelled va statusNote mac dinh neu FE khong gui.",
                 "Cac ve Active cua chuyen se chuyen TicketStatus=Cancelled de khong check-in duoc sau do.",
                 "Booking/payment da thanh toan GIU NGUYEN; khong tu dong refund trong flow no-show.",
@@ -223,7 +230,7 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Nhan vien tren tau bat dau bao delay")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoac Staff OnBoard dang duoc phan ca tren tau",
+                "Admin hoac Staff OnBoard dang duoc phan ca tren tau",
                 StartDelayExample,
                 "Dung khi nhan vien tren tau bam nut Delay. Trip se co delayInfo.isDelayActive=true.",
                 "startStopOrder optional: ben bat dau delay. Neu FE khong gui, BE tu suy theo trip_stops actual/stopStatus.",
@@ -233,10 +240,11 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Nhan vien tren tau cho tau tiep tuc sau delay")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoac Staff OnBoard dang duoc phan ca tren tau",
+                "Admin hoac Staff OnBoard dang duoc phan ca tren tau",
                 ResumeDelayExample,
                 "Dung khi nhan vien bam tiep tuc. BE tinh so phut tu delayStartedAt den hien tai, cap nhat adjusted time cho cac ben con lai.",
-                "Neu tong delay > 15 phut thi cac trip sau cua cung boatId, cung operatingDate bi cong phan vuot 15 phut. Tau/route khac khong bi anh huong.",
+                "BE tinh day chuyen cho cac trip sau cua cung boatId, cung operatingDate theo cong thuc: gio tau san sang = adjustedArrival chuyen truoc + 15 phut quay dau.",
+                "Neu gio tau san sang lon hon gio khoi hanh du kien cua chuyen sau thi chuyen sau bi delay dung phan bi lan gio; route khac van co the bi anh huong neu cung tau.",
                 "Response tra trip moi nhat + affectedTrips. Realtime SignalR /hubs/tracking event tripDelayUpdated gui theo boat group."));
     }
 

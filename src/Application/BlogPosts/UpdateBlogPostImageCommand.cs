@@ -8,7 +8,9 @@ public sealed record UpdateBlogPostImageCommand(
     Guid BlogPostId,
     string? ImageUrl,
     string? ImageAltText = null,
-    BlogPostImageFileRequest? ImageFile = null) : IRequest<BlogPostDto>;
+    BlogPostImageFileRequest? ImageFile = null,
+    IReadOnlyCollection<string>? ImageUrls = null,
+    IReadOnlyCollection<BlogPostImageFileRequest>? ImageFiles = null) : IRequest<BlogPostDto>;
 
 public sealed record BlogPostImageFileRequest(
     string FileName,
@@ -25,6 +27,10 @@ public sealed class UpdateBlogPostImageCommandValidator : AbstractValidator<Upda
             .MaximumLength(2048)
             .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
             .WithMessage("ImageUrl must be an absolute URL.");
+        RuleForEach(x => x.ImageUrls)
+            .MaximumLength(2048)
+            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
+            .WithMessage("ImageUrls must contain absolute URLs.");
         RuleFor(x => x.ImageAltText).MaximumLength(200);
     }
 }
@@ -57,14 +63,34 @@ public sealed class UpdateBlogPostImageCommandHandler
             .SingleOrDefaultAsync(x => x.Id == request.BlogPostId, cancellationToken)
             ?? throw new NotFoundException("Blog post not found.");
 
-        post.ImageUrl = request.ImageFile is null
-            ? BlogPostSupport.NormalizeImageUrl(request.ImageUrl, nameof(request.ImageUrl))
-            : await BlogPostSupport.UploadImageAsync(
+        IReadOnlyCollection<string> imageUrls;
+        if (request.ImageFile is not null)
+        {
+            imageUrls = [await BlogPostSupport.UploadImageAsync(
                 post.Id,
                 request.ImageFile,
                 _blogImageStorage,
                 nameof(request.ImageFile),
+                cancellationToken)];
+        }
+        else if (request.ImageFiles is { Count: > 0 })
+        {
+            imageUrls = await BlogPostSupport.UploadImagesAsync(
+                post.Id,
+                request.ImageFiles,
+                _blogImageStorage,
+                nameof(request.ImageFiles),
                 cancellationToken);
+        }
+        else
+        {
+            imageUrls = BlogPostSupport.NormalizeImageUrls(
+                request.ImageUrl,
+                request.ImageUrls,
+                nameof(request.ImageUrls));
+        }
+
+        BlogPostSupport.ApplyImageUrls(post, imageUrls);
         post.ImageAltText = BlogPostSupport.NormalizeOptionalText(
             request.ImageAltText,
             nameof(request.ImageAltText),

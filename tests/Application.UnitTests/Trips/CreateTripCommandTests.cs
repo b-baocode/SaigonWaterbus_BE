@@ -81,6 +81,7 @@ public class CreateTripCommandTests
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
 
         result.RouteName.ShouldBe("R1");
+        result.TripCode.ShouldStartWith("BB-20300101-R1-");
     }
 
     [Test]
@@ -437,6 +438,81 @@ public class CreateTripCommandTests
             .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
 
         result.CapacitySnapshot.ShouldBe(3);
+    }
+
+    [Test]
+    public async Task GenerateTripsCreatesContinuousRegularScheduleFromTimeRange()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        route.IsBookable = true;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(
+            context,
+            boat,
+            new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
+
+        var result = await new GenerateTripsCommandHandler(context)
+            .Handle(
+                new GenerateTripsCommand(
+                    RouteCode: "R1",
+                    BoatCode: "BOAT-1",
+                    DepartureTimes: null,
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(8, 0),
+                    EndTime: new TimeOnly(9, 0),
+                    IntervalMinutes: 30),
+                CancellationToken.None);
+
+        result.Created.ShouldBe(3);
+        result.SkippedBoatBusy.ShouldBe(0);
+        result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BB-20300101-R1-", StringComparison.Ordinal));
+        context.Trips
+            .OrderBy(x => x.DepartureTime)
+            .Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
+            .ShouldBe([
+                new TimeSpan(8, 0, 0),
+                new TimeSpan(8, 30, 0),
+                new TimeSpan(9, 0, 0)
+            ]);
+    }
+
+    [Test]
+    public async Task GenerateTripsSupportsContinuousSightseeingSchedule()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("SIGHT-1", Station("A", "Ben A"), Station("B", "Ben B"));
+        route.RouteType = RouteTypes.SightseeingLoop;
+        route.IsBookable = true;
+        var boat = BoatWithSeats("BOAT-SIGHT", seatCount: 3, seatSetupType: SeatSetupType.StandardAndVip);
+        var date = new DateOnly(2030, 1, 1);
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(
+            context,
+            boat,
+            new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
+
+        var result = await new GenerateTripsCommandHandler(context)
+            .Handle(
+                new GenerateTripsCommand(
+                    RouteCode: "SIGHT-1",
+                    BoatCode: "BOAT-SIGHT",
+                    DepartureTimes: null,
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(8, 0),
+                    EndTime: new TimeOnly(9, 0),
+                    IntervalMinutes: 30),
+                CancellationToken.None);
+
+        result.Created.ShouldBe(3);
+        result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BS-20300101-SIGHT-1-", StringComparison.Ordinal));
+        context.Trips.All(x => x.RouteId == route.Id).ShouldBeTrue();
     }
 
     [Test]

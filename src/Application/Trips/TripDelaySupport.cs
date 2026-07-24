@@ -6,7 +6,7 @@ namespace SaigonWaterbus.Application.Trips;
 
 public static class TripDelaySupport
 {
-    public const int FutureTripBufferMinutes = 15;
+    public const int TurnaroundBufferMinutes = 15;
 
     public static TripDelayInfoDto? ToDelayInfoDto(Trip trip)
     {
@@ -111,21 +111,35 @@ public static class TripDelaySupport
             ?? (delayMinutes > 0 ? trip.ArrivalTime.AddMinutes(delayMinutes) : null);
     }
 
-    public static void AddDelayToFutureTrip(Trip trip, int additionalDelayMinutes, string reason)
+    public static int CalculateCascadedTotalDelayMinutes(Trip futureTrip, DateTimeOffset previousBoatAvailableAt)
     {
-        if (additionalDelayMinutes <= 0)
+        var earliestDeparture = previousBoatAvailableAt.AddMinutes(TurnaroundBufferMinutes);
+        var currentAdjustedDeparture = ResolveAdjustedDeparture(futureTrip);
+        var requiredDeparture = currentAdjustedDeparture >= earliestDeparture
+            ? currentAdjustedDeparture
+            : earliestDeparture;
+
+        return Math.Max(
+            futureTrip.DelayMinutes,
+            Math.Max(0, (int)Math.Ceiling((requiredDeparture - futureTrip.DepartureTime).TotalMinutes)));
+    }
+
+    public static void ApplyTotalDelayToFutureTrip(Trip trip, int totalDelayMinutes, string reason)
+    {
+        if (totalDelayMinutes <= trip.DelayMinutes)
         {
             return;
         }
 
-        var newDelayMinutes = trip.DelayMinutes + additionalDelayMinutes;
         trip.TripStatus = TripStatus.Delayed;
-        trip.DelayMinutes = newDelayMinutes;
+        trip.DelayMinutes = totalDelayMinutes;
         trip.DelayReason = string.IsNullOrWhiteSpace(trip.DelayReason)
             ? reason
-            : $"{trip.DelayReason.Trim()} {reason}";
-        trip.AdjustedDepartureTime = trip.DepartureTime.AddMinutes(newDelayMinutes);
-        trip.AdjustedArrivalTime = trip.ArrivalTime.AddMinutes(newDelayMinutes);
+            : trip.DelayReason.Contains(reason, StringComparison.Ordinal)
+                ? trip.DelayReason
+                : $"{trip.DelayReason.Trim()} {reason}";
+        trip.AdjustedDepartureTime = trip.DepartureTime.AddMinutes(totalDelayMinutes);
+        trip.AdjustedArrivalTime = trip.ArrivalTime.AddMinutes(totalDelayMinutes);
 
         foreach (var stop in trip.TripStops)
         {
@@ -134,10 +148,22 @@ public static class TripDelaySupport
                 continue;
             }
 
-            stop.AdjustedArrivalTime = stop.PlannedArrivalTime?.AddMinutes(newDelayMinutes);
-            stop.AdjustedDepartureTime = stop.PlannedDepartureTime?.AddMinutes(newDelayMinutes);
+            stop.AdjustedArrivalTime = stop.PlannedArrivalTime?.AddMinutes(totalDelayMinutes);
+            stop.AdjustedDepartureTime = stop.PlannedDepartureTime?.AddMinutes(totalDelayMinutes);
         }
     }
+
+    public static DateTimeOffset ResolveAdjustedDeparture(Trip trip) =>
+        trip.AdjustedDepartureTime
+            ?? (trip.DelayMinutes > 0
+                ? trip.DepartureTime.AddMinutes(trip.DelayMinutes)
+                : trip.DepartureTime);
+
+    public static DateTimeOffset ResolveAdjustedArrival(Trip trip) =>
+        trip.AdjustedArrivalTime
+            ?? (trip.DelayMinutes > 0
+                ? trip.ArrivalTime.AddMinutes(trip.DelayMinutes)
+                : trip.ArrivalTime);
 
     public static TripStatus ResolveResumedStatus(Trip trip, DateTimeOffset now)
     {

@@ -12,7 +12,9 @@ public sealed record CreateBlogPostCommand(
     string? Status,
     string? ImageUrl = null,
     string? ImageAltText = null,
-    BlogPostImageFileRequest? ImageFile = null) : IRequest<BlogPostDto>;
+    BlogPostImageFileRequest? ImageFile = null,
+    IReadOnlyCollection<string>? ImageUrls = null,
+    IReadOnlyCollection<BlogPostImageFileRequest>? ImageFiles = null) : IRequest<BlogPostDto>;
 
 public sealed class CreateBlogPostCommandValidator : AbstractValidator<CreateBlogPostCommand>
 {
@@ -25,6 +27,10 @@ public sealed class CreateBlogPostCommandValidator : AbstractValidator<CreateBlo
             .MaximumLength(2048)
             .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
             .WithMessage("ImageUrl must be an absolute URL.");
+        RuleForEach(x => x.ImageUrls)
+            .MaximumLength(2048)
+            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
+            .WithMessage("ImageUrls must contain absolute URLs.");
         RuleFor(x => x.ImageAltText).MaximumLength(200);
         RuleFor(x => x.Content).NotEmpty();
         RuleFor(x => x.Status)
@@ -85,7 +91,7 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
             Title = title,
             Slug = await BlogPostSupport.GenerateUniqueSlugAsync(
                 _context,
-                request.Slug ?? title,
+                string.IsNullOrWhiteSpace(request.Slug) ? title : request.Slug,
                 null,
                 cancellationToken),
             Summary = BlogPostSupport.NormalizeOptionalText(request.Summary, nameof(request.Summary), 500),
@@ -97,14 +103,34 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
             PublishedAt = status == BlogPostSupport.PublishedStatus ? _timeProvider.GetUtcNow() : null
         };
 
-        post.ImageUrl = request.ImageFile is null
-            ? BlogPostSupport.NormalizeImageUrl(request.ImageUrl, nameof(request.ImageUrl))
-            : await BlogPostSupport.UploadImageAsync(
+        IReadOnlyCollection<string> imageUrls;
+        if (request.ImageFile is not null)
+        {
+            imageUrls = [await BlogPostSupport.UploadImageAsync(
                 post.Id,
                 request.ImageFile,
                 _blogImageStorage,
                 nameof(request.ImageFile),
+                cancellationToken)];
+        }
+        else if (request.ImageFiles is { Count: > 0 })
+        {
+            imageUrls = await BlogPostSupport.UploadImagesAsync(
+                post.Id,
+                request.ImageFiles,
+                _blogImageStorage,
+                nameof(request.ImageFiles),
                 cancellationToken);
+        }
+        else
+        {
+            imageUrls = BlogPostSupport.NormalizeImageUrls(
+                request.ImageUrl,
+                request.ImageUrls,
+                nameof(request.ImageUrls));
+        }
+
+        BlogPostSupport.ApplyImageUrls(post, imageUrls);
 
         BlogPostSupport.EnsurePublishedPostHasImage(post, nameof(request.ImageUrl));
 

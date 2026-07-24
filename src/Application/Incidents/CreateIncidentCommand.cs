@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -36,19 +37,22 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
     private readonly TimeProvider _timeProvider;
     private readonly IIncidentRealtimeNotifier _realtimeNotifier;
     private readonly IIncidentGpsHookNotifier _gpsHookNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CreateIncidentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
         IIncidentRealtimeNotifier? realtimeNotifier = null,
-        IIncidentGpsHookNotifier? gpsHookNotifier = null)
+        IIncidentGpsHookNotifier? gpsHookNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
         _gpsHookNotifier = gpsHookNotifier ?? NullIncidentGpsHookNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(CreateIncidentCommand request, CancellationToken cancellationToken)
@@ -87,6 +91,7 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
         }
 
         var severity = NormalizeOptional(request.Severity);
+        var oldTripStatus = trip?.TripStatus;
         var incident = new Incident
         {
             BoatId = boat.Id,
@@ -110,7 +115,19 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
         }
 
         _context.Incidents.Add(incident);
+        IReadOnlyList<Notification> createdNotifications = trip is not null && oldTripStatus.HasValue
+            ? await NotificationSupport.AddTripStatusChangedNotificationsAsync(
+                _context,
+                trip,
+                oldTripStatus.Value,
+                now,
+                cancellationToken)
+            : [];
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            createdNotifications,
+            cancellationToken);
         await IncidentSupport.PublishGpsHookAsync(
             _context,
             _gpsHookNotifier,

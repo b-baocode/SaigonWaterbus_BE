@@ -23,7 +23,7 @@ internal static class IncidentSupport
         CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
-        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor) || AuthSupport.IsStaff(actor))
+        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsStaff(actor))
         {
             return actor;
         }
@@ -37,48 +37,12 @@ internal static class IncidentSupport
         CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
-        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor))
-        {
-            return actor;
-        }
-
-        throw new ForbiddenAccessException();
-    }
-
-    public static async Task<User> EnsureCurrentUserCanAssignIncidentManagerAsync(
-        IApplicationDbContext context,
-        IUserContext userContext,
-        CancellationToken cancellationToken)
-    {
-        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
         if (AuthSupport.IsAdmin(actor))
         {
             return actor;
         }
 
         throw new ForbiddenAccessException();
-    }
-
-    public static async Task EnsureUserIsActiveManagerAsync(
-        IApplicationDbContext context,
-        Guid managerUserId,
-        string propertyName,
-        CancellationToken cancellationToken)
-    {
-        var manager = await context.Users
-            .Include(x => x.Role)
-            .SingleOrDefaultAsync(x => x.Id == managerUserId, cancellationToken)
-            ?? throw new SaigonWaterbus.Application.Common.Exceptions.NotFoundException("Không tìm thấy manager.");
-
-        if (!string.Equals(manager.Role.SystemName, Roles.ManagerSystemName, StringComparison.Ordinal))
-        {
-            throw AuthSupport.CreateValidationException(propertyName, "Người được gán phải có role Manager.");
-        }
-
-        if (manager.Status != UserStatus.Active)
-        {
-            throw AuthSupport.CreateValidationException(propertyName, "Manager phải đang Active.");
-        }
     }
 
     public static IncidentDto ToDto(Incident incident, int activeTicketCount = 0) =>
@@ -260,33 +224,17 @@ internal static class IncidentSupport
         var affectedPassengerCount = onboardPassengerCount + futurePassengerCount;
         if (affectedPassengerCount == 0)
         {
-            var nextServiceStop = ResolveNextServiceStop(stops, progressStopOrder);
-            if (nextServiceStop is null)
-            {
-                return new IncidentPassengerImpactPlan(
-                    activeTicketSegments.Count,
-                    OnboardPassengerCount: 0,
-                    FuturePassengerCount: 0,
-                    IncidentReplacementMissionTypes.None,
-                    TargetStationId: null,
-                    TargetStationCode: null,
-                    TargetStationName: null,
-                    TargetStopOrder: null,
-                    TargetPlannedArrivalAt: null,
-                    TargetPlannedDepartureAt: null);
-            }
-
             return new IncidentPassengerImpactPlan(
                 activeTicketSegments.Count,
                 OnboardPassengerCount: 0,
                 FuturePassengerCount: 0,
-                IncidentReplacementMissionTypes.ContinueFromStation,
-                nextServiceStop.StationId,
-                nextServiceStop.StationCode,
-                nextServiceStop.StationName,
-                nextServiceStop.StopOrder,
-                nextServiceStop.PlannedArrivalTime,
-                nextServiceStop.PlannedDepartureTime);
+                IncidentReplacementMissionTypes.None,
+                TargetStationId: null,
+                TargetStationCode: null,
+                TargetStationName: null,
+                TargetStopOrder: null,
+                TargetPlannedArrivalAt: null,
+                TargetPlannedDepartureAt: null);
         }
 
         if (onboardPassengerCount > 0)
@@ -322,15 +270,6 @@ internal static class IncidentSupport
             targetStop?.PlannedArrivalTime,
             targetStop?.PlannedDepartureTime);
     }
-
-    private static IncidentStopPlanItem? ResolveNextServiceStop(
-        IReadOnlyList<IncidentStopPlanItem> stops,
-        int progressStopOrder) =>
-        stops
-            .Where(x => x.StopOrder > progressStopOrder
-                && !string.Equals(x.StopStatus, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(x => x.StopOrder)
-            .FirstOrDefault();
 
     private static IncidentPassengerImpactPlan BuildUnknownProgressPlan(int activeTicketCount) =>
         new(

@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
@@ -13,14 +14,14 @@ namespace SaigonWaterbus.Application.UnitTests.Trips;
 public class TripDelayCommandTests
 {
     [Test]
-    public async Task ResumeDelayOverFifteenMinutesDelaysRemainingStopsAndFutureTripsOnSameBoat()
+    public async Task ResumeDelayCascadesWhenSameBoatNextTripCannotMeetTurnaroundBuffer()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
         var sourceDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero);
         var sourceTrip = SeedTrip(context, "TR-SOURCE", sourceDeparture, "BOAT-1");
-        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddHours(2), "BOAT-1", sourceTrip.Boat!);
-        var otherBoat = SeedTrip(context, "TR-OTHER", sourceDeparture.AddHours(2).AddMinutes(10), "BOAT-2");
+        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddMinutes(90), "BOAT-1", sourceTrip.Boat!);
+        var otherBoat = SeedTrip(context, "TR-OTHER", sourceDeparture.AddMinutes(100), "BOAT-2");
         await AddOnBoardAssignmentAsync(
             context,
             staffContext.UserId!.Value,
@@ -60,12 +61,12 @@ public class TripDelayCommandTests
         resumed.DelayInfo.ShouldNotBeNull();
         resumed.DelayInfo.DelayMinutes.ShouldBe(20);
         resumed.DelayInfo.IsDelayActive.ShouldBeFalse();
-        resumed.DelayInfo.DelayPropagationMinutes.ShouldBe(5);
+        resumed.DelayInfo.DelayPropagationMinutes.ShouldBe(10);
         resumed.AffectedTrips.Select(x => x.TripCode).ShouldBe(["TR-FUTURE"]);
-        resumed.AffectedTrips.Single().AddedDelayMinutes.ShouldBe(5);
+        resumed.AffectedTrips.Single().AddedDelayMinutes.ShouldBe(10);
 
         sourceTrip.DelayMinutes.ShouldBe(20);
-        sourceTrip.DelayPropagationMinutes.ShouldBe(5);
+        sourceTrip.DelayPropagationMinutes.ShouldBe(10);
         sourceTrip.AdjustedDepartureTime.ShouldBeNull();
         sourceTrip.AdjustedArrivalTime.ShouldBe(sourceTrip.ArrivalTime.AddMinutes(20));
         sourceTrip.TripStops.Single(x => x.StopOrder == 1).AdjustedDepartureTime.ShouldBeNull();
@@ -81,25 +82,25 @@ public class TripDelayCommandTests
         resumed.Trip.Stops.Single(x => x.StopOrder == 3)
             .AdjustedArrival.ShouldBe(sourceStopC.PlannedArrivalTime!.Value.AddMinutes(20));
 
-        futureSameBoat.DelayMinutes.ShouldBe(5);
+        futureSameBoat.DelayMinutes.ShouldBe(10);
         futureSameBoat.DelayReason!.ShouldContain("TR-SOURCE");
-        futureSameBoat.AdjustedDepartureTime.ShouldBe(futureSameBoat.DepartureTime.AddMinutes(5));
+        futureSameBoat.AdjustedDepartureTime.ShouldBe(futureSameBoat.DepartureTime.AddMinutes(10));
         futureSameBoat.TripStops.Single(x => x.StopOrder == 1)
             .AdjustedDepartureTime.ShouldBe(futureSameBoat.TripStops.Single(x => x.StopOrder == 1)
-                .PlannedDepartureTime!.Value.AddMinutes(5));
+                .PlannedDepartureTime!.Value.AddMinutes(10));
 
         otherBoat.DelayMinutes.ShouldBe(0);
         otherBoat.AdjustedDepartureTime.ShouldBeNull();
     }
 
     [Test]
-    public async Task ResumeDelayWithinFifteenMinutesDoesNotDelayFutureTrips()
+    public async Task ResumeDelayWithinFifteenMinutesStillCascadesWhenNextTripIsTooClose()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
         var sourceDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero);
         var sourceTrip = SeedTrip(context, "TR-SOURCE", sourceDeparture, "BOAT-1");
-        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddHours(2), "BOAT-1", sourceTrip.Boat!);
+        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddMinutes(80), "BOAT-1", sourceTrip.Boat!);
         await AddOnBoardAssignmentAsync(
             context,
             staffContext.UserId!.Value,
@@ -123,13 +124,14 @@ public class TripDelayCommandTests
 
         resumed.DelayInfo.ShouldNotBeNull();
         resumed.DelayInfo.DelayMinutes.ShouldBe(10);
-        resumed.DelayInfo.DelayPropagationMinutes.ShouldBe(0);
-        resumed.AffectedTrips.ShouldBeEmpty();
+        resumed.DelayInfo.DelayPropagationMinutes.ShouldBe(10);
+        resumed.AffectedTrips.Select(x => x.TripCode).ShouldBe(["TR-FUTURE"]);
+        resumed.AffectedTrips.Single().AddedDelayMinutes.ShouldBe(10);
 
         sourceTrip.TripStops.Single(x => x.StopOrder == 2)
             .AdjustedDepartureTime.ShouldBe(sourceDeparture.AddMinutes(35 + 10));
-        futureSameBoat.DelayMinutes.ShouldBe(0);
-        futureSameBoat.AdjustedDepartureTime.ShouldBeNull();
+        futureSameBoat.DelayMinutes.ShouldBe(10);
+        futureSameBoat.AdjustedDepartureTime.ShouldBe(futureSameBoat.DepartureTime.AddMinutes(10));
     }
 
     [Test]
@@ -153,6 +155,27 @@ public class TripDelayCommandTests
             handler.Handle(new StartTripDelayCommand(trip.Id, "Delay", StartStopOrder: 2), CancellationToken.None));
 
         ex.Errors["staffWorkAssignment"].Single().ShouldContain("chưa có ca OnBoard");
+    }
+
+    [Test]
+    public async Task ManagerCannotStartDelay()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var trip = SeedTrip(
+            context,
+            "TR-SOURCE",
+            new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
+            "BOAT-1");
+        await context.SaveChangesAsync();
+
+        var handler = new StartTripDelayCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(trip.DepartureTime.AddMinutes(30)));
+
+        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+            handler.Handle(new StartTripDelayCommand(trip.Id, "Delay", StartStopOrder: 2), CancellationToken.None));
     }
 
     private static Trip SeedTrip(

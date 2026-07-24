@@ -23,6 +23,25 @@ public sealed class Tickets : IEndpointGroup
                 "Customer chi xem duoc ve thuoc booking cua minh.",
                 "Charter booking sinh ve theo tung hanh khach sau khi da thanh toan du va nhap danh sach hanh khach."));
 
+        group.MapPost(ScanTicketByBody, "scan")
+            .RequireAuthorization()
+            .WithSummary("Quet/tra cuu ma ve bang body")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "codeOrToken": "TK2607242A57F0DE",
+                  "source": "Qr",
+                  "tripStopId": null,
+                  "clientOperationId": "scan-uuid",
+                  "deviceTime": "2026-07-24T09:00:00+07:00",
+                  "note": null
+                }
+                """,
+                "Khuyen dung cho FE scan QR de tranh loi URL path khi token co ky tu dac biet.",
+                "codeOrToken nhan ticketCode hoac qrToken.",
+                "Quyen va dieu kien giong GET /api/tickets/scan/{codeOrToken}."));
+
         group.MapPost(CheckInTicket, "check-in/{codeOrToken}")
             .RequireAuthorization()
             .WithSummary("Check-in ve")
@@ -36,6 +55,24 @@ public sealed class Tickets : IEndpointGroup
                 "Ticket phai Active, booking phai Confirmed va da thanh toan du.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedInAt/checkedInBy."));
 
+        group.MapPost(CheckInTicketByBody, "check-in")
+            .RequireAuthorization()
+            .WithSummary("Check-in ve bang body")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "codeOrToken": "TK2607242A57F0DE",
+                  "source": "Qr",
+                  "tripStopId": null,
+                  "clientOperationId": "checkin-uuid",
+                  "deviceTime": "2026-07-24T09:00:00+07:00",
+                  "note": null
+                }
+                """,
+                "Khuyen dung cho FE scan QR de tranh loi URL path khi token co ky tu dac biet.",
+                "Quyen va dieu kien giong POST /api/tickets/check-in/{codeOrToken}."));
+
         group.MapPost(CheckOutTicket, "check-out/{codeOrToken}")
             .RequireAuthorization()
             .WithSummary("Check-out ve")
@@ -48,6 +85,24 @@ public sealed class Tickets : IEndpointGroup
                 "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Ticket phai da CheckedIn truoc do.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedOutAt/checkedOutBy."));
+
+        group.MapPost(CheckOutTicketByBody, "check-out")
+            .RequireAuthorization()
+            .WithSummary("Check-out ve bang body")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "codeOrToken": "TK2607242A57F0DE",
+                  "source": "Qr",
+                  "tripStopId": null,
+                  "clientOperationId": "checkout-uuid",
+                  "deviceTime": "2026-07-24T09:00:00+07:00",
+                  "note": null
+                }
+                """,
+                "Khuyen dung cho FE scan QR de tranh loi URL path khi token co ky tu dac biet.",
+                "Quyen va dieu kien giong POST /api/tickets/check-out/{codeOrToken}."));
 
         group.MapGet(GetTicketScanHistory, "{ticketId:guid}/scan-history")
             .RequireAuthorization()
@@ -93,6 +148,14 @@ public sealed class Tickets : IEndpointGroup
             new ScanTicketQuery(codeOrToken, CreateMetadata(source, tripStopId, clientOperationId, deviceTime, note)),
             ct));
 
+    private static async Task<IResult> ScanTicketByBody(
+        ISender sender,
+        TicketCodeRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(
+            new ScanTicketQuery(request.CodeOrToken, CreateMetadata(request)),
+            ct));
+
     private static async Task<IResult> CheckInTicket(
         ISender sender,
         string codeOrToken,
@@ -106,6 +169,14 @@ public sealed class Tickets : IEndpointGroup
             new CheckInTicketCommand(codeOrToken, CreateMetadata(source, tripStopId, clientOperationId, deviceTime, note)),
             ct));
 
+    private static async Task<IResult> CheckInTicketByBody(
+        ISender sender,
+        TicketCodeRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(
+            new CheckInTicketCommand(request.CodeOrToken, CreateMetadata(request)),
+            ct));
+
     private static async Task<IResult> CheckOutTicket(
         ISender sender,
         string codeOrToken,
@@ -117,6 +188,14 @@ public sealed class Tickets : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(
             new CheckOutTicketCommand(codeOrToken, CreateMetadata(source, tripStopId, clientOperationId, deviceTime, note)),
+            ct));
+
+    private static async Task<IResult> CheckOutTicketByBody(
+        ISender sender,
+        TicketCodeRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(
+            new CheckOutTicketCommand(request.CodeOrToken, CreateMetadata(request)),
             ct));
 
     private static async Task<IResult> GetTicketScanHistory(
@@ -157,4 +236,20 @@ public sealed class Tickets : IEndpointGroup
             ClientOperationId: clientOperationId,
             DeviceTime: deviceTime,
             Note: note);
+
+    private static TicketScanRequestMetadata CreateMetadata(TicketCodeRequest request) =>
+        CreateMetadata(
+            request.Source,
+            request.TripStopId,
+            request.ClientOperationId,
+            request.DeviceTime,
+            request.Note);
+
+    public sealed record TicketCodeRequest(
+        string CodeOrToken,
+        TicketScanSource? Source = null,
+        Guid? TripStopId = null,
+        string? ClientOperationId = null,
+        DateTimeOffset? DeviceTime = null,
+        string? Note = null);
 }

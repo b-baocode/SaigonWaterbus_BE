@@ -9,8 +9,6 @@ namespace SaigonWaterbus.Web.Endpoints;
 
 public sealed class Operations : IEndpointGroup
 {
-    private static readonly TimeSpan ScheduleCacheDuration = TimeSpan.FromSeconds(5);
-
     private const string DelayScheduleExample =
         """
         {
@@ -37,14 +35,21 @@ public sealed class Operations : IEndpointGroup
             .RequireAuthorization(policy => policy.RequireRole(
                 Roles.AdminName,
                 Roles.ManagerSystemName,
-                Roles.StaffSystemName))
+                Roles.StaffSystemName,
+                Roles.CustomerSystemName))
             .WithSummary("Xem lịch vận hành chung")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
+                "Customer, Admin, Manager hoặc Staff",
                 null,
                 "Query params: fromDate, toDate là ngày bắt đầu/kết thúc, không phải bến đi/bến đến.",
                 "Định dạng ngày: yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy. Nếu bỏ toDate thì lấy một ngày.",
+                "serviceType optional: all | booking | bus | sightseeing | charter. FE lịch booking tuần nên dùng serviceType=booking để lấy Bus + Sightseeing.",
+                "routeType optional: Regular | SightseeingLoop | Charter | CharterReference nếu muốn lọc sâu hơn.",
+                "stationId optional: Admin/Manager/Staff OnBoard co the dung de loc theo ben; Staff Ground tu dong bi gioi han theo ben duoc gan.",
+                "Customer bi gioi han toi da 7 ngay, luon chi xem booking trips (Bus + Sightseeing), khong xem charter/cancelled/GPS noi bo.",
                 "Query cũ from/to vẫn được đọc để tương thích, nhưng FE nên dùng fromDate/toDate.",
+                "Response co routeType, tripType, serviceType, capacitySnapshot, totalPassengerCount, adjustedStartAt/adjustedEndAt va dwellCountdown.",
+                "Response co stops[] de FE render bang gio tung ben va tinh cac chang nhu BD -> Thu Thiem, BD -> Ba Son.",
                 "GET đọc trực tiếp trips, trip_stops và boat_latest_locations để hiển thị trạng thái tàu đang di chuyển.",
                 "Nếu GPS gửi ETA, response có remainingMinutesToNextStation và remainingDistanceKmToNextStation.",
                 "Đây là lịch vận hành nội bộ. Bảng công cộng/khách hàng không dùng API này."));
@@ -66,18 +71,20 @@ public sealed class Operations : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin, Manager hoặc Staff",
                 DelayScheduleExample,
-                "Không sửa giờ gốc startAt/endAt.",
-                "Backend lưu delayMinutes, delayReason, adjustedStartAt/adjustedEndAt và operationStatus=Delayed.",
-                "Gọi GET /api/operations/schedule để xem lại lịch đã delay."));
+                "Flow cũ của operation_schedule_entries đã bỏ. FE KHONG dung endpoint nay de bao delay.",
+                "Delay dung API trip: POST /api/trips/{id}/delay/start va POST /api/trips/{id}/delay/resume.",
+                "Sau khi resume, BE tu cap nhat adjusted time, day chuyen cac trip sau va gui notification cho customer."));
     }
 
     private static async Task<IResult> GetSchedule(
         ISender sender,
-        IEndpointResponseCache responseCache,
         HttpRequest httpRequest,
         [FromQuery] string? fromDate,
         [FromQuery] string? toDate,
         [FromQuery] bool includeCancelled,
+        [FromQuery] string? serviceType,
+        [FromQuery] string? routeType,
+        [FromQuery] Guid? stationId,
         CancellationToken cancellationToken)
     {
         var requestedFromDate = fromDate ?? GetQueryValue(httpRequest, "from");
@@ -107,17 +114,9 @@ public sealed class Operations : IEndpointGroup
 
         var fromAt = ToVietnamStartOfDay(startDate);
         var toAt = ToVietnamStartOfDay(endDate.AddDays(1));
-        var cacheKey = $"operations:schedule:{fromAt.UtcTicks}:{toAt.UtcTicks}:{includeCancelled}";
-        var schedule = await responseCache.GetOrCreateAsync(
-            cacheKey,
-            ScheduleCacheDuration,
-            async ct => (await sender.Send(
-                    new GetOperationScheduleQuery(fromAt, toAt, includeCancelled),
-                    ct))
-                .ToArray(),
-            cancellationToken);
-
-        return Results.Ok(schedule ?? []);
+        return Results.Ok(await sender.Send(
+            new GetOperationScheduleQuery(fromAt, toAt, includeCancelled, serviceType, routeType, stationId),
+            cancellationToken));
     }
 
     private static async Task<IResult> RefreshSchedule(

@@ -59,7 +59,39 @@ public sealed record TripDetailDto(
     int StopCount = 0,
     TripDelayInfoDto? DelayInfo = null,
     DateTimeOffset? AdjustedDepartureTime = null,
-    DateTimeOffset? AdjustedArrivalTime = null);
+    DateTimeOffset? AdjustedArrivalTime = null,
+    TripIncidentInfoDto? IncidentInfo = null);
+
+public sealed record TripIncidentInfoDto(
+    Guid IncidentId,
+    string IncidentType,
+    string? Severity,
+    string ResolutionStatus,
+    DateTimeOffset OccurredAt,
+    Guid OriginalBoatId,
+    string OriginalBoatName,
+    string OriginalBoatCode,
+    Guid? RescueBoatId,
+    string? RescueBoatName,
+    string? RescueBoatCode,
+    Guid? ReplacementBoatId,
+    string? ReplacementBoatName,
+    string? ReplacementBoatCode,
+    bool IsTripBoatReplaced,
+    string ReplacementMissionType,
+    Guid? ReplacementTargetStationId,
+    string? ReplacementTargetStationCode,
+    string? ReplacementTargetStationName,
+    int? ReplacementTargetStopOrder,
+    int ReplacementDelayMinutes,
+    DateTimeOffset? ReplacementEstimatedResumeAt,
+    int ActiveTicketCountSnapshot,
+    int OnboardPassengerCountSnapshot,
+    int FuturePassengerCountSnapshot,
+    string? ReplacementNote,
+    DateTimeOffset? RescueDispatchedAt,
+    DateTimeOffset? ReplacementAssignedAt,
+    DateTimeOffset? ResolvedAt);
 
 public sealed record TripBoatDto(
     Guid VesselId,

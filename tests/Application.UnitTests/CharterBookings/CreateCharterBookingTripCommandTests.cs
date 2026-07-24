@@ -34,6 +34,7 @@ public class CreateCharterBookingTripCommandTests
         result.RouteId.ShouldBe(route.Id);
         result.Trips.Count.ShouldBe(1);
         var trip = context.Set<Trip>().Single(x => x.Id == result.Trips[0].TripId);
+        trip.TripCode.ShouldBe($"BR-20300101-{booking.BookingCode}-1");
         trip.TripType.ShouldBe(TripTypes.Charter);
         trip.SourceBookingId.ShouldBe(booking.Id);
         trip.RouteId.ShouldBe(route.Id);

@@ -13,13 +13,13 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Trips;
 
-[Authorize(Roles = "Admin,Manager,Staff")]
+[Authorize(Roles = "Admin,Staff")]
 public sealed record StartTripDelayCommand(
     Guid TripId,
     string? Reason = null,
     int? StartStopOrder = null) : IRequest<TripDelayActionResultDto>;
 
-[Authorize(Roles = "Admin,Manager,Staff")]
+[Authorize(Roles = "Admin,Staff")]
 public sealed record ResumeTripDelayCommand(
     Guid TripId,
     string? Note = null) : IRequest<TripDelayActionResultDto>;
@@ -201,12 +201,7 @@ public sealed class ResumeTripDelayCommandHandler
         var activeDelayMinutes = Math.Max(
             1,
             (int)Math.Ceiling((now - delayStartedAt).TotalMinutes));
-        var previousPropagationMinutes = trip.DelayPropagationMinutes;
         var totalDelayMinutes = trip.DelayMinutes + activeDelayMinutes;
-        var propagationMinutes = Math.Max(
-            0,
-            totalDelayMinutes - TripDelaySupport.FutureTripBufferMinutes);
-        var propagationDeltaMinutes = Math.Max(0, propagationMinutes - previousPropagationMinutes);
         var startStopOrder = trip.DelayStartStopOrder ?? TripDelaySupport.ResolveDelayStartStopOrder(trip);
         TripDelayCommandSupport.EnsureStopOrderExists(trip, startStopOrder);
 
@@ -223,17 +218,17 @@ public sealed class ResumeTripDelayCommandHandler
         trip.DelayStartedAt = delayStartedAt;
         trip.DelayEndedAt = now;
         trip.DelayStartStopOrder = startStopOrder;
-        trip.DelayPropagationMinutes = propagationMinutes;
         trip.StatusNote = note ?? $"Tàu tiếp tục hành trình sau khi trễ {activeDelayMinutes} phút.";
         trip.TripStatus = TripDelaySupport.ResolveResumedStatus(trip, now);
 
-        var affectedTrips = propagationDeltaMinutes > 0
-            ? await LoadAndApplyFutureTripDelaysAsync(
-                trip,
-                propagationDeltaMinutes,
-                totalDelayMinutes,
-                cancellationToken)
-            : [];
+        var affectedTrips = await LoadAndApplyFutureTripDelaysAsync(
+            trip,
+            totalDelayMinutes,
+            cancellationToken);
+        trip.DelayPropagationMinutes = affectedTrips
+            .Select(x => x.Dto.AddedDelayMinutes)
+            .DefaultIfEmpty(0)
+            .Max();
 
         var notifications = new List<Notification>();
         notifications.AddRange(await AddCurrentTripDelayNotificationsAsync(
@@ -271,7 +266,6 @@ public sealed class ResumeTripDelayCommandHandler
 
     private async Task<IReadOnlyList<AffectedTripWithEntity>> LoadAndApplyFutureTripDelaysAsync(
         Trip sourceTrip,
-        int propagationDeltaMinutes,
         int sourceTotalDelayMinutes,
         CancellationToken cancellationToken)
     {
@@ -299,18 +293,30 @@ public sealed class ResumeTripDelayCommandHandler
             .ToListAsync(cancellationToken);
 
         var affectedTrips = new List<AffectedTripWithEntity>();
+        var previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(sourceTrip);
         foreach (var futureTrip in futureTrips)
         {
-            TripDelaySupport.AddDelayToFutureTrip(futureTrip, propagationDeltaMinutes, reason);
+            var previousDelayMinutes = futureTrip.DelayMinutes;
+            var totalDelayMinutes = TripDelaySupport.CalculateCascadedTotalDelayMinutes(
+                futureTrip,
+                previousAvailableAt);
+            if (totalDelayMinutes <= previousDelayMinutes)
+            {
+                previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(futureTrip);
+                continue;
+            }
+
+            TripDelaySupport.ApplyTotalDelayToFutureTrip(futureTrip, totalDelayMinutes, reason);
             affectedTrips.Add(new AffectedTripWithEntity(
                 futureTrip,
                 new TripDelayAffectedTripDto(
                     futureTrip.Id,
                     futureTrip.TripCode,
-                    propagationDeltaMinutes,
+                    totalDelayMinutes - previousDelayMinutes,
                     futureTrip.DelayMinutes,
                     futureTrip.AdjustedDepartureTime,
                     futureTrip.AdjustedArrivalTime)));
+            previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(futureTrip);
         }
 
         return affectedTrips;
@@ -495,7 +501,7 @@ internal static class TripDelayCommandSupport
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor))
+        if (AuthSupport.IsAdmin(actor))
         {
             return;
         }

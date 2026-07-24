@@ -1,5 +1,7 @@
 using System.Globalization;
+using System.Net;
 using System.Text;
+using System.Text.RegularExpressions;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
@@ -18,6 +20,7 @@ internal static class BlogPostSupport
     public const string NewsCategory = "News";
 
     private const int MaxSlugLength = 220;
+    private static readonly Regex HtmlTagPattern = new("<[^>]+>", RegexOptions.Compiled);
 
     public static bool IsValidStatus(string? status)
     {
@@ -144,11 +147,53 @@ internal static class BlogPostSupport
         return normalized;
     }
 
+    public static IReadOnlyCollection<string> NormalizeImageUrls(
+        string? imageUrl,
+        IReadOnlyCollection<string>? imageUrls,
+        string propertyName)
+    {
+        var urls = new List<string>();
+        AddImageUrl(urls, imageUrl, propertyName);
+
+        if (imageUrls is not null)
+        {
+            foreach (var url in imageUrls)
+            {
+                AddImageUrl(urls, url, propertyName);
+            }
+        }
+
+        return urls;
+    }
+
+    public static IReadOnlyCollection<string> CreateImageUrls(BlogPost post) =>
+        post.ImageUrls.Length > 0
+            ? post.ImageUrls
+                .Where(x => !string.IsNullOrWhiteSpace(x))
+                .Select(x => x.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList()
+            : string.IsNullOrWhiteSpace(post.ImageUrl)
+                ? []
+                : [post.ImageUrl.Trim()];
+
+    public static void ApplyImageUrls(BlogPost post, IReadOnlyCollection<string> imageUrls)
+    {
+        var normalized = imageUrls
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+        post.ImageUrls = normalized;
+        post.ImageUrl = normalized.FirstOrDefault();
+    }
+
     public static void EnsurePublishedPostHasImage(BlogPost post, string propertyName)
     {
-        if (post.Status == PublishedStatus && string.IsNullOrWhiteSpace(post.ImageUrl))
+        if (post.Status == PublishedStatus && CreateImageUrls(post).Count == 0)
         {
-            throw CreateValidationException(propertyName, "Bai viet Published bat buoc co imageUrl.");
+            throw CreateValidationException(propertyName, "Bai viet Published bat buoc co it nhat 1 anh.");
         }
     }
 
@@ -219,6 +264,32 @@ internal static class BlogPostSupport
             cancellationToken);
 
         return storedImage.Url;
+    }
+
+    public static async Task<IReadOnlyCollection<string>> UploadImagesAsync(
+        Guid blogPostId,
+        IReadOnlyCollection<BlogPostImageFileRequest>? imageFiles,
+        IBlogImageStorageService? blogImageStorage,
+        string propertyName,
+        CancellationToken cancellationToken)
+    {
+        if (imageFiles is null || imageFiles.Count == 0)
+        {
+            return [];
+        }
+
+        var urls = new List<string>(imageFiles.Count);
+        foreach (var imageFile in imageFiles)
+        {
+            urls.Add(await UploadImageAsync(
+                blogPostId,
+                imageFile,
+                blogImageStorage,
+                propertyName,
+                cancellationToken));
+        }
+
+        return urls;
     }
 
     public static async Task<string> GenerateUniqueSlugAsync(
@@ -310,11 +381,51 @@ internal static class BlogPostSupport
             post.Summary,
             post.Category,
             post.ImageUrl,
+            CreateImageUrls(post),
             post.ImageAltText,
             post.Content,
+            ToContentText(post.Content),
+            ToContentHtml(post.Content),
             post.Status,
             post.PublishedAt,
             post.Created);
+
+    public static string ToContentText(string content)
+    {
+        if (LooksLikeHtml(content))
+        {
+            var withoutTags = HtmlTagPattern.Replace(content, " ");
+            return WebUtility.HtmlDecode(withoutTags).Trim();
+        }
+
+        return content.Trim();
+    }
+
+    public static string ToContentHtml(string content)
+    {
+        var paragraphs = ToContentText(content)
+            .Replace("\r\n", "\n", StringComparison.Ordinal)
+            .Split("\n\n", StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        return string.Join(
+            "",
+            paragraphs.Select(paragraph =>
+                $"<p>{WebUtility.HtmlEncode(paragraph).Replace("\n", "<br>", StringComparison.Ordinal)}</p>"));
+    }
+
+    private static bool LooksLikeHtml(string content) =>
+        HtmlTagPattern.IsMatch(content);
+
+    private static void AddImageUrl(List<string> urls, string? imageUrl, string propertyName)
+    {
+        var normalized = NormalizeImageUrl(imageUrl, propertyName);
+        if (normalized is null || urls.Contains(normalized, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        urls.Add(normalized);
+    }
 
     private static async Task<bool> SlugExistsAsync(
         IApplicationDbContext context,

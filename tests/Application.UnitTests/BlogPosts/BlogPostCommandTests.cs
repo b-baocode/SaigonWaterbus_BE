@@ -55,6 +55,41 @@ public class BlogPostCommandTests
     }
 
     [Test]
+    public async Task CreateBlogPostWithBlankSlugReturnsReadableContentAndMultipleImages()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var handler = new CreateBlogPostCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new CreateBlogPostCommand(
+                Title: "Bài viết nhiều ảnh",
+                Slug: "",
+                Summary: "Tom tat",
+                Content: "Dong 1\nDong 2\n\nDong 3",
+                Category: "News",
+                Status: "Draft",
+                ImageUrls:
+                [
+                    "https://example.test/blog-1.webp",
+                    "https://example.test/blog-2.webp"
+                ]),
+            CancellationToken.None);
+
+        result.Slug.ShouldBe("bai-viet-nhieu-anh");
+        result.ImageUrl.ShouldBe("https://example.test/blog-1.webp");
+        result.ImageUrls.ShouldBe([
+            "https://example.test/blog-1.webp",
+            "https://example.test/blog-2.webp"
+        ]);
+        result.ContentText.ShouldBe("Dong 1\nDong 2\n\nDong 3");
+        result.ContentHtml.ShouldBe("<p>Dong 1<br>Dong 2</p><p>Dong 3</p>");
+    }
+
+    [Test]
     public async Task CreatePublishedBlogPostRequiresImageUrl()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -76,7 +111,7 @@ public class BlogPostCommandTests
                 CancellationToken.None));
 
         exception.Errors["imageUrl"]
-            .ShouldContain("Bai viet Published bat buoc co imageUrl.");
+            .ShouldContain("Bai viet Published bat buoc co it nhat 1 anh.");
     }
 
     [Test]
@@ -186,6 +221,43 @@ public class BlogPostCommandTests
     }
 
     [Test]
+    public async Task StaffCanUpdateBlogPostMultipleImageUrls()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var post = BlogPost(author, "draft-post", "Draft", null);
+        context.Set<BlogPost>().Add(post);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateBlogPostImageCommandHandler(context, staffContext);
+        var result = await handler.Handle(
+            new UpdateBlogPostImageCommand(
+                BlogPostId: post.Id,
+                ImageUrl: null,
+                ImageAltText: "Gallery",
+                ImageUrls:
+                [
+                    "https://example.test/gallery-1.webp",
+                    "https://example.test/gallery-2.webp"
+                ]),
+            CancellationToken.None);
+
+        result.ImageUrl.ShouldBe("https://example.test/gallery-1.webp");
+        result.ImageUrls.ShouldBe([
+            "https://example.test/gallery-1.webp",
+            "https://example.test/gallery-2.webp"
+        ]);
+
+        var savedPost = context.Set<BlogPost>().Single(x => x.Id == post.Id);
+        savedPost.ImageUrl.ShouldBe("https://example.test/gallery-1.webp");
+        savedPost.ImageUrls.ShouldBe([
+            "https://example.test/gallery-1.webp",
+            "https://example.test/gallery-2.webp"
+        ]);
+    }
+
+    [Test]
     public async Task StaffCanUploadBlogPostImageFile()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -277,7 +349,7 @@ public class BlogPostCommandTests
                 CancellationToken.None));
 
         exception.Errors["imageUrl"]
-            .ShouldContain("Bai viet Published bat buoc co imageUrl.");
+            .ShouldContain("Bai viet Published bat buoc co it nhat 1 anh.");
     }
 
     [Test]

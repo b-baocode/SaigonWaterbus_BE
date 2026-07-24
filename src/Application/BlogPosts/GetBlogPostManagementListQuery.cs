@@ -40,9 +40,13 @@ public sealed class GetBlogPostManagementListQueryHandler
             query = query.Where(x => x.Status == status);
         }
 
-        return await query
+        var posts = await query
+            .Include(x => x.Author)
             .OrderByDescending(x => x.Created)
             .ThenByDescending(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        return posts
             .Select(x => new BlogPostSummaryDto(
                 x.Id,
                 x.Title,
@@ -50,12 +54,13 @@ public sealed class GetBlogPostManagementListQueryHandler
                 x.Summary,
                 x.Category,
                 x.ImageUrl,
+                BlogPostSupport.CreateImageUrls(x),
                 x.ImageAltText,
                 x.Status,
                 x.PublishedAt,
                 x.Created,
                 x.AuthorId,
                 x.Author.FullName))
-            .ToListAsync(cancellationToken);
+            .ToList();
     }
 }

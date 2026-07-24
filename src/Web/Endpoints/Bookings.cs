@@ -9,7 +9,7 @@ public sealed class Bookings : IEndpointGroup
     private const string CreateBookingExample =
         """
         {
-          "tripCode": "TR-20260610-R01-BD-LD-1234",
+          "tripCode": "BB-20260610-R01-BD-LD-1234",
           "items": [
             {
               "seatNumber": "A1",
@@ -32,7 +32,7 @@ public sealed class Bookings : IEndpointGroup
           "promotionCode": null,
           "insuranceSelected": true,
           "insurancePackageId": "00000000-0000-0000-0000-000000000000",
-          "returnTripCode": "TR-20260610-R01-LD-BD-5678",
+          "returnTripCode": "BB-20260610-R01-LD-BD-5678",
           "returnItems": [
             {
               "seatNumber": "B2",
@@ -50,7 +50,7 @@ public sealed class Bookings : IEndpointGroup
     private const string CreateCounterBookingExample =
         """
         {
-          "tripCode": "TR-20260610-R01-BD-LD-1234",
+          "tripCode": "BB-20260610-R01-BD-LD-1234",
           "items": [
             {
               "seatNumber": "A1",

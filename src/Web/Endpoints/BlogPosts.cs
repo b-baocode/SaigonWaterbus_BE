@@ -10,12 +10,13 @@ public sealed class BlogPosts : IEndpointGroup
         """
         {
           "title": "Kham pha Sai Gon bang waterbus",
-          "slug": "kham-pha-sai-gon-bang-waterbus",
           "summary": "Nhung diem nen trai nghiem tren tuyen waterbus Sai Gon.",
           "category": "Activity",
-          "imageUrl": "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp",
+          "imageUrls": [
+            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp"
+          ],
           "imageAltText": "Tau waterbus tren song Sai Gon",
-          "content": "Noi dung bai viet...",
+          "content": "Noi dung bai viet dang van ban thuong, khong can HTML.",
           "status": "Draft"
         }
         """;
@@ -24,12 +25,14 @@ public sealed class BlogPosts : IEndpointGroup
         """
         {
           "title": "Kham pha Sai Gon bang waterbus",
-          "slug": "kham-pha-sai-gon-bang-waterbus",
           "summary": "Nhung diem nen trai nghiem tren tuyen waterbus Sai Gon.",
           "category": "News",
-          "imageUrl": "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp",
+          "imageUrls": [
+            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp",
+            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-detail.webp"
+          ],
           "imageAltText": "Tau waterbus tren song Sai Gon",
-          "content": "Noi dung bai viet da cap nhat...",
+          "content": "Noi dung bai viet da cap nhat bang text thuong.",
           "status": "Published"
         }
         """;
@@ -37,7 +40,9 @@ public sealed class BlogPosts : IEndpointGroup
     private const string UpdateImageExample =
         """
         {
-          "imageUrl": "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover-fallback.webp",
+          "imageUrls": [
+            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover-fallback.webp"
+          ],
           "imageAltText": "Tau waterbus tren song Sai Gon luc hoang hon"
         }
         """;
@@ -92,10 +97,12 @@ public sealed class BlogPosts : IEndpointGroup
                 "Danh cho Admin, Manager, Staff.",
                 "status optional, mac dinh Draft. Khi tao moi chi hop le: Draft | Published.",
                 "category bat buoc nhap. Gia tri hop le: Activity | Event | News.",
-                "imageUrl la anh cover cua bai viet. Bai Published bat buoc co imageUrl.",
-                "Co the gui multipart/form-data voi field image de upload anh cover, giong boat/station.",
+                "slug khong can gui; BE tu sinh tu title va tu them hau to neu trung.",
+                "content nhap plain text; BE tra them contentText de admin doc va contentHtml da convert an toan cho FE render.",
+                "imageUrl la anh cover cu, imageUrls la danh sach anh moi (1 hoac nhieu). Bai Published bat buoc co it nhat 1 anh.",
+                "Co the gui multipart/form-data voi field image/images/files de upload 1 hoac nhieu anh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "slug optional; neu khong truyen se tu sinh tu title va tu them hau to neu trung."));
+                "FE khong can hien input slug."));
 
         group.MapPut(UpdateBlogPost, "{id:guid}")
             .RequireAuthorization()
@@ -109,10 +116,12 @@ public sealed class BlogPosts : IEndpointGroup
                 "Danh cho Admin, Manager, Staff.",
                 "status hop le: Draft | Published | Archived.",
                 "category hop le: Activity | Event | News.",
-                "Bai Published bat buoc co imageUrl.",
-                "Co the gui multipart/form-data voi field image de upload/cap nhat anh cover, giong boat/station.",
+                "slug khong can gui; neu bo trong BE tu sinh lai tu title.",
+                "content nhap plain text; BE tra them contentText va contentHtml.",
+                "Bai Published bat buoc co it nhat 1 anh.",
+                "Co the gui multipart/form-data voi field image/images/files de upload/cap nhat 1 hoac nhieu anh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "slug optional; neu khong truyen se tu sinh lai tu title."));
+                "FE khong can hien input slug."));
 
         group.MapPatch(UpdateBlogPostImage, "{id:guid}/image")
             .RequireAuthorization()
@@ -124,11 +133,11 @@ public sealed class BlogPosts : IEndpointGroup
                 "Bearer token",
                 UpdateImageExample,
                 "Danh cho Admin, Manager, Staff.",
-                "Blog chi co 1 anh cover: imageUrl.",
-                "Khuyen dung multipart/form-data voi field image va imageAltText.",
+                "Blog ho tro 1 hoac nhieu anh: gui imageUrl cho 1 anh cu, hoac imageUrls[] cho nhieu anh.",
+                "Khuyen dung multipart/form-data voi field image/images/files va imageAltText de upload 1 hoac nhieu anh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "Neu gui application/json thi imageUrl phai la absolute URL.",
-                "Bai Published khong duoc xoa imageUrl."));
+                "Neu gui application/json thi imageUrl/imageUrls phai la absolute URL.",
+                "Bai Published khong duoc xoa het anh."));
 
         group.MapPost(PublishBlogPost, "{id:guid}/publish")
             .RequireAuthorization()
@@ -138,7 +147,7 @@ public sealed class BlogPosts : IEndpointGroup
                 null,
                 "Danh cho Admin, Manager, Staff.",
                 "Dat Status = Published va set PublishedAt neu chua co.",
-                "Bai viet phai co imageUrl truoc khi publish."));
+                "Bai viet phai co it nhat 1 anh truoc khi publish."));
 
         group.MapDelete(ArchiveBlogPost, "{id:guid}")
             .RequireAuthorization()
@@ -184,7 +193,7 @@ public sealed class BlogPosts : IEndpointGroup
         }
         finally
         {
-            command.ImageFile?.Content.Dispose();
+            DisposeImageContents(command.ImageFile, command.ImageFiles);
         }
     }
 
@@ -208,7 +217,7 @@ public sealed class BlogPosts : IEndpointGroup
         }
         finally
         {
-            command.ImageFile?.Content.Dispose();
+            DisposeImageContents(command.ImageFile, command.ImageFiles);
         }
     }
 
@@ -232,7 +241,7 @@ public sealed class BlogPosts : IEndpointGroup
         }
         finally
         {
-            command.ImageFile?.Content.Dispose();
+            DisposeImageContents(command.ImageFile, command.ImageFiles);
         }
     }
 
@@ -247,52 +256,58 @@ public sealed class BlogPosts : IEndpointGroup
 
     private sealed record CreateBlogPostJsonRequest(
         string Title,
-        string? Slug,
         string? Summary,
         string Content,
         string Category,
         string? Status,
         string? ImageUrl = null,
+        IReadOnlyCollection<string>? ImageUrls = null,
         string? ImageAltText = null);
 
     private sealed record CreateBlogPostFormRequest(
         string Title,
-        string? Slug,
         string? Summary,
         string Content,
         string Category,
         string? Status,
         string? ImageUrl = null,
+        IReadOnlyCollection<string>? ImageUrls = null,
         string? ImageAltText = null,
-        IFormFile? Image = null);
+        IFormFile? Image = null,
+        IFormFileCollection? Images = null);
 
     public sealed record UpdateBlogPostRequest(
         string Title,
-        string? Slug,
         string? Summary,
         string Content,
         string Status,
         string? ImageUrl,
+        IReadOnlyCollection<string>? ImageUrls,
         string? ImageAltText,
         string Category);
 
     private sealed record UpdateBlogPostFormRequest(
         string Title,
-        string? Slug,
         string? Summary,
         string Content,
         string Status,
         string? ImageUrl,
+        IReadOnlyCollection<string>? ImageUrls,
         string? ImageAltText,
         string Category,
-        IFormFile? Image = null);
+        IFormFile? Image = null,
+        IFormFileCollection? Images = null);
 
     public sealed record UpdateBlogPostImageRequest(
         string? ImageUrl,
+        IReadOnlyCollection<string>? ImageUrls = null,
         string? ImageAltText = null);
 
     private sealed record BlogPostImageFormRequest(
-        IFormFile Image,
+        IFormFile? Image = null,
+        IFormFileCollection? Images = null,
+        string? ImageUrl = null,
+        IReadOnlyCollection<string>? ImageUrls = null,
         string? ImageAltText = null);
 
     private static async Task<CreateBlogPostCommand?> CreateBlogPostCommandFromJsonAsync(
@@ -303,14 +318,15 @@ public sealed class BlogPosts : IEndpointGroup
         return body is null
             ? null
             : new CreateBlogPostCommand(
-                body.Title,
-                body.Slug,
-                body.Summary,
-                body.Content,
-                body.Category,
-                body.Status,
-                body.ImageUrl,
-                body.ImageAltText);
+                Title: body.Title,
+                Slug: null,
+                Summary: body.Summary,
+                Content: body.Content,
+                Category: body.Category,
+                Status: body.Status,
+                ImageUrl: body.ImageUrl,
+                ImageAltText: body.ImageAltText,
+                ImageUrls: body.ImageUrls);
     }
 
     private static async Task<CreateBlogPostCommand> CreateBlogPostCommandFromFormAsync(
@@ -318,16 +334,20 @@ public sealed class BlogPosts : IEndpointGroup
         CancellationToken ct)
     {
         var form = await request.ReadFormAsync(ct);
+        var imageUrls = GetFormValues(form, "imageUrls", "imageUrls[]");
+        var imageFiles = await CreateImageFilesFromFormAsync(form, ct);
+
         return new CreateBlogPostCommand(
-            GetFormValue(form, "title") ?? string.Empty,
-            GetFormValue(form, "slug"),
-            GetFormValue(form, "summary"),
-            GetFormValue(form, "content") ?? string.Empty,
-            GetFormValue(form, "category") ?? string.Empty,
-            GetFormValue(form, "status"),
-            GetFormValue(form, "imageUrl"),
-            GetFormValue(form, "imageAltText"),
-            await CreateImageFileFromFormAsync(form, ct));
+            Title: GetFormValue(form, "title") ?? string.Empty,
+            Slug: null,
+            Summary: GetFormValue(form, "summary"),
+            Content: GetFormValue(form, "content") ?? string.Empty,
+            Category: GetFormValue(form, "category") ?? string.Empty,
+            Status: GetFormValue(form, "status"),
+            ImageUrl: GetFormValue(form, "imageUrl"),
+            ImageAltText: GetFormValue(form, "imageAltText"),
+            ImageUrls: imageUrls,
+            ImageFiles: imageFiles);
     }
 
     private static async Task<UpdateBlogPostCommand?> UpdateBlogPostCommandFromJsonAsync(
@@ -339,15 +359,16 @@ public sealed class BlogPosts : IEndpointGroup
         return body is null
             ? null
             : new UpdateBlogPostCommand(
-                id,
-                body.Title,
-                body.Slug,
-                body.Summary,
-                body.Content,
-                body.Status,
-                body.ImageUrl,
-                body.ImageAltText,
-                body.Category);
+                BlogPostId: id,
+                Title: body.Title,
+                Slug: null,
+                Summary: body.Summary,
+                Content: body.Content,
+                Status: body.Status,
+                ImageUrl: body.ImageUrl,
+                ImageAltText: body.ImageAltText,
+                Category: body.Category,
+                ImageUrls: body.ImageUrls);
     }
 
     private static async Task<UpdateBlogPostCommand> UpdateBlogPostCommandFromFormAsync(
@@ -356,17 +377,21 @@ public sealed class BlogPosts : IEndpointGroup
         CancellationToken ct)
     {
         var form = await request.ReadFormAsync(ct);
+        var imageUrls = GetFormValues(form, "imageUrls", "imageUrls[]");
+        var imageFiles = await CreateImageFilesFromFormAsync(form, ct);
+
         return new UpdateBlogPostCommand(
-            id,
-            GetFormValue(form, "title") ?? string.Empty,
-            GetFormValue(form, "slug"),
-            GetFormValue(form, "summary"),
-            GetFormValue(form, "content") ?? string.Empty,
-            GetFormValue(form, "status") ?? string.Empty,
-            GetFormValue(form, "imageUrl"),
-            GetFormValue(form, "imageAltText"),
-            GetFormValue(form, "category") ?? string.Empty,
-            await CreateImageFileFromFormAsync(form, ct));
+            BlogPostId: id,
+            Title: GetFormValue(form, "title") ?? string.Empty,
+            Slug: null,
+            Summary: GetFormValue(form, "summary"),
+            Content: GetFormValue(form, "content") ?? string.Empty,
+            Status: GetFormValue(form, "status") ?? string.Empty,
+            ImageUrl: GetFormValue(form, "imageUrl"),
+            ImageAltText: GetFormValue(form, "imageAltText"),
+            Category: GetFormValue(form, "category") ?? string.Empty,
+            ImageUrls: imageUrls,
+            ImageFiles: imageFiles);
     }
 
     private static async Task<UpdateBlogPostImageCommand?> UpdateBlogPostImageCommandFromJsonAsync(
@@ -377,7 +402,11 @@ public sealed class BlogPosts : IEndpointGroup
         var body = await request.ReadFromJsonAsync<UpdateBlogPostImageRequest>(cancellationToken: ct);
         return body is null
             ? null
-            : new UpdateBlogPostImageCommand(id, body.ImageUrl, body.ImageAltText);
+            : new UpdateBlogPostImageCommand(
+                BlogPostId: id,
+                ImageUrl: body.ImageUrl,
+                ImageAltText: body.ImageAltText,
+                ImageUrls: body.ImageUrls);
     }
 
     private static async Task<UpdateBlogPostImageCommand?> UpdateBlogPostImageCommandFromFormAsync(
@@ -386,45 +415,104 @@ public sealed class BlogPosts : IEndpointGroup
         CancellationToken ct)
     {
         var form = await request.ReadFormAsync(ct);
-        var imageFile = await CreateImageFileFromFormAsync(form, ct);
-        if (imageFile is null)
+        var imageUrl = GetFormValue(form, "imageUrl");
+        var imageUrls = GetFormValues(form, "imageUrls", "imageUrls[]");
+        var imageFiles = await CreateImageFilesFromFormAsync(form, ct);
+        if (string.IsNullOrWhiteSpace(imageUrl) && imageUrls.Count == 0 && imageFiles.Count == 0)
         {
             return null;
         }
 
         return new UpdateBlogPostImageCommand(
-            id,
-            null,
-            GetFormValue(form, "imageAltText"),
-            imageFile);
+            BlogPostId: id,
+            ImageUrl: imageUrl,
+            ImageAltText: GetFormValue(form, "imageAltText"),
+            ImageUrls: imageUrls,
+            ImageFiles: imageFiles);
     }
 
-    private static async Task<BlogPostImageFileRequest?> CreateImageFileFromFormAsync(
+    private static async Task<IReadOnlyCollection<BlogPostImageFileRequest>> CreateImageFilesFromFormAsync(
         IFormCollection form,
         CancellationToken ct)
     {
-        var file = form.Files.FirstOrDefault(file =>
-            string.Equals(file.Name, "image", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(file.Name, "file", StringComparison.OrdinalIgnoreCase));
-        if (file is null)
+        var files = form.Files
+            .Where(file =>
+                string.Equals(file.Name, "image", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(file.Name, "images", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(file.Name, "file", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(file.Name, "files", StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (files.Count == 0)
         {
-            return null;
+            return [];
         }
 
-        var content = new MemoryStream();
-        await file.CopyToAsync(content, ct);
-        content.Position = 0;
+        var imageFiles = new List<BlogPostImageFileRequest>(files.Count);
+        foreach (var file in files)
+        {
+            var content = new MemoryStream();
+            await file.CopyToAsync(content, ct);
+            content.Position = 0;
 
-        return new BlogPostImageFileRequest(
-            file.FileName,
-            file.ContentType,
-            file.Length,
-            content);
+            imageFiles.Add(new BlogPostImageFileRequest(
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                content));
+        }
+
+        return imageFiles;
     }
 
     private static string? GetFormValue(IFormCollection form, string name)
     {
         var value = form[name].ToString();
         return string.IsNullOrWhiteSpace(value) ? null : value;
+    }
+
+    private static IReadOnlyCollection<string> GetFormValues(IFormCollection form, params string[] names)
+    {
+        var values = new List<string>();
+        foreach (var name in names)
+        {
+            foreach (var rawValue in form[name])
+            {
+                if (string.IsNullOrWhiteSpace(rawValue))
+                {
+                    continue;
+                }
+
+                foreach (var value in rawValue.Split(
+                    [',', '\n'],
+                    StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (!values.Contains(value, StringComparer.OrdinalIgnoreCase))
+                    {
+                        values.Add(value);
+                    }
+                }
+            }
+        }
+
+        return values;
+    }
+
+    private static void DisposeImageContents(
+        BlogPostImageFileRequest? imageFile,
+        IReadOnlyCollection<BlogPostImageFileRequest>? imageFiles)
+    {
+        imageFile?.Content.Dispose();
+        if (imageFiles is null)
+        {
+            return;
+        }
+
+        foreach (var file in imageFiles)
+        {
+            if (!ReferenceEquals(file, imageFile))
+            {
+                file.Content.Dispose();
+            }
+        }
     }
 }

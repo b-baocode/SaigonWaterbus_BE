@@ -35,13 +35,6 @@ public sealed class Incidents : IEndpointGroup
         }
         """;
 
-    private const string AssignManagerExample =
-        """
-        {
-          "managerUserId": "00000000-0000-0000-0000-000000000000"
-        }
-        """;
-
     private const string AssignReplacementBoatExample =
         """
         {
@@ -69,7 +62,7 @@ public sealed class Incidents : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Danh sach su co tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
+                "Admin hoặc Staff",
                 null,
                 "Query params optional: boatId, tripId, resolutionStatus.",
                 "Dung de xem cac su co dang Open hoac da Resolved."));
@@ -78,43 +71,35 @@ public sealed class Incidents : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Bao su co tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
+                "Admin hoặc Staff",
                 CreateIncidentExample,
                 "boatId bat buoc. tripId optional neu su co xay ra trong mot chuyen cu the.",
                 "Khi tao su co, tau duoc chuyen sang Incident.",
-                "Neu co tripId: trip chuyen sang Delayed de cho Admin/Manager dieu tau va nhap delay; BE khong tu Cancelled theo severity."));
-
-        group.MapPatch(AssignManager, "{incidentId:guid}/assign-manager")
-            .RequireAuthorization()
-            .WithSummary("Admin gan manager phu trach su co")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
-                AssignManagerExample,
-                "managerUserId phai la user role Manager dang Active.",
-                "Dung sau khi staff bao su co de giao nguoi phu trach xu ly."));
+                "Neu co tripId: trip chuyen sang Delayed de cho Admin dieu tau va nhap delay; BE khong tu Cancelled theo severity."));
 
         group.MapPatch(AssignReplacementBoat, "{incidentId:guid}/assign-replacement-boat")
             .RequireAuthorization()
             .WithSummary("Gan tau thay the/cuu ho cho su co")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager",
+                "Admin",
                 AssignReplacementBoatExample,
                 "rescueBoatId bat buoc, phai la tau serviceType Rescue dang Active.",
                 "BE tinh khach bi anh huong theo vi tri tau: onboardPassengerCount va futurePassengerCount.",
-                "Neu su co co tripId: replacementBoatId bat buoc du co khach hay chua, de tau Passenger thay the tiep tuc hanh trinh.",
                 "Neu co khach dang tren tau: replacementBoatId bat buoc, mission TransferAtIncidentLocation.",
                 "Neu chua co khach tren tau nhung co khach cho o ben sau: replacementBoatId bat buoc, mission ContinueFromStation va co replacementTargetStation.",
-                "Neu khong co khach bi anh huong nhung trip con hanh trinh: mission ContinueFromStation toi ben tiep theo.",
+                "Neu khong co khach bi anh huong: co the chi gui rescueBoatId, replacementBoatId de null, mission None.",
+                "Neu khong co khach bi anh huong nhung Admin van muon tiep tuc chuyen: co the gui them replacementBoatId de doi tau cua trip.",
                 "Neu su co khong co tripId: chi gui rescueBoatId; replacementBoatId phai de null.",
                 "Tau thay the phai serviceType Passenger, Active, setup du ghe va khong trung tau cuu ho/tau gap su co.",
-                "delayMinutes la so phut Admin/Manager nhap luc dieu tau; vi du 5 thi trip cong 5 phut, TripStatus Delayed va adjusted time cho cac stop con lai.",
-                "Neu delayMinutes >= 15, BE day delay sang cac chuyen sau cua cung tau gap su co, cung route va cung ngay van hanh."));
+                "delayMinutes la so phut Admin nhap luc dieu tau; vi du 5 thi trip cong 5 phut, TripStatus Delayed va adjusted time cho cac stop con lai.",
+                "BE tinh day chuyen cho cac trip sau cua cung tau gap su co, cung ngay van hanh theo cong thuc: gio tau san sang = adjustedArrival chuyen truoc + 15 phut quay dau.",
+                "Neu gio tau san sang lon hon gio khoi hanh du kien cua chuyen sau thi chuyen sau bi delay dung phan bi lan gio; route khac van co the bi anh huong neu cung tau."));
 
         group.MapPatch(ResolveIncident, "{incidentId:guid}/resolve")
             .RequireAuthorization()
             .WithSummary("Xu ly/dong su co tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Manager",
+                "Admin",
                 ResolveIncidentExample,
                 "resolutionNote bat buoc.",
                 "boatStatus/tripStatus optional de cap nhat trang thai sau khi xu ly."));
@@ -152,15 +137,6 @@ public sealed class Incidents : IEndpointGroup
                 request.Description,
                 request.Severity,
                 request.OccurredAt),
-            cancellationToken));
-
-    private static async Task<IResult> AssignManager(
-        ISender sender,
-        Guid incidentId,
-        AssignManagerRequest request,
-        CancellationToken cancellationToken) =>
-        Results.Ok(await sender.Send(
-            new AssignIncidentManagerCommand(incidentId, request.ManagerUserId),
             cancellationToken));
 
     private static async Task<IResult> AssignReplacementBoat(
@@ -232,8 +208,6 @@ public sealed class Incidents : IEndpointGroup
         string Description,
         string? Severity,
         DateTimeOffset? OccurredAt);
-
-    public sealed record AssignManagerRequest(Guid ManagerUserId);
 
     public sealed record AssignReplacementBoatRequest(
         Guid RescueBoatId,
