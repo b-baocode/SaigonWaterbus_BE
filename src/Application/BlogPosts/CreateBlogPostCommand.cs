@@ -25,12 +25,11 @@ public sealed class CreateBlogPostCommandValidator : AbstractValidator<CreateBlo
         RuleFor(x => x.Summary).MaximumLength(500);
         RuleFor(x => x.ImageUrl)
             .MaximumLength(2048)
-            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
-            .WithMessage("ImageUrl must be an absolute URL.");
-        RuleForEach(x => x.ImageUrls)
-            .MaximumLength(2048)
-            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
-            .WithMessage("ImageUrls must contain absolute URLs.");
+            .Must(string.IsNullOrWhiteSpace)
+            .WithMessage(BlogPostSupport.UploadOnlyImageMessage);
+        RuleFor(x => x.ImageUrls)
+            .Must(x => x is null || x.All(string.IsNullOrWhiteSpace))
+            .WithMessage(BlogPostSupport.UploadOnlyImageMessage);
         RuleFor(x => x.ImageAltText).MaximumLength(200);
         RuleFor(x => x.Content).NotEmpty();
         RuleFor(x => x.Status)
@@ -68,6 +67,8 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
 
     public async Task<BlogPostDto> Handle(CreateBlogPostCommand request, CancellationToken cancellationToken)
     {
+        BlogPostSupport.EnsureNoManualImageUrls(request.ImageUrl, request.ImageUrls);
+
         var actor = await BlogPostSupport.EnsureCurrentUserCanManageBlogPostsAsync(
             _context,
             _userContext,
@@ -124,10 +125,7 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
         }
         else
         {
-            imageUrls = BlogPostSupport.NormalizeImageUrls(
-                request.ImageUrl,
-                request.ImageUrls,
-                nameof(request.ImageUrls));
+            imageUrls = [];
         }
 
         BlogPostSupport.ApplyImageUrls(post, imageUrls);

@@ -25,12 +25,15 @@ public sealed class UpdateBlogPostImageCommandValidator : AbstractValidator<Upda
         RuleFor(x => x.BlogPostId).NotEmpty();
         RuleFor(x => x.ImageUrl)
             .MaximumLength(2048)
-            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
-            .WithMessage("ImageUrl must be an absolute URL.");
-        RuleForEach(x => x.ImageUrls)
-            .MaximumLength(2048)
-            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
-            .WithMessage("ImageUrls must contain absolute URLs.");
+            .Must(string.IsNullOrWhiteSpace)
+            .WithMessage(BlogPostSupport.UploadOnlyImageMessage);
+        RuleFor(x => x.ImageUrls)
+            .Must(x => x is null || x.All(string.IsNullOrWhiteSpace))
+            .WithMessage(BlogPostSupport.UploadOnlyImageMessage);
+        RuleFor(x => x.ImageFile)
+            .NotNull()
+            .When(x => x.ImageFiles is not { Count: > 0 })
+            .WithMessage(BlogPostSupport.ImageUploadRequiredMessage);
         RuleFor(x => x.ImageAltText).MaximumLength(200);
     }
 }
@@ -56,6 +59,8 @@ public sealed class UpdateBlogPostImageCommandHandler
         UpdateBlogPostImageCommand request,
         CancellationToken cancellationToken)
     {
+        BlogPostSupport.EnsureNoManualImageUrls(request.ImageUrl, request.ImageUrls);
+
         await BlogPostSupport.EnsureCurrentUserCanManageBlogPostsAsync(_context, _userContext, cancellationToken);
 
         var post = await _context.Set<BlogPost>()
@@ -84,10 +89,9 @@ public sealed class UpdateBlogPostImageCommandHandler
         }
         else
         {
-            imageUrls = BlogPostSupport.NormalizeImageUrls(
-                request.ImageUrl,
-                request.ImageUrls,
-                nameof(request.ImageUrls));
+            throw BlogPostSupport.CreateValidationException(
+                nameof(request.ImageFile),
+                BlogPostSupport.ImageUploadRequiredMessage);
         }
 
         BlogPostSupport.ApplyImageUrls(post, imageUrls);

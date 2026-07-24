@@ -18,37 +18,41 @@ public class BlogPostCommandTests
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var now = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero);
-        var handler = new CreateBlogPostCommandHandler(context, staffContext, new FixedTimeProvider(now));
+        var handler = new CreateBlogPostCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now),
+            new TestBlogImageStorageService());
 
         var first = await handler.Handle(
             new CreateBlogPostCommand(
-                "Khám phá Sài Gòn bằng waterbus",
-                null,
-                "Tom tat",
-                "Noi dung bai viet",
-                "activity",
-                "Published",
-                "https://example.test/waterbus-cover.webp",
-                "Tau waterbus tren song Sai Gon"),
+                Title: "Khám phá Sài Gòn bằng waterbus",
+                Slug: null,
+                Summary: "Tom tat",
+                Content: "Noi dung bai viet",
+                Category: "activity",
+                Status: "Published",
+                ImageAltText: "Tau waterbus tren song Sai Gon",
+                ImageFile: ImageFile("waterbus-cover.webp")),
             CancellationToken.None);
 
         var second = await handler.Handle(
             new CreateBlogPostCommand(
-                "Khám phá Sài Gòn bằng waterbus",
-                null,
-                "Tom tat khac",
-                "Noi dung bai viet khac",
-                "News",
-                "Published",
-                "https://example.test/waterbus-cover-2.webp",
-                "Tau waterbus tren song Sai Gon"),
+                Title: "Khám phá Sài Gòn bằng waterbus",
+                Slug: null,
+                Summary: "Tom tat khac",
+                Content: "Noi dung bai viet khac",
+                Category: "News",
+                Status: "Published",
+                ImageAltText: "Tau waterbus tren song Sai Gon",
+                ImageFile: ImageFile("waterbus-cover-2.webp")),
             CancellationToken.None);
 
         first.Slug.ShouldBe("kham-pha-sai-gon-bang-waterbus");
         second.Slug.ShouldBe("kham-pha-sai-gon-bang-waterbus-2");
         first.Category.ShouldBe("Activity");
         second.Category.ShouldBe("News");
-        first.ImageUrl.ShouldBe("https://example.test/waterbus-cover.webp");
+        first.ImageUrl.ShouldBe($"https://example.test/blog-posts/{first.BlogPostId}/waterbus-cover.webp");
         first.PublishedAt.ShouldBe(now);
         second.PublishedAt.ShouldBe(now);
         context.Set<BlogPost>().Count().ShouldBe(2);
@@ -62,7 +66,8 @@ public class BlogPostCommandTests
         var handler = new CreateBlogPostCommandHandler(
             context,
             staffContext,
-            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)),
+            new TestBlogImageStorageService());
 
         var result = await handler.Handle(
             new CreateBlogPostCommand(
@@ -72,25 +77,25 @@ public class BlogPostCommandTests
                 Content: "Dong 1\nDong 2\n\nDong 3",
                 Category: "News",
                 Status: "Draft",
-                ImageUrls:
+                ImageFiles:
                 [
-                    "https://example.test/blog-1.webp",
-                    "https://example.test/blog-2.webp"
+                    ImageFile("blog-1.webp"),
+                    ImageFile("blog-2.webp")
                 ]),
             CancellationToken.None);
 
         result.Slug.ShouldBe("bai-viet-nhieu-anh");
-        result.ImageUrl.ShouldBe("https://example.test/blog-1.webp");
+        result.ImageUrl.ShouldBe($"https://example.test/blog-posts/{result.BlogPostId}/blog-1.webp");
         result.ImageUrls.ShouldBe([
-            "https://example.test/blog-1.webp",
-            "https://example.test/blog-2.webp"
+            $"https://example.test/blog-posts/{result.BlogPostId}/blog-1.webp",
+            $"https://example.test/blog-posts/{result.BlogPostId}/blog-2.webp"
         ]);
         result.ContentText.ShouldBe("Dong 1\nDong 2\n\nDong 3");
         result.ContentHtml.ShouldBe("<p>Dong 1<br>Dong 2</p><p>Dong 3</p>");
     }
 
     [Test]
-    public async Task CreatePublishedBlogPostRequiresImageUrl()
+    public async Task CreatePublishedBlogPostRequiresUploadedImage()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
@@ -115,6 +120,32 @@ public class BlogPostCommandTests
     }
 
     [Test]
+    public async Task CreateBlogPostRejectsManualImageUrl()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var handler = new CreateBlogPostCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new CreateBlogPostCommand(
+                    "Bai viet gan link anh",
+                    null,
+                    "Tom tat",
+                    "Noi dung bai viet",
+                    "News",
+                    "Draft",
+                    ImageUrl: "https://example.test/manual.webp"),
+                CancellationToken.None));
+
+        exception.Errors["imageUrl"]
+            .ShouldContain("Không hỗ trợ gắn link ảnh blog; vui lòng upload file ảnh.");
+    }
+
+    [Test]
     public async Task CreateBlogPostCanUploadImageFile()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -135,11 +166,7 @@ public class BlogPostCommandTests
                 "News",
                 "Published",
                 ImageAltText: "Uploaded cover",
-                ImageFile: new BlogPostImageFileRequest(
-                    "cover.webp",
-                    "image/webp",
-                    16,
-                    new MemoryStream(new byte[16]))),
+                ImageFile: ImageFile("cover.webp")),
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe($"https://example.test/blog-posts/{result.BlogPostId}/cover.webp");
@@ -204,24 +231,28 @@ public class BlogPostCommandTests
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
 
-        var handler = new UpdateBlogPostImageCommandHandler(context, staffContext);
+        var handler = new UpdateBlogPostImageCommandHandler(
+            context,
+            staffContext,
+            new TestBlogImageStorageService());
         var result = await handler.Handle(
             new UpdateBlogPostImageCommand(
-                post.Id,
-                "https://example.test/new-cover.webp",
-                "New cover"),
+                BlogPostId: post.Id,
+                ImageUrl: null,
+                ImageAltText: "New cover",
+                ImageFile: ImageFile("new-cover.webp")),
             CancellationToken.None);
 
-        result.ImageUrl.ShouldBe("https://example.test/new-cover.webp");
+        result.ImageUrl.ShouldBe($"https://example.test/blog-posts/{post.Id}/new-cover.webp");
         result.ImageAltText.ShouldBe("New cover");
 
         var savedPost = context.Set<BlogPost>().Single(x => x.Id == post.Id);
-        savedPost.ImageUrl.ShouldBe("https://example.test/new-cover.webp");
+        savedPost.ImageUrl.ShouldBe($"https://example.test/blog-posts/{post.Id}/new-cover.webp");
         savedPost.ImageAltText.ShouldBe("New cover");
     }
 
     [Test]
-    public async Task StaffCanUpdateBlogPostMultipleImageUrls()
+    public async Task StaffCanUploadMultipleBlogPostImages()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
@@ -230,30 +261,33 @@ public class BlogPostCommandTests
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
 
-        var handler = new UpdateBlogPostImageCommandHandler(context, staffContext);
+        var handler = new UpdateBlogPostImageCommandHandler(
+            context,
+            staffContext,
+            new TestBlogImageStorageService());
         var result = await handler.Handle(
             new UpdateBlogPostImageCommand(
                 BlogPostId: post.Id,
                 ImageUrl: null,
                 ImageAltText: "Gallery",
-                ImageUrls:
+                ImageFiles:
                 [
-                    "https://example.test/gallery-1.webp",
-                    "https://example.test/gallery-2.webp"
+                    ImageFile("gallery-1.webp"),
+                    ImageFile("gallery-2.webp")
                 ]),
             CancellationToken.None);
 
-        result.ImageUrl.ShouldBe("https://example.test/gallery-1.webp");
+        result.ImageUrl.ShouldBe($"https://example.test/blog-posts/{post.Id}/gallery-1.webp");
         result.ImageUrls.ShouldBe([
-            "https://example.test/gallery-1.webp",
-            "https://example.test/gallery-2.webp"
+            $"https://example.test/blog-posts/{post.Id}/gallery-1.webp",
+            $"https://example.test/blog-posts/{post.Id}/gallery-2.webp"
         ]);
 
         var savedPost = context.Set<BlogPost>().Single(x => x.Id == post.Id);
-        savedPost.ImageUrl.ShouldBe("https://example.test/gallery-1.webp");
+        savedPost.ImageUrl.ShouldBe($"https://example.test/blog-posts/{post.Id}/gallery-1.webp");
         savedPost.ImageUrls.ShouldBe([
-            "https://example.test/gallery-1.webp",
-            "https://example.test/gallery-2.webp"
+            $"https://example.test/blog-posts/{post.Id}/gallery-1.webp",
+            $"https://example.test/blog-posts/{post.Id}/gallery-2.webp"
         ]);
     }
 
@@ -276,11 +310,7 @@ public class BlogPostCommandTests
                 post.Id,
                 null,
                 "Uploaded cover",
-                new BlogPostImageFileRequest(
-                    "cover.webp",
-                    "image/webp",
-                    16,
-                    new MemoryStream(new byte[16]))),
+                ImageFile("cover.webp")),
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe($"https://example.test/blog-posts/{post.Id}/cover.webp");
@@ -316,11 +346,7 @@ public class BlogPostCommandTests
                 null,
                 "Updated cover",
                 "Activity",
-                new BlogPostImageFileRequest(
-                    "updated-cover.webp",
-                    "image/webp",
-                    16,
-                    new MemoryStream(new byte[16]))),
+                ImageFile("updated-cover.webp")),
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe($"https://example.test/blog-posts/{post.Id}/updated-cover.webp");
@@ -329,7 +355,7 @@ public class BlogPostCommandTests
     }
 
     [Test]
-    public async Task CannotClearPublishedBlogPostImage()
+    public async Task UpdateBlogPostWithoutImageKeepsExistingImage()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
@@ -342,14 +368,46 @@ public class BlogPostCommandTests
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
 
+        var handler = new UpdateBlogPostCommandHandler(
+            context,
+            staffContext,
+            TimeProvider.System,
+            new TestBlogImageStorageService());
+        var result = await handler.Handle(
+            new UpdateBlogPostCommand(
+                post.Id,
+                "Published post updated",
+                null,
+                "Tom tat moi",
+                "Noi dung moi",
+                "Published",
+                null,
+                "Tau waterbus tren song Sai Gon",
+                "News"),
+            CancellationToken.None);
+
+        result.ImageUrl.ShouldBe("https://example.test/waterbus-cover.webp");
+        result.ImageUrls.ShouldBe(["https://example.test/waterbus-cover.webp"]);
+    }
+
+    [Test]
+    public async Task UpdateBlogPostImageRequiresUploadedFile()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var post = BlogPost(author, "draft-post", "Draft", null);
+        context.Set<BlogPost>().Add(post);
+        await context.SaveChangesAsync();
+
         var handler = new UpdateBlogPostImageCommandHandler(context, staffContext);
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
                 new UpdateBlogPostImageCommand(post.Id, null, null),
                 CancellationToken.None));
 
-        exception.Errors["imageUrl"]
-            .ShouldContain("Bai viet Published bat buoc co it nhat 1 anh.");
+        exception.Errors["imageFile"]
+            .ShouldContain("Vui lòng upload ít nhất 1 file ảnh blog.");
     }
 
     [Test]
@@ -390,6 +448,13 @@ public class BlogPostCommandTests
             PublishedAt = publishedAt,
             Created = publishedAt ?? new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)
         };
+
+    private static BlogPostImageFileRequest ImageFile(string fileName) =>
+        new(
+            fileName,
+            "image/webp",
+            16,
+            new MemoryStream(new byte[16]));
 
     private static async Task<IUserContext> SeedCustomerAsync(Infrastructure.Data.ApplicationDbContext context)
     {

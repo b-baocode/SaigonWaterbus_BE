@@ -28,12 +28,11 @@ public sealed class UpdateBlogPostCommandValidator : AbstractValidator<UpdateBlo
         RuleFor(x => x.Summary).MaximumLength(500);
         RuleFor(x => x.ImageUrl)
             .MaximumLength(2048)
-            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
-            .WithMessage("ImageUrl must be an absolute URL.");
-        RuleForEach(x => x.ImageUrls)
-            .MaximumLength(2048)
-            .Must(x => string.IsNullOrWhiteSpace(x) || Uri.TryCreate(x, UriKind.Absolute, out _))
-            .WithMessage("ImageUrls must contain absolute URLs.");
+            .Must(string.IsNullOrWhiteSpace)
+            .WithMessage(BlogPostSupport.UploadOnlyImageMessage);
+        RuleFor(x => x.ImageUrls)
+            .Must(x => x is null || x.All(string.IsNullOrWhiteSpace))
+            .WithMessage(BlogPostSupport.UploadOnlyImageMessage);
         RuleFor(x => x.ImageAltText).MaximumLength(200);
         RuleFor(x => x.Content).NotEmpty();
         RuleFor(x => x.Status)
@@ -70,6 +69,8 @@ public sealed class UpdateBlogPostCommandHandler : IRequestHandler<UpdateBlogPos
 
     public async Task<BlogPostDto> Handle(UpdateBlogPostCommand request, CancellationToken cancellationToken)
     {
+        BlogPostSupport.EnsureNoManualImageUrls(request.ImageUrl, request.ImageUrls);
+
         await BlogPostSupport.EnsureCurrentUserCanManageBlogPostsAsync(_context, _userContext, cancellationToken);
 
         var post = await _context.Set<BlogPost>()
@@ -90,34 +91,26 @@ public sealed class UpdateBlogPostCommandHandler : IRequestHandler<UpdateBlogPos
             cancellationToken);
         post.Summary = BlogPostSupport.NormalizeOptionalText(request.Summary, nameof(request.Summary), 500);
         post.Category = category;
-        IReadOnlyCollection<string> imageUrls;
         if (request.ImageFile is not null)
         {
-            imageUrls = [await BlogPostSupport.UploadImageAsync(
+            var imageUrl = await BlogPostSupport.UploadImageAsync(
                 post.Id,
                 request.ImageFile,
                 _blogImageStorage,
                 nameof(request.ImageFile),
-                cancellationToken)];
+                cancellationToken);
+            BlogPostSupport.ApplyImageUrls(post, [imageUrl]);
         }
         else if (request.ImageFiles is { Count: > 0 })
         {
-            imageUrls = await BlogPostSupport.UploadImagesAsync(
+            var imageUrls = await BlogPostSupport.UploadImagesAsync(
                 post.Id,
                 request.ImageFiles,
                 _blogImageStorage,
                 nameof(request.ImageFiles),
                 cancellationToken);
+            BlogPostSupport.ApplyImageUrls(post, imageUrls);
         }
-        else
-        {
-            imageUrls = BlogPostSupport.NormalizeImageUrls(
-                request.ImageUrl,
-                request.ImageUrls,
-                nameof(request.ImageUrls));
-        }
-
-        BlogPostSupport.ApplyImageUrls(post, imageUrls);
         post.ImageAltText = BlogPostSupport.NormalizeOptionalText(request.ImageAltText, nameof(request.ImageAltText), 200);
         post.Content = content;
         post.Status = status;

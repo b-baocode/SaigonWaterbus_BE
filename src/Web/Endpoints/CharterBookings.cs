@@ -108,6 +108,20 @@ public sealed class CharterBookings : IEndpointGroup
         }
         """;
 
+    private const string CreateRouteDrawRequestExample =
+        """
+        {
+          "notes": "Booking cần GPS vẽ route charter theo đúng thứ tự bến."
+        }
+        """;
+
+    private const string CompleteRouteDrawRequestExample =
+        """
+        {
+          "routeId": "00000000-0000-0000-0000-000000000001"
+        }
+        """;
+
     private const string AssignManagerExample =
         """
         {
@@ -210,6 +224,66 @@ public sealed class CharterBookings : IEndpointGroup
                 "Da co route Active khop chinh xac lo trinh -> khong tao moi, tra ve route do voi routeAlreadyExisted=true.",
                 "Co chang khong khop duoc route nguon nao -> tra loi validation kem danh sach chang thieu; tao route nguon (vi du POST /api/routes/from-gps) roi goi lai.",
                 "Sau khi tao thanh cong co the goi POST /api/charter-bookings/admin/{id}/trip de sinh trip."));
+
+        group.MapPost(CreateCharterRouteDrawRequest, "admin/{id:guid}/route-draw-request")
+            .RequireAuthorization()
+            .Accepts<CreateCharterRouteDrawRequestBody>("application/json")
+            .WithSummary("Admin Charter gui booking sang GPS de ve route")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                CreateRouteDrawRequestExample,
+                "Dung khi charter booking chua co charterRouteId co geometry.",
+                "BE snapshot chuoi ben cua booking theo thu tu: fromStation -> itineraryStops -> toStation.",
+                "Neu da co request Pending/InProgress cho booking thi tra lai request do, khong tao trung.",
+                "Neu tim thay route Active co san khop dung chuoi ben va co geometry thi response co candidateRoute de GPS hien san polyline.",
+                "GPS van co the ve/chinh va complete bang routeId moi hoac routeId candidate."));
+
+        group.MapGet(GetCharterRouteDrawRequests, "admin/route-draw-requests")
+            .RequireAuthorization()
+            .WithSummary("GPS lay danh sach yeu cau ve route charter")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Query status optional: Pending | InProgress | Done | Cancelled.",
+                "GPS dung list nay de hien hang doi request can ve route."));
+
+        group.MapGet(GetCharterRouteDrawRequestDetail, "admin/route-draw-requests/{requestId:guid}")
+            .RequireAuthorization()
+            .WithSummary("GPS lay chi tiet yeu cau ve route charter")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Response co stops[] kem stationId/code/name/lat/lng dung thu tu de GPS pin len map.",
+                "candidateRoute nullable; neu co thi tra routeGeometry/stops de GPS hien polyline san.",
+                "candidateLegs gom cac route co the khop tung chang neu khong co full candidate."));
+
+        group.MapPatch(MarkCharterRouteDrawRequestInProgress, "admin/route-draw-requests/{requestId:guid}/in-progress")
+            .RequireAuthorization()
+            .WithSummary("GPS nhan viec ve route charter")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Optional nhung nen goi khi admin GPS mo request de status thanh InProgress.",
+                "Goi lai lan 2 khong fail neu request da InProgress."));
+
+        group.MapPost(CompleteCharterRouteDrawRequest, "admin/route-draw-requests/{requestId:guid}/complete")
+            .RequireAuthorization()
+            .Accepts<CompleteCharterRouteDrawRequestBody>("application/json")
+            .WithSummary("GPS hoan tat ve route va gan vao charter booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                CompleteRouteDrawRequestExample,
+                "routeId phai ton tai, Active, co routeGeometry va routeStops khop dung thu tu stops cua request.",
+                "BE update request = Done, resultRouteId = routeId va gan booking.charterRouteId trong transaction.",
+                "Idempotent: complete lai cung routeId khong tao/update sai."));
+
+        group.MapPost(CancelCharterRouteDrawRequest, "admin/route-draw-requests/{requestId:guid}/cancel")
+            .RequireAuthorization()
+            .WithSummary("Huy yeu cau ve route charter")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Chi huy request Pending/InProgress. Request Done khong duoc huy."));
 
         group.MapPost(CreateCharterBookingTrip, "admin/{id:guid}/trip")
             .RequireAuthorization()
@@ -607,6 +681,47 @@ public sealed class CharterBookings : IEndpointGroup
             request?.RouteCode,
             request?.RouteName,
             request?.Description), ct));
+
+    private static async Task<IResult> CreateCharterRouteDrawRequest(
+        ISender sender,
+        Guid id,
+        CreateCharterRouteDrawRequestBody? request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CreateCharterRouteDrawRequestCommand(id, request?.Notes), ct));
+
+    private static async Task<IResult> GetCharterRouteDrawRequests(
+        ISender sender,
+        string? status,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCharterRouteDrawRequestListQuery(status), ct));
+
+    private static async Task<IResult> GetCharterRouteDrawRequestDetail(
+        ISender sender,
+        Guid requestId,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCharterRouteDrawRequestDetailQuery(requestId), ct));
+
+    private static async Task<IResult> MarkCharterRouteDrawRequestInProgress(
+        ISender sender,
+        Guid requestId,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new MarkCharterRouteDrawRequestInProgressCommand(requestId), ct));
+
+    private static async Task<IResult> CompleteCharterRouteDrawRequest(
+        ISender sender,
+        Guid requestId,
+        CompleteCharterRouteDrawRequestBody request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CompleteCharterRouteDrawRequestCommand(requestId, request.RouteId), ct));
+
+    private static async Task<IResult> CancelCharterRouteDrawRequest(
+        ISender sender,
+        Guid requestId,
+        CancellationToken ct)
+    {
+        await sender.Send(new CancelCharterRouteDrawRequestCommand(requestId), ct);
+        return Results.NoContent();
+    }
 
     private static async Task<IResult> CreateCharterBookingTrip(
         ISender sender,
@@ -1294,3 +1409,7 @@ public sealed class CharterBookings : IEndpointGroup
         return builder.Length == 0 ? "charter-booking" : builder.ToString();
     }
 }
+
+public sealed record CreateCharterRouteDrawRequestBody(string? Notes = null);
+
+public sealed record CompleteCharterRouteDrawRequestBody(Guid RouteId);

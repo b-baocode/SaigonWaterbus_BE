@@ -20,6 +20,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<CharterBookingBoat> CharterBookingBoats => Set<CharterBookingBoat>();
 
+    public DbSet<CharterRouteDrawRequest> CharterRouteDrawRequests => Set<CharterRouteDrawRequest>();
+
+    public DbSet<CharterRouteDrawRequestStop> CharterRouteDrawRequestStops => Set<CharterRouteDrawRequestStop>();
+
     public DbSet<Seat> Seats => Set<Seat>();
 
     public DbSet<Station> Stations => Set<Station>();

@@ -18,6 +18,8 @@ internal static class BlogPostSupport
     public const string ActivityCategory = "Activity";
     public const string EventCategory = "Event";
     public const string NewsCategory = "News";
+    public const string UploadOnlyImageMessage = "Không hỗ trợ gắn link ảnh blog; vui lòng upload file ảnh.";
+    public const string ImageUploadRequiredMessage = "Vui lòng upload ít nhất 1 file ảnh blog.";
 
     private const int MaxSlugLength = 220;
     private static readonly Regex HtmlTagPattern = new("<[^>]+>", RegexOptions.Compiled);
@@ -164,6 +166,29 @@ internal static class BlogPostSupport
         }
 
         return urls;
+    }
+
+    public static bool HasManualImageUrls(string? imageUrl, IReadOnlyCollection<string>? imageUrls) =>
+        !string.IsNullOrWhiteSpace(imageUrl)
+        || imageUrls?.Any(x => !string.IsNullOrWhiteSpace(x)) == true;
+
+    public static void EnsureNoManualImageUrls(string? imageUrl, IReadOnlyCollection<string>? imageUrls)
+    {
+        var failures = new List<ValidationFailure>();
+        if (!string.IsNullOrWhiteSpace(imageUrl))
+        {
+            failures.Add(new ValidationFailure(nameof(BlogPost.ImageUrl), UploadOnlyImageMessage));
+        }
+
+        if (imageUrls?.Any(x => !string.IsNullOrWhiteSpace(x)) == true)
+        {
+            failures.Add(new ValidationFailure(nameof(BlogPost.ImageUrls), UploadOnlyImageMessage));
+        }
+
+        if (failures.Count > 0)
+        {
+            throw new SaigonWaterbus.Application.Common.Exceptions.ValidationException(failures);
+        }
     }
 
     public static IReadOnlyCollection<string> CreateImageUrls(BlogPost post) =>

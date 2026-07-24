@@ -1,3 +1,4 @@
+using System.Text.Json;
 using SaigonWaterbus.Application.BlogPosts;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -5,6 +6,8 @@ namespace SaigonWaterbus.Web.Endpoints;
 public sealed class BlogPosts : IEndpointGroup
 {
     public static string RoutePrefix => "/api/blog-posts";
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const string UploadOnlyImageMessage = "Không hỗ trợ gắn link ảnh blog; vui lòng upload file ảnh.";
 
     private const string CreateExample =
         """
@@ -12,9 +15,6 @@ public sealed class BlogPosts : IEndpointGroup
           "title": "Kham pha Sai Gon bang waterbus",
           "summary": "Nhung diem nen trai nghiem tren tuyen waterbus Sai Gon.",
           "category": "Activity",
-          "imageUrls": [
-            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp"
-          ],
           "imageAltText": "Tau waterbus tren song Sai Gon",
           "content": "Noi dung bai viet dang van ban thuong, khong can HTML.",
           "status": "Draft"
@@ -27,10 +27,6 @@ public sealed class BlogPosts : IEndpointGroup
           "title": "Kham pha Sai Gon bang waterbus",
           "summary": "Nhung diem nen trai nghiem tren tuyen waterbus Sai Gon.",
           "category": "News",
-          "imageUrls": [
-            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover.webp",
-            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-detail.webp"
-          ],
           "imageAltText": "Tau waterbus tren song Sai Gon",
           "content": "Noi dung bai viet da cap nhat bang text thuong.",
           "status": "Published"
@@ -39,12 +35,10 @@ public sealed class BlogPosts : IEndpointGroup
 
     private const string UpdateImageExample =
         """
-        {
-          "imageUrls": [
-            "https://res.cloudinary.com/demo/image/upload/waterbus/blog-cover-fallback.webp"
-          ],
-          "imageAltText": "Tau waterbus tren song Sai Gon luc hoang hon"
-        }
+        multipart/form-data
+        image=<file>
+        images=<file>
+        imageAltText=Tau waterbus tren song Sai Gon luc hoang hon
         """;
 
     public static void Map(RouteGroupBuilder group)
@@ -99,8 +93,9 @@ public sealed class BlogPosts : IEndpointGroup
                 "category bat buoc nhap. Gia tri hop le: Activity | Event | News.",
                 "slug khong can gui; BE tu sinh tu title va tu them hau to neu trung.",
                 "content nhap plain text; BE tra them contentText de admin doc va contentHtml da convert an toan cho FE render.",
-                "imageUrl la anh cover cu, imageUrls la danh sach anh moi (1 hoac nhieu). Bai Published bat buoc co it nhat 1 anh.",
-                "Co the gui multipart/form-data voi field image/images/files de upload 1 hoac nhieu anh.",
+                "Anh blog chi nhan upload file bang multipart/form-data field image/images/files, khong ho tro gan link imageUrl/imageUrls.",
+                "Response van tra imageUrl/imageUrls vi file upload se duoc luu thanh URL de FE hien thi.",
+                "Bai Published bat buoc co it nhat 1 anh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
                 "FE khong can hien input slug."));
 
@@ -119,7 +114,9 @@ public sealed class BlogPosts : IEndpointGroup
                 "slug khong can gui; neu bo trong BE tu sinh lai tu title.",
                 "content nhap plain text; BE tra them contentText va contentHtml.",
                 "Bai Published bat buoc co it nhat 1 anh.",
-                "Co the gui multipart/form-data voi field image/images/files de upload/cap nhat 1 hoac nhieu anh.",
+                "Neu gui file image/images/files thi BE thay toan bo danh sach anh bang file moi upload.",
+                "Neu khong gui file anh thi BE giu nguyen danh sach anh hien tai.",
+                "Khong ho tro gan link imageUrl/imageUrls trong request.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
                 "FE khong can hien input slug."));
 
@@ -127,16 +124,15 @@ public sealed class BlogPosts : IEndpointGroup
             .RequireAuthorization()
             .DisableAntiforgery()
             .Accepts<BlogPostImageFormRequest>("multipart/form-data")
-            .Accepts<UpdateBlogPostImageRequest>("application/json")
             .WithSummary("Cap nhat anh cover blog")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateImageExample,
                 "Danh cho Admin, Manager, Staff.",
-                "Blog ho tro 1 hoac nhieu anh: gui imageUrl cho 1 anh cu, hoac imageUrls[] cho nhieu anh.",
-                "Khuyen dung multipart/form-data voi field image/images/files va imageAltText de upload 1 hoac nhieu anh.",
+                "Chi nhan multipart/form-data voi field image/images/files va imageAltText de upload 1 hoac nhieu anh.",
+                "Endpoint nay thay toan bo danh sach anh hien tai bang file moi upload.",
+                "Khong ho tro application/json, imageUrl hoac imageUrls.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "Neu gui application/json thi imageUrl/imageUrls phai la absolute URL.",
                 "Bai Published khong duoc xoa het anh."));
 
         group.MapPost(PublishBlogPost, "{id:guid}/publish")
@@ -229,10 +225,10 @@ public sealed class BlogPosts : IEndpointGroup
     {
         var command = request.HasFormContentType
             ? await UpdateBlogPostImageCommandFromFormAsync(id, request, ct)
-            : await UpdateBlogPostImageCommandFromJsonAsync(id, request, ct);
+            : null;
         if (command is null)
         {
-            return Results.BadRequest(new { message = "Gửi multipart/form-data với field image hoặc application/json với imageUrl." });
+            return Results.BadRequest(new { message = "Gửi multipart/form-data với field image/images/files. Không hỗ trợ gắn link imageUrl/imageUrls." });
         }
 
         try
@@ -260,8 +256,6 @@ public sealed class BlogPosts : IEndpointGroup
         string Content,
         string Category,
         string? Status,
-        string? ImageUrl = null,
-        IReadOnlyCollection<string>? ImageUrls = null,
         string? ImageAltText = null);
 
     private sealed record CreateBlogPostFormRequest(
@@ -270,8 +264,6 @@ public sealed class BlogPosts : IEndpointGroup
         string Content,
         string Category,
         string? Status,
-        string? ImageUrl = null,
-        IReadOnlyCollection<string>? ImageUrls = null,
         string? ImageAltText = null,
         IFormFile? Image = null,
         IFormFileCollection? Images = null);
@@ -281,8 +273,6 @@ public sealed class BlogPosts : IEndpointGroup
         string? Summary,
         string Content,
         string Status,
-        string? ImageUrl,
-        IReadOnlyCollection<string>? ImageUrls,
         string? ImageAltText,
         string Category);
 
@@ -291,30 +281,22 @@ public sealed class BlogPosts : IEndpointGroup
         string? Summary,
         string Content,
         string Status,
-        string? ImageUrl,
-        IReadOnlyCollection<string>? ImageUrls,
         string? ImageAltText,
         string Category,
         IFormFile? Image = null,
         IFormFileCollection? Images = null);
 
-    public sealed record UpdateBlogPostImageRequest(
-        string? ImageUrl,
-        IReadOnlyCollection<string>? ImageUrls = null,
-        string? ImageAltText = null);
-
     private sealed record BlogPostImageFormRequest(
         IFormFile? Image = null,
         IFormFileCollection? Images = null,
-        string? ImageUrl = null,
-        IReadOnlyCollection<string>? ImageUrls = null,
         string? ImageAltText = null);
 
     private static async Task<CreateBlogPostCommand?> CreateBlogPostCommandFromJsonAsync(
         HttpRequest request,
         CancellationToken ct)
     {
-        var body = await request.ReadFromJsonAsync<CreateBlogPostJsonRequest>(cancellationToken: ct);
+        using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
+        var body = document.RootElement.Deserialize<CreateBlogPostJsonRequest>(JsonOptions);
         return body is null
             ? null
             : new CreateBlogPostCommand(
@@ -324,9 +306,9 @@ public sealed class BlogPosts : IEndpointGroup
                 Content: body.Content,
                 Category: body.Category,
                 Status: body.Status,
-                ImageUrl: body.ImageUrl,
+                ImageUrl: CreateRejectedImageUrlMarker(document.RootElement),
                 ImageAltText: body.ImageAltText,
-                ImageUrls: body.ImageUrls);
+                ImageUrls: CreateRejectedImageUrlsMarker(document.RootElement));
     }
 
     private static async Task<CreateBlogPostCommand> CreateBlogPostCommandFromFormAsync(
@@ -355,7 +337,8 @@ public sealed class BlogPosts : IEndpointGroup
         HttpRequest request,
         CancellationToken ct)
     {
-        var body = await request.ReadFromJsonAsync<UpdateBlogPostRequest>(cancellationToken: ct);
+        using var document = await JsonDocument.ParseAsync(request.Body, cancellationToken: ct);
+        var body = document.RootElement.Deserialize<UpdateBlogPostRequest>(JsonOptions);
         return body is null
             ? null
             : new UpdateBlogPostCommand(
@@ -365,10 +348,10 @@ public sealed class BlogPosts : IEndpointGroup
                 Summary: body.Summary,
                 Content: body.Content,
                 Status: body.Status,
-                ImageUrl: body.ImageUrl,
+                ImageUrl: CreateRejectedImageUrlMarker(document.RootElement),
                 ImageAltText: body.ImageAltText,
                 Category: body.Category,
-                ImageUrls: body.ImageUrls);
+                ImageUrls: CreateRejectedImageUrlsMarker(document.RootElement));
     }
 
     private static async Task<UpdateBlogPostCommand> UpdateBlogPostCommandFromFormAsync(
@@ -394,21 +377,6 @@ public sealed class BlogPosts : IEndpointGroup
             ImageFiles: imageFiles);
     }
 
-    private static async Task<UpdateBlogPostImageCommand?> UpdateBlogPostImageCommandFromJsonAsync(
-        Guid id,
-        HttpRequest request,
-        CancellationToken ct)
-    {
-        var body = await request.ReadFromJsonAsync<UpdateBlogPostImageRequest>(cancellationToken: ct);
-        return body is null
-            ? null
-            : new UpdateBlogPostImageCommand(
-                BlogPostId: id,
-                ImageUrl: body.ImageUrl,
-                ImageAltText: body.ImageAltText,
-                ImageUrls: body.ImageUrls);
-    }
-
     private static async Task<UpdateBlogPostImageCommand?> UpdateBlogPostImageCommandFromFormAsync(
         Guid id,
         HttpRequest request,
@@ -429,6 +397,46 @@ public sealed class BlogPosts : IEndpointGroup
             ImageAltText: GetFormValue(form, "imageAltText"),
             ImageUrls: imageUrls,
             ImageFiles: imageFiles);
+    }
+
+    private static string? CreateRejectedImageUrlMarker(JsonElement root) =>
+        ContainsManualImageInput(root, "imageUrl") ? UploadOnlyImageMessage : null;
+
+    private static IReadOnlyCollection<string>? CreateRejectedImageUrlsMarker(JsonElement root) =>
+        ContainsManualImageInput(root, "imageUrls") ? [UploadOnlyImageMessage] : null;
+
+    private static bool ContainsManualImageInput(JsonElement root, string propertyName)
+    {
+        if (root.ValueKind != JsonValueKind.Object || !TryGetPropertyIgnoreCase(root, propertyName, out var value))
+        {
+            return false;
+        }
+
+        return ContainsNonBlankJsonValue(value);
+    }
+
+    private static bool ContainsNonBlankJsonValue(JsonElement value) =>
+        value.ValueKind switch
+        {
+            JsonValueKind.Null or JsonValueKind.Undefined => false,
+            JsonValueKind.String => !string.IsNullOrWhiteSpace(value.GetString()),
+            JsonValueKind.Array => value.EnumerateArray().Any(ContainsNonBlankJsonValue),
+            _ => true
+        };
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement root, string propertyName, out JsonElement value)
+    {
+        foreach (var property in root.EnumerateObject())
+        {
+            if (string.Equals(property.Name, propertyName, StringComparison.OrdinalIgnoreCase))
+            {
+                value = property.Value;
+                return true;
+            }
+        }
+
+        value = default;
+        return false;
     }
 
     private static async Task<IReadOnlyCollection<BlogPostImageFileRequest>> CreateImageFilesFromFormAsync(
