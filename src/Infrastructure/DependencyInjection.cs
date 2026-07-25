@@ -166,7 +166,14 @@ public static class DependencyInjection
         builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection(RedisOptions.SectionName));
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
         builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
-        builder.Services.Configure<IncidentGpsHookOptions>(builder.Configuration.GetSection(IncidentGpsHookOptions.SectionName));
+        builder.Services.Configure<IncidentGpsHookOptions>(options =>
+        {
+            builder.Configuration.GetSection(IncidentGpsHookOptions.SectionName).Bind(options);
+            if (string.IsNullOrWhiteSpace(options.Secret))
+            {
+                options.Secret = builder.Configuration["LIVE_HOOK_SECRET"] ?? string.Empty;
+            }
+        });
         builder.Services.Configure<CharterRouteEstimateOptions>(builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName));
         builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection(GeminiOptions.SectionName));
         CharterRouteEstimateOptionsSetup.ConfigureDefaults(
