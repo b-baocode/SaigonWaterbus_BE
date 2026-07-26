@@ -14,12 +14,6 @@ public sealed record BoatRentalPriceDto(
     string Currency,
     string? Note);
 
-public sealed record BoatRentalPriceRequest(
-    BoatRentalUnit RentalUnit,
-    decimal UnitPrice,
-    string? Currency = null,
-    string? Note = null);
-
 public sealed record BoatImageFileRequest(
     string FileName,
     string? ContentType,

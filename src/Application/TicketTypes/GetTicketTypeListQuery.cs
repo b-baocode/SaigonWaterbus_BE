@@ -24,20 +24,11 @@ public sealed class GetTicketTypeListQueryHandler : IRequestHandler<GetTicketTyp
                 x.Code,
                 x.Name,
                 x.Description,
-                ResolveModifier(configuredRules, x, RouteTypes.Regular),
+                TicketFareRuleSupport.ResolveEffectivePriceModifier(configuredRules, x, RouteTypes.Regular),
                 x.GetAllowedSeatTypeCodesList(),
-                ResolveModifier(configuredRules, x, RouteTypes.SightseeingLoop)))
+                TicketFareRuleSupport.ResolveEffectivePriceModifier(configuredRules, x, RouteTypes.SightseeingLoop)))
             .ToList();
 
         return result;
     }
-
-    private static decimal ResolveModifier(
-        IReadOnlyDictionary<(string TicketTypeCode, string RouteType), TicketFareRule> configuredRules,
-        TicketTypeInfo ticketType,
-        string routeType) =>
-        configuredRules.TryGetValue((ticketType.Code, routeType), out var configuredRule)
-            && configuredRule.IsActive
-                ? configuredRule.PriceModifier
-                : ticketType.GetPriceModifier(routeType);
 }

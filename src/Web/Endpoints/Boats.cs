@@ -14,20 +14,6 @@ public sealed class Boats : IEndpointGroup
           "name": "Tau Waterbus 01",
           "numberOfDecks": 1,
           "seatSetupType": "FullStandard",
-          "rentalPrices": [
-            {
-              "rentalUnit": "Hour",
-              "unitPrice": 2000000,
-              "currency": "VND",
-              "note": "Gia tham khao theo gio."
-            },
-            {
-              "rentalUnit": "Day",
-              "unitPrice": 15000000,
-              "currency": "VND",
-              "note": "Gia tham khao theo ngay."
-            }
-          ],
           "registrationNumber": "SG-1234",
           "maxSpeedKmh": 30,
           "yearBuilt": 2020,
@@ -42,15 +28,7 @@ public sealed class Boats : IEndpointGroup
     private const string UpdateBoatExample =
         """
         {
-          "name": "Tau Waterbus 01 (moi)",
-          "rentalPrices": [
-            {
-              "rentalUnit": "Hour",
-              "unitPrice": 2500000,
-              "currency": "VND",
-              "note": "Gia cap nhat theo gio."
-            }
-          ]
+          "name": "Tau Waterbus 01 (moi)"
         }
         """;
 
@@ -114,6 +92,7 @@ public sealed class Boats : IEndpointGroup
                 "Code tàu được chuẩn hóa thành chữ in hoa.",
                 "seatSetupType: FullStandard hoặc StandardAndVip, là đặc tính của tàu.",
                 "Không cần nhập seatCount khi tạo tàu; backend tự tính sau khi setup sơ đồ ghế.",
+                "Không nhập giá thuê khi tạo tàu. Giá charter dùng policy chung theo số tầng tại /api/charter-bookings/admin/rental-price-policies.",
                 "Tàu chưa thuộc dịch vụ nào; dịch vụ sẽ được chọn khi phân lịch chạy.",
                 "Không cần gửi status khi tạo tàu. Backend tự tạo Inactive; khi đủ ghế và đủ 4 hồ sơ thì tự chuyển Active.",
                 "Số đăng ký tàu phải là duy nhất nếu cung cấp."));
@@ -127,13 +106,12 @@ public sealed class Boats : IEndpointGroup
                 "Admin",
                 UpdateBoatExample,
                 "Chỉ field nào gửi lên mới được cập nhật.",
-                "Nếu gửi rentalPrices thì backend cập nhật/thêm các giá theo rentalUnit được gửi, không xóa giá cũ không có trong payload.",
+                "Không cập nhật giá thuê trong API tàu. Giá charter dùng policy chung theo số tầng tại /api/charter-bookings/admin/rental-price-policies.",
                 "Có thể gửi application/json nếu không đổi ảnh.",
                 "Nếu gửi ảnh mới bằng imageUrl/imageUrls/images thì backend thay bộ ảnh hiện tại bằng bộ ảnh mới.",
                 "Nếu upload ảnh, gửi multipart/form-data với field 'images' nhiều file; field cũ 'image' vẫn được hỗ trợ cho 1 ảnh.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
-                "Mỗi tàu lưu tối đa 3 ảnh.",
-                "Với multipart/form-data, rentalPrices dùng dạng rentalPrices[0].rentalUnit, rentalPrices[0].unitPrice, rentalPrices[0].currency, rentalPrices[0].note."));
+                "Mỗi tàu lưu tối đa 3 ảnh."));
 
         groupBuilder.MapPatch(UpdateBoatStatus, "{boatId:guid}/status")
             .RequireAuthorization()
@@ -311,7 +289,6 @@ public sealed class Boats : IEndpointGroup
             body?.ImageUrl,
             ServiceType: body?.ServiceType ?? BoatServiceType.Passenger,
             SeatSetupType: body?.SeatSetupType ?? SeatSetupType.FullStandard,
-            RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray(),
             ImageUrls: body?.ImageUrls);
     }
 
@@ -336,7 +313,6 @@ public sealed class Boats : IEndpointGroup
                 ?? BoatServiceType.Passenger,
             SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType"))
                 ?? SeatSetupType.FullStandard,
-            RentalPrices: CreateRentalPricesFromForm(form),
             ImageUrls: GetFormValues(form, "imageUrls"),
             ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken));
     }
@@ -359,8 +335,7 @@ public sealed class Boats : IEndpointGroup
             body?.ImageUrl,
             ServiceType: body?.ServiceType,
             SeatSetupType: body?.SeatSetupType,
-            ImageUrls: body?.ImageUrls,
-            RentalPrices: body?.RentalPrices?.Select(ToApplicationRentalPrice).ToArray());
+            ImageUrls: body?.ImageUrls);
     }
 
     private static async Task<UpdateBoatRequest> UpdateBoatRequestFromFormAsync(
@@ -383,8 +358,7 @@ public sealed class Boats : IEndpointGroup
             ServiceType: ParseOptionalEnum<BoatServiceType>(GetFormValue(form, "serviceType")),
             SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType")),
             ImageUrls: GetFormValues(form, "imageUrls"),
-            ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken),
-            RentalPrices: CreateRentalPricesFromForm(form));
+            ImageFiles: await CreateImageFilesFromFormAsync(form, cancellationToken));
     }
 
     private static async Task<UpdateBoatDocumentRequest?> UpdateBoatDocumentRequestFromFormAsync(
@@ -514,11 +488,6 @@ public sealed class Boats : IEndpointGroup
     private static int? ParseOptionalInt(string? value) =>
         int.TryParse(value, out var result) ? result : null;
 
-    private static decimal? ParseOptionalDecimal(string? value) =>
-        decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var result)
-            ? result
-            : null;
-
     private static DateOnly? ParseOptionalDateOnly(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -539,96 +508,6 @@ public sealed class Boats : IEndpointGroup
     private static T? ParseOptionalEnum<T>(string? value) where T : struct, Enum =>
         Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : null;
 
-    private static BoatRentalPriceRequest ToApplicationRentalPrice(BoatRentalPriceApiRequest request) =>
-        new(request.RentalUnit, request.UnitPrice, request.Currency, request.Note);
-
-    private static IReadOnlyCollection<BoatRentalPriceRequest>? CreateRentalPricesFromForm(IFormCollection form)
-    {
-        var indexedRentalPrices = CreateIndexedRentalPricesFromForm(form);
-        if (indexedRentalPrices is not null)
-        {
-            return indexedRentalPrices;
-        }
-
-        var rentalPrices = new List<BoatRentalPriceRequest>();
-        var hourlyPrice = ParseOptionalDecimal(GetFormValue(form, "hourlyUnitPrice")
-            ?? GetFormValue(form, "hourlyRentalPrice"));
-        var dailyPrice = ParseOptionalDecimal(GetFormValue(form, "dailyUnitPrice")
-            ?? GetFormValue(form, "dailyRentalPrice"));
-
-        if (hourlyPrice.HasValue)
-        {
-            rentalPrices.Add(new BoatRentalPriceRequest(
-                BoatRentalUnit.Hour,
-                hourlyPrice.Value,
-                GetFormValue(form, "hourlyCurrency"),
-                GetFormValue(form, "hourlyNote")));
-        }
-
-        if (dailyPrice.HasValue)
-        {
-            rentalPrices.Add(new BoatRentalPriceRequest(
-                BoatRentalUnit.Day,
-                dailyPrice.Value,
-                GetFormValue(form, "dailyCurrency"),
-                GetFormValue(form, "dailyNote")));
-        }
-
-        return rentalPrices.Count == 0 ? null : rentalPrices;
-    }
-
-    private static IReadOnlyCollection<BoatRentalPriceRequest>? CreateIndexedRentalPricesFromForm(IFormCollection form)
-    {
-        const string prefix = "rentalPrices[";
-
-        var indices = new SortedSet<int>();
-        foreach (var key in form.Keys)
-        {
-            if (!key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-            {
-                continue;
-            }
-
-            var closeIndex = key.IndexOf(']');
-            if (closeIndex <= prefix.Length)
-            {
-                continue;
-            }
-
-            if (int.TryParse(key.AsSpan(prefix.Length, closeIndex - prefix.Length), out var index))
-            {
-                indices.Add(index);
-            }
-        }
-
-        if (indices.Count == 0)
-        {
-            return null;
-        }
-
-        var rentalPrices = new List<BoatRentalPriceRequest>();
-        foreach (var index in indices)
-        {
-            var rentalUnit = ParseOptionalEnum<BoatRentalUnit>(
-                GetFormValue(form, $"rentalPrices[{index}].rentalUnit"));
-            var unitPrice = ParseOptionalDecimal(
-                GetFormValue(form, $"rentalPrices[{index}].unitPrice"));
-
-            if (rentalUnit is null || unitPrice is null)
-            {
-                continue;
-            }
-
-            rentalPrices.Add(new BoatRentalPriceRequest(
-                rentalUnit.Value,
-                unitPrice.Value,
-                GetFormValue(form, $"rentalPrices[{index}].currency"),
-                GetFormValue(form, $"rentalPrices[{index}].note")));
-        }
-
-        return rentalPrices.Count == 0 ? null : rentalPrices;
-    }
-
     private sealed record CreateBoatJsonRequest(
         string Code,
         string Name,
@@ -640,8 +519,7 @@ public sealed class Boats : IEndpointGroup
         int? YearBuilt = null,
         string? Description = null,
         string? ImageUrl = null,
-        IReadOnlyCollection<string>? ImageUrls = null,
-        IReadOnlyCollection<BoatRentalPriceApiRequest>? RentalPrices = null);
+        IReadOnlyCollection<string>? ImageUrls = null);
 
     private sealed record UpdateBoatJsonRequest(
         string? Code = null,
@@ -654,8 +532,7 @@ public sealed class Boats : IEndpointGroup
         int? YearBuilt = null,
         string? Description = null,
         string? ImageUrl = null,
-        IReadOnlyCollection<string>? ImageUrls = null,
-        IReadOnlyCollection<BoatRentalPriceApiRequest>? RentalPrices = null);
+        IReadOnlyCollection<string>? ImageUrls = null);
 
     private sealed record UpdateBoatStatusApiRequest(BoatStatus Status);
 
@@ -664,9 +541,4 @@ public sealed class Boats : IEndpointGroup
         DateOnly? IssuedDate = null,
         DateOnly? ExpiryDate = null);
 
-    private sealed record BoatRentalPriceApiRequest(
-        BoatRentalUnit RentalUnit,
-        decimal UnitPrice,
-        string? Currency = null,
-        string? Note = null);
 }

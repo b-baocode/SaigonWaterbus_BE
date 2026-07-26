@@ -21,8 +21,7 @@ public sealed record UpdateBoatRequest(
     BoatServiceType? ServiceType = null,
     SeatSetupType? SeatSetupType = null,
     IReadOnlyCollection<string>? ImageUrls = null,
-    IReadOnlyCollection<BoatImageFileRequest>? ImageFiles = null,
-    IReadOnlyCollection<BoatRentalPriceRequest>? RentalPrices = null);
+    IReadOnlyCollection<BoatImageFileRequest>? ImageFiles = null);
 
 public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatRequest>
 {
@@ -88,9 +87,6 @@ public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatReq
                 x.ImageFiles))
             .WithMessage("Mỗi tàu chỉ được gửi tối đa 3 ảnh.");
 
-        RuleFor(x => x.RentalPrices)
-            .Must(BoatSupport.HasDistinctRentalUnits)
-            .WithMessage("Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
     }
 }
 
@@ -219,11 +215,6 @@ public sealed class UpdateBoatRequestUseCase
         if (imageUrls.Count > 0)
         {
             BoatSupport.ReplaceImages(boat, imageUrls, uploadedImages);
-        }
-
-        if (request.RentalPrices is not null)
-        {
-            BoatSupport.ApplyRentalPrices(boat, request.RentalPrices);
         }
 
         try

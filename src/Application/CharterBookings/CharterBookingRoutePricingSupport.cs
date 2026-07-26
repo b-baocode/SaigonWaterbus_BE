@@ -372,15 +372,6 @@ internal static class CharterBookingRoutePricingSupport
         BoatRentalUnit rentalUnit,
         IReadOnlyDictionary<CharterBoatRentalPricePolicyKey, decimal>? rentalPricePolicies)
     {
-        var unitPrice = rentalUnit == BoatRentalUnit.Day
-            ? boat.DailyRentalPrice
-            : boat.HourlyRentalPrice;
-
-        if (unitPrice.HasValue && unitPrice > 0)
-        {
-            return unitPrice.Value;
-        }
-
         var policyKey = new CharterBoatRentalPricePolicyKey(boat.NumberOfDecks, rentalUnit);
         if (rentalPricePolicies is not null
             && rentalPricePolicies.TryGetValue(policyKey, out var policyUnitPrice)
@@ -389,14 +380,9 @@ internal static class CharterBookingRoutePricingSupport
             return policyUnitPrice;
         }
 
-        if (!unitPrice.HasValue || unitPrice <= 0)
-        {
-            var unitName = rentalUnit == BoatRentalUnit.Day ? "ngày" : "giờ";
-            throw new ValidationException([new ValidationFailure(nameof(rentalUnit),
-                $"Tàu chưa cấu hình giá thuê theo {unitName}, và chưa có policy chung cho tàu {boat.NumberOfDecks} tầng.")]);
-        }
-
-        return unitPrice.Value;
+        var unitName = rentalUnit == BoatRentalUnit.Day ? "ngày" : "giờ";
+        throw new ValidationException([new ValidationFailure(nameof(rentalUnit),
+            $"Chưa có policy giá thuê theo {unitName} cho tàu {boat.NumberOfDecks} tầng.")]);
     }
 
     private static IEnumerable<RoutePoint> BuildRoutePoints(Booking booking)

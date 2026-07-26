@@ -149,7 +149,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin hoac Manager",
                 null,
                 "Tra ve cau hinh gia thuê chung theo numberOfDecks + rentalUnit.",
-                "Khi quote charter: neu tau co hourlyRentalPrice/dailyRentalPrice rieng thi uu tien gia rieng; neu khong co thi lay policy chung theo so tang tau.",
+                "Khi quote charter: backend lay policy chung theo so tang tau, khong lay gia rieng tren tau.",
                 "rentalUnit: Hour hoac Day."));
 
         group.MapPut(UpsertCharterBoatRentalPricePolicy, "admin/rental-price-policies")
@@ -160,7 +160,7 @@ public sealed class CharterBookings : IEndpointGroup
                 RentalPricePolicyExample,
                 "Dung de setup vi du tau 1 tang theo gio bao nhieu, tau 2 tang theo gio bao nhieu.",
                 "Ap dung cho quote charter tao sau khi chinh. Gia da quote/payment cu khong doi.",
-                "Neu can override mot tau cu the, cap nhat rentalPrices tren /api/boats/{boatId}."));
+                "Khong cau hinh gia thue rieng trong API tao/sua tau."));
 
         group.MapGet(GetAdminCharterBookings, "admin")
             .RequireAuthorization()
@@ -219,7 +219,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Backend mac dinh tinh theo Hour cho logic moi, lay thoi gian/quang duong tu route da co cua cac ben va tra routeEstimate cho khach xem.",
                 "Hour: backend can co route/GeoJSON/toa do hop le cho tung chang; neu thieu thi tra 400.",
                 "Hour: so gio tinh tien = max(durationValue, phut tinh tien / 60) va lam tron den 3 chu so thap phan.",
-                "Gia thue: uu tien gia rieng cua tau (hourlyRentalPrice/dailyRentalPrice); neu tau chua co gia rieng thi lay policy chung theo so tang tu /api/charter-bookings/admin/rental-price-policies.",
+                "Gia thue: lay policy chung theo so tang tau va rentalUnit tu /api/charter-bookings/admin/rental-price-policies.",
                 "Day: tinh theo gia ngay * durationValue.",
                 "Admin khong gui promotionCode hoac insurancePackageId trong quote.",
                 "Sau khi quote thanh cong, bookingStatus = Quoted va customer moi tao payment duoc.",

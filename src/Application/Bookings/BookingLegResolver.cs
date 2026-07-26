@@ -117,7 +117,7 @@ internal sealed class BookingLegResolver
         }
 
         // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và miễn phí trên
-        // cả waterbus thường lẫn sightseeing. CHILD/DISABLED dùng hệ số giảm giá theo routeType.
+        // cả waterbus thường lẫn sightseeing. Các loại vé có ghế dùng hệ số giá theo routeType.
         var lapItems = items.Where(i => string.IsNullOrWhiteSpace(i.SeatNumber)).ToList();
         if (lapItems.Count > 0)
         {

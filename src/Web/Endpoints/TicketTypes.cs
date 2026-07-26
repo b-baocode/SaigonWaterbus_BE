@@ -16,6 +16,13 @@ public sealed class TicketTypes : IEndpointGroup
         }
         """;
 
+    private const string UpdateSightseeingConcessionExample =
+        """
+        {
+          "discountPercent": 50
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetTicketTypes, string.Empty)
@@ -27,8 +34,27 @@ public sealed class TicketTypes : IEndpointGroup
                 "Tra ve danh sach loai ve kem he so gia dang ap dung. Default nam trong code, admin co the override bang fare-rules.",
                 "priceModifier: he so gia (1.0 = gia goc, 0.5 = giam 50%).",
                 "priceModifier ap dung Regular; sightseeingPriceModifier ap dung routeType=SightseeingLoop.",
-                "CHILD giam 50%; DISABLED mien phi waterbus thuong va giam 50% sightseeing.",
+                "Sightseeing: CHILD/SENIOR/DISABLED dung chung % giam tai /api/ticket-types/sightseeing-concession.",
                 "Ticket type thuc te cua ve da phat hanh duoc luu truc tiep trong bang tickets."));
+
+        group.MapGet(GetSightseeingConcessionFareRule, "sightseeing-concession")
+            .RequireAuthorization()
+            .WithSummary("Admin xem % giam chung cho nhom uu dai sightseeing")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                null,
+                "Mot setting duy nhat cho CHILD, SENIOR va DISABLED tren routeType=SightseeingLoop.",
+                "discountPercent=50 nghia la gia ve = gia ghe x 0.5."));
+
+        group.MapPut(UpdateSightseeingConcessionFareRule, "sightseeing-concession")
+            .RequireAuthorization()
+            .WithSummary("Admin chinh % giam chung cho nhom uu dai sightseeing")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                UpdateSightseeingConcessionExample,
+                "Ap dung cho CHILD, SENIOR va DISABLED tren routeType=SightseeingLoop.",
+                "discountPercent=0 la khong giam; 50 la giam mot nua; 100 la mien phi.",
+                "Ap dung cho booking tao sau khi chinh; booking da tao/da thanh toan khong tinh lai."));
 
         group.MapGet(GetTicketFareRules, "fare-rules")
             .RequireAuthorization()
@@ -37,7 +63,8 @@ public sealed class TicketTypes : IEndpointGroup
                 "Admin hoac Manager",
                 null,
                 "Tra ve ma tran ticketTypeCode x routeType. Dong ticketFareRuleId=null la gia default chua override.",
-                "routeType: Regular hoac SightseeingLoop. priceModifier: 1 = nguyen gia, 0.5 = giam 50%, 0 = mien phi."));
+                "routeType: Regular hoac SightseeingLoop. priceModifier: 1 = nguyen gia, 0.5 = giam 50%, 0 = mien phi.",
+                "Voi CHILD/SENIOR/DISABLED tren SightseeingLoop, nen dung endpoint /api/ticket-types/sightseeing-concession de chinh chung mot lan."));
 
         group.MapPut(UpdateTicketFareRule, "fare-rules")
             .RequireAuthorization()
@@ -53,6 +80,15 @@ public sealed class TicketTypes : IEndpointGroup
 
     private static async Task<IResult> GetTicketTypes(ISender sender, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTicketTypeListQuery(), ct));
+
+    private static async Task<IResult> GetSightseeingConcessionFareRule(ISender sender, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetSightseeingConcessionFareRuleQuery(), ct));
+
+    private static async Task<IResult> UpdateSightseeingConcessionFareRule(
+        ISender sender,
+        UpdateSightseeingConcessionFareRuleCommand command,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> GetTicketFareRules(ISender sender, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTicketFareRuleListQuery(), ct));

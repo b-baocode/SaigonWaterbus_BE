@@ -51,7 +51,7 @@ public class BoatSupportTests
     }
 
     [Test]
-    public void CreateDtoIncludesOnlyRentalPricesWhenConfigured()
+    public void CreateDtoDoesNotExposeLegacyBoatRentalPrices()
     {
         var boat = Boat(seatsConfigured: true);
         boat.DailyRentalPrice = 15000000m;
@@ -60,11 +60,7 @@ public class BoatSupportTests
 
         var dto = BoatSupport.CreateDto(boat);
 
-        dto.RentalPrices.Count.ShouldBe(2);
-        dto.RentalPrices.First().RentalUnit.ShouldBe(BoatRentalUnit.Hour);
-        dto.RentalPrices.First().UnitPrice.ShouldBe(2000000m);
-        dto.RentalPrices.Last().RentalUnit.ShouldBe(BoatRentalUnit.Day);
-        dto.RentalPrices.Last().UnitPrice.ShouldBe(15000000m);
+        dto.RentalPrices.ShouldBeEmpty();
     }
 
     [TestCase(SeatSetupType.FullStandard)]
@@ -83,42 +79,6 @@ public class BoatSupportTests
     public void NormalizeCurrencyDefaultsAndUppercasesCurrency(string? currency, string expected)
     {
         BoatSupport.NormalizeCurrency(currency).ShouldBe(expected);
-    }
-
-    [Test]
-    public void CreateBoatRequestValidatorRejectsDuplicateRentalUnits()
-    {
-        var validator = new CreateBoatRequestValidator();
-        var result = validator.Validate(new CreateBoatRequest(
-            "WB01",
-            "Waterbus 01",
-            BoatStatus.Inactive,
-            80,
-            1,
-            RentalPrices:
-            [
-                new BoatRentalPriceRequest(BoatRentalUnit.Hour, 2000000m),
-                new BoatRentalPriceRequest(BoatRentalUnit.Hour, 2500000m)
-            ]));
-
-        result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
-    }
-
-    [Test]
-    public void UpdateBoatRequestValidatorRejectsDuplicateRentalUnits()
-    {
-        var validator = new UpdateBoatRequestValidator();
-        var result = validator.Validate(new UpdateBoatRequest(
-            Guid.NewGuid(),
-            RentalPrices:
-            [
-                new BoatRentalPriceRequest(BoatRentalUnit.Day, 15000000m),
-                new BoatRentalPriceRequest(BoatRentalUnit.Day, 16000000m)
-            ]));
-
-        result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.ErrorMessage == "Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
     }
 
     private static Boat Boat(

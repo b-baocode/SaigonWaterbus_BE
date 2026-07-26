@@ -139,7 +139,11 @@ public class CharterBookingRoutePricingSupportTests
         };
         var boat = new Boat
         {
-            HourlyRentalPrice = 1_000_000m
+            NumberOfDecks = 1
+        };
+        var policies = new Dictionary<CharterBoatRentalPricePolicyKey, decimal>
+        {
+            [new CharterBoatRentalPricePolicyKey(1, BoatRentalUnit.Hour)] = 1_000_000m
         };
 
         var pricing = CharterBookingRoutePricingSupport.EstimatePrice(
@@ -147,7 +151,8 @@ public class CharterBookingRoutePricingSupportTests
             boat,
             BoatRentalUnit.Hour,
             requestedDurationValue: 1,
-            relatedRoutes: [route]);
+            relatedRoutes: [route],
+            rentalPricePolicies: policies);
 
         pricing.RouteEstimate.EstimatedDurationMinutes.ShouldBe(126);
         pricing.RouteEstimate.FreeStayMinutes.ShouldBe(30);
@@ -174,7 +179,7 @@ public class CharterBookingRoutePricingSupportTests
     }
 
     [Test]
-    public void EstimatePriceFallsBackToDeckRentalPolicyWhenBoatHasNoOwnPrice()
+    public void EstimatePriceUsesDeckRentalPolicy()
     {
         var booking = new Booking
         {
