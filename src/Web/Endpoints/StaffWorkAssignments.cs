@@ -20,8 +20,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
           "stationId": "00000000-0000-0000-0000-000000000001",
           "startAt": "2026-07-13T08:00:00+07:00",
           "endAt": "2026-07-13T16:00:00+07:00",
-          "dutyRole": "Gate",
-          "note": "Ca sáng"
+          "dutyRole": "Gate"
         }
         """;
 
@@ -36,8 +35,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
           "startTime": "07:30:00",
           "endTime": "15:00:00",
           "daysOfWeek": [1, 2, 3, 4, 5],
-          "dutyRole": "OnBoard",
-          "note": "Ca sáng tháng 7"
+          "dutyRole": "OnBoard"
         }
         """;
 
@@ -45,8 +43,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         """
         {
           "replacementStaffUserId": "00000000-0000-0000-0000-000000000003",
-          "reason": "Nhân viên hiện tại nghỉ đột xuất",
-          "note": "Ca thay thế"
+          "reason": "Nhân viên hiện tại nghỉ đột xuất"
         }
         """;
 
@@ -157,8 +154,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 request.TripStopId,
                 request.StartAt,
                 request.EndAt,
-                request.DutyRole,
-                request.Note),
+                request.DutyRole),
             cancellationToken));
 
     private static async Task<IResult> CreateBulkStaffWorkAssignments(
@@ -176,8 +172,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
                 request.StartTime,
                 request.EndTime,
                 request.DaysOfWeek,
-                request.DutyRole,
-                request.Note),
+                request.DutyRole),
             cancellationToken));
 
     private static async Task<IResult> ReplaceStaffWorkAssignment(
@@ -189,8 +184,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
             new ReplaceStaffWorkAssignmentCommand(
                 assignmentId,
                 request.ReplacementStaffUserId,
-                request.Reason,
-                request.Note),
+                request.Reason),
             cancellationToken));
 
     private static async Task<IResult> DeleteStaffWorkAssignment(
@@ -235,8 +229,7 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         Guid? TripStopId = null,
         DateTimeOffset? StartAt = null,
         DateTimeOffset? EndAt = null,
-        string? DutyRole = null,
-        string? Note = null);
+        string? DutyRole = null);
 
     public sealed record CreateBulkStaffWorkAssignmentsRequest(
         Guid StaffUserId,
@@ -248,13 +241,11 @@ public sealed class StaffWorkAssignments : IEndpointGroup
         TimeOnly StartTime,
         TimeOnly EndTime,
         IReadOnlyCollection<int>? DaysOfWeek = null,
-        string? DutyRole = null,
-        string? Note = null);
+        string? DutyRole = null);
 
     public sealed record ReplaceStaffWorkAssignmentRequest(
         Guid ReplacementStaffUserId,
-        string? Reason = null,
-        string? Note = null);
+        string? Reason = null);
 
 }
 

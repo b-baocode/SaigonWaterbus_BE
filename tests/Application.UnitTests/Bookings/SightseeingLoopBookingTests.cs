@@ -65,6 +65,85 @@ public class SightseeingLoopBookingTests
     }
 
     [Test]
+    public async Task SightseeingChildAndDisabledTicketsUseDiscountedSeatPrice()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedLoopTripAsync(context, "TR-SIG-DISCOUNT");
+        var seats = context.Set<Seat>().Where(x => x.BoatId == seeded.Trip.BoatId).ToList();
+        foreach (var seat in seats)
+        {
+            seat.SeatTypeCode = "CABIN";
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBookingCommandHandler(
+            context,
+            userContext,
+            new SequentialBookingCodeGenerator(),
+            new FareCalculator(context),
+            new FixedTimeProvider(Now));
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-SIG-DISCOUNT",
+                [
+                    Adult("A1") with { TicketTypeCode = "CHILD" },
+                    Adult("A2") with { TicketTypeCode = "DISABLED" }
+                ],
+                null),
+            CancellationToken.None);
+
+        result.SubtotalAmount.ShouldBe(10_000m);
+        result.TotalAmount.ShouldBe(10_000m);
+
+        var passengers = context.Set<BookingPassenger>()
+            .Where(x => x.BookingId == result.BookingId)
+            .OrderBy(x => x.PassengerType)
+            .ToList();
+        passengers.Select(x => x.PassengerType).ShouldBe(["CHILD", "DISABLED"]);
+        passengers.ShouldAllBe(x => x.UnitPrice == 5_000m);
+    }
+
+    [Test]
+    public async Task SightseeingTicketFareRuleOverridesDefaultDiscount()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedLoopTripAsync(context, "TR-SIG-RULE");
+        var seats = context.Set<Seat>().Where(x => x.BoatId == seeded.Trip.BoatId).ToList();
+        foreach (var seat in seats)
+        {
+            seat.SeatTypeCode = "CABIN";
+        }
+        context.Set<TicketFareRule>().Add(new TicketFareRule
+        {
+            TicketTypeCode = "CHILD",
+            RouteType = RouteTypes.SightseeingLoop,
+            PriceModifier = 0.25m,
+            IsActive = true
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBookingCommandHandler(
+            context,
+            userContext,
+            new SequentialBookingCodeGenerator(),
+            new FareCalculator(context),
+            new FixedTimeProvider(Now));
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-SIG-RULE",
+                [Adult("A1") with { TicketTypeCode = "CHILD" }],
+                null),
+            CancellationToken.None);
+
+        result.SubtotalAmount.ShouldBe(2_500m);
+        result.TotalAmount.ShouldBe(2_500m);
+    }
+
+    [Test]
     public async Task SeatBookedOnLoopTripCannotBeBookedAgain()
     {
         await using var context = SeatFlowTestData.CreateContext();

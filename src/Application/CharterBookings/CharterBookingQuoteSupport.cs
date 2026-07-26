@@ -162,7 +162,8 @@ internal static class CharterBookingQuoteSupport
         IReadOnlyList<QuoteBoatSelection> selectedBoats,
         BoatRentalUnit rentalUnit,
         int requestedDurationValue,
-        IReadOnlyCollection<Route>? relatedRoutes) =>
+        IReadOnlyCollection<Route>? relatedRoutes,
+        IReadOnlyDictionary<CharterBoatRentalPricePolicyKey, decimal>? rentalPricePolicies = null) =>
         selectedBoats
             .Select(x => new PricedQuoteBoat(
                 x.BoatOrder,
@@ -172,7 +173,8 @@ internal static class CharterBookingQuoteSupport
                     x.Boat,
                     rentalUnit,
                     requestedDurationValue,
-                    relatedRoutes)))
+                    relatedRoutes,
+                    rentalPricePolicies: rentalPricePolicies)))
             .ToArray();
 
     public static IReadOnlyList<CharterBookingSelectedBoatDto> ToSelectedBoatDtos(

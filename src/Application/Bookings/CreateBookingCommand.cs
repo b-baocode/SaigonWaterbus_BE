@@ -4,8 +4,10 @@ using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
+using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Seats;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -297,6 +299,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 leg, userId, _seatHoldService, _tripSeatNotifier, cancellationToken);
         }
 
+        await CompleteFreeRegularBookingAsync(booking, now, cancellationToken);
+
         return new CreateBookingResult(
             booking.Id, booking.BookingCode,
             booking.SubtotalAmount, booking.DiscountAmount, booking.TotalAmount,
@@ -305,5 +309,50 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
             BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
+    }
+
+    private async Task CompleteFreeRegularBookingAsync(
+        Booking booking,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!PaymentSupport.IsFreeRegularBooking(booking)
+            || booking.Payments.Any(x => PaymentSupport.IsSettlementPayment(x) && PaymentSupport.IsPaid(x.PaymentStatus)))
+        {
+            return;
+        }
+
+        var payment = new Payment
+        {
+            BookingId = booking.Id,
+            PaymentCode = await PaymentSupport.GenerateInternalPaymentCodeAsync(
+                _context,
+                "FREE",
+                now,
+                cancellationToken),
+            Provider = PaymentSupport.FreeProvider,
+            Amount = 0,
+            Currency = booking.Currency,
+            PaymentMethod = PaymentSupport.FreePaymentMethod,
+            PaymentPurpose = PaymentSupport.FullPurpose,
+            PaymentStatus = PaymentSupport.PendingStatus
+        };
+        booking.Payments.Add(payment);
+        _context.Set<Payment>().Add(payment);
+
+        PaymentSupport.ApplyPaymentStatus(
+            booking,
+            payment,
+            PaymentSupport.PaidStatus,
+            paymentLinkId: null,
+            checkoutUrl: null,
+            now);
+        await _context.SaveChangesAsync(cancellationToken);
+
+        await TicketIssueSupport.EnsureRegularBookingPassengerTicketsAsync(
+            _context,
+            booking,
+            _timeProvider,
+            cancellationToken);
     }
 }

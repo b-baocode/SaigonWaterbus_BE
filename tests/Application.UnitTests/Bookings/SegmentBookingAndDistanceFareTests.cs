@@ -417,19 +417,19 @@ public class SegmentBookingAndDistanceFareTests
         var searchHandler = new SearchTripsQueryHandler(context, new FixedTimeProvider(Now));
         var date = DateOnly.FromDateTime(Now.UtcDateTime);
 
-        // Chặng HB→LT: khách trước đã xuống ở HB → cả 2 ghế trống; giá theo km chặng sau (11000).
+        // Chặng HB→LT: khách trước đã xuống ở HB → cả 2 ghế trống; giá "từ" lấy loại vé trả tiền rẻ nhất (CHILD 50%).
         var tailResults = await searchHandler.Handle(
             new SearchTripsQuery(hb.Id, lt.Id, date), CancellationToken.None);
         var tailTrip = tailResults.Single(x => x.TripCode == "TR-SRCH-1");
         tailTrip.AvailableSeats.ShouldBe(2);
-        tailTrip.MinPrice.ShouldBe(11000m);
+        tailTrip.MinPrice.ShouldBe(5500m);
 
-        // Chặng BB→HB (giao vé đã bán): còn 1 ghế; giá theo km chặng đầu (9000).
+        // Chặng BB→HB (giao vé đã bán): còn 1 ghế; giá "từ" lấy loại vé trả tiền rẻ nhất (CHILD 50%).
         var headResults = await searchHandler.Handle(
             new SearchTripsQuery(bb.Id, hb.Id, date), CancellationToken.None);
         var headTrip = headResults.Single(x => x.TripCode == "TR-SRCH-1");
         headTrip.AvailableSeats.ShouldBe(1);
-        headTrip.MinPrice.ShouldBe(9000m);
+        headTrip.MinPrice.ShouldBe(4500m);
     }
 
     [Test]

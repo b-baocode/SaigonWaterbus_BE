@@ -5,4 +5,5 @@ public sealed record TicketTypeDto(
     string TicketTypeName,
     string? Description,
     decimal PriceModifier,
-    IReadOnlyList<string>? AllowedSeatTypeCodes);
+    IReadOnlyList<string>? AllowedSeatTypeCodes,
+    decimal? SightseeingPriceModifier = null);

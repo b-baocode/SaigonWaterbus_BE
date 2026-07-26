@@ -217,6 +217,79 @@ public class CreateRoundTripBookingTests
         inboundResults.Single(x => x.TripCode == "TR-RET").AvailableSeats.ShouldBe(0);
     }
 
+    [Test]
+    public async Task FreeRegularBookingConfirmsAndIssuesTicketOnCreate()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedTripAsync(context, "TR-FREE", "BD", "TADA", Now.AddHours(2));
+        var handler = CreateHandler(context, userContext);
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-FREE",
+                [Adult("A1", "BD", "TADA") with { TicketTypeCode = "SENIOR" }],
+                null),
+            CancellationToken.None);
+
+        result.TotalAmount.ShouldBe(0m);
+        result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
+
+        var booking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
+        booking.PaymentStatus.ShouldBe("Paid");
+        booking.RemainingAmount.ShouldBe(0m);
+
+        var payment = context.Set<Payment>().Single(x => x.BookingId == booking.Id);
+        payment.Provider.ShouldBe("System");
+        payment.PaymentMethod.ShouldBe("Free");
+        payment.PaymentStatus.ShouldBe("Paid");
+        payment.PaidAt.ShouldNotBeNull();
+
+        var ticket = context.Set<Ticket>().Single(x => x.BookingId == booking.Id);
+        ticket.TicketStatus.ShouldBe(TicketStatus.Active);
+        ticket.TicketCode.ShouldNotBeNullOrWhiteSpace();
+        ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
+    }
+
+    [Test]
+    public async Task RoundTripBookingUsesPassengerInsurancePackagePerPassenger()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedTripAsync(context, "TR-INS-OUT", "BD", "TADA", Now.AddHours(2));
+        await SeedTripAsync(context, "TR-INS-RET", "TADA", "BD", Now.AddHours(6));
+        var insurancePackage = new InsurancePackage
+        {
+            Code = "PASSENGER_BASIC",
+            Name = "Bao hiem hanh khach",
+            BookingType = "PassengerInsurance",
+            UnitPremiumAmount = 3_000m,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            IsActive = true,
+            DisplayOrder = 1
+        };
+        context.Add(insurancePackage);
+        await context.SaveChangesAsync();
+
+        var result = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand(
+                "TR-INS-OUT",
+                [Adult("A1", "BD", "TADA")],
+                null,
+                "TR-INS-RET",
+                [Adult("A1", "TADA", "BD")],
+                InsuranceSelected: true),
+            CancellationToken.None);
+
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        result.Insurance.Quantity.ShouldBe(2);
+        result.Insurance.TotalAmount.ShouldBe(6_000m);
+        result.SubtotalAmount.ShouldBe(26_000m);
+        result.TotalAmount.ShouldBe(26_000m);
+    }
+
     private static CreateBookingCommandHandler CreateHandler(
         ApplicationDbContext context,
         TestUserContext userContext,

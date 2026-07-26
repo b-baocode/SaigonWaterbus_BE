@@ -46,7 +46,8 @@ public sealed class FarePolicies : IEndpointGroup
                 "Gia ve trip Regular (ghe STANDARD) = RoundUp(baseFare + pricePerKm x km, roundingStep), toi thieu minFare neu co.",
                 "Km cua chang = tong distance_from_previous_km cua cac route stops giua tram len va tram xuong.",
                 "Neu route Regular thieu km cho chang dang ban thi search tra isBookable=false, seat-map/booking tra validation; backend khong fallback gia STANDARD.",
-                "Ve mien phi (INFANT/SENIOR/DISABLED) van ap dung he so 0 nhu cu."));
+                "Waterbus thuong: INFANT/SENIOR/DISABLED he so 0, CHILD he so 0.5.",
+                "Sightseeing: CHILD/DISABLED he so 0.5, INFANT he so 0."));
 
         group.MapPut(UpdateFarePolicy, string.Empty)
             .RequireAuthorization()

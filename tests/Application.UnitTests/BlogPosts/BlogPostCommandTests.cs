@@ -16,11 +16,11 @@ public class BlogPostCommandTests
     public async Task CreatePublishedBlogPostGeneratesUniqueSlug()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var now = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero);
         var handler = new CreateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new FixedTimeProvider(now),
             new TestBlogImageStorageService());
 
@@ -62,10 +62,10 @@ public class BlogPostCommandTests
     public async Task CreateBlogPostWithBlankSlugReturnsReadableContentAndMultipleImages()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var handler = new CreateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)),
             new TestBlogImageStorageService());
 
@@ -98,10 +98,10 @@ public class BlogPostCommandTests
     public async Task CreatePublishedBlogPostRequiresUploadedImage()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var handler = new CreateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
@@ -123,10 +123,10 @@ public class BlogPostCommandTests
     public async Task CreateBlogPostRejectsManualImageUrl()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var handler = new CreateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
@@ -149,11 +149,11 @@ public class BlogPostCommandTests
     public async Task CreateBlogPostCanUploadImageFile()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var now = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero);
         var handler = new CreateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new FixedTimeProvider(now),
             new TestBlogImageStorageService());
 
@@ -178,10 +178,10 @@ public class BlogPostCommandTests
     public async Task CreateBlogPostRequiresCategory()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var handler = new CreateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
@@ -222,18 +222,40 @@ public class BlogPostCommandTests
     }
 
     [Test]
-    public async Task StaffCanUpdateBlogPostImage()
+    public async Task StaffCannotCreateBlogPost()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var handler = new CreateBlogPostCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero)));
+
+        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+            handler.Handle(
+                new CreateBlogPostCommand(
+                    "Staff post",
+                    null,
+                    null,
+                    "Noi dung bai viet",
+                    "News",
+                    "Draft"),
+                CancellationToken.None));
+    }
+
+    [Test]
+    public async Task AdminCanUpdateBlogPostImage()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
         var post = BlogPost(author, "draft-post", "Draft", null);
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
 
         var handler = new UpdateBlogPostImageCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new TestBlogImageStorageService());
         var result = await handler.Handle(
             new UpdateBlogPostImageCommand(
@@ -252,11 +274,12 @@ public class BlogPostCommandTests
     }
 
     [Test]
-    public async Task StaffCanUploadMultipleBlogPostImages()
+    public async Task StaffCannotUpdateBlogPostImage()
     {
         await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
         var post = BlogPost(author, "draft-post", "Draft", null);
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
@@ -264,6 +287,29 @@ public class BlogPostCommandTests
         var handler = new UpdateBlogPostImageCommandHandler(
             context,
             staffContext,
+            new TestBlogImageStorageService());
+        await Should.ThrowAsync<ForbiddenAccessException>(() => handler.Handle(
+            new UpdateBlogPostImageCommand(
+                BlogPostId: post.Id,
+                ImageUrl: null,
+                ImageAltText: "New cover",
+                ImageFile: ImageFile("new-cover.webp")),
+            CancellationToken.None));
+    }
+
+    [Test]
+    public async Task AdminCanUploadMultipleBlogPostImages()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
+        var post = BlogPost(author, "draft-post", "Draft", null);
+        context.Set<BlogPost>().Add(post);
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateBlogPostImageCommandHandler(
+            context,
+            adminContext,
             new TestBlogImageStorageService());
         var result = await handler.Handle(
             new UpdateBlogPostImageCommand(
@@ -292,18 +338,18 @@ public class BlogPostCommandTests
     }
 
     [Test]
-    public async Task StaffCanUploadBlogPostImageFile()
+    public async Task AdminCanUploadBlogPostImageFile()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
         var post = BlogPost(author, "draft-post", "Draft", null);
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
 
         var handler = new UpdateBlogPostImageCommandHandler(
             context,
-            staffContext,
+            adminContext,
             new TestBlogImageStorageService());
         var result = await handler.Handle(
             new UpdateBlogPostImageCommand(
@@ -324,15 +370,15 @@ public class BlogPostCommandTests
     public async Task UpdateBlogPostCanUploadImageFile()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
         var post = BlogPost(author, "draft-post", "Draft", null);
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
 
         var handler = new UpdateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             TimeProvider.System,
             new TestBlogImageStorageService());
         var result = await handler.Handle(
@@ -358,8 +404,8 @@ public class BlogPostCommandTests
     public async Task UpdateBlogPostWithoutImageKeepsExistingImage()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
         var post = BlogPost(
             author,
             "published-post",
@@ -370,7 +416,7 @@ public class BlogPostCommandTests
 
         var handler = new UpdateBlogPostCommandHandler(
             context,
-            staffContext,
+            adminContext,
             TimeProvider.System,
             new TestBlogImageStorageService());
         var result = await handler.Handle(
@@ -394,13 +440,13 @@ public class BlogPostCommandTests
     public async Task UpdateBlogPostImageRequiresUploadedFile()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
         var post = BlogPost(author, "draft-post", "Draft", null);
         context.Set<BlogPost>().Add(post);
         await context.SaveChangesAsync();
 
-        var handler = new UpdateBlogPostImageCommandHandler(context, staffContext);
+        var handler = new UpdateBlogPostImageCommandHandler(context, adminContext);
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
                 new UpdateBlogPostImageCommand(post.Id, null, null),
@@ -414,8 +460,8 @@ public class BlogPostCommandTests
     public async Task PublicListOnlyReturnsPublishedBlogPosts()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        var author = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
 
         context.Set<BlogPost>().AddRange(
             BlogPost(author, "draft-post", "Draft", null),

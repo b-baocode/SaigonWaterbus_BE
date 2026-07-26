@@ -85,9 +85,12 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                 });
 
         // Giá "từ" = loại vé trả tiền rẻ nhất (bỏ qua các loại miễn phí).
-        var minModifier = TicketTypePricing.All
-            .Where(x => x.PriceModifier > 0)
-            .Min(x => x.PriceModifier);
+        var configuredTicketFareRules = await TicketFareRuleSupport.LoadConfiguredRulesAsync(
+            _context,
+            cancellationToken);
+        var minModifier = TicketFareRuleSupport.GetMinimumPositivePriceModifier(
+            configuredTicketFareRules,
+            RouteTypes.SightseeingLoop);
         var fareAdjustments = await FareAdjustmentSupport.GetEffectiveAdjustmentsAsync(
             _context,
             trips.Select(x => x.OperatingDate).ToArray(),

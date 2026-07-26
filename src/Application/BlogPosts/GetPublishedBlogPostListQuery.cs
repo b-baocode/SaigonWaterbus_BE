@@ -18,7 +18,6 @@ public sealed class GetPublishedBlogPostListQueryHandler
     {
         var posts = await _context.Set<BlogPost>()
             .AsNoTracking()
-            .Include(x => x.Author)
             .Where(x => x.Status == BlogPostSupport.PublishedStatus)
             .OrderByDescending(x => x.PublishedAt ?? x.Created)
             .ThenByDescending(x => x.Id)
@@ -36,9 +35,7 @@ public sealed class GetPublishedBlogPostListQueryHandler
                 x.ImageAltText,
                 x.Status,
                 x.PublishedAt,
-                x.Created,
-                x.AuthorId,
-                x.Author.FullName))
+                x.Created))
             .ToList();
     }
 }

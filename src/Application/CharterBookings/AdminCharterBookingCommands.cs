@@ -520,12 +520,16 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             : [previewRoute];
         var rentalUnit = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
         var requestedDurationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
+        var rentalPricePolicies = await CharterBookingRoutePricingSupport.LoadRentalPricePoliciesAsync(
+            _context,
+            cancellationToken);
         var selectedBoatPricings = CharterBookingQuoteSupport.EstimateSelectedBoatPrices(
             booking,
             selectedBoats,
             rentalUnit,
             requestedDurationValue,
-            relatedRoutes);
+            relatedRoutes,
+            rentalPricePolicies);
         var primarySelection = selectedBoatPricings[0];
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
@@ -657,12 +661,16 @@ public sealed class QuoteCharterBookingCommandHandler
         var routeEstimate = CharterBookingRoutePricingSupport.EstimateRoute(booking, relatedRoutes);
         var rentalUnit = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
         var requestedDurationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
+        var rentalPricePolicies = await CharterBookingRoutePricingSupport.LoadRentalPricePoliciesAsync(
+            _context,
+            cancellationToken);
         var selectedBoatPricings = CharterBookingQuoteSupport.EstimateSelectedBoatPrices(
             booking,
             selectedBoats,
             rentalUnit,
             requestedDurationValue,
-            relatedRoutes);
+            relatedRoutes,
+            rentalPricePolicies);
         var primarySelection = selectedBoatPricings[0];
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 

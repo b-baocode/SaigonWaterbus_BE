@@ -145,11 +145,14 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                         .Select(x => x.BasePriceFromDb ?? (SeatTypePricing.TryGetBasePrice(x.SeatTypeCode, out var p) ? p : (decimal?)null))
                         .Where(p => p.HasValue)
                         .Min()
-                });
+        });
         // Giá "từ" = loại vé trả tiền rẻ nhất (bỏ qua các loại miễn phí).
-        var minModifier = TicketTypePricing.All
-            .Where(x => x.PriceModifier > 0)
-            .Min(x => x.PriceModifier);
+        var configuredTicketFareRules = await TicketFareRuleSupport.LoadConfiguredRulesAsync(
+            _context,
+            cancellationToken);
+        var minModifier = TicketFareRuleSupport.GetMinimumPositivePriceModifier(
+            configuredTicketFareRules,
+            RouteTypes.Regular);
 
         // Trip Regular tính giá theo quãng đường: giá "từ" = giá chặng tìm kiếm. Nếu tuyến chưa
         // nhập đủ km thì không fallback giá ghế STANDARD legacy, mà trả chuyến ở trạng thái

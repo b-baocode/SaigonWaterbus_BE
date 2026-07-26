@@ -66,7 +66,7 @@ public sealed class BlogPosts : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Danh cho Admin, Manager, Staff.",
+                "Chi danh cho Admin.",
                 "Query params: status (optional): Draft | Published | Archived.",
                 "Khong truyen status se tra ve tat ca."));
 
@@ -76,7 +76,7 @@ public sealed class BlogPosts : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Danh cho Admin, Manager, Staff.",
+                "Chi danh cho Admin.",
                 "Tra ve du content ke ca bai Draft hoac Archived."));
 
         group.MapPost(CreateBlogPost, string.Empty)
@@ -88,7 +88,8 @@ public sealed class BlogPosts : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 CreateExample,
-                "Danh cho Admin, Manager, Staff.",
+                "Chi danh cho Admin.",
+                "Khong co luong duyet/tac gia tren FE; Admin tao xong tu chon Draft de an hoac Published de hien.",
                 "status optional, mac dinh Draft. Khi tao moi chi hop le: Draft | Published.",
                 "category bat buoc nhap. Gia tri hop le: Activity | Event | News.",
                 "slug khong can gui; BE tu sinh tu title va tu them hau to neu trung.",
@@ -108,7 +109,8 @@ public sealed class BlogPosts : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateExample,
-                "Danh cho Admin, Manager, Staff.",
+                "Chi danh cho Admin.",
+                "Khong co luong duyet/tac gia tren FE; Admin doi status de an/hien bai.",
                 "status hop le: Draft | Published | Archived.",
                 "category hop le: Activity | Event | News.",
                 "slug khong can gui; neu bo trong BE tu sinh lai tu title.",
@@ -128,7 +130,7 @@ public sealed class BlogPosts : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 UpdateImageExample,
-                "Danh cho Admin, Manager, Staff.",
+                "Chi danh cho Admin.",
                 "Chi nhan multipart/form-data voi field image/images/files va imageAltText de upload 1 hoac nhieu anh.",
                 "Endpoint nay thay toan bo danh sach anh hien tai bang file moi upload.",
                 "Khong ho tro application/json, imageUrl hoac imageUrls.",
@@ -141,7 +143,7 @@ public sealed class BlogPosts : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Danh cho Admin, Manager, Staff.",
+                "Chi danh cho Admin.",
                 "Dat Status = Published va set PublishedAt neu chua co.",
                 "Bai viet phai co it nhat 1 anh truoc khi publish."));
 
@@ -151,7 +153,8 @@ public sealed class BlogPosts : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Soft delete: dat Status = Archived.",
+                "Chi danh cho Admin.",
+                "Soft delete/an bai: dat Status = Archived.",
                 "Tra ve 204 khi thanh cong."));
     }
 

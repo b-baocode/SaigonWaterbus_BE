@@ -125,7 +125,9 @@ public sealed class Stations : IEndpointGroup
                 "Admin",
                 null,
                 "Tra ve 204 khi xoa thanh cong.",
-                "Tra ve 404 neu khong tim thay tram."));
+                "Tra ve 404 neu khong tim thay tram.",
+                "Tra ve 400 neu tram dang duoc dung trong route, booking, trip, GPS, phan cong hoac du lieu lien quan.",
+                "Neu muon an tram da phat sinh du lieu, dung PATCH /api/stations/{id}/status voi status=Inactive."));
     }
 
     private static async Task<IResult> GetStations(ISender sender, CancellationToken ct) =>

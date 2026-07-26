@@ -291,8 +291,7 @@ public class StaffWorkAssignmentTests
             new ReplaceStaffWorkAssignmentCommand(
                 created.AssignmentId,
                 replacementStaffContext.UserId!.Value,
-                Reason: "Đổi ca",
-                Note: "Nhân viên thay thế nhận ca"),
+                Reason: "Đổi ca"),
             CancellationToken.None);
 
         result.OriginalAssignment.Status.ShouldBe(StaffWorkAssignmentStatus.Replaced);

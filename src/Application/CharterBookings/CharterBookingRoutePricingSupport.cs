@@ -39,6 +39,8 @@ internal sealed record CharterBookingRouteLegEstimate(
     string? MatchedRouteCode,
     string? MatchedRouteName);
 
+internal readonly record struct CharterBoatRentalPricePolicyKey(int NumberOfDecks, BoatRentalUnit RentalUnit);
+
 internal static class CharterBookingRoutePricingSupport
 {
     private const decimal DefaultAverageSpeedKmh = 13m;
@@ -195,10 +197,11 @@ internal static class CharterBookingRoutePricingSupport
         BoatRentalUnit rentalUnit,
         int requestedDurationValue,
         IReadOnlyCollection<Route>? relatedRoutes = null,
-        CharterRouteEstimateOptions? options = null)
+        CharterRouteEstimateOptions? options = null,
+        IReadOnlyDictionary<CharterBoatRentalPricePolicyKey, decimal>? rentalPricePolicies = null)
     {
         var routeEstimate = EstimateRoute(booking, relatedRoutes, options);
-        var unitPrice = ResolveUnitPrice(boat, rentalUnit);
+        var unitPrice = ResolveUnitPrice(boat, rentalUnit, rentalPricePolicies);
         var chargeableDurationValue = ResolveChargeableDurationValue(
             rentalUnit,
             requestedDurationValue,
@@ -350,17 +353,47 @@ internal static class CharterBookingRoutePricingSupport
             matchedRoute?.RouteName);
     }
 
-    private static decimal ResolveUnitPrice(Boat boat, BoatRentalUnit rentalUnit)
+    public static async Task<IReadOnlyDictionary<CharterBoatRentalPricePolicyKey, decimal>> LoadRentalPricePoliciesAsync(
+        IApplicationDbContext context,
+        CancellationToken cancellationToken)
+    {
+        var rows = await context.Set<CharterBoatRentalPricePolicy>()
+            .AsNoTracking()
+            .Where(x => x.IsActive)
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(
+            x => new CharterBoatRentalPricePolicyKey(x.NumberOfDecks, x.RentalUnit),
+            x => x.UnitPrice);
+    }
+
+    private static decimal ResolveUnitPrice(
+        Boat boat,
+        BoatRentalUnit rentalUnit,
+        IReadOnlyDictionary<CharterBoatRentalPricePolicyKey, decimal>? rentalPricePolicies)
     {
         var unitPrice = rentalUnit == BoatRentalUnit.Day
             ? boat.DailyRentalPrice
             : boat.HourlyRentalPrice;
 
+        if (unitPrice.HasValue && unitPrice > 0)
+        {
+            return unitPrice.Value;
+        }
+
+        var policyKey = new CharterBoatRentalPricePolicyKey(boat.NumberOfDecks, rentalUnit);
+        if (rentalPricePolicies is not null
+            && rentalPricePolicies.TryGetValue(policyKey, out var policyUnitPrice)
+            && policyUnitPrice > 0)
+        {
+            return policyUnitPrice;
+        }
+
         if (!unitPrice.HasValue || unitPrice <= 0)
         {
             var unitName = rentalUnit == BoatRentalUnit.Day ? "ngày" : "giờ";
             throw new ValidationException([new ValidationFailure(nameof(rentalUnit),
-                $"Tàu chưa cấu hình giá thuê theo {unitName}.")]);
+                $"Tàu chưa cấu hình giá thuê theo {unitName}, và chưa có policy chung cho tàu {boat.NumberOfDecks} tầng.")]);
         }
 
         return unitPrice.Value;

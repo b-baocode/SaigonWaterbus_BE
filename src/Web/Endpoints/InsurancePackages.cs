@@ -11,8 +11,8 @@ public sealed class InsurancePackages : IEndpointGroup
         """
         {
           "code": "CHARTER_PASSENGER_BASIC",
-          "name": "Bao hiem hanh khach thue tau",
-          "bookingType": "CharterBooking",
+          "name": "Bao hiem hanh khach",
+          "bookingType": "PassengerInsurance",
           "unitPremiumAmount": 10000,
           "coverageAmount": 50000000,
           "isRequired": false,
@@ -20,7 +20,7 @@ public sealed class InsurancePackages : IEndpointGroup
           "providerLogoUrl": "https://cdn.example.com/insurance/logo.png",
           "conditions": [
             "Chi ap dung cho hanh khach co ten trong danh sach chuyen di.",
-            "Chi co hieu luc trong thoi gian dien ra chuyen thue tau."
+            "Chi co hieu luc trong thoi gian dien ra chuyen di."
           ],
           "termsUrl": "https://cdn.example.com/insurance/terms.pdf",
           "status": "Active",
@@ -31,8 +31,8 @@ public sealed class InsurancePackages : IEndpointGroup
     private const string UpdateExample =
         """
         {
-          "name": "Bao hiem hanh khach thue tau",
-          "bookingType": "CharterBooking",
+          "name": "Bao hiem hanh khach",
+          "bookingType": "PassengerInsurance",
           "unitPremiumAmount": 12000,
           "coverageAmount": 50000000,
           "isRequired": false,
@@ -63,8 +63,10 @@ public sealed class InsurancePackages : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Query params: bookingType optional (SeatBooking | CharterBooking), activeOnly optional true/false.",
-                "FE charter booking goi: GET /api/insurance-packages?bookingType=CharterBooking",
+                "Query params: bookingType optional, activeOnly optional true/false.",
+                "Logic moi chi dung mot loai bao hiem theo hanh khach: bookingType=PassengerInsurance.",
+                "FE co the goi GET /api/insurance-packages?bookingType=PassengerInsurance hoac bo bookingType.",
+                "Query SeatBooking/CharterBooking cu van duoc ho tro tam thoi va se tra them goi PassengerInsurance de FE cu khong bi hong.",
                 "providerLogoUrl la link logo bao hiem de FE hien thi."));
 
         group.MapPost(CreateInsurancePackage, string.Empty)
@@ -73,8 +75,8 @@ public sealed class InsurancePackages : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin hoac Manager",
                 CreateExample,
-                "bookingType hop le: SeatBooking | CharterBooking.",
-                "code unique theo bookingType.",
+                "bookingType nen gui PassengerInsurance hoac bo trong; SeatBooking/CharterBooking chi giu de tuong thich request cu.",
+                "code unique theo bookingType da normalize ve PassengerInsurance.",
                 "unitPremiumAmount la gia tren moi hanh khach, VND.",
                 "coverageAmount la muc boi thuong/quyen loi tren moi hanh khach."));
 

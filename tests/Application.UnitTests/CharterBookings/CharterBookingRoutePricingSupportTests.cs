@@ -174,6 +174,34 @@ public class CharterBookingRoutePricingSupportTests
     }
 
     [Test]
+    public void EstimatePriceFallsBackToDeckRentalPolicyWhenBoatHasNoOwnPrice()
+    {
+        var booking = new Booking
+        {
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 1
+        };
+        var boat = new Boat
+        {
+            NumberOfDecks = 2
+        };
+        var policies = new Dictionary<CharterBoatRentalPricePolicyKey, decimal>
+        {
+            [new CharterBoatRentalPricePolicyKey(2, BoatRentalUnit.Hour)] = 3_000_000m
+        };
+
+        var pricing = CharterBookingRoutePricingSupport.EstimatePrice(
+            booking,
+            boat,
+            BoatRentalUnit.Hour,
+            requestedDurationValue: 2,
+            rentalPricePolicies: policies);
+
+        pricing.UnitPrice.ShouldBe(3_000_000m);
+        pricing.SubtotalAmount.ShouldBe(6_000_000m);
+    }
+
+    [Test]
     public void EstimateRouteUsesConfiguredSpeedAndBuffer()
     {
         var fromStation = new Station
