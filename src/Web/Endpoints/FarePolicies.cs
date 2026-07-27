@@ -11,8 +11,7 @@ public sealed class FarePolicies : IEndpointGroup
         {
           "baseFare": 5000,
           "pricePerKm": 1500,
-          "roundingStep": 1000,
-          "minFare": null
+          "roundingStep": 1000
         }
         """;
 
@@ -43,10 +42,11 @@ public sealed class FarePolicies : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",
                 null,
-                "Gia ve trip Regular (ghe STANDARD) = RoundUp(baseFare + pricePerKm x km, roundingStep), toi thieu minFare neu co.",
+                "Gia ve trip Regular (ghe STANDARD) = RoundUp(baseFare + pricePerKm x km, roundingStep).",
                 "Km cua chang = tong distance_from_previous_km cua cac route stops giua tram len va tram xuong.",
                 "Neu route Regular thieu km cho chang dang ban thi search tra isBookable=false, seat-map/booking tra validation; backend khong fallback gia STANDARD.",
-                "Ve mien phi (INFANT/SENIOR/DISABLED) van ap dung he so 0 nhu cu."));
+                "Waterbus thuong: INFANT/SENIOR/DISABLED he so 0, CHILD he so 0.5.",
+                "Sightseeing: CHILD/SENIOR/DISABLED dung chung % giam tai /api/ticket-types/sightseeing-concession, INFANT he so 0."));
 
         group.MapPut(UpdateFarePolicy, string.Empty)
             .RequireAuthorization()
@@ -55,7 +55,7 @@ public sealed class FarePolicies : IEndpointGroup
                 "Admin hoac Manager",
                 UpdateExample,
                 "Ap dung ngay cho cac booking tao sau khi chinh (gia da chot trong booking cu khong doi).",
-                "baseFare/pricePerKm/minFare: so nguyen VND. roundingStep: 1 | 100 | 500 | 1000 (lam tron LEN).",
+                "baseFare/pricePerKm: so nguyen VND. roundingStep: 1 | 100 | 500 | 1000 (lam tron LEN).",
                 "Chi ap dung trip Regular voi ghe STANDARD; sightseeing (CABIN/RIVER/SKY) van tinh theo loai ghe."));
 
         group.MapGet(GetFareAdjustments, "adjustments")

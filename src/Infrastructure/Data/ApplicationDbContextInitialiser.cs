@@ -228,7 +228,6 @@ public class ApplicationDbContextInitialiser
                 Name = definition.Name,
                 BasePrice = definition.BasePrice,
                 Currency = "VND",
-                IsActive = true,
                 DisplayOrder = definition.DisplayOrder
             });
             added = true;

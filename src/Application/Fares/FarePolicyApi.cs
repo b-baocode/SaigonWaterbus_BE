@@ -8,7 +8,6 @@ public sealed record FarePolicyDto(
     decimal BaseFare,
     decimal PricePerKm,
     decimal RoundingStep,
-    decimal? MinFare,
     string Currency);
 
 /// <summary>Giá trị mặc định khi DB chưa có policy active (khớp seed trong migration).</summary>
@@ -18,7 +17,7 @@ public static class FarePolicyDefaults
     public const decimal PricePerKm = 1500m;
     public const decimal RoundingStep = 1000m;
 
-    public static FarePolicyDto Dto { get; } = new(null, BaseFare, PricePerKm, RoundingStep, null, "VND");
+    public static FarePolicyDto Dto { get; } = new(null, BaseFare, PricePerKm, RoundingStep, "VND");
 }
 
 public sealed record GetFarePolicyQuery : IRequest<FarePolicyDto>;
@@ -37,8 +36,7 @@ public sealed class GetFarePolicyQueryHandler : IRequestHandler<GetFarePolicyQue
 public sealed record UpdateFarePolicyCommand(
     decimal BaseFare,
     decimal PricePerKm,
-    decimal RoundingStep = 1000m,
-    decimal? MinFare = null) : IRequest<FarePolicyDto>;
+    decimal RoundingStep = 1000m) : IRequest<FarePolicyDto>;
 
 public sealed class UpdateFarePolicyCommandValidator : AbstractValidator<UpdateFarePolicyCommand>
 {
@@ -55,9 +53,6 @@ public sealed class UpdateFarePolicyCommandValidator : AbstractValidator<UpdateF
         RuleFor(x => x.RoundingStep)
             .Must(x => x is 1m or 100m or 500m or 1000m)
             .WithMessage("Bước làm tròn chỉ nhận 1, 100, 500 hoặc 1000 VND.");
-        RuleFor(x => x.MinFare)
-            .Must(x => x is null || (x > 0 && x <= 100_000_000 && decimal.Truncate(x.Value) == x))
-            .WithMessage("Giá sàn phải là số nguyên VND lớn hơn 0.");
     }
 }
 
@@ -70,7 +65,6 @@ public sealed class UpdateFarePolicyCommandHandler : IRequestHandler<UpdateFareP
     public async Task<FarePolicyDto> Handle(UpdateFarePolicyCommand request, CancellationToken cancellationToken)
     {
         var policy = await _context.Set<FarePolicy>()
-            .Where(x => x.IsActive)
             .OrderByDescending(x => x.Created)
             .FirstOrDefaultAsync(cancellationToken);
 
@@ -83,12 +77,10 @@ public sealed class UpdateFarePolicyCommandHandler : IRequestHandler<UpdateFareP
         policy.BaseFare = request.BaseFare;
         policy.PricePerKm = request.PricePerKm;
         policy.RoundingStep = request.RoundingStep;
-        policy.MinFare = request.MinFare;
-        policy.IsActive = true;
 
         await _context.SaveChangesAsync(cancellationToken);
 
         return new FarePolicyDto(policy.Id, policy.BaseFare, policy.PricePerKm,
-            policy.RoundingStep, policy.MinFare, policy.Currency);
+            policy.RoundingStep, policy.Currency);
     }
 }

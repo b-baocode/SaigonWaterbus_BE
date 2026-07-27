@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using SaigonWaterbus.Application.InsurancePackages;
 using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
@@ -120,8 +121,8 @@ internal static class CharterBookingInsuranceSupport
             throw CreateInsuranceValidation("Không tìm thấy gói bảo hiểm đã chọn.");
         }
 
-        if (!string.Equals(package.BookingType, bookingType, StringComparison.Ordinal)
-            || !package.IsActive)
+        if (!package.IsActive
+            || !InsurancePackageSupport.IsApplicableToBookingType(package, bookingType))
         {
             throw CreateInsuranceValidation(CreateUnavailablePackageMessage(bookingType));
         }
@@ -250,7 +251,8 @@ internal static class CharterBookingInsuranceSupport
                 throw CreateInsuranceValidation("Không tìm thấy gói bảo hiểm đã chọn.");
             }
 
-            if (!IsActiveCharterInsurancePackage(selectedPackage))
+            if (!selectedPackage.IsActive
+                || !InsurancePackageSupport.IsApplicableToBookingType(selectedPackage, Booking.CharterBookingType))
             {
                 throw CreateInsuranceValidation("Gói bảo hiểm đã chọn không khả dụng cho charter booking.");
             }
@@ -260,8 +262,11 @@ internal static class CharterBookingInsuranceSupport
 
         return await context.Set<InsurancePackage>()
             .AsNoTracking()
-            .Where(IsActiveCharterInsurancePackageExpression())
-            .OrderByDescending(x => x.IsRequired)
+            .Where(x => x.IsActive
+                && (x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType
+                    || x.BookingType == Booking.CharterBookingType))
+            .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
+            .ThenByDescending(x => x.IsRequired)
             .ThenBy(x => x.DisplayOrder)
             .ThenBy(x => x.Code)
             .FirstOrDefaultAsync(cancellationToken);
@@ -304,8 +309,11 @@ internal static class CharterBookingInsuranceSupport
 
         var package = await context.Set<InsurancePackage>()
             .AsNoTracking()
-            .Where(x => x.BookingType == bookingType && x.IsActive)
-            .OrderByDescending(x => x.IsRequired)
+            .Where(x => x.IsActive
+                && (x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType
+                    || x.BookingType == bookingType))
+            .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
+            .ThenByDescending(x => x.IsRequired)
             .ThenBy(x => x.DisplayOrder)
             .ThenBy(x => x.Code)
             .FirstOrDefaultAsync(cancellationToken);
@@ -314,13 +322,6 @@ internal static class CharterBookingInsuranceSupport
             ? null
             : CreateSnapshot(package, insuredPassengerQuantity, quotedAt);
     }
-
-    private static System.Linq.Expressions.Expression<Func<InsurancePackage, bool>> IsActiveCharterInsurancePackageExpression() =>
-        package => package.BookingType == Booking.CharterBookingType && package.IsActive;
-
-    private static bool IsActiveCharterInsurancePackage(InsurancePackage package) =>
-        string.Equals(package.BookingType, Booking.CharterBookingType, StringComparison.Ordinal)
-        && package.IsActive;
 
     private static string CreateUnavailablePackageMessage(string bookingType) =>
         Booking.IsCharterBookingType(bookingType)

@@ -41,7 +41,6 @@ public sealed class GetBlogPostManagementListQueryHandler
         }
 
         var posts = await query
-            .Include(x => x.Author)
             .OrderByDescending(x => x.Created)
             .ThenByDescending(x => x.Id)
             .ToListAsync(cancellationToken);
@@ -58,9 +57,7 @@ public sealed class GetBlogPostManagementListQueryHandler
                 x.ImageAltText,
                 x.Status,
                 x.PublishedAt,
-                x.Created,
-                x.AuthorId,
-                x.Author.FullName))
+                x.Created))
             .ToList();
     }
 }

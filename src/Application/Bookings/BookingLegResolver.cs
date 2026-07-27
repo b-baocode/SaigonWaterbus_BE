@@ -116,10 +116,8 @@ internal sealed class BookingLegResolver
                     "Vé INFANT chỉ áp dụng cho trẻ dưới 2 tuổi (sinh trong vòng 2 năm so với ngày khởi hành).")]);
         }
 
-        // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và MIỄN PHÍ trên
-        // cả waterbus thường lẫn sightseeing. Vé free có ghế (SENIOR/DISABLED, hoặc INFANT chọn ghế riêng)
-        // vẫn bị chặn tự nhiên trên sightseeing vì ghế sightseeing không phải loại STANDARD — FareCalculator
-        // từ chối theo AllowedSeatTypeCodes, nên không cần chặn thêm ở cấp tàu tại đây.
+        // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và miễn phí trên
+        // cả waterbus thường lẫn sightseeing. Các loại vé có ghế dùng hệ số giá theo routeType.
         var lapItems = items.Where(i => string.IsNullOrWhiteSpace(i.SeatNumber)).ToList();
         if (lapItems.Count > 0)
         {
@@ -268,9 +266,21 @@ internal sealed class BookingLegResolver
                 tripSeat = tripSeatsBySeatId[seat.Id];
             }
 
+            var ticketType = ticketTypesByCode[TicketTypeCatalog.NormalizeCode(item.TicketTypeCode)];
+            if (seat is not null && !ticketType.IsApplicableForSeatType(seat.SeatTypeCode))
+            {
+                var allowed = ticketType.AllowedSeatTypeCodes!;
+                throw new ValidationException(
+                [
+                    new ValidationFailure(nameof(BookingItemRequest.TicketTypeCode),
+                        $"Loại vé '{ticketType.Name}' chỉ áp dụng cho ghế: {allowed}. "
+                        + $"Ghế '{seat.Code}' là loại {seat.SeatTypeCode}.")
+                ]);
+            }
+
             resolvedItems.Add(new ResolvedItem(
                 item,
-                ticketTypesByCode[TicketTypeCatalog.NormalizeCode(item.TicketTypeCode)],
+                ticketType,
                 seat,
                 tripSeat,
                 fromStop,
@@ -313,8 +323,13 @@ internal sealed class BookingLegResolver
 
                     farePolicy ??= await DistanceFareSupport.GetActivePolicyAsync(_context, cancellationToken);
                     var baseFare = DistanceFareSupport.CalculateFare(farePolicy, distanceKm.Value);
+                    var priceModifier = await TicketFareRuleSupport.GetEffectivePriceModifierAsync(
+                        _context,
+                        resolved.TicketType,
+                        trip.Route.RouteType,
+                        cancellationToken);
                     unitPrice = FareAdjustmentSupport.ApplySurcharge(baseFare, fareAdjustment)
-                        * resolved.TicketType.PriceModifier;
+                        * priceModifier;
                 }
                 else
                 {

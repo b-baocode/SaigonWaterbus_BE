@@ -95,6 +95,38 @@ public class CompleteSeatSetupFlowIntegrationTests
     }
 
     [Test]
+    public async Task ConfigureNumbersSeatsByActualSeatsAndSkipsAisleColumns()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
+        boat.SeatCount = 6;
+        context.Add(boat);
+        await context.SaveChangesAsync();
+
+        var configured = await Configure(
+            context,
+            userContext,
+            boat.Id,
+            [
+                new DeckConfigDto(
+                    1,
+                    1,
+                    7,
+                    Cells: [new LayoutCellConfigDto(1, 4, SeatLayoutCellType.Aisle)])
+            ]);
+
+        configured.ConfiguredSeats.ShouldBe(6);
+        var seats = await context.Seats
+            .Where(x => x.BoatId == boat.Id)
+            .OrderBy(x => x.Column)
+            .Select(x => new { x.Code, x.Column })
+            .ToListAsync();
+        seats.Select(x => x.Code).ShouldBe(["1-A1", "1-A2", "1-A3", "1-A4", "1-A5", "1-A6"]);
+        seats.Select(x => x.Column).ShouldBe([1, 2, 3, 5, 6, 7]);
+    }
+
+    [Test]
     public async Task FullStandardFlowGeneratesMatrixConfiguresSeatsAndAutoActivates()
     {
         await using var context = SeatFlowTestData.CreateContext();

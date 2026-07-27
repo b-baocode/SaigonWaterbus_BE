@@ -30,14 +30,84 @@ public sealed class DeleteStationCommandHandler : IRequestHandler<DeleteStationC
             .SingleOrDefaultAsync(s => s.Id == request.StationId, cancellationToken)
             ?? throw new NotFoundException("Station not found.");
 
-        var belongsToRoute = await _context.Set<RouteStop>()
-            .AnyAsync(rs => rs.StationId == station.Id, cancellationToken);
+        var dependencies = new List<string>();
 
-        if (belongsToRoute)
+        if (await _context.Set<RouteStop>().AnyAsync(rs => rs.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("route");
+        }
+
+        if (await _context.Set<TripStop>().AnyAsync(ts => ts.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("trip stop");
+        }
+
+        if (await _context.Set<Booking>().AnyAsync(
+                b => b.FromStationId == station.Id || b.ToStationId == station.Id,
+                cancellationToken))
+        {
+            dependencies.Add("booking");
+        }
+
+        if (await _context.Set<BookingPassenger>().AnyAsync(
+                p => p.FromStationId == station.Id || p.ToStationId == station.Id,
+                cancellationToken))
+        {
+            dependencies.Add("booking passenger");
+        }
+
+        if (await _context.Set<BookingItineraryStop>().AnyAsync(s => s.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("booking itinerary");
+        }
+
+        if (await _context.Set<CharterRouteDrawRequestStop>().AnyAsync(s => s.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("charter route draw request");
+        }
+
+        if (await _context.Set<UserStationAssignment>().AnyAsync(a => a.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("user station assignment");
+        }
+
+        if (await _context.Set<StaffWorkAssignment>().AnyAsync(a => a.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("staff work assignment");
+        }
+
+        if (await _context.Set<Landmark>().AnyAsync(l => l.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("landmark");
+        }
+
+        if (await _context.Set<GpsTrackingSession>().AnyAsync(
+                s => s.StartStationId == station.Id || s.EndStationId == station.Id,
+                cancellationToken))
+        {
+            dependencies.Add("GPS tracking session");
+        }
+
+        if (await _context.Set<BoatLatestLocation>().AnyAsync(l => l.NextStationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("boat latest location");
+        }
+
+        if (await _context.Set<TicketScanEvent>().AnyAsync(e => e.StationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("ticket scan event");
+        }
+
+        if (await _context.Set<Incident>().AnyAsync(i => i.ReplacementTargetStationId == station.Id, cancellationToken))
+        {
+            dependencies.Add("incident");
+        }
+
+        if (dependencies.Count > 0)
         {
             throw new ValidationException([new ValidationFailure(
                 nameof(request.StationId),
-                "Station cannot be deleted because it is assigned to one or more routes.")]);
+                $"Station cannot be deleted because it is being used by: {string.Join(", ", dependencies)}. Set it to Inactive instead if you want to hide it from operations.")]);
         }
 
         _context.Set<Station>().Remove(station);

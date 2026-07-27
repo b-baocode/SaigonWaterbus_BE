@@ -22,7 +22,6 @@ public sealed record CreateBoatRequest(
     Stream? ImageContent = null,
     BoatServiceType ServiceType = BoatServiceType.Passenger,
     SeatSetupType SeatSetupType = SeatSetupType.FullStandard,
-    IReadOnlyCollection<BoatRentalPriceRequest>? RentalPrices = null,
     IReadOnlyCollection<string>? ImageUrls = null,
     IReadOnlyCollection<BoatImageFileRequest>? ImageFiles = null);
 
@@ -93,26 +92,6 @@ public sealed class CreateBoatRequestValidator : AbstractValidator<CreateBoatReq
                 x.ImageFiles))
             .WithMessage("Mỗi tàu chỉ được gửi tối đa 3 ảnh.");
 
-        RuleFor(x => x.RentalPrices)
-            .Must(BoatSupport.HasDistinctRentalUnits)
-            .WithMessage("Mỗi đơn vị thuê tàu chỉ được cấu hình một giá.");
-
-        RuleForEach(x => x.RentalPrices)
-            .ChildRules(price =>
-            {
-                price.RuleFor(x => x.RentalUnit)
-                    .IsInEnum()
-                    .WithMessage("Đơn vị thuê tàu chỉ được là Hour hoặc Day.");
-
-                price.RuleFor(x => x.UnitPrice)
-                    .GreaterThan(0)
-                    .WithMessage("Giá thuê tàu phải lớn hơn 0.");
-
-                price.RuleFor(x => x.Currency)
-                    .Must(BoatSupport.IsValidCurrencyCode)
-                    .WithMessage("Currency phải là mã ISO 4217 gồm 3 chữ cái, ví dụ VND.")
-                    .When(x => x.Currency is not null);
-            });
     }
 }
 
@@ -176,7 +155,6 @@ public sealed class CreateBoatRequestUseCase
             YearBuilt = request.YearBuilt,
             Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim()
         };
-        BoatSupport.ApplyRentalPrices(boat, request.RentalPrices);
 
         var imageFiles = BoatSupport.CreateImageFiles(
             request.ImageFileName,

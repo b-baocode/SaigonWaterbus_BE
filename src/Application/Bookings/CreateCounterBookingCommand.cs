@@ -224,7 +224,7 @@ public sealed class CreateCounterBookingCommandHandler
                 leg, staff.Id, _seatHoldService, _tripSeatNotifier, cancellationToken);
         }
 
-        // Đơn 0đ (toàn vé miễn phí: SENIOR/DISABLED/INFANT) không qua được cổng thanh toán,
+        // Đơn 0đ không qua được cổng thanh toán,
         // luôn ghi nhận như thu tại quầy để vé vẫn được phát hành.
         var settleAtCounter = request.PaymentMethod == CounterPaymentMethod.Cash || booking.TotalAmount <= 0;
         var payment = settleAtCounter

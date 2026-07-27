@@ -93,7 +93,7 @@ internal static class BlogPostSupport
         CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
-        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor) || AuthSupport.IsStaff(actor))
+        if (AuthSupport.IsAdmin(actor))
         {
             return actor;
         }
@@ -399,8 +399,6 @@ internal static class BlogPostSupport
     public static BlogPostDto ToDto(BlogPost post) =>
         new(
             post.Id,
-            post.AuthorId,
-            post.Author.FullName,
             post.Title,
             post.Slug,
             post.Summary,

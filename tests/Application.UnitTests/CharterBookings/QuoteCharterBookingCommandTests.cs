@@ -45,7 +45,12 @@ public class QuoteCharterBookingCommandTests
         var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var booking = CharterBooking(1, 2);
-        context.AddRange(fullStandardBoat, standardAndVipBoat, booking);
+        context.AddRange(
+            fullStandardBoat,
+            standardAndVipBoat,
+            RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
+            RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
+            booking);
         await context.SaveChangesAsync();
 
         var handler = new QuoteCharterBookingCommandHandler(
@@ -180,7 +185,13 @@ public class QuoteCharterBookingCommandTests
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
         var booking = CharterBooking(1, 2);
-        context.AddRange(fullStandardBoat, standardAndVipBoat, insurancePackage, booking);
+        context.AddRange(
+            fullStandardBoat,
+            standardAndVipBoat,
+            RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
+            RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
+            insurancePackage,
+            booking);
         await context.SaveChangesAsync();
 
         var handler = new QuoteCharterBookingCommandHandler(
@@ -223,7 +234,13 @@ public class QuoteCharterBookingCommandTests
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
         var booking = CharterBooking(1, 2);
-        context.AddRange(fullStandardBoat, standardAndVipBoat, insurancePackage, booking);
+        context.AddRange(
+            fullStandardBoat,
+            standardAndVipBoat,
+            RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
+            RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
+            insurancePackage,
+            booking);
         await context.SaveChangesAsync();
 
         var handler = new QuoteCharterBookingCommandHandler(
@@ -258,6 +275,47 @@ public class QuoteCharterBookingCommandTests
     }
 
     [Test]
+    public async Task QuoteUsesSharedPassengerInsurancePackagePerPassenger()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
+        var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
+        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        insurancePackage.BookingType = "PassengerInsurance";
+        var booking = CharterBooking(1, 2);
+        context.AddRange(
+            fullStandardBoat,
+            standardAndVipBoat,
+            RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
+            RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
+            insurancePackage,
+            booking);
+        await context.SaveChangesAsync();
+
+        var handler = new QuoteCharterBookingCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var result = await handler.Handle(
+            new QuoteCharterBookingCommand(
+                booking.Id,
+                Boats:
+                [
+                    new QuoteCharterBookingBoatRequest(1, fullStandardBoat.Id),
+                    new QuoteCharterBookingBoatRequest(2, standardAndVipBoat.Id)
+                ]),
+            CancellationToken.None);
+
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        result.Insurance.Quantity.ShouldBe(101);
+        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
+        result.SubtotalAmount.ShouldBe(4_010_000m);
+    }
+
+    [Test]
     public async Task PreviewReturnsPerBoatPricesWithoutUpdatingBooking()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -265,7 +323,12 @@ public class QuoteCharterBookingCommandTests
         var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var booking = CharterBooking(1, 2);
-        context.AddRange(fullStandardBoat, standardAndVipBoat, booking);
+        context.AddRange(
+            fullStandardBoat,
+            standardAndVipBoat,
+            RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
+            RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
+            booking);
         await context.SaveChangesAsync();
 
         var handler = new PreviewCharterBookingQuoteCommandHandler(
@@ -311,7 +374,13 @@ public class QuoteCharterBookingCommandTests
         var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
         var booking = CharterBooking(1, 2);
         booking.InsuranceSnapshot = InsuranceSnapshot(insurancePackage, quantity: 101);
-        context.AddRange(fullStandardBoat, standardAndVipBoat, insurancePackage, booking);
+        context.AddRange(
+            fullStandardBoat,
+            standardAndVipBoat,
+            RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
+            RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
+            insurancePackage,
+            booking);
         await context.SaveChangesAsync();
 
         var handler = new PreviewCharterBookingQuoteCommandHandler(
@@ -374,10 +443,20 @@ public class QuoteCharterBookingCommandTests
         boat.Name = name;
         boat.SeatCount = 60;
         boat.NumberOfDecks = numberOfDecks;
-        boat.DailyRentalPrice = dailyRentalPrice;
-        boat.HourlyRentalPrice = dailyRentalPrice / 10m;
         return boat;
     }
+
+    private static CharterBoatRentalPricePolicy RentalPolicy(
+        int numberOfDecks,
+        BoatRentalUnit rentalUnit,
+        decimal unitPrice) =>
+        new()
+        {
+            NumberOfDecks = numberOfDecks,
+            RentalUnit = rentalUnit,
+            UnitPrice = unitPrice,
+            Currency = "VND"
+        };
 
     private static Booking CharterBooking(params int[] requestedBoatDecks) =>
         new()

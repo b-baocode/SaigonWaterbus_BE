@@ -11,14 +11,10 @@ public sealed record BlogPostSummaryDto(
     string? ImageAltText,
     string Status,
     DateTimeOffset? PublishedAt,
-    DateTimeOffset CreatedAt,
-    Guid AuthorId,
-    string AuthorName);
+    DateTimeOffset CreatedAt);
 
 public sealed record BlogPostDto(
     Guid BlogPostId,
-    Guid AuthorId,
-    string AuthorName,
     string Title,
     string Slug,
     string? Summary,

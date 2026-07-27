@@ -45,30 +45,63 @@ public sealed class FareCalculator : IFareCalculator
             ]);
         }
 
-        var basePrice = await ResolveBasePriceAsync(seat, tripId, cancellationToken);
-        return basePrice * ticketType.PriceModifier;
+        var tripPricingContext = await ResolveTripPricingContextAsync(tripId, cancellationToken);
+        var basePrice = await ResolveBasePriceAsync(seat, tripPricingContext?.OperatingDate, cancellationToken);
+        var priceModifier = await TicketFareRuleSupport.GetEffectivePriceModifierAsync(
+            _context,
+            ticketType,
+            tripPricingContext?.RouteType,
+            cancellationToken);
+        return basePrice * priceModifier;
     }
 
-    private async Task<decimal> ResolveBasePriceAsync(Seat seat, Guid? tripId, CancellationToken cancellationToken)
+    private async Task<decimal> ResolveBasePriceAsync(
+        Seat seat,
+        DateOnly? operatingDate,
+        CancellationToken cancellationToken)
     {
         var basePrice = seat.SeatType?.BasePrice ?? SeatTypePricing.GetBasePrice(seat.SeatTypeCode);
 
-        if (tripId.HasValue)
+        if (operatingDate.HasValue)
         {
-            var operatingDate = await _context.Set<Trip>()
-                .AsNoTracking()
-                .Where(x => x.Id == tripId.Value)
-                .Select(x => (DateOnly?)x.OperatingDate)
-                .SingleOrDefaultAsync(cancellationToken);
-
-            if (operatingDate.HasValue)
-            {
-                var adjustment = await FareAdjustmentSupport.GetEffectiveAdjustmentAsync(
-                    _context, operatingDate.Value, cancellationToken);
-                return FareAdjustmentSupport.ApplySurcharge(basePrice, adjustment);
-            }
+            var adjustment = await FareAdjustmentSupport.GetEffectiveAdjustmentAsync(
+                _context, operatingDate.Value, cancellationToken);
+            return FareAdjustmentSupport.ApplySurcharge(basePrice, adjustment);
         }
 
         return basePrice;
     }
+
+    private async Task<TripPricingContext?> ResolveTripPricingContextAsync(
+        Guid? tripId,
+        CancellationToken cancellationToken)
+    {
+        if (!tripId.HasValue)
+        {
+            return null;
+        }
+
+        var trip = await _context.Set<Trip>()
+            .AsNoTracking()
+            .Where(x => x.Id == tripId.Value)
+            .Select(x => new { x.OperatingDate, x.RouteId })
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (trip is null)
+        {
+            return null;
+        }
+
+        var routeType = trip.RouteId == Guid.Empty
+            ? null
+            : await _context.Set<Route>()
+                .AsNoTracking()
+                .Where(x => x.Id == trip.RouteId)
+                .Select(x => x.RouteType)
+                .SingleOrDefaultAsync(cancellationToken);
+
+        return new TripPricingContext(trip.OperatingDate, routeType);
+    }
+
+    private sealed record TripPricingContext(DateOnly OperatingDate, string? RouteType);
 }

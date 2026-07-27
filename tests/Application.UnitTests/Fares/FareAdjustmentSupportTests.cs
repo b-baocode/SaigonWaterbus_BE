@@ -101,8 +101,7 @@ public class FareAdjustmentSupportTests
             Code = "CABIN",
             Name = "Cabin",
             BasePrice = 10_000m,
-            Currency = "VND",
-            IsActive = true
+            Currency = "VND"
         };
         var boat = new Boat
         {

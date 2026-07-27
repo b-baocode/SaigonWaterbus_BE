@@ -22,7 +22,6 @@ public sealed record StaffWorkAssignmentDto(
     StaffWorkAssignmentStatus Status,
     string ShiftState,
     string? DutyRole,
-    string? Note,
     StaffWorkAssignmentBoatDto? Boat,
     StaffWorkAssignmentStationDto? Station,
     StaffWorkAssignmentTripStopDto? TripStop,
@@ -93,8 +92,7 @@ public sealed record CreateStaffWorkAssignmentCommand(
     Guid? TripStopId = null,
     DateTimeOffset? StartAt = null,
     DateTimeOffset? EndAt = null,
-    string? DutyRole = null,
-    string? Note = null) : IRequest<StaffWorkAssignmentDto>;
+    string? DutyRole = null) : IRequest<StaffWorkAssignmentDto>;
 
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateBulkStaffWorkAssignmentsCommand(
@@ -107,15 +105,13 @@ public sealed record CreateBulkStaffWorkAssignmentsCommand(
     TimeOnly StartTime,
     TimeOnly EndTime,
     IReadOnlyCollection<int>? DaysOfWeek,
-    string? DutyRole = null,
-    string? Note = null) : IRequest<IReadOnlyList<StaffWorkAssignmentDto>>;
+    string? DutyRole = null) : IRequest<IReadOnlyList<StaffWorkAssignmentDto>>;
 
 [Authorize(Roles = "Admin,Manager")]
 public sealed record ReplaceStaffWorkAssignmentCommand(
     Guid AssignmentId,
     Guid ReplacementStaffUserId,
-    string? Reason = null,
-    string? Note = null) : IRequest<StaffWorkAssignmentReplacementDto>;
+    string? Reason = null) : IRequest<StaffWorkAssignmentReplacementDto>;
 
 public sealed class CreateStaffWorkAssignmentCommandValidator : AbstractValidator<CreateStaffWorkAssignmentCommand>
 {
@@ -124,7 +120,6 @@ public sealed class CreateStaffWorkAssignmentCommandValidator : AbstractValidato
         RuleFor(x => x.StaffUserId).NotEmpty();
         RuleFor(x => x.AssignmentType).IsInEnum();
         RuleFor(x => x.DutyRole).MaximumLength(80).When(x => x.DutyRole is not null);
-        RuleFor(x => x.Note).MaximumLength(500).When(x => x.Note is not null);
         RuleFor(x => x.StartAt).NotNull().WithMessage("startAt là bắt buộc.");
         RuleFor(x => x.EndAt).NotNull().WithMessage("endAt là bắt buộc.");
         RuleFor(x => x)
@@ -142,7 +137,6 @@ public sealed class CreateBulkStaffWorkAssignmentsCommandValidator
         RuleFor(x => x.StaffUserId).NotEmpty();
         RuleFor(x => x.AssignmentType).IsInEnum();
         RuleFor(x => x.DutyRole).MaximumLength(80).When(x => x.DutyRole is not null);
-        RuleFor(x => x.Note).MaximumLength(500).When(x => x.Note is not null);
         RuleFor(x => x.FromDate)
             .NotEmpty()
             .WithMessage("fromDate là bắt buộc.");
@@ -170,7 +164,6 @@ public sealed class ReplaceStaffWorkAssignmentCommandValidator
         RuleFor(x => x.AssignmentId).NotEmpty();
         RuleFor(x => x.ReplacementStaffUserId).NotEmpty();
         RuleFor(x => x.Reason).MaximumLength(500).When(x => x.Reason is not null);
-        RuleFor(x => x.Note).MaximumLength(500).When(x => x.Note is not null);
     }
 }
 
@@ -237,8 +230,7 @@ public sealed class CreateStaffWorkAssignmentCommandHandler
             DutyRole = string.IsNullOrWhiteSpace(request.DutyRole) ? null : request.DutyRole.Trim(),
             Status = StaffWorkAssignmentStatus.Scheduled,
             AssignedByUserId = actor.Id,
-            AssignedAt = _timeProvider.GetUtcNow(),
-            Note = string.IsNullOrWhiteSpace(request.Note) ? null : request.Note.Trim()
+            AssignedAt = _timeProvider.GetUtcNow()
         };
 
         _context.StaffWorkAssignments.Add(assignment);
@@ -323,8 +315,7 @@ public sealed class CreateBulkStaffWorkAssignmentsCommandHandler
                 occurrence.EndAt,
                 actor.Id,
                 assignedAt,
-                request.DutyRole,
-                request.Note))
+                request.DutyRole))
             .ToArray();
 
         _context.StaffWorkAssignments.AddRange(assignments);
@@ -440,10 +431,7 @@ public sealed class ReplaceStaffWorkAssignmentCommandHandler
             assignment.EndAt,
             actor.Id,
             now,
-            assignment.DutyRole,
-            string.IsNullOrWhiteSpace(request.Note)
-                ? $"Thay thế ca của {assignment.StaffUser.FullName}."
-                : request.Note);
+            assignment.DutyRole);
 
         _context.StaffWorkAssignments.Add(replacement);
         await _context.SaveChangesAsync(cancellationToken);
@@ -1090,8 +1078,7 @@ public static class StaffWorkAssignmentSupport
         DateTimeOffset endAt,
         Guid assignedByUserId,
         DateTimeOffset assignedAt,
-        string? dutyRole,
-        string? note) =>
+        string? dutyRole) =>
         new()
         {
             StaffUserId = staffUserId,
@@ -1105,8 +1092,7 @@ public static class StaffWorkAssignmentSupport
             DutyRole = string.IsNullOrWhiteSpace(dutyRole) ? null : dutyRole.Trim(),
             Status = StaffWorkAssignmentStatus.Scheduled,
             AssignedByUserId = assignedByUserId,
-            AssignedAt = assignedAt,
-            Note = string.IsNullOrWhiteSpace(note) ? null : note.Trim()
+            AssignedAt = assignedAt
         };
 
     public static IReadOnlyList<(DateTimeOffset StartAt, DateTimeOffset EndAt)> BuildRecurringShiftOccurrences(
@@ -1186,7 +1172,6 @@ public static class StaffWorkAssignmentSupport
             assignment.Status,
             ResolveShiftState(assignment, now),
             assignment.DutyRole,
-            assignment.Note,
             assignment.Boat is null
                 ? null
                 : new StaffWorkAssignmentBoatDto(

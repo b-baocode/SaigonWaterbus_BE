@@ -2027,7 +2027,7 @@ internal static class PaymentSupport
         var vessels = isCharterBooking
             ? ResolveNotificationVessels(booking)
             : [];
-        var insurance = isCharterBooking && booking.InsuranceSnapshot is { } insuranceSnapshot
+        var insurance = booking.InsuranceSnapshot is { } insuranceSnapshot
             ? new PaymentNotificationInsurance(
                 insuranceSnapshot.Name,
                 insuranceSnapshot.Quantity,

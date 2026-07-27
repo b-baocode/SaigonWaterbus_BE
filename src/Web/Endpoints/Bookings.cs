@@ -153,9 +153,10 @@ public sealed class Bookings : IEndpointGroup
                 CreateBookingExample,
                 "tripCode: lay tu GET /api/trips hoac GET /api/trips/search → tripCode.",
                 "seatNumber: lay tu GET /api/trips/{id}/seats → seats[].seatNumber (chi chon ghe status=Available).",
-                "ticketTypeCode: ADULT (nguyen gia) | INFANT (duoi 2 tuoi) | SENIOR (tren 70) | DISABLED (khuyet tat) - 3 loai sau mien phi.",
+                "ticketTypeCode: ADULT (nguyen gia) | CHILD (giam 50%) | INFANT (duoi 2 tuoi) | SENIOR (tren 70) | DISABLED (khuyet tat).",
                 "INFANT khong chiem ghe (ngoi long cung nguoi lon) MIEN PHI tren CA waterbus thuong lan sightseeing; van co ve/QR.",
-                "Ve co ghe cua INFANT/SENIOR/DISABLED chi ap dung ghe STANDARD (waterbus thuong); tren sightseeing (ghe CABIN/RIVER/SKY) se bi tu choi.",
+                "Waterbus thuong: SENIOR/DISABLED/INFANT mien phi; CHILD giam 50%.",
+                "Sightseeing: CHILD/SENIOR/DISABLED dung chung % giam tai /api/ticket-types/sightseeing-concession; INFANT mien phi.",
                 "INFANT bat buoc khai bao birthYear (tre duoi 2 tuoi tinh theo ngay khoi hanh chuyen).",
                 "Moi INFANT khong chiem ghe phai co it nhat mot hanh khach nguoi lon co ghe di kem trong cung booking.",
                 "fromStationCode / toStationCode: khuyến nghị lấy từ GET /api/trips/{id} → stops[].stationCode; BE cũng chấp nhận stationId hoặc stationName.",
@@ -167,7 +168,7 @@ public sealed class Bookings : IEndpointGroup
                 "passengerEmail (optional): hanh khach co email se nhan rieng ve dien tu (QR) cua minh sau khi thanh toan.",
                 "Ve khu hoi (optional): truyen them returnTripCode + returnItems de mua ve 2 chieu trong 1 booking; hai chieu doc lap (trip, ghe, hanh khach rieng), khong giam gia, tong tien = cong 2 chieu.",
                 "returnTripCode va returnItems phai di cung nhau; returnItems theo cung rule voi items (toi da 10 ghe/chieu, INFANT tinh theo tung chieu).",
-                "Bao hiem: neu co goi SeatBooking active/default, BE tu cong phi bao hiem theo so passenger item. Gui insuranceSelected=false de khong chon; gui insurancePackageId de chon goi cu the.",
+                "Bao hiem: dung goi PassengerInsurance active/default, BE tu cong phi theo so passenger item. Gui insuranceSelected=false de khong chon; gui insurancePackageId de chon goi cu the.",
                 "bookingStatus sau khi tao: PendingPayment; ghe duoc giu toi da 15 phut, nhung holdExpiresAt khong vuot gio dong ban cua chang (gio tau roi ben len - 10 phut). Qua han booking tu Expired va nha ghe ca 2 chieu.",
                 "Tra ve 400 neu ghe da bi dat hoac dang duoc nguoi khac tam giu (race condition)."));
 
@@ -187,8 +188,8 @@ public sealed class Bookings : IEndpointGroup
                     + "chi tu choi chuyen da Completed hoac Cancelled.",
                 "Ghe van kiem tra nhu binh thuong: da ban / dang duoc nguoi khac giu tren chang giao nhau se bi tu choi.",
                 "Khong ho tro ma khuyen mai va diem tich luy (booking khach vang lai khong gan tai khoan).",
-                "Bao hiem SeatBooking active/default duoc cong theo so passenger item; gui insuranceSelected=false de khong chon.",
-                "Don 0d (toan ve mien phi SENIOR/DISABLED/INFANT) luon ghi nhan nhu thu tai quay du chon paymentMethod nao."));
+                "Bao hiem PassengerInsurance active/default duoc cong theo so passenger item; gui insuranceSelected=false de khong chon.",
+                "Don 0d (tong tien sau tinh gia/giam gia bang 0) luon ghi nhan nhu thu tai quay du chon paymentMethod nao."));
     }
 
     private static async Task<IResult> GetBookings(ISender sender, CancellationToken ct) =>

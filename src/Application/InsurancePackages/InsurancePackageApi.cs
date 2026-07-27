@@ -43,7 +43,9 @@ public sealed class GetInsurancePackageListQueryHandler
         if (!string.IsNullOrWhiteSpace(request.BookingType))
         {
             var bookingType = InsurancePackageSupport.NormalizeBookingType(request.BookingType);
-            query = query.Where(x => x.BookingType == bookingType);
+            var legacyBookingType = InsurancePackageSupport.NormalizeLegacyBookingType(request.BookingType);
+            query = query.Where(x => x.BookingType == bookingType
+                || legacyBookingType != null && x.BookingType == legacyBookingType);
         }
 
         if (request.ActiveOnly)
@@ -63,7 +65,7 @@ public sealed class GetInsurancePackageListQueryHandler
 public sealed record CreateInsurancePackageCommand(
     string Code,
     string Name,
-    string BookingType,
+    string? BookingType,
     decimal UnitPremiumAmount,
     decimal CoverageAmount,
     bool IsRequired = false,
@@ -85,9 +87,8 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
             .WithMessage("Code chỉ gồm chữ, số và dấu gạch dưới, bắt đầu bằng chữ.");
         RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
         RuleFor(x => x.BookingType)
-            .NotEmpty()
             .Must(InsurancePackageSupport.IsKnownBookingType)
-            .WithMessage("bookingType hợp lệ: SeatBooking | CharterBooking.");
+            .WithMessage("bookingType hợp lệ: PassengerInsurance. SeatBooking/CharterBooking chỉ giữ tương thích dữ liệu cũ.");
         RuleFor(x => x.UnitPremiumAmount)
             .GreaterThanOrEqualTo(0)
             .LessThanOrEqualTo(100_000_000)
@@ -171,7 +172,7 @@ public sealed class CreateInsurancePackageCommandHandler
 public sealed record UpdateInsurancePackageCommand(
     Guid InsurancePackageId,
     string Name,
-    string BookingType,
+    string? BookingType,
     decimal UnitPremiumAmount,
     decimal CoverageAmount,
     bool IsRequired,
@@ -189,9 +190,8 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
         RuleFor(x => x.InsurancePackageId).NotEmpty();
         RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
         RuleFor(x => x.BookingType)
-            .NotEmpty()
             .Must(InsurancePackageSupport.IsKnownBookingType)
-            .WithMessage("bookingType hợp lệ: SeatBooking | CharterBooking.");
+            .WithMessage("bookingType hợp lệ: PassengerInsurance. SeatBooking/CharterBooking chỉ giữ tương thích dữ liệu cũ.");
         RuleFor(x => x.UnitPremiumAmount)
             .GreaterThanOrEqualTo(0)
             .LessThanOrEqualTo(100_000_000)
@@ -304,10 +304,44 @@ public sealed class UpdateInsurancePackageStatusCommandHandler
 
 internal static class InsurancePackageSupport
 {
+    public const string PassengerInsuranceBookingType = "PassengerInsurance";
+
     public static string NormalizeCode(string code) =>
         code.Trim().Replace(" ", string.Empty, StringComparison.Ordinal).ToUpperInvariant();
 
-    public static string NormalizeBookingType(string bookingType)
+    public static string NormalizeBookingType(string? bookingType)
+    {
+        if (string.IsNullOrWhiteSpace(bookingType)
+            || string.Equals(bookingType, PassengerInsuranceBookingType, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(bookingType, "Passenger", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(bookingType, "All", StringComparison.OrdinalIgnoreCase))
+        {
+            return PassengerInsuranceBookingType;
+        }
+
+        if (string.Equals(bookingType, Booking.SeatBookingType, StringComparison.OrdinalIgnoreCase))
+        {
+            return PassengerInsuranceBookingType;
+        }
+
+        if (string.Equals(bookingType, Booking.CharterBookingType, StringComparison.OrdinalIgnoreCase))
+        {
+            return PassengerInsuranceBookingType;
+        }
+
+        throw new ValidationException([new ValidationFailure(nameof(bookingType),
+            "bookingType hợp lệ: PassengerInsurance. SeatBooking/CharterBooking chỉ giữ tương thích dữ liệu cũ.")]);
+    }
+
+    public static bool IsKnownBookingType(string? bookingType) =>
+        string.IsNullOrWhiteSpace(bookingType)
+        || string.Equals(bookingType, PassengerInsuranceBookingType, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(bookingType, "Passenger", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(bookingType, "All", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(bookingType, Booking.SeatBookingType, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(bookingType, Booking.CharterBookingType, StringComparison.OrdinalIgnoreCase);
+
+    public static string? NormalizeLegacyBookingType(string? bookingType)
     {
         if (string.Equals(bookingType, Booking.SeatBookingType, StringComparison.OrdinalIgnoreCase))
         {
@@ -319,13 +353,12 @@ internal static class InsurancePackageSupport
             return Booking.CharterBookingType;
         }
 
-        throw new ValidationException([new ValidationFailure(nameof(bookingType),
-            "bookingType hợp lệ: SeatBooking | CharterBooking.")]);
+        return null;
     }
 
-    public static bool IsKnownBookingType(string? bookingType) =>
-        string.Equals(bookingType, Booking.SeatBookingType, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(bookingType, Booking.CharterBookingType, StringComparison.OrdinalIgnoreCase);
+    public static bool IsApplicableToBookingType(InsurancePackage package, string bookingType) =>
+        string.Equals(package.BookingType, PassengerInsuranceBookingType, StringComparison.Ordinal)
+        || string.Equals(package.BookingType, bookingType, StringComparison.Ordinal);
 
     public static string? TrimToNull(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

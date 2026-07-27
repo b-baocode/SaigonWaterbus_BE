@@ -70,40 +70,21 @@ public class BoatSeatFlowIntegrationTests
     }
 
     [Test]
-    public async Task UpdateBoatUpsertsRentalPricesWithoutRemovingExistingPrices()
+    public async Task UpdateBoatUpdatesEditableProfileFields()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
-        boat.HourlyRentalPrice = 2000000m;
-        boat.DailyRentalPrice = 15000000m;
-        boat.Currency = "VND";
         context.Add(boat);
         await context.SaveChangesAsync();
 
         var result = await UpdateBoatUseCase(context, userContext).ExecuteAsync(
             new UpdateBoatRequest(
                 boat.Id,
-                RentalPrices:
-                [
-                    new BoatRentalPriceRequest(
-                        BoatRentalUnit.Hour,
-                        2500000m,
-                        "usd",
-                        "Gia gio moi")
-                ]),
+                Name: "Waterbus updated"),
             CancellationToken.None);
 
-        result.RentalPrices.Count.ShouldBe(2);
-        var hourlyPrice = result.RentalPrices.Single(x => x.RentalUnit == BoatRentalUnit.Hour);
-        hourlyPrice.UnitPrice.ShouldBe(2500000m);
-        hourlyPrice.Currency.ShouldBe("USD");
-        hourlyPrice.Note.ShouldBeNull();
-
-        var dailyPrice = result.RentalPrices.Single(x => x.RentalUnit == BoatRentalUnit.Day);
-        dailyPrice.UnitPrice.ShouldBe(15000000m);
-        dailyPrice.Currency.ShouldBe("USD");
-        dailyPrice.Note.ShouldBeNull();
+        result.Name.ShouldBe("Waterbus updated");
     }
 
     [Test]
@@ -571,12 +552,7 @@ public class BoatSeatFlowIntegrationTests
                 YearBuilt: 2026,
                 Description: "abcdef",
                 ImageUrl: "https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg",
-                SeatSetupType: SeatSetupType.FullStandard,
-                RentalPrices:
-                [
-                    new BoatRentalPriceRequest(BoatRentalUnit.Hour, 10m, "VND", "abc"),
-                    new BoatRentalPriceRequest(BoatRentalUnit.Day, 20m, "VND", "abc")
-                ]),
+                SeatSetupType: SeatSetupType.FullStandard),
             CancellationToken.None);
 
         result.Code.ShouldBe("WB_006");
@@ -589,9 +565,6 @@ public class BoatSeatFlowIntegrationTests
         result.Description.ShouldBe("abcdef");
         result.ImageUrl.ShouldBe("https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg");
         result.ImageUrls.ShouldBe(["https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg"]);
-        result.RentalPrices.Count.ShouldBe(2);
-        result.RentalPrices.Single(x => x.RentalUnit == BoatRentalUnit.Hour).UnitPrice.ShouldBe(10m);
-        result.RentalPrices.Single(x => x.RentalUnit == BoatRentalUnit.Day).UnitPrice.ShouldBe(20m);
     }
 
     private static CreateBoatRequestUseCase CreateBoatUseCase(

@@ -74,7 +74,6 @@ public sealed class UpdateBlogPostCommandHandler : IRequestHandler<UpdateBlogPos
         await BlogPostSupport.EnsureCurrentUserCanManageBlogPostsAsync(_context, _userContext, cancellationToken);
 
         var post = await _context.Set<BlogPost>()
-            .Include(x => x.Author)
             .SingleOrDefaultAsync(x => x.Id == request.BlogPostId, cancellationToken)
             ?? throw new NotFoundException("Blog post not found.");
 

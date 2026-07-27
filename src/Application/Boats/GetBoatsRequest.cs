@@ -8,18 +8,6 @@ public sealed record GetBoatsRequest(
     BoatServiceType? ServiceType = null,
     string? Search = null);
 
-public sealed record BoatRentalPriceDto(
-    BoatRentalUnit RentalUnit,
-    decimal UnitPrice,
-    string Currency,
-    string? Note);
-
-public sealed record BoatRentalPriceRequest(
-    BoatRentalUnit RentalUnit,
-    decimal UnitPrice,
-    string? Currency = null,
-    string? Note = null);
-
 public sealed record BoatImageFileRequest(
     string FileName,
     string? ContentType,
@@ -42,7 +30,6 @@ public sealed record BoatDto(
     string ImageUrl,
     IReadOnlyCollection<string> ImageUrls,
     string? Description,
-    IReadOnlyCollection<BoatRentalPriceDto> RentalPrices,
     SeatSetupType SeatSetupType,
     DateTimeOffset? MaintenanceStartedAt,
     bool DocumentsRequireRefresh);

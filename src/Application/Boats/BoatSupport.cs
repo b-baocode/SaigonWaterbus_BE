@@ -62,7 +62,6 @@ internal static class BoatSupport
 
     public static BoatDto CreateDto(Boat boat)
     {
-        var rentalPrices = CreateRentalPriceDtos(boat);
         var imageUrls = CreateImageUrls(boat);
 
         return new BoatDto(
@@ -81,7 +80,6 @@ internal static class BoatSupport
             imageUrls.FirstOrDefault() ?? string.Empty,
             imageUrls,
             boat.Description,
-            rentalPrices,
             boat.SeatSetupType,
             boat.MaintenanceStartedAt,
             BoatDocumentSupport.RequiresDocumentRefresh(boat));
@@ -257,57 +255,8 @@ internal static class BoatSupport
         }
     }
 
-    public static void ApplyRentalPrices(
-        Boat boat,
-        IReadOnlyCollection<BoatRentalPriceRequest>? rentalPrices)
-    {
-        foreach (var request in rentalPrices ?? [])
-        {
-            boat.Currency = NormalizeCurrency(request.Currency);
-            if (request.RentalUnit == BoatRentalUnit.Hour)
-            {
-                boat.HourlyRentalPrice = request.UnitPrice;
-            }
-            else if (request.RentalUnit == BoatRentalUnit.Day)
-            {
-                boat.DailyRentalPrice = request.UnitPrice;
-            }
-        }
-    }
-
-    public static IReadOnlyCollection<BoatRentalPriceDto> CreateRentalPriceDtos(Boat boat)
-    {
-        var prices = new List<BoatRentalPriceDto>();
-        if (boat.HourlyRentalPrice.HasValue)
-        {
-            prices.Add(new BoatRentalPriceDto(
-                BoatRentalUnit.Hour,
-                boat.HourlyRentalPrice.Value,
-                boat.Currency,
-                null));
-        }
-
-        if (boat.DailyRentalPrice.HasValue)
-        {
-            prices.Add(new BoatRentalPriceDto(
-                BoatRentalUnit.Day,
-                boat.DailyRentalPrice.Value,
-                boat.Currency,
-                null));
-        }
-
-        return prices;
-    }
-
     public static string? NormalizeOptionalNote(string? note) =>
         string.IsNullOrWhiteSpace(note) ? null : note.Trim();
-
-    public static bool HasDistinctRentalUnits(IEnumerable<BoatRentalPriceRequest>? rentalPrices) =>
-        rentalPrices is null
-        || rentalPrices
-            .Select(x => x.RentalUnit)
-            .Distinct()
-            .Count() == rentalPrices.Count();
 
     public static string NormalizeCurrency(string? currency) =>
         string.IsNullOrWhiteSpace(currency) ? "VND" : currency.Trim().ToUpperInvariant();

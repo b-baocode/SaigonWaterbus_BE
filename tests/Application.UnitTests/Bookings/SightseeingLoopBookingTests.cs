@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
@@ -62,6 +63,110 @@ public class SightseeingLoopBookingTests
             CancellationToken.None);
 
         result.ItemCount.ShouldBe(1);
+    }
+
+    [Test]
+    public async Task SightseeingConcessionTicketsUseSharedDefaultPriceModifier()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedLoopTripAsync(context, "TR-SIG-DISCOUNT");
+        var seats = context.Set<Seat>().Where(x => x.BoatId == seeded.Trip.BoatId).ToList();
+        foreach (var seat in seats)
+        {
+            seat.SeatTypeCode = "CABIN";
+        }
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBookingCommandHandler(
+            context,
+            userContext,
+            new SequentialBookingCodeGenerator(),
+            new FareCalculator(context),
+            new FixedTimeProvider(Now));
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-SIG-DISCOUNT",
+                [
+                    Adult("A1") with { TicketTypeCode = "CHILD" },
+                    Adult("A2") with { TicketTypeCode = "DISABLED" }
+                ],
+                null),
+            CancellationToken.None);
+
+        result.SubtotalAmount.ShouldBe(10_000m);
+        result.TotalAmount.ShouldBe(10_000m);
+
+        var passengers = context.Set<BookingPassenger>()
+            .Where(x => x.BookingId == result.BookingId)
+            .OrderBy(x => x.PassengerType)
+            .ToList();
+        passengers.Select(x => x.PassengerType).ShouldBe(["CHILD", "DISABLED"]);
+        passengers.Single(x => x.PassengerType == "CHILD").UnitPrice.ShouldBe(5_000m);
+        passengers.Single(x => x.PassengerType == "DISABLED").UnitPrice.ShouldBe(5_000m);
+
+        var seniorPrice = await new FareCalculator(context).CalculateAsync(
+            seats.Single(x => x.Code == "A1").Id,
+            "SENIOR",
+            CancellationToken.None,
+            seeded.Trip.Id);
+        seniorPrice.ShouldBe(5_000m);
+    }
+
+    [Test]
+    public async Task SightseeingConcessionFareRuleAppliesSameDiscountToWholeGroup()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedLoopTripAsync(context, "TR-SIG-RULE");
+        var seats = context.Set<Seat>().Where(x => x.BoatId == seeded.Trip.BoatId).ToList();
+        foreach (var seat in seats)
+        {
+            seat.SeatTypeCode = "CABIN";
+        }
+        await context.SaveChangesAsync();
+        await new UpdateSightseeingConcessionFareRuleCommandHandler(context).Handle(
+            new UpdateSightseeingConcessionFareRuleCommand(75m),
+            CancellationToken.None);
+
+        var handler = new CreateBookingCommandHandler(
+            context,
+            userContext,
+            new SequentialBookingCodeGenerator(),
+            new FareCalculator(context),
+            new FixedTimeProvider(Now));
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-SIG-RULE",
+                [
+                    Adult("A1") with { TicketTypeCode = "CHILD" },
+                    Adult("A2") with { TicketTypeCode = "DISABLED" }
+                ],
+                null),
+            CancellationToken.None);
+
+        result.SubtotalAmount.ShouldBe(5_000m);
+        result.TotalAmount.ShouldBe(5_000m);
+
+        var seniorPrice = await new FareCalculator(context).CalculateAsync(
+            seats.Single(x => x.Code == "A1").Id,
+            "SENIOR",
+            CancellationToken.None,
+            seeded.Trip.Id);
+        seniorPrice.ShouldBe(2_500m);
+
+        context.Set<TicketFareRule>()
+            .Where(x => x.RouteType == RouteTypes.SightseeingLoop)
+            .OrderBy(x => x.TicketTypeCode)
+            .Select(x => new ValueTuple<string, decimal>(x.TicketTypeCode, x.PriceModifier))
+            .ToList()
+            .ShouldBe([
+                new ValueTuple<string, decimal>("CHILD", 0.25m),
+                new ValueTuple<string, decimal>("DISABLED", 0.25m),
+                new ValueTuple<string, decimal>("SENIOR", 0.25m)
+            ]);
     }
 
     [Test]

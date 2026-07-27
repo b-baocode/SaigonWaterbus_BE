@@ -129,8 +129,39 @@ public sealed class CharterBookings : IEndpointGroup
         }
         """;
 
+    private const string RentalPricePolicyExample =
+        """
+        {
+          "numberOfDecks": 2,
+          "rentalUnit": "Hour",
+          "unitPrice": 3000000,
+          "currency": "VND"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
+        group.MapGet(GetCharterBoatRentalPricePolicies, "admin/rental-price-policies")
+            .RequireAuthorization()
+            .WithSummary("Admin xem gia thue tau chung")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                null,
+                "Tra ve cau hinh gia thuê chung theo numberOfDecks + rentalUnit.",
+                "Khi quote charter: backend lay policy chung theo so tang tau, khong lay gia rieng tren tau.",
+                "rentalUnit: Hour hoac Day."));
+
+        group.MapPut(UpsertCharterBoatRentalPricePolicy, "admin/rental-price-policies")
+            .RequireAuthorization()
+            .WithSummary("Admin chinh gia thue tau chung")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                RentalPricePolicyExample,
+                "Dung de setup vi du tau 1 tang theo gio bao nhieu, tau 2 tang theo gio bao nhieu.",
+                "Policy gia luon duoc ap dung; neu muon khong tinh tien thi de unitPrice=0.",
+                "Ap dung cho quote charter tao sau khi chinh. Gia da quote/payment cu khong doi.",
+                "Khong cau hinh gia thue rieng trong API tao/sua tau."));
+
         group.MapGet(GetAdminCharterBookings, "admin")
             .RequireAuthorization()
             .WithSummary("Admin xem danh sach charter booking")
@@ -188,7 +219,8 @@ public sealed class CharterBookings : IEndpointGroup
                 "Backend mac dinh tinh theo Hour cho logic moi, lay thoi gian/quang duong tu route da co cua cac ben va tra routeEstimate cho khach xem.",
                 "Hour: backend can co route/GeoJSON/toa do hop le cho tung chang; neu thieu thi tra 400.",
                 "Hour: so gio tinh tien = max(durationValue, phut tinh tien / 60) va lam tron den 3 chu so thap phan.",
-                "Day: tinh theo dailyRentalPrice * durationValue.",
+                "Gia thue: lay policy chung theo so tang tau va rentalUnit tu /api/charter-bookings/admin/rental-price-policies.",
+                "Day: tinh theo gia ngay * durationValue.",
                 "Admin khong gui promotionCode hoac insurancePackageId trong quote.",
                 "Sau khi quote thanh cong, bookingStatus = Quoted va customer moi tao payment duoc.",
                 "Khong cho quote neu booking da co payment Pending/Paid."));
@@ -587,7 +619,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
                 "requestedBoats: danh sach tau customer muon thue; moi item co numberOfDecks.",
                 "numberOfDecks: so tang cua tau khach mong muon, phai lon hon 0.",
-                "insuranceSelected/insurancePackageId: neu khach chon bao hiem thi gui true va id goi bao hiem CharterBooking active.",
+                "insuranceSelected/insurancePackageId: neu khach chon bao hiem thi gui true va id goi PassengerInsurance active.",
                 "contactName/contactPhone/contactEmail: bat buoc sau khi fallback tu thong tin tai khoan; FE nen gui gia tri nguoi dung da nhap.",
                 "specialRequests: ghi chu them cua khach cho yeu cau thue tau.",
                 "fromStationId: bat buoc, phai la ben Waterbus dang hoat dong tu GET /api/stations voi isWaterbusStation=true va status=Active.",
@@ -602,6 +634,15 @@ public sealed class CharterBookings : IEndpointGroup
 
     private static async Task<IResult> GetAdminCharterBookingDetail(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetAdminCharterBookingDetailQuery(id), ct));
+
+    private static async Task<IResult> GetCharterBoatRentalPricePolicies(ISender sender, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCharterBoatRentalPricePolicyListQuery(), ct));
+
+    private static async Task<IResult> UpsertCharterBoatRentalPricePolicy(
+        ISender sender,
+        UpsertCharterBoatRentalPricePolicyCommand command,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> GetAdminCharterBookingRouteCandidates(
         ISender sender,

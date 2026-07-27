@@ -18,7 +18,6 @@ public sealed class SeatTypeConfiguration : IEntityTypeConfiguration<SeatType>
         builder.Property(x => x.Name).HasColumnName("name").HasMaxLength(100).IsRequired();
         builder.Property(x => x.BasePrice).HasColumnName("base_price").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
-        builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
         builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
 
         builder.Property(x => x.Created).HasColumnName("created_at");

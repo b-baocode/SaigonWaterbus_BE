@@ -26,7 +26,6 @@ public sealed class GetBlogPostBySlugQueryHandler : IRequestHandler<GetBlogPostB
 
         var post = await _context.Set<BlogPost>()
             .AsNoTracking()
-            .Include(x => x.Author)
             .SingleOrDefaultAsync(x => x.Slug == slug && x.Status == BlogPostSupport.PublishedStatus, cancellationToken)
             ?? throw new NotFoundException("Blog post not found.");
 
