@@ -123,7 +123,6 @@ public sealed class GenerateSeatsRequestUseCase
             request.Decks.Select(x => new DeckMatrixConfigDto(x.DeckNumber, x.RowCount, x.ColumnCount)).ToArray());
 
         var seatTypeById = await _context.Set<SeatType>()
-            .Where(st => st.IsActive)
             .ToDictionaryAsync(st => st.Code, cancellationToken);
 
         var seats = CreateSeats(boat, request.Decks, seatTypeById);

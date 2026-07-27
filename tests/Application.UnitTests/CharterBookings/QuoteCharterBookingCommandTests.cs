@@ -443,8 +443,6 @@ public class QuoteCharterBookingCommandTests
         boat.Name = name;
         boat.SeatCount = 60;
         boat.NumberOfDecks = numberOfDecks;
-        boat.DailyRentalPrice = dailyRentalPrice;
-        boat.HourlyRentalPrice = dailyRentalPrice / 10m;
         return boat;
     }
 
@@ -457,8 +455,7 @@ public class QuoteCharterBookingCommandTests
             NumberOfDecks = numberOfDecks,
             RentalUnit = rentalUnit,
             UnitPrice = unitPrice,
-            Currency = "VND",
-            IsActive = true
+            Currency = "VND"
         };
 
     private static Booking CharterBooking(params int[] requestedBoatDecks) =>

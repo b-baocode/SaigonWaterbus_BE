@@ -670,14 +670,12 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
-    public void CalculateFareRoundsUpAndAppliesMinFare()
+    public void CalculateFareRoundsUpBaseFarePlusDistancePrice()
     {
-        var policy = new FarePolicyDto(null, 5000m, 1500m, 1000m, null, "VND");
+        var policy = new FarePolicyDto(null, 5000m, 1500m, 1000m, "VND");
         DistanceFareSupport.CalculateFare(policy, 2.5m).ShouldBe(9000m);
         DistanceFareSupport.CalculateFare(policy, 6m).ShouldBe(14000m);
-
-        var withMin = policy with { MinFare = 12000m };
-        DistanceFareSupport.CalculateFare(withMin, 1m).ShouldBe(12000m);
+        DistanceFareSupport.CalculateFare(policy, 1m).ShouldBe(7000m);
     }
 
     [Test]

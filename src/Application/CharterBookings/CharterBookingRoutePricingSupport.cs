@@ -359,7 +359,6 @@ internal static class CharterBookingRoutePricingSupport
     {
         var rows = await context.Set<CharterBoatRentalPricePolicy>()
             .AsNoTracking()
-            .Where(x => x.IsActive)
             .ToListAsync(cancellationToken);
 
         return rows.ToDictionary(
@@ -374,8 +373,7 @@ internal static class CharterBookingRoutePricingSupport
     {
         var policyKey = new CharterBoatRentalPricePolicyKey(boat.NumberOfDecks, rentalUnit);
         if (rentalPricePolicies is not null
-            && rentalPricePolicies.TryGetValue(policyKey, out var policyUnitPrice)
-            && policyUnitPrice > 0)
+            && rentalPricePolicies.TryGetValue(policyKey, out var policyUnitPrice))
         {
             return policyUnitPrice;
         }

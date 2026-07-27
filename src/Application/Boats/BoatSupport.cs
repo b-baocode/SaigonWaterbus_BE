@@ -80,7 +80,6 @@ internal static class BoatSupport
             imageUrls.FirstOrDefault() ?? string.Empty,
             imageUrls,
             boat.Description,
-            [],
             boat.SeatSetupType,
             boat.MaintenanceStartedAt,
             BoatDocumentSupport.RequiresDocumentRefresh(boat));

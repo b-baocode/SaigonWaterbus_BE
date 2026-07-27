@@ -6,7 +6,7 @@ namespace SaigonWaterbus.Application.Fares;
 
 /// <summary>
 /// Tính giá vé theo quãng đường cho trip Regular (ghế STANDARD):
-/// giá = RoundUp(BaseFare + PricePerKm × km, RoundingStep), áp giá sàn MinFare nếu có.
+/// giá = RoundUp(BaseFare + PricePerKm × km, RoundingStep).
 /// Km của chặng = tổng distance_from_previous_km của các stop nằm sau trạm lên đến trạm xuống.
 /// </summary>
 public static class DistanceFareSupport
@@ -62,14 +62,7 @@ public static class DistanceFareSupport
         var raw = policy.BaseFare + policy.PricePerKm * distanceKm;
 
         var step = policy.RoundingStep > 0 ? policy.RoundingStep : 1m;
-        var rounded = Math.Ceiling(raw / step) * step;
-
-        if (policy.MinFare is > 0 && rounded < policy.MinFare.Value)
-        {
-            rounded = policy.MinFare.Value;
-        }
-
-        return rounded;
+        return Math.Ceiling(raw / step) * step;
     }
 
     /// <summary>Policy đang active, hoặc mặc định trong code nếu DB chưa có.</summary>
@@ -79,13 +72,12 @@ public static class DistanceFareSupport
     {
         var policy = await context.Set<FarePolicy>()
             .AsNoTracking()
-            .Where(x => x.IsActive)
             .OrderByDescending(x => x.Created)
             .FirstOrDefaultAsync(cancellationToken);
 
         return policy is null
             ? FarePolicyDefaults.Dto
             : new FarePolicyDto(policy.Id, policy.BaseFare, policy.PricePerKm,
-                policy.RoundingStep, policy.MinFare, policy.Currency);
+                policy.RoundingStep, policy.Currency);
     }
 }

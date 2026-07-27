@@ -135,8 +135,7 @@ public sealed class CharterBookings : IEndpointGroup
           "numberOfDecks": 2,
           "rentalUnit": "Hour",
           "unitPrice": 3000000,
-          "currency": "VND",
-          "isActive": true
+          "currency": "VND"
         }
         """;
 
@@ -159,6 +158,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin hoac Manager",
                 RentalPricePolicyExample,
                 "Dung de setup vi du tau 1 tang theo gio bao nhieu, tau 2 tang theo gio bao nhieu.",
+                "Policy gia luon duoc ap dung; neu muon khong tinh tien thi de unitPrice=0.",
                 "Ap dung cho quote charter tao sau khi chinh. Gia da quote/payment cu khong doi.",
                 "Khong cau hinh gia thue rieng trong API tao/sua tau."));
 

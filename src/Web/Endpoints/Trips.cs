@@ -181,7 +181,7 @@ public sealed class Trips : IEndpointGroup
                 "Khong nhap gia theo tung trip. Gia ve lay tu GET/PUT /api/seat-types, GET/PUT /api/fare-policy va phu thu /api/fare-policy/adjustments.",
                 "Gia ve khi dat = gia goc/chang da ap phu thu x he so loai ve.",
                 "Waterbus thuong: ADULT x1, CHILD x0.5, INFANT/SENIOR/DISABLED x0.",
-                "Sightseeing: ADULT x1, CHILD/DISABLED x0.5, INFANT x0.",
+                "Sightseeing: ADULT x1, CHILD/SENIOR/DISABLED lay chung % giam tu /api/ticket-types/sightseeing-concession, INFANT x0.",
                 "tripCode tu sinh theo loai chuyen: BB-{yyyyMMdd}-{routeCode}-{4 so ngau nhien} cho bus, BS-{yyyyMMdd}-{routeCode}-{4 so ngau nhien} cho sightseeing. Charter booking sinh BR-{yyyyMMdd}-{bookingCode}-{boatOrder}."));
 
         group.MapPost(GenerateTrips, "generate")

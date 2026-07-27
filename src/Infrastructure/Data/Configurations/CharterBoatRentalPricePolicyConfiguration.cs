@@ -20,7 +20,6 @@ public sealed class CharterBoatRentalPricePolicyConfiguration : IEntityTypeConfi
             .IsRequired();
         builder.Property(x => x.UnitPrice).HasColumnName("unit_price").HasColumnType("numeric(12,2)").IsRequired();
         builder.Property(x => x.Currency).HasColumnName("currency").HasMaxLength(3).IsRequired();
-        builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");

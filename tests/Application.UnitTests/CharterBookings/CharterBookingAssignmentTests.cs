@@ -117,7 +117,6 @@ public class CharterBookingAssignmentTests
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
         boat.Name = "Charter Boat";
         boat.SeatCount = 50;
-        boat.DailyRentalPrice = 1_000_000m;
         return boat;
     }
 

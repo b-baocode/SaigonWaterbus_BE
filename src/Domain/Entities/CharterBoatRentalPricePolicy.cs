@@ -12,6 +12,4 @@ public class CharterBoatRentalPricePolicy : BaseGuidAuditableEntity
     public decimal UnitPrice { get; set; }
 
     public string Currency { get; set; } = "VND";
-
-    public bool IsActive { get; set; } = true;
 }

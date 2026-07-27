@@ -109,19 +109,6 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
                 json => DeserializeDocuments(json))
             .Metadata.SetValueComparer(BoatDocumentComparer);
 
-        builder.Property(x => x.HourlyRentalPrice)
-            .HasColumnName("hourly_rental_price")
-            .HasColumnType("numeric(12,2)");
-
-        builder.Property(x => x.DailyRentalPrice)
-            .HasColumnName("daily_rental_price")
-            .HasColumnType("numeric(12,2)");
-
-        builder.Property(x => x.Currency)
-            .HasColumnName("currency")
-            .HasMaxLength(3)
-            .IsRequired();
-
         builder.Property(x => x.Description)
             .HasColumnName("description")
             .HasMaxLength(1000);

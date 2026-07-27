@@ -266,10 +266,10 @@ public static class WaterbusSeedData
         if (await context.Set<SeatType>().AnyAsync()) return;
 
         context.Set<SeatType>().AddRange(
-            new SeatType { Code = "STANDARD", Name = "Standard",  BasePrice = 7_000m,  Currency = "VND", IsActive = true, DisplayOrder = 1 },
-            new SeatType { Code = "CABIN",    Name = "Cabin",     BasePrice = 10_000m, Currency = "VND", IsActive = true, DisplayOrder = 2 },
-            new SeatType { Code = "RIVER",    Name = "River",     BasePrice = 12_000m, Currency = "VND", IsActive = true, DisplayOrder = 3 },
-            new SeatType { Code = "SKY",      Name = "Sky",       BasePrice = 15_000m, Currency = "VND", IsActive = true, DisplayOrder = 4 }
+            new SeatType { Code = "STANDARD", Name = "Standard",  BasePrice = 7_000m,  Currency = "VND", DisplayOrder = 1 },
+            new SeatType { Code = "CABIN",    Name = "Cabin",     BasePrice = 10_000m, Currency = "VND", DisplayOrder = 2 },
+            new SeatType { Code = "RIVER",    Name = "River",     BasePrice = 12_000m, Currency = "VND", DisplayOrder = 3 },
+            new SeatType { Code = "SKY",      Name = "Sky",       BasePrice = 15_000m, Currency = "VND", DisplayOrder = 4 }
         );
         await context.SaveChangesAsync();
     }

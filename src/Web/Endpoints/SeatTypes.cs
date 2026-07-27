@@ -55,7 +55,7 @@ public sealed class SeatTypes : IEndpointGroup
                 "Dung cho CABIN | RIVER | SKY | loai ghe custom cua sightseeing.",
                 "Khong dung cho STANDARD; gia Waterbus thuong chinh bang PUT /api/fare-policy va km tren route stops.",
                 "Gia goc moi ap dung cho tat ca booking sightseeing tao sau thoi diem chinh, ke ca trip da tao nhung chua booking.",
-                "basePrice: so nguyen VND, > 0."));
+                "basePrice: so nguyen VND, >= 0. De 0 neu muon khong tinh tien cho loai ghe do."));
     }
 
     private static async Task<IResult> GetSeatTypes(ISender sender, CancellationToken ct) =>

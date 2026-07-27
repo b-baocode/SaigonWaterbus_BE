@@ -36,12 +36,6 @@ public class Boat : BaseAuditableEntity
 
     public BoatDocument[] Documents { get; set; } = [];
 
-    public decimal? HourlyRentalPrice { get; set; }
-
-    public decimal? DailyRentalPrice { get; set; }
-
-    public string Currency { get; set; } = "VND";
-
     public string? Description { get; set; }
 
     public ICollection<Seat> Seats { get; set; } = new List<Seat>();

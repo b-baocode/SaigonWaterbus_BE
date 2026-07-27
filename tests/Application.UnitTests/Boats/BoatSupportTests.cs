@@ -50,19 +50,6 @@ public class BoatSupportTests
             status: BoatStatus.UnderMaintenance)).ShouldBeFalse();
     }
 
-    [Test]
-    public void CreateDtoDoesNotExposeLegacyBoatRentalPrices()
-    {
-        var boat = Boat(seatsConfigured: true);
-        boat.DailyRentalPrice = 15000000m;
-        boat.HourlyRentalPrice = 2000000m;
-        boat.Currency = "VND";
-
-        var dto = BoatSupport.CreateDto(boat);
-
-        dto.RentalPrices.ShouldBeEmpty();
-    }
-
     [TestCase(SeatSetupType.FullStandard)]
     [TestCase(SeatSetupType.StandardAndVip)]
     public void CreateDtoReturnsSeatSetupTypeFromBoat(SeatSetupType expected)

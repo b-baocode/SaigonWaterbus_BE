@@ -156,7 +156,7 @@ public sealed class Bookings : IEndpointGroup
                 "ticketTypeCode: ADULT (nguyen gia) | CHILD (giam 50%) | INFANT (duoi 2 tuoi) | SENIOR (tren 70) | DISABLED (khuyet tat).",
                 "INFANT khong chiem ghe (ngoi long cung nguoi lon) MIEN PHI tren CA waterbus thuong lan sightseeing; van co ve/QR.",
                 "Waterbus thuong: SENIOR/DISABLED/INFANT mien phi; CHILD giam 50%.",
-                "Sightseeing: CHILD va DISABLED giam 50%; INFANT mien phi; SENIOR chi ap dung ghe STANDARD neu co.",
+                "Sightseeing: CHILD/SENIOR/DISABLED dung chung % giam tai /api/ticket-types/sightseeing-concession; INFANT mien phi.",
                 "INFANT bat buoc khai bao birthYear (tre duoi 2 tuoi tinh theo ngay khoi hanh chuyen).",
                 "Moi INFANT khong chiem ghe phai co it nhat mot hanh khach nguoi lon co ghe di kem trong cung booking.",
                 "fromStationCode / toStationCode: khuyến nghị lấy từ GET /api/trips/{id} → stops[].stationCode; BE cũng chấp nhận stationId hoặc stationName.",

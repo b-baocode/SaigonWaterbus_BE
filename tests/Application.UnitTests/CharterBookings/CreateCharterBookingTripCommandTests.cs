@@ -384,8 +384,6 @@ public class CreateCharterBookingTripCommandTests
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
         boat.Name = name;
         boat.SeatCount = 40;
-        boat.HourlyRentalPrice = 500_000m;
-        boat.DailyRentalPrice = 5_000_000m;
         return boat;
     }
 

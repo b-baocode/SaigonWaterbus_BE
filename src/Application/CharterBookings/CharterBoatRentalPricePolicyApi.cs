@@ -12,8 +12,7 @@ public sealed record CharterBoatRentalPricePolicyDto(
     int NumberOfDecks,
     BoatRentalUnit RentalUnit,
     decimal UnitPrice,
-    string Currency,
-    bool IsActive);
+    string Currency);
 
 [Authorize(Roles = "Admin,Manager")]
 public sealed record GetCharterBoatRentalPricePolicyListQuery
@@ -24,8 +23,7 @@ public sealed record UpsertCharterBoatRentalPricePolicyCommand(
     int NumberOfDecks,
     BoatRentalUnit RentalUnit,
     decimal UnitPrice,
-    string? Currency = null,
-    bool IsActive = true) : IRequest<CharterBoatRentalPricePolicyDto>;
+    string? Currency = null) : IRequest<CharterBoatRentalPricePolicyDto>;
 
 public sealed class UpsertCharterBoatRentalPricePolicyCommandValidator
     : AbstractValidator<UpsertCharterBoatRentalPricePolicyCommand>
@@ -35,7 +33,7 @@ public sealed class UpsertCharterBoatRentalPricePolicyCommandValidator
         RuleFor(x => x.NumberOfDecks).GreaterThan(0).LessThanOrEqualTo(10);
         RuleFor(x => x.RentalUnit).IsInEnum();
         RuleFor(x => x.UnitPrice)
-            .GreaterThan(0).WithMessage("Giá thuê tàu phải lớn hơn 0.")
+            .GreaterThanOrEqualTo(0).WithMessage("Giá thuê tàu không được âm.")
             .LessThanOrEqualTo(1_000_000_000).WithMessage("Giá thuê tàu tối đa 1.000.000.000 VND.")
             .Must(x => decimal.Truncate(x) == x).WithMessage("Giá thuê tàu phải là số nguyên VND.");
         RuleFor(x => x.Currency)
@@ -66,7 +64,7 @@ public sealed class GetCharterBoatRentalPricePolicyListQueryHandler
     }
 
     private static CharterBoatRentalPricePolicyDto ToDto(CharterBoatRentalPricePolicy policy) =>
-        new(policy.Id, policy.NumberOfDecks, policy.RentalUnit, policy.UnitPrice, policy.Currency, policy.IsActive);
+        new(policy.Id, policy.NumberOfDecks, policy.RentalUnit, policy.UnitPrice, policy.Currency);
 }
 
 public sealed class UpsertCharterBoatRentalPricePolicyCommandHandler
@@ -96,7 +94,6 @@ public sealed class UpsertCharterBoatRentalPricePolicyCommandHandler
 
         policy.UnitPrice = request.UnitPrice;
         policy.Currency = BoatSupport.NormalizeCurrency(request.Currency);
-        policy.IsActive = request.IsActive;
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -104,5 +101,5 @@ public sealed class UpsertCharterBoatRentalPricePolicyCommandHandler
     }
 
     private static CharterBoatRentalPricePolicyDto ToDto(CharterBoatRentalPricePolicy policy) =>
-        new(policy.Id, policy.NumberOfDecks, policy.RentalUnit, policy.UnitPrice, policy.Currency, policy.IsActive);
+        new(policy.Id, policy.NumberOfDecks, policy.RentalUnit, policy.UnitPrice, policy.Currency);
 }

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260726221402_RemoveFarePolicyMinFare")]
+    partial class RemoveFarePolicyMinFare
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -125,6 +128,16 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("created_at");
 
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasMaxLength(3)
+                        .HasColumnType("character varying(3)")
+                        .HasColumnName("currency");
+
+                    b.Property<decimal?>("DailyRentalPrice")
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("daily_rental_price");
+
                     b.Property<string>("Description")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
@@ -136,6 +149,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("jsonb")
                         .HasColumnName("documents")
                         .HasDefaultValueSql("'[]'::jsonb");
+
+                    b.Property<decimal?>("HourlyRentalPrice")
+                        .HasColumnType("numeric(12,2)")
+                        .HasColumnName("hourly_rental_price");
 
                     b.Property<string>("ImagePublicId")
                         .HasMaxLength(500)
@@ -781,6 +798,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(3)")
                         .HasColumnName("currency");
 
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
+
                     b.Property<int>("NumberOfDecks")
                         .HasColumnType("integer")
                         .HasColumnName("number_of_decks");
@@ -1099,6 +1120,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasMaxLength(3)
                         .HasColumnType("character varying(3)")
                         .HasColumnName("currency");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
 
                     b.Property<decimal>("PricePerKm")
                         .HasColumnType("numeric(12,2)")
@@ -2466,6 +2491,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<int>("DisplayOrder")
                         .HasColumnType("integer")
                         .HasColumnName("display_order");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean")
+                        .HasColumnName("is_active");
 
                     b.Property<string>("Name")
                         .IsRequired()

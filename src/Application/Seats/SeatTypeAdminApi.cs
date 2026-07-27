@@ -12,7 +12,6 @@ public sealed record SeatTypeAdminDto(
     string Name,
     decimal BasePrice,
     string Currency,
-    bool IsActive,
     int DisplayOrder,
     string PricingMode,
     string? PriceNote = null);
@@ -34,14 +33,10 @@ internal static class SeatTypeBasePriceSupport
 
         var rows = await context.Set<SeatType>()
             .AsNoTracking()
-            .Where(x => x.IsActive)
             .ToListAsync(cancellationToken);
         foreach (var row in rows)
         {
-            if (row.BasePrice > 0)
-            {
-                prices[row.Code] = row.BasePrice;
-            }
+            prices[row.Code] = row.BasePrice;
         }
 
         return prices;
@@ -76,7 +71,6 @@ public sealed class GetSeatTypeListQueryHandler
                     x.Name,
                     x.BasePrice,
                     x.Currency,
-                    x.IsActive,
                     x.DisplayOrder,
                     SeatSupport.GetPricingMode(x.Code),
                     SeatSupport.GetPriceNote(x.Code)))
@@ -91,7 +85,6 @@ public sealed class GetSeatTypeListQueryHandler
                 code,
                 SeatTypePricing.GetBasePrice(code),
                 "VND",
-                true,
                 index + 1,
                 SeatSupport.GetPricingMode(code),
                 SeatSupport.GetPriceNote(code)))
@@ -117,7 +110,7 @@ public sealed class CreateSeatTypeCommandValidator : AbstractValidator<CreateSea
             .WithMessage("Code chỉ gồm chữ, số và dấu gạch dưới, bắt đầu bằng chữ (vd: VIP, FAMILY_DECK).");
         RuleFor(x => x.Name).NotEmpty().MaximumLength(150);
         RuleFor(x => x.BasePrice)
-            .GreaterThan(0).WithMessage("Giá gốc phải lớn hơn 0.")
+            .GreaterThanOrEqualTo(0).WithMessage("Giá gốc không được âm.")
             .LessThanOrEqualTo(100_000_000).WithMessage("Giá gốc tối đa 100.000.000 VND.")
             .Must(x => decimal.Truncate(x) == x).WithMessage("Giá gốc phải là số nguyên VND.");
         RuleFor(x => x.DisplayOrder).GreaterThan(0).When(x => x.DisplayOrder.HasValue);
@@ -156,7 +149,6 @@ public sealed class CreateSeatTypeCommandHandler : IRequestHandler<CreateSeatTyp
             Name = request.Name.Trim(),
             BasePrice = request.BasePrice,
             Currency = "VND",
-            IsActive = true,
             DisplayOrder = displayOrder
         };
         _context.Set<SeatType>().Add(seatType);
@@ -168,7 +160,6 @@ public sealed class CreateSeatTypeCommandHandler : IRequestHandler<CreateSeatTyp
             seatType.Name,
             seatType.BasePrice,
             seatType.Currency,
-            seatType.IsActive,
             seatType.DisplayOrder,
             SeatSupport.GetPricingMode(seatType.Code),
             SeatSupport.GetPriceNote(seatType.Code));
@@ -185,7 +176,7 @@ public sealed class UpdateSeatTypePriceCommandValidator : AbstractValidator<Upda
     {
         RuleFor(x => x.Code).NotEmpty().MaximumLength(50);
         RuleFor(x => x.BasePrice)
-            .GreaterThan(0).WithMessage("Giá gốc phải lớn hơn 0.")
+            .GreaterThanOrEqualTo(0).WithMessage("Giá gốc không được âm.")
             .LessThanOrEqualTo(100_000_000).WithMessage("Giá gốc tối đa 100.000.000 VND.")
             .Must(x => decimal.Truncate(x) == x).WithMessage("Giá gốc phải là số nguyên VND.");
     }
@@ -226,7 +217,6 @@ public sealed class UpdateSeatTypePriceCommandHandler
                 Code = code,
                 Name = code,
                 Currency = "VND",
-                IsActive = true,
                 DisplayOrder = Array.FindIndex(SeatTypeBasePriceSupport.KnownCodes,
                     x => x.Equals(code, StringComparison.OrdinalIgnoreCase)) + 1
             };
@@ -256,7 +246,6 @@ public sealed class UpdateSeatTypePriceCommandHandler
             seatType.Name,
             seatType.BasePrice,
             seatType.Currency,
-            seatType.IsActive,
             seatType.DisplayOrder,
             SeatSupport.GetPricingMode(seatType.Code),
             SeatSupport.GetPriceNote(seatType.Code));

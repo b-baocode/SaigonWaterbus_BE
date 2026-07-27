@@ -70,14 +70,11 @@ public class BoatSeatFlowIntegrationTests
     }
 
     [Test]
-    public async Task UpdateBoatDoesNotExposeLegacyRentalPrices()
+    public async Task UpdateBoatUpdatesEditableProfileFields()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedAdminAsync(context);
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard);
-        boat.HourlyRentalPrice = 2000000m;
-        boat.DailyRentalPrice = 15000000m;
-        boat.Currency = "VND";
         context.Add(boat);
         await context.SaveChangesAsync();
 
@@ -88,9 +85,6 @@ public class BoatSeatFlowIntegrationTests
             CancellationToken.None);
 
         result.Name.ShouldBe("Waterbus updated");
-        result.RentalPrices.ShouldBeEmpty();
-        boat.HourlyRentalPrice.ShouldBe(2000000m);
-        boat.DailyRentalPrice.ShouldBe(15000000m);
     }
 
     [Test]
@@ -571,7 +565,6 @@ public class BoatSeatFlowIntegrationTests
         result.Description.ShouldBe("abcdef");
         result.ImageUrl.ShouldBe("https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg");
         result.ImageUrls.ShouldBe(["https://i.pinimg.com/236x/bd/e3/14/bde3147fb7e955639478c55a0e050cd9.jpg"]);
-        result.RentalPrices.ShouldBeEmpty();
     }
 
     private static CreateBoatRequestUseCase CreateBoatUseCase(
