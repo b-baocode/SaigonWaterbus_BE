@@ -134,6 +134,15 @@ public sealed class GeminiChatCompletionService : IChatCompletionService
             declarations.Add(declaration);
         }
 
+        var generationConfig = new JsonObject { ["maxOutputTokens"] = _options.MaxOutputTokens };
+
+        // Tắt/giới hạn "thinking" để giảm độ trễ. -1 = không gửi (model tự quyết);
+        // 0 = tắt hẳn (chatbox routing không cần suy nghĩ) → nhanh hơn nhiều.
+        if (_options.ThinkingBudget >= 0)
+        {
+            generationConfig["thinkingConfig"] = new JsonObject { ["thinkingBudget"] = _options.ThinkingBudget };
+        }
+
         return new JsonObject
         {
             ["systemInstruction"] = new JsonObject
@@ -142,7 +151,7 @@ public sealed class GeminiChatCompletionService : IChatCompletionService
             },
             ["contents"] = contents,
             ["tools"] = new JsonArray { new JsonObject { ["functionDeclarations"] = declarations } },
-            ["generationConfig"] = new JsonObject { ["maxOutputTokens"] = _options.MaxOutputTokens },
+            ["generationConfig"] = generationConfig,
         };
     }
 
