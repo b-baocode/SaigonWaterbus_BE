@@ -75,9 +75,8 @@ public sealed class ChatWithAssistantCommandHandler
                 // LLM lỗi (thiếu key, quá tải, rate limit provider, mạng) — trả lời lịch sự
                 // thay vì 500, nhưng PHẢI log để còn biết nguyên nhân (đừng nuốt im lặng).
                 _logger.LogError(ex, "Assistant LLM call failed");
-                // TEMP DEBUG: lộ chi tiết lỗi ra response để chẩn đoán prod. GỠ sau khi xong.
                 return new AssistantReply(
-                    "Xin lỗi, trợ lý đang bận. [DEBUG " + ex.GetType().Name + ": " + ex.Message + "]");
+                    "Xin lỗi, trợ lý đang bận. Bạn vui lòng thử lại sau ít phút nhé.");
             }
 
             if (result.ToolCalls.Count == 0)
