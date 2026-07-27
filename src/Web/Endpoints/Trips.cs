@@ -34,6 +34,33 @@ public sealed class Trips : IEndpointGroup
         }
         """;
 
+    private const string RoundTripPreviewExample =
+        """
+        {
+          "boatCode": "BOAT-01",
+          "outboundRouteCode": "R01-BD-LD",
+          "inboundRouteCode": "R02-LD-BD",
+          "fromDate": "2026-07-01",
+          "toDate": "2026-07-01",
+          "startTime": "08:00:00",
+          "endTime": "17:00:00",
+          "daysOfWeek": null,
+          "outboundStops": [
+            { "stopOrder": 2, "stayDurationMinutes": 5 }
+          ],
+          "inboundStops": [
+            { "stopOrder": 2, "stayDurationMinutes": 5 }
+          ]
+        }
+        """;
+
+    private const string ReplaceBoatExample =
+        """
+        {
+          "boatId": "00000000-0000-0000-0000-000000000001"
+        }
+        """;
+
     private const string CancelNoShowExample =
         """
         {
@@ -183,6 +210,20 @@ public sealed class Trips : IEndpointGroup
                 "Vi du: route dai 3h41 ma dat departureTimes cach nhau 2h thi cac chuyen sau se bi skippedBoatBusy - can gian gio hoac dung tau khac.",
                 "Tra ve: { created, skipped, skippedBoatBusy, skippedPast, createdTripCodes, skippedMissingOnBoardStaff }."));
 
+        group.MapPost(PreviewRoundTripSchedule, "schedule/round-trip-preview")
+            .RequireAuthorization()
+            .WithSummary("Preview lich di/ve cho mot tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                RoundTripPreviewExample,
+                "API chi goi y lich, KHONG tao trip.",
+                "FE gui boatCode, route luot di, route luot ve, khoang ngay va gio bat dau/ket thuc.",
+                "Route luot ve phai bat dau tai ben cuoi cua route luot di va ket thuc tai ben dau cua route luot di.",
+                "BE tu xen luot di/luot ve theo cong thuc: departure chuyen sau = arrival chuyen truoc + 15 phut quay dau, vi tau dang o dung ben.",
+                "Neu tau bi ban voi lich co san, item canCreate=false va reason/suggestedNextDepartureTime cho FE hien thi.",
+                "Neu route thuong co ben giua, FE gui outboundStops/inboundStops cho stayDurationMinutes cua tung ben giua.",
+                "Admin xem preview xong, FE dung cac item canCreate=true de goi POST /api/trips/schedule tao that."));
+
         group.MapPost(GenerateTrips, "generate")
             .RequireAuthorization()
             .WithName("GenerateTripsLegacy")
@@ -197,6 +238,17 @@ public sealed class Trips : IEndpointGroup
                 "tripStatus hop le: Scheduled | Boarding | InProgress | Completed | Delayed | Cancelled.",
                 "statusNote: ghi chu kem theo (optional).",
                 "Delayed: he thong tu bao khach co booking tren chuyen (in-app + SignalR); GPS thay tau chay se tu chuyen lai Boarding/InProgress."));
+
+        group.MapPatch(ReplaceTripBoat, "{id:guid}/boat")
+            .RequireAuthorization()
+            .WithSummary("Thay tau cho trip")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                ReplaceBoatExample,
+                "Dung khi trip can doi sang tau khac.",
+                "Tau moi phai Active, da setup ghe, hop voi routeType cua trip va ranh lich trong khung gio trip.",
+                "Neu trip da co ve, tau moi phai co day du cac ma ghe dang co ve de BE remap ve sang tau moi.",
+                "Khong cho thay tau cho trip Completed/Cancelled."));
 
         group.MapPost(CancelSightseeingTripNoShow, "{id:guid}/cancel-no-show")
             .RequireAuthorization()
@@ -305,10 +357,21 @@ public sealed class Trips : IEndpointGroup
     private static async Task<IResult> GenerateTrips(ISender sender, GenerateTripsCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
+    private static async Task<IResult> PreviewRoundTripSchedule(
+        ISender sender,
+        PreviewRoundTripScheduleCommand command,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
     private static async Task<IResult> UpdateTripStatus(ISender sender, Guid id, UpdateTripStatusRequest req, CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateTripStatusCommand(id, req.TripStatus, req.StatusNote), ct));
 
     public sealed record UpdateTripStatusRequest(TripStatus TripStatus, string? StatusNote);
+
+    private static async Task<IResult> ReplaceTripBoat(ISender sender, Guid id, ReplaceTripBoatRequest req, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ReplaceTripBoatCommand(id, req.BoatId), ct));
+
+    public sealed record ReplaceTripBoatRequest(Guid BoatId);
 
     private static async Task<IResult> CancelSightseeingTripNoShow(
         ISender sender,

@@ -261,17 +261,20 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task CreateTripAllowsBoatWhenGapIsAtLeastTurnaroundBuffer()
+    public async Task CreateTripAllowsReverseRouteWhenGapIsAtLeastTurnaroundBuffer()
     {
         await using var context = SeatFlowTestData.CreateContext();
-        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var outbound = Route("OUT", stationA, stationB);
+        var inbound = Route("IN", stationB, stationA);
         var boat = BoatWithSeats("BOAT-1", seatCount: 3);
 
         var existingDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
         var existingTrip = new Trip
         {
-            Route = route,
-            RouteId = route.Id,
+            Route = outbound,
+            RouteId = outbound.Id,
             Boat = boat,
             BoatId = boat.Id,
             TripCode = "TR-EARLIER",
@@ -282,15 +285,15 @@ public class CreateTripCommandTests
             TripStatus = TripStatus.Scheduled
         };
 
-        context.AddRange(route, boat, existingTrip);
+        context.AddRange(outbound, inbound, boat, existingTrip);
         await context.SaveChangesAsync();
 
-        // Chuyen truoc ket thuc 09:00; chuyen moi khoi hanh 09:20 -> cach 20 phut >= 15 phut.
+        // Chuyen truoc den Ben B luc 09:00; chuyen nguoc xuat phat tu Ben B luc 09:20 -> du 15 phut quay dau.
         var farEnough = existingDeparture.AddHours(1).AddMinutes(20);
         await AddRequiredOnBoardStaffAsync(context, boat, farEnough);
 
         var result = await new CreateTripCommandHandler(context)
-            .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(farEnough.Date), farEnough), CancellationToken.None);
+            .Handle(new CreateTripCommand("IN", "BOAT-1", DateOnly.FromDateTime(farEnough.Date), farEnough), CancellationToken.None);
 
         result.CapacitySnapshot.ShouldBe(3);
     }
@@ -442,7 +445,139 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task GenerateTripsCreatesContinuousRegularScheduleFromTimeRange()
+    public async Task ReplaceTripBoatRemapsBookedPassengersToSameSeatCodesOnNewBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var oldBoat = BoatWithSeats("BOAT-OLD", seatCount: 2);
+        var newBoat = BoatWithSeats("BOAT-NEW", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var trip = TripWithSeats(route, oldBoat, "TR-REPLACE", departureTime);
+        var bookedTripSeat = trip.TripSeats.Single(x => x.Seat.Code == "A1");
+        var booking = new Booking
+        {
+            BookingCode = "BKG-REPLACE",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            Trip = trip,
+            TripId = trip.Id,
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid"
+        };
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            FullName = "Nguyen Van A",
+            Trip = trip,
+            TripId = trip.Id,
+            TripSeat = bookedTripSeat,
+            TripSeatId = bookedTripSeat.Id,
+            FromStopOrder = 1,
+            ToStopOrder = 2
+        };
+
+        context.AddRange(route, oldBoat, newBoat, trip, booking, passenger);
+        await context.SaveChangesAsync();
+
+        var result = await new ReplaceTripBoatCommandHandler(context)
+            .Handle(new ReplaceTripBoatCommand(trip.Id, newBoat.Id), CancellationToken.None);
+
+        result.Boat.ShouldNotBeNull();
+        result.Boat.VesselId.ShouldBe(newBoat.Id);
+        result.CapacitySnapshot.ShouldBe(3);
+
+        var remappedPassenger = await context.Set<BookingPassenger>()
+            .Include(x => x.TripSeat)
+                .ThenInclude(x => x!.Seat)
+            .SingleAsync(x => x.Id == passenger.Id);
+        remappedPassenger.TripSeat.ShouldNotBeNull();
+        remappedPassenger.TripSeat.Seat.BoatId.ShouldBe(newBoat.Id);
+        remappedPassenger.TripSeat.Seat.Code.ShouldBe("A1");
+
+        var tripSeatCodes = await context.Set<TripSeat>()
+            .Include(x => x.Seat)
+            .Where(x => x.TripId == trip.Id)
+            .OrderBy(x => x.Seat.Code)
+            .Select(x => x.Seat.Code)
+            .ToListAsync();
+        tripSeatCodes.ShouldBe(["A1", "A2", "A3"]);
+    }
+
+    [Test]
+    public async Task ReplaceTripBoatRejectsBusyReplacementBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var currentBoat = BoatWithSeats("BOAT-CURRENT", seatCount: 2);
+        var busyBoat = BoatWithSeats("BOAT-BUSY", seatCount: 2);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var tripToReplace = TripWithSeats(route, currentBoat, "TR-REPLACE", departureTime);
+        var conflictingTrip = TripWithSeats(route, busyBoat, "TR-BUSY", departureTime.AddMinutes(30));
+
+        context.AddRange(route, currentBoat, busyBoat, tripToReplace, conflictingTrip);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new ReplaceTripBoatCommandHandler(context)
+                .Handle(new ReplaceTripBoatCommand(tripToReplace.Id, busyBoat.Id), CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x).Single()
+            .ShouldContain("Tàu thay thế đã có chuyến vào ngày/giờ này");
+    }
+
+    [Test]
+    public async Task PreviewRoundTripScheduleAlternatesOutboundAndInboundAfterTurnaroundAtCurrentStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var outbound = Route("OUT", stationA, stationB);
+        var inbound = Route("IN", stationB, stationA);
+        outbound.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 88;
+        inbound.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 88;
+        outbound.IsBookable = true;
+        inbound.IsBookable = true;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+        var start = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(outbound, inbound, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, start);
+
+        var result = await new PreviewRoundTripScheduleCommandHandler(context)
+            .Handle(
+                new PreviewRoundTripScheduleCommand(
+                    BoatCode: "BOAT-1",
+                    OutboundRouteCode: "OUT",
+                    InboundRouteCode: "IN",
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(8, 0),
+                    EndTime: new TimeOnly(11, 30)),
+                CancellationToken.None);
+
+        result.Suggested.ShouldBe(3);
+        result.SkippedBoatBusy.ShouldBe(0);
+        result.Items.Select(x => x.Direction).ShouldBe(["Outbound", "Inbound", "Outbound"]);
+        result.Items.Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
+            .ShouldBe([
+                new TimeSpan(8, 0, 0),
+                new TimeSpan(9, 43, 0),
+                new TimeSpan(11, 26, 0)
+            ]);
+        result.Items.Select(x => x.ArrivalTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
+            .ShouldBe([
+                new TimeSpan(9, 28, 0),
+                new TimeSpan(11, 11, 0),
+                new TimeSpan(12, 54, 0)
+            ]);
+        result.Items.ShouldAllBe(x => x.CanCreate);
+    }
+
+    [Test]
+    public async Task GenerateTripsSkipsSameDirectionTripsBeforeBoatCanReturnToStart()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
@@ -469,17 +604,43 @@ public class CreateTripCommandTests
                     IntervalMinutes: 30),
                 CancellationToken.None);
 
-        result.Created.ShouldBe(3);
-        result.SkippedBoatBusy.ShouldBe(0);
+        result.Created.ShouldBe(2);
+        result.SkippedBoatBusy.ShouldBe(1);
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BB-20300101-R1-", StringComparison.Ordinal));
         context.Trips
             .OrderBy(x => x.DepartureTime)
             .Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
             .ShouldBe([
                 new TimeSpan(8, 0, 0),
-                new TimeSpan(8, 30, 0),
                 new TimeSpan(9, 0, 0)
             ]);
+    }
+
+    [Test]
+    public async Task CreateTripAllowsReverseDirectionAfterTurnaroundAtArrivalStation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var outbound = Route("OUT", stationA, stationB);
+        var inbound = Route("IN", stationB, stationA);
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var firstDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        context.AddRange(outbound, inbound, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, firstDeparture);
+
+        var handler = new CreateTripCommandHandler(context);
+        await handler.Handle(
+            new CreateTripCommand("OUT", "BOAT-1", DateOnly.FromDateTime(firstDeparture.Date), firstDeparture),
+            CancellationToken.None);
+
+        var reverseDeparture = firstDeparture.AddMinutes(30);
+        var result = await handler.Handle(
+            new CreateTripCommand("IN", "BOAT-1", DateOnly.FromDateTime(reverseDeparture.Date), reverseDeparture),
+            CancellationToken.None);
+
+        result.RouteCode.ShouldBe("IN");
     }
 
     [Test]
@@ -552,7 +713,7 @@ public class CreateTripCommandTests
                     IntervalMinutes: 30),
                 CancellationToken.None);
 
-        result.Created.ShouldBe(3);
+        result.Created.ShouldBe(2);
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BS-20300101-SIGHT-1-", StringComparison.Ordinal));
         context.Trips.All(x => x.RouteId == route.Id).ShouldBeTrue();
     }
@@ -680,6 +841,41 @@ public class CreateTripCommandTests
         }
 
         return boat;
+    }
+
+    private static Trip TripWithSeats(
+        Route route,
+        Boat boat,
+        string tripCode,
+        DateTimeOffset departureTime)
+    {
+        var trip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = tripCode,
+            OperatingDate = DateOnly.FromDateTime(departureTime.Date),
+            DepartureTime = departureTime.ToUniversalTime(),
+            ArrivalTime = departureTime.AddMinutes(30).ToUniversalTime(),
+            CapacitySnapshot = boat.Seats.Count(x => x.IsActive),
+            TripStatus = TripStatus.Scheduled
+        };
+
+        foreach (var seat in boat.Seats.Where(x => x.IsActive))
+        {
+            trip.TripSeats.Add(new TripSeat
+            {
+                Trip = trip,
+                TripId = trip.Id,
+                Seat = seat,
+                SeatId = seat.Id,
+                Status = TripSeat.StatusAvailable
+            });
+        }
+
+        return trip;
     }
 
     private static async Task AddRequiredOnBoardStaffAsync(

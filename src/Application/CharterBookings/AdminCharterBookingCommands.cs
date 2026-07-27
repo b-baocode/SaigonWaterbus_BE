@@ -872,7 +872,7 @@ public sealed class QuoteCharterBookingCommandHandler
         if (tripConflict is not null)
         {
             throw new ValidationException([new ValidationFailure(errorFieldName,
-                "Tàu đã có trip trùng giờ: "
+                "Tàu đã có chuyến vào ngày/giờ charter đã chọn: "
                 + TripScheduleSupport.BuildConflictMessage(
                     tripConflict.TripCode,
                     tripConflict.DepartureTime,

@@ -169,6 +169,7 @@ public sealed class GenerateSeatsRequestUseCase
 
             for (var row = 1; row <= deck.RowCount; row++)
             {
+                var seatNumberInRow = 0;
                 for (var column = 1; column <= deck.ColumnCount; column++)
                 {
                     if (cellOverrides.TryGetValue((row, column), out var cell))
@@ -178,11 +179,13 @@ public sealed class GenerateSeatsRequestUseCase
                             continue;
                         }
 
-                        AddSeat(boat, deck.DeckNumber, row, column, cell.SeatTypeCode, seats, occupiedCells, seatTypeById);
+                        seatNumberInRow++;
+                        AddSeat(boat, deck.DeckNumber, row, column, seatNumberInRow, cell.SeatTypeCode, seats, occupiedCells, seatTypeById);
                         continue;
                     }
 
-                    AddSeat(boat, deck.DeckNumber, row, column, null, seats, occupiedCells, seatTypeById);
+                    seatNumberInRow++;
+                    AddSeat(boat, deck.DeckNumber, row, column, seatNumberInRow, null, seats, occupiedCells, seatTypeById);
                 }
             }
         }
@@ -201,6 +204,7 @@ public sealed class GenerateSeatsRequestUseCase
         int deckNumber,
         int row,
         int column,
+        int seatNumberInRow,
         string? seatTypeCode,
         List<Seat> seats,
         HashSet<(int Deck, int Row, int Column)> occupiedCells,
@@ -218,7 +222,7 @@ public sealed class GenerateSeatsRequestUseCase
         seats.Add(new Seat
         {
             BoatId = boat.Id,
-            Code = SeatSupport.SeatCode(deckNumber, rowLabel, column),
+            Code = SeatSupport.SeatCode(deckNumber, rowLabel, seatNumberInRow),
             SeatTypeCode = normalizedCode,
             SeatTypeId = seatType?.Id,
             Deck = deckNumber,

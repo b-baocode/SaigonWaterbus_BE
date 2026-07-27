@@ -124,7 +124,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             throw new ValidationException([new ValidationFailure(nameof(request.BoatCode),
                 "Boat has no active seats.")]);
 
-        await EnsureBoatIsFreeAsync(boat.Id, departureTime, arrivalTime, cancellationToken);
+        await EnsureBoatIsFreeAsync(boat.Id, route, departureTime, arrivalTime, cancellationToken);
         await OnBoardStaffTripSupport.EnsureBoatHasRequiredOnBoardStaffAsync(
             _context, boat.Id, departureTime, arrivalTime, nameof(request.BoatCode), cancellationToken);
 
@@ -203,31 +203,56 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
     /// </summary>
     private async Task EnsureBoatIsFreeAsync(
         Guid boatId,
+        Route route,
         DateTimeOffset departureTime,
         DateTimeOffset arrivalTime,
         CancellationToken cancellationToken)
     {
-        var bufferedArrival = arrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
-        var bufferedDeparture = departureTime.Subtract(TripScheduleSupport.BoatTurnaroundBuffer);
+        var routeStops = route.RouteStops.OrderBy(x => x.StopOrder).ToList();
+        var requestedWindow = new TripScheduleSupport.BoatScheduleWindow(
+            "(new)",
+            departureTime,
+            arrivalTime,
+            TripScheduleSupport.ResolveStartStationId(routeStops),
+            TripScheduleSupport.ResolveEndStationId(routeStops),
+            routeStops);
 
-        var conflict = await _context.Set<Trip>()
+        var existingWindows = (await _context.Set<Trip>()
             .AsNoTracking()
+            .Include(x => x.Route).ThenInclude(x => x.RouteStops)
             .Where(x => x.BoatId == boatId
                 && x.TripStatus != TripStatus.Cancelled
-                && x.DepartureTime < bufferedArrival
-                && bufferedDeparture < x.ArrivalTime)
+                && x.ArrivalTime >= departureTime.AddHours(-24)
+                && x.DepartureTime <= arrivalTime.AddHours(24))
             .OrderBy(x => x.DepartureTime)
-            .Select(x => new { x.TripCode, x.DepartureTime, x.ArrivalTime })
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken))
+            .Where(x => x.Route.RouteStops.Count >= 2)
+            .Select(x =>
+            {
+                var existingRouteStops = x.Route.RouteStops.OrderBy(stop => stop.StopOrder).ToList();
+                return new TripScheduleSupport.BoatScheduleWindow(
+                    x.TripCode,
+                    x.DepartureTime,
+                    x.ArrivalTime,
+                    TripScheduleSupport.ResolveStartStationId(existingRouteStops),
+                    TripScheduleSupport.ResolveEndStationId(existingRouteStops),
+                    existingRouteStops);
+            })
+            .ToList();
 
+        var conflict = TripScheduleSupport.FindConflict(requestedWindow, existingWindows);
         if (conflict is not null)
         {
             throw new ValidationException(
             [
                 new ValidationFailure(
                     nameof(CreateTripCommand.BoatCode),
-                    TripScheduleSupport.BuildConflictMessage(
-                        conflict.TripCode, conflict.DepartureTime, conflict.ArrivalTime))
+                    TripScheduleSupport.BuildLocationAwareConflictMessage(
+                        conflict.Existing.TripCode,
+                        conflict.Existing.DepartureTime,
+                        conflict.Existing.ArrivalTime,
+                        conflict.EarliestAllowedDeparture,
+                        conflict.RepositionDuration))
             ]);
         }
     }

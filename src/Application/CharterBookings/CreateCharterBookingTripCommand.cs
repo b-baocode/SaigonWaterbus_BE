@@ -230,7 +230,8 @@ public sealed class CreateCharterBookingTripCommandHandler
             if (conflict is not null)
             {
                 throw new ValidationException([new ValidationFailure("boats",
-                    TripScheduleSupport.BuildConflictMessage(
+                    "Tàu đã có chuyến vào ngày/giờ charter đã chọn: "
+                    + TripScheduleSupport.BuildConflictMessage(
                         conflict.TripCode, conflict.DepartureTime, conflict.ArrivalTime))]);
             }
         }

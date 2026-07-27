@@ -38,10 +38,10 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
         RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x)
             .Must(HasOneScheduleInput)
-            .WithMessage("Gui departureTimes hoac gui startTime/endTime/intervalMinutes de tao lien tuc.")
+            .WithMessage("Gui departureTimes hoac startTime/endTime/intervalMinutes.")
             .OverridePropertyName(nameof(GenerateTripsCommand.DepartureTimes));
         RuleFor(x => x)
-            .Must(x => !HasExplicitDepartureTimes(x) || !HasContinuousSchedule(x))
+            .Must(x => !HasExplicitDepartureTimes(x) || !HasTimeRange(x))
             .WithMessage("Chi duoc gui mot trong hai cach: departureTimes hoac startTime/endTime/intervalMinutes.")
             .OverridePropertyName(nameof(GenerateTripsCommand.DepartureTimes));
         RuleFor(x => x.IntervalMinutes)
@@ -49,7 +49,7 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
             .When(x => x.IntervalMinutes.HasValue)
             .WithMessage("IntervalMinutes phai >= 5.");
         RuleFor(x => x)
-            .Must(x => !HasContinuousSchedule(x) || x.StartTime!.Value < x.EndTime!.Value)
+            .Must(x => !HasTimeRange(x) || x.StartTime!.Value < x.EndTime!.Value)
             .WithMessage("EndTime phai lon hon StartTime.")
             .OverridePropertyName(nameof(GenerateTripsCommand.EndTime));
         RuleFor(x => x.FromDate).NotEmpty();
@@ -86,6 +86,10 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
         && command.EndTime.HasValue
         && command.IntervalMinutes.HasValue;
 
+    private static bool HasTimeRange(GenerateTripsCommand command) =>
+        command.StartTime.HasValue
+        && command.EndTime.HasValue;
+
     private static bool HasOneScheduleInput(GenerateTripsCommand command) =>
         HasExplicitDepartureTimes(command) || HasContinuousSchedule(command);
 }
@@ -112,6 +116,9 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode),
                 "Route must have at least 2 stops.")]);
+        var routeStops = route.RouteStops.OrderBy(x => x.StopOrder).ToList();
+        var routeStartStationId = TripScheduleSupport.ResolveStartStationId(routeStops);
+        var routeEndStationId = TripScheduleSupport.ResolveEndStationId(routeStops);
 
         var boat = await _context.Set<Boat>()
             .SingleOrDefaultAsync(x => x.Code == boatCode, cancellationToken)
@@ -161,13 +168,24 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
 
         var boatSchedule = (await _context.Set<Trip>()
                 .AsNoTracking()
+                .Include(t => t.Route).ThenInclude(r => r.RouteStops)
                 .Where(t => t.BoatId == boat.Id
                     && t.TripStatus != TripStatus.Cancelled
                     && t.ArrivalTime >= rangeStart.AddDays(-1)
                     && t.DepartureTime <= rangeEnd.AddDays(1))
-                .Select(t => new { t.DepartureTime, t.ArrivalTime })
                 .ToListAsync(cancellationToken))
-            .Select(t => (t.DepartureTime, t.ArrivalTime))
+            .Where(t => t.Route.RouteStops.Count >= 2)
+            .Select(t =>
+            {
+                var existingRouteStops = t.Route.RouteStops.OrderBy(stop => stop.StopOrder).ToList();
+                return new TripScheduleSupport.BoatScheduleWindow(
+                    t.TripCode,
+                    t.DepartureTime,
+                    t.ArrivalTime,
+                    TripScheduleSupport.ResolveStartStationId(existingRouteStops),
+                    TripScheduleSupport.ResolveEndStationId(existingRouteStops),
+                    existingRouteStops);
+            })
             .ToList();
 
         var skippedBoatBusy = 0;
@@ -179,6 +197,92 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
         int skippedPast = 0;
         int skippedMissingOnBoardStaff = 0;
         var now = DateTimeOffset.UtcNow;
+
+        async Task<DateTimeOffset> TryCreateTripAsync(DateOnly date, DateTimeOffset departureTime)
+        {
+            // Cùng chuẩn với tạo lẻ (phải trước giờ chạy tối thiểu theo TripScheduleSupport): không sinh chuyến
+            // đã trôi qua hoặc quá sát giờ, nhưng batch thì skip đếm riêng thay vì fail cả lô.
+            if (TripScheduleSupport.IsTooSoonToCreate(departureTime, now))
+            {
+                skippedPast++;
+                var minimumDeparture = now.Add(TripScheduleSupport.MinimumCreationLeadTime);
+                return minimumDeparture > departureTime
+                    ? minimumDeparture
+                    : departureTime.AddMinutes(5);
+            }
+
+            if (existingDepartures.Contains(departureTime))
+            {
+                skipped++;
+                return departureTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
+            }
+
+            var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
+                routeStops,
+                departureTime,
+                stayDurationMinutesByStopOrder);
+            var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
+            var requestedWindow = new TripScheduleSupport.BoatScheduleWindow(
+                "(new)",
+                departureTime,
+                arrivalTime,
+                routeStartStationId,
+                routeEndStationId,
+                routeStops);
+
+            // Tau da ban trong khung gio nay (ke ca chuyen vua sinh trong lo nay) -> bo qua.
+            var conflict = TripScheduleSupport.FindConflict(requestedWindow, boatSchedule);
+            if (conflict is not null)
+            {
+                skippedBoatBusy++;
+                return conflict.Existing.DepartureTime > departureTime
+                    ? TripScheduleSupport.ResolveEarliestDepartureAfter(conflict.Existing, requestedWindow)
+                    : conflict.EarliestAllowedDeparture;
+            }
+
+            if (!await OnBoardStaffTripSupport.HasRequiredOnBoardStaffAsync(
+                    _context, boat.Id, departureTime, arrivalTime, cancellationToken))
+            {
+                skippedMissingOnBoardStaff++;
+                return arrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
+            }
+
+            var localDeparture = departureTime.ToOffset(VietnamOffset);
+            var tripCode = TripCodeSupport.BuildRegularOrSightseeingTripCode(
+                route,
+                date,
+                localDeparture.ToString("HHmm"));
+
+            var trip = new Trip
+            {
+                RouteId = route.Id,
+                BoatId = boat.Id,
+                TripCode = tripCode,
+                OperatingDate = date,
+                DepartureTime = departureTime,
+                ArrivalTime = arrivalTime,
+                CapacitySnapshot = activeSeats.Count,
+                TripStatus = TripStatus.Scheduled
+            };
+
+            tripsToAdd.Add(trip);
+            TripStopScheduleSupport.CreateTripStops(trip, stopDrafts);
+            existingDepartures.Add(departureTime);
+            boatSchedule.Add(requestedWindow with { TripCode = tripCode });
+
+            foreach (var seat in activeSeats)
+                tripSeatsToAdd.Add(new TripSeat
+                {
+                    TripId = trip.Id,
+                    SeatId = seat.Id,
+                    Price = null
+                });
+
+            createdCodes.Add(tripCode);
+            return TripScheduleSupport.ResolveEarliestDepartureAfter(
+                requestedWindow with { TripCode = tripCode },
+                requestedWindow);
+        }
 
         for (var date = request.FromDate; date <= request.ToDate; date = date.AddDays(1))
         {
@@ -192,72 +296,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     time.Hour, time.Minute, 0,
                     VietnamOffset).ToUniversalTime();
 
-                // Cùng chuẩn với tạo lẻ (phải trước giờ chạy tối thiểu theo TripScheduleSupport): không sinh chuyến
-                // đã trôi qua hoặc quá sát giờ, nhưng batch thì skip đếm riêng thay vì fail cả lô.
-                if (TripScheduleSupport.IsTooSoonToCreate(departureTime, now))
-                {
-                    skippedPast++;
-                    continue;
-                }
-
-                if (existingDepartures.Contains(departureTime))
-                {
-                    skipped++;
-                    continue;
-                }
-
-                var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
-                    route.RouteStops,
-                    departureTime,
-                    stayDurationMinutesByStopOrder);
-                var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
-
-                // Tau da ban trong khung gio nay (ke ca chuyen vua sinh trong lo nay) -> bo qua.
-                if (boatSchedule.Any(x => TripScheduleSupport.ConflictsWithBuffer(
-                        x.DepartureTime, x.ArrivalTime, departureTime, arrivalTime)))
-                {
-                    skippedBoatBusy++;
-                    continue;
-                }
-
-                if (!await OnBoardStaffTripSupport.HasRequiredOnBoardStaffAsync(
-                        _context, boat.Id, departureTime, arrivalTime, cancellationToken))
-                {
-                    skippedMissingOnBoardStaff++;
-                    continue;
-                }
-
-                var tripCode = TripCodeSupport.BuildRegularOrSightseeingTripCode(
-                    route,
-                    date,
-                    time.ToString("HHmm"));
-
-                var trip = new Trip
-                {
-                    RouteId = route.Id,
-                    BoatId = boat.Id,
-                    TripCode = tripCode,
-                    OperatingDate = date,
-                    DepartureTime = departureTime,
-                    ArrivalTime = arrivalTime,
-                    CapacitySnapshot = activeSeats.Count,
-                    TripStatus = TripStatus.Scheduled
-                };
-
-                tripsToAdd.Add(trip);
-                TripStopScheduleSupport.CreateTripStops(trip, stopDrafts);
-                existingDepartures.Add(departureTime);
-                boatSchedule.Add((departureTime, arrivalTime));
-
-                foreach (var seat in activeSeats)
-                    tripSeatsToAdd.Add(new TripSeat
-                    {
-                        TripId = trip.Id,
-                        SeatId = seat.Id,
-                        Price = null
-                    });
-
-                createdCodes.Add(tripCode);
+                _ = await TryCreateTripAsync(date, departureTime);
             }
         }
 
