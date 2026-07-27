@@ -55,9 +55,23 @@ public sealed class ChatWithAssistantCommandHandler
 
         for (var i = 0; i < MaxToolIterations; i++)
         {
-            var result = await _chat.CompleteAsync(
-                new ChatCompletionRequest(systemPrompt, messages, _tools.Definitions),
-                cancellationToken);
+            ChatCompletionResult result;
+            try
+            {
+                result = await _chat.CompleteAsync(
+                    new ChatCompletionRequest(systemPrompt, messages, _tools.Definitions),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // client hủy / timeout thật — để nguyên.
+            }
+            catch (Exception)
+            {
+                // LLM lỗi (quá tải, rate limit provider, mạng) — trả lời lịch sự thay vì 500.
+                return new AssistantReply(
+                    "Xin lỗi, trợ lý đang bận. Bạn vui lòng thử lại sau ít phút nhé.");
+            }
 
             if (result.ToolCalls.Count == 0)
             {
