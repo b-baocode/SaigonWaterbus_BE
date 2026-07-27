@@ -100,6 +100,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
         await EnsureNoRouteDepartureConflictAsync(route.Id, departureTime, cancellationToken);
+        await EnsureStationDepartureGapAsync(route, departureTime, cancellationToken);
 
         var boatCode = request.BoatCode.Trim().ToUpperInvariant();
         var boat = await _context.Set<Boat>()
@@ -277,6 +278,56 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
                 new ValidationFailure(
                     nameof(CreateTripCommand.DepartureTime),
                     "Tuyến đã có chuyến tàu xuất phát trong cùng thời điểm.")
+            ]);
+        }
+    }
+
+    private async Task EnsureStationDepartureGapAsync(
+        Route route,
+        DateTimeOffset departureTime,
+        CancellationToken cancellationToken)
+    {
+        var routeStops = route.RouteStops.OrderBy(x => x.StopOrder).ToList();
+        var firstStop = routeStops[0];
+        var requestedWindow = new TripScheduleSupport.StationDepartureWindow(
+            "(new)",
+            firstStop.StationId,
+            firstStop.Station?.StationName,
+            departureTime);
+
+        var windowStart = departureTime.Subtract(TripScheduleSupport.StationDepartureBuffer);
+        var windowEnd = departureTime.Add(TripScheduleSupport.StationDepartureBuffer);
+        var existingWindows = (await _context.Set<Trip>()
+                .AsNoTracking()
+                .Include(x => x.Route).ThenInclude(x => x.RouteStops).ThenInclude(x => x.Station)
+                .Where(x => x.TripStatus != TripStatus.Cancelled
+                    && x.DepartureTime > windowStart
+                    && x.DepartureTime < windowEnd)
+                .ToListAsync(cancellationToken))
+            .Where(x => x.Route.RouteStops.Count >= 2)
+            .Select(x =>
+            {
+                var existingFirstStop = x.Route.RouteStops.OrderBy(stop => stop.StopOrder).First();
+                return new TripScheduleSupport.StationDepartureWindow(
+                    x.TripCode,
+                    existingFirstStop.StationId,
+                    existingFirstStop.Station?.StationName,
+                    x.DepartureTime);
+            })
+            .ToList();
+
+        var conflict = TripScheduleSupport.FindStationDepartureConflict(requestedWindow, existingWindows);
+        if (conflict is not null)
+        {
+            throw new ValidationException(
+            [
+                new ValidationFailure(
+                    nameof(CreateTripCommand.DepartureTime),
+                    TripScheduleSupport.BuildStationDepartureConflictMessage(
+                        conflict.Existing.StationName,
+                        conflict.Existing.TripCode,
+                        conflict.Existing.DepartureTime,
+                        conflict.EarliestAllowedDeparture))
             ]);
         }
     }

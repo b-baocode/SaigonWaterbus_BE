@@ -21,8 +21,21 @@ internal static class TripScheduleSupport
         DateTimeOffset EarliestAllowedDeparture,
         TimeSpan RepositionDuration);
 
+    public sealed record StationDepartureWindow(
+        string TripCode,
+        Guid StationId,
+        string? StationName,
+        DateTimeOffset DepartureTime);
+
+    public sealed record StationDepartureConflict(
+        StationDepartureWindow Existing,
+        DateTimeOffset EarliestAllowedDeparture);
+
     /// <summary>Thoi gian quay dau toi thieu giua 2 chuyen cua cung mot tau.</summary>
     public static readonly TimeSpan BoatTurnaroundBuffer = TimeSpan.FromMinutes(15);
+
+    /// <summary>Cac chuyen xuat phat cung mot ben phai gian cach de staff check ve/len tau.</summary>
+    public static readonly TimeSpan StationDepartureBuffer = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// Chuyến phải được tạo trước giờ khởi hành ít nhất 20 phút để có thể mở bán/kiểm tra lịch.
@@ -110,6 +123,28 @@ internal static class TripScheduleSupport
     public static Guid ResolveEndStationId(IReadOnlyList<RouteStop> routeStops) =>
         routeStops.OrderBy(x => x.StopOrder).Last().StationId;
 
+    public static StationDepartureConflict? FindStationDepartureConflict(
+        StationDepartureWindow requested,
+        IEnumerable<StationDepartureWindow> existingWindows)
+    {
+        foreach (var existing in existingWindows
+            .Where(x => x.StationId == requested.StationId)
+            .OrderBy(x => x.DepartureTime))
+        {
+            var gap = (requested.DepartureTime - existing.DepartureTime).Duration();
+            if (gap >= StationDepartureBuffer)
+            {
+                continue;
+            }
+
+            return new StationDepartureConflict(
+                existing,
+                existing.DepartureTime.Add(StationDepartureBuffer));
+        }
+
+        return null;
+    }
+
     private static decimal? TryResolveTravelMinutes(
         IReadOnlyList<RouteStop> routeStops,
         Guid fromStationId,
@@ -169,5 +204,20 @@ internal static class TripScheduleSupport
             + (repositionDuration > TimeSpan.Zero
                 ? $" và {repositionDuration.TotalMinutes:0} phút để tàu di chuyển về bến xuất phát."
                 : ". ");
+    }
+
+    public static string BuildStationDepartureConflictMessage(
+        string? stationName,
+        string tripCode,
+        DateTimeOffset conflictDeparture,
+        DateTimeOffset earliestAllowedDeparture)
+    {
+        var localConflictDeparture = conflictDeparture.ToOffset(TimeSpan.FromHours(7));
+        var localEarliest = earliestAllowedDeparture.ToOffset(TimeSpan.FromHours(7));
+        var stationLabel = string.IsNullOrWhiteSpace(stationName) ? "bến này" : stationName;
+
+        return $"Bến {stationLabel} đã có chuyến {tripCode} xuất phát lúc {localConflictDeparture:HH:mm dd/MM/yyyy}. "
+            + $"Các chuyến cùng bến phải cách nhau tối thiểu {StationDepartureBuffer.TotalMinutes:0} phút để check vé/lên tàu. "
+            + $"Chuyến mới chỉ được khởi hành sớm nhất lúc {localEarliest:HH:mm dd/MM/yyyy}.";
     }
 }

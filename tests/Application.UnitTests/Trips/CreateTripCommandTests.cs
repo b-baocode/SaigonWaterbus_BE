@@ -299,6 +299,49 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task CreateTripRejectsDepartureFromSameStationWithinTenMinutes()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var stationC = Station("C", "Ben C");
+        var routeA = Route("R1", stationA, stationB);
+        var routeB = Route("R2", stationA, stationC);
+        var boatA = BoatWithSeats("BOAT-1", seatCount: 3);
+        var boatB = BoatWithSeats("BOAT-2", seatCount: 3);
+        var existingDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var existingTrip = new Trip
+        {
+            Route = routeA,
+            RouteId = routeA.Id,
+            Boat = boatA,
+            BoatId = boatA.Id,
+            TripCode = "TR-STATION",
+            OperatingDate = DateOnly.FromDateTime(existingDeparture.Date),
+            DepartureTime = existingDeparture.ToUniversalTime(),
+            ArrivalTime = existingDeparture.AddMinutes(30).ToUniversalTime(),
+            CapacitySnapshot = 3,
+            TripStatus = TripStatus.Scheduled
+        };
+
+        context.AddRange(routeA, routeB, boatA, boatB, existingTrip);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context)
+                .Handle(
+                    new CreateTripCommand(
+                        "R2",
+                        "BOAT-2",
+                        DateOnly.FromDateTime(existingDeparture.Date),
+                        existingDeparture.AddMinutes(5)),
+                    CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x).Single()
+            .ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 10 phút");
+    }
+
+    [Test]
     public async Task CreateTripReturnsEachStopExactlyOnce()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -606,6 +649,12 @@ public class CreateTripCommandTests
 
         result.Created.ShouldBe(2);
         result.SkippedBoatBusy.ShouldBe(1);
+        result.SkippedItems.ShouldNotBeNull();
+        result.SkippedItems.Single().RequestedDepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            .ShouldBe(new TimeSpan(8, 30, 0));
+        result.SkippedItems.Single().EarliestAllowedDepartureTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            .ShouldBe(new TimeSpan(8, 45, 0));
+        result.SkippedItems.Single().Reason.ShouldContain("Chuyến mới chỉ được khởi hành sớm nhất lúc");
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BB-20300101-R1-", StringComparison.Ordinal));
         context.Trips
             .OrderBy(x => x.DepartureTime)
@@ -614,6 +663,53 @@ public class CreateTripCommandTests
                 new TimeSpan(8, 0, 0),
                 new TimeSpan(9, 0, 0)
             ]);
+    }
+
+    [Test]
+    public async Task GenerateTripsReportsEarliestDepartureWhenStationIsBusy()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var routeA = Route("R1", stationA, Station("B", "Ben B"));
+        var routeB = Route("R2", stationA, Station("C", "Ben C"));
+        routeB.IsBookable = true;
+        var existingBoat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var newBoat = BoatWithSeats("BOAT-2", seatCount: 3);
+        var existingDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var existingTrip = new Trip
+        {
+            Route = routeA,
+            RouteId = routeA.Id,
+            Boat = existingBoat,
+            BoatId = existingBoat.Id,
+            TripCode = "TR-STATION",
+            OperatingDate = DateOnly.FromDateTime(existingDeparture.Date),
+            DepartureTime = existingDeparture.ToUniversalTime(),
+            ArrivalTime = existingDeparture.AddMinutes(30).ToUniversalTime(),
+            CapacitySnapshot = 3,
+            TripStatus = TripStatus.Scheduled
+        };
+        context.AddRange(routeA, routeB, existingBoat, newBoat, existingTrip);
+        await context.SaveChangesAsync();
+
+        var result = await new GenerateTripsCommandHandler(context)
+            .Handle(
+                new GenerateTripsCommand(
+                    RouteCode: "R2",
+                    BoatCode: "BOAT-2",
+                    DepartureTimes: [new TimeOnly(8, 5)],
+                    FromDate: DateOnly.FromDateTime(existingDeparture.Date),
+                    ToDate: DateOnly.FromDateTime(existingDeparture.Date)),
+                CancellationToken.None);
+
+        result.Created.ShouldBe(0);
+        result.SkippedStationBusy.ShouldBe(1);
+        result.SkippedItems.ShouldNotBeNull();
+        var skippedItem = result.SkippedItems.Single();
+        skippedItem.ConflictTripCode.ShouldBe("TR-STATION");
+        skippedItem.EarliestAllowedDepartureTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            .ShouldBe(new TimeSpan(8, 10, 0));
+        skippedItem.Reason.ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 10 phút");
     }
 
     [Test]

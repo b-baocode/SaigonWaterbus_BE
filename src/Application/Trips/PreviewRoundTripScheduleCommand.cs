@@ -26,6 +26,7 @@ public sealed record RoundTripSchedulePreviewResult(
     int SkippedBoatBusy,
     int SkippedDuplicateRouteTime,
     int SkippedMissingOnBoardStaff,
+    int SkippedStationBusy,
     IReadOnlyList<RoundTripSchedulePreviewItemDto> Items);
 
 public sealed record RoundTripSchedulePreviewItemDto(
@@ -157,6 +158,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         var rangeStart = ToUtc(request.FromDate, new TimeOnly(0, 0));
         var rangeEnd = ToUtc(request.ToDate, new TimeOnly(23, 59, 59));
         var boatSchedule = await LoadBoatScheduleAsync(boat.Id, rangeStart, rangeEnd, cancellationToken);
+        var stationDepartureSchedule = await LoadStationDepartureScheduleAsync(rangeStart, rangeEnd, cancellationToken);
         var allowedDays = request.DaysOfWeek is { Count: > 0 }
             ? request.DaysOfWeek.Select(d => (DayOfWeek)d).ToHashSet()
             : null;
@@ -165,6 +167,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         var skippedBoatBusy = 0;
         var skippedDuplicateRouteTime = 0;
         var skippedMissingOnBoardStaff = 0;
+        var skippedStationBusy = 0;
 
         for (var date = request.FromDate; date <= request.ToDate; date = date.AddDays(1))
         {
@@ -191,12 +194,14 @@ public sealed class PreviewRoundTripScheduleCommandHandler
                     plan,
                     existingDepartureKeys,
                     boatSchedule,
+                    stationDepartureSchedule,
                     cancellationToken);
                 items.Add(item);
 
                 if (item.CanCreate)
                 {
                     boatSchedule.Add(ToScheduleWindow(plan, item.DepartureTime, item.ArrivalTime, "(preview)"));
+                    stationDepartureSchedule.Add(ToStationDepartureWindow(plan, item.DepartureTime, "(preview)"));
                     existingDepartureKeys.Add((plan.Route.Id, item.DepartureTime));
                     departureTime = item.ArrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
                     direction = direction == RoundTripDirection.Outbound
@@ -212,6 +217,10 @@ public sealed class PreviewRoundTripScheduleCommandHandler
                 else if (item.Reason?.Contains("thiếu nhân viên OnBoard", StringComparison.OrdinalIgnoreCase) == true)
                 {
                     skippedMissingOnBoardStaff++;
+                }
+                else if (item.Reason?.Contains("Các chuyến cùng bến", StringComparison.OrdinalIgnoreCase) == true)
+                {
+                    skippedStationBusy++;
                 }
                 else
                 {
@@ -229,6 +238,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
             skippedBoatBusy,
             skippedDuplicateRouteTime,
             skippedMissingOnBoardStaff,
+            skippedStationBusy,
             items);
     }
 
@@ -306,6 +316,31 @@ public sealed class PreviewRoundTripScheduleCommandHandler
             .ToList();
     }
 
+    private async Task<List<TripScheduleSupport.StationDepartureWindow>> LoadStationDepartureScheduleAsync(
+        DateTimeOffset rangeStart,
+        DateTimeOffset rangeEnd,
+        CancellationToken cancellationToken)
+    {
+        return (await _context.Set<Trip>()
+                .AsNoTracking()
+                .Include(x => x.Route).ThenInclude(x => x.RouteStops).ThenInclude(x => x.Station)
+                .Where(x => x.TripStatus != TripStatus.Cancelled
+                    && x.DepartureTime >= rangeStart.Subtract(TripScheduleSupport.StationDepartureBuffer)
+                    && x.DepartureTime <= rangeEnd.Add(TripScheduleSupport.StationDepartureBuffer))
+                .ToListAsync(cancellationToken))
+            .Where(x => x.Route.RouteStops.Count >= 2)
+            .Select(x =>
+            {
+                var firstStop = x.Route.RouteStops.OrderBy(stop => stop.StopOrder).First();
+                return new TripScheduleSupport.StationDepartureWindow(
+                    x.TripCode,
+                    firstStop.StationId,
+                    firstStop.Station?.StationName,
+                    x.DepartureTime);
+            })
+            .ToList();
+    }
+
     private async Task<RoundTripSchedulePreviewItemDto> PreviewOneTripAsync(
         DateOnly date,
         Guid boatId,
@@ -313,6 +348,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         RoutePreviewPlan plan,
         HashSet<(Guid RouteId, DateTimeOffset DepartureTime)> existingDepartureKeys,
         IReadOnlyList<TripScheduleSupport.BoatScheduleWindow> boatSchedule,
+        IReadOnlyList<TripScheduleSupport.StationDepartureWindow> stationDepartureSchedule,
         CancellationToken cancellationToken)
     {
         var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
@@ -334,6 +370,25 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         }
 
         var requestedWindow = ToScheduleWindow(plan, departureTime, arrivalTime, "(preview)");
+        var stationConflict = TripScheduleSupport.FindStationDepartureConflict(
+            ToStationDepartureWindow(plan, departureTime, "(preview)"),
+            stationDepartureSchedule);
+        if (stationConflict is not null)
+        {
+            return ToItem(
+                date,
+                plan,
+                departureTime,
+                arrivalTime,
+                canCreate: false,
+                reason: TripScheduleSupport.BuildStationDepartureConflictMessage(
+                    stationConflict.Existing.StationName,
+                    stationConflict.Existing.TripCode,
+                    stationConflict.Existing.DepartureTime,
+                    stationConflict.EarliestAllowedDeparture),
+                suggestedNextDepartureTime: stationConflict.EarliestAllowedDeparture);
+        }
+
         var conflict = TripScheduleSupport.FindConflict(requestedWindow, boatSchedule);
         if (conflict is not null)
         {
@@ -381,6 +436,19 @@ public sealed class PreviewRoundTripScheduleCommandHandler
             TripScheduleSupport.ResolveStartStationId(plan.RouteStops),
             TripScheduleSupport.ResolveEndStationId(plan.RouteStops),
             plan.RouteStops);
+    }
+
+    private static TripScheduleSupport.StationDepartureWindow ToStationDepartureWindow(
+        RoutePreviewPlan plan,
+        DateTimeOffset departureTime,
+        string tripCode)
+    {
+        var firstStop = plan.RouteStops.OrderBy(x => x.StopOrder).First();
+        return new TripScheduleSupport.StationDepartureWindow(
+            tripCode,
+            firstStop.StationId,
+            firstStop.Station?.StationName,
+            departureTime);
     }
 
     private static RoundTripSchedulePreviewItemDto ToItem(

@@ -206,9 +206,11 @@ public sealed class Trips : IEndpointGroup
                 "Neu chuyen da ton tai (cung tuyen + cung gio), tu dong bo qua (skip).",
                 "Gio khoi hanh da troi qua HOAC cach hien tai chua du 20 phut cung bi bo qua, dem vao skippedPast.",
                 "CHAN TRUNG LICH TAU: chuyen nao lam tau chong gio voi chuyen khac (ke ca chuyen vua sinh trong cung lo) se bi bo qua va dem vao skippedBoatBusy. Giua 2 chuyen cua cung tau phai cach it nhat 15 phut quay dau.",
+                "CHAN TRUNG BEN: cac chuyen xuat phat cung mot ben phai cach nhau toi thieu 10 phut de staff check ve/len tau, neu khong se dem vao skippedStationBusy.",
+                "Moi chuyen bi bo qua nam trong skippedItems[] kem reason, conflictTripCode va earliestAllowedDepartureTime de FE hien gio som nhat co the chay lai.",
                 "Chuyen nao thieu 2 nhan vien OnBoard assignmentType=Boat phu thoi gian chuyen se bi bo qua va dem vao skippedMissingOnBoardStaff.",
                 "Vi du: route dai 3h41 ma dat departureTimes cach nhau 2h thi cac chuyen sau se bi skippedBoatBusy - can gian gio hoac dung tau khac.",
-                "Tra ve: { created, skipped, skippedBoatBusy, skippedPast, createdTripCodes, skippedMissingOnBoardStaff }."));
+                "Tra ve: { created, skipped, skippedBoatBusy, skippedStationBusy, skippedPast, createdTripCodes, skippedMissingOnBoardStaff, skippedItems }."));
 
         group.MapPost(PreviewRoundTripSchedule, "schedule/round-trip-preview")
             .RequireAuthorization()
@@ -220,6 +222,7 @@ public sealed class Trips : IEndpointGroup
                 "FE gui boatCode, route luot di, route luot ve, khoang ngay va gio bat dau/ket thuc.",
                 "Route luot ve phai bat dau tai ben cuoi cua route luot di va ket thuc tai ben dau cua route luot di.",
                 "BE tu xen luot di/luot ve theo cong thuc: departure chuyen sau = arrival chuyen truoc + 15 phut quay dau, vi tau dang o dung ben.",
+                "Cac chuyen xuat phat cung mot ben van phai cach nhau toi thieu 10 phut; neu khong item canCreate=false va dem vao skippedStationBusy.",
                 "Neu tau bi ban voi lich co san, item canCreate=false va reason/suggestedNextDepartureTime cho FE hien thi.",
                 "Neu route thuong co ben giua, FE gui outboundStops/inboundStops cho stayDurationMinutes cua tung ben giua.",
                 "Admin xem preview xong, FE dung cac item canCreate=true de goi POST /api/trips/schedule tao that."));

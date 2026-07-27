@@ -28,7 +28,20 @@ public sealed record GenerateTripsResult(
     /// <summary>Chuyến bị bỏ qua vì giờ chạy đã trôi qua hoặc cách hiện tại chưa đủ lead time tối thiểu.</summary>
     int SkippedPast,
     IReadOnlyList<string> CreatedTripCodes,
-    int SkippedMissingOnBoardStaff = 0);
+    int SkippedMissingOnBoardStaff = 0,
+    int SkippedStationBusy = 0,
+    IReadOnlyList<GenerateTripsSkippedItemDto>? SkippedItems = null);
+
+public sealed record GenerateTripsSkippedItemDto(
+    DateOnly OperatingDate,
+    string RouteCode,
+    DateTimeOffset RequestedDepartureTime,
+    DateTimeOffset? RequestedArrivalTime,
+    string Reason,
+    DateTimeOffset? EarliestAllowedDepartureTime = null,
+    string? ConflictTripCode = null,
+    DateTimeOffset? ConflictDepartureTime = null,
+    DateTimeOffset? ConflictArrivalTime = null);
 
 public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTripsCommand>
 {
@@ -168,7 +181,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
 
         var boatSchedule = (await _context.Set<Trip>()
                 .AsNoTracking()
-                .Include(t => t.Route).ThenInclude(r => r.RouteStops)
+                .Include(t => t.Route).ThenInclude(r => r.RouteStops).ThenInclude(x => x.Station)
                 .Where(t => t.BoatId == boat.Id
                     && t.TripStatus != TripStatus.Cancelled
                     && t.ArrivalTime >= rangeStart.AddDays(-1)
@@ -188,14 +201,35 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             })
             .ToList();
 
+        var stationDepartureSchedule = (await _context.Set<Trip>()
+                .AsNoTracking()
+                .Include(t => t.Route).ThenInclude(r => r.RouteStops).ThenInclude(x => x.Station)
+                .Where(t => t.TripStatus != TripStatus.Cancelled
+                    && t.DepartureTime >= rangeStart.Subtract(TripScheduleSupport.StationDepartureBuffer)
+                    && t.DepartureTime <= rangeEnd.Add(TripScheduleSupport.StationDepartureBuffer))
+                .ToListAsync(cancellationToken))
+            .Where(t => t.Route.RouteStops.Count >= 2)
+            .Select(t =>
+            {
+                var firstStop = t.Route.RouteStops.OrderBy(stop => stop.StopOrder).First();
+                return new TripScheduleSupport.StationDepartureWindow(
+                    t.TripCode,
+                    firstStop.StationId,
+                    firstStop.Station?.StationName,
+                    t.DepartureTime);
+            })
+            .ToList();
+
         var skippedBoatBusy = 0;
 
         var tripsToAdd = new List<Trip>();
         var tripSeatsToAdd = new List<TripSeat>();
         var createdCodes = new List<string>();
+        var skippedItems = new List<GenerateTripsSkippedItemDto>();
         int skipped = 0;
         int skippedPast = 0;
         int skippedMissingOnBoardStaff = 0;
+        int skippedStationBusy = 0;
         var now = DateTimeOffset.UtcNow;
 
         async Task<DateTimeOffset> TryCreateTripAsync(DateOnly date, DateTimeOffset departureTime)
@@ -206,6 +240,13 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             {
                 skippedPast++;
                 var minimumDeparture = now.Add(TripScheduleSupport.MinimumCreationLeadTime);
+                skippedItems.Add(new GenerateTripsSkippedItemDto(
+                    date,
+                    route.RouteCode,
+                    departureTime,
+                    RequestedArrivalTime: null,
+                    TripScheduleSupport.BuildTooSoonMessage(),
+                    minimumDeparture));
                 return minimumDeparture > departureTime
                     ? minimumDeparture
                     : departureTime.AddMinutes(5);
@@ -214,6 +255,13 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             if (existingDepartures.Contains(departureTime))
             {
                 skipped++;
+                skippedItems.Add(new GenerateTripsSkippedItemDto(
+                    date,
+                    route.RouteCode,
+                    departureTime,
+                    RequestedArrivalTime: null,
+                    "Tuyến đã có chuyến cùng giờ.",
+                    departureTime.Add(TripScheduleSupport.BoatTurnaroundBuffer)));
                 return departureTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
             }
 
@@ -229,21 +277,72 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                 routeStartStationId,
                 routeEndStationId,
                 routeStops);
+            var requestedStationWindow = new TripScheduleSupport.StationDepartureWindow(
+                "(new)",
+                routeStartStationId,
+                routeStops[0].Station?.StationName,
+                departureTime);
+
+            var stationConflict = TripScheduleSupport.FindStationDepartureConflict(
+                requestedStationWindow,
+                stationDepartureSchedule);
+            if (stationConflict is not null)
+            {
+                skippedStationBusy++;
+                skippedItems.Add(new GenerateTripsSkippedItemDto(
+                    date,
+                    route.RouteCode,
+                    departureTime,
+                    arrivalTime,
+                    TripScheduleSupport.BuildStationDepartureConflictMessage(
+                        stationConflict.Existing.StationName,
+                        stationConflict.Existing.TripCode,
+                        stationConflict.Existing.DepartureTime,
+                        stationConflict.EarliestAllowedDeparture),
+                    stationConflict.EarliestAllowedDeparture,
+                    stationConflict.Existing.TripCode,
+                    stationConflict.Existing.DepartureTime,
+                    ConflictArrivalTime: null));
+                return stationConflict.EarliestAllowedDeparture;
+            }
 
             // Tau da ban trong khung gio nay (ke ca chuyen vua sinh trong lo nay) -> bo qua.
             var conflict = TripScheduleSupport.FindConflict(requestedWindow, boatSchedule);
             if (conflict is not null)
             {
                 skippedBoatBusy++;
-                return conflict.Existing.DepartureTime > departureTime
+                var earliestAllowedDepartureTime = conflict.Existing.DepartureTime > departureTime
                     ? TripScheduleSupport.ResolveEarliestDepartureAfter(conflict.Existing, requestedWindow)
                     : conflict.EarliestAllowedDeparture;
+                skippedItems.Add(new GenerateTripsSkippedItemDto(
+                    date,
+                    route.RouteCode,
+                    departureTime,
+                    arrivalTime,
+                    TripScheduleSupport.BuildLocationAwareConflictMessage(
+                        conflict.Existing.TripCode,
+                        conflict.Existing.DepartureTime,
+                        conflict.Existing.ArrivalTime,
+                        earliestAllowedDepartureTime,
+                        conflict.RepositionDuration),
+                    earliestAllowedDepartureTime,
+                    conflict.Existing.TripCode,
+                    conflict.Existing.DepartureTime,
+                    conflict.Existing.ArrivalTime));
+                return earliestAllowedDepartureTime;
             }
 
             if (!await OnBoardStaffTripSupport.HasRequiredOnBoardStaffAsync(
                     _context, boat.Id, departureTime, arrivalTime, cancellationToken))
             {
                 skippedMissingOnBoardStaff++;
+                skippedItems.Add(new GenerateTripsSkippedItemDto(
+                    date,
+                    route.RouteCode,
+                    departureTime,
+                    arrivalTime,
+                    "Tàu thiếu nhân viên OnBoard trong khung giờ này.",
+                    arrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer)));
                 return arrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
             }
 
@@ -269,6 +368,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             TripStopScheduleSupport.CreateTripStops(trip, stopDrafts);
             existingDepartures.Add(departureTime);
             boatSchedule.Add(requestedWindow with { TripCode = tripCode });
+            stationDepartureSchedule.Add(requestedStationWindow with { TripCode = tripCode });
 
             foreach (var seat in activeSeats)
                 tripSeatsToAdd.Add(new TripSeat
@@ -313,7 +413,9 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             skippedBoatBusy,
             skippedPast,
             createdCodes,
-            skippedMissingOnBoardStaff);
+            skippedMissingOnBoardStaff,
+            skippedStationBusy,
+            skippedItems);
     }
 
     private static IReadOnlyList<TimeOnly> ResolveDepartureTimes(GenerateTripsCommand request)
