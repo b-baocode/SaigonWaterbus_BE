@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260726100901_DecoupleLandmarkFromRoute")]
+    partial class DecoupleLandmarkFromRoute
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -3397,11 +3400,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("name");
 
-                    b.Property<string>("RefAudioUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("ref_audio_url");
-
                     b.Property<string>("Region")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
@@ -3422,6 +3420,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnName("updated_at");
 
                     b.Property<string>("VieneuVoiceId")
+                        .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("vieneu_voice_id");

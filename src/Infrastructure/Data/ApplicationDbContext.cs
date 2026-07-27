@@ -32,6 +32,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<RouteStop> RouteStops => Set<RouteStop>();
 
+    public DbSet<LandmarkAudio> LandmarkAudios => Set<LandmarkAudio>();
+
+    public DbSet<Voice> Voices => Set<Voice>();
+
     public DbSet<Trip> Trips => Set<Trip>();
 
     public DbSet<Promotion> Promotions => Set<Promotion>();

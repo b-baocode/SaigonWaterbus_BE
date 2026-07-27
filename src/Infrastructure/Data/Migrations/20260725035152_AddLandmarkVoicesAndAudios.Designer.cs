@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260725035152_AddLandmarkVoicesAndAudios")]
+    partial class AddLandmarkVoicesAndAudios
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1651,6 +1654,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("numeric(10,7)")
                         .HasColumnName("longitude");
 
+                    b.Property<Guid>("RouteId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("route_id");
+
                     b.Property<int>("TriggerRadiusMeters")
                         .HasColumnType("integer")
                         .HasColumnName("trigger_radius_m");
@@ -1661,7 +1668,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("IsActive", "DisplayOrder");
+                    b.HasIndex("RouteId", "DisplayOrder");
 
                     b.ToTable("landmarks", (string)null);
                 });
@@ -3397,11 +3404,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(150)")
                         .HasColumnName("name");
 
-                    b.Property<string>("RefAudioUrl")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("ref_audio_url");
-
                     b.Property<string>("Region")
                         .HasMaxLength(20)
                         .HasColumnType("character varying(20)")
@@ -3422,6 +3424,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnName("updated_at");
 
                     b.Property<string>("VieneuVoiceId")
+                        .IsRequired()
                         .HasMaxLength(150)
                         .HasColumnType("character varying(150)")
                         .HasColumnName("vieneu_voice_id");
@@ -3954,6 +3957,17 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Trip");
                 });
 
+            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Landmark", b =>
+                {
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Route", "Route")
+                        .WithMany("Landmarks")
+                        .HasForeignKey("RouteId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Route");
+                });
+
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.LandmarkAudio", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Landmark", "Landmark")
@@ -4389,6 +4403,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Route", b =>
                 {
+                    b.Navigation("Landmarks");
+
                     b.Navigation("RouteStops");
 
                     b.Navigation("Trips");
