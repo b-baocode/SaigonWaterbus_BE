@@ -6,6 +6,9 @@ public sealed class Assistant : IEndpointGroup
 {
     public static string RoutePrefix => "/api/assistant";
 
+    /// <summary>Tên policy rate limit áp cho endpoint chat (đăng ký ở AddWebServices).</summary>
+    public const string RateLimitPolicy = "AssistantChat";
+
     private const string ChatExample =
         """
         {
@@ -19,6 +22,7 @@ public sealed class Assistant : IEndpointGroup
     {
         group.MapPost(Chat, "chat")
             .AllowAnonymous()
+            .RequireRateLimiting(RateLimitPolicy)
             .WithSummary("Chat voi tro ly ao Saigon Waterbus")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous",

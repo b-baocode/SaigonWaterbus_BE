@@ -1,7 +1,9 @@
 using System.Text;
 using System.Text.Json.Serialization;
+using System.Threading.RateLimiting;
 using Azure.Identity;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.ResponseCompression;
 using Microsoft.IdentityModel.Tokens;
@@ -18,6 +20,18 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class DependencyInjection
 {
+    /// <summary>Khóa phân vùng rate limit: IP client thật (X-Forwarded-For sau proxy Azure).</summary>
+    private static string ResolveClientKey(HttpContext context)
+    {
+        var forwarded = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(forwarded))
+        {
+            return forwarded.Split(',')[0].Trim();
+        }
+
+        return context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+    }
+
     public static void AddWebServices(this IHostApplicationBuilder builder)
     {
         var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
@@ -112,6 +126,24 @@ public static class DependencyInjection
             });
 
         builder.Services.AddAuthorization();
+
+        // Rate limit cho endpoint tốn kém (chatbox gọi LLM). Chặn spam/lạm dụng chi phí.
+        // Phân vùng theo IP client (ưu tiên X-Forwarded-For vì sau reverse proxy của Azure).
+        var assistantPermit = builder.Configuration.GetValue<int?>("RateLimiting:AssistantChatPerWindow") ?? 8;
+        var assistantWindowSeconds = builder.Configuration.GetValue<int?>("RateLimiting:AssistantChatWindowSeconds") ?? 60;
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+            options.AddPolicy(SaigonWaterbus.Web.Endpoints.Assistant.RateLimitPolicy, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: ResolveClientKey(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = assistantPermit,
+                        Window = TimeSpan.FromSeconds(assistantWindowSeconds),
+                        QueueLimit = 0,
+                    }));
+        });
 
         builder.Services.AddSwaggerGen(options =>
         {

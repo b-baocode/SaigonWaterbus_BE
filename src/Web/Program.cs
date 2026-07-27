@@ -170,6 +170,7 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseCors("FrontendClientPolicy");
 app.UseResponseCompression();
+app.UseRateLimiter();
 app.UseAuthentication();
 app.UseAuthorization();
 
