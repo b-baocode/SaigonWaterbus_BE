@@ -1,6 +1,8 @@
+using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Trips;
 
@@ -22,6 +24,72 @@ internal static class TripStopScheduleSupport
 {
     /// <summary>Thoi gian chay mac dinh giua 2 ben khi route stop chua co standard_travel_min.</summary>
     public const decimal DefaultTravelMinutes = 15m;
+
+    public static IReadOnlyDictionary<int, int>? ResolveStayDurationMinutesByStopOrder(
+        Route route,
+        IReadOnlyList<CreateTripStopScheduleInput>? stops,
+        string propertyName)
+    {
+        var orderedStops = route.RouteStops.OrderBy(x => x.StopOrder).ToList();
+        if (orderedStops.Count == 0)
+        {
+            return null;
+        }
+
+        var routeStopOrders = orderedStops.Select(x => x.StopOrder).ToHashSet();
+        var firstStopOrder = orderedStops[0].StopOrder;
+        var lastStopOrder = orderedStops[^1].StopOrder;
+        var intermediateStopOrders = orderedStops
+            .Where(x => x.StopOrder != firstStopOrder && x.StopOrder != lastStopOrder)
+            .Select(x => x.StopOrder)
+            .ToList();
+        var requiresExplicitStayDurations = route.RouteType == RouteTypes.Regular
+            && intermediateStopOrders.Count > 0;
+
+        if (requiresExplicitStayDurations && stops is not { Count: > 0 })
+        {
+            throw new ValidationException([new ValidationFailure(propertyName,
+                "stops là bắt buộc với tuyến thường có bến giữa; nhập stayDurationMinutes cho từng bến giữa tuyến.")]);
+        }
+
+        var result = new Dictionary<int, int>();
+
+        foreach (var stop in stops ?? [])
+        {
+            if (!routeStopOrders.Contains(stop.StopOrder))
+            {
+                throw new ValidationException([new ValidationFailure(propertyName,
+                    $"stopOrder {stop.StopOrder} không thuộc route đã chọn.")]);
+            }
+
+            if (stop.StopOrder == firstStopOrder || stop.StopOrder == lastStopOrder)
+            {
+                if (stop.StayDurationMinutes != 0)
+                {
+                    throw new ValidationException([new ValidationFailure(propertyName,
+                        "stayDurationMinutes chỉ áp dụng cho các bến giữa tuyến.")]);
+                }
+
+                continue;
+            }
+
+            result[stop.StopOrder] = stop.StayDurationMinutes;
+        }
+
+        if (requiresExplicitStayDurations)
+        {
+            var missingStopOrders = intermediateStopOrders
+                .Where(stopOrder => !result.ContainsKey(stopOrder))
+                .ToList();
+            if (missingStopOrders.Count > 0)
+            {
+                throw new ValidationException([new ValidationFailure(propertyName,
+                    $"Thiếu stayDurationMinutes cho bến giữa stopOrder: {string.Join(", ", missingStopOrders)}.")]);
+            }
+        }
+
+        return result.Count == 0 ? null : result;
+    }
 
     /// <summary>
     /// Lich trinh waterbus thuong tu route stops: standardTravelMin cua stop i la phut chay

@@ -93,7 +93,10 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
         var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
             route.RouteStops,
             departureTime,
-            ResolveStayDurationMinutesByStopOrder(route, request.Stops));
+            TripStopScheduleSupport.ResolveStayDurationMinutesByStopOrder(
+                route,
+                request.Stops,
+                nameof(request.Stops)));
         var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
         await EnsureNoRouteDepartureConflictAsync(route.Id, departureTime, cancellationToken);
@@ -192,71 +195,6 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         return await query.SingleOrDefaultAsync(r => r.RouteCode == routeCode, cancellationToken)
             ?? throw new NotFoundException($"Route '{routeCode}' not found, inactive, or not bookable.");
-    }
-
-    private static IReadOnlyDictionary<int, int>? ResolveStayDurationMinutesByStopOrder(
-        Route route,
-        IReadOnlyList<CreateTripStopScheduleInput>? stops)
-    {
-        if (stops is not { Count: > 0 })
-        {
-            return null;
-        }
-
-        var orderedStops = route.RouteStops.OrderBy(x => x.StopOrder).ToList();
-        var routeStopOrders = orderedStops.Select(x => x.StopOrder).ToHashSet();
-        var firstStopOrder = orderedStops[0].StopOrder;
-        var lastStopOrder = orderedStops[^1].StopOrder;
-        var intermediateStopOrders = orderedStops
-            .Where(x => x.StopOrder != firstStopOrder && x.StopOrder != lastStopOrder)
-            .Select(x => x.StopOrder)
-            .ToList();
-        var requiresExplicitStayDurations = route.RouteType == RouteTypes.Regular
-            && intermediateStopOrders.Count > 0;
-
-        if (requiresExplicitStayDurations && stops is not { Count: > 0 })
-        {
-            throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
-                "stops là bắt buộc với tuyến thường có bến giữa; nhập stayDurationMinutes cho từng bến giữa tuyến.")]);
-        }
-
-        var result = new Dictionary<int, int>();
-
-        foreach (var stop in stops ?? [])
-        {
-            if (!routeStopOrders.Contains(stop.StopOrder))
-            {
-                throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
-                    $"stopOrder {stop.StopOrder} không thuộc route đã chọn.")]);
-            }
-
-            if (stop.StopOrder == firstStopOrder || stop.StopOrder == lastStopOrder)
-            {
-                if (stop.StayDurationMinutes != 0)
-                {
-                    throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
-                        "stayDurationMinutes chỉ áp dụng cho các bến giữa tuyến.")]);
-                }
-
-                continue;
-            }
-
-            result[stop.StopOrder] = stop.StayDurationMinutes;
-        }
-
-        if (requiresExplicitStayDurations)
-        {
-            var missingStopOrders = intermediateStopOrders
-                .Where(stopOrder => !result.ContainsKey(stopOrder))
-                .ToList();
-            if (missingStopOrders.Count > 0)
-            {
-                throw new ValidationException([new ValidationFailure(nameof(CreateTripCommand.Stops),
-                    $"Thiếu stayDurationMinutes cho bến giữa stopOrder: {string.Join(", ", missingStopOrders)}.")]);
-            }
-        }
-
-        return result.Count == 0 ? null : result;
     }
 
     /// <summary>

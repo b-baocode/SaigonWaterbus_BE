@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Trips;
@@ -479,6 +480,47 @@ public class CreateTripCommandTests
                 new TimeSpan(8, 30, 0),
                 new TimeSpan(9, 0, 0)
             ]);
+    }
+
+    [Test]
+    public async Task GenerateTripsUsesStopStayDurationForIntermediateStops()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"), Station("C", "Ben C"));
+        route.IsBookable = true;
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 20;
+        route.RouteStops.Single(x => x.StopOrder == 3).StandardTravelMin = 20;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(
+            context,
+            boat,
+            new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
+
+        var result = await new GenerateTripsCommandHandler(context)
+            .Handle(
+                new GenerateTripsCommand(
+                    RouteCode: "R1",
+                    BoatCode: "BOAT-1",
+                    DepartureTimes: [new TimeOnly(8, 0)],
+                    FromDate: date,
+                    ToDate: date,
+                    Stops: [new CreateTripStopScheduleInput(2, 5)]),
+                CancellationToken.None);
+
+        result.Created.ShouldBe(1);
+        var trip = await context.Trips
+            .Include(x => x.TripStops)
+            .SingleAsync();
+        var stop = trip.TripStops.Single(x => x.StopOrder == 2);
+        stop.StayDurationMinutes.ShouldBe(5);
+        stop.PlannedArrivalTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            .ShouldBe(new TimeSpan(8, 20, 0));
+        stop.PlannedDepartureTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            .ShouldBe(new TimeSpan(8, 25, 0));
+        trip.ArrivalTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay.ShouldBe(new TimeSpan(8, 45, 0));
     }
 
     [Test]

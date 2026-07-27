@@ -18,7 +18,8 @@ public sealed record GenerateTripsCommand(
     IReadOnlyList<int>? DaysOfWeek = null,
     TimeOnly? StartTime = null,
     TimeOnly? EndTime = null,
-    int? IntervalMinutes = null) : IRequest<GenerateTripsResult>;
+    int? IntervalMinutes = null,
+    IReadOnlyList<CreateTripStopScheduleInput>? Stops = null) : IRequest<GenerateTripsResult>;
 
 public sealed record GenerateTripsResult(
     int Created,
@@ -62,6 +63,19 @@ public sealed class GenerateTripsCommandValidator : AbstractValidator<GenerateTr
             .Must(days => days == null || (days.Count > 0 && days.All(d => d is >= 0 and <= 6)))
             .WithMessage("DaysOfWeek values must be 0–6 (0=Sunday, 6=Saturday).")
             .When(x => x.DaysOfWeek is not null);
+        RuleFor(x => x.Stops!)
+            .Must(stops => stops.Select(x => x.StopOrder).Distinct().Count() == stops.Count)
+            .WithMessage("stops không được trùng stopOrder.")
+            .When(x => x.Stops is not null);
+        RuleForEach(x => x.Stops).ChildRules(stop =>
+        {
+            stop.RuleFor(x => x.StopOrder)
+                .GreaterThan(0)
+                .WithMessage("stopOrder phải lớn hơn 0.");
+            stop.RuleFor(x => x.StayDurationMinutes)
+                .InclusiveBetween(0, 24 * 60)
+                .WithMessage("stayDurationMinutes phải từ 0 đến 1440 phút.");
+        });
     }
 
     private static bool HasExplicitDepartureTimes(GenerateTripsCommand command) =>
@@ -129,6 +143,10 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             .ToHashSetAsync(cancellationToken);
 
         var departureTimes = ResolveDepartureTimes(request);
+        var stayDurationMinutesByStopOrder = TripStopScheduleSupport.ResolveStayDurationMinutesByStopOrder(
+            route,
+            request.Stops,
+            nameof(request.Stops));
         var allowedDays = request.DaysOfWeek is { Count: > 0 }
             ? request.DaysOfWeek.Select(d => (DayOfWeek)d).ToHashSet()
             : null;
@@ -188,7 +206,10 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                     continue;
                 }
 
-                var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(route.RouteStops, departureTime);
+                var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
+                    route.RouteStops,
+                    departureTime,
+                    stayDurationMinutesByStopOrder);
                 var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
                 // Tau da ban trong khung gio nay (ke ca chuyen vua sinh trong lo nay) -> bo qua.
