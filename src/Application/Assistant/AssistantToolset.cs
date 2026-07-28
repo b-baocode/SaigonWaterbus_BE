@@ -4,6 +4,8 @@ using System.Text.Json;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Stations;
 using SaigonWaterbus.Application.Trips;
+using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Assistant;
 
@@ -18,8 +20,15 @@ namespace SaigonWaterbus.Application.Assistant;
 public sealed class AssistantToolset
 {
     private readonly ISender _sender;
+    private readonly IApplicationDbContext _context;
 
-    public AssistantToolset(ISender sender) => _sender = sender;
+    public AssistantToolset(ISender sender, IApplicationDbContext context)
+    {
+        _sender = sender;
+        // Bảng giá thuê tàu chỉ có query dành cho Admin/Manager, mà trợ lý chạy ẩn danh —
+        // nên đọc thẳng bảng (chỉ đọc) thay vì nới quyền của query đó.
+        _context = context;
+    }
 
     public IReadOnlyList<ChatToolDefinition> Definitions { get; } = BuildDefinitions();
 
@@ -31,6 +40,7 @@ public sealed class AssistantToolset
             {
                 "list_stations" => await ListStationsAsync(cancellationToken),
                 "search_trips" => await SearchTripsAsync(arguments, cancellationToken),
+                "get_charter_prices" => await GetCharterPricesAsync(cancellationToken),
                 _ => Error($"Tool '{name}' không tồn tại."),
             };
         }
@@ -138,6 +148,53 @@ public sealed class AssistantToolset
             .Trim();
     }
 
+    /// <summary>
+    /// Bảng giá thuê nguyên tàu: đơn giá theo (số tầng × đơn vị thuê), kèm đội tàu hiện có
+    /// để khách ước lượng sức chứa. Giá chốt cuối vẫn do nhân viên báo, tool chỉ đưa đơn giá.
+    /// </summary>
+    private async Task<string> GetCharterPricesAsync(CancellationToken cancellationToken)
+    {
+        var policies = await _context.Set<CharterBoatRentalPricePolicy>()
+            .AsNoTracking()
+            .OrderBy(x => x.NumberOfDecks).ThenBy(x => x.RentalUnit)
+            .Select(x => new
+            {
+                decks = x.NumberOfDecks,
+                unit = x.RentalUnit == BoatRentalUnit.Hour ? "gio" : "ngay",
+                unit_price = x.UnitPrice,
+                currency = x.Currency,
+            })
+            .ToListAsync(cancellationToken);
+
+        if (policies.Count == 0)
+        {
+            return Error("Hệ thống chưa cấu hình bảng giá thuê tàu. Hãy mời khách liên hệ nhân viên "
+                       + "để được báo giá, và đừng tự đưa ra con số nào.");
+        }
+
+        var fleet = await _context.Boats
+            .AsNoTracking()
+            .GroupBy(x => x.NumberOfDecks)
+            .Select(g => new
+            {
+                decks = g.Key,
+                so_tau = g.Count(),
+                suc_chua_min = g.Min(x => x.SeatCount),
+                suc_chua_max = g.Max(x => x.SeatCount),
+            })
+            .OrderBy(x => x.decks)
+            .ToListAsync(cancellationToken);
+
+        return JsonSerializer.Serialize(new
+        {
+            bang_gia_thue = policies,
+            doi_tau = fleet,
+            cach_tinh = "Tam tinh = don gia x thoi luong thue (thue theo gio thi tinh theo so gio "
+                      + "thuc te, theo ngay thi tinh theo so ngay). Chua gom bao hiem va khuyen mai. "
+                      + "Bao gia chinh thuc do nhan vien chot sau khi khach gui yeu cau thue tau.",
+        });
+    }
+
     private static string StationNames(IReadOnlyList<StationDto> stations) =>
         string.Join(", ", stations.Select(s => s.StationName));
 
@@ -175,6 +232,15 @@ public sealed class AssistantToolset
               },
               "required": ["from_station", "to_station", "date"]
             }
+            """)),
+
+        new ChatToolDefinition(
+            "get_charter_prices",
+            "Lấy bảng giá thuê NGUYÊN CHIẾC tàu (charter) theo số tầng và đơn vị thuê (giờ/ngày), "
+            + "kèm đội tàu hiện có. Gọi khi khách hỏi giá thuê tàu, thuê bao trọn chuyến, thuê tàu "
+            + "tổ chức tiệc/sự kiện, hoặc hỏi tàu chứa được bao nhiêu người.",
+            ParseSchema("""
+            { "type": "object", "properties": {} }
             """)),
     ];
 
