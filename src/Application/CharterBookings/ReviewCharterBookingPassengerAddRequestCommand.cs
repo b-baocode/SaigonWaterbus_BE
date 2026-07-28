@@ -117,7 +117,7 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
             booking,
             _timeProvider,
             cancellationToken);
-        CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
+        var additionalInsuranceAmount = CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
             booking,
             approvedPassengers.Count,
             now);
@@ -133,7 +133,7 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
             cancellationToken);
         await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
 
-        return ToResult(booking, ticketResult?.Tickets);
+        return ToResult(booking, ticketResult?.Tickets, additionalInsuranceAmount);
     }
 
     private async Task<Booking> LoadBookingAsync(Guid bookingId, CancellationToken cancellationToken) =>
@@ -252,23 +252,9 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
 
     private static UpdateCharterBookingPassengersResult ToResult(
         Booking booking,
-        IReadOnlyList<Ticket>? tickets = null)
-    {
-        var displayTickets = tickets ?? CharterBookingTicketSupport.GetDisplayTickets(booking.Tickets);
-        return new UpdateCharterBookingPassengersResult(
-            booking.Id,
-            booking.CharterBookingQrToken,
-            booking.PassengerCount.GetValueOrDefault(),
-            booking.Passengers.Count,
-            CharterBookingPassengerSupport.CountAdults(booking.Passengers),
-            CharterBookingPassengerSupport.CountChildren(booking.Passengers),
-            booking.Passengers
-                .OrderBy(x => x.FullName)
-                .Select(CharterBookingPassengerSupport.ToDto)
-                .ToList(),
-            displayTickets.Count,
-            displayTickets.Select(CharterBookingTicketSupport.ToDto).ToList());
-    }
+        IReadOnlyList<Ticket>? tickets = null,
+        decimal additionalInsuranceAmount = 0m) =>
+        CharterBookingPassengerResultSupport.ToUpdateResult(booking, tickets, additionalInsuranceAmount);
 
     private static string SanitizeFileName(string value)
     {
@@ -351,19 +337,6 @@ public sealed class RejectCharterBookingPassengerAddRequestCommandHandler
                 now),
             cancellationToken);
 
-        var displayTickets = CharterBookingTicketSupport.GetDisplayTickets(booking.Tickets);
-        return new UpdateCharterBookingPassengersResult(
-            booking.Id,
-            booking.CharterBookingQrToken,
-            booking.PassengerCount.GetValueOrDefault(),
-            booking.Passengers.Count,
-            CharterBookingPassengerSupport.CountAdults(booking.Passengers),
-            CharterBookingPassengerSupport.CountChildren(booking.Passengers),
-            booking.Passengers
-                .OrderBy(x => x.FullName)
-                .Select(CharterBookingPassengerSupport.ToDto)
-                .ToList(),
-            displayTickets.Count,
-            displayTickets.Select(CharterBookingTicketSupport.ToDto).ToList());
+        return CharterBookingPassengerResultSupport.ToUpdateResult(booking);
     }
 }

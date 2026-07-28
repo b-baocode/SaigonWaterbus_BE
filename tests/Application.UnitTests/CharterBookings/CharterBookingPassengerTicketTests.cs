@@ -142,10 +142,53 @@ public class CharterBookingPassengerTicketTests
                 System.Text.Encoding.UTF8.GetBytes(csv)),
             CancellationToken.None);
 
-        result.PassengerCount.ShouldBe(2);
+        result.PassengerCount.ShouldBe(3);
         result.RegisteredPassengerCount.ShouldBe(3);
         result.AdultCount.ShouldBe(3);
         result.TicketCount.ShouldBe(3);
+    }
+
+    [Test]
+    public async Task ImportingPassengersWithInsuranceRequiresAdditionalPaymentForNewPassengers()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        booking.ContactEmail = "customer@example.test";
+        booking.InsuranceSnapshot = InsuranceSnapshot(unitPremiumAmount: 10_000m, quantity: 2);
+        booking.SubtotalAmount += booking.InsuranceSnapshot.TotalAmount;
+        booking.TotalAmount += booking.InsuranceSnapshot.TotalAmount;
+        booking.DepositAmount = booking.TotalAmount;
+        booking.RemainingAmount = 0m;
+        booking.Payments.Add(PaidPayment(booking.TotalAmount));
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateImportHandler(context, userId, new TestPaymentNotificationSender());
+        var csv = "fullName,birthYear\nNguyen Van A,1990\nTran Thi B,1992\nLe Van C,1988\n";
+
+        var result = await handler.Handle(
+            new ImportCharterBookingPassengersCommand(
+                booking.Id,
+                "passengers.csv",
+                System.Text.Encoding.UTF8.GetBytes(csv)),
+            CancellationToken.None);
+
+        result.PassengerCount.ShouldBe(3);
+        result.RegisteredPassengerCount.ShouldBe(3);
+        result.PaymentStatus.ShouldBe("DepositPaid");
+        result.RequiresAdditionalPayment.ShouldBeTrue();
+        result.AdditionalInsuranceAmount.ShouldBe(10_000m);
+        result.TotalAmount.ShouldBe(1_030_000m);
+        result.DepositAmount.ShouldBe(1_020_000m);
+        result.RemainingAmount.ShouldBe(10_000m);
+        result.Insurance.ShouldNotBeNull().Quantity.ShouldBe(3);
+
+        var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
+        savedBooking.InsuranceSnapshot.ShouldNotBeNull().TotalAmount.ShouldBe(30_000m);
+        savedBooking.RemainingAmount.ShouldBe(10_000m);
     }
 
     [Test]
@@ -209,6 +252,10 @@ public class CharterBookingPassengerTicketTests
             CancellationToken.None);
 
         approved.TicketCount.ShouldBe(3);
+        approved.PaymentStatus.ShouldBe("Paid");
+        approved.RequiresAdditionalPayment.ShouldBeFalse();
+        approved.AdditionalInsuranceAmount.ShouldBe(0m);
+        approved.RemainingAmount.ShouldBe(0m);
         var activeTickets = context.Tickets
             .Where(x => x.TicketStatus == TicketStatus.Active)
             .ToArray();
@@ -220,6 +267,71 @@ public class CharterBookingPassengerTicketTests
         context.Set<BookingPassenger>().Single(x => x.FullName == "Le Van C")
             .ApprovalStatus.ShouldBe(CharterBookingPassengerSupport.ApprovalStatusApproved);
         notificationSender.BoardingPasses.Single().Attachments.ShouldNotBeNull().Single().Content.ShouldBe([1, 2, 3]);
+    }
+
+    [Test]
+    public async Task ApprovingPassengerAddRequestWithInsuranceRequiresAdditionalPayment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        booking.ContactEmail = "customer@example.test";
+        booking.InsuranceSnapshot = InsuranceSnapshot(unitPremiumAmount: 10_000m, quantity: 2);
+        booking.SubtotalAmount += booking.InsuranceSnapshot.TotalAmount;
+        booking.TotalAmount += booking.InsuranceSnapshot.TotalAmount;
+        booking.DepositAmount = booking.TotalAmount;
+        booking.RemainingAmount = 0m;
+        booking.Payments.Add(PaidPayment(booking.TotalAmount));
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var updateHandler = CreateUpdateHandler(context, userId);
+        await updateHandler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
+                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                ]),
+            CancellationToken.None);
+
+        var addHandler = CreateAddHandler(context, userId);
+        await addHandler.Handle(
+            new AddCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+            CancellationToken.None);
+
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var notificationSender = new TestPaymentNotificationSender();
+        var approveHandler = CreateApproveHandler(context, adminContext.UserId!.Value, notificationSender);
+        var requestBatchId = context.Set<BookingPassenger>()
+            .Single(x => x.FullName == "Le Van C")
+            .RequestBatchId
+            .ShouldNotBeNull();
+
+        var result = await approveHandler.Handle(
+            new ApproveCharterBookingPassengerAddRequestCommand(booking.Id, requestBatchId),
+            CancellationToken.None);
+
+        result.TicketCount.ShouldBe(3);
+        result.PaymentStatus.ShouldBe("DepositPaid");
+        result.RequiresAdditionalPayment.ShouldBeTrue();
+        result.AdditionalInsuranceAmount.ShouldBe(10_000m);
+        result.TotalAmount.ShouldBe(1_030_000m);
+        result.DepositAmount.ShouldBe(1_020_000m);
+        result.RemainingAmount.ShouldBe(10_000m);
+        result.Insurance.ShouldNotBeNull().Quantity.ShouldBe(3);
+
+        var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
+        savedBooking.PaymentStatus.ShouldBe("DepositPaid");
+        savedBooking.DepositAmount.ShouldBe(1_020_000m);
+        savedBooking.RemainingAmount.ShouldBe(10_000m);
+        savedBooking.InsuranceSnapshot.ShouldNotBeNull().Quantity.ShouldBe(3);
+        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(30_000m);
+        notificationSender.BoardingPasses.Count.ShouldBe(0);
     }
 
     [Test]
@@ -865,6 +977,33 @@ public class CharterBookingPassengerTicketTests
             SubtotalAmount = 1_000_000
         });
     }
+
+    private static Payment PaidPayment(decimal amount) =>
+        new()
+        {
+            PaymentCode = $"PAY{Guid.NewGuid():N}"[..20],
+            Provider = "PayOS",
+            Amount = amount,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = DateTimeOffset.UtcNow
+        };
+
+    private static BookingInsuranceSnapshot InsuranceSnapshot(decimal unitPremiumAmount, int quantity) =>
+        new()
+        {
+            InsurancePackageId = Guid.NewGuid(),
+            Code = "INS-CHARTER",
+            Name = "Charter insurance",
+            BookingType = Booking.CharterBookingType,
+            UnitPremiumAmount = unitPremiumAmount,
+            Currency = "VND",
+            Quantity = quantity,
+            TotalAmount = unitPremiumAmount * quantity,
+            QuotedAt = DateTimeOffset.UtcNow
+        };
 
     private static User Customer()
     {

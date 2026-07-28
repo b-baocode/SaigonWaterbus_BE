@@ -269,6 +269,9 @@ public sealed record CharterBookingDetailDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PromotionCode,
     decimal TotalAmount,
+    decimal DepositAmount,
+    decimal RemainingAmount,
+    bool RequiresAdditionalPayment,
     string ContactName,
     string ContactPhone,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -447,7 +450,15 @@ public sealed record UpdateCharterBookingPassengersResult(
     int ChildCount,
     IReadOnlyList<CharterBookingPassengerDto> Passengers,
     int TicketCount,
-    IReadOnlyList<CharterBookingTicketDto> Tickets);
+    IReadOnlyList<CharterBookingTicketDto> Tickets,
+    string PaymentStatus,
+    decimal TotalAmount,
+    decimal DepositAmount,
+    decimal RemainingAmount,
+    bool RequiresAdditionalPayment,
+    decimal AdditionalInsuranceAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CharterBookingInsuranceDto? Insurance = null);
 
 public sealed record ImportCharterBookingPassengersResult(
     Guid BookingId,
@@ -460,7 +471,15 @@ public sealed record ImportCharterBookingPassengersResult(
     int ChildCount,
     IReadOnlyList<CharterBookingPassengerDto> Passengers,
     int TicketCount,
-    IReadOnlyList<CharterBookingTicketDto> Tickets);
+    IReadOnlyList<CharterBookingTicketDto> Tickets,
+    string PaymentStatus,
+    decimal TotalAmount,
+    decimal DepositAmount,
+    decimal RemainingAmount,
+    bool RequiresAdditionalPayment,
+    decimal AdditionalInsuranceAmount,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CharterBookingInsuranceDto? Insurance = null);
 
 public sealed record CharterBookingTicketExportDto(
     Guid BookingId,

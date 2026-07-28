@@ -126,7 +126,7 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
             booking,
             _timeProvider,
             cancellationToken);
-        CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
+        var additionalInsuranceAmount = CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
             booking,
             passengers.Count,
             now);
@@ -142,25 +142,10 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
             cancellationToken);
         await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
 
-        var adultCount = CharterBookingPassengerSupport.CountAdults(booking.Passengers);
-        var childCount = CharterBookingPassengerSupport.CountChildren(booking.Passengers);
-        var ticketDtos = ticketResult?.Tickets
-            .Select(CharterBookingTicketSupport.ToDto)
-            .ToList() ?? [];
-
-        return new UpdateCharterBookingPassengersResult(
-            booking.Id,
-            booking.CharterBookingQrToken,
-            booking.PassengerCount.GetValueOrDefault(),
-            booking.Passengers.Count,
-            adultCount,
-            childCount,
-            booking.Passengers
-                .OrderBy(x => x.FullName)
-                .Select(CharterBookingPassengerSupport.ToDto)
-                .ToList(),
-            ticketDtos.Count,
-            ticketDtos);
+        return CharterBookingPassengerResultSupport.ToUpdateResult(
+            booking,
+            ticketResult?.Tickets,
+            additionalInsuranceAmount);
     }
 
     private async Task SendBoardingPassIfNeededAsync(

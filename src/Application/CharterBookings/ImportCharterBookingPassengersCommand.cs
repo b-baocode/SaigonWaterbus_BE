@@ -121,11 +121,18 @@ public sealed class ImportCharterBookingPassengersCommandHandler
         CharterBookingTicketSupport.CancelTicketsBeforeReplacingPassengers(booking);
         _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);
         booking.Passengers = passengerEntities;
+        booking.PassengerCount = passengerEntities.Count;
+        booking.AdultCount = CharterBookingPassengerSupport.CountAdults(passengerEntities);
+        booking.ChildCount = CharterBookingPassengerSupport.CountChildren(passengerEntities);
         var ticketResult = await CharterBookingTicketSupport.EnsurePassengerTicketsAsync(
             _context,
             booking,
             _timeProvider,
             cancellationToken);
+        var additionalInsuranceAmount = CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
+            booking,
+            passengerEntities.Count,
+            now);
 
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
@@ -138,25 +145,10 @@ public sealed class ImportCharterBookingPassengersCommandHandler
             cancellationToken);
         await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
 
-        var adultCount = CharterBookingPassengerSupport.CountAdults(booking.Passengers);
-        var childCount = CharterBookingPassengerSupport.CountChildren(booking.Passengers);
-        var ticketDtos = ticketResult?.Tickets
-            .Select(CharterBookingTicketSupport.ToDto)
-            .ToList() ?? [];
-
-        return new ImportCharterBookingPassengersResult(
-            booking.Id,
-            booking.CharterBookingQrToken,
-            booking.PassengerCount.GetValueOrDefault(),
-            booking.Passengers.Count,
-            adultCount,
-            childCount,
-            booking.Passengers
-                .OrderBy(x => x.FullName)
-                .Select(CharterBookingPassengerSupport.ToDto)
-                .ToList(),
-            ticketDtos.Count,
-            ticketDtos);
+        return CharterBookingPassengerResultSupport.ToImportResult(
+            booking,
+            ticketResult?.Tickets,
+            additionalInsuranceAmount);
     }
 
     private async Task SendBoardingPassIfNeededAsync(
@@ -165,7 +157,10 @@ public sealed class ImportCharterBookingPassengersCommandHandler
         CancellationToken cancellationToken)
     {
         var ticket = ticketResult?.CreatedTickets.FirstOrDefault();
-        if (ticket is null || string.IsNullOrWhiteSpace(booking.ContactEmail))
+        if (ticket is null
+            || string.IsNullOrWhiteSpace(booking.ContactEmail)
+            || !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount > 0)
         {
             return;
         }

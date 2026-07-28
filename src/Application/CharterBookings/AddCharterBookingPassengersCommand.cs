@@ -140,24 +140,6 @@ public sealed class AddCharterBookingPassengersCommandHandler
                 now),
             cancellationToken);
 
-        var adultCount = CharterBookingPassengerSupport.CountAdults(booking.Passengers);
-        var childCount = CharterBookingPassengerSupport.CountChildren(booking.Passengers);
-        var ticketDtos = CharterBookingTicketSupport.GetDisplayTickets(booking.Tickets)
-            .Select(CharterBookingTicketSupport.ToDto)
-            .ToList();
-
-        return new UpdateCharterBookingPassengersResult(
-            booking.Id,
-            booking.CharterBookingQrToken,
-            booking.PassengerCount.GetValueOrDefault(),
-            booking.Passengers.Count,
-            adultCount,
-            childCount,
-            booking.Passengers
-                .OrderBy(x => x.FullName)
-                .Select(CharterBookingPassengerSupport.ToDto)
-                .ToList(),
-            ticketDtos.Count,
-            ticketDtos);
+        return CharterBookingPassengerResultSupport.ToUpdateResult(booking);
     }
 }

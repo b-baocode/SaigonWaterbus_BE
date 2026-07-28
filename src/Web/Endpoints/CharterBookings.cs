@@ -468,7 +468,9 @@ public sealed class CharterBookings : IEndpointGroup
                 "Backend tu tinh passengerType: Adult tu 12 tuoi tro len, Child duoi 12 tuoi theo nam sinh neu chi gui birthYear.",
                 "Chi cap nhat duoc truoc gio khoi hanh it nhat 24 gio.",
                 "So hanh khach khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
-                "Sau khi luu thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
+                "Neu booking co bao hiem va danh sach moi tang so nguoi duoc bao hiem, backend cong them phi bao hiem vao totalAmount/remainingAmount.",
+                "Response tra ve paymentStatus/remainingAmount/requiresAdditionalPayment/additionalInsuranceAmount de FE hien nut thanh toan bo sung khi can.",
+                "Sau khi luu thanh cong va booking da thanh toan du, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
 
         group.MapPost(AddCharterBookingPassengers, "{id:guid}/passengers")
             .RequireAuthorization()
@@ -482,7 +484,8 @@ public sealed class CharterBookings : IEndpointGroup
                 "Moi charter booking chi duoc gui yeu cau them hanh khach 1 lan.",
                 "Chi gui duoc truoc gio khoi hanh it nhat 24 gio.",
                 "Tong hanh khach Approved + Pending + moi gui khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
-                "Hanh khach moi duoc luu Pending; Admin/Manager duyet moi tao ve/QR va gui lai email ve day du."));
+                "Hanh khach moi duoc luu Pending; Admin/Manager duyet moi tao ve/QR.",
+                "Phi bao hiem bo sung chi duoc tinh khi Admin/Manager approve batch, khong tinh ngay luc customer gui yeu cau."));
 
         group.MapPost(ApproveCharterBookingPassengerAddRequest, "assigned/{id:guid}/passenger-add-requests/{requestBatchId:guid}/approve")
             .RequireAuthorization()
@@ -498,7 +501,10 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin duyet duoc moi charter booking.",
                 "Manager chi duyet duoc charter booking da duoc phan cong cho minh.",
                 "Chi duyet khi booking da thanh toan du, chua check-in/check-out va con truoc gio khoi hanh it nhat 24 gio.",
-                "Sau khi duyet, backend tao ve/QR rieng cho hanh khach moi, giu ve/QR cu va gui lai email boarding pass gom tat ca ve hien hanh."));
+                "Sau khi duyet, backend tao ve/QR rieng cho hanh khach moi va giu ve/QR cu.",
+                "Neu booking co bao hiem, backend cong phi bao hiem cho so khach moi; response co requiresAdditionalPayment=true, remainingAmount va additionalInsuranceAmount.",
+                "Khi con remainingAmount, FE can goi POST /api/payments voi paymentOption=Remaining de thanh toan bo sung truoc khi export/check-in; BE khong gui boarding pass cho toi khi da thanh toan du.",
+                "Neu khong co bao hiem hoac phi bo sung = 0, booking van Paid va BE gui lai email boarding pass gom tat ca ve hien hanh."));
 
         group.MapPost(RejectCharterBookingPassengerAddRequest, "assigned/{id:guid}/passenger-add-requests/{requestBatchId:guid}/reject")
             .RequireAuthorization()
@@ -530,7 +536,9 @@ public sealed class CharterBookings : IEndpointGroup
                 "Backend tu tinh adultCount/childCount theo moc 12 tuoi.",
                 "Chi upload/cap nhat duoc truoc gio khoi hanh it nhat 24 gio.",
                 "So hanh khach khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
-                "Sau khi import thanh cong, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
+                "Neu booking co bao hiem va danh sach import tang so nguoi duoc bao hiem, backend cong them phi bao hiem vao totalAmount/remainingAmount.",
+                "Response tra ve paymentStatus/remainingAmount/requiresAdditionalPayment/additionalInsuranceAmount de FE hien nut thanh toan bo sung khi can.",
+                "Sau khi import thanh cong va booking da thanh toan du, response tra ve tickets[] gom ticketCode/qrToken cho tung hanh khach."));
 
         group.MapGet(ExportCharterBookingTickets, "{id:guid}/tickets/export")
             .RequireAuthorization()
