@@ -40,9 +40,9 @@ public sealed class CreateBlogPostCommandValidator : AbstractValidator<CreateBlo
         RuleFor(x => x.Category)
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
-            .WithMessage("Category bat buoc nhap. Gia tri hop le: Activity | Event | News.")
+            .WithMessage("Category bat buoc nhap. Gia tri hop le: News | Event.")
             .Must(BlogPostSupport.IsValidCategory)
-            .WithMessage("Category hop le: Activity | Event | News.");
+            .WithMessage("Category hop le: News | Event.");
     }
 }
 
@@ -79,11 +79,6 @@ public sealed class CreateBlogPostCommandHandler : IRequestHandler<CreateBlogPos
         var status = string.IsNullOrWhiteSpace(request.Status)
             ? BlogPostSupport.DraftStatus
             : BlogPostSupport.NormalizeStatus(request.Status, nameof(request.Status));
-        if (status == BlogPostSupport.ArchivedStatus)
-        {
-            throw new SaigonWaterbus.Application.Common.Exceptions.ValidationException(
-                [new FluentValidation.Results.ValidationFailure(nameof(request.Status), "Status khi tao moi hop le: Draft | Published.")]);
-        }
 
         var post = new BlogPost
         {

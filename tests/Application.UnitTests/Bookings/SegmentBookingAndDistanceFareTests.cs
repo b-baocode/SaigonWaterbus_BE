@@ -365,21 +365,25 @@ public class SegmentBookingAndDistanceFareTests
             new CreateBookingCommand(
                 "TR-FARE-FREE",
                 [
-                    Adult("A1", "BB", "HB") with { TicketTypeCode = "CHILD" },
-                    Adult("A2", "BB", "HB") with { TicketTypeCode = "SENIOR" },
-                    Adult("A1", "HB", "LT") with { TicketTypeCode = "DISABLED" },
+                    Adult("A1", "BB", "HB"),
+                    Adult("A2", "BB", "HB") with { TicketTypeCode = "CHILD", BirthYear = 2020 },
+                    Adult("A1", "HB", "LT"),
                     Adult("A2", "HB", "LT") with { TicketTypeCode = "INFANT", BirthYear = 2026 }
                 ],
                 null),
             CancellationToken.None);
 
-        result.SubtotalAmount.ShouldBe(0m);
-        result.TotalAmount.ShouldBe(0m);
-        context.Set<BookingPassenger>()
+        result.SubtotalAmount.ShouldBe(19_000m);
+        result.TotalAmount.ShouldBe(19_000m);
+        var passengers = context.Set<BookingPassenger>()
             .Where(p => p.BookingId == result.BookingId)
-            .Select(p => p.UnitPrice)
+            .ToList();
+        passengers.Single(x => x.PassengerType == "CHILD").UnitPrice.ShouldBe(0m);
+        passengers.Single(x => x.PassengerType == "INFANT").UnitPrice.ShouldBe(0m);
+        passengers.Where(x => x.PassengerType == "ADULT")
+            .Select(x => x.UnitPrice)
             .ToList()
-            .ShouldAllBe(x => x == 0m);
+            .ShouldBe([8750m, 10250m], ignoreOrder: true);
     }
 
     [Test]

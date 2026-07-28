@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Entities;
@@ -95,11 +96,16 @@ public sealed class GetBookingManifestQueryHandler :
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
 
-    public GetBookingManifestQueryHandler(IApplicationDbContext context, IUserContext userContext)
+    public GetBookingManifestQueryHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider? timeProvider = null)
     {
         _context = context;
         _userContext = userContext;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<BookingManifestDto> Handle(
@@ -134,7 +140,7 @@ public sealed class GetBookingManifestQueryHandler :
             ?? throw new NotFoundException("Booking not found.");
 
         BookingManifestSupport.EnsureCanView(currentUser, booking);
-        return BookingManifestSupport.ToDto(booking);
+        return BookingManifestSupport.ToDto(booking, _timeProvider.GetUtcNow());
     }
 }
 
@@ -183,10 +189,10 @@ internal static class BookingManifestSupport
         && (string.Equals(booking.PaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
             || booking.RemainingAmount <= 0);
 
-    public static BookingManifestDto ToDto(Booking booking)
+    public static BookingManifestDto ToDto(Booking booking, DateTimeOffset? now = null)
     {
         var passengerById = booking.Passengers.ToDictionary(x => x.Id);
-        var lapInfantCompanionByPassengerId = LapInfantTicketSupport.AssignInfantsToCompanions(booking.Passengers);
+        var companionByPassengerId = LapInfantTicketSupport.AssignCompanionTicketPassengersToAdults(booking.Passengers);
         var currentTickets = booking.Tickets
             .Where(x => x.TicketStatus != TicketStatus.Cancelled && x.TicketStatus != TicketStatus.Expired)
             .Where(x => !x.BookingPassengerId.HasValue
@@ -215,9 +221,10 @@ internal static class BookingManifestSupport
             .Select(passenger =>
             {
                 var isLapInfant = LapInfantTicketSupport.IsLapInfant(passenger);
+                var usesCompanionTicket = LapInfantTicketSupport.UsesCompanionTicket(passenger);
                 BookingPassenger? companion = null;
-                if (isLapInfant
-                    && lapInfantCompanionByPassengerId.TryGetValue(passenger.Id, out var companionPassengerId)
+                if (usesCompanionTicket
+                    && companionByPassengerId.TryGetValue(passenger.Id, out var companionPassengerId)
                     && passengerById.TryGetValue(companionPassengerId, out var assignedCompanion))
                 {
                     companion = assignedCompanion;
@@ -250,7 +257,9 @@ internal static class BookingManifestSupport
                     ticket?.TicketStatus.ToString(),
                     ticket?.CheckedInAt,
                     ticket?.CheckedInByUser?.FullName,
-                    canCheckInBooking && ticket?.TicketStatus == TicketStatus.Active,
+                    canCheckInBooking
+                    && ticket?.TicketStatus == TicketStatus.Active
+                    && TicketAttendanceWindowSupport.IsWithinCheckInWindow(booking, passenger, now),
                     legTripCode,
                     passenger.FromStation?.StationName,
                     passenger.ToStation?.StationName,
@@ -266,11 +275,13 @@ internal static class BookingManifestSupport
                     segmentTimes?.Arrival,
                     ticket?.CheckedOutAt,
                     ticket?.CheckedOutByUser?.FullName,
-                    canCheckInBooking && ticket?.TicketStatus == TicketStatus.CheckedIn,
+                    canCheckInBooking
+                    && ticket?.TicketStatus == TicketStatus.CheckedIn
+                    && TicketAttendanceWindowSupport.IsWithinCheckOutWindow(booking, passenger, now),
                     isLapInfant,
                     companion?.Id,
                     companion?.FullName,
-                    isLapInfant && companion is not null);
+                    usesCompanionTicket && companion is not null);
             })
             .ToList();
 

@@ -89,21 +89,23 @@ public class SightseeingLoopBookingTests
             new CreateBookingCommand(
                 "TR-SIG-DISCOUNT",
                 [
-                    Adult("A1") with { TicketTypeCode = "CHILD" },
-                    Adult("A2") with { TicketTypeCode = "DISABLED" }
+                    Adult("A1"),
+                    Adult("A2") with { TicketTypeCode = "CHILD", BirthYear = 2020 },
+                    Adult("A3") with { TicketTypeCode = "DISABLED" }
                 ],
                 null),
             CancellationToken.None);
 
-        result.SubtotalAmount.ShouldBe(10_000m);
-        result.TotalAmount.ShouldBe(10_000m);
+        result.SubtotalAmount.ShouldBe(15_000m);
+        result.TotalAmount.ShouldBe(15_000m);
 
         var passengers = context.Set<BookingPassenger>()
             .Where(x => x.BookingId == result.BookingId)
             .OrderBy(x => x.PassengerType)
             .ToList();
-        passengers.Select(x => x.PassengerType).ShouldBe(["CHILD", "DISABLED"]);
-        passengers.Single(x => x.PassengerType == "CHILD").UnitPrice.ShouldBe(5_000m);
+        passengers.Select(x => x.PassengerType).ShouldBe(["ADULT", "CHILD", "DISABLED"]);
+        passengers.Single(x => x.PassengerType == "ADULT").UnitPrice.ShouldBe(10_000m);
+        passengers.Single(x => x.PassengerType == "CHILD").UnitPrice.ShouldBe(0m);
         passengers.Single(x => x.PassengerType == "DISABLED").UnitPrice.ShouldBe(5_000m);
 
         var seniorPrice = await new FareCalculator(context).CalculateAsync(
@@ -141,14 +143,15 @@ public class SightseeingLoopBookingTests
             new CreateBookingCommand(
                 "TR-SIG-RULE",
                 [
-                    Adult("A1") with { TicketTypeCode = "CHILD" },
-                    Adult("A2") with { TicketTypeCode = "DISABLED" }
+                    Adult("A1"),
+                    Adult("A2") with { TicketTypeCode = "CHILD", BirthYear = 2020 },
+                    Adult("A3") with { TicketTypeCode = "DISABLED" }
                 ],
                 null),
             CancellationToken.None);
 
-        result.SubtotalAmount.ShouldBe(5_000m);
-        result.TotalAmount.ShouldBe(5_000m);
+        result.SubtotalAmount.ShouldBe(12_500m);
+        result.TotalAmount.ShouldBe(12_500m);
 
         var seniorPrice = await new FareCalculator(context).CalculateAsync(
             seats.Single(x => x.Code == "A1").Id,
@@ -163,7 +166,6 @@ public class SightseeingLoopBookingTests
             .Select(x => new ValueTuple<string, decimal>(x.TicketTypeCode, x.PriceModifier))
             .ToList()
             .ShouldBe([
-                new ValueTuple<string, decimal>("CHILD", 0.25m),
                 new ValueTuple<string, decimal>("DISABLED", 0.25m),
                 new ValueTuple<string, decimal>("SENIOR", 0.25m)
             ]);
@@ -419,9 +421,10 @@ public class SightseeingLoopBookingTests
         }
 
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, BoatStatus.Active);
-        boat.SeatCount = 2;
+        boat.SeatCount = 3;
         var seatA1 = new Seat { Boat = boat, BoatId = boat.Id, Code = "A1", Deck = 1, Row = "A", Column = 1 };
         var seatA2 = new Seat { Boat = boat, BoatId = boat.Id, Code = "A2", Deck = 1, Row = "A", Column = 2 };
+        var seatA3 = new Seat { Boat = boat, BoatId = boat.Id, Code = "A3", Deck = 1, Row = "A", Column = 3 };
 
         var trip = new Trip
         {
@@ -440,8 +443,10 @@ public class SightseeingLoopBookingTests
 
         context.AddRange(
             route, boat, seatA1, seatA2, trip,
+            seatA3,
             new TripSeat { Trip = trip, TripId = trip.Id, Seat = seatA1, SeatId = seatA1.Id, Price = 150000m },
-            new TripSeat { Trip = trip, TripId = trip.Id, Seat = seatA2, SeatId = seatA2.Id, Price = 150000m });
+            new TripSeat { Trip = trip, TripId = trip.Id, Seat = seatA2, SeatId = seatA2.Id, Price = 150000m },
+            new TripSeat { Trip = trip, TripId = trip.Id, Seat = seatA3, SeatId = seatA3.Id, Price = 150000m });
         await context.SaveChangesAsync();
 
         return new SeededLoopTrip(trip, bb.Id);

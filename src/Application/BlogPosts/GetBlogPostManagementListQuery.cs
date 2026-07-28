@@ -11,7 +11,7 @@ public sealed class GetBlogPostManagementListQueryValidator : AbstractValidator<
     {
         RuleFor(x => x.Status)
             .Must(status => string.IsNullOrWhiteSpace(status) || BlogPostSupport.IsValidStatus(status))
-            .WithMessage("Status hop le: Draft | Published | Archived.");
+            .WithMessage("Status hop le: Draft | Published.");
     }
 }
 
@@ -33,7 +33,12 @@ public sealed class GetBlogPostManagementListQueryHandler
     {
         await BlogPostSupport.EnsureCurrentUserCanManageBlogPostsAsync(_context, _userContext, cancellationToken);
 
-        var query = _context.Set<BlogPost>().AsNoTracking();
+        var query = _context.Set<BlogPost>()
+            .AsNoTracking()
+            .Where(x => x.Status == BlogPostSupport.DraftStatus
+                || x.Status == BlogPostSupport.PublishedStatus)
+            .Where(x => x.Category == BlogPostSupport.NewsCategory
+                || x.Category == BlogPostSupport.EventCategory);
         if (!string.IsNullOrWhiteSpace(request.Status))
         {
             var status = BlogPostSupport.NormalizeStatus(request.Status, nameof(request.Status));

@@ -35,6 +35,32 @@ public class CreateBookingCommandValidatorTests
     }
 
     [Test]
+    public void ChildWithoutBirthYearIsInvalid()
+    {
+        var result = Validator.Validate(Command(Adult("A1"), Child("A2", birthYear: null)));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage.Contains("birthYear"));
+    }
+
+    [Test]
+    public void ChildWithoutAdultCompanionIsInvalid()
+    {
+        var result = Validator.Validate(Command(Child("A1")));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage.Contains("đi kèm"));
+    }
+
+    [Test]
+    public void ChildWithSeatedAdultCompanionIsValid()
+    {
+        var result = Validator.Validate(Command(Adult("A1"), Child("A2")));
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
     public void MoreLapInfantsThanSeatedCompanionsIsInvalid()
     {
         var result = Validator.Validate(Command(Adult("A1"), LapInfant(), LapInfant()));
@@ -145,6 +171,9 @@ public class CreateBookingCommandValidatorTests
 
     private static BookingItemRequest Adult(string seat) =>
         new(seat, "ADULT", "BD", "TADA", "Nguyen Van A", null, null, null, null, null);
+
+    private static BookingItemRequest Child(string seat, int? birthYear = 2020) =>
+        new(seat, "CHILD", "BD", "TADA", "Be Nguyen Van B", null, birthYear, null, null, null);
 
     private static BookingItemRequest LapInfant(int? birthYear = 2025) =>
         new(null, "INFANT", "BD", "TADA", "Be Nguyen Van B", null, birthYear, null, null, null);

@@ -4,28 +4,28 @@ using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundE
 
 namespace SaigonWaterbus.Application.BlogPosts;
 
-public sealed record ArchiveBlogPostCommand(Guid BlogPostId) : IRequest;
+public sealed record DeleteBlogPostCommand(Guid BlogPostId) : IRequest;
 
-public sealed class ArchiveBlogPostCommandValidator : AbstractValidator<ArchiveBlogPostCommand>
+public sealed class DeleteBlogPostCommandValidator : AbstractValidator<DeleteBlogPostCommand>
 {
-    public ArchiveBlogPostCommandValidator()
+    public DeleteBlogPostCommandValidator()
     {
         RuleFor(x => x.BlogPostId).NotEmpty();
     }
 }
 
-public sealed class ArchiveBlogPostCommandHandler : IRequestHandler<ArchiveBlogPostCommand>
+public sealed class DeleteBlogPostCommandHandler : IRequestHandler<DeleteBlogPostCommand>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
 
-    public ArchiveBlogPostCommandHandler(IApplicationDbContext context, IUserContext userContext)
+    public DeleteBlogPostCommandHandler(IApplicationDbContext context, IUserContext userContext)
     {
         _context = context;
         _userContext = userContext;
     }
 
-    public async Task Handle(ArchiveBlogPostCommand request, CancellationToken cancellationToken)
+    public async Task Handle(DeleteBlogPostCommand request, CancellationToken cancellationToken)
     {
         await BlogPostSupport.EnsureCurrentUserCanManageBlogPostsAsync(_context, _userContext, cancellationToken);
 
@@ -33,7 +33,7 @@ public sealed class ArchiveBlogPostCommandHandler : IRequestHandler<ArchiveBlogP
             .SingleOrDefaultAsync(x => x.Id == request.BlogPostId, cancellationToken)
             ?? throw new NotFoundException("Blog post not found.");
 
-        post.Status = BlogPostSupport.ArchivedStatus;
+        _context.Set<BlogPost>().Remove(post);
         await _context.SaveChangesAsync(cancellationToken);
     }
 }

@@ -14,7 +14,7 @@ public sealed class BlogPosts : IEndpointGroup
         {
           "title": "Kham pha Sai Gon bang waterbus",
           "summary": "Nhung diem nen trai nghiem tren tuyen waterbus Sai Gon.",
-          "category": "Activity",
+          "category": "News",
           "imageAltText": "Tau waterbus tren song Sai Gon",
           "content": "Noi dung bai viet dang van ban thuong, khong can HTML.",
           "status": "Draft"
@@ -67,8 +67,8 @@ public sealed class BlogPosts : IEndpointGroup
                 "Bearer token",
                 null,
                 "Chi danh cho Admin.",
-                "Query params: status (optional): Draft | Published | Archived.",
-                "Khong truyen status se tra ve tat ca."));
+                "Query params: status (optional): Draft | Published.",
+                "Khong truyen status se tra ve tat ca bai Draft/Published. Khong con trang thai Archived."));
 
         group.MapGet(GetBlogPostManagementDetail, "management/{id:guid}")
             .RequireAuthorization()
@@ -77,7 +77,7 @@ public sealed class BlogPosts : IEndpointGroup
                 "Bearer token",
                 null,
                 "Chi danh cho Admin.",
-                "Tra ve du content ke ca bai Draft hoac Archived."));
+                "Tra ve du content cua bai Draft hoac Published."));
 
         group.MapPost(CreateBlogPost, string.Empty)
             .RequireAuthorization()
@@ -91,7 +91,7 @@ public sealed class BlogPosts : IEndpointGroup
                 "Chi danh cho Admin.",
                 "Khong co luong duyet/tac gia tren FE; Admin tao xong tu chon Draft de an hoac Published de hien.",
                 "status optional, mac dinh Draft. Khi tao moi chi hop le: Draft | Published.",
-                "category bat buoc nhap. Gia tri hop le: Activity | Event | News.",
+                "category bat buoc nhap. Gia tri hop le: News | Event.",
                 "slug khong can gui; BE tu sinh tu title va tu them hau to neu trung.",
                 "content nhap plain text; BE tra them contentText de admin doc va contentHtml da convert an toan cho FE render.",
                 "Anh blog chi nhan upload file bang multipart/form-data field image/images/files, khong ho tro gan link imageUrl/imageUrls.",
@@ -110,9 +110,9 @@ public sealed class BlogPosts : IEndpointGroup
                 "Bearer token",
                 UpdateExample,
                 "Chi danh cho Admin.",
-                "Khong co luong duyet/tac gia tren FE; Admin doi status de an/hien bai.",
-                "status hop le: Draft | Published | Archived.",
-                "category hop le: Activity | Event | News.",
+                "Khong co luong duyet/tac gia tren FE; FE gui status nao thi BE luu dung status do.",
+                "status hop le: Draft | Published.",
+                "category hop le: News | Event.",
                 "slug khong can gui; neu bo trong BE tu sinh lai tu title.",
                 "content nhap plain text; BE tra them contentText va contentHtml.",
                 "Bai Published bat buoc co it nhat 1 anh.",
@@ -121,6 +121,18 @@ public sealed class BlogPosts : IEndpointGroup
                 "Khong ho tro gan link imageUrl/imageUrls trong request.",
                 "Ảnh chỉ hỗ trợ JPEG, PNG hoặc WebP, tối đa 5 MB.",
                 "FE khong can hien input slug."));
+
+        group.MapPatch(UpdateBlogPostStatus, "{id:guid}/status")
+            .RequireAuthorization()
+            .WithSummary("Cap nhat trang thai blog")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """{ "status": "Published" }""",
+                "Chi danh cho Admin.",
+                "Dung khi admin bam nut Nhap/Xuat ban.",
+                "status hop le: Draft | Published.",
+                "Published bat buoc bai viet da co it nhat 1 anh.",
+                "Draft se an khoi public list va clear PublishedAt."));
 
         group.MapPatch(UpdateBlogPostImage, "{id:guid}/image")
             .RequireAuthorization()
@@ -147,14 +159,14 @@ public sealed class BlogPosts : IEndpointGroup
                 "Dat Status = Published va set PublishedAt neu chua co.",
                 "Bai viet phai co it nhat 1 anh truoc khi publish."));
 
-        group.MapDelete(ArchiveBlogPost, "{id:guid}")
+        group.MapDelete(DeleteBlogPost, "{id:guid}")
             .RequireAuthorization()
-            .WithSummary("Luu tru blog")
+            .WithSummary("Xoa blog")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
                 "Chi danh cho Admin.",
-                "Soft delete/an bai: dat Status = Archived.",
+                "Xoa that bai viet; khong con trang thai Archived.",
                 "Tra ve 204 khi thanh cong."));
     }
 
@@ -244,12 +256,19 @@ public sealed class BlogPosts : IEndpointGroup
         }
     }
 
+    private static async Task<IResult> UpdateBlogPostStatus(
+        ISender sender,
+        Guid id,
+        BlogPostStatusRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new UpdateBlogPostStatusCommand(id, request.Status), ct));
+
     private static async Task<IResult> PublishBlogPost(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new PublishBlogPostCommand(id), ct));
 
-    private static async Task<IResult> ArchiveBlogPost(ISender sender, Guid id, CancellationToken ct)
+    private static async Task<IResult> DeleteBlogPost(ISender sender, Guid id, CancellationToken ct)
     {
-        await sender.Send(new ArchiveBlogPostCommand(id), ct);
+        await sender.Send(new DeleteBlogPostCommand(id), ct);
         return Results.NoContent();
     }
 
@@ -293,6 +312,8 @@ public sealed class BlogPosts : IEndpointGroup
         IFormFile? Image = null,
         IFormFileCollection? Images = null,
         string? ImageAltText = null);
+
+    private sealed record BlogPostStatusRequest(string Status);
 
     private static async Task<CreateBlogPostCommand?> CreateBlogPostCommandFromJsonAsync(
         HttpRequest request,

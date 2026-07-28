@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
@@ -46,10 +47,14 @@ internal static class RegularBookingETicketSupport
             .Where(x => x.BookingPassengerId.HasValue)
             .GroupBy(x => x.BookingPassengerId!.Value)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(x => x.IssuedAt).First());
+        var companionByPassengerId = LapInfantTicketSupport.AssignCompanionTicketPassengersToAdults(passengers);
 
         foreach (var passenger in passengers.OrderBy(x => x.TripSeat?.Seat?.Code).ThenBy(x => x.FullName))
         {
-            if (!ticketsByPassengerId.TryGetValue(passenger.Id, out var ticket))
+            var ticketPassengerId = companionByPassengerId.TryGetValue(passenger.Id, out var companionId)
+                ? companionId
+                : passenger.Id;
+            if (!ticketsByPassengerId.TryGetValue(ticketPassengerId, out var ticket))
             {
                 continue;
             }

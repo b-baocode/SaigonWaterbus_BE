@@ -31,7 +31,13 @@ public sealed class GetBlogPostManagementDetailQueryHandler : IRequestHandler<Ge
 
         var post = await _context.Set<BlogPost>()
             .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == request.BlogPostId, cancellationToken)
+            .SingleOrDefaultAsync(
+                x => x.Id == request.BlogPostId
+                    && (x.Status == BlogPostSupport.DraftStatus
+                        || x.Status == BlogPostSupport.PublishedStatus)
+                    && (x.Category == BlogPostSupport.NewsCategory
+                        || x.Category == BlogPostSupport.EventCategory),
+                cancellationToken)
             ?? throw new NotFoundException("Blog post not found.");
 
         return BlogPostSupport.ToDto(post);

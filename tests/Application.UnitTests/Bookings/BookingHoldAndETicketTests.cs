@@ -284,8 +284,12 @@ public class BookingHoldAndETicketTests
 
         var ticket = context.Tickets.ShouldHaveSingleItem();
         ticket.BookingPassengerId.ShouldBe(adult.Id);
-        sender.ETickets.Single(x => x.Booking.Email == "booker@gmail.com")
-            .Tickets.ShouldHaveSingleItem().TicketCode.ShouldBe(ticket.TicketCode);
+        var bookerTickets = sender.ETickets.Single(x => x.Booking.Email == "booker@gmail.com")
+            .Tickets;
+        bookerTickets.Count.ShouldBe(2);
+        bookerTickets.ShouldAllBe(x => x.TicketCode == ticket.TicketCode);
+        bookerTickets.ShouldContain(x => x.PassengerName == "Nguyen Huu Hoang");
+        bookerTickets.ShouldContain(x => x.PassengerName == "Em bé");
 
         var manifest = await new GetBookingManifestQueryHandler(context, passengerContext)
             .Handle(new GetBookingManifestByQrTokenQuery(booking.CharterBookingQrToken!), CancellationToken.None);
@@ -304,7 +308,146 @@ public class BookingHoldAndETicketTests
         scan.PassengerCount.ShouldBe(2);
         scan.Passengers.Select(x => x.FullName).ShouldBe(["Nguyen Huu Hoang", "Em bé"]);
         scan.Passengers.Single(x => x.PassengerId == infant.Id).IsLapInfant.ShouldBeTrue();
+        scan.Passengers.Single(x => x.PassengerId == infant.Id).UsesCompanionTicket.ShouldBeTrue();
         scan.Passengers.Single(x => x.PassengerId == infant.Id).CompanionPassengerId.ShouldBe(adult.Id);
+    }
+
+    [Test]
+    public async Task ChildUsesAdultCompanionTicketAndScanShowsBothPassengers()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var passengerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var stationA = new Station { StationCode = "BD", StationName = "Bến Bạch Đằng" };
+        var stationB = new Station { StationCode = "BA", StationName = "Bến Bình An" };
+        var route = new Route
+        {
+            RouteCode = "R-BD-BA-CHILD",
+            RouteName = "Bạch Đằng - Bình An",
+            RouteType = RouteTypes.Regular
+        };
+        route.RouteStops.Add(new RouteStop { Route = route, Station = stationA, StationId = stationA.Id, StopOrder = 1 });
+        route.RouteStops.Add(new RouteStop { Route = route, Station = stationB, StationId = stationB.Id, StopOrder = 2, DistanceFromPreviousKm = 3m });
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, BoatStatus.Active);
+        boat.SeatCount = 2;
+        var adultSeat = new Seat { Boat = boat, BoatId = boat.Id, Code = "A1", Deck = 1, Row = "A", Column = 1 };
+        var childSeat = new Seat { Boat = boat, BoatId = boat.Id, Code = "A2", Deck = 1, Row = "A", Column = 2 };
+        var trip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = "TR-CHILD-PAIR",
+            TripType = TripTypes.Regular,
+            OperatingDate = new DateOnly(2026, 7, 20),
+            DepartureTime = new DateTimeOffset(2026, 7, 20, 8, 0, 0, TimeSpan.Zero),
+            ArrivalTime = new DateTimeOffset(2026, 7, 20, 9, 0, 0, TimeSpan.Zero),
+            CapacitySnapshot = 2
+        };
+        var adultTripSeat = new TripSeat { Trip = trip, TripId = trip.Id, Seat = adultSeat, SeatId = adultSeat.Id, Status = TripSeat.StatusBooked };
+        var childTripSeat = new TripSeat { Trip = trip, TripId = trip.Id, Seat = childSeat, SeatId = childSeat.Id, Status = TripSeat.StatusBooked };
+        var booking = new Booking
+        {
+            UserId = passengerContext.UserId,
+            Trip = trip,
+            TripId = trip.Id,
+            BookingCode = "BK-CHILD-PAIR",
+            ContactName = "Nguyen Huu Hoang",
+            ContactPhone = "0900000000",
+            ContactEmail = "booker@gmail.com",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 9500,
+            TotalAmount = 9500,
+            RemainingAmount = 9500
+        };
+        var adult = new BookingPassenger
+        {
+            Booking = booking,
+            Trip = trip,
+            TripId = trip.Id,
+            TripSeat = adultTripSeat,
+            TripSeatId = adultTripSeat.Id,
+            FullName = "Nguyen Huu Hoang",
+            PassengerType = "ADULT",
+            UnitPrice = 9500,
+            FromStation = stationA,
+            FromStationId = stationA.Id,
+            ToStation = stationB,
+            ToStationId = stationB.Id,
+            FromStopOrder = 1,
+            ToStopOrder = 2
+        };
+        var child = new BookingPassenger
+        {
+            Booking = booking,
+            Trip = trip,
+            TripId = trip.Id,
+            TripSeat = childTripSeat,
+            TripSeatId = childTripSeat.Id,
+            FullName = "Bé lớn",
+            PassengerType = "CHILD",
+            BirthYear = 2020,
+            UnitPrice = 0,
+            FromStation = stationA,
+            FromStationId = stationA.Id,
+            ToStation = stationB,
+            ToStationId = stationB.Id,
+            FromStopOrder = 1,
+            ToStopOrder = 2
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "2000004",
+            Provider = "PayOS",
+            Amount = 9500,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(route, boat, adultSeat, childSeat, trip, adultTripSeat, childTripSeat, booking, adult, child, payment);
+        await context.SaveChangesAsync();
+
+        var sender = new RecordingPaymentNotificationSender();
+        var handler = new HandlePaymentWebhookCommandHandler(
+            context,
+            new PaidPaymentGateway(),
+            sender,
+            TimeProvider.System);
+
+        await handler.Handle(
+            new HandlePaymentWebhookCommand(CreatePaidWebhook(2000004, 9500)),
+            CancellationToken.None);
+
+        var ticket = context.Tickets.ShouldHaveSingleItem();
+        ticket.BookingPassengerId.ShouldBe(adult.Id);
+        var bookerTickets = sender.ETickets.Single(x => x.Booking.Email == "booker@gmail.com").Tickets;
+        bookerTickets.Count.ShouldBe(2);
+        bookerTickets.ShouldAllBe(x => x.TicketCode == ticket.TicketCode);
+        bookerTickets.Single(x => x.PassengerName == "Bé lớn").SeatCode.ShouldBe("A2");
+
+        var manifest = await new GetBookingManifestQueryHandler(context, passengerContext)
+            .Handle(new GetBookingManifestByQrTokenQuery(booking.CharterBookingQrToken!), CancellationToken.None);
+        manifest.PassengerCount.ShouldBe(2);
+        manifest.ActiveTicketCount.ShouldBe(1);
+        var childManifest = manifest.Passengers.Single(x => x.PassengerId == child.Id);
+        childManifest.TicketCode.ShouldBe(ticket.TicketCode);
+        childManifest.IsLapInfant.ShouldBeFalse();
+        childManifest.UsesCompanionTicket.ShouldBeTrue();
+        childManifest.CompanionPassengerId.ShouldBe(adult.Id);
+
+        var scan = await new ScanTicketQueryHandler(context, adminContext, TimeProvider.System)
+            .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
+        scan.PassengerCount.ShouldBe(2);
+        scan.Passengers.Select(x => x.FullName).ShouldBe(["Nguyen Huu Hoang", "Bé lớn"]);
+        var scannedChild = scan.Passengers.Single(x => x.PassengerId == child.Id);
+        scannedChild.IsLapInfant.ShouldBeFalse();
+        scannedChild.UsesCompanionTicket.ShouldBeTrue();
+        scannedChild.CompanionPassengerId.ShouldBe(adult.Id);
+        scannedChild.SeatCode.ShouldBe("A2");
     }
 
     private static Trip CreateTrip(string tripCode) =>

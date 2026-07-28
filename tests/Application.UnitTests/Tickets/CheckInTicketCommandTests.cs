@@ -169,6 +169,29 @@ public class CheckInTicketCommandTests
     }
 
     [Test]
+    public async Task CheckInBeforeTenMinuteBoardingWindowIsRejected()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var ticket = await SeedRegularBookingTicketAsync(context);
+        await AddOnBoardAssignmentAsync(
+            context,
+            staffContext.UserId!.Value,
+            ticket,
+            new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero));
+        var handler = new CheckInTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 8, 59, 0, TimeSpan.Zero)));
+
+        var ex = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        ex.Errors["ticket"].Single().ShouldContain("10 phút trước giờ tàu rời bến");
+    }
+
+    [Test]
     public async Task CheckedInTicketCannotBeCheckedInAgain()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -333,6 +356,32 @@ public class CheckInTicketCommandTests
     }
 
     [Test]
+    public async Task CheckOutAfterArrivalGraceWindowIsRejected()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var ticket = await SeedRegularBookingTicketAsync(
+            context,
+            TicketStatus.CheckedIn,
+            new DateTimeOffset(2030, 1, 1, 9, 5, 0, TimeSpan.Zero));
+        await AddOnBoardAssignmentAsync(
+            context,
+            staffContext.UserId!.Value,
+            ticket,
+            new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
+            new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero));
+        var handler = new CheckOutTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 10, 11, 0, TimeSpan.Zero)));
+
+        var ex = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckOutTicketCommand(ticket.TicketCode), CancellationToken.None));
+
+        ex.Errors["ticket"].Single().ShouldContain("quá 10 phút sau giờ tàu đến bến");
+    }
+
+    [Test]
     public async Task CheckedOutTicketCannotBeCheckedOutAgain()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -471,19 +520,22 @@ public class CheckInTicketCommandTests
             Boat = boat,
             TripCode = $"TR-{Guid.NewGuid():N}"[..20],
             OperatingDate = new DateOnly(2030, 1, 1),
-            DepartureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
-            ArrivalTime = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero),
+            DepartureTime = new DateTimeOffset(2030, 1, 1, 9, 10, 0, TimeSpan.Zero),
+            ArrivalTime = new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero),
             CapacitySnapshot = 1
         };
         var tripSeat = new TripSeat
         {
             Trip = trip,
+            TripId = trip.Id,
             Seat = seat,
+            SeatId = seat.Id,
             Status = TripSeat.StatusBooked
         };
         var booking = new Booking
         {
             Trip = trip,
+            TripId = trip.Id,
             BookingCode = $"BK-{Guid.NewGuid():N}"[..20],
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",
@@ -498,6 +550,8 @@ public class CheckInTicketCommandTests
         var passenger = new BookingPassenger
         {
             Booking = booking,
+            BookingId = booking.Id,
+            TripId = trip.Id,
             FullName = "Nguyen Van A",
             PhoneNumber = "0900000001",
             PassengerType = "ADULT",
@@ -507,6 +561,7 @@ public class CheckInTicketCommandTests
         var ticket = new Ticket
         {
             Booking = booking,
+            BookingId = booking.Id,
             BookingPassenger = passenger,
             BookingPassengerId = passenger.Id,
             TicketCode = $"TK{Guid.NewGuid():N}"[..20],

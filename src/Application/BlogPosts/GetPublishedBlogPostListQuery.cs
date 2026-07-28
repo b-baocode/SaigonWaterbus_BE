@@ -19,6 +19,8 @@ public sealed class GetPublishedBlogPostListQueryHandler
         var posts = await _context.Set<BlogPost>()
             .AsNoTracking()
             .Where(x => x.Status == BlogPostSupport.PublishedStatus)
+            .Where(x => x.Category == BlogPostSupport.NewsCategory
+                || x.Category == BlogPostSupport.EventCategory)
             .OrderByDescending(x => x.PublishedAt ?? x.Created)
             .ThenByDescending(x => x.Id)
             .ToListAsync(cancellationToken);

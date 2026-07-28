@@ -83,6 +83,6 @@ public sealed class ScanTicketQueryHandler : IRequestHandler<ScanTicketQuery, Ti
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        return await TicketScanSupport.ToDtoAsync(_context, ticket!, cancellationToken);
+        return await TicketScanSupport.ToDtoAsync(_context, ticket!, cancellationToken, now);
     }
 }

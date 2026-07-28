@@ -22,7 +22,7 @@ public class RoundTripCheckInAndScanTests
         var seeded = await SeedConfirmedRoundTripBookingAsync(context);
         await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Booking.Trip!.BoatId!.Value);
         var handler = new CheckInAllBookingTicketsCommandHandler(
-            context, staffContext, new FixedTimeProvider(Now));
+            context, staffContext, new FixedTimeProvider(seeded.Booking.Trip!.DepartureTime.AddMinutes(-5)));
 
         var manifest = await handler.Handle(
             new CheckInAllBookingTicketsCommand(seeded.Booking.CharterBookingQrToken!, "TR-OUT"),
@@ -47,25 +47,72 @@ public class RoundTripCheckInAndScanTests
         var returnManifestPassenger = manifest.Passengers.Single(p => p.TripCode == "TR-RET");
         returnManifestPassenger.TicketStatus
             .ShouldBe(nameof(TicketStatus.Active));
-        returnManifestPassenger.CanCheckIn.ShouldBeTrue();
+        returnManifestPassenger.CanCheckIn.ShouldBeFalse();
         returnManifestPassenger.CanCheckOut.ShouldBeFalse();
     }
 
     [Test]
-    public async Task CheckInAllWithoutTripCodeChecksInBothLegs()
+    public async Task CheckInAllWithoutTripCodeRejectsRoundTripLegOutsideBoardingWindow()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var seeded = await SeedConfirmedRoundTripBookingAsync(context);
         await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Booking.Trip!.BoatId!.Value);
         var handler = new CheckInAllBookingTicketsCommandHandler(
-            context, staffContext, new FixedTimeProvider(Now));
+            context, staffContext, new FixedTimeProvider(seeded.Booking.Trip!.DepartureTime.AddMinutes(-5)));
 
-        await handler.Handle(
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
             new CheckInAllBookingTicketsCommand(seeded.Booking.CharterBookingQrToken!),
+            CancellationToken.None));
+
+        context.Tickets.Count(x => x.TicketStatus == TicketStatus.CheckedIn).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task CheckOutAllWithTripCodeChecksOutOnlyThatLegAndCompletesAfterBothLegs()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Booking.Trip!.BoatId!.Value);
+
+        seeded.OutboundTicket.TicketStatus = TicketStatus.CheckedIn;
+        seeded.OutboundTicket.CheckedInAt = seeded.Booking.Trip!.DepartureTime.AddMinutes(-5);
+        seeded.ReturnTicket.TicketStatus = TicketStatus.CheckedIn;
+        seeded.ReturnTicket.CheckedInAt = seeded.Booking.ReturnTrip!.DepartureTime.AddMinutes(-5);
+        await context.SaveChangesAsync();
+
+        var checkOutHandler = new CheckOutAllBookingTicketsCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(seeded.Booking.Trip.ArrivalTime.AddMinutes(5)));
+
+        var outboundManifest = await checkOutHandler.Handle(
+            new CheckOutAllBookingTicketsCommand(seeded.Booking.CharterBookingQrToken!, "TR-OUT"),
             CancellationToken.None);
 
-        context.Tickets.Count(x => x.TicketStatus == TicketStatus.CheckedIn).ShouldBe(2);
+        context.Tickets.Single(x => x.Id == seeded.OutboundTicket.Id)
+            .TicketStatus.ShouldBe(TicketStatus.CheckedOut);
+        context.Tickets.Single(x => x.Id == seeded.ReturnTicket.Id)
+            .TicketStatus.ShouldBe(TicketStatus.CheckedIn);
+        context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Confirmed);
+        outboundManifest.Passengers.Single(p => p.TripCode == "TR-OUT")
+            .CanCheckOut.ShouldBeFalse();
+        outboundManifest.Passengers.Single(p => p.TripCode == "TR-RET")
+            .CanCheckOut.ShouldBeTrue();
+
+        var returnManifest = await new CheckOutAllBookingTicketsCommandHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(seeded.Booking.ReturnTrip.ArrivalTime.AddMinutes(5)))
+            .Handle(
+                new CheckOutAllBookingTicketsCommand(seeded.Booking.CharterBookingQrToken!, "TR-RET"),
+                CancellationToken.None);
+
+        context.Tickets.Count(x => x.TicketStatus == TicketStatus.CheckedOut).ShouldBe(2);
+        context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Completed);
+        returnManifest.BookingStatus.ShouldBe(nameof(BookingStatus.Completed));
+        returnManifest.CheckedInTicketCount.ShouldBe(0);
     }
 
     [Test]
@@ -126,7 +173,9 @@ public class RoundTripCheckInAndScanTests
         var booking = new Booking
         {
             Trip = outboundTrip,
+            TripId = outboundTrip.Id,
             ReturnTrip = returnTrip,
+            ReturnTripId = returnTrip.Id,
             BookingCode = "BK-ROUNDTRIP",
             CharterBookingQrToken = "BK" + Guid.NewGuid().ToString("N"),
             ContactName = "Nguyen Van A",
@@ -142,6 +191,8 @@ public class RoundTripCheckInAndScanTests
         var outboundPassenger = new BookingPassenger
         {
             Booking = booking,
+            BookingId = booking.Id,
+            TripId = outboundTrip.Id,
             Trip = outboundTrip,
             FullName = "Khach Chieu Di",
             PassengerType = "ADULT",
@@ -150,6 +201,8 @@ public class RoundTripCheckInAndScanTests
         var returnPassenger = new BookingPassenger
         {
             Booking = booking,
+            BookingId = booking.Id,
+            TripId = returnTrip.Id,
             Trip = returnTrip,
             FullName = "Khach Chieu Ve",
             PassengerType = "ADULT",
@@ -209,6 +262,8 @@ public class RoundTripCheckInAndScanTests
         new()
         {
             Booking = booking,
+            BookingId = booking.Id,
+            BookingPassengerId = passenger.Id,
             BookingPassenger = passenger,
             TicketCode = ticketCode,
             QrToken = $"QR-{ticketCode}-{Guid.NewGuid():N}",

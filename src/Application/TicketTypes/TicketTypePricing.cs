@@ -38,12 +38,12 @@ public static class TicketTypePricing
 
     public static readonly IReadOnlyList<string> AlwaysFreeTicketTypeCodes =
     [
+        "CHILD",
         "INFANT"
     ];
 
     public static readonly IReadOnlyList<string> SightseeingConcessionTicketTypeCodes =
     [
-        "CHILD",
         "SENIOR",
         "DISABLED"
     ];
@@ -52,8 +52,8 @@ public static class TicketTypePricing
     [
         new("ADULT", "Vé người lớn", "Hành khách thông thường, nguyên giá", 1.0m, null),
         new("CHILD", "Vé trẻ em",
-            "Miễn phí trên waterbus thường; sightseeing giảm theo cấu hình nhóm ưu đãi.",
-            0.0m, null, SightseeingConcessionPriceModifier),
+            "Miễn phí trên waterbus thường và sightseeing; phải đi kèm một hành khách người lớn.",
+            0.0m, null, 0.0m),
         new("INFANT", "Trẻ em dưới 2 tuổi",
             "Miễn phí. Có thể ngồi cùng người lớn (không chiếm ghế) hoặc chiếm 1 ghế riêng tùy khách. "
             + "Áp dụng waterbus thường và sightseeing.",

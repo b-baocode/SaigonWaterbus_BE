@@ -58,6 +58,7 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
             ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
             ticketStatusBefore = ticket.TicketStatus;
             EnsureTicketCanBeCheckedOut(ticket);
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, now);
             await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTicketAsync(
                 _context, currentUser, ticket, now, cancellationToken);
         }
@@ -100,7 +101,7 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken);
+        return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken, now);
     }
 
     private async Task CompleteBookingIfAllTicketsCheckedOutAsync(

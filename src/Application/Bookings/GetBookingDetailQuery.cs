@@ -25,28 +25,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             ?? throw new ValidationException([]);
 
         var booking = await _context.Set<Booking>()
+            .AsNoTracking()
             .Include(b => b.Promotion)
-            .Include(b => b.Passengers)
-                .ThenInclude(p => p.TripSeat)
-                    .ThenInclude(ts => ts!.Seat)
-            .Include(b => b.Passengers)
-                .ThenInclude(p => p.FromStation)
-            .Include(b => b.Passengers)
-                .ThenInclude(p => p.ToStation)
-            .Include(b => b.Trip)
-                .ThenInclude(t => t!.Route)
-                    .ThenInclude(r => r.RouteStops)
-                        .ThenInclude(rs => rs.Station)
-            .Include(b => b.Trip)
-                .ThenInclude(t => t!.TripStops)
-            .Include(b => b.ReturnTrip)
-                .ThenInclude(t => t!.Route)
-                    .ThenInclude(r => r.RouteStops)
-                        .ThenInclude(rs => rs.Station)
-            .Include(b => b.ReturnTrip)
-                .ThenInclude(t => t!.TripStops)
-            .Include(b => b.Tickets)
-            .Include(b => b.Payments)
             .SingleOrDefaultAsync(
                 b => b.Id == request.BookingId && b.BookingType == Booking.SeatBookingType,
                 cancellationToken)
@@ -54,6 +34,12 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
 
         if (booking.UserId != userId)
             throw new NotFoundException("Booking not found.");
+
+        booking.Trip = await LoadTripAsync(booking.TripId, cancellationToken);
+        booking.ReturnTrip = await LoadTripAsync(booking.ReturnTripId, cancellationToken);
+        booking.Passengers = await LoadPassengersAsync(booking.Id, cancellationToken);
+        booking.Tickets = await LoadTicketsAsync(booking.Id, cancellationToken);
+        booking.Payments = await LoadPaymentsAsync(booking.Id, cancellationToken);
 
         var ticketsByPassengerId = booking.Tickets
             .Where(t => t.BookingPassengerId.HasValue
@@ -145,4 +131,48 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             booking.ReturnTrip?.DepartureTime,
             BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
     }
+
+    private async Task<Trip?> LoadTripAsync(Guid? tripId, CancellationToken cancellationToken)
+    {
+        if (!tripId.HasValue)
+        {
+            return null;
+        }
+
+        return await _context.Set<Trip>()
+            .AsNoTracking()
+            .Include(t => t.Route)
+                .ThenInclude(r => r.RouteStops)
+                    .ThenInclude(rs => rs.Station)
+            .Include(t => t.TripStops)
+            .SingleOrDefaultAsync(t => t.Id == tripId.Value, cancellationToken);
+    }
+
+    private async Task<List<BookingPassenger>> LoadPassengersAsync(
+        Guid bookingId,
+        CancellationToken cancellationToken) =>
+        await _context.Set<BookingPassenger>()
+            .AsNoTracking()
+            .Where(p => p.BookingId == bookingId)
+            .Include(p => p.TripSeat)
+                .ThenInclude(ts => ts!.Seat)
+            .Include(p => p.FromStation)
+            .Include(p => p.ToStation)
+            .ToListAsync(cancellationToken);
+
+    private async Task<List<Ticket>> LoadTicketsAsync(
+        Guid bookingId,
+        CancellationToken cancellationToken) =>
+        await _context.Set<Ticket>()
+            .AsNoTracking()
+            .Where(t => t.BookingId == bookingId)
+            .ToListAsync(cancellationToken);
+
+    private async Task<List<Payment>> LoadPaymentsAsync(
+        Guid bookingId,
+        CancellationToken cancellationToken) =>
+        await _context.Set<Payment>()
+            .AsNoTracking()
+            .Where(p => p.BookingId == bookingId)
+            .ToListAsync(cancellationToken);
 }

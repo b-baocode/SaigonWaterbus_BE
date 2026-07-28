@@ -5,6 +5,8 @@ namespace SaigonWaterbus.Application.Bookings;
 internal static class LapInfantTicketSupport
 {
     private const string InfantTicketTypeCode = "INFANT";
+    private const string ChildTicketTypeCode = "CHILD";
+    private const string AdultTicketTypeCode = "ADULT";
 
     public static bool IsLapInfant(BookingPassenger passenger) =>
         string.Equals(passenger.PassengerType?.Trim(), InfantTicketTypeCode, StringComparison.OrdinalIgnoreCase)
@@ -12,10 +14,21 @@ internal static class LapInfantTicketSupport
         && !passenger.TripSeatId.HasValue
         && passenger.TripSeat is null;
 
+    public static bool IsAccompaniedChild(BookingPassenger passenger) =>
+        string.Equals(passenger.PassengerType?.Trim(), ChildTicketTypeCode, StringComparison.OrdinalIgnoreCase)
+        && passenger.TripId.HasValue;
+
+    public static bool UsesCompanionTicket(BookingPassenger passenger) =>
+        IsLapInfant(passenger) || IsAccompaniedChild(passenger);
+
     public static bool RequiresOwnTicket(BookingPassenger passenger) =>
-        !IsLapInfant(passenger);
+        !UsesCompanionTicket(passenger);
 
     public static IReadOnlyDictionary<Guid, Guid> AssignInfantsToCompanions(
+        IEnumerable<BookingPassenger> passengers) =>
+        AssignCompanionTicketPassengersToAdults(passengers);
+
+    public static IReadOnlyDictionary<Guid, Guid> AssignCompanionTicketPassengersToAdults(
         IEnumerable<BookingPassenger> passengers)
     {
         var companions = passengers
@@ -28,10 +41,10 @@ internal static class LapInfantTicketSupport
             .ThenBy(x => x.Id)
             .ToList();
         var usedCompanionIds = new HashSet<Guid>();
-        var assignmentByInfantId = new Dictionary<Guid, Guid>();
+        var assignmentByPassengerId = new Dictionary<Guid, Guid>();
 
-        foreach (var infant in passengers
-                     .Where(IsLapInfant)
+        foreach (var dependent in passengers
+                     .Where(UsesCompanionTicket)
                      .OrderBy(PassengerLegOrder)
                      .ThenBy(x => x.FromStopOrder ?? int.MaxValue)
                      .ThenBy(x => x.ToStopOrder ?? int.MaxValue)
@@ -40,17 +53,17 @@ internal static class LapInfantTicketSupport
         {
             var companion = companions.FirstOrDefault(candidate =>
                 !usedCompanionIds.Contains(candidate.Id)
-                && SameTicketSegment(candidate, infant));
+                && SameTicketSegment(candidate, dependent));
             if (companion is null)
             {
                 continue;
             }
 
-            assignmentByInfantId[infant.Id] = companion.Id;
+            assignmentByPassengerId[dependent.Id] = companion.Id;
             usedCompanionIds.Add(companion.Id);
         }
 
-        return assignmentByInfantId;
+        return assignmentByPassengerId;
     }
 
     public static IReadOnlyList<BookingPassenger> ResolvePassengersRepresentedByTicket(
@@ -66,12 +79,12 @@ internal static class LapInfantTicketSupport
                 .ToArray();
         }
 
-        if (IsLapInfant(ticketPassenger))
+        if (UsesCompanionTicket(ticketPassenger))
         {
             return [ticketPassenger];
         }
 
-        var assignments = AssignInfantsToCompanions(passengers);
+        var assignments = AssignCompanionTicketPassengersToAdults(passengers);
         var represented = passengers
             .Where(passenger => passenger.Id == ticketPassenger.Id
                 || (assignments.TryGetValue(passenger.Id, out var companionId)
@@ -84,7 +97,7 @@ internal static class LapInfantTicketSupport
     }
 
     private static bool IsEligibleCompanion(BookingPassenger passenger) =>
-        !IsLapInfant(passenger)
+        string.Equals(passenger.PassengerType?.Trim(), AdultTicketTypeCode, StringComparison.OrdinalIgnoreCase)
         && (passenger.TripSeatId.HasValue || passenger.TripSeat is not null);
 
     private static bool SameTicketSegment(BookingPassenger companion, BookingPassenger infant) =>

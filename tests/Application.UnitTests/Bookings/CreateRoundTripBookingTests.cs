@@ -222,8 +222,12 @@ public class CreateRoundTripBookingTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var user = context.Set<User>().Single(x => x.Id == userContext.UserId!.Value);
+        user.Email = "booker@gmail.com";
+        await context.SaveChangesAsync();
         await SeedTripAsync(context, "TR-FREE", "BD", "TADA", Now.AddHours(2));
-        var handler = CreateHandler(context, userContext);
+        var sender = new RecordingPaymentNotificationSender();
+        var handler = CreateHandler(context, userContext, paymentNotificationSender: sender);
 
         var result = await handler.Handle(
             new CreateBookingCommand(
@@ -249,6 +253,11 @@ public class CreateRoundTripBookingTests
         ticket.TicketStatus.ShouldBe(TicketStatus.Active);
         ticket.TicketCode.ShouldNotBeNullOrWhiteSpace();
         ticket.QrToken.ShouldNotBeNullOrWhiteSpace();
+
+        sender.ETickets.ShouldHaveSingleItem();
+        sender.ETickets.Single().Booking.Email.ShouldBe(booking.ContactEmail);
+        sender.ETickets.Single().BookingQrToken.ShouldBe(booking.CharterBookingQrToken);
+        sender.ETickets.Single().Tickets.ShouldHaveSingleItem();
     }
 
     [Test]
@@ -293,14 +302,16 @@ public class CreateRoundTripBookingTests
     private static CreateBookingCommandHandler CreateHandler(
         ApplicationDbContext context,
         TestUserContext userContext,
-        ITripSeatNotifier? notifier = null) =>
+        ITripSeatNotifier? notifier = null,
+        IPaymentNotificationSender? paymentNotificationSender = null) =>
         new(
             context,
             userContext,
             new SequentialBookingCodeGenerator(),
             new FixedFareCalculator(10000m),
             new FixedTimeProvider(Now),
-            tripSeatNotifier: notifier);
+            tripSeatNotifier: notifier,
+            paymentNotificationSender: paymentNotificationSender);
 
     private static BookingItemRequest Adult(string seat, string from, string to) =>
         new(seat, "ADULT", from, to, "Nguyen Van A", null, null, null, null, null);
@@ -414,6 +425,37 @@ public class CreateRoundTripBookingTests
             CancellationToken cancellationToken)
         {
             Published.Add((tripId, changes));
+            return Task.CompletedTask;
+        }
+    }
+
+    private sealed class RecordingPaymentNotificationSender : IPaymentNotificationSender
+    {
+        public List<PaymentSucceededNotification> Notifications { get; } = [];
+        public List<BoardingPassNotification> BoardingPasses { get; } = [];
+        public List<ETicketNotification> ETickets { get; } = [];
+
+        public Task SendPaymentSucceededAsync(
+            PaymentSucceededNotification notification,
+            CancellationToken cancellationToken)
+        {
+            Notifications.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task SendBoardingPassAsync(
+            BoardingPassNotification notification,
+            CancellationToken cancellationToken)
+        {
+            BoardingPasses.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task SendETicketsAsync(
+            ETicketNotification notification,
+            CancellationToken cancellationToken)
+        {
+            ETickets.Add(notification);
             return Task.CompletedTask;
         }
     }

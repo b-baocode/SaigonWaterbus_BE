@@ -121,7 +121,9 @@ public sealed class Bookings : IEndpointGroup
                 "Chu booking hoac Admin/Manager/Staff",
                 null,
                 "Staff quet QR chung tren ve dien tu de mo manifest ca nhom.",
-                "Check-in tung ve van dung POST /api/tickets/check-in/{codeOrToken}."));
+                "Response passengers[] show full hanh khach cua booking; CHILD/INFANT di kem co usesCompanionTicket=true, companionPassengerId/name va dung chung ticketCode/qrToken cua ADULT.",
+                "Check-in/check-out tung ve van dung POST /api/tickets/check-in hoac /api/tickets/check-out.",
+                "Check-in/check-out ca nhom dung endpoint check-in-all/check-out-all ben duoi."));
 
         group.MapPost(CheckInAllBookingTickets, "manifest/qr/{qrToken}/check-in-all")
             .RequireAuthorization()
@@ -133,7 +135,21 @@ public sealed class Bookings : IEndpointGroup
                 "Booking khu hoi: truyen query ?tripCode=<chuyen dang boarding> de chi check-in ve chieu do; bo trong se check-in tat ca.",
                 "Neu nguoi goi la Staff thi phai la nhan vien OnBoard co ca assignmentType=Boat dang active tren dung tau cua tung chieu check-in.",
                 "Yeu cau booking da Confirmed va thanh toan du.",
+                "Chi duoc check-in trong vong 10 phut truoc gio tau roi ben khach len cua tung ve.",
                 "Tra ve manifest moi sau khi check-in."));
+
+        group.MapPost(CheckOutAllBookingTickets, "manifest/qr/{qrToken}/check-out-all")
+            .RequireAuthorization()
+            .WithSummary("Check-out ca nhom bang QR chung")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Manager hoac Staff",
+                null,
+                "Check-out mot luot toan bo ve CheckedIn cua booking thuong.",
+                "Booking khu hoi: truyen query ?tripCode=<chuyen dang tra khach> de chi check-out ve chieu do; bo trong se check-out tat ca ve dang CheckedIn.",
+                "Neu nguoi goi la Staff thi phai la nhan vien OnBoard co ca assignmentType=Boat dang active tren dung tau cua tung chieu check-out.",
+                "Check-out duoc thuc hien sau check-in, nhung khong qua 10 phut sau gio tau den ben khach xuong cua tung ve.",
+                "Khi tat ca ve hop le da CheckedOut, booking chuyen Completed va tich diem neu co.",
+                "Tra ve manifest moi sau khi check-out."));
 
         group.MapPost(ResendBookingTickets, "{id:guid}/resend-tickets")
             .RequireAuthorization()
@@ -153,12 +169,11 @@ public sealed class Bookings : IEndpointGroup
                 CreateBookingExample,
                 "tripCode: lay tu GET /api/trips hoac GET /api/trips/search → tripCode.",
                 "seatNumber: lay tu GET /api/trips/{id}/seats → seats[].seatNumber (chi chon ghe status=Available).",
-                "ticketTypeCode: ADULT (nguyen gia) | CHILD (mien phi waterbus thuong) | INFANT (duoi 2 tuoi) | SENIOR (tren 70) | DISABLED (khuyet tat).",
-                "INFANT khong chiem ghe (ngoi long cung nguoi lon) MIEN PHI tren CA waterbus thuong lan sightseeing; van co ve/QR.",
-                "Waterbus thuong: CHILD/SENIOR/DISABLED/INFANT mien phi.",
-                "Sightseeing: CHILD/SENIOR/DISABLED dung chung % giam tai /api/ticket-types/sightseeing-concession; INFANT mien phi.",
-                "INFANT bat buoc khai bao birthYear (tre duoi 2 tuoi tinh theo ngay khoi hanh chuyen).",
-                "Moi INFANT khong chiem ghe phai co it nhat mot hanh khach nguoi lon co ghe di kem trong cung booking.",
+                "ticketTypeCode: ADULT (nguyen gia) | CHILD (tren 2 den 12 tuoi, mien phi) | INFANT (duoi 2 tuoi) | SENIOR (tren 70) | DISABLED (khuyet tat).",
+                "CHILD va INFANT mien phi tren ca waterbus thuong lan sightseeing, khong co QR rieng; di kem trong QR cua hanh khach ADULT cung chieu/cung chang.",
+                "SENIOR/DISABLED: mien phi tren waterbus thuong; sightseeing dung chung % giam tai /api/ticket-types/sightseeing-concession.",
+                "INFANT/CHILD bat buoc khai bao birthYear. CHILD phai tren 2 tuoi va khong qua 12 tuoi tai ngay khoi hanh.",
+                "Moi INFANT/CHILD phai co it nhat mot hanh khach ADULT co ghe di kem trong cung booking; 1 ADULT kem toi da 1 tre trong cung chieu/chang.",
                 "fromStationCode / toStationCode: khuyến nghị lấy từ GET /api/trips/{id} → stops[].stationCode; BE cũng chấp nhận stationId hoặc stationName.",
                 "Chi bat buoc tren chuyen ban ve theo chang (sellsBySegment=true trong GET /api/trips/{id} hoac /seats); "
                     + "chuyen ngam canh (routeType=SightseeingLoop) di nguyen chuyen nen BO TRONG ca hai, BE tu lay ben dau → ben cuoi cua tuyen.",
@@ -167,7 +182,7 @@ public sealed class Bookings : IEndpointGroup
                 "Gia tu dong tinh theo gia cua seatTypeCode cua ghe x ticket type modifier.",
                 "passengerEmail (optional): hanh khach co email se nhan rieng ve dien tu (QR) cua minh sau khi thanh toan.",
                 "Ve khu hoi (optional): truyen them returnTripCode + returnItems de mua ve 2 chieu trong 1 booking; hai chieu doc lap (trip, ghe, hanh khach rieng), khong giam gia, tong tien = cong 2 chieu.",
-                "returnTripCode va returnItems phai di cung nhau; returnItems theo cung rule voi items (toi da 10 ghe/chieu, INFANT tinh theo tung chieu).",
+                "returnTripCode va returnItems phai di cung nhau; returnItems theo cung rule voi items (toi da 10 ghe/chieu, tre em di kem tinh theo tung chieu).",
                 "Bao hiem: dung goi PassengerInsurance active/default, BE tu cong phi theo so passenger item. Gui insuranceSelected=false de khong chon; gui insurancePackageId de chon goi cu the.",
                 "bookingStatus sau khi tao: PendingPayment; ghe duoc giu toi da 15 phut, nhung holdExpiresAt khong vuot gio dong ban cua chang (gio tau roi ben len - 10 phut). Qua han booking tu Expired va nha ghe ca 2 chieu.",
                 "Tra ve 400 neu ghe da bi dat hoac dang duoc nguoi khac tam giu (race condition)."));
@@ -223,6 +238,10 @@ public sealed class Bookings : IEndpointGroup
     private static async Task<IResult> CheckInAllBookingTickets(
         ISender sender, string qrToken, string? tripCode, CancellationToken ct) =>
         Results.Ok(await sender.Send(new CheckInAllBookingTicketsCommand(qrToken, tripCode), ct));
+
+    private static async Task<IResult> CheckOutAllBookingTickets(
+        ISender sender, string qrToken, string? tripCode, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CheckOutAllBookingTicketsCommand(qrToken, tripCode), ct));
 
     private static async Task<IResult> ResendBookingTickets(
         ISender sender, Guid id, CancellationToken ct) =>

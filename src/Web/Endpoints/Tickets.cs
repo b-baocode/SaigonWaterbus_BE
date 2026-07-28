@@ -22,6 +22,8 @@ public sealed class Tickets : IEndpointGroup
                 "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
                 "Scan/tra cuu KHONG doi trang thai ve, co the goi nhieu lan tren cung mot ve.",
                 "Response co canCheckIn/canCheckOut de FE biet lan quet nay nen hien nut check-in hay check-out.",
+                "Voi booking thuong: TicketScanDto.passengers la nhom duoc QR nay dai dien. QR nguoi lon co the tra ve nguoi lon + CHILD/INFANT di kem.",
+                "CHILD/INFANT di kem co usesCompanionTicket=true va companionPassengerId/name tro ve hanh khach ADULT; booking moi khong co QR rieng cho CHILD/INFANT.",
                 "Admin/Manager/Staff xem duoc moi ve.",
                 "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Customer chi xem duoc ve thuoc booking cua minh.",
@@ -47,6 +49,7 @@ public sealed class Tickets : IEndpointGroup
                 "Neu codeOrToken la QR tong booking thuong prefix BK thi tra BookingManifestDto.",
                 "Neu codeOrToken la QR tong charter prefix CB thi tra CharterBookingManifestDto.",
                 "Neu codeOrToken la ticketCode/qrToken ve le thi tra TicketScanDto.",
+                "BookingManifestDto.passengers show full hanh khach cua QR tong; CHILD/INFANT di kem co usesCompanionTicket=true va dung ticketCode/qrToken cua ADULT.",
                 "TicketScanDto co canCheckIn/canCheckOut; scan ve da CheckedIn se canCheckOut=true de FE cho checkout bang cung ma ve.",
                 "Quyen va dieu kien ve le giong GET /api/tickets/scan/{codeOrToken}."));
 
@@ -61,6 +64,7 @@ public sealed class Tickets : IEndpointGroup
                 "Chi Admin/Manager/Staff duoc check-in.",
                 "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Ticket phai Active, booking phai Confirmed va da thanh toan du.",
+                "Chi duoc check-in tu 10 phut truoc gio tau roi ben khach len den dung gio roi ben.",
                 "Check-in chi thuc hien mot lan; ve da CheckedIn thi scan lai bang /api/tickets/scan de hien canCheckOut=true.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedInAt/checkedInBy."));
 
@@ -93,6 +97,7 @@ public sealed class Tickets : IEndpointGroup
                 "Chi Admin/Manager/Staff duoc check-out.",
                 "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Ticket phai da CheckedIn truoc do.",
+                "Check-out duoc thuc hien sau check-in, nhung khong qua 10 phut sau gio tau den ben khach xuong.",
                 "Dung cung ticketCode/qrToken cua ve da check-in; checkout xong ve khong checkout lai duoc.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedOutAt/checkedOutBy."));
 

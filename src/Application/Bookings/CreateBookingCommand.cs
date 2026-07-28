@@ -59,8 +59,8 @@ public sealed record CreateBookingCommand(
 
 public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBookingCommand>
 {
-    private const string LapInfantCompanionMessage =
-        "Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế đi kèm trong cùng booking.";
+    private const string ChildCompanionMessage =
+        "Mỗi trẻ em miễn phí (INFANT hoặc CHILD) phải có một hành khách người lớn có ghế đi kèm trong cùng booking.";
 
     public CreateBookingCommandValidator()
     {
@@ -70,11 +70,10 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
 
         RuleForEach(x => x.Items).ChildRules(ApplyItemRules);
 
-        // Trẻ dưới 2 tuổi ngồi cùng người lớn (INFANT không chiếm ghế) phải có người lớn có ghế đi kèm.
-        // Mỗi hành khách có ghế (không phải INFANT) chỉ "kèm" tối đa một trẻ ngồi lòng. Tính theo từng chiều.
+        // Trẻ miễn phí dùng QR của người lớn đi kèm. Mỗi ADULT có ghế chỉ kèm tối đa một trẻ trong từng chiều.
         RuleFor(x => x.Items)
-            .Must(HasSeatedCompanionForEachLapInfant)
-            .WithMessage(LapInfantCompanionMessage)
+            .Must(HasSeatedAdultCompanionForEachAccompaniedChild)
+            .WithMessage(ChildCompanionMessage)
             .When(x => x.Items is not null);
 
         // Vé khứ hồi: ReturnTripCode và ReturnItems phải đi cùng nhau.
@@ -93,8 +92,8 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
         RuleForEach(x => x.ReturnItems).ChildRules(ApplyItemRules);
 
         RuleFor(x => x.ReturnItems!)
-            .Must(HasSeatedCompanionForEachLapInfant)
-            .WithMessage(LapInfantCompanionMessage)
+            .Must(HasSeatedAdultCompanionForEachAccompaniedChild)
+            .WithMessage(ChildCompanionMessage)
             .When(x => x.ReturnItems is { Count: > 0 });
 
         RuleFor(x => x.InsurancePackageId)
@@ -110,8 +109,8 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             .When(x => !IsInfant(x.TicketTypeCode))
             .WithMessage("seatNumber là bắt buộc (chỉ vé INFANT - trẻ dưới 2 tuổi - mới được bỏ trống để ngồi cùng người lớn).");
         item.RuleFor(x => x.BirthYear).NotNull()
-            .When(x => IsInfant(x.TicketTypeCode))
-            .WithMessage("birthYear là bắt buộc với vé INFANT (trẻ dưới 2 tuổi) để khai báo và lưu hành khách.");
+            .When(x => IsInfant(x.TicketTypeCode) || IsChild(x.TicketTypeCode))
+            .WithMessage("birthYear là bắt buộc với vé INFANT/CHILD để khai báo và lưu hành khách.");
         // Bắt buộc / phải khác nhau chỉ áp dụng cho chuyến bán theo chặng — validator không biết
         // trip nào nên rule đó enforce ở handler (xem ResolveLegAsync).
         item.RuleFor(x => x.FromStationCode).MaximumLength(50);
@@ -122,17 +121,25 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             .When(x => !string.IsNullOrWhiteSpace(x.PassengerEmail));
     }
 
-    private static bool HasSeatedCompanionForEachLapInfant(IReadOnlyList<BookingItemRequest> items)
+    private static bool HasSeatedAdultCompanionForEachAccompaniedChild(IReadOnlyList<BookingItemRequest> items)
     {
-        var lapInfants = items.Count(i =>
-            string.IsNullOrWhiteSpace(i.SeatNumber) && IsInfant(i.TicketTypeCode));
-        var seatedCompanions = items.Count(i =>
-            !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
-        return lapInfants <= seatedCompanions;
+        var accompaniedChildren = items.Count(i => UsesCompanionTicket(i.TicketTypeCode));
+        var seatedAdults = items.Count(i =>
+            !string.IsNullOrWhiteSpace(i.SeatNumber) && IsAdult(i.TicketTypeCode));
+        return accompaniedChildren <= seatedAdults;
     }
 
     private static bool IsInfant(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "INFANT", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsChild(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "CHILD", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAdult(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "ADULT", StringComparison.OrdinalIgnoreCase);
+
+    private static bool UsesCompanionTicket(string? ticketTypeCode) =>
+        IsInfant(ticketTypeCode) || IsChild(ticketTypeCode);
 }
 
 public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand, CreateBookingResult>
@@ -145,6 +152,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
     private readonly ISeatHoldService _seatHoldService;
     private readonly ITripSeatNotifier _tripSeatNotifier;
     private readonly IPromotionLock? _promotionLock;
+    private readonly IPaymentNotificationSender? _paymentNotificationSender;
+    private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
     private readonly BookingLegResolver _legResolver;
 
     public CreateBookingCommandHandler(
@@ -155,7 +165,10 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         TimeProvider timeProvider,
         ISeatHoldService? seatHoldService = null,
         ITripSeatNotifier? tripSeatNotifier = null,
-        IPromotionLock? promotionLock = null)
+        IPromotionLock? promotionLock = null,
+        IPaymentNotificationSender? paymentNotificationSender = null,
+        IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
@@ -165,6 +178,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         _seatHoldService = seatHoldService ?? NullSeatHoldService.Instance;
         _tripSeatNotifier = tripSeatNotifier ?? NullTripSeatNotifier.Instance;
         _promotionLock = promotionLock;
+        _paymentNotificationSender = paymentNotificationSender;
+        _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
         _legResolver = new BookingLegResolver(_context, _fareCalculator, _seatHoldService);
     }
 
@@ -349,10 +365,25 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             now);
         await _context.SaveChangesAsync(cancellationToken);
 
-        await TicketIssueSupport.EnsureRegularBookingPassengerTicketsAsync(
+        if (_paymentNotificationSender is null)
+        {
+            await TicketIssueSupport.EnsureRegularBookingPassengerTicketsAsync(
+                _context,
+                booking,
+                _timeProvider,
+                cancellationToken);
+            return;
+        }
+
+        await PaymentSupport.SendPaymentNotificationIfPaidAsync(
             _context,
-            booking,
             _timeProvider,
-            cancellationToken);
+            _paymentNotificationSender,
+            booking,
+            payment,
+            wasPaid: false,
+            cancellationToken,
+            _bookingTicketPdfRenderer,
+            _notificationRealtimeNotifier);
     }
 }

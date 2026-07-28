@@ -39,6 +39,14 @@ internal static class TicketScanSupport
             .Include(x => x.CheckedOutByUser)
             .Include(x => x.Booking)
                 .ThenInclude(x => x.Passengers)
+                    .ThenInclude(x => x.TripSeat)
+                        .ThenInclude(x => x!.Seat)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Passengers)
+                    .ThenInclude(x => x.FromStation)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Passengers)
+                    .ThenInclude(x => x.ToStation)
             .Include(x => x.Booking)
                 .ThenInclude(x => x.Trip)
                     .ThenInclude(x => x!.Boat)
@@ -74,7 +82,8 @@ internal static class TicketScanSupport
     public static async Task<TicketScanDto> ToDtoAsync(
         IApplicationDbContext context,
         Ticket ticket,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        DateTimeOffset? now = null)
     {
         if (Booking.IsCharterBookingType(ticket.Booking.BookingType))
         {
@@ -87,10 +96,10 @@ internal static class TicketScanSupport
                     x => x.Id == ticket.BookingId && x.BookingType == Booking.CharterBookingType,
                     cancellationToken);
 
-            return ToCharterBookingScanDto(ticket, charterBooking);
+            return ToCharterBookingScanDto(ticket, charterBooking, now);
         }
 
-        return ToBookingScanDto(ticket, ticket.Booking);
+        return ToBookingScanDto(ticket, ticket.Booking, now);
     }
 
     /// <summary>Loại vé hiển thị của charter theo PassengerType (Adult/Child) — độc lập với danh mục vé booking thường.</summary>
@@ -102,7 +111,7 @@ internal static class TicketScanSupport
             _ => ((string?)null, (string?)null)
         };
 
-    private static TicketScanDto ToCharterBookingScanDto(Ticket ticket, Booking booking)
+    private static TicketScanDto ToCharterBookingScanDto(Ticket ticket, Booking booking, DateTimeOffset? now)
     {
         var ticketPassenger = ticket.BookingPassenger;
         var seatCode = ticket.BookingPassenger?.TripSeat?.Seat?.Code;
@@ -153,11 +162,11 @@ internal static class TicketScanSupport
             booking.FromStationId,
             booking.ToStationId,
             booking.BoatId,
-            CanCheckIn(ticket, booking),
-            CanCheckOut(ticket, booking));
+            CanCheckIn(ticket, booking, now),
+            CanCheckOut(ticket, booking, now));
     }
 
-    private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking)
+    private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking, DateTimeOffset? now)
     {
         // Booking khứ hồi: trip của vé lấy theo chiều của hành khách (TripId null = dữ liệu cũ → trip đi).
         var trip = ticket.BookingPassenger?.Trip ?? booking.Trip;
@@ -188,14 +197,14 @@ internal static class TicketScanSupport
                 trip, ticketPassenger?.FromStopOrder, ticketPassenger?.ToStopOrder);
 
         // Danh sách hành khách trong DTO chỉ gồm nhóm được đại diện bởi vé được quét:
-        // người có ghế + INFANT không ghế đi kèm (nếu có).
+        // người có QR riêng + trẻ em/INFANT đi kèm QR đó (nếu có).
         var legPassengers = booking.Passengers
             .Where(p => ticketPassenger?.TripId is null || p.TripId == ticketPassenger.TripId)
             .ToList();
         var representedPassengers = LapInfantTicketSupport.ResolvePassengersRepresentedByTicket(
             legPassengers,
             ticketPassenger);
-        var companionByInfantId = LapInfantTicketSupport.AssignInfantsToCompanions(legPassengers);
+        var companionByPassengerId = LapInfantTicketSupport.AssignCompanionTicketPassengersToAdults(legPassengers);
         var passengerById = legPassengers.ToDictionary(x => x.Id);
 
         return new TicketScanDto(
@@ -238,31 +247,33 @@ internal static class TicketScanSupport
             representedPassengers
                 .Select(p => ToPassengerDto(
                     p,
-                    ResolveCompanion(p, companionByInfantId, passengerById)))
+                    ResolveCompanion(p, companionByPassengerId, passengerById)))
                 .ToList(),
             fromStationId,
             toStationId,
             trip?.BoatId,
-            CanCheckIn(ticket, booking),
-            CanCheckOut(ticket, booking));
+            CanCheckIn(ticket, booking, now),
+            CanCheckOut(ticket, booking, now));
     }
 
-    private static bool CanCheckIn(Ticket ticket, Booking booking) =>
+    private static bool CanCheckIn(Ticket ticket, Booking booking, DateTimeOffset? now) =>
         ticket.TicketStatus == TicketStatus.Active
         && booking.BookingStatus == BookingStatus.Confirmed
         && (string.Equals(booking.PaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
-            || booking.RemainingAmount <= 0);
+            || booking.RemainingAmount <= 0)
+        && TicketAttendanceWindowSupport.IsWithinCheckInWindow(ticket, now);
 
-    private static bool CanCheckOut(Ticket ticket, Booking booking) =>
+    private static bool CanCheckOut(Ticket ticket, Booking booking, DateTimeOffset? now) =>
         ticket.TicketStatus == TicketStatus.CheckedIn
         && ticket.CheckedInAt.HasValue
-        && booking.BookingStatus == BookingStatus.Confirmed;
+        && booking.BookingStatus == BookingStatus.Confirmed
+        && TicketAttendanceWindowSupport.IsWithinCheckOutWindow(ticket, now);
 
     private static BookingPassenger? ResolveCompanion(
         BookingPassenger passenger,
-        IReadOnlyDictionary<Guid, Guid> companionByInfantId,
+        IReadOnlyDictionary<Guid, Guid> companionByPassengerId,
         IReadOnlyDictionary<Guid, BookingPassenger> passengerById) =>
-        companionByInfantId.TryGetValue(passenger.Id, out var companionPassengerId)
+        companionByPassengerId.TryGetValue(passenger.Id, out var companionPassengerId)
             && passengerById.TryGetValue(companionPassengerId, out var companion)
             ? companion
             : null;
@@ -281,5 +292,6 @@ internal static class TicketScanSupport
             passenger.TripSeat?.Seat?.Code,
             LapInfantTicketSupport.IsLapInfant(passenger),
             companion?.Id,
-            companion?.FullName);
+            companion?.FullName,
+            LapInfantTicketSupport.UsesCompanionTicket(passenger));
 }

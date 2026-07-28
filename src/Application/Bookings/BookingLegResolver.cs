@@ -126,8 +126,21 @@ internal sealed class BookingLegResolver
                     "Vé INFANT chỉ áp dụng cho trẻ dưới 2 tuổi (sinh trong vòng 2 năm so với ngày khởi hành).")]);
         }
 
-        // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và miễn phí trên
-        // cả waterbus thường lẫn sightseeing. Các loại vé có ghế dùng hệ số giá theo routeType.
+        // Vé CHILD dành cho trẻ trên 2 tuổi đến 12 tuổi, miễn phí và dùng chung QR với người lớn đi kèm.
+        foreach (var childItem in items.Where(i => IsChild(i.TicketTypeCode)))
+        {
+            if (!childItem.BirthYear.HasValue)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé CHILD yêu cầu khai báo birthYear (trẻ trên 2 tuổi đến 12 tuổi).")]);
+
+            var ageAtDeparture = departureYear - childItem.BirthYear.Value;
+            if (ageAtDeparture <= 2 || ageAtDeparture > 12)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé CHILD chỉ áp dụng cho trẻ trên 2 tuổi đến 12 tuổi tại ngày khởi hành.")]);
+        }
+
+        // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn). INFANT và
+        // CHILD đều miễn phí nhưng phải dùng QR của một hành khách ADULT đi kèm.
         var lapItems = items.Where(i => string.IsNullOrWhiteSpace(i.SeatNumber)).ToList();
         if (lapItems.Count > 0)
         {
@@ -136,11 +149,9 @@ internal sealed class BookingLegResolver
                 throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
                     "Chỉ vé INFANT (trẻ dưới 2 tuổi) mới được bỏ trống seatNumber.")]);
 
-            // Mỗi trẻ ngồi lòng (INFANT không ghế) phải có một hành khách có ghế (không phải INFANT) đi kèm
-            // trong cùng chiều — 1 người lớn kèm tối đa 1 trẻ. (Cũng khai báo ở validator, nhưng validator
-            // không chạy trong pipeline MediatR nên bắt buộc phải enforce tại handler.)
+            // Check nhanh theo số lượng; check đúng cùng chiều/cùng chặng chạy sau khi resolve itemSegments.
             var seatedCompanionCount = items.Count(i =>
-                !string.IsNullOrWhiteSpace(i.SeatNumber) && !IsInfant(i.TicketTypeCode));
+                !string.IsNullOrWhiteSpace(i.SeatNumber) && IsAdult(i.TicketTypeCode));
             if (lapItems.Count > seatedCompanionCount)
                 throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.SeatNumber),
                     "Mỗi trẻ dưới 2 tuổi (INFANT không chiếm ghế) phải có một hành khách người lớn có ghế "
@@ -195,6 +206,8 @@ internal sealed class BookingLegResolver
                 itemSegments.Add((item, firstStop, lastStop));
             }
         }
+
+        EnsureAccompaniedChildrenHaveAdultCompanions(itemSegments);
 
         // Hạn đóng bán theo bến khách LÊN (không phải bến đầu tuyến) — chỉ áp cho khách tự đặt;
         // staff bán tại quầy vẫn bán được cả khi tàu đã rời bến.
@@ -593,6 +606,46 @@ internal sealed class BookingLegResolver
                 Trips.BookingCutoffSupport.CutoffMessage())]);
     }
 
+    private static void EnsureAccompaniedChildrenHaveAdultCompanions(
+        IReadOnlyList<(BookingItemRequest Item, RouteStop FromStop, RouteStop ToStop)> itemSegments)
+    {
+        var adults = itemSegments
+            .Where(x => IsAdult(x.Item.TicketTypeCode) && !string.IsNullOrWhiteSpace(x.Item.SeatNumber))
+            .OrderBy(x => x.FromStop.StopOrder)
+            .ThenBy(x => x.ToStop.StopOrder)
+            .ThenBy(x => NormalizeSeatCode(x.Item.SeatNumber!))
+            .ToList();
+        var usedAdultIndexes = new HashSet<int>();
+
+        foreach (var child in itemSegments
+                     .Where(x => UsesCompanionTicket(x.Item.TicketTypeCode))
+                     .OrderBy(x => x.FromStop.StopOrder)
+                     .ThenBy(x => x.ToStop.StopOrder)
+                     .ThenBy(x => x.Item.PassengerName))
+        {
+            var adultIndex = -1;
+            for (var i = 0; i < adults.Count; i++)
+            {
+                var adult = adults[i];
+                if (!usedAdultIndexes.Contains(i)
+                    && adult.FromStop.StopOrder == child.FromStop.StopOrder
+                    && adult.ToStop.StopOrder == child.ToStop.StopOrder)
+                {
+                    adultIndex = i;
+                    break;
+                }
+            }
+            if (adultIndex < 0)
+            {
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.TicketTypeCode),
+                    "Mỗi trẻ em miễn phí (INFANT hoặc CHILD) phải có một hành khách ADULT có ghế "
+                    + "đi kèm cùng chiều và cùng chặng.")]);
+            }
+
+            usedAdultIndexes.Add(adultIndex);
+        }
+    }
+
     private static void EnsureTripSellable(
         Trip trip,
         string tripCodePropertyName,
@@ -618,4 +671,13 @@ internal sealed class BookingLegResolver
 
     private static bool IsInfant(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "INFANT", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsChild(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "CHILD", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsAdult(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "ADULT", StringComparison.OrdinalIgnoreCase);
+
+    private static bool UsesCompanionTicket(string? ticketTypeCode) =>
+        IsInfant(ticketTypeCode) || IsChild(ticketTypeCode);
 }

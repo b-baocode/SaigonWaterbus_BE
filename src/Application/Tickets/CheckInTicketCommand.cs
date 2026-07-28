@@ -55,6 +55,7 @@ public sealed class CheckInTicketCommandHandler : IRequestHandler<CheckInTicketC
             ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
             ticketStatusBefore = ticket.TicketStatus;
             EnsureTicketCanBeCheckedIn(ticket);
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, now);
             await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTicketAsync(
                 _context, currentUser, ticket, now, cancellationToken);
         }
@@ -95,7 +96,7 @@ public sealed class CheckInTicketCommandHandler : IRequestHandler<CheckInTicketC
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken);
+        return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken, now);
     }
 
     private static void EnsureTicketCanBeCheckedIn(Domain.Entities.Ticket ticket)

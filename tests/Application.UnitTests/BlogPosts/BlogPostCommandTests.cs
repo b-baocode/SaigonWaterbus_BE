@@ -30,7 +30,7 @@ public class BlogPostCommandTests
                 Slug: null,
                 Summary: "Tom tat",
                 Content: "Noi dung bai viet",
-                Category: "activity",
+                Category: "event",
                 Status: "Published",
                 ImageAltText: "Tau waterbus tren song Sai Gon",
                 ImageFile: ImageFile("waterbus-cover.webp")),
@@ -50,7 +50,7 @@ public class BlogPostCommandTests
 
         first.Slug.ShouldBe("kham-pha-sai-gon-bang-waterbus");
         second.Slug.ShouldBe("kham-pha-sai-gon-bang-waterbus-2");
-        first.Category.ShouldBe("Activity");
+        first.Category.ShouldBe("Event");
         second.Category.ShouldBe("News");
         first.ImageUrl.ShouldBe($"https://example.test/blog-posts/{first.BlogPostId}/waterbus-cover.webp");
         first.PublishedAt.ShouldBe(now);
@@ -196,7 +196,7 @@ public class BlogPostCommandTests
                 CancellationToken.None));
 
         exception.Errors["category"]
-            .ShouldContain("Category bat buoc nhap. Gia tri hop le: Activity | Event | News.");
+            .ShouldContain("Category bat buoc nhap. Gia tri hop le: News | Event.");
     }
 
     [Test]
@@ -391,13 +391,13 @@ public class BlogPostCommandTests
                 "Draft",
                 null,
                 "Updated cover",
-                "Activity",
+                "Event",
                 ImageFile("updated-cover.webp")),
             CancellationToken.None);
 
         result.ImageUrl.ShouldBe($"https://example.test/blog-posts/{post.Id}/updated-cover.webp");
         result.ImageAltText.ShouldBe("Updated cover");
-        result.Category.ShouldBe("Activity");
+        result.Category.ShouldBe("Event");
     }
 
     [Test]
@@ -437,6 +437,56 @@ public class BlogPostCommandTests
     }
 
     [Test]
+    public async Task UpdateBlogPostStatusUsesRequestedDraftOrPublishedStatus()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
+        var post = BlogPost(author, "draft-post", "Draft", null);
+        post.ImageUrl = "https://example.test/waterbus-cover.webp";
+        post.ImageUrls = ["https://example.test/waterbus-cover.webp"];
+        context.Set<BlogPost>().Add(post);
+        await context.SaveChangesAsync();
+
+        var publishedAt = new DateTimeOffset(2030, 1, 2, 1, 0, 0, TimeSpan.Zero);
+        var handler = new UpdateBlogPostStatusCommandHandler(
+            context,
+            adminContext,
+            new FixedTimeProvider(publishedAt));
+
+        var published = await handler.Handle(
+            new UpdateBlogPostStatusCommand(post.Id, "Published"),
+            CancellationToken.None);
+
+        published.Status.ShouldBe("Published");
+        published.PublishedAt.ShouldBe(publishedAt);
+
+        var draft = await handler.Handle(
+            new UpdateBlogPostStatusCommand(post.Id, "Draft"),
+            CancellationToken.None);
+
+        draft.Status.ShouldBe("Draft");
+        draft.PublishedAt.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task DeleteBlogPostRemovesPostInsteadOfArchiving()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
+        var post = BlogPost(author, "draft-post", "Draft", null);
+        context.Set<BlogPost>().Add(post);
+        await context.SaveChangesAsync();
+
+        var handler = new DeleteBlogPostCommandHandler(context, adminContext);
+
+        await handler.Handle(new DeleteBlogPostCommand(post.Id), CancellationToken.None);
+
+        context.Set<BlogPost>().Any(x => x.Id == post.Id).ShouldBeFalse();
+    }
+
+    [Test]
     public async Task UpdateBlogPostImageRequiresUploadedFile()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -466,6 +516,7 @@ public class BlogPostCommandTests
         context.Set<BlogPost>().AddRange(
             BlogPost(author, "draft-post", "Draft", null),
             BlogPost(author, "published-post", "Published", new DateTimeOffset(2030, 1, 2, 1, 0, 0, TimeSpan.Zero)),
+            BlogPost(author, "activity-post", "Published", new DateTimeOffset(2030, 1, 4, 1, 0, 0, TimeSpan.Zero), "Activity"),
             BlogPost(author, "archived-post", "Archived", new DateTimeOffset(2030, 1, 3, 1, 0, 0, TimeSpan.Zero)));
         await context.SaveChangesAsync();
 
@@ -478,7 +529,89 @@ public class BlogPostCommandTests
         result.Single().ImageUrl.ShouldBe("https://example.test/waterbus-cover.webp");
     }
 
-    private static BlogPost BlogPost(User author, string slug, string status, DateTimeOffset? publishedAt) =>
+    [Test]
+    public async Task ManagementListOnlyReturnsDraftAndPublishedBlogPosts()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var author = context.Users.Single(x => x.Id == adminContext.UserId!.Value);
+
+        context.Set<BlogPost>().AddRange(
+            BlogPost(author, "draft-post", "Draft", null),
+            BlogPost(author, "published-post", "Published", new DateTimeOffset(2030, 1, 2, 1, 0, 0, TimeSpan.Zero)),
+            BlogPost(author, "activity-post", "Published", new DateTimeOffset(2030, 1, 4, 1, 0, 0, TimeSpan.Zero), "Activity"),
+            BlogPost(author, "archived-post", "Archived", new DateTimeOffset(2030, 1, 3, 1, 0, 0, TimeSpan.Zero)));
+        await context.SaveChangesAsync();
+
+        var result = await new GetBlogPostManagementListQueryHandler(context, adminContext)
+            .Handle(new GetBlogPostManagementListQuery(null), CancellationToken.None);
+
+        result.Select(x => x.Slug).ShouldBe(["published-post", "draft-post"]);
+    }
+
+    [Test]
+    public void BlogPostStatusValidatorsRejectArchived()
+    {
+        new UpdateBlogPostCommandValidator()
+            .Validate(new UpdateBlogPostCommand(
+                Guid.NewGuid(),
+                "Title",
+                null,
+                null,
+                "Content",
+                "Archived",
+                null,
+                null,
+                "News"))
+            .IsValid
+            .ShouldBeFalse();
+
+        new UpdateBlogPostStatusCommandValidator()
+            .Validate(new UpdateBlogPostStatusCommand(Guid.NewGuid(), "Archived"))
+            .IsValid
+            .ShouldBeFalse();
+
+        new GetBlogPostManagementListQueryValidator()
+            .Validate(new GetBlogPostManagementListQuery("Archived"))
+            .IsValid
+            .ShouldBeFalse();
+    }
+
+    [Test]
+    public void BlogPostCategoryValidatorsRejectActivity()
+    {
+        new CreateBlogPostCommandValidator()
+            .Validate(new CreateBlogPostCommand(
+                "Title",
+                null,
+                null,
+                "Content",
+                "Activity",
+                "Draft"))
+            .IsValid
+            .ShouldBeFalse();
+
+        new UpdateBlogPostCommandValidator()
+            .Validate(new UpdateBlogPostCommand(
+                Guid.NewGuid(),
+                "Title",
+                null,
+                null,
+                "Content",
+                "Draft",
+                null,
+                null,
+                "Activity"))
+            .IsValid
+            .ShouldBeFalse();
+    }
+
+    private static BlogPost BlogPost(
+        User author,
+        string slug,
+        string status,
+        DateTimeOffset? publishedAt,
+        string category = "News") =>
         new()
         {
             AuthorId = author.Id,
@@ -486,7 +619,7 @@ public class BlogPostCommandTests
             Title = slug,
             Slug = slug,
             Summary = "Tom tat",
-            Category = "News",
+            Category = category,
             ImageUrl = status == "Published" ? "https://example.test/waterbus-cover.webp" : null,
             ImageAltText = status == "Published" ? "Tau waterbus tren song Sai Gon" : null,
             Content = "Noi dung",

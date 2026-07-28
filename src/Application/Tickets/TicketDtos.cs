@@ -83,4 +83,5 @@ public sealed record TicketScanPassengerDto(
     string? SeatCode,
     bool IsLapInfant = false,
     Guid? CompanionPassengerId = null,
-    string? CompanionPassengerName = null);
+    string? CompanionPassengerName = null,
+    bool UsesCompanionTicket = false);

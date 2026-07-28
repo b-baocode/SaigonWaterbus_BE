@@ -14,8 +14,6 @@ internal static class BlogPostSupport
 {
     public const string DraftStatus = "Draft";
     public const string PublishedStatus = "Published";
-    public const string ArchivedStatus = "Archived";
-    public const string ActivityCategory = "Activity";
     public const string EventCategory = "Event";
     public const string NewsCategory = "News";
     public const string UploadOnlyImageMessage = "Không hỗ trợ gắn link ảnh blog; vui lòng upload file ảnh.";
@@ -28,8 +26,7 @@ internal static class BlogPostSupport
     {
         var normalized = status?.Trim();
         return string.Equals(normalized, DraftStatus, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(normalized, PublishedStatus, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(normalized, ArchivedStatus, StringComparison.OrdinalIgnoreCase);
+            || string.Equals(normalized, PublishedStatus, StringComparison.OrdinalIgnoreCase);
     }
 
     public static string NormalizeStatus(string? status, string propertyName)
@@ -45,35 +42,31 @@ internal static class BlogPostSupport
             return PublishedStatus;
         }
 
-        if (string.Equals(normalized, ArchivedStatus, StringComparison.OrdinalIgnoreCase))
-        {
-            return ArchivedStatus;
-        }
-
-        throw CreateValidationException(propertyName, "Status hop le: Draft | Published | Archived.");
+        throw CreateValidationException(propertyName, "Status hop le: Draft | Published.");
     }
+
+    public static bool IsCurrentStatus(string status) =>
+        status == DraftStatus || status == PublishedStatus;
 
     public static bool IsValidCategory(string? category)
     {
         var normalized = category?.Trim();
-        return string.Equals(normalized, ActivityCategory, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(normalized, EventCategory, StringComparison.OrdinalIgnoreCase)
+        return string.Equals(normalized, EventCategory, StringComparison.OrdinalIgnoreCase)
             || string.Equals(normalized, NewsCategory, StringComparison.OrdinalIgnoreCase);
     }
+
+    public static bool IsCurrentCategory(string? category) =>
+        string.Equals(category, EventCategory, StringComparison.Ordinal)
+        || string.Equals(category, NewsCategory, StringComparison.Ordinal);
 
     public static string NormalizeCategory(string? category, string propertyName)
     {
         if (string.IsNullOrWhiteSpace(category))
         {
-            throw CreateValidationException(propertyName, "Category bat buoc nhap. Gia tri hop le: Activity | Event | News.");
+            throw CreateValidationException(propertyName, "Category bat buoc nhap. Gia tri hop le: News | Event.");
         }
 
         var normalized = category.Trim();
-        if (string.Equals(normalized, ActivityCategory, StringComparison.OrdinalIgnoreCase))
-        {
-            return ActivityCategory;
-        }
-
         if (string.Equals(normalized, EventCategory, StringComparison.OrdinalIgnoreCase))
         {
             return EventCategory;
@@ -84,7 +77,7 @@ internal static class BlogPostSupport
             return NewsCategory;
         }
 
-        throw CreateValidationException(propertyName, "Category hop le: Activity | Event | News.");
+        throw CreateValidationException(propertyName, "Category hop le: News | Event.");
     }
 
     public static async Task<User> EnsureCurrentUserCanManageBlogPostsAsync(

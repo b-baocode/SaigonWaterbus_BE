@@ -38,13 +38,13 @@ public sealed class UpdateBlogPostCommandValidator : AbstractValidator<UpdateBlo
         RuleFor(x => x.Status)
             .NotEmpty()
             .Must(BlogPostSupport.IsValidStatus)
-            .WithMessage("Status hop le: Draft | Published | Archived.");
+            .WithMessage("Status hop le: Draft | Published.");
         RuleFor(x => x.Category)
             .Cascade(CascadeMode.Stop)
             .NotEmpty()
-            .WithMessage("Category bat buoc nhap. Gia tri hop le: Activity | Event | News.")
+            .WithMessage("Category bat buoc nhap. Gia tri hop le: News | Event.")
             .Must(BlogPostSupport.IsValidCategory)
-            .WithMessage("Category hop le: Activity | Event | News.");
+            .WithMessage("Category hop le: News | Event.");
     }
 }
 
