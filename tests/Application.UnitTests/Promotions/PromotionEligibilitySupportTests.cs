@@ -134,6 +134,42 @@ public class PromotionEligibilitySupportTests
         result.Reason.ShouldBe("Khuyến mãi chỉ dành cho lần đặt đầu tiên.");
     }
 
+    [Test]
+    public async Task PublicPromotionListHidesCodeWhenCurrentUserReachedAccountLimit()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var usedPromotion = Promotion(p => p.MaxUsesPerAccount = 1);
+        usedPromotion.PromotionCode = "USEDONCE";
+        var availablePromotion = Promotion(p => p.MaxUsesPerAccount = 1);
+        availablePromotion.PromotionCode = "AVAILABLE";
+        context.Set<Promotion>().AddRange(usedPromotion, availablePromotion);
+        context.Set<Booking>().Add(Booking(userContext.UserId!.Value, usedPromotion.Id, BookingStatus.Completed));
+        await context.SaveChangesAsync();
+
+        var result = await new GetPublicPromotionListQueryHandler(context, userContext, new FixedTimeProvider(Now))
+            .Handle(new GetPublicPromotionListQuery(), CancellationToken.None);
+
+        result.Select(x => x.PromotionCode).ShouldBe(["AVAILABLE"]);
+    }
+
+    [Test]
+    public async Task PublicPromotionListShowsCodeAgainWhenPreviousUseWasReleased()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var promotion = Promotion(p => p.MaxUsesPerAccount = 1);
+        promotion.PromotionCode = "WELCOME10";
+        context.Set<Promotion>().Add(promotion);
+        context.Set<Booking>().Add(Booking(userContext.UserId!.Value, promotion.Id, BookingStatus.Cancelled));
+        await context.SaveChangesAsync();
+
+        var result = await new GetPublicPromotionListQueryHandler(context, userContext, new FixedTimeProvider(Now))
+            .Handle(new GetPublicPromotionListQuery(), CancellationToken.None);
+
+        result.Single().PromotionCode.ShouldBe("WELCOME10");
+    }
+
     private static Promotion Promotion(Action<Promotion>? configure = null)
     {
         var promotion = new Promotion
