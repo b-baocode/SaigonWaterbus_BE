@@ -8,7 +8,7 @@ public sealed class LoginNotificationOptions
 
     public int TemplateId { get; set; }
 
-    public string WebName { get; set; } = "Saigon Waterbus";
+    public string WebName { get; set; } = "Waterbus";
 
     public string Subject { get; set; } = "Dang nhap thanh cong";
 }

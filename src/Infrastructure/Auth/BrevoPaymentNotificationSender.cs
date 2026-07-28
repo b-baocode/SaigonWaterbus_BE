@@ -248,7 +248,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             notification.Booking.ContactName,
             ResolveBoardingPassTemplateId(options),
             parameters,
-            $"Saigon Waterbus - Ve len tau {notification.Booking.BookingCode}",
+            $"Waterbus - Ve len tau {notification.Booking.BookingCode}",
             BuildHtmlContent(notification.Booking));
         AddAttachments(payload, notification.Attachments);
         return payload;
@@ -351,7 +351,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             booking.ContactName,
             options.ETicketTemplateId,
             parameters,
-            $"Saigon Waterbus - Vé điện tử {booking.BookingCode}",
+            $"Waterbus - Vé điện tử {booking.BookingCode}",
             string.Empty);
         AddAttachments(payload, notification.Attachments);
         return payload;
@@ -586,8 +586,8 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
 
     private static string BuildSubject(PaymentSucceededNotification notification) =>
         notification.IsFullyPaid
-            ? $"Saigon Waterbus - Xác nhận thanh toán đủ {notification.BookingCode}"
-            : $"Saigon Waterbus - Xác nhận đặt cọc {notification.BookingCode}";
+            ? $"Waterbus - Xác nhận thanh toán đủ {notification.BookingCode}"
+            : $"Waterbus - Xác nhận đặt cọc {notification.BookingCode}";
 
     private static string BuildHtmlContent(PaymentSucceededNotification notification)
     {
@@ -596,7 +596,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         return
             "<html><body>"
             + $"<p>Xin chào {Encode(notification.ContactName)},</p>"
-            + $"<p>Saigon Waterbus đã ghi nhận {paymentLabel} cho booking <strong>{Encode(notification.BookingCode)}</strong>.</p>"
+            + $"<p>Waterbus đã ghi nhận {paymentLabel} cho booking <strong>{Encode(notification.BookingCode)}</strong>.</p>"
             + "<ul>"
             + $"<li>Mã thanh toán: {Encode(notification.PaymentCode)}</li>"
             + $"<li>Loại thanh toán: {Encode(notification.PaymentPurpose)}</li>"
@@ -607,7 +607,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             + $"<li>Trạng thái thanh toán: {Encode(notification.BookingPaymentStatus)}</li>"
             + $"<li>Thời gian ghi nhận: {notification.PaidAt:O}</li>"
             + "</ul>"
-            + "<p>Cảm ơn bạn đã sử dụng dịch vụ Saigon Waterbus.</p>"
+            + "<p>Cảm ơn bạn đã sử dụng dịch vụ Waterbus.</p>"
             + "</body></html>";
     }
 
