@@ -41,9 +41,9 @@ public class CreateRoundTripBookingTests
         result.ReturnTripCode.ShouldBe("TR-RET");
         result.ItemCount.ShouldBe(3);
 
-        // Tổng tiền = cộng 2 chiều, không giảm giá khứ hồi.
-        result.SubtotalAmount.ShouldBe(30000m);
-        result.TotalAmount.ShouldBe(30000m);
+        // Tổng tiền = cộng 2 chiều, không giảm giá khứ hồi; fare default không làm tròn lên nghìn.
+        result.SubtotalAmount.ShouldBe(28500m);
+        result.TotalAmount.ShouldBe(28500m);
 
         var passengers = context.Set<BookingPassenger>().Where(p => p.BookingId == booking.Id).ToList();
         passengers.Count(p => p.TripId == outbound.Trip.Id).ShouldBe(1);
@@ -286,8 +286,8 @@ public class CreateRoundTripBookingTests
         result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
         result.Insurance.Quantity.ShouldBe(2);
         result.Insurance.TotalAmount.ShouldBe(6_000m);
-        result.SubtotalAmount.ShouldBe(26_000m);
-        result.TotalAmount.ShouldBe(26_000m);
+        result.SubtotalAmount.ShouldBe(25_000m);
+        result.TotalAmount.ShouldBe(25_000m);
     }
 
     private static CreateBookingCommandHandler CreateHandler(
