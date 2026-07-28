@@ -111,7 +111,8 @@ public sealed class Trips : IEndpointGroup
                 "Chi tra ve chuyen co tripStatus=Scheduled/Boarding/InProgress/Delayed va chặng còn trước giờ rời bến lên tối thiểu 10 phút.",
                 "FE dùng isBookable/isBookingClosed trong response để enable/disable chọn chuyến; không khóa chỉ vì tripStatus=Boarding/InProgress.",
                 "availableSeats = so ghe con trong tren CHANG tim kiem (ghe ban theo chang, xem ghi chu seat map).",
-                "minPrice da ap dung phu thu theo fareAdjustment neu ngay chay la cuoi tuan/le/dac biet."));
+                "minPrice da ap dung phu thu theo fareAdjustment neu ngay chay la cuoi tuan/le/dac biet.",
+                "Response co stops[] gom full lo trinh cua trip; FE dung isSelectedFrom/isSelectedTo de in dam ben khach chon, isWithinSelectedSegment de highlight doan dang dat."));
 
         group.MapGet(SearchSightseeingTrips, "search/sightseeing")
             .AllowAnonymous()

@@ -547,12 +547,24 @@ public class SegmentBookingAndDistanceFareTests
         tail.FromStopScheduledDeparture.ShouldBe(dep.AddMinutes(20));
         tail.ToStopScheduledArrival.ShouldBe(dep.AddMinutes(45));
         tail.DepartureTime.ShouldBe(dep);
+        tail.Stops.ShouldNotBeNull().Count.ShouldBe(3);
+        tail.Stops.Select(x => x.StationCode).ShouldBe(["BB", "HB", "LT"]);
+        tail.Stops.Single(x => x.StopOrder == 1).IsWithinSelectedSegment.ShouldBeFalse();
+        tail.Stops.Single(x => x.StopOrder == 2).IsSelectedFrom.ShouldBeTrue();
+        tail.Stops.Single(x => x.StopOrder == 2).IsWithinSelectedSegment.ShouldBeTrue();
+        tail.Stops.Single(x => x.StopOrder == 3).IsSelectedTo.ShouldBeTrue();
+        tail.Stops.Single(x => x.StopOrder == 3).IsWithinSelectedSegment.ShouldBeTrue();
+        tail.Stops.Single(x => x.StopOrder == 2).ScheduledDeparture.ShouldBe(dep.AddMinutes(20));
+        tail.Stops.Single(x => x.StopOrder == 3).ScheduledArrival.ShouldBe(dep.AddMinutes(45));
 
         var head = (await searchHandler.Handle(
             new SearchTripsQuery(bb.Id, hb.Id, date), CancellationToken.None))
             .Single(x => x.TripCode == "TR-TIME-1");
         head.FromStopScheduledDeparture.ShouldBe(dep);
         head.ToStopScheduledArrival.ShouldBe(dep.AddMinutes(20));
+        head.Stops.ShouldNotBeNull().Single(x => x.StopOrder == 1).IsSelectedFrom.ShouldBeTrue();
+        head.Stops.Single(x => x.StopOrder == 2).IsSelectedTo.ShouldBeTrue();
+        head.Stops.Single(x => x.StopOrder == 3).IsWithinSelectedSegment.ShouldBeFalse();
     }
 
     [Test]

@@ -69,6 +69,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         var tripQuery = _context.Set<Trip>()
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
+                    .ThenInclude(rs => rs.Station)
             .Where(t => routeIds.Contains(t.RouteId)
                      && t.Route.IsBookable
                      // Endpoint nay chi tim waterbus thuong; sightseeing co endpoint rieng,
@@ -226,7 +227,8 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 FareAdjustment: fareAdjustment,
                 DelayInfo: TripDelaySupport.ToDelayInfoDto(t),
                 AdjustedDepartureTime: t.AdjustedDepartureTime,
-                AdjustedArrivalTime: t.AdjustedArrivalTime);
+                AdjustedArrivalTime: t.AdjustedArrivalTime,
+                Stops: BuildSearchStops(t, selectedSegment.Segment, tripStopsByTripId));
         })
         .Where(dto => dto is not null)
         .Select(dto => dto!)
@@ -283,5 +285,50 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         return (
             fromDraft?.PlannedDepartureTime ?? fromDraft?.PlannedArrivalTime ?? trip.DepartureTime,
             toDraft?.PlannedArrivalTime ?? toDraft?.PlannedDepartureTime ?? trip.ArrivalTime);
+    }
+
+    private static IReadOnlyList<TripSearchStopDto> BuildSearchStops(
+        Trip trip,
+        SearchSegment selectedSegment,
+        IReadOnlyDictionary<Guid, Dictionary<int, (DateTimeOffset? Arrival, DateTimeOffset? Departure)>> tripStopsByTripId)
+    {
+        var routeStops = trip.Route.RouteStops
+            .OrderBy(x => x.StopOrder)
+            .ToList();
+        var stopTimesByOrder = ResolveStopTimesByOrder(trip, routeStops, tripStopsByTripId);
+
+        return routeStops
+            .Select(routeStop =>
+            {
+                stopTimesByOrder.TryGetValue(routeStop.StopOrder, out var stopTimes);
+                return new TripSearchStopDto(
+                    routeStop.StopOrder,
+                    routeStop.StationId,
+                    routeStop.Station?.StationCode,
+                    routeStop.Station?.StationName ?? "Chưa xác định",
+                    stopTimes.Arrival,
+                    stopTimes.Departure,
+                    routeStop.StopOrder == selectedSegment.FromOrder,
+                    routeStop.StopOrder == selectedSegment.ToOrder,
+                    routeStop.StopOrder >= selectedSegment.FromOrder
+                        && routeStop.StopOrder <= selectedSegment.ToOrder);
+            })
+            .ToList();
+    }
+
+    private static IReadOnlyDictionary<int, (DateTimeOffset? Arrival, DateTimeOffset? Departure)> ResolveStopTimesByOrder(
+        Trip trip,
+        IReadOnlyList<RouteStop> routeStops,
+        IReadOnlyDictionary<Guid, Dictionary<int, (DateTimeOffset? Arrival, DateTimeOffset? Departure)>> tripStopsByTripId)
+    {
+        if (tripStopsByTripId.TryGetValue(trip.Id, out var stopTimesByOrder))
+        {
+            return stopTimesByOrder;
+        }
+
+        return TripStopScheduleSupport.BuildFromRouteStops(routeStops, trip.DepartureTime)
+            .ToDictionary(
+                x => x.StopOrder,
+                x => (x.PlannedArrivalTime, x.PlannedDepartureTime));
     }
 }

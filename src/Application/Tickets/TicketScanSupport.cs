@@ -161,7 +161,7 @@ internal static class TicketScanSupport
     {
         // Booking khứ hồi: trip của vé lấy theo chiều của hành khách (TripId null = dữ liệu cũ → trip đi).
         var trip = ticket.BookingPassenger?.Trip ?? booking.Trip;
-        var stops = trip?.Route.RouteStops
+        var stops = trip?.Route?.RouteStops
             .OrderBy(x => x.StopOrder)
             .ToArray() ?? [];
         var fromStop = stops.FirstOrDefault();
@@ -169,6 +169,12 @@ internal static class TicketScanSupport
         var ticketPassenger = ticket.BookingPassenger;
         var seatCode = ticket.BookingPassenger?.TripSeat?.Seat?.Code;
         TicketTypePricing.TryGet(ticket.BookingPassenger?.PassengerType, out var ticketType);
+        var ticketTypeCode = string.IsNullOrWhiteSpace(ticketType.Code)
+            ? ticket.BookingPassenger?.PassengerType
+            : ticketType.Code;
+        var ticketTypeName = string.IsNullOrWhiteSpace(ticketType.Name)
+            ? ticket.BookingPassenger?.PassengerType
+            : ticketType.Name;
 
         // Ga lên/xuống + giờ đi/đến theo CHẶNG trên vé (ghế bán theo chặng) — staff quét vé phải
         // thấy đúng chỗ khách lên/xuống; dữ liệu cũ chưa lưu chặng thì rơi về đầu/cuối chuyến.
@@ -196,8 +202,8 @@ internal static class TicketScanSupport
             ticket.Id,
             ticket.TicketCode,
             ticket.QrToken,
-            ticketType.Code,
-            ticketType.Name,
+            ticketTypeCode,
+            ticketTypeName,
             ticket.TicketStatus.ToString(),
             ticket.IssuedAt,
             ticket.CheckedInAt,

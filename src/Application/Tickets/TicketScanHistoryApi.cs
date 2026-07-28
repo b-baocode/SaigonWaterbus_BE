@@ -379,7 +379,7 @@ internal static class TicketScanHistorySupport
         var booking = ticket.Booking;
         var trip = ticket.BookingPassenger?.Trip ?? booking.Trip;
         var boardingTripStop = ResolveBoardingTripStop(ticket, trip);
-        var routeStationIds = trip?.Route.RouteStops.Select(x => x.StationId).ToHashSet() ?? [];
+        var routeStationIds = trip?.Route?.RouteStops.Select(x => x.StationId).ToHashSet() ?? [];
         var charterStationIds = new[] { booking.FromStationId, booking.ToStationId }
             .Where(x => x.HasValue)
             .Select(x => x!.Value)

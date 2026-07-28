@@ -22,7 +22,19 @@ public sealed record TripSummaryDto(
     EffectiveFareAdjustmentDto? FareAdjustment = null,
     TripDelayInfoDto? DelayInfo = null,
     DateTimeOffset? AdjustedDepartureTime = null,
-    DateTimeOffset? AdjustedArrivalTime = null);
+    DateTimeOffset? AdjustedArrivalTime = null,
+    IReadOnlyList<TripSearchStopDto>? Stops = null);
+
+public sealed record TripSearchStopDto(
+    int StopOrder,
+    Guid StationId,
+    string? StationCode,
+    string StationName,
+    DateTimeOffset? ScheduledArrival,
+    DateTimeOffset? ScheduledDeparture,
+    bool IsSelectedFrom,
+    bool IsSelectedTo,
+    bool IsWithinSelectedSegment);
 
 public sealed record TripDelayInfoDto(
     int DelayMinutes,

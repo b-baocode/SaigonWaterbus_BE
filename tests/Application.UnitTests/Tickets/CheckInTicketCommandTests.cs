@@ -124,6 +124,28 @@ public class CheckInTicketCommandTests
     }
 
     [Test]
+    public async Task StaffScanFallsBackWhenTripRouteNavigationIsMissing()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context, includeRoute: false);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(1));
+        var handler = new ScanTicketQueryHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
+
+        result.TicketCode.ShouldBe(ticket.TicketCode);
+        result.ScheduledDeparture.ShouldBe(ticket.Booking.Trip!.DepartureTime);
+        result.ScheduledArrival.ShouldBe(ticket.Booking.Trip.ArrivalTime);
+        result.CanCheckIn.ShouldBeTrue();
+        context.TicketScanEvents.Single().Result.ShouldBe(TicketScanResult.Success);
+    }
+
+    [Test]
     public async Task StaffWithoutActiveBoatAssignmentCannotCheckInTicket()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -418,7 +440,8 @@ public class CheckInTicketCommandTests
         DbContext context,
         TicketStatus ticketStatus = TicketStatus.Active,
         DateTimeOffset? checkedInAt = null,
-        DateTimeOffset? checkedOutAt = null)
+        DateTimeOffset? checkedOutAt = null,
+        bool includeRoute = true)
     {
         var boat = new Boat
         {
@@ -444,7 +467,7 @@ public class CheckInTicketCommandTests
         };
         var trip = new Trip
         {
-            Route = route,
+            Route = includeRoute ? route : null!,
             Boat = boat,
             TripCode = $"TR-{Guid.NewGuid():N}"[..20],
             OperatingDate = new DateOnly(2030, 1, 1),
