@@ -1,5 +1,7 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.TicketTypes;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -20,7 +22,20 @@ public sealed record BookingManifestPassengerDto(
     bool CanCheckIn,
     string? TripCode = null,
     string? FromStationName = null,
-    string? ToStationName = null);
+    string? ToStationName = null,
+    string? BookingCode = null,
+    string? TicketTypeCode = null,
+    string? TicketTypeName = null,
+    decimal? UnitPrice = null,
+    Guid? FromStationId = null,
+    string? FromStationCode = null,
+    Guid? ToStationId = null,
+    string? ToStationCode = null,
+    DateTimeOffset? ScheduledBoardingAt = null,
+    DateTimeOffset? ScheduledAlightingAt = null,
+    DateTimeOffset? CheckedOutAt = null,
+    string? CheckedOutByName = null,
+    bool CanCheckOut = false);
 
 // Booking khứ hồi: các field Return* mô tả chiều về (null với booking một chiều);
 // mỗi passenger mang TripCode của chiều mình thuộc về.
@@ -128,10 +143,14 @@ internal static class BookingManifestSupport
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+            .Include(x => x.Trip)
+                .ThenInclude(t => t!.TripStops)
             .Include(x => x.ReturnTrip)
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
+            .Include(x => x.ReturnTrip)
+                .ThenInclude(t => t!.TripStops)
             .Include(x => x.Passengers)
                 .ThenInclude(p => p.TripSeat)
                     .ThenInclude(ts => ts!.Seat)
@@ -140,7 +159,9 @@ internal static class BookingManifestSupport
             .Include(x => x.Passengers)
                 .ThenInclude(p => p.ToStation)
             .Include(x => x.Tickets)
-                .ThenInclude(t => t.CheckedInByUser);
+                .ThenInclude(t => t.CheckedInByUser)
+            .Include(x => x.Tickets)
+                .ThenInclude(t => t.CheckedOutByUser);
 
     public static void EnsureCanView(User currentUser, Booking booking)
     {
@@ -185,9 +206,19 @@ internal static class BookingManifestSupport
             .Select(passenger =>
             {
                 ticketsByPassengerId.TryGetValue(passenger.Id, out var ticket);
-                var legTripCode = passenger.TripId.HasValue && passenger.TripId == booking.ReturnTripId
-                    ? booking.ReturnTrip?.TripCode
-                    : booking.Trip?.TripCode;
+                var isReturnLeg = passenger.TripId.HasValue && passenger.TripId == booking.ReturnTripId;
+                var legTrip = isReturnLeg ? booking.ReturnTrip : booking.Trip;
+                var legTripCode = legTrip?.TripCode;
+                var ticketTypeCode = passenger.PassengerType is null
+                    ? null
+                    : TicketTypeCatalog.NormalizeCode(passenger.PassengerType);
+                var ticketTypeName = TicketTypePricing.TryGet(passenger.PassengerType, out var ticketType)
+                    ? ticketType.Name
+                    : null;
+                var segmentTimes = legTrip is null
+                    ? default((DateTimeOffset Departure, DateTimeOffset Arrival)?)
+                    : TripStopScheduleSupport.ResolveSegmentTimes(
+                        legTrip, passenger.FromStopOrder, passenger.ToStopOrder);
                 return new BookingManifestPassengerDto(
                     passenger.Id,
                     passenger.FullName,
@@ -202,7 +233,20 @@ internal static class BookingManifestSupport
                     canCheckInBooking && ticket?.TicketStatus == TicketStatus.Active,
                     legTripCode,
                     passenger.FromStation?.StationName,
-                    passenger.ToStation?.StationName);
+                    passenger.ToStation?.StationName,
+                    booking.BookingCode,
+                    ticketTypeCode,
+                    ticketTypeName,
+                    passenger.UnitPrice,
+                    passenger.FromStationId,
+                    passenger.FromStation?.StationCode,
+                    passenger.ToStationId,
+                    passenger.ToStation?.StationCode,
+                    segmentTimes?.Departure,
+                    segmentTimes?.Arrival,
+                    ticket?.CheckedOutAt,
+                    ticket?.CheckedOutByUser?.FullName,
+                    canCheckInBooking && ticket?.TicketStatus == TicketStatus.CheckedIn);
             })
             .ToList();
 

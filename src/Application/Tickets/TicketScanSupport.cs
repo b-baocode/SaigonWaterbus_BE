@@ -2,6 +2,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 
 namespace SaigonWaterbus.Application.Tickets;
@@ -150,7 +151,9 @@ internal static class TicketScanSupport
                 .ToList(),
             booking.FromStationId,
             booking.ToStationId,
-            booking.BoatId);
+            booking.BoatId,
+            CanCheckIn(ticket, booking),
+            CanCheckOut(ticket, booking));
     }
 
     private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking)
@@ -225,8 +228,21 @@ internal static class TicketScanSupport
                 .ToList(),
             fromStationId,
             toStationId,
-            trip?.BoatId);
+            trip?.BoatId,
+            CanCheckIn(ticket, booking),
+            CanCheckOut(ticket, booking));
     }
+
+    private static bool CanCheckIn(Ticket ticket, Booking booking) =>
+        ticket.TicketStatus == TicketStatus.Active
+        && booking.BookingStatus == BookingStatus.Confirmed
+        && (string.Equals(booking.PaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount <= 0);
+
+    private static bool CanCheckOut(Ticket ticket, Booking booking) =>
+        ticket.TicketStatus == TicketStatus.CheckedIn
+        && ticket.CheckedInAt.HasValue
+        && booking.BookingStatus == BookingStatus.Confirmed;
 
     private static TicketScanPassengerDto? ToPassengerDtoOrNull(BookingPassenger? passenger) =>
         passenger is null ? null : ToPassengerDto(passenger);

@@ -1,3 +1,5 @@
+using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Tickets;
 using QRCoder;
 using SaigonWaterbus.Domain.Enums;
@@ -18,6 +20,8 @@ public sealed class Tickets : IEndpointGroup
                 null,
                 "Nhan ticketCode hoac qrToken.",
                 "Query optional: source=Qr|Manual|Override, tripStopId, clientOperationId, deviceTime, note.",
+                "Scan/tra cuu KHONG doi trang thai ve, co the goi nhieu lan tren cung mot ve.",
+                "Response co canCheckIn/canCheckOut de FE biet lan quet nay nen hien nut check-in hay check-out.",
                 "Admin/Manager/Staff xem duoc moi ve.",
                 "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Customer chi xem duoc ve thuoc booking cua minh.",
@@ -39,8 +43,12 @@ public sealed class Tickets : IEndpointGroup
                 }
                 """,
                 "Khuyen dung cho FE scan QR de tranh loi URL path khi token co ky tu dac biet.",
-                "codeOrToken nhan ticketCode hoac qrToken.",
-                "Quyen va dieu kien giong GET /api/tickets/scan/{codeOrToken}."));
+                "codeOrToken nhan ticketCode hoac qrToken ve le; BE cung chap nhan alias ticketCode, qrToken, bookingQrToken.",
+                "Neu codeOrToken la QR tong booking thuong prefix BK thi tra BookingManifestDto.",
+                "Neu codeOrToken la QR tong charter prefix CB thi tra CharterBookingManifestDto.",
+                "Neu codeOrToken la ticketCode/qrToken ve le thi tra TicketScanDto.",
+                "TicketScanDto co canCheckIn/canCheckOut; scan ve da CheckedIn se canCheckOut=true de FE cho checkout bang cung ma ve.",
+                "Quyen va dieu kien ve le giong GET /api/tickets/scan/{codeOrToken}."));
 
         group.MapPost(CheckInTicket, "check-in/{codeOrToken}")
             .RequireAuthorization()
@@ -53,6 +61,7 @@ public sealed class Tickets : IEndpointGroup
                 "Chi Admin/Manager/Staff duoc check-in.",
                 "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Ticket phai Active, booking phai Confirmed va da thanh toan du.",
+                "Check-in chi thuc hien mot lan; ve da CheckedIn thi scan lai bang /api/tickets/scan de hien canCheckOut=true.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedInAt/checkedInBy."));
 
         group.MapPost(CheckInTicketByBody, "check-in")
@@ -84,6 +93,7 @@ public sealed class Tickets : IEndpointGroup
                 "Chi Admin/Manager/Staff duoc check-out.",
                 "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
                 "Ticket phai da CheckedIn truoc do.",
+                "Dung cung ticketCode/qrToken cua ve da check-in; checkout xong ve khong checkout lai duoc.",
                 "Tra ve thong tin ve sau khi da cap nhat checkedOutAt/checkedOutBy."));
 
         group.MapPost(CheckOutTicketByBody, "check-out")
@@ -150,11 +160,29 @@ public sealed class Tickets : IEndpointGroup
 
     private static async Task<IResult> ScanTicketByBody(
         ISender sender,
-        TicketCodeRequest request,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(
-            new ScanTicketQuery(request.CodeOrToken, CreateMetadata(request)),
+        TicketCodeRequest? request,
+        CancellationToken ct)
+    {
+        var codeOrToken = request?.ResolveCodeOrToken();
+        if (string.IsNullOrWhiteSpace(codeOrToken))
+        {
+            return Results.BadRequest(new { message = "codeOrToken is required." });
+        }
+
+        if (codeOrToken.StartsWith("BK", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Ok(await sender.Send(new GetBookingManifestByQrTokenQuery(codeOrToken), ct));
+        }
+
+        if (codeOrToken.StartsWith("CB", StringComparison.OrdinalIgnoreCase))
+        {
+            return Results.Ok(await sender.Send(new GetCharterBookingManifestByQrTokenQuery(codeOrToken), ct));
+        }
+
+        return Results.Ok(await sender.Send(
+            new ScanTicketQuery(codeOrToken, CreateMetadata(request)),
             ct));
+    }
 
     private static async Task<IResult> CheckInTicket(
         ISender sender,
@@ -171,11 +199,19 @@ public sealed class Tickets : IEndpointGroup
 
     private static async Task<IResult> CheckInTicketByBody(
         ISender sender,
-        TicketCodeRequest request,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(
-            new CheckInTicketCommand(request.CodeOrToken, CreateMetadata(request)),
+        TicketCodeRequest? request,
+        CancellationToken ct)
+    {
+        var codeOrToken = request?.ResolveCodeOrToken();
+        if (string.IsNullOrWhiteSpace(codeOrToken))
+        {
+            return Results.BadRequest(new { message = "codeOrToken is required." });
+        }
+
+        return Results.Ok(await sender.Send(
+            new CheckInTicketCommand(codeOrToken, CreateMetadata(request)),
             ct));
+    }
 
     private static async Task<IResult> CheckOutTicket(
         ISender sender,
@@ -192,11 +228,19 @@ public sealed class Tickets : IEndpointGroup
 
     private static async Task<IResult> CheckOutTicketByBody(
         ISender sender,
-        TicketCodeRequest request,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(
-            new CheckOutTicketCommand(request.CodeOrToken, CreateMetadata(request)),
+        TicketCodeRequest? request,
+        CancellationToken ct)
+    {
+        var codeOrToken = request?.ResolveCodeOrToken();
+        if (string.IsNullOrWhiteSpace(codeOrToken))
+        {
+            return Results.BadRequest(new { message = "codeOrToken is required." });
+        }
+
+        return Results.Ok(await sender.Send(
+            new CheckOutTicketCommand(codeOrToken, CreateMetadata(request)),
             ct));
+    }
 
     private static async Task<IResult> GetTicketScanHistory(
         ISender sender,
@@ -237,19 +281,29 @@ public sealed class Tickets : IEndpointGroup
             DeviceTime: deviceTime,
             Note: note);
 
-    private static TicketScanRequestMetadata CreateMetadata(TicketCodeRequest request) =>
+    private static TicketScanRequestMetadata CreateMetadata(TicketCodeRequest? request) =>
         CreateMetadata(
-            request.Source,
-            request.TripStopId,
-            request.ClientOperationId,
-            request.DeviceTime,
-            request.Note);
+            request?.Source,
+            request?.TripStopId,
+            request?.ClientOperationId,
+            request?.DeviceTime,
+            request?.Note);
 
     public sealed record TicketCodeRequest(
-        string CodeOrToken,
+        string? CodeOrToken = null,
+        string? TicketCode = null,
+        string? QrToken = null,
+        string? BookingQrToken = null,
         TicketScanSource? Source = null,
         Guid? TripStopId = null,
         string? ClientOperationId = null,
         DateTimeOffset? DeviceTime = null,
-        string? Note = null);
+        string? Note = null)
+    {
+        public string? ResolveCodeOrToken() =>
+            FirstNonBlank(CodeOrToken, TicketCode, QrToken, BookingQrToken)?.Trim();
+
+        private static string? FirstNonBlank(params string?[] values) =>
+            values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+    }
 }

@@ -72,7 +72,10 @@ public sealed record OperationScheduleItemDto(
     int? RemainingMinutesToNextStation,
     bool IsGpsOnline,
     TripStopDwellCountdownDto? DwellCountdown = null,
-    IReadOnlyList<OperationScheduleStopDto>? Stops = null);
+    IReadOnlyList<OperationScheduleStopDto>? Stops = null,
+    Guid? DestinationStationId = null,
+    string? DestinationStationCode = null,
+    string? DestinationStationName = null);
 
 public sealed record OperationScheduleStopDto(
     Guid? TripStopId,
@@ -320,7 +323,10 @@ public sealed class GetOperationScheduleQueryHandler
             latestLocation?.RemainingMinutesToNextStation,
             isGpsOnline,
             dwellCountdown,
-            BuildStopDtos(tripStops, routeStops));
+            BuildStopDtos(tripStops, routeStops),
+            toStation.StationId,
+            toStation.StationCode,
+            toStation.LocationName);
     }
 
     private static IReadOnlyList<OperationScheduleStopDto> BuildStopDtos(

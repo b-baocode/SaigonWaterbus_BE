@@ -10,12 +10,12 @@ public sealed record FarePolicyDto(
     decimal RoundingStep,
     string Currency);
 
-/// <summary>Giá trị mặc định khi DB chưa có policy active (khớp seed trong migration).</summary>
+/// <summary>Giá trị mặc định khi DB chưa có policy active.</summary>
 public static class FarePolicyDefaults
 {
     public const decimal BaseFare = 5000m;
     public const decimal PricePerKm = 1500m;
-    public const decimal RoundingStep = 1000m;
+    public const decimal RoundingStep = 1m;
 
     public static FarePolicyDto Dto { get; } = new(null, BaseFare, PricePerKm, RoundingStep, "VND");
 }
@@ -36,7 +36,7 @@ public sealed class GetFarePolicyQueryHandler : IRequestHandler<GetFarePolicyQue
 public sealed record UpdateFarePolicyCommand(
     decimal BaseFare,
     decimal PricePerKm,
-    decimal RoundingStep = 1000m) : IRequest<FarePolicyDto>;
+    decimal RoundingStep = 1m) : IRequest<FarePolicyDto>;
 
 public sealed class UpdateFarePolicyCommandValidator : AbstractValidator<UpdateFarePolicyCommand>
 {

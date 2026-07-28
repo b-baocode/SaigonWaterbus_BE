@@ -34,10 +34,21 @@ public class RoundTripCheckInAndScanTests
         context.Tickets.Single(x => x.Id == seeded.ReturnTicket.Id)
             .TicketStatus.ShouldBe(TicketStatus.Active);
         manifest.ReturnTripCode.ShouldBe("TR-RET");
-        manifest.Passengers.Single(p => p.TripCode == "TR-OUT").TicketStatus
+        var outboundManifestPassenger = manifest.Passengers.Single(p => p.TripCode == "TR-OUT");
+        outboundManifestPassenger.TicketStatus
             .ShouldBe(nameof(TicketStatus.CheckedIn));
-        manifest.Passengers.Single(p => p.TripCode == "TR-RET").TicketStatus
+        outboundManifestPassenger.BookingCode.ShouldBe("BK-ROUNDTRIP");
+        outboundManifestPassenger.TicketTypeCode.ShouldBe("ADULT");
+        outboundManifestPassenger.TicketTypeName.ShouldBe("Vé người lớn");
+        outboundManifestPassenger.UnitPrice.ShouldBe(10000);
+        outboundManifestPassenger.CanCheckIn.ShouldBeFalse();
+        outboundManifestPassenger.CanCheckOut.ShouldBeTrue();
+        outboundManifestPassenger.CheckedOutAt.ShouldBeNull();
+        var returnManifestPassenger = manifest.Passengers.Single(p => p.TripCode == "TR-RET");
+        returnManifestPassenger.TicketStatus
             .ShouldBe(nameof(TicketStatus.Active));
+        returnManifestPassenger.CanCheckIn.ShouldBeTrue();
+        returnManifestPassenger.CanCheckOut.ShouldBeFalse();
     }
 
     [Test]

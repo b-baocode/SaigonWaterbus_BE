@@ -68,6 +68,10 @@ public class GetOperationScheduleQueryTests
         result.Single(x => x.SourceCode.StartsWith("BB-", StringComparison.Ordinal)).CapacitySnapshot.ShouldBe(79);
         result.Single(x => x.SourceCode.StartsWith("BB-", StringComparison.Ordinal)).TotalPassengerCount.ShouldBe(2);
         result.Single(x => x.SourceCode.StartsWith("BS-", StringComparison.Ordinal)).TotalPassengerCount.ShouldBe(3);
+        var bus = result.Single(x => x.SourceCode.StartsWith("BB-", StringComparison.Ordinal));
+        bus.DestinationStationId.ShouldBe(bus.ToStationId);
+        bus.DestinationStationCode.ShouldBe(bus.ToStationCode);
+        bus.DestinationStationName.ShouldBe(bus.ToLocation);
     }
 
     [Test]

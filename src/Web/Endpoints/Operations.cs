@@ -45,7 +45,9 @@ public sealed class Operations : IEndpointGroup
                 "Anonymous/Customer bi gioi han toi da 7 ngay, luon chi xem booking trips (Bus + Sightseeing), khong xem charter/cancelled/GPS noi bo.",
                 "Query cũ from/to vẫn được đọc để tương thích, nhưng FE nên dùng fromDate/toDate.",
                 "Response co routeType, tripType, serviceType, capacitySnapshot, totalPassengerCount, adjustedStartAt/adjustedEndAt va dwellCountdown.",
+                "Response co fromStation*/toStation* va alias destinationStation* de FE hien ga den ro rang.",
                 "Response co stops[] de FE render bang gio tung ben va tinh cac chang nhu BD -> Thu Thiem, BD -> Ba Son.",
+                "Neu can xem danh sach khach/ve cua mot chuyen, FE goi GET /api/trips/{tripId}/passengers.",
                 "GET đọc trực tiếp trips, trip_stops và boat_latest_locations để hiển thị trạng thái tàu đang di chuyển.",
                 "Nếu GPS gửi ETA, response có remainingMinutesToNextStation và remainingDistanceKmToNextStation.",
                 "Anonymous/Customer khong nhan GPS live va khong xem charter/cancelled; Admin/Manager/Staff van xem du theo quyen."));

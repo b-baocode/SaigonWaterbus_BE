@@ -64,7 +64,9 @@ public sealed record TicketScanDto(
     IReadOnlyList<TicketScanPassengerDto> Passengers,
     Guid? FromStationId = null,
     Guid? ToStationId = null,
-    Guid? BoatId = null);
+    Guid? BoatId = null,
+    bool CanCheckIn = false,
+    bool CanCheckOut = false);
 
 public sealed record TicketScanPassengerDto(
     Guid PassengerId,

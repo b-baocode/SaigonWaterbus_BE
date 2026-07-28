@@ -140,6 +140,18 @@ public sealed class Trips : IEndpointGroup
                 "incidentInfo neu co su co gan voi trip: gom tau goc bi su co, tau cuu ho, tau thay the, mission, so khach bi anh huong va delay de FE show banner.",
                 "Ben dau chi co gio di, ben cuoi chi co gio den."));
 
+        group.MapGet(GetTripPassengers, "{id:guid}/passengers")
+            .RequireAuthorization()
+            .WithSummary("Danh sach khach cua mot chuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Manager hoac Staff",
+                null,
+                "Tra ve danh sach hanh khach/ve cua dung trip, gom bookingCode, thong tin lien he booking, ten khach, loai ve, ghe, gia ve, ga len/ga xuong, gio len/xuong du kien va trang thai ticket.",
+                "Dung cho man hinh operation/trip manifest khi nhan vao mot chuyen de xem ai da mua/giu ve tren chuyen do.",
+                "Booking PendingPayment con han giu cho van co the xuat hien voi ticketStatus=null; FE dua vao bookingStatus/paymentStatus/ticketStatus de hien thi.",
+                "Khach booking khu hoi chi hien trong dung chieu cua passenger.TripId; khong tron chieu di va chieu ve.",
+                "Chi ve Active moi canCheckIn=true; ve da check-in/check-out/cancel/expired khong check-in lai."));
+
         group.MapGet(GetTripSeatMap, "{id:guid}/seats")
             .AllowAnonymous()
             .WithSummary("So do ghe cua chuyen")
@@ -329,6 +341,9 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
+
+    private static async Task<IResult> GetTripPassengers(ISender sender, Guid id, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetTripPassengerManifestQuery(id), ct));
 
     private static async Task<IResult> GetTripSeatMap(
         ISender sender, Guid id, string? fromStationCode, string? toStationCode, CancellationToken ct) =>

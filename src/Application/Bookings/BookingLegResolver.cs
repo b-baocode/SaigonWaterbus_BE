@@ -35,6 +35,8 @@ internal sealed record SeatSegmentRequest(Guid TripSeatId, string SeatCode, int 
 /// </summary>
 internal sealed class BookingLegResolver
 {
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+
     private readonly IApplicationDbContext _context;
     private readonly IFareCalculator _fareCalculator;
     private readonly ISeatHoldService _seatHoldService;
@@ -102,8 +104,16 @@ internal sealed class BookingLegResolver
         if (missingTicket is not null)
             throw new NotFoundException($"Ticket type '{missingTicket}' not found.");
 
+        var currentYear = now.ToOffset(VietnamOffset).Year;
+        var futureBirthYearItem = items.FirstOrDefault(i => i.BirthYear.HasValue && i.BirthYear.Value > currentYear);
+        if (futureBirthYearItem is not null)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                $"birthYear không được lớn hơn năm hiện tại ({currentYear}).")]);
+        }
+
         // Vé INFANT chỉ dành cho trẻ dưới 2 tuổi — kiểm tra năm sinh so với ngày khởi hành chuyến.
-        var departureYear = trip.DepartureTime.Year;
+        var departureYear = trip.DepartureTime.ToOffset(VietnamOffset).Year;
         foreach (var infantItem in items.Where(i => IsInfant(i.TicketTypeCode)))
         {
             if (!infantItem.BirthYear.HasValue)

@@ -29,6 +29,8 @@ public class CheckInTicketCommandTests
         var result = await handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None);
 
         result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedIn));
+        result.CanCheckIn.ShouldBeFalse();
+        result.CanCheckOut.ShouldBeTrue();
         result.CheckedInAt.ShouldBe(now);
         result.CheckedInByUserId.ShouldBe(staffContext.UserId!.Value);
         result.TicketPassenger.ShouldNotBeNull();
@@ -52,6 +54,73 @@ public class CheckInTicketCommandTests
         scanEvent.TicketStatusBefore.ShouldBe(TicketStatus.Active);
         scanEvent.TicketStatusAfter.ShouldBe(TicketStatus.CheckedIn);
         scanEvent.StaffWorkAssignmentId.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task StaffCanScanSameTicketManyTimesAndUseCheckedInTicketForCheckout()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(2));
+
+        var firstScan = await new ScanTicketQueryHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(now))
+            .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
+        var secondScan = await new ScanTicketQueryHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(now.AddMinutes(1)))
+            .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
+
+        firstScan.TicketStatus.ShouldBe(nameof(TicketStatus.Active));
+        firstScan.CanCheckIn.ShouldBeTrue();
+        firstScan.CanCheckOut.ShouldBeFalse();
+        secondScan.TicketStatus.ShouldBe(nameof(TicketStatus.Active));
+        secondScan.CanCheckIn.ShouldBeTrue();
+        secondScan.CanCheckOut.ShouldBeFalse();
+
+        await new CheckInTicketCommandHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(now.AddMinutes(2)))
+            .Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None);
+
+        var checkoutLookup = await new ScanTicketQueryHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(now.AddMinutes(3)))
+            .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
+
+        checkoutLookup.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedIn));
+        checkoutLookup.CanCheckIn.ShouldBeFalse();
+        checkoutLookup.CanCheckOut.ShouldBeTrue();
+
+        var checkout = await new CheckOutTicketCommandHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(now.AddMinutes(4)))
+            .Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None);
+
+        checkout.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedOut));
+        checkout.CanCheckIn.ShouldBeFalse();
+        checkout.CanCheckOut.ShouldBeFalse();
+
+        var finalLookup = await new ScanTicketQueryHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(now.AddMinutes(5)))
+            .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
+
+        finalLookup.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedOut));
+        finalLookup.CanCheckIn.ShouldBeFalse();
+        finalLookup.CanCheckOut.ShouldBeFalse();
+        context.TicketScanEvents.Count(x => x.Action == TicketScanAction.Scan).ShouldBe(4);
+        context.TicketScanEvents.Count(x => x.Action == TicketScanAction.CheckIn).ShouldBe(1);
+        context.TicketScanEvents.Count(x => x.Action == TicketScanAction.CheckOut).ShouldBe(1);
     }
 
     [Test]
@@ -141,6 +210,8 @@ public class CheckInTicketCommandTests
         var result = await handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None);
 
         result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedOut));
+        result.CanCheckIn.ShouldBeFalse();
+        result.CanCheckOut.ShouldBeFalse();
         result.BookingStatus.ShouldBe(nameof(BookingStatus.Completed));
         result.CheckedInAt.ShouldBe(checkedInAt);
         result.CheckedOutAt.ShouldBe(checkedOutAt);
