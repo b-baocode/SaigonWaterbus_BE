@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Cryptography;
 using FluentValidation.Results;
+using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -40,7 +41,20 @@ internal static class TicketIssueSupport
             return [];
         }
 
-        var passengerIds = passengers.Select(x => x.Id).ToArray();
+        var ticketablePassengers = passengers
+            .Where(LapInfantTicketSupport.RequiresOwnTicket)
+            .ToList();
+        if (ticketablePassengers.Count == 0)
+        {
+            if (bookingQrTokenCreated)
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
+
+            return [];
+        }
+
+        var passengerIds = ticketablePassengers.Select(x => x.Id).ToArray();
         var existingTickets = await context.Tickets
             .Where(x => x.BookingId == booking.Id
                      && x.BookingPassengerId.HasValue
@@ -53,7 +67,7 @@ internal static class TicketIssueSupport
 
         var now = timeProvider.GetUtcNow();
         var createdTickets = new List<Ticket>();
-        foreach (var passenger in passengers.Where(x => !ticketedPassengerIds.Contains(x.Id)))
+        foreach (var passenger in ticketablePassengers.Where(x => !ticketedPassengerIds.Contains(x.Id)))
         {
             var ticket = new Ticket
             {

@@ -80,4 +80,7 @@ public sealed record TicketScanPassengerDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? SeatCode);
+    string? SeatCode,
+    bool IsLapInfant = false,
+    Guid? CompanionPassengerId = null,
+    string? CompanionPassengerName = null);

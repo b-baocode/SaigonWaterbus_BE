@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Payments;
 
@@ -64,11 +65,34 @@ public sealed record PaymentDto(
 
 public sealed record RequestRefundOtpRequest(string? OtpChannel = null);
 
+public sealed record RefundOtpOptionsDto(
+    Guid PaymentId,
+    decimal RefundAmount,
+    OtpChannel DefaultChannel,
+    IReadOnlyList<RefundOtpChannelOptionDto> Channels);
+
+public sealed record RefundOtpChannelOptionDto(
+    OtpChannel Channel,
+    string MaskedDestination,
+    bool IsDefault);
+
+public sealed record BankAccountLookupRequest(
+    string BankBin,
+    string AccountNumber);
+
+public sealed record BankAccountLookupDto(
+    string BankBin,
+    string AccountNumber,
+    string AccountName,
+    string Provider,
+    DateTimeOffset VerifiedAt,
+    string? Description = null);
+
 public sealed record RefundPaymentRequest(
     string Reason,
     string BankBin,
     string AccountNumber,
-    string AccountName,
+    string? AccountName,
     Guid OtpChallengeId,
     string OtpCode);
 

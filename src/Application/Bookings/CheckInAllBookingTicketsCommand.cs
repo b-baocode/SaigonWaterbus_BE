@@ -95,6 +95,8 @@ public sealed class CheckInAllBookingTicketsCommandHandler
 
         var activeTickets = booking.Tickets
             .Where(x => x.TicketStatus == TicketStatus.Active)
+            .Where(x => x.BookingPassenger is null
+                || LapInfantTicketSupport.RequiresOwnTicket(x.BookingPassenger))
             .Where(x => legTripId is null
                 || x.BookingPassenger?.TripId is null
                 || x.BookingPassenger.TripId == legTripId)

@@ -627,6 +627,129 @@ public sealed class HandlePaymentWebhookCommandHandler
 public sealed record RequestRefundOtpCommand(Guid PaymentId, string? OtpChannel = null)
     : IRequest<OtpChallengeDto>;
 
+public sealed record GetRefundOtpOptionsQuery(Guid PaymentId)
+    : IRequest<RefundOtpOptionsDto>;
+
+public sealed record LookupBankAccountQuery(string BankBin, string AccountNumber)
+    : IRequest<BankAccountLookupDto>;
+
+public sealed class GetRefundOtpOptionsQueryValidator : AbstractValidator<GetRefundOtpOptionsQuery>
+{
+    public GetRefundOtpOptionsQueryValidator()
+    {
+        RuleFor(x => x.PaymentId).NotEmpty();
+    }
+}
+
+public sealed class LookupBankAccountQueryValidator : AbstractValidator<LookupBankAccountQuery>
+{
+    public LookupBankAccountQueryValidator()
+    {
+        RuleFor(x => x.BankBin).NotEmpty().Length(6).Matches("^[0-9]{6}$");
+        RuleFor(x => x.AccountNumber).NotEmpty().Length(6, 19).Matches("^[0-9]+$");
+    }
+}
+
+public sealed class GetRefundOtpOptionsQueryHandler
+    : IRequestHandler<GetRefundOtpOptionsQuery, RefundOtpOptionsDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly IOtpCodeService _otpCodeService;
+    private readonly TimeProvider _timeProvider;
+
+    public GetRefundOtpOptionsQueryHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        IOtpCodeService otpCodeService,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _otpCodeService = otpCodeService;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<RefundOtpOptionsDto> Handle(
+        GetRefundOtpOptionsQuery request,
+        CancellationToken cancellationToken)
+    {
+        var payment = await PaymentSupport.GetOwnedPaymentAsync(
+            _context,
+            _userContext,
+            request.PaymentId,
+            includeBookingPayments: true,
+            cancellationToken);
+
+        if (!PaymentSupport.IsPaid(payment.PaymentStatus))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(payment.PaymentStatus),
+                "Chỉ có thể yêu cầu OTP hoàn tiền cho payment đã thanh toán.")]);
+        }
+
+        var refundAmount = await PaymentSupport.ResolvePolicyRefundAmountAsync(
+            _context,
+            payment,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
+
+        var userId = _userContext.UserId
+            ?? throw new UnauthorizedAccessException();
+        var user = await _context.Set<User>()
+            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
+            ?? throw new NotFoundException("Current user was not found.");
+        AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
+
+        var defaultChannel = RefundOtpSupport.ResolveChannel(user, requestedChannel: null);
+        var channels = RefundOtpSupport.ResolveAvailableChannels(user, _otpCodeService)
+            .Select(x => x with { IsDefault = x.Channel == defaultChannel })
+            .ToArray();
+
+        return new RefundOtpOptionsDto(
+            payment.Id,
+            refundAmount,
+            defaultChannel,
+            channels);
+    }
+}
+
+public sealed class LookupBankAccountQueryHandler
+    : IRequestHandler<LookupBankAccountQuery, BankAccountLookupDto>
+{
+    private readonly IBankAccountLookupService _lookupService;
+
+    public LookupBankAccountQueryHandler(IBankAccountLookupService lookupService)
+    {
+        _lookupService = lookupService;
+    }
+
+    public async Task<BankAccountLookupDto> Handle(
+        LookupBankAccountQuery request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await _lookupService.LookupAsync(
+                new BankAccountLookupServiceRequest(
+                    request.BankBin.Trim(),
+                    request.AccountNumber.Trim()),
+                cancellationToken);
+
+            return new BankAccountLookupDto(
+                result.BankBin,
+                result.AccountNumber,
+                result.AccountName,
+                result.Provider,
+                result.VerifiedAt,
+                result.Description);
+        }
+        catch (PaymentGatewayException ex)
+        {
+            throw new ValidationException([new ValidationFailure("bankAccount", ex.Message)]);
+        }
+    }
+}
+
 public sealed class RequestRefundOtpCommandValidator : AbstractValidator<RequestRefundOtpCommand>
 {
     public RequestRefundOtpCommandValidator()
@@ -698,8 +821,8 @@ public sealed class RequestRefundOtpCommandHandler
             ?? throw new NotFoundException("Current user was not found.");
         AuthSupport.EnsureUserCanLogin(user, requireVerifiedPhone: false);
 
-        var otpChannel = ResolveRefundOtpChannel(user, request.OtpChannel);
-        var destination = ResolveRefundOtpDestination(user, otpChannel);
+        var otpChannel = RefundOtpSupport.ResolveChannel(user, request.OtpChannel);
+        var destination = RefundOtpSupport.ResolveDestination(user, otpChannel);
         var normalizedDestination = otpChannel == OtpChannel.Phone
             ? PhoneRules.ToInternationalFormat(destination)
             : destination.Trim();
@@ -770,7 +893,11 @@ public sealed class RequestRefundOtpCommandHandler
         };
     }
 
-    private static OtpChannel ResolveRefundOtpChannel(User user, string? requestedChannel)
+}
+
+internal static class RefundOtpSupport
+{
+    public static OtpChannel ResolveChannel(User user, string? requestedChannel)
     {
         var defaultChannel = !string.IsNullOrWhiteSpace(user.PhoneNumber)
             && user.PhoneVerifiedAt.HasValue
@@ -784,7 +911,7 @@ public sealed class RequestRefundOtpCommandHandler
             "otpChannel");
     }
 
-    private static string ResolveRefundOtpDestination(User user, OtpChannel otpChannel)
+    public static string ResolveDestination(User user, OtpChannel otpChannel)
     {
         if (otpChannel == OtpChannel.Email)
         {
@@ -807,6 +934,39 @@ public sealed class RequestRefundOtpCommandHandler
 
         return user.PhoneNumber;
     }
+
+    public static IReadOnlyList<RefundOtpChannelOptionDto> ResolveAvailableChannels(
+        User user,
+        IOtpCodeService otpCodeService)
+    {
+        var channels = new List<RefundOtpChannelOptionDto>();
+
+        if (!string.IsNullOrWhiteSpace(user.Email))
+        {
+            channels.Add(new RefundOtpChannelOptionDto(
+                OtpChannel.Email,
+                otpCodeService.MaskEmail(user.Email),
+                IsDefault: false));
+        }
+
+        if (!string.IsNullOrWhiteSpace(user.PhoneNumber)
+            && user.PhoneVerifiedAt.HasValue
+            && PhoneRules.IsVietnamPhone(user.PhoneNumber))
+        {
+            channels.Add(new RefundOtpChannelOptionDto(
+                OtpChannel.Phone,
+                otpCodeService.MaskPhone(PhoneRules.ToInternationalFormat(user.PhoneNumber)),
+                IsDefault: false));
+        }
+
+        if (channels.Count == 0)
+        {
+            throw AuthSupport.CreateValidationException("otpChannel",
+                "Tài khoản chưa có email hoặc số điện thoại Việt Nam đã xác thực để nhận OTP hoàn tiền.");
+        }
+
+        return channels;
+    }
 }
 
 public sealed record RefundPaymentCommand(
@@ -814,7 +974,7 @@ public sealed record RefundPaymentCommand(
     string Reason,
     string BankBin,
     string AccountNumber,
-    string AccountName,
+    string? AccountName,
     Guid OtpChallengeId,
     string OtpCode)
     : IRequest<PaymentDto>;
@@ -827,7 +987,9 @@ public sealed class RefundPaymentCommandValidator : AbstractValidator<RefundPaym
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(100);
         RuleFor(x => x.BankBin).NotEmpty().Length(6).Matches("^[0-9]{6}$");
         RuleFor(x => x.AccountNumber).NotEmpty().MaximumLength(50).Matches("^[0-9]+$");
-        RuleFor(x => x.AccountName).NotEmpty().MaximumLength(100);
+        RuleFor(x => x.AccountName)
+            .MaximumLength(100)
+            .When(x => !string.IsNullOrWhiteSpace(x.AccountName));
         RuleFor(x => x.OtpChallengeId).NotEmpty();
         RuleFor(x => x.OtpCode)
             .NotEmpty()
@@ -841,6 +1003,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly ICharterBookingPaymentGateway _paymentGateway;
+    private readonly IBankAccountLookupService _bankAccountLookupService;
     private readonly ISecretHasher _secretHasher;
     private readonly IOtpCache _otpCache;
     private readonly TimeProvider _timeProvider;
@@ -849,6 +1012,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         IApplicationDbContext context,
         IUserContext userContext,
         ICharterBookingPaymentGateway paymentGateway,
+        IBankAccountLookupService bankAccountLookupService,
         ISecretHasher secretHasher,
         TimeProvider timeProvider,
         IOtpCache? otpCache = null)
@@ -856,6 +1020,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         _context = context;
         _userContext = userContext;
         _paymentGateway = paymentGateway;
+        _bankAccountLookupService = bankAccountLookupService;
         _secretHasher = secretHasher;
         _timeProvider = timeProvider;
         _otpCache = otpCache ?? NullOtpCache.Instance;
@@ -882,6 +1047,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
             payment,
             now,
             cancellationToken);
+        var accountName = await ResolveRefundAccountNameAsync(request, cancellationToken);
         await VerifyRefundOtpAsync(payment, request.OtpChallengeId, request.OtpCode, now, cancellationToken);
 
         var referenceId = PaymentSupport.CreateRefundReference(payment, now);
@@ -904,7 +1070,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
                     request.Reason.Trim(),
                     request.BankBin.Trim(),
                     request.AccountNumber.Trim(),
-                    request.AccountName.Trim(),
+                    accountName,
                     referenceId),
                 cancellationToken);
         }
@@ -929,6 +1095,37 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         await _context.SaveChangesAsync(cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
+    }
+
+    private async Task<string> ResolveRefundAccountNameAsync(
+        RefundPaymentCommand request,
+        CancellationToken cancellationToken)
+    {
+        if (!string.IsNullOrWhiteSpace(request.AccountName))
+        {
+            return request.AccountName.Trim();
+        }
+
+        if (request.AccountNumber.Trim().Length is < 6 or > 19)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.AccountNumber),
+                "Số tài khoản phải từ 6 đến 19 chữ số khi cần BE tự tra cứu tên chủ tài khoản.")]);
+        }
+
+        try
+        {
+            var result = await _bankAccountLookupService.LookupAsync(
+                new BankAccountLookupServiceRequest(
+                    request.BankBin.Trim(),
+                    request.AccountNumber.Trim()),
+                cancellationToken);
+
+            return result.AccountName;
+        }
+        catch (PaymentGatewayException ex)
+        {
+            throw new ValidationException([new ValidationFailure("bankAccount", ex.Message)]);
+        }
     }
 
     private async Task VerifyRefundOtpAsync(

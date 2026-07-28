@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Entities;
@@ -147,7 +148,7 @@ internal static class TicketScanSupport
             ToPassengerDtoOrNull(ticketPassenger),
             booking.Passengers
                 .OrderBy(x => x.FullName)
-                .Select(p => ToPassengerDto(p))
+                .Select(p => ToPassengerDto(p, companion: null))
                 .ToList(),
             booking.FromStationId,
             booking.ToStationId,
@@ -180,10 +181,16 @@ internal static class TicketScanSupport
             : Trips.TripStopScheduleSupport.ResolveSegmentTimes(
                 trip, ticketPassenger?.FromStopOrder, ticketPassenger?.ToStopOrder);
 
-        // Danh sách hành khách trong DTO chỉ gồm chiều của vé được quét.
+        // Danh sách hành khách trong DTO chỉ gồm nhóm được đại diện bởi vé được quét:
+        // người có ghế + INFANT không ghế đi kèm (nếu có).
         var legPassengers = booking.Passengers
             .Where(p => ticketPassenger?.TripId is null || p.TripId == ticketPassenger.TripId)
             .ToList();
+        var representedPassengers = LapInfantTicketSupport.ResolvePassengersRepresentedByTicket(
+            legPassengers,
+            ticketPassenger);
+        var companionByInfantId = LapInfantTicketSupport.AssignInfantsToCompanions(legPassengers);
+        var passengerById = legPassengers.ToDictionary(x => x.Id);
 
         return new TicketScanDto(
             ticket.Id,
@@ -207,8 +214,8 @@ internal static class TicketScanSupport
             booking.ContactName,
             booking.ContactPhone,
             booking.ContactEmail,
-            legPassengers.Count,
-            legPassengers.Count,
+            representedPassengers.Count,
+            representedPassengers.Count,
             null,
             null,
             trip?.OperatingDate,
@@ -222,9 +229,10 @@ internal static class TicketScanSupport
             toStationName,
             seatCode,
             ToPassengerDtoOrNull(ticketPassenger),
-            legPassengers
-                .OrderBy(x => x.FullName)
-                .Select(p => ToPassengerDto(p))
+            representedPassengers
+                .Select(p => ToPassengerDto(
+                    p,
+                    ResolveCompanion(p, companionByInfantId, passengerById)))
                 .ToList(),
             fromStationId,
             toStationId,
@@ -244,10 +252,19 @@ internal static class TicketScanSupport
         && ticket.CheckedInAt.HasValue
         && booking.BookingStatus == BookingStatus.Confirmed;
 
-    private static TicketScanPassengerDto? ToPassengerDtoOrNull(BookingPassenger? passenger) =>
-        passenger is null ? null : ToPassengerDto(passenger);
+    private static BookingPassenger? ResolveCompanion(
+        BookingPassenger passenger,
+        IReadOnlyDictionary<Guid, Guid> companionByInfantId,
+        IReadOnlyDictionary<Guid, BookingPassenger> passengerById) =>
+        companionByInfantId.TryGetValue(passenger.Id, out var companionPassengerId)
+            && passengerById.TryGetValue(companionPassengerId, out var companion)
+            ? companion
+            : null;
 
-    private static TicketScanPassengerDto ToPassengerDto(BookingPassenger passenger) =>
+    private static TicketScanPassengerDto? ToPassengerDtoOrNull(BookingPassenger? passenger) =>
+        passenger is null ? null : ToPassengerDto(passenger, companion: null);
+
+    private static TicketScanPassengerDto ToPassengerDto(BookingPassenger passenger, BookingPassenger? companion) =>
         new(
             passenger.Id,
             passenger.FullName,
@@ -255,5 +272,8 @@ internal static class TicketScanSupport
             passenger.Email,
             passenger.BirthYear,
             passenger.PassengerType,
-            null);
+            passenger.TripSeat?.Seat?.Code,
+            LapInfantTicketSupport.IsLapInfant(passenger),
+            companion?.Id,
+            companion?.FullName);
 }

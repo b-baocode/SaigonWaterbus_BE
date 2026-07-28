@@ -1095,6 +1095,69 @@ public class CreatePaymentCommandTests
         booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
     }
 
+    [Test]
+    public async Task RefundPaymentLooksUpAccountNameWhenRequestOmitsIt()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var (booking, payment) = PaidCharterBooking(userId, "BK-REFUND-LOOKUP", now);
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var gateway = new TestPaymentGateway();
+        var lookupService = new TestBankAccountLookupService("NGUYEN VAN LOOKUP");
+
+        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
+            context,
+            userId,
+            payment,
+            now,
+            gateway,
+            lookupService);
+
+        var result = await handler.Handle(
+            CreateRefundCommand(payment, otpChallenge, accountName: null),
+            CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(10000);
+        lookupService.Requests.ShouldHaveSingleItem().ShouldBe(new BankAccountLookupServiceRequest("970422", "123456789"));
+        gateway.RefundRequests.ShouldHaveSingleItem().ToAccountName.ShouldBe("NGUYEN VAN LOOKUP");
+    }
+
+    [Test]
+    public async Task GetRefundOtpOptionsReturnsAvailableMaskedChannels()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(
+            context,
+            userId,
+            email: "nguyenvana@example.com",
+            phoneNumber: "0901234567",
+            phoneVerifiedAt: now.AddDays(-1));
+        var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-OPTIONS", now);
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var handler = new GetRefundOtpOptionsQueryHandler(
+            context,
+            new TestUserContext(user.Id),
+            new TestOtpCodeService(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(new GetRefundOtpOptionsQuery(payment.Id), CancellationToken.None);
+
+        result.PaymentId.ShouldBe(payment.Id);
+        result.RefundAmount.ShouldBe(10000);
+        result.DefaultChannel.ShouldBe(OtpChannel.Phone);
+        result.Channels.Select(x => x.Channel).ShouldBe([OtpChannel.Email, OtpChannel.Phone]);
+        result.Channels.Single(x => x.Channel == OtpChannel.Email).MaskedDestination
+            .ShouldBe("masked-email:nguyenvana@example.com");
+        result.Channels.Single(x => x.Channel == OtpChannel.Phone).MaskedDestination
+            .ShouldBe("masked-phone:+84901234567");
+        result.Channels.Single(x => x.Channel == OtpChannel.Phone).IsDefault.ShouldBeTrue();
+    }
+
     private const string RefundOtpCode = "123456";
 
     private static RequestRefundOtpCommandHandler CreateRequestRefundOtpHandler(
@@ -1118,7 +1181,8 @@ public class CreatePaymentCommandTests
         Guid userId,
         Payment payment,
         DateTimeOffset now,
-        ICharterBookingPaymentGateway? gateway = null)
+        ICharterBookingPaymentGateway? gateway = null,
+        IBankAccountLookupService? bankAccountLookupService = null)
     {
         var secretHasher = new TestSecretHasher();
         var challenge = new OtpChallenge
@@ -1142,6 +1206,7 @@ public class CreatePaymentCommandTests
                 context,
                 new TestUserContext(userId),
                 gateway ?? new TestPaymentGateway(),
+                bankAccountLookupService ?? new TestBankAccountLookupService(),
                 secretHasher,
                 new FixedTimeProvider(now)),
             challenge);
@@ -1150,13 +1215,14 @@ public class CreatePaymentCommandTests
     private static RefundPaymentCommand CreateRefundCommand(
         Payment payment,
         OtpChallenge challenge,
-        string reason = "Doi lich") =>
+        string reason = "Doi lich",
+        string? accountName = "NGUYEN VAN A") =>
         new(
             payment.Id,
             reason,
             "970422",
             "123456789",
-            "NGUYEN VAN A",
+            accountName,
             challenge.Id,
             RefundOtpCode);
 
@@ -1573,6 +1639,8 @@ public class CreatePaymentCommandTests
     {
         public List<CharterBookingDepositPaymentRequest> CreateRequests { get; } = [];
 
+        public List<CharterBookingRefundPayoutRequest> RefundRequests { get; } = [];
+
         public Task<CharterBookingDepositPaymentResult> CreateDepositPaymentAsync(
             CharterBookingDepositPaymentRequest request,
             CancellationToken cancellationToken)
@@ -1625,6 +1693,7 @@ public class CreatePaymentCommandTests
                 throw refundException;
             }
 
+            RefundRequests.Add(request);
             return Task.FromResult(new CharterBookingRefundPayoutResult(
                 "payout-id",
                 request.ReferenceId,
@@ -1638,6 +1707,32 @@ public class CreatePaymentCommandTests
             Task.FromResult<CharterBookingRefundPayoutResult?>(null);
 
         public bool IsValidWebhook(CharterBookingDepositPaymentWebhook webhook) => true;
+    }
+
+    private sealed class TestBankAccountLookupService(
+        string accountName = "NGUYEN VAN A",
+        PaymentGatewayException? exception = null)
+        : IBankAccountLookupService
+    {
+        public List<BankAccountLookupServiceRequest> Requests { get; } = [];
+
+        public Task<BankAccountLookupServiceResult> LookupAsync(
+            BankAccountLookupServiceRequest request,
+            CancellationToken cancellationToken)
+        {
+            if (exception is not null)
+            {
+                throw exception;
+            }
+
+            Requests.Add(request);
+            return Task.FromResult(new BankAccountLookupServiceResult(
+                request.BankBin,
+                request.AccountNumber,
+                accountName,
+                "VietQR",
+                new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero)));
+        }
     }
 
     private sealed class TestPaymentNotificationSender : IPaymentNotificationSender

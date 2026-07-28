@@ -35,7 +35,11 @@ public sealed record BookingManifestPassengerDto(
     DateTimeOffset? ScheduledAlightingAt = null,
     DateTimeOffset? CheckedOutAt = null,
     string? CheckedOutByName = null,
-    bool CanCheckOut = false);
+    bool CanCheckOut = false,
+    bool IsLapInfant = false,
+    Guid? CompanionPassengerId = null,
+    string? CompanionPassengerName = null,
+    bool UsesCompanionTicket = false);
 
 // Booking khứ hồi: các field Return* mô tả chiều về (null với booking một chiều);
 // mỗi passenger mang TripCode của chiều mình thuộc về.
@@ -181,8 +185,13 @@ internal static class BookingManifestSupport
 
     public static BookingManifestDto ToDto(Booking booking)
     {
+        var passengerById = booking.Passengers.ToDictionary(x => x.Id);
+        var lapInfantCompanionByPassengerId = LapInfantTicketSupport.AssignInfantsToCompanions(booking.Passengers);
         var currentTickets = booking.Tickets
             .Where(x => x.TicketStatus != TicketStatus.Cancelled && x.TicketStatus != TicketStatus.Expired)
+            .Where(x => !x.BookingPassengerId.HasValue
+                || !passengerById.TryGetValue(x.BookingPassengerId.Value, out var passenger)
+                || LapInfantTicketSupport.RequiresOwnTicket(passenger))
             .ToList();
         var ticketsByPassengerId = currentTickets
             .Where(x => x.BookingPassengerId.HasValue)
@@ -205,7 +214,18 @@ internal static class BookingManifestSupport
             .ThenBy(x => x.FullName)
             .Select(passenger =>
             {
-                ticketsByPassengerId.TryGetValue(passenger.Id, out var ticket);
+                var isLapInfant = LapInfantTicketSupport.IsLapInfant(passenger);
+                BookingPassenger? companion = null;
+                if (isLapInfant
+                    && lapInfantCompanionByPassengerId.TryGetValue(passenger.Id, out var companionPassengerId)
+                    && passengerById.TryGetValue(companionPassengerId, out var assignedCompanion))
+                {
+                    companion = assignedCompanion;
+                }
+
+                var ticket = companion is not null
+                    ? ticketsByPassengerId.GetValueOrDefault(companion.Id)
+                    : ticketsByPassengerId.GetValueOrDefault(passenger.Id);
                 var isReturnLeg = passenger.TripId.HasValue && passenger.TripId == booking.ReturnTripId;
                 var legTrip = isReturnLeg ? booking.ReturnTrip : booking.Trip;
                 var legTripCode = legTrip?.TripCode;
@@ -246,7 +266,11 @@ internal static class BookingManifestSupport
                     segmentTimes?.Arrival,
                     ticket?.CheckedOutAt,
                     ticket?.CheckedOutByUser?.FullName,
-                    canCheckInBooking && ticket?.TicketStatus == TicketStatus.CheckedIn);
+                    canCheckInBooking && ticket?.TicketStatus == TicketStatus.CheckedIn,
+                    isLapInfant,
+                    companion?.Id,
+                    companion?.FullName,
+                    isLapInfant && companion is not null);
             })
             .ToList();
 
