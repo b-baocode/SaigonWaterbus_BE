@@ -20,6 +20,26 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task CreateTripRejectsRegularRouteMissingDistance()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"), Station("C", "Ben C"));
+        route.RouteStops.Single(x => x.StopOrder == 2).DistanceFromPreviousKm = null;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CreateTripCommandHandler(context)
+                .Handle(new CreateTripCommand("R1", "BOAT-1", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None));
+
+        exception.Errors["routeCode"].Single().ShouldContain("distanceFromPreviousKm");
+        context.Trips.Count().ShouldBe(0);
+    }
+
+    [Test]
     public async Task CreateTripRejectsSameRouteDepartureAtSameTime()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -620,6 +640,37 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task PreviewRoundTripScheduleRejectsRegularRouteMissingDistance()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var outbound = Route("OUT", stationA, stationB);
+        var inbound = Route("IN", stationB, stationA);
+        inbound.RouteStops.Single(x => x.StopOrder == 2).DistanceFromPreviousKm = null;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+
+        context.AddRange(outbound, inbound, boat);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new PreviewRoundTripScheduleCommandHandler(context)
+                .Handle(
+                    new PreviewRoundTripScheduleCommand(
+                        BoatCode: "BOAT-1",
+                        OutboundRouteCode: "OUT",
+                        InboundRouteCode: "IN",
+                        FromDate: date,
+                        ToDate: date,
+                        StartTime: new TimeOnly(8, 0),
+                        EndTime: new TimeOnly(11, 30)),
+                    CancellationToken.None));
+
+        exception.Errors["inboundRouteCode"].Single().ShouldContain("distanceFromPreviousKm");
+    }
+
+    [Test]
     public async Task GenerateTripsCreatesEveryRoundTripPreviewItemWhenScheduledOneByOne()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -791,6 +842,33 @@ public class CreateTripCommandTests
                 new TimeSpan(8, 0, 0),
                 new TimeSpan(9, 0, 0)
             ]);
+    }
+
+    [Test]
+    public async Task GenerateTripsRejectsRegularRouteMissingDistance()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        route.IsBookable = true;
+        route.RouteStops.Single(x => x.StopOrder == 2).DistanceFromPreviousKm = null;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new GenerateTripsCommandHandler(context)
+                .Handle(
+                    new GenerateTripsCommand(
+                        RouteCode: "R1",
+                        BoatCode: "BOAT-1",
+                        DepartureTimes: [new TimeOnly(8, 0)],
+                        FromDate: date,
+                        ToDate: date),
+                    CancellationToken.None));
+
+        exception.Errors["routeCode"].Single().ShouldContain("distanceFromPreviousKm");
+        context.Trips.Count().ShouldBe(0);
     }
 
     [Test]

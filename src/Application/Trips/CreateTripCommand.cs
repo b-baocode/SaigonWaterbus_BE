@@ -83,6 +83,9 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
 
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteId), "Route must have at least 2 stops.")]);
+        TripRouteDistanceValidationSupport.EnsureCompleteRegularRouteDistance(
+            route,
+            request.RouteId.HasValue ? nameof(request.RouteId) : nameof(request.RouteCode));
 
         var tripCode = TripCodeSupport.BuildRegularOrSightseeingTripCode(
             route,

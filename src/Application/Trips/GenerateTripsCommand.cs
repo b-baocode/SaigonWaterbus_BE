@@ -129,6 +129,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
         if (route.RouteStops.Count < 2)
             throw new ValidationException([new ValidationFailure(nameof(request.RouteCode),
                 "Route must have at least 2 stops.")]);
+        TripRouteDistanceValidationSupport.EnsureCompleteRegularRouteDistance(route, nameof(request.RouteCode));
         var routeStops = route.RouteStops.OrderBy(x => x.StopOrder).ToList();
         var routeStartStationId = TripScheduleSupport.ResolveStartStationId(routeStops);
         var routeEndStationId = TripScheduleSupport.ResolveEndStationId(routeStops);

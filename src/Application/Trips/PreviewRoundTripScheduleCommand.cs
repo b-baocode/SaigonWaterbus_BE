@@ -128,6 +128,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         var outboundRoute = await LoadRouteAsync(outboundRouteCode, nameof(request.OutboundRouteCode), cancellationToken);
         var inboundRoute = await LoadRouteAsync(inboundRouteCode, nameof(request.InboundRouteCode), cancellationToken);
         EnsureRoutePairIsRoundTrip(outboundRoute, inboundRoute);
+        EnsureRouteDistances(outboundRoute, inboundRoute);
 
         EnsureBoatCompatible(boat, outboundRoute, nameof(request.OutboundRouteCode));
         EnsureBoatCompatible(boat, inboundRoute, nameof(request.InboundRouteCode));
@@ -275,6 +276,22 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         {
             throw new ValidationException([new ValidationFailure(nameof(PreviewRoundTripScheduleCommand.InboundRouteCode),
                 "Route lượt về phải bắt đầu tại bến cuối của lượt đi và kết thúc tại bến đầu của lượt đi.")]);
+        }
+    }
+
+    private static void EnsureRouteDistances(Route outboundRoute, Route inboundRoute)
+    {
+        var failures = TripRouteDistanceValidationSupport.BuildCompleteRegularRouteDistanceFailures(
+                outboundRoute,
+                nameof(PreviewRoundTripScheduleCommand.OutboundRouteCode))
+            .Concat(TripRouteDistanceValidationSupport.BuildCompleteRegularRouteDistanceFailures(
+                inboundRoute,
+                nameof(PreviewRoundTripScheduleCommand.InboundRouteCode)))
+            .ToList();
+
+        if (failures.Count > 0)
+        {
+            throw new ValidationException(failures);
         }
     }
 
