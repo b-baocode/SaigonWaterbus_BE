@@ -76,11 +76,6 @@ public sealed class DeleteStationCommandHandler : IRequestHandler<DeleteStationC
             dependencies.Add("staff work assignment");
         }
 
-        if (await _context.Set<Landmark>().AnyAsync(l => l.StationId == station.Id, cancellationToken))
-        {
-            dependencies.Add("landmark");
-        }
-
         if (await _context.Set<GpsTrackingSession>().AnyAsync(
                 s => s.StartStationId == station.Id || s.EndStationId == station.Id,
                 cancellationToken))

@@ -38,6 +38,12 @@ public interface IApplicationDbContext
 
     DbSet<FareAdjustment> FareAdjustments { get; }
 
+    DbSet<Landmark> Landmarks { get; }
+
+    DbSet<LandmarkAudio> LandmarkAudios { get; }
+
+    DbSet<Voice> Voices { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

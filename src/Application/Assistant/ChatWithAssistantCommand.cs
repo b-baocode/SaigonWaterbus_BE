@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging;
 using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Assistant;
@@ -30,15 +31,18 @@ public sealed class ChatWithAssistantCommandHandler
     private readonly IChatCompletionService _chat;
     private readonly AssistantToolset _tools;
     private readonly TimeProvider _timeProvider;
+    private readonly ILogger<ChatWithAssistantCommandHandler> _logger;
 
     public ChatWithAssistantCommandHandler(
         IChatCompletionService chat,
         AssistantToolset tools,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ILogger<ChatWithAssistantCommandHandler> logger)
     {
         _chat = chat;
         _tools = tools;
         _timeProvider = timeProvider;
+        _logger = logger;
     }
 
     public async Task<AssistantReply> Handle(ChatWithAssistantCommand request, CancellationToken cancellationToken)
@@ -55,9 +59,25 @@ public sealed class ChatWithAssistantCommandHandler
 
         for (var i = 0; i < MaxToolIterations; i++)
         {
-            var result = await _chat.CompleteAsync(
-                new ChatCompletionRequest(systemPrompt, messages, _tools.Definitions),
-                cancellationToken);
+            ChatCompletionResult result;
+            try
+            {
+                result = await _chat.CompleteAsync(
+                    new ChatCompletionRequest(systemPrompt, messages, _tools.Definitions),
+                    cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                throw; // client hủy / timeout thật — để nguyên.
+            }
+            catch (Exception ex)
+            {
+                // LLM lỗi (thiếu key, quá tải, rate limit provider, mạng) — trả lời lịch sự
+                // thay vì 500, nhưng PHẢI log để còn biết nguyên nhân (đừng nuốt im lặng).
+                _logger.LogError(ex, "Assistant LLM call failed");
+                return new AssistantReply(
+                    "Xin lỗi, trợ lý đang bận. Bạn vui lòng thử lại sau ít phút nhé.");
+            }
 
             if (result.ToolCalls.Count == 0)
             {
