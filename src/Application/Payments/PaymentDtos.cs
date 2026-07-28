@@ -76,23 +76,11 @@ public sealed record RefundOtpChannelOptionDto(
     string MaskedDestination,
     bool IsDefault);
 
-public sealed record BankAccountLookupRequest(
-    string BankBin,
-    string AccountNumber);
-
-public sealed record BankAccountLookupDto(
-    string BankBin,
-    string AccountNumber,
-    string AccountName,
-    string Provider,
-    DateTimeOffset VerifiedAt,
-    string? Description = null);
-
 public sealed record RefundPaymentRequest(
     string Reason,
     string BankBin,
     string AccountNumber,
-    string? AccountName,
+    string AccountName,
     Guid OtpChallengeId,
     string OtpCode);
 

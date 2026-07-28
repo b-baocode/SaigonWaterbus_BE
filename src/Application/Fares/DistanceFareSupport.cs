@@ -6,8 +6,8 @@ namespace SaigonWaterbus.Application.Fares;
 
 /// <summary>
 /// Tính giá vé theo quãng đường cho trip Regular (ghế STANDARD):
-/// giá = RoundUp(BaseFare + PricePerKm × km, RoundingStep). RoundingStep mặc định là 1 VND,
-/// tức là không làm tròn lên nghìn.
+/// giá = RoundNearest(BaseFare + PricePerKm × km, RoundingStep), nửa bước trở lên làm tròn lên.
+/// RoundingStep mặc định là 1 VND, tức là không làm tròn lên nghìn.
 /// Km của chặng = tổng distance_from_previous_km của các stop nằm sau trạm lên đến trạm xuống.
 /// </summary>
 public static class DistanceFareSupport
@@ -63,7 +63,7 @@ public static class DistanceFareSupport
         var raw = policy.BaseFare + policy.PricePerKm * distanceKm;
 
         var step = policy.RoundingStep > 0 ? policy.RoundingStep : 1m;
-        return Math.Ceiling(raw / step) * step;
+        return Math.Floor((raw + step / 2m) / step) * step;
     }
 
     /// <summary>Policy đang active, hoặc mặc định trong code nếu DB chưa có.</summary>

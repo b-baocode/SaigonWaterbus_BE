@@ -28,11 +28,15 @@ public sealed class EsmsOptions
 
     public string ForgotPasswordContentTemplate { get; set; } = "{code} la ma xac minh dang ky {brandname} cua ban";
 
+    public string? RefundContentTemplate { get; set; }
+
     public string DefaultContentTemplate { get; set; } = "{code} la ma xac minh tai khoan {brandname} cua ban";
 
     public string? VinaRegisterContentTemplate { get; set; } = "Ma xac minh dang ky Baotrixemay tai website baotrixemay.com cua ban la {code}";
 
     public string? VinaForgotPasswordContentTemplate { get; set; }
+
+    public string? VinaRefundContentTemplate { get; set; }
 
     public string? VinaDefaultContentTemplate { get; set; }
 

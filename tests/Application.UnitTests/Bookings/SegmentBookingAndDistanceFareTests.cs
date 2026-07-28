@@ -16,7 +16,7 @@ namespace SaigonWaterbus.Application.UnitTests.Bookings;
 
 /// <summary>
 /// Trip Regular bán ghế theo chặng: cùng một ghế bán được nhiều lần trên các chặng không
-/// giao nhau, và giá vé tính theo quãng đường (base + đơn giá × km, làm tròn lên 1000).
+/// giao nhau, và giá vé tính theo quãng đường (base + đơn giá × km, làm tròn theo roundingStep).
 /// </summary>
 public class SegmentBookingAndDistanceFareTests
 {
@@ -755,9 +755,10 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
-    public void CalculateFareRoundsUpBaseFarePlusDistancePrice()
+    public void CalculateFareRoundsToNearestStepWithHalfUpRule()
     {
         var policy = new FarePolicyDto(null, 5000m, 1500m, 1000m, "VND");
+        DistanceFareSupport.CalculateFare(policy, 2.16m).ShouldBe(8000m);
         DistanceFareSupport.CalculateFare(policy, 2.5m).ShouldBe(9000m);
         DistanceFareSupport.CalculateFare(policy, 6m).ShouldBe(14000m);
         DistanceFareSupport.CalculateFare(policy, 1m).ShouldBe(7000m);

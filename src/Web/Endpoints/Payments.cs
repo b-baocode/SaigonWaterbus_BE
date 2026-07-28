@@ -37,14 +37,6 @@ public sealed class Payments : IEndpointGroup
         }
         """;
 
-    private const string BankAccountLookupExample =
-        """
-        {
-          "bankBin": "970422",
-          "accountNumber": "123456789"
-        }
-        """;
-
     private const string ManualRefundPaymentExample =
         """
         {
@@ -113,16 +105,6 @@ public sealed class Payments : IEndpointGroup
                 "Tra ve refundAmount, defaultChannel va danh sach kenh OTP co the dung.",
                 "Dung de FE hien thi email/so dien thoai dang bi mask truoc khi goi API gui OTP."));
 
-        group.MapPost(LookupBankAccount, "refund/bank-account/lookup")
-            .RequireAuthorization()
-            .WithSummary("Tra cuu ten chu tai khoan ngan hang")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
-                BankAccountLookupExample,
-                "Tra cuu tu dong ten chu tai khoan theo bankBin va accountNumber de autofill accountName luc hoan tien.",
-                "Can cau hinh BankAccountLookup__Enabled=true, ClientId va ApiKey tren BE.",
-                "Neu gateway tra cuu loi 502/503/timeout, BE tra ve validation field bankAccount voi message de FE hien thi."));
-
         group.MapPost(RefundPayment, "{paymentId:guid}/refund")
             .RequireAuthorization()
             .WithSummary("Hoan tien payment")
@@ -131,7 +113,7 @@ public sealed class Payments : IEndpointGroup
                 RefundPaymentExample,
                 "Tao lenh payout PayOS de hoan tien payment da thanh toan.",
                 "Bat buoc goi POST /api/payments/{paymentId}/refund/otp truoc, sau do gui otpChallengeId va otpCode trong request nay.",
-                "accountName optional: neu FE bo trong, BE se tu tra cuu bang bankBin + accountNumber truoc khi tao payout.",
+                "accountName bat buoc do khach/FE nhap thu cong; BE khong tu tra cuu ten chu tai khoan.",
                 "Khong nhan amount tu client; backend tu tinh so tien hoan tu payment.Amount, payment.RefundAmount va chinh sach hoan tien."));
 
         group.MapPost(ManualRefundPayment, "{paymentId:guid}/manual-refund")
@@ -186,14 +168,6 @@ public sealed class Payments : IEndpointGroup
         Guid paymentId,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetRefundOtpOptionsQuery(paymentId), ct));
-
-    private static async Task<IResult> LookupBankAccount(
-        ISender sender,
-        BankAccountLookupRequest request,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new LookupBankAccountQuery(
-            request.BankBin,
-            request.AccountNumber), ct));
 
     private static async Task<IResult> RefundPayment(
         ISender sender,

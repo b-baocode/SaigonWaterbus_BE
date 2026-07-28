@@ -1096,35 +1096,6 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
-    public async Task RefundPaymentLooksUpAccountNameWhenRequestOmitsIt()
-    {
-        await using var context = SeatFlowTestData.CreateContext();
-        var userId = Guid.NewGuid();
-        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
-        var (booking, payment) = PaidCharterBooking(userId, "BK-REFUND-LOOKUP", now);
-        context.AddRange(booking, payment);
-        await context.SaveChangesAsync();
-        var gateway = new TestPaymentGateway();
-        var lookupService = new TestBankAccountLookupService("NGUYEN VAN LOOKUP");
-
-        var (handler, otpChallenge) = await CreateRefundHandlerAsync(
-            context,
-            userId,
-            payment,
-            now,
-            gateway,
-            lookupService);
-
-        var result = await handler.Handle(
-            CreateRefundCommand(payment, otpChallenge, accountName: null),
-            CancellationToken.None);
-
-        result.RefundAmount.ShouldBe(10000);
-        lookupService.Requests.ShouldHaveSingleItem().ShouldBe(new BankAccountLookupServiceRequest("970422", "123456789"));
-        gateway.RefundRequests.ShouldHaveSingleItem().ToAccountName.ShouldBe("NGUYEN VAN LOOKUP");
-    }
-
-    [Test]
     public async Task GetRefundOtpOptionsReturnsAvailableMaskedChannels()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -1181,8 +1152,7 @@ public class CreatePaymentCommandTests
         Guid userId,
         Payment payment,
         DateTimeOffset now,
-        ICharterBookingPaymentGateway? gateway = null,
-        IBankAccountLookupService? bankAccountLookupService = null)
+        ICharterBookingPaymentGateway? gateway = null)
     {
         var secretHasher = new TestSecretHasher();
         var challenge = new OtpChallenge
@@ -1206,7 +1176,6 @@ public class CreatePaymentCommandTests
                 context,
                 new TestUserContext(userId),
                 gateway ?? new TestPaymentGateway(),
-                bankAccountLookupService ?? new TestBankAccountLookupService(),
                 secretHasher,
                 new FixedTimeProvider(now)),
             challenge);
@@ -1216,7 +1185,7 @@ public class CreatePaymentCommandTests
         Payment payment,
         OtpChallenge challenge,
         string reason = "Doi lich",
-        string? accountName = "NGUYEN VAN A") =>
+        string accountName = "NGUYEN VAN A") =>
         new(
             payment.Id,
             reason,
@@ -1707,32 +1676,6 @@ public class CreatePaymentCommandTests
             Task.FromResult<CharterBookingRefundPayoutResult?>(null);
 
         public bool IsValidWebhook(CharterBookingDepositPaymentWebhook webhook) => true;
-    }
-
-    private sealed class TestBankAccountLookupService(
-        string accountName = "NGUYEN VAN A",
-        PaymentGatewayException? exception = null)
-        : IBankAccountLookupService
-    {
-        public List<BankAccountLookupServiceRequest> Requests { get; } = [];
-
-        public Task<BankAccountLookupServiceResult> LookupAsync(
-            BankAccountLookupServiceRequest request,
-            CancellationToken cancellationToken)
-        {
-            if (exception is not null)
-            {
-                throw exception;
-            }
-
-            Requests.Add(request);
-            return Task.FromResult(new BankAccountLookupServiceResult(
-                request.BankBin,
-                request.AccountNumber,
-                accountName,
-                "VietQR",
-                new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero)));
-        }
     }
 
     private sealed class TestPaymentNotificationSender : IPaymentNotificationSender

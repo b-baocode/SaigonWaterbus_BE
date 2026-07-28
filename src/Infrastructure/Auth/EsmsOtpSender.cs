@@ -72,6 +72,17 @@ public sealed class EsmsOtpSender : ISmsOtpSender
             OtpPurpose.ForgotPassword => isVinaPhone
                 ? ResolveTemplate(options.VinaForgotPasswordContentTemplate, options.ForgotPasswordContentTemplate, options.DefaultContent)
                 : ResolveTemplate(options.ForgotPasswordContentTemplate, options.DefaultContent),
+            OtpPurpose.Refund => isVinaPhone
+                ? ResolveTemplate(
+                    options.VinaRefundContentTemplate,
+                    options.VinaRegisterContentTemplate,
+                    options.RefundContentTemplate,
+                    options.RegisterContentTemplate,
+                    options.DefaultContent)
+                : ResolveTemplate(
+                    options.RefundContentTemplate,
+                    options.RegisterContentTemplate,
+                    options.DefaultContent),
             _ => isVinaPhone
                 ? ResolveTemplate(options.VinaDefaultContentTemplate, options.DefaultContentTemplate, options.DefaultContent)
                 : ResolveTemplate(options.DefaultContentTemplate, options.DefaultContent)

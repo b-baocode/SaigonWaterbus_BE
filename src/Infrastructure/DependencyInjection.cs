@@ -59,7 +59,6 @@ public static class DependencyInjection
         builder.Services.AddScoped<IBookingCodeGenerator, BookingCodeGenerator>();
         builder.Services.AddScoped<IFareCalculator, FareCalculator>();
         builder.Services.AddScoped<ICharterBookingPaymentGateway, PayOsCharterBookingPaymentGateway>();
-        builder.Services.AddScoped<IBankAccountLookupService, VietQrBankAccountLookupService>();
         builder.Services.AddScoped<IIncidentGpsHookNotifier, HttpIncidentGpsHookNotifier>();
         builder.Services.AddScoped<IProfileImageStorageService, CloudinaryProfileImageStorageService>();
         builder.Services.AddScoped<IBlogImageStorageService, CloudinaryBlogImageStorageService>();
@@ -71,11 +70,6 @@ public static class DependencyInjection
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddHttpClient(PayOsHttpClientName);
-        builder.Services.AddHttpClient(VietQrBankAccountLookupService.HttpClientName, (provider, client) =>
-        {
-            var options = provider.GetRequiredService<IOptions<BankAccountLookupOptions>>().Value;
-            client.Timeout = TimeSpan.FromSeconds(Math.Max(1, options.TimeoutSeconds));
-        });
         builder.Services.AddHttpClient(GeminiChatCompletionService.HttpClientName);
         builder.Services.AddScoped<IChatCompletionService, GeminiChatCompletionService>();
         builder.Services.AddHttpClient(IncidentGpsHookHttpClientName, (provider, client) =>
@@ -169,7 +163,6 @@ public static class DependencyInjection
         builder.Services.Configure<EsmsOptions>(builder.Configuration.GetSection(EsmsOptions.SectionName));
         builder.Services.Configure<CloudinaryOptions>(builder.Configuration.GetSection(CloudinaryOptions.SectionName));
         builder.Services.Configure<PayOsOptions>(builder.Configuration.GetSection(PayOsOptions.SectionName));
-        builder.Services.Configure<BankAccountLookupOptions>(builder.Configuration.GetSection(BankAccountLookupOptions.SectionName));
         builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection(RedisOptions.SectionName));
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
         builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
