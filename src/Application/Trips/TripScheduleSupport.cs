@@ -97,9 +97,9 @@ internal static class TripScheduleSupport
     public static DateTimeOffset ResolveEarliestDepartureAfter(
         BoatScheduleWindow previous,
         BoatScheduleWindow next) =>
-        previous.ArrivalTime
+        TripStopScheduleSupport.RoundUpToWholeMinute(previous.ArrivalTime
             .Add(BoatTurnaroundBuffer)
-            .Add(ResolveRepositionDuration(previous, next));
+            .Add(ResolveRepositionDuration(previous, next)));
 
     public static TimeSpan ResolveRepositionDuration(
         BoatScheduleWindow previous,
@@ -139,7 +139,7 @@ internal static class TripScheduleSupport
 
             return new StationDepartureConflict(
                 existing,
-                existing.DepartureTime.Add(StationDepartureBuffer));
+                TripStopScheduleSupport.RoundUpToWholeMinute(existing.DepartureTime.Add(StationDepartureBuffer)));
         }
 
         return null;

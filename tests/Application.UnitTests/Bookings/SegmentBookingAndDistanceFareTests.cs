@@ -324,6 +324,65 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task RegularConcessionTicketsAreFreeEvenWhenOldFareRulesExist()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-FARE-FREE", withDistances: true);
+        context.Set<TicketFareRule>().AddRange(
+            new TicketFareRule
+            {
+                TicketTypeCode = "CHILD",
+                RouteType = RouteTypes.Regular,
+                PriceModifier = 0.5m,
+                IsActive = true
+            },
+            new TicketFareRule
+            {
+                TicketTypeCode = "SENIOR",
+                RouteType = RouteTypes.Regular,
+                PriceModifier = 0.5m,
+                IsActive = true
+            },
+            new TicketFareRule
+            {
+                TicketTypeCode = "DISABLED",
+                RouteType = RouteTypes.Regular,
+                PriceModifier = 0.5m,
+                IsActive = true
+            },
+            new TicketFareRule
+            {
+                TicketTypeCode = "INFANT",
+                RouteType = RouteTypes.Regular,
+                PriceModifier = 1.0m,
+                IsActive = true
+            });
+        await context.SaveChangesAsync();
+        var handler = CreateHandler(context, userContext);
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-FARE-FREE",
+                [
+                    Adult("A1", "BB", "HB") with { TicketTypeCode = "CHILD" },
+                    Adult("A2", "BB", "HB") with { TicketTypeCode = "SENIOR" },
+                    Adult("A1", "HB", "LT") with { TicketTypeCode = "DISABLED" },
+                    Adult("A2", "HB", "LT") with { TicketTypeCode = "INFANT", BirthYear = 2026 }
+                ],
+                null),
+            CancellationToken.None);
+
+        result.SubtotalAmount.ShouldBe(0m);
+        result.TotalAmount.ShouldBe(0m);
+        context.Set<BookingPassenger>()
+            .Where(p => p.BookingId == result.BookingId)
+            .Select(p => p.UnitPrice)
+            .ToList()
+            .ShouldAllBe(x => x == 0m);
+    }
+
+    [Test]
     public async Task MissingDistanceRejectsRegularBookingInsteadOfFallingBackToSeatTypeFare()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -355,7 +414,7 @@ public class SegmentBookingAndDistanceFareTests
         var searchTrip = searchResults.Single(x => x.TripCode == "TR-FARE-3");
         searchTrip.MinPrice.ShouldBeNull();
         searchTrip.IsBookable.ShouldBeFalse();
-        searchTrip.IsBookingClosed.ShouldBeTrue();
+        searchTrip.IsBookingClosed.ShouldBeFalse();
         searchTrip.BookingClosedReason.ShouldNotBeNull();
         searchTrip.BookingClosedReason!.ShouldContain("chưa nhập đủ số km");
 
@@ -417,19 +476,19 @@ public class SegmentBookingAndDistanceFareTests
         var searchHandler = new SearchTripsQueryHandler(context, new FixedTimeProvider(Now));
         var date = DateOnly.FromDateTime(Now.UtcDateTime);
 
-        // Chặng HB→LT: khách trước đã xuống ở HB → cả 2 ghế trống; giá "từ" lấy loại vé trả tiền rẻ nhất (CHILD 50%).
+        // Chặng HB→LT: khách trước đã xuống ở HB → cả 2 ghế trống; giá "từ" lấy loại vé trả tiền rẻ nhất (ADULT).
         var tailResults = await searchHandler.Handle(
             new SearchTripsQuery(hb.Id, lt.Id, date), CancellationToken.None);
         var tailTrip = tailResults.Single(x => x.TripCode == "TR-SRCH-1");
         tailTrip.AvailableSeats.ShouldBe(2);
-        tailTrip.MinPrice.ShouldBe(5500m);
+        tailTrip.MinPrice.ShouldBe(11000m);
 
-        // Chặng BB→HB (giao vé đã bán): còn 1 ghế; giá "từ" lấy loại vé trả tiền rẻ nhất (CHILD 50%).
+        // Chặng BB→HB (giao vé đã bán): còn 1 ghế; giá "từ" lấy loại vé trả tiền rẻ nhất (ADULT).
         var headResults = await searchHandler.Handle(
             new SearchTripsQuery(bb.Id, hb.Id, date), CancellationToken.None);
         var headTrip = headResults.Single(x => x.TripCode == "TR-SRCH-1");
         headTrip.AvailableSeats.ShouldBe(1);
-        headTrip.MinPrice.ShouldBe(4500m);
+        headTrip.MinPrice.ShouldBe(9000m);
     }
 
     [Test]

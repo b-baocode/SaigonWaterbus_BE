@@ -34,6 +34,7 @@ public sealed class TicketTypes : IEndpointGroup
                 "Tra ve danh sach loai ve kem he so gia dang ap dung. Default nam trong code, admin co the override bang fare-rules.",
                 "priceModifier: he so gia (1.0 = gia goc, 0.5 = giam 50%).",
                 "priceModifier ap dung Regular; sightseeingPriceModifier ap dung routeType=SightseeingLoop.",
+                "Regular co dinh mien phi cho CHILD/SENIOR/DISABLED/INFANT; INFANT mien phi ca Regular lan SightseeingLoop.",
                 "Sightseeing: CHILD/SENIOR/DISABLED dung chung % giam tai /api/ticket-types/sightseeing-concession.",
                 "Ticket type thuc te cua ve da phat hanh duoc luu truc tiep trong bang tickets."));
 
@@ -64,6 +65,7 @@ public sealed class TicketTypes : IEndpointGroup
                 null,
                 "Tra ve ma tran ticketTypeCode x routeType. Dong ticketFareRuleId=null la gia default chua override.",
                 "routeType: Regular hoac SightseeingLoop. priceModifier: 1 = nguyen gia, 0.5 = giam 50%, 0 = mien phi.",
+                "Regular cua CHILD/SENIOR/DISABLED/INFANT la mien phi co dinh, khong can tao setting rieng.",
                 "Voi CHILD/SENIOR/DISABLED tren SightseeingLoop, nen dung endpoint /api/ticket-types/sightseeing-concession de chinh chung mot lan."));
 
         group.MapPut(UpdateTicketFareRule, "fare-rules")
@@ -75,6 +77,7 @@ public sealed class TicketTypes : IEndpointGroup
                 "Ap dung cho booking tao sau khi chinh; booking da tao/da thanh toan khong tinh lai.",
                 "ticketTypeCode: ADULT | CHILD | INFANT | SENIOR | DISABLED.",
                 "routeType: Regular | SightseeingLoop.",
+                "Neu gui CHILD/SENIOR/DISABLED/INFANT voi routeType=Regular hoac INFANT voi SightseeingLoop, BE se tra ve he so 0 va xoa override cu neu co.",
                 "priceModifier: 1 = nguyen gia, 0.5 = giam 50%, 0 = mien phi. Neu can phu thu ngay le/cuoi tuan thi dung /api/fare-policy/adjustments."));
     }
 

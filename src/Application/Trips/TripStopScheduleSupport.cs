@@ -114,8 +114,8 @@ internal static class TripStopScheduleSupport
             }
             else
             {
-                plannedArrival = previousDeparture.AddMinutes(
-                    (double)(orderedStops[i].StandardTravelMin ?? DefaultTravelMinutes));
+                plannedArrival = RoundUpToWholeMinute(previousDeparture.AddMinutes(
+                    (double)(orderedStops[i].StandardTravelMin ?? DefaultTravelMinutes)));
                 var stayDurationMinutes = ResolveStayDurationMinutes(
                     orderedStops[i].StopOrder,
                     isFirstStop: false,
@@ -123,7 +123,7 @@ internal static class TripStopScheduleSupport
                     stayDurationMinutesByStopOrder);
                 plannedDeparture = i == orderedStops.Count - 1
                     ? null
-                    : plannedArrival.Value.AddMinutes(stayDurationMinutes);
+                    : RoundUpToWholeMinute(plannedArrival.Value.AddMinutes(stayDurationMinutes));
                 previousDeparture = plannedDeparture ?? plannedArrival.Value;
             }
 
@@ -143,6 +143,23 @@ internal static class TripStopScheduleSupport
         }
 
         return drafts;
+    }
+
+    public static DateTimeOffset RoundUpToWholeMinute(DateTimeOffset value)
+    {
+        if (value.Second == 0 && value.Millisecond == 0 && value.Microsecond == 0 && value.Nanosecond == 0)
+        {
+            return value;
+        }
+
+        return new DateTimeOffset(
+            value.Year,
+            value.Month,
+            value.Day,
+            value.Hour,
+            value.Minute,
+            0,
+            value.Offset).AddMinutes(1);
     }
 
     private static int ResolveStayDurationMinutes(

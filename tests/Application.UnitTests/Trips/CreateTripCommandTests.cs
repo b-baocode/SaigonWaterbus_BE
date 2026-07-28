@@ -620,6 +620,134 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task GenerateTripsCreatesEveryRoundTripPreviewItemWhenScheduledOneByOne()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var outbound = Route("OUT", stationA, stationB);
+        var inbound = Route("IN", stationB, stationA);
+        outbound.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 88;
+        inbound.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 88;
+        outbound.IsBookable = true;
+        inbound.IsBookable = true;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+        var start = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(outbound, inbound, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, start);
+
+        var preview = await new PreviewRoundTripScheduleCommandHandler(context)
+            .Handle(
+                new PreviewRoundTripScheduleCommand(
+                    BoatCode: "BOAT-1",
+                    OutboundRouteCode: "OUT",
+                    InboundRouteCode: "IN",
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(8, 0),
+                    EndTime: new TimeOnly(11, 30)),
+                CancellationToken.None);
+        preview.Items.ShouldAllBe(x => x.CanCreate);
+
+        var generateHandler = new GenerateTripsCommandHandler(context);
+        foreach (var item in preview.Items)
+        {
+            var localDeparture = item.DepartureTime.ToOffset(TimeSpan.FromHours(7));
+            var result = await generateHandler.Handle(
+                new GenerateTripsCommand(
+                    RouteCode: item.RouteCode,
+                    BoatCode: "BOAT-1",
+                    DepartureTimes: [TimeOnly.FromDateTime(localDeparture.DateTime)],
+                    FromDate: item.OperatingDate,
+                    ToDate: item.OperatingDate),
+                CancellationToken.None);
+
+            result.Created.ShouldBe(1, result.SkippedItems?.SingleOrDefault()?.Reason ?? "Trip should be created.");
+            result.SkippedItems.ShouldBeEmpty();
+        }
+
+        context.Trips
+            .OrderBy(x => x.DepartureTime)
+            .Select(x => new
+            {
+                RouteCode = x.Route.RouteCode,
+                Departure = x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            })
+            .ShouldBe([
+                new { RouteCode = "OUT", Departure = new TimeSpan(8, 0, 0) },
+                new { RouteCode = "IN", Departure = new TimeSpan(9, 43, 0) },
+                new { RouteCode = "OUT", Departure = new TimeSpan(11, 26, 0) }
+            ]);
+    }
+
+    [Test]
+    public async Task PreviewRoundTripScheduleRoundsFractionalTravelMinutesUpBeforeSchedulingNextTrip()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var outbound = Route("OUT", stationA, stationB);
+        var inbound = Route("IN", stationB, stationA);
+        outbound.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 88.5m;
+        inbound.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 88.5m;
+        outbound.IsBookable = true;
+        inbound.IsBookable = true;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+        var start = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(outbound, inbound, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, start);
+
+        var preview = await new PreviewRoundTripScheduleCommandHandler(context)
+            .Handle(
+                new PreviewRoundTripScheduleCommand(
+                    BoatCode: "BOAT-1",
+                    OutboundRouteCode: "OUT",
+                    InboundRouteCode: "IN",
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(8, 0),
+                    EndTime: new TimeOnly(11, 40)),
+                CancellationToken.None);
+
+        preview.Items.ShouldAllBe(x => x.CanCreate);
+        preview.Items.Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
+            .ShouldBe([
+                new TimeSpan(8, 0, 0),
+                new TimeSpan(9, 44, 0),
+                new TimeSpan(11, 28, 0)
+            ]);
+        preview.Items.Select(x => x.ArrivalTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
+            .ShouldBe([
+                new TimeSpan(9, 29, 0),
+                new TimeSpan(11, 13, 0),
+                new TimeSpan(12, 57, 0)
+            ]);
+
+        var generateHandler = new GenerateTripsCommandHandler(context);
+        foreach (var item in preview.Items)
+        {
+            var localDeparture = item.DepartureTime.ToOffset(TimeSpan.FromHours(7));
+            var result = await generateHandler.Handle(
+                new GenerateTripsCommand(
+                    RouteCode: item.RouteCode,
+                    BoatCode: "BOAT-1",
+                    DepartureTimes: [TimeOnly.FromDateTime(localDeparture.DateTime)],
+                    FromDate: item.OperatingDate,
+                    ToDate: item.OperatingDate),
+                CancellationToken.None);
+
+            result.Created.ShouldBe(1, result.SkippedItems?.SingleOrDefault()?.Reason ?? "Trip should be created.");
+            result.SkippedItems.ShouldBeEmpty();
+        }
+    }
+
+    [Test]
     public async Task GenerateTripsSkipsSameDirectionTripsBeforeBoatCanReturnToStart()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -812,6 +940,33 @@ public class CreateTripCommandTests
         result.Created.ShouldBe(2);
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BS-20300101-SIGHT-1-", StringComparison.Ordinal));
         context.Trips.All(x => x.RouteId == route.Id).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task SearchTripsDoesNotMarkFutureTripsClosedWhenRouteDistanceIsMissing()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var route = Route("R1", stationA, stationB);
+        route.RouteStops.Single(x => x.StopOrder == 2).DistanceFromPreviousKm = null;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var trip = TripWithSeats(route, boat, "TR-MISSING-KM", departureTime);
+
+        context.AddRange(route, boat, trip);
+        await context.SaveChangesAsync();
+
+        var result = await new SearchTripsQueryHandler(
+                context,
+                new FixedTimeProvider(departureTime.ToUniversalTime().AddDays(-1)))
+            .Handle(new SearchTripsQuery(stationA.Id, stationB.Id, DateOnly.FromDateTime(departureTime.Date)), CancellationToken.None);
+
+        var tripSummary = result.Single();
+        tripSummary.IsBookingClosed.ShouldBeFalse();
+        tripSummary.IsBookable.ShouldBeFalse();
+        tripSummary.BookingClosedReason.ShouldNotBeNull();
+        tripSummary.BookingClosedReason.ShouldContain("chưa nhập đủ số km");
     }
 
     [Test]

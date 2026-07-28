@@ -1,7 +1,9 @@
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -53,6 +55,7 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         var oldStatus = trip.TripStatus;
         trip.TripStatus = request.TripStatus;
         trip.StatusNote = request.StatusNote;
+        var sourceBooking = await LoadSourceBookingAsync(trip, cancellationToken);
 
         var now = _timeProvider.GetUtcNow();
         var createdNotifications = new List<Notification>();
@@ -77,11 +80,18 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             now,
             cancellationToken);
 
+        if (ShouldDeactivateCharterRoute(trip, oldStatus, sourceBooking))
+        {
+            await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
+                _context,
+                sourceBooking!,
+                cancellationToken);
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(
             _notificationRealtimeNotifier, createdNotifications, cancellationToken);
 
-        var sourceBooking = await LoadSourceBookingAsync(trip, cancellationToken);
         return ToDetailDto(trip, sourceBooking);
     }
 
@@ -123,7 +133,19 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
 
         return await _context.Set<Booking>()
             .Include(x => x.ItineraryStops)
+            .Include(x => x.CharterRoute)
             .SingleOrDefaultAsync(x => x.Id == trip.SourceBookingId.Value, cancellationToken);
     }
+
+    private static bool ShouldDeactivateCharterRoute(
+        Trip trip,
+        TripStatus oldStatus,
+        Booking? sourceBooking) =>
+        sourceBooking is not null
+        && trip.TripStatus != oldStatus
+        && trip.TripStatus == TripStatus.Completed
+        && (trip.TripType == TripTypes.Charter
+            || trip.Route.RouteType == RouteTypes.Charter
+            || trip.Route.RouteType == RouteTypes.CharterReference);
 
 }

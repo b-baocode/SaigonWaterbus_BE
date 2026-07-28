@@ -93,6 +93,17 @@ public sealed class UpdateTicketFareRuleCommandHandler
         var ticketType = TicketFareRuleSupport.ResolveTicketType(request.TicketTypeCode);
         var routeType = TicketFareRuleSupport.NormalizeBookableRouteType(request.RouteType);
 
+        if (TicketFareRuleSupport.IsFixedFreeRule(ticketType.Code, routeType))
+        {
+            await TicketFareRuleSupport.RemoveConfiguredRuleAsync(
+                _context,
+                ticketType.Code,
+                routeType,
+                cancellationToken);
+
+            return TicketFareRuleSupport.BuildFixedFreeRuleDto(ticketType, routeType);
+        }
+
         if (TicketFareRuleSupport.IsSightseeingConcessionRule(ticketType.Code, routeType))
         {
             await TicketFareRuleSupport.UpsertSightseeingConcessionRulesAsync(
@@ -203,6 +214,11 @@ public static class TicketFareRuleSupport
         CancellationToken cancellationToken)
     {
         var normalizedRouteType = RouteTypes.Normalize(routeType);
+        if (IsFixedFreeRule(ticketType.Code, normalizedRouteType))
+        {
+            return 0m;
+        }
+
         if (IsSightseeingConcessionRule(ticketType.Code, normalizedRouteType))
         {
             var configuredRules = await context.Set<TicketFareRule>()
@@ -253,6 +269,11 @@ public static class TicketFareRuleSupport
         TicketTypePricing.All
             .SelectMany(ticketType => BookableRouteTypes.Select(routeType =>
             {
+                if (IsFixedFreeRule(ticketType.Code, routeType))
+                {
+                    return BuildFixedFreeRuleDto(ticketType, routeType);
+                }
+
                 var key = (ticketType.Code, routeType);
                 return configuredRules.TryGetValue(key, out var configured)
                     ? ToDto(configured, ticketType) with
@@ -285,6 +306,15 @@ public static class TicketFareRuleSupport
             rule.RouteType,
             rule.PriceModifier,
             rule.IsActive);
+
+    public static TicketFareRuleDto BuildFixedFreeRuleDto(TicketTypeInfo ticketType, string routeType) =>
+        new(
+            null,
+            ticketType.Code,
+            ticketType.Name,
+            routeType,
+            0m,
+            true);
 
     public static SightseeingConcessionFareRuleDto BuildSightseeingConcessionDto(
         IReadOnlyDictionary<(string TicketTypeCode, string RouteType), TicketFareRule> configuredRules)
@@ -331,6 +361,24 @@ public static class TicketFareRuleSupport
         await context.SaveChangesAsync(cancellationToken);
     }
 
+    public static async Task RemoveConfiguredRuleAsync(
+        IApplicationDbContext context,
+        string ticketTypeCode,
+        string routeType,
+        CancellationToken cancellationToken)
+    {
+        var rule = await context.Set<TicketFareRule>()
+            .SingleOrDefaultAsync(x => x.TicketTypeCode == ticketTypeCode && x.RouteType == routeType, cancellationToken);
+
+        if (rule is null)
+        {
+            return;
+        }
+
+        context.Set<TicketFareRule>().Remove(rule);
+        await context.SaveChangesAsync(cancellationToken);
+    }
+
     private static decimal PriceModifierToDiscountPercent(decimal priceModifier) =>
         Math.Round((1m - priceModifier) * 100m, 2, MidpointRounding.AwayFromZero);
 
@@ -339,6 +387,11 @@ public static class TicketFareRuleSupport
         TicketTypeInfo ticketType,
         string routeType)
     {
+        if (IsFixedFreeRule(ticketType.Code, routeType))
+        {
+            return 0m;
+        }
+
         if (IsSightseeingConcessionRule(ticketType.Code, routeType))
         {
             return ResolveSightseeingConcessionPriceModifier(configuredRules);
@@ -368,6 +421,14 @@ public static class TicketFareRuleSupport
     public static bool IsSightseeingConcessionRule(string ticketTypeCode, string routeType) =>
         string.Equals(routeType, RouteTypes.SightseeingLoop, StringComparison.Ordinal)
         && TicketTypePricing.IsSightseeingConcessionTicketType(ticketTypeCode);
+
+    public static bool IsFixedFreeRule(string ticketTypeCode, string routeType)
+    {
+        var normalizedRouteType = RouteTypes.Normalize(routeType);
+        return TicketTypePricing.IsAlwaysFreeTicketType(ticketTypeCode)
+            || (string.Equals(normalizedRouteType, RouteTypes.Regular, StringComparison.Ordinal)
+                && TicketTypePricing.IsFreeRegularTicketType(ticketTypeCode));
+    }
 
     private sealed class StringTupleComparer : IEqualityComparer<(string TicketTypeCode, string RouteType)>
     {

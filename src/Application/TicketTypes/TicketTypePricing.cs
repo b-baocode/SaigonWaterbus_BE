@@ -28,6 +28,19 @@ public static class TicketTypePricing
 {
     public const decimal SightseeingConcessionPriceModifier = 0.5m;
 
+    public static readonly IReadOnlyList<string> RegularFreeTicketTypeCodes =
+    [
+        "CHILD",
+        "INFANT",
+        "SENIOR",
+        "DISABLED"
+    ];
+
+    public static readonly IReadOnlyList<string> AlwaysFreeTicketTypeCodes =
+    [
+        "INFANT"
+    ];
+
     public static readonly IReadOnlyList<string> SightseeingConcessionTicketTypeCodes =
     [
         "CHILD",
@@ -39,8 +52,8 @@ public static class TicketTypePricing
     [
         new("ADULT", "Vé người lớn", "Hành khách thông thường, nguyên giá", 1.0m, null),
         new("CHILD", "Vé trẻ em",
-            "Giảm 50% giá vé. Áp dụng waterbus thường và sightseeing.",
-            0.5m, null, SightseeingConcessionPriceModifier),
+            "Miễn phí trên waterbus thường; sightseeing giảm theo cấu hình nhóm ưu đãi.",
+            0.0m, null, SightseeingConcessionPriceModifier),
         new("INFANT", "Trẻ em dưới 2 tuổi",
             "Miễn phí. Có thể ngồi cùng người lớn (không chiếm ghế) hoặc chiếm 1 ghế riêng tùy khách. "
             + "Áp dụng waterbus thường và sightseeing.",
@@ -80,6 +93,18 @@ public static class TicketTypePricing
     public static bool IsSightseeingConcessionTicketType(string? code) =>
         code is not null
         && SightseeingConcessionTicketTypeCodes.Contains(
+            TicketTypeCatalog.NormalizeCode(code),
+            StringComparer.Ordinal);
+
+    public static bool IsFreeRegularTicketType(string? code) =>
+        code is not null
+        && RegularFreeTicketTypeCodes.Contains(
+            TicketTypeCatalog.NormalizeCode(code),
+            StringComparer.Ordinal);
+
+    public static bool IsAlwaysFreeTicketType(string? code) =>
+        code is not null
+        && AlwaysFreeTicketTypeCodes.Contains(
             TicketTypeCatalog.NormalizeCode(code),
             StringComparer.Ordinal);
 }

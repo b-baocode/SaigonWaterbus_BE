@@ -89,7 +89,6 @@ public sealed record OperationScheduleStopDto(
     int StayDurationMinutes,
     string? StopStatus);
 
-[Authorize(Roles = "Admin,Manager,Staff,Customer")]
 public sealed record GetOperationScheduleQuery(
     DateTimeOffset From,
     DateTimeOffset To,
@@ -374,6 +373,16 @@ public sealed class GetOperationScheduleQueryHandler
         DateTimeOffset to,
         CancellationToken cancellationToken)
     {
+        if (!_userContext.IsAuthenticated || !_userContext.UserId.HasValue)
+        {
+            return new OperationScheduleAccess(
+                ForcedServiceType: OperationServiceTypes.Booking,
+                AllowedStationIds: request.StationId.HasValue ? [request.StationId.Value] : null,
+                CanIncludeCancelled: false,
+                CanViewLiveTelemetry: false,
+                MaxDays: 7);
+        }
+
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
         if (AuthSupport.IsCustomer(actor))
         {

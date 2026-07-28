@@ -132,6 +132,44 @@ public class GetOperationScheduleQueryTests
     }
 
     [Test]
+    public async Task AnonymousIsLimitedToBookingTripsAndSevenDays()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var departure = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)).ToUniversalTime();
+        SeedTrip(context, "BB-20300101-B01-0800", RouteTypes.Regular, TripTypes.Regular, departure, capacity: 79);
+        SeedTrip(context, "BS-20300101-S01-0830", RouteTypes.SightseeingLoop, TripTypes.Regular, departure.AddMinutes(30), capacity: 40);
+        SeedTrip(context, "BR-20300101-CB001-1", RouteTypes.CharterReference, TripTypes.Charter, departure.AddHours(1), capacity: 20);
+        await context.SaveChangesAsync();
+
+        var handler = new GetOperationScheduleQueryHandler(
+            context,
+            AnonymousUserContext.Instance,
+            new FixedTimeProvider(departure.AddHours(-1)));
+
+        var result = await handler.Handle(
+            new GetOperationScheduleQuery(
+                departure.AddDays(-1),
+                departure.AddDays(6),
+                IncludeCancelled: true,
+                ServiceType: "charter"),
+            CancellationToken.None);
+
+        result.Select(x => x.SourceCode).ShouldBe([
+            "BB-20300101-B01-0800",
+            "BS-20300101-S01-0830"
+        ]);
+        result.ShouldAllBe(x => x.ServiceType == "Bus" || x.ServiceType == "Sightseeing");
+        result.ShouldAllBe(x => x.LatestLatitude == null && x.LatestLongitude == null);
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new GetOperationScheduleQuery(
+                departure.AddDays(-1),
+                departure.AddDays(8),
+                IncludeCancelled: false),
+            CancellationToken.None));
+    }
+
+    [Test]
     public async Task GroundStaffOnlySeesTripsThroughAssignedStation()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -283,4 +321,13 @@ public class GetOperationScheduleQueryTests
             StationName = name,
             Status = StationStatus.Active
         };
+
+    private sealed class AnonymousUserContext : IUserContext
+    {
+        public static readonly AnonymousUserContext Instance = new();
+
+        public Guid? UserId => null;
+
+        public bool IsAuthenticated => false;
+    }
 }

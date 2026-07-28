@@ -1,7 +1,9 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.CharterBookings;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
@@ -50,6 +52,26 @@ public class UpdateCharterBookingStatusCommandTests
     }
 
     [Test]
+    public async Task CompletingLinkedCharterTripInactivatesOwnedRoute()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        const string bookingCode = "CB-20300101-ABC";
+        var route = OwnedRoute(bookingCode);
+        var booking = CharterBooking(BookingStatus.Confirmed, paymentStatus: "Paid");
+        booking.BookingCode = bookingCode;
+        booking.CharterRouteId = route.Id;
+        booking.CharterRoute = route;
+        var trip = CharterTrip(route, booking);
+        context.AddRange(route, booking, trip);
+        await context.SaveChangesAsync();
+
+        await new UpdateTripStatusCommandHandler(context)
+            .Handle(new UpdateTripStatusCommand(trip.Id, TripStatus.Completed, null), CancellationToken.None);
+
+        context.Set<Route>().Single(x => x.Id == route.Id).Status.ShouldBe("Inactive");
+    }
+
+    [Test]
     public async Task SystemManagedStatusesCannotBeSetManuallyByAdmin()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -86,5 +108,57 @@ public class UpdateCharterBookingStatusCommandTests
             TotalAmount = 1_000_000,
             RemainingAmount = paymentStatus == "Paid" ? 0 : 500_000,
             DepositAmount = paymentStatus == "Paid" ? 1_000_000 : 500_000
+        };
+
+    private static Route OwnedRoute(string bookingCode)
+    {
+        var stationA = Station("CTA", "Bến A");
+        var stationB = Station("CTB", "Bến B");
+        var route = new Route
+        {
+            RouteCode = CharterBookingRouteSupport.BuildCompactRouteCodeBase(bookingCode),
+            RouteName = $"Charter {bookingCode}: Bến A - Bến B",
+            RouteType = RouteTypes.Charter,
+            Description = $"Route charter ghép từ booking {bookingCode}.",
+            Status = "Active",
+            IsBookable = false
+        };
+        route.RouteStops.Add(RouteStop(route, stationA, 1));
+        route.RouteStops.Add(RouteStop(route, stationB, 2));
+        return route;
+    }
+
+    private static Trip CharterTrip(Route route, Booking booking) =>
+        new()
+        {
+            RouteId = route.Id,
+            Route = route,
+            TripCode = $"TRIP-{booking.BookingCode}",
+            TripType = TripTypes.Charter,
+            SourceBookingId = booking.Id,
+            OperatingDate = booking.DepartureDate.GetValueOrDefault(),
+            DepartureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero),
+            ArrivalTime = new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero),
+            CapacitySnapshot = 10,
+            TripStatus = TripStatus.Scheduled
+        };
+
+    private static RouteStop RouteStop(Route route, Station station, int stopOrder) =>
+        new()
+        {
+            Route = route,
+            RouteId = route.Id,
+            Station = station,
+            StationId = station.Id,
+            StopOrder = stopOrder,
+            StandardTravelMin = stopOrder == 1 ? null : 60
+        };
+
+    private static Station Station(string code, string name) =>
+        new()
+        {
+            StationCode = code,
+            StationName = name,
+            Status = StationStatus.Active
         };
 }

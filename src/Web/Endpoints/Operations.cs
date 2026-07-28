@@ -32,27 +32,23 @@ public sealed class Operations : IEndpointGroup
     public static void Map(RouteGroupBuilder groupBuilder)
     {
         groupBuilder.MapGet(GetSchedule, "schedule")
-            .RequireAuthorization(policy => policy.RequireRole(
-                Roles.AdminName,
-                Roles.ManagerSystemName,
-                Roles.StaffSystemName,
-                Roles.CustomerSystemName))
+            .AllowAnonymous()
             .WithSummary("Xem lịch vận hành chung")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Customer, Admin, Manager hoặc Staff",
+                "Anonymous, Customer, Admin, Manager hoặc Staff",
                 null,
                 "Query params: fromDate, toDate là ngày bắt đầu/kết thúc, không phải bến đi/bến đến.",
                 "Định dạng ngày: yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy. Nếu bỏ toDate thì lấy một ngày.",
                 "serviceType optional: all | booking | bus | sightseeing | charter. FE lịch booking tuần nên dùng serviceType=booking để lấy Bus + Sightseeing.",
                 "routeType optional: Regular | SightseeingLoop | Charter | CharterReference nếu muốn lọc sâu hơn.",
                 "stationId optional: Admin/Manager/Staff OnBoard co the dung de loc theo ben; Staff Ground tu dong bi gioi han theo ben duoc gan.",
-                "Customer bi gioi han toi da 7 ngay, luon chi xem booking trips (Bus + Sightseeing), khong xem charter/cancelled/GPS noi bo.",
+                "Anonymous/Customer bi gioi han toi da 7 ngay, luon chi xem booking trips (Bus + Sightseeing), khong xem charter/cancelled/GPS noi bo.",
                 "Query cũ from/to vẫn được đọc để tương thích, nhưng FE nên dùng fromDate/toDate.",
                 "Response co routeType, tripType, serviceType, capacitySnapshot, totalPassengerCount, adjustedStartAt/adjustedEndAt va dwellCountdown.",
                 "Response co stops[] de FE render bang gio tung ben va tinh cac chang nhu BD -> Thu Thiem, BD -> Ba Son.",
                 "GET đọc trực tiếp trips, trip_stops và boat_latest_locations để hiển thị trạng thái tàu đang di chuyển.",
                 "Nếu GPS gửi ETA, response có remainingMinutesToNextStation và remainingDistanceKmToNextStation.",
-                "Đây là lịch vận hành nội bộ. Bảng công cộng/khách hàng không dùng API này."));
+                "Anonymous/Customer khong nhan GPS live va khong xem charter/cancelled; Admin/Manager/Staff van xem du theo quyen."));
 
         groupBuilder.MapPost(RefreshSchedule, "schedule/sync")
             .RequireAuthorization()
