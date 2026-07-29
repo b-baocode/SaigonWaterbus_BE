@@ -34,6 +34,7 @@ internal static class SeatBookingTestData
         var user = new User
         {
             FullName = $"Khach {suffix}",
+            Email = $"khach-{suffix}@example.test",
             RoleId = role.Id,
             Role = role,
             Status = UserStatus.Active
