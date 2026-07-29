@@ -15,8 +15,9 @@ public static class ReviewStatuses
 
 public sealed record TripReviewDto(
     Guid ReviewId,
-    Guid TripId,
+    Guid? TripId,
     string? TripCode,
+    string? RouteName,
     int Rating,
     string? Comment,
     string CustomerName,
@@ -216,79 +217,33 @@ public sealed class GetMyReviewableTripsQueryHandler
     }
 }
 
-public sealed record GetTripReviewsQuery(Guid TripId, int Page = 1, int PageSize = 20) : IRequest<TripReviewListDto>;
+public sealed record GetPublishedReviewsQuery(int Page = 1, int PageSize = 20) : IRequest<TripReviewListDto>;
 
-public sealed class GetTripReviewsQueryValidator : AbstractValidator<GetTripReviewsQuery>
+public sealed class GetPublishedReviewsQueryValidator : AbstractValidator<GetPublishedReviewsQuery>
 {
-    public GetTripReviewsQueryValidator()
+    public GetPublishedReviewsQueryValidator()
     {
-        RuleFor(x => x.TripId).NotEmpty();
         RuleFor(x => x.Page).GreaterThanOrEqualTo(1);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
     }
 }
 
-public sealed class GetTripReviewsQueryHandler : IRequestHandler<GetTripReviewsQuery, TripReviewListDto>
+public sealed class GetPublishedReviewsQueryHandler : IRequestHandler<GetPublishedReviewsQuery, TripReviewListDto>
 {
     private readonly IApplicationDbContext _context;
 
-    public GetTripReviewsQueryHandler(IApplicationDbContext context)
+    public GetPublishedReviewsQueryHandler(IApplicationDbContext context)
     {
         _context = context;
     }
 
-    public async Task<TripReviewListDto> Handle(GetTripReviewsQuery request, CancellationToken cancellationToken)
+    public async Task<TripReviewListDto> Handle(
+        GetPublishedReviewsQuery request,
+        CancellationToken cancellationToken)
     {
-        var tripExists = await _context.Set<Trip>()
-            .AnyAsync(t => t.Id == request.TripId, cancellationToken);
-        if (!tripExists)
-        {
-            throw new NotFoundException("Trip not found.");
-        }
-
         var query = _context.Set<Review>()
             .AsNoTracking()
-            .Where(r => r.TripId == request.TripId && r.Status == ReviewStatuses.Published);
-
-        return await ReviewListSupport.ToPagedListAsync(query, request.Page, request.PageSize, cancellationToken);
-    }
-}
-
-public sealed record GetRouteReviewsQuery(Guid RouteId, int Page = 1, int PageSize = 20) : IRequest<TripReviewListDto>;
-
-public sealed class GetRouteReviewsQueryValidator : AbstractValidator<GetRouteReviewsQuery>
-{
-    public GetRouteReviewsQueryValidator()
-    {
-        RuleFor(x => x.RouteId).NotEmpty();
-        RuleFor(x => x.Page).GreaterThanOrEqualTo(1);
-        RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
-    }
-}
-
-public sealed class GetRouteReviewsQueryHandler : IRequestHandler<GetRouteReviewsQuery, TripReviewListDto>
-{
-    private readonly IApplicationDbContext _context;
-
-    public GetRouteReviewsQueryHandler(IApplicationDbContext context)
-    {
-        _context = context;
-    }
-
-    public async Task<TripReviewListDto> Handle(GetRouteReviewsQuery request, CancellationToken cancellationToken)
-    {
-        var routeExists = await _context.Set<Route>()
-            .AnyAsync(r => r.Id == request.RouteId, cancellationToken);
-        if (!routeExists)
-        {
-            throw new NotFoundException("Route not found.");
-        }
-
-        var query = _context.Set<Review>()
-            .AsNoTracking()
-            .Where(r => r.Trip != null
-                && r.Trip.RouteId == request.RouteId
-                && r.Status == ReviewStatuses.Published);
+            .Where(r => r.Status == ReviewStatuses.Published);
 
         return await ReviewListSupport.ToPagedListAsync(query, request.Page, request.PageSize, cancellationToken);
     }
@@ -314,8 +269,9 @@ internal static class ReviewListSupport
             .Take(pageSize)
             .Select(r => new TripReviewDto(
                 r.Id,
-                r.TripId!.Value,
+                r.TripId,
                 r.Trip != null ? r.Trip.TripCode : null,
+                r.Trip != null ? r.Trip.Route.RouteName : null,
                 r.Rating,
                 r.Comment,
                 r.Customer.FullName,

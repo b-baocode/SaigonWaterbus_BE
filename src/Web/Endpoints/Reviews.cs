@@ -38,20 +38,13 @@ public sealed class Reviews : IEndpointGroup
                 "myReview=null nghia la chua danh gia -> hien nut 'Danh gia'; nguoc lai hien noi dung da gui kem status (Hidden = cho duyet).",
                 "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100)."));
 
-        group.MapGet(GetTripReviews, "trips/{tripId:guid}")
-            .WithSummary("Danh sach danh gia cua mot chuyen")
+        group.MapGet(GetPublishedReviews, "")
+            .WithSummary("Danh sach danh gia cong khai")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Public",
                 null,
-                "Chi tra ve review status=Published, moi nhat truoc, kem averageRating (lam tron 1 chu so).",
-                "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100)."));
-
-        group.MapGet(GetRouteReviews, "routes/{routeId:guid}")
-            .WithSummary("Danh sach danh gia cua mot tuyen")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Public",
-                null,
-                "Gop review Published cua tat ca chuyen thuoc tuyen, kem averageRating - dung hien diem tuyen o man chon tuyen.",
+                "Tra ve toan bo review status=Published (moi nhat truoc), kem averageRating tren toan he thong (lam tron 1 chu so).",
+                "Moi item kem tripId/tripCode/routeName de biet danh gia thuoc chuyen - tuyen nao.",
                 "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100)."));
 
         group.MapGet(GetAdminReviews, "admin")
@@ -88,21 +81,12 @@ public sealed class Reviews : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetMyReviewableTripsQuery(page ?? 1, pageSize ?? 20), ct));
 
-    private static async Task<IResult> GetTripReviews(
+    private static async Task<IResult> GetPublishedReviews(
         ISender sender,
-        Guid tripId,
         int? page,
         int? pageSize,
         CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetTripReviewsQuery(tripId, page ?? 1, pageSize ?? 20), ct));
-
-    private static async Task<IResult> GetRouteReviews(
-        ISender sender,
-        Guid routeId,
-        int? page,
-        int? pageSize,
-        CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetRouteReviewsQuery(routeId, page ?? 1, pageSize ?? 20), ct));
+        Results.Ok(await sender.Send(new GetPublishedReviewsQuery(page ?? 1, pageSize ?? 20), ct));
 
     private static async Task<IResult> GetAdminReviews(
         ISender sender,
