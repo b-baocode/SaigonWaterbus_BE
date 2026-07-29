@@ -82,8 +82,10 @@ public sealed class BlogPosts : IEndpointGroup
         group.MapPost(CreateBlogPost, string.Empty)
             .RequireAuthorization()
             .DisableAntiforgery()
-            .Accepts<CreateBlogPostFormRequest>("multipart/form-data")
-            .Accepts<CreateBlogPostJsonRequest>("application/json")
+            .Accepts<CreateBlogPostJsonRequest>(
+                "application/json",
+                "multipart/form-data",
+                "application/x-www-form-urlencoded")
             .WithSummary("Tao blog moi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
@@ -103,8 +105,10 @@ public sealed class BlogPosts : IEndpointGroup
         group.MapPut(UpdateBlogPost, "{id:guid}")
             .RequireAuthorization()
             .DisableAntiforgery()
-            .Accepts<UpdateBlogPostFormRequest>("multipart/form-data")
-            .Accepts<UpdateBlogPostRequest>("application/json")
+            .Accepts<UpdateBlogPostRequest>(
+                "application/json",
+                "multipart/form-data",
+                "application/x-www-form-urlencoded")
             .WithSummary("Cap nhat blog")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",

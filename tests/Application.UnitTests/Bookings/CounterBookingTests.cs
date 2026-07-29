@@ -47,6 +47,7 @@ public class CounterBookingTests
         booking.SoldByStaffId.ShouldBe(staffContext.UserId);
         booking.ContactName.ShouldBe("Khach Vang Lai");
         booking.ContactPhone.ShouldBe("0909000111");
+        booking.ContactEmail.ShouldBe("khach@example.test");
         booking.RemainingAmount.ShouldBe(0m);
 
         var payment = context.Set<Payment>().Single(p => p.BookingId == result.BookingId);
@@ -105,6 +106,39 @@ public class CounterBookingTests
         await Should.ThrowAsync<ValidationException>(() => handler.Handle(
             new CreateBookingCommand("TR-CTR-4", [Adult("A1")], null),
             CancellationToken.None));
+    }
+
+    [Test]
+    public async Task CustomerBookingRequiresAccountEmailForSharedTicketEmail()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var customer = context.Users.Single(x => x.Id == customerContext.UserId);
+        customer.Email = null;
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBookingCommandHandler(
+            context,
+            customerContext,
+            new SequentialBookingCodeGenerator(),
+            new FixedFareCalculator(10000m),
+            new FixedTimeProvider(Now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new CreateBookingCommand("TR-ANY", [Adult("A1")], null),
+            CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value).ShouldContain(m => m.Contains("email"));
+    }
+
+    [Test]
+    public void CounterBookingRequiresContactEmailForSharedTicketEmail()
+    {
+        var result = new CreateCounterBookingCommandValidator()
+            .Validate(CashCommand("TR-CTR-EMAIL", "A1") with { ContactEmail = "" });
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.PropertyName == nameof(CreateCounterBookingCommand.ContactEmail));
     }
 
     [Test]
@@ -182,7 +216,8 @@ public class CounterBookingTests
             tripCode,
             [Adult(seat)],
             "Khach Vang Lai",
-            "0909000111");
+            "0909000111",
+            "khach@example.test");
 
     private static BookingItemRequest Adult(string seat) =>
         new(seat, "ADULT", "BB", "LT", "Khach Vang Lai", null, null, null, null, null);

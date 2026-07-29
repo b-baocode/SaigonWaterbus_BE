@@ -75,6 +75,7 @@ internal static class SeatFlowTestData
         var user = new User
         {
             FullName = $"Seat flow {roleDisplayName}",
+            Email = $"{roleDisplayName.ToLowerInvariant()}@example.test",
             RoleId = role.Id,
             Role = role,
             StaffType = staffType,

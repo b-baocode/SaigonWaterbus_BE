@@ -51,7 +51,7 @@ public sealed record CreateCounterBookingCommand(
     IReadOnlyList<BookingItemRequest> Items,
     string ContactName,
     string ContactPhone,
-    string? ContactEmail = null,
+    string ContactEmail,
     CounterPaymentMethod PaymentMethod = CounterPaymentMethod.Cash,
     string? ReturnTripCode = null,
     IReadOnlyList<BookingItemRequest>? ReturnItems = null,
@@ -67,8 +67,7 @@ public sealed class CreateCounterBookingCommandValidator : AbstractValidator<Cre
             .Must(items => items.Count <= 10).WithMessage("Maximum 10 items per booking.");
         RuleFor(x => x.ContactName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ContactPhone).NotEmpty().MaximumLength(20);
-        RuleFor(x => x.ContactEmail).EmailAddress().MaximumLength(255)
-            .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail));
+        RuleFor(x => x.ContactEmail).NotEmpty().EmailAddress().MaximumLength(255);
         RuleFor(x => x.PaymentMethod).IsInEnum();
         RuleFor(x => x.ReturnTripCode).MaximumLength(50);
         RuleFor(x => x.ReturnItems!)
@@ -183,9 +182,7 @@ public sealed class CreateCounterBookingCommandHandler
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
             ContactName = request.ContactName.Trim(),
             ContactPhone = request.ContactPhone.Trim(),
-            ContactEmail = string.IsNullOrWhiteSpace(request.ContactEmail)
-                ? null
-                : request.ContactEmail.Trim(),
+            ContactEmail = request.ContactEmail.Trim(),
             BookingStatus = BookingStatus.PendingPayment,
             SubtotalAmount = subtotal,
             DiscountAmount = 0,

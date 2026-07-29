@@ -313,7 +313,7 @@ public class BookingHoldAndETicketTests
     }
 
     [Test]
-    public async Task ChildUsesAdultCompanionTicketAndScanShowsBothPassengers()
+    public async Task ChildHasOwnTicketAndQrButRequiresAdultInBooking()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -422,31 +422,43 @@ public class BookingHoldAndETicketTests
             new HandlePaymentWebhookCommand(CreatePaidWebhook(2000004, 9500)),
             CancellationToken.None);
 
-        var ticket = context.Tickets.ShouldHaveSingleItem();
-        ticket.BookingPassengerId.ShouldBe(adult.Id);
+        var tickets = context.Tickets.OrderBy(x => x.BookingPassengerId).ToList();
+        tickets.Count.ShouldBe(2);
+        var adultTicket = tickets.Single(x => x.BookingPassengerId == adult.Id);
+        var childTicket = tickets.Single(x => x.BookingPassengerId == child.Id);
+        childTicket.TicketCode.ShouldNotBe(adultTicket.TicketCode);
         var bookerTickets = sender.ETickets.Single(x => x.Booking.Email == "booker@gmail.com").Tickets;
         bookerTickets.Count.ShouldBe(2);
-        bookerTickets.ShouldAllBe(x => x.TicketCode == ticket.TicketCode);
+        var expectedTicketCodes = new[] { adultTicket.TicketCode, childTicket.TicketCode }
+            .OrderBy(x => x)
+            .ToArray();
+        bookerTickets.Select(x => x.TicketCode).OrderBy(x => x).ShouldBe(
+            expectedTicketCodes);
         bookerTickets.Single(x => x.PassengerName == "Bé lớn").SeatCode.ShouldBe("A2");
 
         var manifest = await new GetBookingManifestQueryHandler(context, passengerContext)
             .Handle(new GetBookingManifestByQrTokenQuery(booking.CharterBookingQrToken!), CancellationToken.None);
         manifest.PassengerCount.ShouldBe(2);
-        manifest.ActiveTicketCount.ShouldBe(1);
+        manifest.ActiveTicketCount.ShouldBe(2);
         var childManifest = manifest.Passengers.Single(x => x.PassengerId == child.Id);
-        childManifest.TicketCode.ShouldBe(ticket.TicketCode);
+        childManifest.TicketCode.ShouldBe(childTicket.TicketCode);
         childManifest.IsLapInfant.ShouldBeFalse();
-        childManifest.UsesCompanionTicket.ShouldBeTrue();
-        childManifest.CompanionPassengerId.ShouldBe(adult.Id);
+        childManifest.UsesCompanionTicket.ShouldBeFalse();
+        childManifest.CompanionPassengerId.ShouldBeNull();
 
-        var scan = await new ScanTicketQueryHandler(context, adminContext, TimeProvider.System)
-            .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
-        scan.PassengerCount.ShouldBe(2);
-        scan.Passengers.Select(x => x.FullName).ShouldBe(["Nguyen Huu Hoang", "Bé lớn"]);
-        var scannedChild = scan.Passengers.Single(x => x.PassengerId == child.Id);
+        var adultScan = await new ScanTicketQueryHandler(context, adminContext, TimeProvider.System)
+            .Handle(new ScanTicketQuery(adultTicket.QrToken), CancellationToken.None);
+        adultScan.PassengerCount.ShouldBe(1);
+        adultScan.Passengers.ShouldHaveSingleItem().PassengerId.ShouldBe(adult.Id);
+
+        var childScan = await new ScanTicketQueryHandler(context, adminContext, TimeProvider.System)
+            .Handle(new ScanTicketQuery(childTicket.QrToken), CancellationToken.None);
+        childScan.PassengerCount.ShouldBe(1);
+        var scannedChild = childScan.Passengers.ShouldHaveSingleItem();
+        scannedChild.PassengerId.ShouldBe(child.Id);
         scannedChild.IsLapInfant.ShouldBeFalse();
-        scannedChild.UsesCompanionTicket.ShouldBeTrue();
-        scannedChild.CompanionPassengerId.ShouldBe(adult.Id);
+        scannedChild.UsesCompanionTicket.ShouldBeFalse();
+        scannedChild.CompanionPassengerId.ShouldBeNull();
         scannedChild.SeatCode.ShouldBe("A2");
     }
 

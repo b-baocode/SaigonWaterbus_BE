@@ -5,7 +5,6 @@ namespace SaigonWaterbus.Application.Bookings;
 internal static class LapInfantTicketSupport
 {
     private const string InfantTicketTypeCode = "INFANT";
-    private const string ChildTicketTypeCode = "CHILD";
     private const string AdultTicketTypeCode = "ADULT";
 
     public static bool IsLapInfant(BookingPassenger passenger) =>
@@ -14,12 +13,8 @@ internal static class LapInfantTicketSupport
         && !passenger.TripSeatId.HasValue
         && passenger.TripSeat is null;
 
-    public static bool IsAccompaniedChild(BookingPassenger passenger) =>
-        string.Equals(passenger.PassengerType?.Trim(), ChildTicketTypeCode, StringComparison.OrdinalIgnoreCase)
-        && passenger.TripId.HasValue;
-
     public static bool UsesCompanionTicket(BookingPassenger passenger) =>
-        IsLapInfant(passenger) || IsAccompaniedChild(passenger);
+        IsLapInfant(passenger);
 
     public static bool RequiresOwnTicket(BookingPassenger passenger) =>
         !UsesCompanionTicket(passenger);

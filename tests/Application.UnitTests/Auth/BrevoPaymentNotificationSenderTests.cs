@@ -111,7 +111,58 @@ public class BrevoPaymentNotificationSenderTests
         ticket.GetProperty("ticketQrCodeUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
     }
 
-    private static BrevoPaymentNotificationSender CreateSender(CapturingHttpMessageHandler httpHandler) =>
+    [Test]
+    public async Task ETicketFallsBackToAzureWebsiteHostnameForQrImageUrls()
+    {
+        var previousPublicApiBaseUrl = Environment.GetEnvironmentVariable("PUBLIC_API_BASE_URL");
+        var previousWebsiteHostname = Environment.GetEnvironmentVariable("WEBSITE_HOSTNAME");
+        try
+        {
+            Environment.SetEnvironmentVariable("PUBLIC_API_BASE_URL", null);
+            Environment.SetEnvironmentVariable("WEBSITE_HOSTNAME", "waterbus-api.azurewebsites.net");
+            var httpHandler = new CapturingHttpMessageHandler();
+            var sender = CreateSender(httpHandler, publicApiBaseUrl: "");
+            var booking = CreateNotification(isFullyPaid: true);
+
+            await sender.SendETicketsAsync(
+                new ETicketNotification(
+                    booking,
+                    BookingQrToken: "booking-qr",
+                    TripCode: "TR-001",
+                    RouteName: "Bach Dang - Linh Dong",
+                    DepartureTime: null,
+                    ArrivalTime: null,
+                    FromStationName: "Bach Dang",
+                    ToStationName: "Linh Dong",
+                    Tickets:
+                    [
+                        new ETicketPassenger(
+                            "Tran Thi B",
+                            "A1",
+                            "Nguoi lon",
+                            "TK123",
+                            "ticket-qr",
+                            "passenger@example.com")
+                    ]),
+                CancellationToken.None);
+
+            using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
+            var parameters = payload.RootElement.GetProperty("params");
+            parameters.GetProperty("bookingQrImageUrl").GetString()
+                .ShouldBe("https://waterbus-api.azurewebsites.net/api/tickets/qr-image/booking-qr");
+            parameters.GetProperty("TICKETS")[0].GetProperty("qrImageUrl").GetString()
+                .ShouldBe("https://waterbus-api.azurewebsites.net/api/tickets/qr-image/ticket-qr");
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("PUBLIC_API_BASE_URL", previousPublicApiBaseUrl);
+            Environment.SetEnvironmentVariable("WEBSITE_HOSTNAME", previousWebsiteHostname);
+        }
+    }
+
+    private static BrevoPaymentNotificationSender CreateSender(
+        CapturingHttpMessageHandler httpHandler,
+        string? publicApiBaseUrl = "https://api.test") =>
         new(
             new TestHttpClientFactory(httpHandler),
             new TestOptionsMonitor<BrevoOptions>(new BrevoOptions
@@ -121,7 +172,7 @@ public class BrevoPaymentNotificationSenderTests
                 ApiKey = "test-api-key",
                 SenderEmail = "noreply@saigonwaterbus.test",
                 SenderName = "Saigon Waterbus",
-                PublicApiBaseUrl = "https://api.test",
+                PublicApiBaseUrl = publicApiBaseUrl,
                 CharterBookingQuoteTemplateId = 14,
                 CharterBookingConfirmationTemplateId = 13,
                 PaymentDepositTemplateId = 14,

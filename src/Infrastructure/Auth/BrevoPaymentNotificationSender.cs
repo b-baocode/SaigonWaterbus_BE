@@ -14,6 +14,8 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
     private const string HttpClientName = "Brevo";
     private const string TicketQrImagePathPrefix = "/api/tickets/qr-image/";
     private const string CharterBookingTicketsPdfPathPrefix = "/api/charter-bookings/tickets/pdf/";
+    private const string PublicApiBaseUrlEnvironmentVariable = "PUBLIC_API_BASE_URL";
+    private const string AzureWebsiteHostnameEnvironmentVariable = "WEBSITE_HOSTNAME";
     private static readonly CultureInfo ViCulture = CultureInfo.GetCultureInfo("vi-VN");
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly IOptionsMonitor<BrevoOptions> _optionsMonitor;
@@ -738,12 +740,13 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
 
     private static string? CreateQrImageUrl(string? publicApiBaseUrl, string? qrPayload)
     {
-        if (string.IsNullOrWhiteSpace(publicApiBaseUrl) || string.IsNullOrWhiteSpace(qrPayload))
+        var resolvedPublicApiBaseUrl = ResolvePublicApiBaseUrl(publicApiBaseUrl);
+        if (string.IsNullOrWhiteSpace(resolvedPublicApiBaseUrl) || string.IsNullOrWhiteSpace(qrPayload))
         {
             return null;
         }
 
-        return $"{publicApiBaseUrl.TrimEnd('/')}{TicketQrImagePathPrefix}{Uri.EscapeDataString(qrPayload)}";
+        return $"{resolvedPublicApiBaseUrl.TrimEnd('/')}{TicketQrImagePathPrefix}{Uri.EscapeDataString(qrPayload)}";
     }
 
     private static string? CreateCharterBookingTicketsPdfUrl(
@@ -751,14 +754,41 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         string? qrPayload,
         string bookingType)
     {
+        var resolvedPublicApiBaseUrl = ResolvePublicApiBaseUrl(publicApiBaseUrl);
         if (!Booking.IsCharterBookingType(bookingType)
-            || string.IsNullOrWhiteSpace(publicApiBaseUrl)
+            || string.IsNullOrWhiteSpace(resolvedPublicApiBaseUrl)
             || string.IsNullOrWhiteSpace(qrPayload))
         {
             return null;
         }
 
-        return $"{publicApiBaseUrl.TrimEnd('/')}{CharterBookingTicketsPdfPathPrefix}{Uri.EscapeDataString(qrPayload)}";
+        return $"{resolvedPublicApiBaseUrl.TrimEnd('/')}{CharterBookingTicketsPdfPathPrefix}{Uri.EscapeDataString(qrPayload)}";
+    }
+
+    private static string? ResolvePublicApiBaseUrl(string? configuredPublicApiBaseUrl)
+    {
+        if (!string.IsNullOrWhiteSpace(configuredPublicApiBaseUrl))
+        {
+            return configuredPublicApiBaseUrl.Trim();
+        }
+
+        var publicApiBaseUrl = Environment.GetEnvironmentVariable(PublicApiBaseUrlEnvironmentVariable);
+        if (!string.IsNullOrWhiteSpace(publicApiBaseUrl))
+        {
+            return publicApiBaseUrl.Trim();
+        }
+
+        var azureHostname = Environment.GetEnvironmentVariable(AzureWebsiteHostnameEnvironmentVariable);
+        if (string.IsNullOrWhiteSpace(azureHostname))
+        {
+            return null;
+        }
+
+        var normalizedHostname = azureHostname.Trim();
+        return normalizedHostname.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || normalizedHostname.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? normalizedHostname
+            : $"https://{normalizedHostname}";
     }
 
     private static string ResolveText(string? value, string fallback = "Chưa xác định") =>

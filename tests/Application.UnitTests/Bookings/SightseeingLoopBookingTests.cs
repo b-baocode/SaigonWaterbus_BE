@@ -96,8 +96,8 @@ public class SightseeingLoopBookingTests
                 null),
             CancellationToken.None);
 
-        result.SubtotalAmount.ShouldBe(15_000m);
-        result.TotalAmount.ShouldBe(15_000m);
+        result.SubtotalAmount.ShouldBe(20_000m);
+        result.TotalAmount.ShouldBe(20_000m);
 
         var passengers = context.Set<BookingPassenger>()
             .Where(x => x.BookingId == result.BookingId)
@@ -105,7 +105,7 @@ public class SightseeingLoopBookingTests
             .ToList();
         passengers.Select(x => x.PassengerType).ShouldBe(["ADULT", "CHILD", "DISABLED"]);
         passengers.Single(x => x.PassengerType == "ADULT").UnitPrice.ShouldBe(10_000m);
-        passengers.Single(x => x.PassengerType == "CHILD").UnitPrice.ShouldBe(0m);
+        passengers.Single(x => x.PassengerType == "CHILD").UnitPrice.ShouldBe(5_000m);
         passengers.Single(x => x.PassengerType == "DISABLED").UnitPrice.ShouldBe(5_000m);
 
         var seniorPrice = await new FareCalculator(context).CalculateAsync(
@@ -150,8 +150,8 @@ public class SightseeingLoopBookingTests
                 null),
             CancellationToken.None);
 
-        result.SubtotalAmount.ShouldBe(12_500m);
-        result.TotalAmount.ShouldBe(12_500m);
+        result.SubtotalAmount.ShouldBe(15_000m);
+        result.TotalAmount.ShouldBe(15_000m);
 
         var seniorPrice = await new FareCalculator(context).CalculateAsync(
             seats.Single(x => x.Code == "A1").Id,
@@ -166,6 +166,7 @@ public class SightseeingLoopBookingTests
             .Select(x => new ValueTuple<string, decimal>(x.TicketTypeCode, x.PriceModifier))
             .ToList()
             .ShouldBe([
+                new ValueTuple<string, decimal>("CHILD", 0.25m),
                 new ValueTuple<string, decimal>("DISABLED", 0.25m),
                 new ValueTuple<string, decimal>("SENIOR", 0.25m)
             ]);

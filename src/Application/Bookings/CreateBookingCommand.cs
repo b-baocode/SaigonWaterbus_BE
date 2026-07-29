@@ -59,8 +59,8 @@ public sealed record CreateBookingCommand(
 
 public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBookingCommand>
 {
-    private const string ChildCompanionMessage =
-        "Mỗi trẻ em miễn phí (INFANT hoặc CHILD) phải có một hành khách người lớn có ghế đi kèm trong cùng booking.";
+    private const string ChildAdultMessage =
+        "Booking có vé CHILD hoặc INFANT không ghế phải có ít nhất một hành khách ADULT có ghế đi kèm.";
 
     public CreateBookingCommandValidator()
     {
@@ -70,10 +70,11 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
 
         RuleForEach(x => x.Items).ChildRules(ApplyItemRules);
 
-        // Trẻ miễn phí dùng QR của người lớn đi kèm. Mỗi ADULT có ghế chỉ kèm tối đa một trẻ trong từng chiều.
+        // CHILD có ghế riêng/QR riêng nhưng booking vẫn phải có người lớn đi cùng.
+        // INFANT không ghế dùng QR người lớn; mỗi ADULT có ghế kèm tối đa một INFANT không ghế.
         RuleFor(x => x.Items)
-            .Must(HasSeatedAdultCompanionForEachAccompaniedChild)
-            .WithMessage(ChildCompanionMessage)
+            .Must(HasRequiredSeatedAdultCompanions)
+            .WithMessage(ChildAdultMessage)
             .When(x => x.Items is not null);
 
         // Vé khứ hồi: ReturnTripCode và ReturnItems phải đi cùng nhau.
@@ -92,8 +93,8 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
         RuleForEach(x => x.ReturnItems).ChildRules(ApplyItemRules);
 
         RuleFor(x => x.ReturnItems!)
-            .Must(HasSeatedAdultCompanionForEachAccompaniedChild)
-            .WithMessage(ChildCompanionMessage)
+            .Must(HasRequiredSeatedAdultCompanions)
+            .WithMessage(ChildAdultMessage)
             .When(x => x.ReturnItems is { Count: > 0 });
 
         RuleFor(x => x.InsurancePackageId)
@@ -121,12 +122,20 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             .When(x => !string.IsNullOrWhiteSpace(x.PassengerEmail));
     }
 
-    private static bool HasSeatedAdultCompanionForEachAccompaniedChild(IReadOnlyList<BookingItemRequest> items)
+    private static bool HasRequiredSeatedAdultCompanions(IReadOnlyList<BookingItemRequest> items)
     {
-        var accompaniedChildren = items.Count(i => UsesCompanionTicket(i.TicketTypeCode));
         var seatedAdults = items.Count(i =>
             !string.IsNullOrWhiteSpace(i.SeatNumber) && IsAdult(i.TicketTypeCode));
-        return accompaniedChildren <= seatedAdults;
+        var hasChild = items.Any(i => IsChild(i.TicketTypeCode));
+        var lapInfants = items.Count(i =>
+            string.IsNullOrWhiteSpace(i.SeatNumber) && IsInfant(i.TicketTypeCode));
+
+        if (hasChild && seatedAdults == 0)
+        {
+            return false;
+        }
+
+        return lapInfants <= seatedAdults;
     }
 
     private static bool IsInfant(string? ticketTypeCode) =>
@@ -138,8 +147,6 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
     private static bool IsAdult(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "ADULT", StringComparison.OrdinalIgnoreCase);
 
-    private static bool UsesCompanionTicket(string? ticketTypeCode) =>
-        IsInfant(ticketTypeCode) || IsChild(ticketTypeCode);
 }
 
 public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand, CreateBookingResult>
@@ -190,6 +197,17 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
         var userId = _userContext.UserId
             ?? throw new ValidationException([new ValidationFailure("userId", "User must be authenticated.")]);
 
+        var user = await _context.Users
+            .AsNoTracking()
+            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
+            ?? throw new ValidationException([new ValidationFailure("userId", "User không tồn tại.")]);
+        var contactEmail = user.Email?.Trim();
+        if (string.IsNullOrWhiteSpace(contactEmail))
+        {
+            throw new ValidationException([new ValidationFailure("contactEmail",
+                "Tài khoản cần có email để nhận QR/vé điện tử của booking.")]);
+        }
+
         var outboundLeg = await _legResolver.ResolveAsync(
             request.TripCode, request.Items, userId, now, nameof(request.TripCode),
             allowDepartedTrip: false, cancellationToken);
@@ -234,11 +252,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             cancellationToken);
         var subtotal = ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m);
 
-        var user = await _context.Users
-            .AsNoTracking()
-            .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
-            ?? throw new ValidationException([new ValidationFailure("userId", "User không tồn tại.")]);
-
         var booking = new Booking
         {
             UserId = userId,
@@ -247,7 +260,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
             ContactName = user.FullName,
             ContactPhone = user.PhoneNumber ?? string.Empty,
-            ContactEmail = user.Email,
+            ContactEmail = contactEmail,
             BookingStatus = BookingStatus.PendingPayment,
             SubtotalAmount = subtotal,
             DiscountAmount = 0,

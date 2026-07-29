@@ -61,6 +61,14 @@ public class CreateBookingCommandValidatorTests
     }
 
     [Test]
+    public void MultipleChildrenWithOneSeatedAdultIsValid()
+    {
+        var result = Validator.Validate(Command(Adult("A1"), Child("A2"), Child("A3")));
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [Test]
     public void MoreLapInfantsThanSeatedCompanionsIsInvalid()
     {
         var result = Validator.Validate(Command(Adult("A1"), LapInfant(), LapInfant()));
