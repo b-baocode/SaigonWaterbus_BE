@@ -45,14 +45,22 @@ public sealed class GmailOtpSender : IOtpSender
             throw new OtpDispatchException("Gmail FromEmail is not configured.");
         }
 
+        var recipientEmail = EmailRecipientResolver.Resolve(options.TestRecipientEmail, email);
+        var isHtml = IsHtmlTemplate(options, purpose);
+        var body = EmailRecipientResolver.AddOriginalRecipientNotice(
+            BuildBody(options, purpose, code, templateContent),
+            isHtml,
+            options.TestRecipientEmail,
+            email);
+
         using var message = new MailMessage
         {
             From = new MailAddress(fromEmail, options.FromName),
             Subject = ResolveSubject(options, purpose, templateContent),
-            Body = BuildBody(options, purpose, code, templateContent),
-            IsBodyHtml = IsHtmlTemplate(options, purpose)
+            Body = body,
+            IsBodyHtml = isHtml
         };
-        message.To.Add(email);
+        message.To.Add(recipientEmail);
 
         using var client = new SmtpClient(options.Host, options.Port)
         {
@@ -70,17 +78,19 @@ public sealed class GmailOtpSender : IOtpSender
             cancellationToken.ThrowIfCancellationRequested();
 
             _logger.LogInformation(
-                "Gmail OTP sent successfully. Purpose: {Purpose}, Email: {Email}",
+                "Gmail OTP sent successfully. Purpose: {Purpose}, Email: {Email}, RecipientEmail: {RecipientEmail}",
                 purpose,
-                email);
+                email,
+                recipientEmail);
         }
         catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException)
         {
             _logger.LogWarning(
-                "Gmail SMTP send failed: {Message}. Purpose: {Purpose}, Email: {Email}. OTP skipped for development.",
+                "Gmail SMTP send failed: {Message}. Purpose: {Purpose}, Email: {Email}, RecipientEmail: {RecipientEmail}. OTP skipped for development.",
                 ex.Message,
                 purpose,
-                email);
+                email,
+                recipientEmail);
         }
     }
 

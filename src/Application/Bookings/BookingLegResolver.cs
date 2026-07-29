@@ -139,6 +139,26 @@ internal sealed class BookingLegResolver
                     "Vé CHILD chỉ áp dụng cho trẻ trên 2 tuổi đến 12 tuổi tại ngày khởi hành.")]);
         }
 
+        // Vé SENIOR và DISABLED cũng cần năm sinh để lưu manifest hành khách.
+        foreach (var seniorItem in items.Where(i => IsSenior(i.TicketTypeCode)))
+        {
+            if (!seniorItem.BirthYear.HasValue)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé SENIOR yêu cầu khai báo birthYear (người cao tuổi từ 70 tuổi).")]);
+
+            var ageAtDeparture = departureYear - seniorItem.BirthYear.Value;
+            if (ageAtDeparture < 70)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé SENIOR chỉ áp dụng cho người cao tuổi từ 70 tuổi tại ngày khởi hành.")]);
+        }
+
+        foreach (var disabledItem in items.Where(i => IsDisabled(i.TicketTypeCode)))
+        {
+            if (!disabledItem.BirthYear.HasValue)
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.BirthYear),
+                    "Vé DISABLED yêu cầu khai báo birthYear (người khuyết tật).")]);
+        }
+
         // Trẻ dưới 2 tuổi (INFANT) được phép không chiếm ghế (ngồi cùng người lớn) và dùng QR
         // của một hành khách ADULT đi kèm. CHILD có ghế riêng nên vẫn được phát QR riêng.
         var lapItems = items.Where(i => string.IsNullOrWhiteSpace(i.SeatNumber)).ToList();
@@ -685,6 +705,12 @@ internal sealed class BookingLegResolver
 
     private static bool IsChild(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "CHILD", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSenior(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "SENIOR", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDisabled(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "DISABLED", StringComparison.OrdinalIgnoreCase);
 
     private static bool IsAdult(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "ADULT", StringComparison.OrdinalIgnoreCase);

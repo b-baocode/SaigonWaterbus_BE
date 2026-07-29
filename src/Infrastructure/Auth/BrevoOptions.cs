@@ -16,6 +16,11 @@ public sealed class BrevoOptions
 
     public string? PublicApiBaseUrl { get; set; }
 
+    /// <summary>
+    /// Khi cấu hình, toàn bộ email Brevo sẽ gửi về địa chỉ này để test thay vì gửi cho khách thật.
+    /// </summary>
+    public string? TestRecipientEmail { get; set; }
+
     public int TemplateId { get; set; }
 
     public int RegisterTemplateId { get; set; }
@@ -40,4 +45,7 @@ public sealed class BrevoOptions
 
     /// <summary>Template Brevo cho email vé điện tử booking thường; 0 = dùng HTML inline.</summary>
     public int ETicketTemplateId { get; set; }
+
+    /// <summary>Template Brevo cho email vé cá nhân gửi riêng cho từng hành khách; 0 = dùng ETicketTemplateId.</summary>
+    public int PassengerETicketTemplateId { get; set; }
 }

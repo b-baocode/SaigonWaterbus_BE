@@ -102,7 +102,7 @@ public sealed record ETicketLeg(
 
 // FromStationName/ToStationName: chặng của riêng hành khách (trip Regular bán ghế theo chặng);
 // null = đi cả tuyến (dữ liệu cũ, sightseeing) → hiển thị theo trạm đầu/cuối của leg.
-// DepartureTime = giờ tàu rời bến LÊN của hành khách (theo chặng, từ trip_stops);
+// DepartureTime/ArrivalTime = giờ tàu rời/đến bến của hành khách (theo chặng, từ trip_stops);
 // null = dữ liệu cũ → template dùng giờ khởi hành của chuyến.
 public sealed record ETicketPassenger(
     string PassengerName,
@@ -113,4 +113,5 @@ public sealed record ETicketPassenger(
     string? Email,
     string? FromStationName = null,
     string? ToStationName = null,
-    DateTimeOffset? DepartureTime = null);
+    DateTimeOffset? DepartureTime = null,
+    DateTimeOffset? ArrivalTime = null);

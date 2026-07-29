@@ -65,10 +65,12 @@ internal static class RegularBookingETicketSupport
                 : outboundLeg;
 
             // Giờ boarding = giờ tàu rời bến LÊN của khách (theo chặng), không phải giờ đầu chuyến.
-            DateTimeOffset? boardingTime = leg.Trip is null
+            (DateTimeOffset Departure, DateTimeOffset Arrival)? segmentTimes = leg.Trip is null
                 ? null
                 : Trips.TripStopScheduleSupport.ResolveSegmentTimes(
-                    leg.Trip, passenger.FromStopOrder, passenger.ToStopOrder).Departure;
+                    leg.Trip, passenger.FromStopOrder, passenger.ToStopOrder);
+            DateTimeOffset? boardingTime = segmentTimes?.Departure;
+            DateTimeOffset? arrivalTime = segmentTimes?.Arrival;
 
             TicketTypePricing.TryGet(passenger.PassengerType, out var ticketType);
             var eTicket = new ETicketPassenger(
@@ -80,7 +82,8 @@ internal static class RegularBookingETicketSupport
                 passenger.Email,
                 passenger.FromStation?.StationName,
                 passenger.ToStation?.StationName,
-                boardingTime);
+                boardingTime,
+                arrivalTime);
 
             leg.Tickets.Add(eTicket);
         }

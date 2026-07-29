@@ -173,10 +173,11 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             return;
         }
 
-        if (options.ETicketTemplateId <= 0)
+        var isPassengerETicket = IsPassengerETicket(notification);
+        if (ResolveETicketTemplateId(options, isPassengerETicket) <= 0)
         {
             _logger.LogWarning(
-                "Brevo e-ticket notification is enabled but ETicketTemplateId is not configured. BookingCode: {BookingCode}, Email: {Email}",
+                "Brevo e-ticket notification is enabled but template id is not configured. BookingCode: {BookingCode}, Email: {Email}",
                 notification.Booking.BookingCode,
                 notification.Booking.Email);
             return;
@@ -262,6 +263,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
     {
         var booking = notification.Booking;
         var parameters = BuildTemplateParams(options, booking, boardingPass: null);
+        var isPassengerETicket = IsPassengerETicket(notification);
 
         var bookingQrImageUrl = CreateQrImageUrl(options.PublicApiBaseUrl, notification.BookingQrToken);
         var primaryQrImageUrl = bookingQrImageUrl
@@ -277,6 +279,9 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         parameters["routeName"] = notification.RouteName;
         parameters["departureTime"] = departureText;
         parameters["arrivalTime"] = arrivalText;
+        parameters["arrivalDate"] = notification.ArrivalTime.HasValue
+            ? FormatDateTimeOffset(notification.ArrivalTime.Value, "dd/MM/yyyy")
+            : null;
         parameters["fromStationName"] = ResolveText(notification.FromStationName);
         parameters["toStationName"] = ResolveText(notification.ToStationName);
         parameters["bookingQrPayload"] = notification.BookingQrToken;
@@ -342,21 +347,66 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                     ["toStationName"] = ResolveText(ticket.ToStationName ?? notification.ToStationName),
                     ["departureTime"] = (ticket.DepartureTime ?? notification.DepartureTime) is { } boarding
                         ? FormatDateTimeOffset(boarding, "dd/MM/yyyy HH:mm")
+                        : null,
+                    ["arrivalTime"] = (ticket.ArrivalTime ?? notification.ArrivalTime) is { } arrival
+                        ? FormatDateTimeOffset(arrival, "dd/MM/yyyy HH:mm")
                         : null
                 };
             })
             .ToArray();
 
+        if (isPassengerETicket)
+        {
+            AddPassengerETicketTopLevelParams(options, notification, parameters);
+        }
+
         var payload = BuildPayload(
             options,
             booking.Email,
             booking.ContactName,
-            options.ETicketTemplateId,
+            ResolveETicketTemplateId(options, isPassengerETicket),
             parameters,
             $"Waterbus - Vé điện tử {booking.BookingCode}",
             string.Empty);
         AddAttachments(payload, notification.Attachments);
         return payload;
+    }
+
+    private static void AddPassengerETicketTopLevelParams(
+        BrevoOptions options,
+        ETicketNotification notification,
+        Dictionary<string, object?> parameters)
+    {
+        var ticket = notification.Tickets[0];
+        var ticketQrImageUrl = CreateQrImageUrl(options.PublicApiBaseUrl, ticket.QrToken);
+        var departureAt = ticket.DepartureTime ?? notification.DepartureTime;
+        var arrivalAt = ticket.ArrivalTime ?? notification.ArrivalTime;
+
+        parameters["passengerName"] = ticket.PassengerName;
+        parameters["seatNumber"] = ticket.SeatCode;
+        parameters["ticketTypeName"] = ticket.TicketTypeName;
+        parameters["ticketCode"] = ticket.TicketCode;
+        parameters["qrPayload"] = ticket.QrToken;
+        parameters["qrImageUrl"] = ticketQrImageUrl;
+        parameters["qrCodeUrl"] = ticketQrImageUrl;
+        parameters["ticketQrImageUrl"] = ticketQrImageUrl;
+        parameters["ticketQrCodeUrl"] = ticketQrImageUrl;
+        parameters["tripCode"] = notification.TripCode;
+        parameters["routeName"] = notification.RouteName;
+        parameters["fromStationName"] = ResolveText(ticket.FromStationName ?? notification.FromStationName);
+        parameters["toStationName"] = ResolveText(ticket.ToStationName ?? notification.ToStationName);
+        parameters["departureDate"] = departureAt.HasValue
+            ? FormatDateTimeOffset(departureAt.Value, "dd/MM/yyyy")
+            : null;
+        parameters["departureTime"] = departureAt.HasValue
+            ? FormatDateTimeOffset(departureAt.Value, "HH:mm")
+            : null;
+        parameters["arrivalDate"] = arrivalAt.HasValue
+            ? FormatDateTimeOffset(arrivalAt.Value, "dd/MM/yyyy")
+            : null;
+        parameters["arrivalTime"] = arrivalAt.HasValue
+            ? FormatDateTimeOffset(arrivalAt.Value, "HH:mm")
+            : null;
     }
 
     private static Dictionary<string, object?> BuildPayload(
@@ -368,6 +418,9 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         string subject,
         string htmlContent)
     {
+        var recipientEmail = EmailRecipientResolver.Resolve(options.TestRecipientEmail, email);
+        EmailRecipientResolver.AddDebugParams(parameters, options.TestRecipientEmail, email);
+
         var payload = new Dictionary<string, object?>
         {
             ["sender"] = new
@@ -375,7 +428,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 email = options.SenderEmail,
                 name = options.SenderName
             },
-            ["to"] = new[] { new { email, name = contactName } },
+            ["to"] = new[] { new { email = recipientEmail, name = contactName } },
             ["params"] = parameters
         };
 
@@ -430,6 +483,16 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             options.CharterBookingConfirmationTemplateId,
             options.PaymentFullTemplateId,
             options.BookingPaymentConfirmationTemplateId);
+
+    private static int ResolveETicketTemplateId(BrevoOptions options, bool isPassengerETicket) =>
+        isPassengerETicket
+            ? FirstPositive(options.PassengerETicketTemplateId, options.ETicketTemplateId)
+            : options.ETicketTemplateId;
+
+    private static bool IsPassengerETicket(ETicketNotification notification) =>
+        string.IsNullOrWhiteSpace(notification.BookingQrToken)
+        && notification.Tickets.Count == 1
+        && notification.Legs is null;
 
     private static Dictionary<string, object?> BuildTemplateParams(
         BrevoOptions options,

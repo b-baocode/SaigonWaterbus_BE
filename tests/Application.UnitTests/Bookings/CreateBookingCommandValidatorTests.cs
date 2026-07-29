@@ -44,6 +44,24 @@ public class CreateBookingCommandValidatorTests
     }
 
     [Test]
+    public void SeniorWithoutBirthYearIsInvalid()
+    {
+        var result = Validator.Validate(Command(Adult("A1"), Senior("A2", birthYear: null)));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage.Contains("birthYear"));
+    }
+
+    [Test]
+    public void DisabledWithoutBirthYearIsInvalid()
+    {
+        var result = Validator.Validate(Command(Adult("A1"), Disabled("A2", birthYear: null)));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage.Contains("birthYear"));
+    }
+
+    [Test]
     public void ChildWithoutAdultCompanionIsInvalid()
     {
         var result = Validator.Validate(Command(Child("A1")));
@@ -182,6 +200,12 @@ public class CreateBookingCommandValidatorTests
 
     private static BookingItemRequest Child(string seat, int? birthYear = 2020) =>
         new(seat, "CHILD", "BD", "TADA", "Be Nguyen Van B", null, birthYear, null, null, null);
+
+    private static BookingItemRequest Senior(string seat, int? birthYear = 1940) =>
+        new(seat, "SENIOR", "BD", "TADA", "Nguyen Van C", null, birthYear, null, null, null);
+
+    private static BookingItemRequest Disabled(string seat, int? birthYear = 1990) =>
+        new(seat, "DISABLED", "BD", "TADA", "Nguyen Van D", null, birthYear, null, null, null);
 
     private static BookingItemRequest LapInfant(int? birthYear = 2025) =>
         new(null, "INFANT", "BD", "TADA", "Be Nguyen Van B", null, birthYear, null, null, null);

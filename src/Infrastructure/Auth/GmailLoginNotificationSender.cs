@@ -42,14 +42,19 @@ public sealed class GmailLoginNotificationSender : ILoginNotificationSender
             ? gmailOptions.Username
             : gmailOptions.FromEmail;
 
+        var recipientEmail = EmailRecipientResolver.Resolve(gmailOptions.TestRecipientEmail, notification.Email);
         using var message = new MailMessage
         {
             From = new MailAddress(fromEmail, gmailOptions.FromName),
             Subject = notificationOptions.Subject,
-            Body = BuildBody(notificationOptions, notification),
+            Body = EmailRecipientResolver.AddOriginalRecipientNotice(
+                BuildBody(notificationOptions, notification),
+                isHtml: false,
+                gmailOptions.TestRecipientEmail,
+                notification.Email),
             IsBodyHtml = false
         };
-        message.To.Add(notification.Email);
+        message.To.Add(recipientEmail);
 
         using var client = new SmtpClient(gmailOptions.Host, gmailOptions.Port)
         {

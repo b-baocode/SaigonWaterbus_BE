@@ -110,8 +110,8 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             .When(x => !IsInfant(x.TicketTypeCode))
             .WithMessage("seatNumber là bắt buộc (chỉ vé INFANT - trẻ dưới 2 tuổi - mới được bỏ trống để ngồi cùng người lớn).");
         item.RuleFor(x => x.BirthYear).NotNull()
-            .When(x => IsInfant(x.TicketTypeCode) || IsChild(x.TicketTypeCode))
-            .WithMessage("birthYear là bắt buộc với vé INFANT/CHILD để khai báo và lưu hành khách.");
+            .When(x => RequiresBirthYear(x.TicketTypeCode))
+            .WithMessage("birthYear là bắt buộc với vé INFANT/CHILD/SENIOR/DISABLED để khai báo và lưu hành khách.");
         // Bắt buộc / phải khác nhau chỉ áp dụng cho chuyến bán theo chặng — validator không biết
         // trip nào nên rule đó enforce ở handler (xem ResolveLegAsync).
         item.RuleFor(x => x.FromStationCode).MaximumLength(50);
@@ -143,6 +143,15 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
 
     private static bool IsChild(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "CHILD", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsSenior(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "SENIOR", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsDisabled(string? ticketTypeCode) =>
+        string.Equals(ticketTypeCode?.Trim(), "DISABLED", StringComparison.OrdinalIgnoreCase);
+
+    private static bool RequiresBirthYear(string? ticketTypeCode) =>
+        IsInfant(ticketTypeCode) || IsChild(ticketTypeCode) || IsSenior(ticketTypeCode) || IsDisabled(ticketTypeCode);
 
     private static bool IsAdult(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "ADULT", StringComparison.OrdinalIgnoreCase);
