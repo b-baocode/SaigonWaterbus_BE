@@ -49,14 +49,16 @@ public sealed class Landmarks : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Tao landmark")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", CreateExample,
-                "routeId phai ton tai.",
-                "displayOrder sap xep dọc tuyen; triggerRadiusMeters (mac dinh 300) la ban kinh kich hoat phat."));
+                "Landmark khong gan tuyen — dinh danh bang latitude/longitude, dung chung moi tuyen di ngang qua.",
+                "displayOrder chi la thu tu hien thi o man admin; triggerRadiusMeters (mac dinh 300) la ban kinh kich hoat phat.",
+                "Chi tao phan text + toa do. Muon co tieng phai bake TTS roi goi PUT {id}/audios cho tung giong."));
 
         group.MapPut(UpdateLandmark, "{id:guid}")
             .RequireAuthorization()
             .WithSummary("Cap nhat landmark")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", CreateExample,
-                "Gui lai toan bo thong tin landmark (khong doi routeId)."));
+                "Full replace — gui lai toan bo thong tin landmark, field bo trong se bi ghi de.",
+                "Sua description KHONG tu re-bake audio; phai chay lai bake va PUT {id}/audios."));
 
         group.MapDelete(DeleteLandmark, "{id:guid}")
             .RequireAuthorization()

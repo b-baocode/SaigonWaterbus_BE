@@ -40,7 +40,7 @@ public sealed class Voices : IEndpointGroup
             .WithSummary("Danh sach giong doc (khach)")
             .WithDescription(OpenApiDescriptionBuilder.Build("Anonymous", null,
                 "Tra ve cac giong active de khach chon nghe thuyet minh, sap xep theo displayOrder.",
-                "voiceId dung lam tham so cho GET /api/routes/{routeId}/landmarks."));
+                "voiceId dung lam tham so cho GET /api/landmarks?voiceId=..."));
 
         group.MapGet(GetVoicesAdmin, "admin")
             .RequireAuthorization()
