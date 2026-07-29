@@ -86,6 +86,29 @@ public sealed class Tickets : IEndpointGroup
                 "Khuyen dung cho FE scan QR de tranh loi URL path khi token co ky tu dac biet.",
                 "Quyen va dieu kien giong POST /api/tickets/check-in/{codeOrToken}."));
 
+        group.MapPost(RejectTicketConcession, "concession/reject")
+            .RequireAuthorization()
+            .WithSummary("Reject ve uu dai khong dung doi tuong")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                """
+                {
+                  "codeOrToken": "TK2607242A57F0DE",
+                  "reason": "Khach khong chung minh du tuoi/khuyet tat",
+                  "source": "Qr",
+                  "tripStopId": null,
+                  "clientOperationId": "reject-concession-uuid",
+                  "deviceTime": "2026-07-24T09:00:00+07:00",
+                  "note": null
+                }
+                """,
+                "Chi Admin/Manager/Staff duoc reject.",
+                "Neu la Staff thi phai la OnBoard va co ca assignmentType=Boat dang active tren dung tau cua ve.",
+                "Chi ap dung cho ve SENIOR/DISABLED dang Active trong khung gio check-in.",
+                "Waterbus thuong: ve bi chuyen Cancelled.",
+                "Sightseeing: hanh khach duoc doi sang ADULT, booking duoc cong chenhlech gia ve nguoi lon va can thanh toan phan con lai truoc khi check-in.",
+                "FE co the hien nut nay khi scan DTO co ticketPassenger.passengerType = SENIOR hoac DISABLED; neu xac nhan dung doi tuong thi goi check-in nhu hien tai."));
+
         group.MapPost(CheckOutTicket, "check-out/{codeOrToken}")
             .RequireAuthorization()
             .WithSummary("Check-out ve")
@@ -218,6 +241,25 @@ public sealed class Tickets : IEndpointGroup
             ct));
     }
 
+    private static async Task<IResult> RejectTicketConcession(
+        ISender sender,
+        RejectTicketConcessionRequest? request,
+        CancellationToken ct)
+    {
+        var codeOrToken = request?.ResolveCodeOrToken();
+        if (string.IsNullOrWhiteSpace(codeOrToken))
+        {
+            return Results.BadRequest(new { message = "codeOrToken is required." });
+        }
+
+        return Results.Ok(await sender.Send(
+            new RejectTicketConcessionCommand(
+                codeOrToken,
+                request?.Reason ?? string.Empty,
+                CreateMetadata(request)),
+            ct));
+    }
+
     private static async Task<IResult> CheckOutTicket(
         ISender sender,
         string codeOrToken,
@@ -294,6 +336,14 @@ public sealed class Tickets : IEndpointGroup
             request?.DeviceTime,
             request?.Note);
 
+    private static TicketScanRequestMetadata CreateMetadata(RejectTicketConcessionRequest? request) =>
+        CreateMetadata(
+            request?.Source,
+            request?.TripStopId,
+            request?.ClientOperationId,
+            request?.DeviceTime,
+            request?.Note);
+
     public sealed record TicketCodeRequest(
         string? CodeOrToken = null,
         string? TicketCode = null,
@@ -307,6 +357,24 @@ public sealed class Tickets : IEndpointGroup
     {
         public string? ResolveCodeOrToken() =>
             FirstNonBlank(CodeOrToken, TicketCode, QrToken, BookingQrToken)?.Trim();
+
+        private static string? FirstNonBlank(params string?[] values) =>
+            values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
+    }
+
+    public sealed record RejectTicketConcessionRequest(
+        string? CodeOrToken = null,
+        string? TicketCode = null,
+        string? QrToken = null,
+        string? Reason = null,
+        TicketScanSource? Source = null,
+        Guid? TripStopId = null,
+        string? ClientOperationId = null,
+        DateTimeOffset? DeviceTime = null,
+        string? Note = null)
+    {
+        public string? ResolveCodeOrToken() =>
+            FirstNonBlank(CodeOrToken, TicketCode, QrToken)?.Trim();
 
         private static string? FirstNonBlank(params string?[] values) =>
             values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));

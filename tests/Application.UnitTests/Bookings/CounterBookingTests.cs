@@ -199,7 +199,7 @@ public class CounterBookingTests
         // Vé SENIOR miễn phí → đơn 0đ, không qua được cổng thanh toán.
         var command = CashCommand("TR-CTR-8", "A1") with
         {
-            Items = [Adult("A1") with { TicketTypeCode = "SENIOR" }],
+            Items = [Adult("A1") with { TicketTypeCode = "SENIOR", BirthYear = 1940 }],
             PaymentMethod = CounterPaymentMethod.PayOs
         };
 

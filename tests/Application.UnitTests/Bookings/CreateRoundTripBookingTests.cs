@@ -232,7 +232,7 @@ public class CreateRoundTripBookingTests
         var result = await handler.Handle(
             new CreateBookingCommand(
                 "TR-FREE",
-                [Adult("A1", "BD", "TADA") with { TicketTypeCode = "SENIOR" }],
+                [Adult("A1", "BD", "TADA") with { TicketTypeCode = "SENIOR", BirthYear = 1940 }],
                 null),
             CancellationToken.None);
 

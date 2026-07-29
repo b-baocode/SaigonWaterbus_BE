@@ -413,6 +413,70 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task SeniorTicketRequiresBirthYear()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-SENIOR-BIRTH", withDistances: true);
+        var handler = CreateHandler(context, userContext, Now);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new CreateBookingCommand(
+                "TR-SENIOR-BIRTH",
+                [
+                    Adult("A1", "BB", "HB"),
+                    Adult("A2", "BB", "HB") with { TicketTypeCode = "SENIOR" }
+                ],
+                null),
+            CancellationToken.None));
+
+        exception.Errors["birthYear"].Single().ShouldContain("Vé SENIOR yêu cầu khai báo birthYear");
+    }
+
+    [Test]
+    public async Task SeniorTicketAcceptsPassengerAgedSeventyAtDeparture()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-SENIOR-70", withDistances: true);
+        var handler = CreateHandler(context, userContext, Now);
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-SENIOR-70",
+                [
+                    Adult("A1", "BB", "HB"),
+                    Adult("A2", "BB", "HB") with { TicketTypeCode = "SENIOR", BirthYear = 1956 }
+                ],
+                null),
+            CancellationToken.None);
+
+        result.ItemCount.ShouldBe(2);
+        context.Set<BookingPassenger>().Single(x => x.PassengerType == "SENIOR").BirthYear.ShouldBe(1956);
+    }
+
+    [Test]
+    public async Task DisabledTicketRequiresBirthYear()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-DISABLED-BIRTH", withDistances: true);
+        var handler = CreateHandler(context, userContext, Now);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new CreateBookingCommand(
+                "TR-DISABLED-BIRTH",
+                [
+                    Adult("A1", "BB", "HB"),
+                    Adult("A2", "BB", "HB") with { TicketTypeCode = "DISABLED" }
+                ],
+                null),
+            CancellationToken.None));
+
+        exception.Errors["birthYear"].Single().ShouldContain("Vé DISABLED yêu cầu khai báo birthYear");
+    }
+
+    [Test]
     public async Task MissingDistanceRejectsRegularBookingInsteadOfFallingBackToSeatTypeFare()
     {
         await using var context = SeatFlowTestData.CreateContext();

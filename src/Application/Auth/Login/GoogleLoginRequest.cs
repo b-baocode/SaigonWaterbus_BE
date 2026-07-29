@@ -1,5 +1,6 @@
 using Google.Apis.Auth;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -36,6 +37,8 @@ public sealed class GoogleLoginRequestUseCase
     private readonly IProfileImageStorageService _profileImageStorage;
     private readonly ISecretHasher _secretHasher;
     private readonly IUserCodeGenerator _userCodeGenerator;
+    private readonly ILoginNotificationSender _loginNotificationSender;
+    private readonly ILogger<GoogleLoginRequestUseCase> _logger;
     private readonly TimeProvider _timeProvider;
     private readonly string _googleClientId;
 
@@ -46,6 +49,8 @@ public sealed class GoogleLoginRequestUseCase
         IProfileImageStorageService profileImageStorage,
         ISecretHasher secretHasher,
         IUserCodeGenerator userCodeGenerator,
+        ILoginNotificationSender loginNotificationSender,
+        ILogger<GoogleLoginRequestUseCase> logger,
         TimeProvider timeProvider,
         IConfiguration configuration)
     {
@@ -55,6 +60,8 @@ public sealed class GoogleLoginRequestUseCase
         _profileImageStorage = profileImageStorage;
         _secretHasher = secretHasher;
         _userCodeGenerator = userCodeGenerator;
+        _loginNotificationSender = loginNotificationSender;
+        _logger = logger;
         _timeProvider = timeProvider;
         _googleClientId = configuration["OAuth:Google:ClientId"] ?? throw new InvalidOperationException("Google ClientId not configured");
     }
@@ -95,6 +102,8 @@ public sealed class GoogleLoginRequestUseCase
 
         if (existingUser is not null)
         {
+            var shouldSendFirstGoogleLoginEmail = existingUser.LastLoginAt is null;
+
             if (existingUser.Status == UserStatus.PendingVerification)
             {
                 existingUser.Status = UserStatus.Active;
@@ -110,7 +119,13 @@ public sealed class GoogleLoginRequestUseCase
                 AuthSupport.EnsureUserCanLogin(existingUser, nameof(request.IdToken), requireVerifiedPhone: false);
             }
 
-            return await CreateLoggedInResultAsync(existingUser, payload, now, cancellationToken);
+            var result = await CreateLoggedInResultAsync(existingUser, payload, now, cancellationToken);
+            if (shouldSendFirstGoogleLoginEmail)
+            {
+                await SendFirstGoogleLoginEmailAsync(existingUser, now, cancellationToken);
+            }
+
+            return result;
         }
 
         return await CreateNewGoogleUserLoggedInResultAsync(payload, normalizedEmail, now, cancellationToken);
@@ -157,7 +172,44 @@ public sealed class GoogleLoginRequestUseCase
         _context.Set<User>().Add(user);
         await _context.SaveChangesAsync(cancellationToken);
 
-        return await CreateLoggedInResultAsync(user, payload, now, cancellationToken);
+        var result = await CreateLoggedInResultAsync(user, payload, now, cancellationToken);
+        await SendFirstGoogleLoginEmailAsync(user, now, cancellationToken);
+        return result;
+    }
+
+    private async Task SendFirstGoogleLoginEmailAsync(
+        User user,
+        DateTimeOffset loggedInAt,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(user.Email))
+        {
+            return;
+        }
+
+        try
+        {
+            await _loginNotificationSender.SendLoginSucceededAsync(
+                new LoginNotification(
+                    user.Email,
+                    user.FullName,
+                    GoogleProvider,
+                    loggedInAt,
+                    DeviceInfo: "Google Sign-In"),
+                cancellationToken);
+        }
+        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(
+                ex,
+                "Google first-login email failed. UserId: {UserId}, Email: {Email}",
+                user.Id,
+                user.Email);
+        }
     }
 
     private async Task<GoogleLoginResultDto> CreateLoggedInResultAsync(

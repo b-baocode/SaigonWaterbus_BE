@@ -112,6 +112,63 @@ public class BrevoPaymentNotificationSenderTests
     }
 
     [Test]
+    public async Task PassengerETicketUsesTemplate16AndFlattensSingleTicketParams()
+    {
+        var httpHandler = new CapturingHttpMessageHandler();
+        var sender = CreateSender(httpHandler);
+        var booking = CreateNotification(isFullyPaid: true) with
+        {
+            Email = "passenger@example.com",
+            ContactName = "Tran Thi B"
+        };
+
+        await sender.SendETicketsAsync(
+            new ETicketNotification(
+                booking,
+                BookingQrToken: null,
+                TripCode: "TR-001",
+                RouteName: "Bach Dang - Linh Dong",
+                DepartureTime: new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)),
+                ArrivalTime: new DateTimeOffset(2030, 1, 1, 8, 30, 0, TimeSpan.FromHours(7)),
+                FromStationName: "Bach Dang",
+                ToStationName: "Linh Dong",
+                Tickets:
+                [
+                    new ETicketPassenger(
+                        "Tran Thi B",
+                        "A1",
+                        "Nguoi lon",
+                        "TK123",
+                        "ticket-qr",
+                        "passenger@example.com",
+                        "Bach Dang",
+                        "Linh Dong",
+                        new DateTimeOffset(2030, 1, 1, 8, 5, 0, TimeSpan.FromHours(7)),
+                        new DateTimeOffset(2030, 1, 1, 8, 25, 0, TimeSpan.FromHours(7)))
+                ]),
+            CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
+        var root = payload.RootElement;
+        var parameters = root.GetProperty("params");
+        root.GetProperty("templateId").GetInt32().ShouldBe(16);
+        root.GetProperty("to")[0].GetProperty("email").GetString().ShouldBe("passenger@example.com");
+        root.GetProperty("to")[0].GetProperty("name").GetString().ShouldBe("Tran Thi B");
+        parameters.GetProperty("passengerName").GetString().ShouldBe("Tran Thi B");
+        parameters.GetProperty("seatNumber").GetString().ShouldBe("A1");
+        parameters.GetProperty("ticketTypeName").GetString().ShouldBe("Nguoi lon");
+        parameters.GetProperty("ticketCode").GetString().ShouldBe("TK123");
+        parameters.GetProperty("bookingCode").GetString().ShouldBe("CB-FULL");
+        parameters.GetProperty("qrPayload").GetString().ShouldBe("ticket-qr");
+        parameters.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+        parameters.GetProperty("departureDate").GetString().ShouldBe("01/01/2030");
+        parameters.GetProperty("departureTime").GetString().ShouldBe("08:05");
+        parameters.GetProperty("arrivalDate").GetString().ShouldBe("01/01/2030");
+        parameters.GetProperty("arrivalTime").GetString().ShouldBe("08:25");
+        parameters.GetProperty("TICKETS")[0].GetProperty("ticketCode").GetString().ShouldBe("TK123");
+    }
+
+    [Test]
     public async Task ETicketFallsBackToAzureWebsiteHostnameForQrImageUrls()
     {
         var previousPublicApiBaseUrl = Environment.GetEnvironmentVariable("PUBLIC_API_BASE_URL");
@@ -160,9 +217,30 @@ public class BrevoPaymentNotificationSenderTests
         }
     }
 
+    [Test]
+    public async Task PaymentEmailCanBeRedirectedToTestRecipientAndKeepsOriginalRecipientInParams()
+    {
+        var httpHandler = new CapturingHttpMessageHandler();
+        var sender = CreateSender(httpHandler, testRecipientEmail: "qa@example.test");
+
+        await sender.SendPaymentSucceededAsync(CreateNotification(isFullyPaid: false), CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
+        var root = payload.RootElement;
+        var parameters = root.GetProperty("params");
+        root.GetProperty("to")[0].GetProperty("email").GetString().ShouldBe("qa@example.test");
+        parameters.GetProperty("email").GetString().ShouldBe("customer@gmail.com");
+        parameters.GetProperty("contactEmail").GetString().ShouldBe("customer@gmail.com");
+        parameters.GetProperty("originalRecipientEmail").GetString().ShouldBe("customer@gmail.com");
+        parameters.GetProperty("recipientEmail").GetString().ShouldBe("qa@example.test");
+        parameters.GetProperty("testRecipientEmail").GetString().ShouldBe("qa@example.test");
+        parameters.GetProperty("isTestRecipientRedirect").GetBoolean().ShouldBeTrue();
+    }
+
     private static BrevoPaymentNotificationSender CreateSender(
         CapturingHttpMessageHandler httpHandler,
-        string? publicApiBaseUrl = "https://api.test") =>
+        string? publicApiBaseUrl = "https://api.test",
+        string? testRecipientEmail = null) =>
         new(
             new TestHttpClientFactory(httpHandler),
             new TestOptionsMonitor<BrevoOptions>(new BrevoOptions
@@ -173,11 +251,13 @@ public class BrevoPaymentNotificationSenderTests
                 SenderEmail = "noreply@saigonwaterbus.test",
                 SenderName = "Saigon Waterbus",
                 PublicApiBaseUrl = publicApiBaseUrl,
+                TestRecipientEmail = testRecipientEmail,
                 CharterBookingQuoteTemplateId = 14,
                 CharterBookingConfirmationTemplateId = 13,
                 PaymentDepositTemplateId = 14,
                 PaymentFullTemplateId = 14,
-                ETicketTemplateId = 15
+                ETicketTemplateId = 15,
+                PassengerETicketTemplateId = 16
             }),
             NullLogger<BrevoPaymentNotificationSender>.Instance);
 

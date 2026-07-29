@@ -60,6 +60,8 @@ public sealed class BrevoOtpSender : IOtpSender
             throw new OtpDispatchException($"Brevo template id is not configured for purpose '{purpose}'.");
         }
 
+        var recipientEmail = EmailRecipientResolver.Resolve(options.TestRecipientEmail, email);
+        var isRedirected = EmailRecipientResolver.IsRedirected(options.TestRecipientEmail, email);
         var payload = new
         {
             sender = new
@@ -69,7 +71,7 @@ public sealed class BrevoOtpSender : IOtpSender
             },
             to = new[]
             {
-                new { email }
+                new { email = recipientEmail }
             },
             templateId,
             @params = new Dictionary<string, object?>
@@ -88,7 +90,11 @@ public sealed class BrevoOtpSender : IOtpSender
                 ["ttl_minutes"] = _otpPolicy.ExpirationMinutes,
                 ["ttlMinutes"] = _otpPolicy.ExpirationMinutes,
                 ["purpose"] = purpose.ToString(),
-                ["email"] = email
+                ["email"] = email,
+                ["recipientEmail"] = recipientEmail,
+                ["originalRecipientEmail"] = email,
+                ["isTestRecipientRedirect"] = isRedirected,
+                ["testRecipientEmail"] = isRedirected ? recipientEmail : null
             }
         };
 
@@ -111,9 +117,10 @@ public sealed class BrevoOtpSender : IOtpSender
             }
 
             _logger.LogInformation(
-                "Brevo OTP sent successfully. Purpose: {Purpose}, Email: {Email}, MessageId: {MessageId}",
+                "Brevo OTP sent successfully. Purpose: {Purpose}, Email: {Email}, RecipientEmail: {RecipientEmail}, MessageId: {MessageId}",
                 purpose,
                 email,
+                recipientEmail,
                 TryGetMessageId(body) ?? "(n/a)");
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -128,9 +135,10 @@ public sealed class BrevoOtpSender : IOtpSender
         {
             _logger.LogError(
                 ex,
-                "Brevo OTP send failed. Purpose: {Purpose}, Email: {Email}",
+                "Brevo OTP send failed. Purpose: {Purpose}, Email: {Email}, RecipientEmail: {RecipientEmail}",
                 purpose,
-                email);
+                email,
+                recipientEmail);
             throw new OtpDispatchException($"Unable to send OTP email via Brevo: {ex.Message}");
         }
     }

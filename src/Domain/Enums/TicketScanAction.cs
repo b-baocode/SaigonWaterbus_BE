@@ -6,5 +6,6 @@ public enum TicketScanAction
     CheckIn = 2,
     CheckOut = 3,
     OverrideCheckIn = 4,
-    OverrideCheckOut = 5
+    OverrideCheckOut = 5,
+    ConcessionRejected = 6
 }

@@ -91,7 +91,7 @@ public class SightseeingLoopBookingTests
                 [
                     Adult("A1"),
                     Adult("A2") with { TicketTypeCode = "CHILD", BirthYear = 2020 },
-                    Adult("A3") with { TicketTypeCode = "DISABLED" }
+                    Adult("A3") with { TicketTypeCode = "DISABLED", BirthYear = 1990 }
                 ],
                 null),
             CancellationToken.None);
@@ -145,7 +145,7 @@ public class SightseeingLoopBookingTests
                 [
                     Adult("A1"),
                     Adult("A2") with { TicketTypeCode = "CHILD", BirthYear = 2020 },
-                    Adult("A3") with { TicketTypeCode = "DISABLED" }
+                    Adult("A3") with { TicketTypeCode = "DISABLED", BirthYear = 1990 }
                 ],
                 null),
             CancellationToken.None);
