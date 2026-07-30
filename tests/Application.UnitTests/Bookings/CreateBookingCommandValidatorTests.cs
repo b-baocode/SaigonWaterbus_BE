@@ -35,6 +35,28 @@ public class CreateBookingCommandValidatorTests
     }
 
     [Test]
+    public void LapInfantWithoutCompanionPassengerNameIsInvalid()
+    {
+        var result = Validator.Validate(Command(
+            Adult("A1"),
+            LapInfant(companionPassengerName: null)));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.PropertyName.Contains(nameof(BookingItemRequest.CompanionPassengerName)));
+    }
+
+    [Test]
+    public void LapInfantWithUnknownCompanionPassengerNameIsInvalid()
+    {
+        var result = Validator.Validate(Command(
+            Adult("A1"),
+            LapInfant(companionPassengerName: "Nguoi Lon Khac")));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(e => e.ErrorMessage.Contains("companionPassengerName"));
+    }
+
+    [Test]
     public void ChildWithoutBirthYearIsInvalid()
     {
         var result = Validator.Validate(Command(Adult("A1"), Child("A2", birthYear: null)));
@@ -207,6 +229,11 @@ public class CreateBookingCommandValidatorTests
     private static BookingItemRequest Disabled(string seat, int? birthYear = 1990) =>
         new(seat, "DISABLED", "BD", "TADA", "Nguyen Van D", null, birthYear, null, null, null);
 
-    private static BookingItemRequest LapInfant(int? birthYear = 2025) =>
-        new(null, "INFANT", "BD", "TADA", "Be Nguyen Van B", null, birthYear, null, null, null);
+    private static BookingItemRequest LapInfant(
+        int? birthYear = 2025,
+        string? companionPassengerName = "Nguyen Van A") =>
+        new(null, "INFANT", "BD", "TADA", "Be Nguyen Van B", null, birthYear, null, null, null)
+        {
+            CompanionPassengerName = companionPassengerName
+        };
 }

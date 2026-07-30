@@ -463,7 +463,7 @@ internal sealed class BookingLegResolver
                     BirthYear = x.Resolved.Item.BirthYear,
                     Gender = x.Resolved.Item.Gender?.Trim(),
                     Nationality = x.Resolved.Item.Nationality?.Trim(),
-                    Note = x.Resolved.Item.Note?.Trim(),
+                    Note = LapInfantTicketSupport.BuildPassengerNote(x.Resolved.Item),
                     TripId = leg.Trip.Id,
                     TripSeatId = x.Resolved.TripSeat?.Id,
                     UnitPrice = x.UnitPrice,
@@ -657,27 +657,40 @@ internal sealed class BookingLegResolver
                      .ThenBy(x => x.Item.PassengerName))
         {
             var adultIndex = -1;
+            var requestedCompanion = NormalizePassengerName(infant.Item.CompanionPassengerName);
+            if (string.IsNullOrEmpty(requestedCompanion))
+            {
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.CompanionPassengerName),
+                    "INFANT không ghế bắt buộc companionPassengerName (tên ADULT đi kèm trên form).")]);
+            }
+
             for (var i = 0; i < adults.Count; i++)
             {
                 var adult = adults[i];
                 if (!usedAdultIndexes.Contains(i)
                     && adult.FromStop.StopOrder == infant.FromStop.StopOrder
-                    && adult.ToStop.StopOrder == infant.ToStop.StopOrder)
+                    && adult.ToStop.StopOrder == infant.ToStop.StopOrder
+                    && NormalizePassengerName(adult.Item.PassengerName) == requestedCompanion)
                 {
                     adultIndex = i;
                     break;
                 }
             }
+
             if (adultIndex < 0)
             {
-                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.TicketTypeCode),
-                    "Mỗi INFANT không chiếm ghế phải có một hành khách ADULT có ghế "
-                    + "đi kèm cùng chiều và cùng chặng.")]);
+                throw new ValidationException([new ValidationFailure(nameof(BookingItemRequest.CompanionPassengerName),
+                    "companionPassengerName của INFANT phải khớp với một hành khách ADULT có ghế đi kèm cùng chiều và cùng chặng.")]);
             }
 
             usedAdultIndexes.Add(adultIndex);
         }
     }
+
+    private static string NormalizePassengerName(string? value) =>
+        string.Join(' ', (value ?? string.Empty).Trim().ToLowerInvariant().Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 
     private static void EnsureTripSellable(
         Trip trip,

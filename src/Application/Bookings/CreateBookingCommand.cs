@@ -31,7 +31,9 @@ public sealed record BookingItemRequest(
     string? Gender,
     string? Nationality,
     string? Note,
-    string? PassengerEmail = null);
+    string? PassengerEmail = null,
+    /// <summary>INFANT không ghế: tên ADULT đi kèm trên form (FE). BE lưu & ưu tiên khi gán QR.</summary>
+    string? CompanionPassengerName = null);
 
 public sealed record CreateBookingResult(
     Guid BookingId,
@@ -63,7 +65,7 @@ public sealed record CreateBookingCommand(
 public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBookingCommand>
 {
     private const string ChildAdultMessage =
-        "Booking có vé CHILD hoặc INFANT không ghế phải có ít nhất một hành khách ADULT có ghế đi kèm.";
+        "Booking có vé CHILD phải có ít nhất một ADULT có ghế đi kèm; mỗi INFANT không ghế phải có companionPassengerName khớp với một ADULT có ghế đi kèm cùng chặng.";
 
     public CreateBookingCommandValidator()
     {
@@ -130,22 +132,56 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
         item.RuleFor(x => x.PassengerPhone).MaximumLength(20).When(x => x.PassengerPhone is not null);
         item.RuleFor(x => x.PassengerEmail).EmailAddress().MaximumLength(255)
             .When(x => !string.IsNullOrWhiteSpace(x.PassengerEmail));
+        item.RuleFor(x => x.CompanionPassengerName).MaximumLength(150);
+        // INFANT không ghế: FE phải gửi tên ADULT đi kèm (cùng chiều) — BE lưu COMPANION:{name}.
+        item.RuleFor(x => x.CompanionPassengerName).NotEmpty()
+            .When(x => IsInfant(x.TicketTypeCode) && string.IsNullOrWhiteSpace(x.SeatNumber))
+            .WithMessage("INFANT không ghế bắt buộc companionPassengerName (tên ADULT đi kèm trên form).");
+        item.RuleFor(x => x.Note).MaximumLength(500);
     }
 
     private static bool HasRequiredSeatedAdultCompanions(IReadOnlyList<BookingItemRequest> items)
     {
-        var seatedAdults = items.Count(i =>
-            !string.IsNullOrWhiteSpace(i.SeatNumber) && IsAdult(i.TicketTypeCode));
-        var hasChild = items.Any(i => IsChild(i.TicketTypeCode));
-        var lapInfants = items.Count(i =>
-            string.IsNullOrWhiteSpace(i.SeatNumber) && IsInfant(i.TicketTypeCode));
+        var adults = items
+            .Where(i => !string.IsNullOrWhiteSpace(i.SeatNumber) && IsAdult(i.TicketTypeCode))
+            .ToList();
 
-        if (hasChild && seatedAdults == 0)
+        if (items.Any(i => IsChild(i.TicketTypeCode)) && adults.Count == 0)
         {
             return false;
         }
 
-        return lapInfants <= seatedAdults;
+        var usedAdultIndexes = new HashSet<int>();
+        foreach (var infant in items.Where(i =>
+                     string.IsNullOrWhiteSpace(i.SeatNumber) && IsInfant(i.TicketTypeCode)))
+        {
+            var requestedCompanion = NormalizePassengerName(infant.CompanionPassengerName);
+            if (string.IsNullOrWhiteSpace(requestedCompanion))
+            {
+                return false;
+            }
+
+            var adultIndex = -1;
+            for (var i = 0; i < adults.Count; i++)
+            {
+                var adult = adults[i];
+                if (!usedAdultIndexes.Contains(i)
+                    && SameRequestedSegment(adult, infant)
+                    && NormalizePassengerName(adult.PassengerName) == requestedCompanion)
+                {
+                    adultIndex = i;
+                    break;
+                }
+            }
+            if (adultIndex < 0)
+            {
+                return false;
+            }
+
+            usedAdultIndexes.Add(adultIndex);
+        }
+
+        return true;
     }
 
     private static bool IsInfant(string? ticketTypeCode) =>
@@ -166,6 +202,14 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
     private static bool IsAdult(string? ticketTypeCode) =>
         string.Equals(ticketTypeCode?.Trim(), "ADULT", StringComparison.OrdinalIgnoreCase);
 
+    private static bool SameRequestedSegment(BookingItemRequest adult, BookingItemRequest dependent) =>
+        string.Equals(adult.FromStationCode?.Trim(), dependent.FromStationCode?.Trim(), StringComparison.OrdinalIgnoreCase)
+        && string.Equals(adult.ToStationCode?.Trim(), dependent.ToStationCode?.Trim(), StringComparison.OrdinalIgnoreCase);
+
+    private static string NormalizePassengerName(string? value) =>
+        string.Join(' ', (value ?? string.Empty).Trim().ToLowerInvariant().Split(
+            ' ',
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 }
 
 public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingCommand, CreateBookingResult>
