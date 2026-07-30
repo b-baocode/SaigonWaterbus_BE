@@ -65,6 +65,7 @@ public sealed record TripDetailDto(
     TripBoatDto? Boat = null,
     IReadOnlyList<TripStaffAssignmentDto>? OnBoardStaff = null,
     int TotalPassengerCount = 0,
+    int OnboardPassengerCount = 0,
     string? RouteCode = null,
     TripRouteEndpointDto? FromStation = null,
     TripRouteEndpointDto? ToStation = null,

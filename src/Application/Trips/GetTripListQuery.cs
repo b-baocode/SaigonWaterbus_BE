@@ -22,6 +22,7 @@ public sealed record TripAdminListItemDto(
     string TripType,
     Guid? SourceBookingId,
     int TotalPassengerCount = 0,
+    int OnboardPassengerCount = 0,
     string? SourceBookingCode = null,
     Guid? BoatId = null,
     [property: JsonIgnore]
@@ -143,7 +144,7 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
                 t.Route.RouteCode, t.Route.RouteName, t.Route.RouteType,
                 t.OperatingDate, t.DepartureTime, t.ArrivalTime,
                 t.CapacitySnapshot, t.TripStatus.ToString(), t.StatusNote,
-                t.TripType, t.SourceBookingId, 0,
+                t.TripType, t.SourceBookingId, 0, 0,
                 t.SourceBookingId.HasValue ? sourceBookingCodes.GetValueOrDefault(t.SourceBookingId.Value) : null,
                 t.BoatId,
                 t.Boat?.Code,
@@ -177,9 +178,17 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
             .GroupBy(x => x.TripId!.Value)
             .Select(g => new { TripId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
+        var onboardPassengerCounts = await TripPassengerCountSupport.LoadOnboardPassengerCountsByTripIdAsync(
+            _context,
+            tripIds,
+            cancellationToken);
 
         return trips
-            .Select(x => x with { TotalPassengerCount = passengerCounts.GetValueOrDefault(x.TripId) })
+            .Select(x => x with
+            {
+                TotalPassengerCount = passengerCounts.GetValueOrDefault(x.TripId),
+                OnboardPassengerCount = onboardPassengerCounts.GetValueOrDefault(x.TripId)
+            })
             .ToList();
     }
 }

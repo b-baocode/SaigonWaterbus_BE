@@ -107,7 +107,9 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
             var minBasePrice = stats?.MinSeatPrice is > 0
                 ? FareAdjustmentSupport.ApplySurcharge(stats.MinSeatPrice.Value, fareAdjustment)
                 : (decimal?)null;
-            var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
+            var minPrice = minBasePrice is > 0
+                ? (decimal?)PriceRoundingSupport.RoundFare(minBasePrice.Value * minModifier)
+                : null;
 
             // Tuyến vòng lặp đi nguyên chuyến: giờ lên = giờ khởi hành, giờ về = giờ kết thúc.
             return new TripSummaryDto(

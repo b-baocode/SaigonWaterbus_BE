@@ -5,7 +5,7 @@ namespace SaigonWaterbus.Domain.Entities;
 /// <summary>
 /// Cấu hình công thức giá vé theo quãng đường cho trip Regular (ghế STANDARD):
 /// giá = RoundNearest(BaseFare + PricePerKm × km, RoundingStep),
-/// sau đó nhân hệ số loại vé (ADULT/INFANT/...).
+/// sau đó áp phụ thu/hệ số loại vé và chốt giá cuối cùng về nghìn gần nhất.
 /// </summary>
 public class FarePolicy : BaseGuidAuditableEntity
 {

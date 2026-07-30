@@ -71,6 +71,12 @@ internal static class RegularBookingETicketSupport
                     leg.Trip, passenger.FromStopOrder, passenger.ToStopOrder);
             DateTimeOffset? boardingTime = segmentTimes?.Departure;
             DateTimeOffset? arrivalTime = segmentTimes?.Arrival;
+            BookingPassenger? companion = null;
+            if (LapInfantTicketSupport.UsesCompanionTicket(passenger)
+                && companionByPassengerId.TryGetValue(passenger.Id, out var companionPassengerId))
+            {
+                companion = passengers.FirstOrDefault(x => x.Id == companionPassengerId);
+            }
 
             TicketTypePricing.TryGet(passenger.PassengerType, out var ticketType);
             var eTicket = new ETicketPassenger(
@@ -83,7 +89,11 @@ internal static class RegularBookingETicketSupport
                 passenger.FromStation?.StationName,
                 passenger.ToStation?.StationName,
                 boardingTime,
-                arrivalTime);
+                arrivalTime,
+                LapInfantTicketSupport.IsLapInfant(passenger),
+                companion?.Id,
+                companion?.FullName,
+                LapInfantTicketSupport.UsesCompanionTicket(passenger) && companion is not null);
 
             leg.Tickets.Add(eTicket);
         }

@@ -48,6 +48,49 @@ public class SightseeingLoopBookingTests
     }
 
     [Test]
+    public async Task BookerContactEmailIsRequiredButPassengerEmailsAreOptional()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        context.Users.Single(x => x.Id == userContext.UserId!.Value).Email = null;
+        await SeedLoopTripAsync(context, "TR-SIG-EMAIL-1");
+        await context.SaveChangesAsync();
+
+        var result = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand(
+                "TR-SIG-EMAIL-1",
+                [Adult("A1"), Adult("A2")],
+                null,
+                ContactEmail: "booker@example.test"),
+            CancellationToken.None);
+
+        var booking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
+        booking.ContactEmail.ShouldBe("booker@example.test");
+        context.Set<BookingPassenger>()
+            .Where(x => x.BookingId == result.BookingId)
+            .ShouldAllBe(x => x.Email == null);
+    }
+
+    [Test]
+    public async Task PassengerEmailDoesNotReplaceRequiredBookerContactEmail()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        context.Users.Single(x => x.Id == userContext.UserId!.Value).Email = null;
+        await SeedLoopTripAsync(context, "TR-SIG-EMAIL-2");
+        await context.SaveChangesAsync();
+
+        var ex = await Should.ThrowAsync<ValidationException>(() => CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand(
+                "TR-SIG-EMAIL-2",
+                [Adult("A1") with { PassengerEmail = "passenger@example.test" }],
+                null),
+            CancellationToken.None));
+
+        ex.Errors.Keys.ShouldContain("contactEmail");
+    }
+
+    [Test]
     public async Task StationCodesSentByClientAreIgnoredOnLoopTrip()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -150,15 +193,15 @@ public class SightseeingLoopBookingTests
                 null),
             CancellationToken.None);
 
-        result.SubtotalAmount.ShouldBe(15_000m);
-        result.TotalAmount.ShouldBe(15_000m);
+        result.SubtotalAmount.ShouldBe(16_000m);
+        result.TotalAmount.ShouldBe(16_000m);
 
         var seniorPrice = await new FareCalculator(context).CalculateAsync(
             seats.Single(x => x.Code == "A1").Id,
             "SENIOR",
             CancellationToken.None,
             seeded.Trip.Id);
-        seniorPrice.ShouldBe(2_500m);
+        seniorPrice.ShouldBe(3_000m);
 
         context.Set<TicketFareRule>()
             .Where(x => x.RouteType == RouteTypes.SightseeingLoop)

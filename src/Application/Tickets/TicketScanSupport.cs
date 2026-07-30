@@ -16,7 +16,9 @@ internal static class TicketScanSupport
         CancellationToken cancellationToken)
     {
         var normalizedCodeOrToken = codeOrToken.Trim();
-        return await context.Tickets
+        var ticketId = await ResolveTicketIdAsync(context, normalizedCodeOrToken, cancellationToken);
+
+        var ticket = await context.Tickets
             .Include(x => x.BookingPassenger)
                 .ThenInclude(x => x!.TripSeat)
                     .ThenInclude(x => x!.Seat)
@@ -24,44 +26,96 @@ internal static class TicketScanSupport
                 .ThenInclude(x => x!.FromStation)
             .Include(x => x.BookingPassenger)
                 .ThenInclude(x => x!.ToStation)
-            .Include(x => x.BookingPassenger)
-                .ThenInclude(x => x!.Trip)
-                    .ThenInclude(x => x!.Boat)
-            .Include(x => x.BookingPassenger)
-                .ThenInclude(x => x!.Trip)
-                    .ThenInclude(x => x!.Route)
-                        .ThenInclude(x => x.RouteStops)
-                            .ThenInclude(x => x.Station)
-            .Include(x => x.BookingPassenger)
-                .ThenInclude(x => x!.Trip)
-                    .ThenInclude(x => x!.TripStops)
             .Include(x => x.CheckedInByUser)
             .Include(x => x.CheckedOutByUser)
             .Include(x => x.Booking)
-                .ThenInclude(x => x.Passengers)
-                    .ThenInclude(x => x.TripSeat)
-                        .ThenInclude(x => x!.Seat)
-            .Include(x => x.Booking)
-                .ThenInclude(x => x.Passengers)
-                    .ThenInclude(x => x.FromStation)
-            .Include(x => x.Booking)
-                .ThenInclude(x => x.Passengers)
-                    .ThenInclude(x => x.ToStation)
-            .Include(x => x.Booking)
-                .ThenInclude(x => x.Trip)
-                    .ThenInclude(x => x!.Boat)
-            .Include(x => x.Booking)
-                .ThenInclude(x => x.Trip)
-                    .ThenInclude(x => x!.Route)
-                        .ThenInclude(x => x.RouteStops)
-                            .ThenInclude(x => x.Station)
-            .Include(x => x.Booking)
-                .ThenInclude(x => x.Trip)
-                    .ThenInclude(x => x!.TripStops)
-            .SingleOrDefaultAsync(
-                x => x.TicketCode == normalizedCodeOrToken || x.QrToken == normalizedCodeOrToken,
-                cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == ticketId, cancellationToken)
             ?? throw new NotFoundException("Ticket not found.");
+
+        if (!Booking.IsCharterBookingType(ticket.Booking.BookingType))
+        {
+            await LoadRegularTicketGraphAsync(context, ticket, cancellationToken);
+        }
+
+        return ticket;
+    }
+
+    private static async Task<Guid> ResolveTicketIdAsync(
+        IApplicationDbContext context,
+        string normalizedCodeOrToken,
+        CancellationToken cancellationToken)
+    {
+        var ticketId = await context.Tickets
+            .Where(x => x.TicketCode == normalizedCodeOrToken)
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        if (ticketId.HasValue)
+        {
+            return ticketId.Value;
+        }
+
+        ticketId = await context.Tickets
+            .Where(x => x.QrToken == normalizedCodeOrToken)
+            .Select(x => (Guid?)x.Id)
+            .SingleOrDefaultAsync(cancellationToken);
+
+        return ticketId
+            ?? throw new NotFoundException("Ticket not found.");
+    }
+
+    private static async Task LoadRegularTicketGraphAsync(
+        IApplicationDbContext context,
+        Ticket ticket,
+        CancellationToken cancellationToken)
+    {
+        var tripId = ticket.BookingPassenger?.TripId ?? ticket.Booking.TripId;
+        var trip = await LoadTripAsync(context, tripId, cancellationToken);
+        if (trip is not null)
+        {
+            if (ticket.BookingPassenger?.TripId == trip.Id)
+            {
+                ticket.BookingPassenger.Trip = trip;
+            }
+
+            if (ticket.Booking.TripId == trip.Id)
+            {
+                ticket.Booking.Trip = trip;
+            }
+
+            if (ticket.Booking.ReturnTripId == trip.Id)
+            {
+                ticket.Booking.ReturnTrip = trip;
+            }
+        }
+
+        // Load passengers separately so individual ticket scan does not produce a huge joined result set.
+        ticket.Booking.Passengers = await context.Set<BookingPassenger>()
+            .Include(x => x.TripSeat)
+                .ThenInclude(x => x!.Seat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Where(x => x.BookingId == ticket.BookingId)
+            .ToListAsync(cancellationToken);
+    }
+
+    private static async Task<Trip?> LoadTripAsync(
+        IApplicationDbContext context,
+        Guid? tripId,
+        CancellationToken cancellationToken)
+    {
+        if (!tripId.HasValue)
+        {
+            return null;
+        }
+
+        return await context.Set<Trip>()
+            .Include(x => x.Boat)
+            .Include(x => x.Route)
+                .ThenInclude(x => x.RouteStops)
+                    .ThenInclude(x => x.Station)
+            .Include(x => x.TripStops)
+            .SingleOrDefaultAsync(x => x.Id == tripId.Value, cancellationToken);
     }
 
     public static void EnsureCanViewTicket(User currentUser, Ticket ticket)

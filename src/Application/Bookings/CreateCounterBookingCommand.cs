@@ -1,6 +1,7 @@
 using System.Globalization;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
@@ -18,8 +19,11 @@ public enum CounterPaymentMethod
     /// <summary>Staff thu tiền mặt tại quầy — booking xác nhận và phát hành vé ngay.</summary>
     Cash = 0,
 
+    /// <summary>Staff/Manager ghi nhận khách đã chuyển khoản tại quầy — booking xác nhận và phát hành vé ngay.</summary>
+    BankTransfer = 1,
+
     /// <summary>Khách quét QR PayOS tại quầy — vé chỉ phát hành sau khi cổng báo đã thanh toán.</summary>
-    PayOs = 1
+    PayOs = 2
 }
 
 public sealed record CounterBookingResult(
@@ -42,8 +46,8 @@ public sealed record CounterBookingResult(
     BookingInsuranceDto? Insurance = null);
 
 /// <summary>
-/// Bán vé tại quầy: staff đặt hộ khách vãng lai (không cần tài khoản) và thu tiền ngay.
-/// Khác booking online ở ba điểm: booking không gắn user (chỉ lưu thông tin liên hệ staff nhập),
+/// Bán vé tại quầy: staff/manager đặt hộ khách vãng lai (không cần tài khoản) và thu tiền ngay.
+/// Khác booking online ở ba điểm: booking không gắn user (chỉ lưu thông tin liên hệ người bán nhập),
 /// bán được cả khi tàu đã rời bến, và có thể thu tiền mặt để xác nhận tức thì.
 /// </summary>
 public sealed record CreateCounterBookingCommand(
@@ -125,13 +129,13 @@ public sealed class CreateCounterBookingCommandHandler
         CreateCounterBookingCommand request,
         CancellationToken cancellationToken)
     {
-        var staff = await AuthSupport.EnsureCurrentUserIsStaffAsync(_context, _userContext, cancellationToken);
+        var seller = await AuthSupport.EnsureCurrentUserCanSellAtCounterAsync(_context, _userContext, cancellationToken);
         var now = _timeProvider.GetUtcNow();
 
         // allowDepartedTrip: quầy vé bán được cả khi tàu đã rời bến (khách lên ở bến giữa tuyến),
-        // chỉ chặn chuyến đã kết thúc/hủy. Pre-hold ghế tính theo staff đang thao tác.
+        // chỉ chặn chuyến đã kết thúc/hủy. Pre-hold ghế tính theo người bán đang thao tác.
         var outboundLeg = await _legResolver.ResolveAsync(
-            request.TripCode, request.Items, staff.Id, now, nameof(request.TripCode),
+            request.TripCode, request.Items, seller.Id, now, nameof(request.TripCode),
             allowDepartedTrip: true, cancellationToken);
 
         ResolvedLeg? returnLeg = null;
@@ -142,7 +146,7 @@ public sealed class CreateCounterBookingCommandHandler
                     "Vé khứ hồi phải có ít nhất một returnItem cho chiều về.")]);
 
             returnLeg = await _legResolver.ResolveAsync(
-                request.ReturnTripCode, request.ReturnItems, staff.Id, now,
+                request.ReturnTripCode, request.ReturnItems, seller.Id, now,
                 nameof(request.ReturnTripCode), allowDepartedTrip: true, cancellationToken);
 
             BookingLegResolver.EnsureLegsDoNotShareSeats(outboundLeg, returnLeg);
@@ -169,14 +173,15 @@ public sealed class CreateCounterBookingCommandHandler
             legs.Sum(x => x.ItemPrices.Count),
             now,
             cancellationToken);
-        var subtotal = ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m);
+        var subtotal = PriceRoundingSupport.RoundFare(
+            ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m));
 
         // Khách vãng lai: booking không gắn user nên không tích/dùng điểm và không áp mã khuyến mãi
         // (mã khuyến mãi kiểm tra hạn mức theo từng tài khoản).
         var booking = new Booking
         {
             UserId = null,
-            SoldByStaffId = staff.Id,
+            SoldByStaffId = seller.Id,
             TripId = outboundLeg.Trip.Id,
             ReturnTripId = returnLeg?.Trip.Id,
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
@@ -203,7 +208,7 @@ public sealed class CreateCounterBookingCommandHandler
                     // Chốt ghế: khoá trip_seats rồi kiểm tra lại trước khi insert — chặn quầy và
                     // khách online cùng bán một ghế trong cùng khoảnh khắc.
                     await BookingLegResolver.EnsureSeatsStillAvailableAsync(
-                        _context, _legResolver, legs, staff.Id, now, ct);
+                        _context, _legResolver, legs, seller.Id, now, ct);
 
                     await _context.SaveChangesAsync(ct);
                 },
@@ -218,14 +223,17 @@ public sealed class CreateCounterBookingCommandHandler
         foreach (var leg in legs)
         {
             await BookingLegResolver.NotifyLegBookedAsync(
-                leg, staff.Id, _seatHoldService, _tripSeatNotifier, cancellationToken);
+                leg, seller.Id, _seatHoldService, _tripSeatNotifier, cancellationToken);
         }
 
         // Đơn 0đ không qua được cổng thanh toán,
         // luôn ghi nhận như thu tại quầy để vé vẫn được phát hành.
-        var settleAtCounter = request.PaymentMethod == CounterPaymentMethod.Cash || booking.TotalAmount <= 0;
+        var counterPaymentMethod = booking.TotalAmount <= 0
+            ? CounterPaymentMethod.Cash
+            : request.PaymentMethod;
+        var settleAtCounter = counterPaymentMethod is CounterPaymentMethod.Cash or CounterPaymentMethod.BankTransfer;
         var payment = settleAtCounter
-            ? await SettleWithCashAsync(booking, now, cancellationToken)
+            ? await SettleAtCounterAsync(booking, counterPaymentMethod, now, cancellationToken)
             : null;
 
         if (payment is null)
@@ -238,11 +246,12 @@ public sealed class CreateCounterBookingCommandHandler
     }
 
     /// <summary>
-    /// Thu tiền mặt: ghi nhận payment đã thanh toán ngay (không qua cổng) rồi chạy đúng nhánh
+    /// Thu tại quầy: ghi nhận payment đã thanh toán ngay (không qua cổng) rồi chạy đúng nhánh
     /// hậu-thanh-toán của booking online — xác nhận booking, phát hành vé/QR và gửi email vé điện tử.
     /// </summary>
-    private async Task<Payment> SettleWithCashAsync(
+    private async Task<Payment> SettleAtCounterAsync(
         Booking booking,
+        CounterPaymentMethod paymentMethod,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -254,7 +263,7 @@ public sealed class CreateCounterBookingCommandHandler
             Provider = PaymentSupport.CounterProvider,
             Amount = booking.TotalAmount,
             Currency = booking.Currency,
-            PaymentMethod = PaymentSupport.CashPaymentMethod,
+            PaymentMethod = ResolveSettlementPaymentMethod(paymentMethod),
             PaymentPurpose = PaymentSupport.FullPurpose,
             PaymentStatus = PaymentSupport.PendingStatus
         };
@@ -278,6 +287,11 @@ public sealed class CreateCounterBookingCommandHandler
 
         return payment;
     }
+
+    private static string ResolveSettlementPaymentMethod(CounterPaymentMethod paymentMethod) =>
+        paymentMethod == CounterPaymentMethod.BankTransfer
+            ? PaymentSupport.BankTransferPaymentMethod
+            : PaymentSupport.CashPaymentMethod;
 
     private static CounterBookingResult ToResult(
         Booking booking,

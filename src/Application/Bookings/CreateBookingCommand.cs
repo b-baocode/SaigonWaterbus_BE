@@ -55,7 +55,10 @@ public sealed record CreateBookingCommand(
     string? ReturnTripCode = null,
     IReadOnlyList<BookingItemRequest>? ReturnItems = null,
     bool? InsuranceSelected = null,
-    Guid? InsurancePackageId = null) : IRequest<CreateBookingResult>;
+    Guid? InsurancePackageId = null,
+    string? ContactName = null,
+    string? ContactPhone = null,
+    string? ContactEmail = null) : IRequest<CreateBookingResult>;
 
 public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBookingCommand>
 {
@@ -100,6 +103,13 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
         RuleFor(x => x.InsurancePackageId)
             .NotEmpty()
             .When(x => x.InsurancePackageId.HasValue);
+
+        RuleFor(x => x.ContactName).MaximumLength(150)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactName));
+        RuleFor(x => x.ContactPhone).MaximumLength(20)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactPhone));
+        RuleFor(x => x.ContactEmail).EmailAddress().MaximumLength(255)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail));
     }
 
     private static void ApplyItemRules(InlineValidator<BookingItemRequest> item)
@@ -210,12 +220,18 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.Id == userId, cancellationToken)
             ?? throw new ValidationException([new ValidationFailure("userId", "User không tồn tại.")]);
-        var contactEmail = user.Email?.Trim();
+
+        // Email/tên/SĐT trên form đặt vé → Contact* của người đặt vé (gửi QR tổng).
+        // Email hành khách chỉ dùng để gửi vé riêng nếu có, không thay thế email người đặt.
+        var contactEmail = FirstNonEmpty(request.ContactEmail, user.Email);
         if (string.IsNullOrWhiteSpace(contactEmail))
         {
-            throw new ValidationException([new ValidationFailure("contactEmail",
-                "Tài khoản cần có email để nhận QR/vé điện tử của booking.")]);
+            throw new ValidationException([new ValidationFailure(nameof(request.ContactEmail),
+                "Email liên hệ là bắt buộc để nhận QR/vé điện tử của booking.")]);
         }
+
+        var contactName = FirstNonEmpty(request.ContactName, user.FullName) ?? string.Empty;
+        var contactPhone = FirstNonEmpty(request.ContactPhone, user.PhoneNumber) ?? string.Empty;
 
         var outboundLeg = await _legResolver.ResolveAsync(
             request.TripCode, request.Items, userId, now, nameof(request.TripCode),
@@ -259,7 +275,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             legs.Sum(x => x.ItemPrices.Count),
             now,
             cancellationToken);
-        var subtotal = ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m);
+        var subtotal = PriceRoundingSupport.RoundFare(
+            ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m));
 
         var booking = new Booking
         {
@@ -267,8 +284,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             TripId = trip.Id,
             ReturnTripId = returnLeg?.Trip.Id,
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
-            ContactName = user.FullName,
-            ContactPhone = user.PhoneNumber ?? string.Empty,
+            ContactName = contactName,
+            ContactPhone = contactPhone,
             ContactEmail = contactEmail,
             BookingStatus = BookingStatus.PendingPayment,
             SubtotalAmount = subtotal,
@@ -318,7 +335,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
                         booking.PromotionId = promotion.Id;
                         booking.DiscountAmount = discount;
-                        booking.TotalAmount = subtotal - discount;
+                        booking.TotalAmount = PriceRoundingSupport.RoundFare(subtotal - discount);
                     }
 
                     await _context.SaveChangesAsync(ct);
@@ -407,5 +424,19 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             cancellationToken,
             _bookingTicketPdfRenderer,
             _notificationRealtimeNotifier);
+    }
+
+    private static string? FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            var trimmed = value?.Trim();
+            if (!string.IsNullOrWhiteSpace(trimmed))
+            {
+                return trimmed;
+            }
+        }
+
+        return null;
     }
 }

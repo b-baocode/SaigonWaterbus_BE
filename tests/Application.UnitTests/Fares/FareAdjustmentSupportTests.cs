@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
@@ -11,6 +12,14 @@ namespace SaigonWaterbus.Application.UnitTests.Fares;
 
 public class FareAdjustmentSupportTests
 {
+    [Test]
+    public void PriceRoundingRoundsVndToNearestThousand()
+    {
+        PriceRoundingSupport.RoundFare(12_160m).ShouldBe(12_000m);
+        PriceRoundingSupport.RoundFare(12_560m).ShouldBe(13_000m);
+        PriceRoundingSupport.RoundFare(12_500m).ShouldBe(13_000m);
+    }
+
     [Test]
     public async Task WeekendAdjustmentAppliesOnlyToWeekendDates()
     {

@@ -66,6 +66,10 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
                         .ToList());
         }
         var passengerCounts = await LoadPassengerCountsAsync(trip, now, cancellationToken);
+        var onboardPassengerCount = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
+            _context,
+            trip.Id,
+            cancellationToken);
         var incidentInfo = await LoadIncidentInfoAsync(trip, cancellationToken);
 
         return UpdateTripStatusCommandHandler.ToDetailDto(
@@ -77,6 +81,7 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
                 passengerCountsByTripStopId: passengerCounts.ByTripStopId),
             onBoardStaff,
             passengerCounts.TotalPassengerCount,
+            onboardPassengerCount,
             incidentInfo);
     }
 

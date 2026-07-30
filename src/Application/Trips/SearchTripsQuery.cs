@@ -212,7 +212,9 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                     ?? (stats?.MinSeatPrice is > 0
                         ? FareAdjustmentSupport.ApplySurcharge(stats.MinSeatPrice.Value, fareAdjustment)
                         : null);
-            var minPrice = minBasePrice is > 0 ? minBasePrice * minModifier : null;
+            var minPrice = minBasePrice is > 0
+                ? (decimal?)PriceRoundingSupport.RoundFare(minBasePrice.Value * minModifier)
+                : null;
             var isBookable = available > 0 && !missingDistanceFare;
 
             return new TripSummaryDto(

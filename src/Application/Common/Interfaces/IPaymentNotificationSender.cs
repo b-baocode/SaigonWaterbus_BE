@@ -114,4 +114,8 @@ public sealed record ETicketPassenger(
     string? FromStationName = null,
     string? ToStationName = null,
     DateTimeOffset? DepartureTime = null,
-    DateTimeOffset? ArrivalTime = null);
+    DateTimeOffset? ArrivalTime = null,
+    bool IsLapInfant = false,
+    Guid? CompanionPassengerId = null,
+    string? CompanionPassengerName = null,
+    bool UsesCompanionTicket = false);

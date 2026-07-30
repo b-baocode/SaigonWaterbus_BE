@@ -90,20 +90,10 @@ public sealed class Bookings : IEndpointGroup
                 "Bearer token",
                 null,
                 "Tra ve day du thong tin booking kem danh sach ve (hanh khach, cho, gio len/xuong).",
+                "INFANT khong ghe co usesCompanionTicket=true, companionPassengerId/name va dung chung ticketCode/qrToken cua ADULT.",
                 "serviceType = Waterbus | Sightseeing, routeType = routeType goc cua tuyen (Regular | SightseeingLoop); "
                 + "tour ngam canh di nguyen chuyen nen ga len = ga xuong.",
                 "Tra ve 404 neu booking khong thuoc ve user dang dang nhap."));
-
-        group.MapPost(CancelBooking, "{id:guid}/cancel")
-            .RequireAuthorization()
-            .WithSummary("Huy booking")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token",
-                null,
-                "Huy toan bo booking va tat ca BookingItem ben trong.",
-                "Khong the huy khi tau da khoi hanh (departureTime <= now).",
-                "Hoan lai luot su dung ma khuyen mai neu co.",
-                "Tra ve 204 khi huy thanh cong."));
 
         group.MapGet(GetBookingManifestByCode, "manifest/{bookingCode}")
             .RequireAuthorization()
@@ -194,13 +184,14 @@ public sealed class Bookings : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Ban ve tai quay (staff)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Chi Staff",
+                "Staff hoặc Manager",
                 CreateCounterBookingExample,
-                "Staff dat ve ho khach mua truc tiep tai quay; khach KHONG can co tai khoan.",
+                "Staff/Manager dat ve ho khach mua truc tiep tai quay; khach KHONG can co tai khoan.",
                 "items / returnItems / ticketTypeCode / fromStationCode / toStationCode: giong het POST /api/bookings.",
                 "contactName + contactPhone + contactEmail bat buoc (staff nhap); contactEmail nhan email tong QR booking.",
                 "passengerEmail trong items/returnItems optional; neu nhap them thi gui them email ve rieng cho hanh khach do.",
                 "paymentMethod = Cash: ghi nhan thu tien mat ngay -> booking Confirmed, phat hanh ve/QR va gui email ngay trong 1 lan goi.",
+                "paymentMethod = BankTransfer: ghi nhan khach da chuyen khoan tai quay -> booking Confirmed, phat hanh ve/QR va gui email ngay trong 1 lan goi.",
                 "paymentMethod = PayOs: tra ve checkoutUrl + qrCode cho khach quet; ve chi phat hanh sau khi PayOS bao da thanh toan. "
                     + "Staff theo doi bang POST /api/payments/{paymentId}/sync; qua holdExpiresAt chua tra thi booking het han va nha ghe.",
                 "Ban duoc CA KHI TAU DA KHOI HANH: bo han dong ban truoc gio chay, chap nhan chuyen Scheduled/Boarding/Delayed/InProgress; "
@@ -216,12 +207,6 @@ public sealed class Bookings : IEndpointGroup
 
     private static async Task<IResult> GetBookingDetail(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetBookingDetailQuery(id), ct));
-
-    private static async Task<IResult> CancelBooking(ISender sender, Guid id, CancellationToken ct)
-    {
-        await sender.Send(new CancelBookingCommand(id), ct);
-        return Results.NoContent();
-    }
 
     private static async Task<IResult> CreateBooking(
         ISender sender, CreateBookingCommand command, CancellationToken ct) =>

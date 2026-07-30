@@ -1198,11 +1198,12 @@ internal static class PaymentSupport
 {
     public const string PayOsProvider = "PayOS";
 
-    /// <summary>Payment thu tại quầy (staff thu tiền mặt) — không đi qua cổng thanh toán.</summary>
+    /// <summary>Payment thu tại quầy (tiền mặt hoặc chuyển khoản nội bộ) — không đi qua cổng thanh toán.</summary>
     public const string CounterProvider = "Counter";
     /// <summary>Payment 0đ của booking thường — hoàn tất nội bộ, không đi qua PayOS.</summary>
     public const string FreeProvider = "System";
     public const string CashPaymentMethod = "Cash";
+    public const string BankTransferPaymentMethod = "BankTransfer";
     public const string FreePaymentMethod = "Free";
     public const string PendingStatus = "Pending";
     public const string PaidStatus = "Paid";
@@ -1609,8 +1610,9 @@ internal static class PaymentSupport
         if (targetPoints == booking.PointsUsed)
         {
             // Quote/promotion có thể vừa ghi đè TotalAmount mà không biết tới điểm — đồng bộ lại nếu lệch.
-            var expectedTotal = Math.Max(0, booking.SubtotalAmount - booking.DiscountAmount - booking.PointsUsed);
-            if (booking.PointsUsed > 0 && booking.TotalAmount != expectedTotal && !hasLockedPayment)
+            var expectedTotal = PriceRoundingSupport.RoundFare(
+                booking.SubtotalAmount - booking.DiscountAmount - booking.PointsUsed);
+            if (booking.TotalAmount != expectedTotal && !hasLockedPayment)
             {
                 RecalculateUnpaidTotals(booking);
                 await context.SaveChangesAsync(cancellationToken);
@@ -1681,7 +1683,8 @@ internal static class PaymentSupport
     /// <summary>Tính lại tổng phải trả khi booking chưa có payment khóa: Total = Subtotal - Discount - PointsUsed.</summary>
     private static void RecalculateUnpaidTotals(Booking booking)
     {
-        booking.TotalAmount = Math.Max(0, booking.SubtotalAmount - booking.DiscountAmount - booking.PointsUsed);
+        booking.TotalAmount = PriceRoundingSupport.RoundFare(
+            booking.SubtotalAmount - booking.DiscountAmount - booking.PointsUsed);
         booking.DepositAmount = 0;
         booking.RemainingAmount = booking.TotalAmount;
         booking.PaymentStatus = UnpaidBookingPaymentStatus;

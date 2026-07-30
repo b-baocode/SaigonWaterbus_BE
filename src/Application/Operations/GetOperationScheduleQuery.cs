@@ -29,6 +29,7 @@ public sealed record OperationScheduleItemDto(
     bool SellsBySegment,
     int CapacitySnapshot,
     int TotalPassengerCount,
+    int OnboardPassengerCount,
     Guid? FromStationId,
     string? FromStationCode,
     string FromLocation,
@@ -209,6 +210,10 @@ public sealed class GetOperationScheduleQueryHandler
                 .GroupBy(x => x.TripId!.Value)
                 .Select(g => new { TripId = g.Key, Count = g.Count() })
                 .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
+        var onboardPassengerCounts = await TripPassengerCountSupport.LoadOnboardPassengerCountsByTripIdAsync(
+            _context,
+            tripIds,
+            cancellationToken);
 
         return trips
             .Select(trip =>
@@ -219,7 +224,8 @@ public sealed class GetOperationScheduleQueryHandler
                     trip,
                     tripLatestLocation,
                     now,
-                    passengerCounts.GetValueOrDefault(trip.Id));
+                    passengerCounts.GetValueOrDefault(trip.Id),
+                    onboardPassengerCounts.GetValueOrDefault(trip.Id));
             })
             .ToArray();
     }
@@ -228,7 +234,8 @@ public sealed class GetOperationScheduleQueryHandler
         Trip trip,
         BoatLatestLocation? latestLocation,
         DateTimeOffset now,
-        int totalPassengerCount)
+        int totalPassengerCount,
+        int onboardPassengerCount)
     {
         var tripStops = trip.TripStops
             .OrderBy(x => x.StopOrder)
@@ -275,6 +282,7 @@ public sealed class GetOperationScheduleQueryHandler
             DistanceFareSupport.UsesDistanceFare(trip.TripType, trip.Route.RouteType),
             trip.CapacitySnapshot,
             totalPassengerCount,
+            onboardPassengerCount,
             fromStation.StationId,
             fromStation.StationCode,
             fromStation.LocationName,

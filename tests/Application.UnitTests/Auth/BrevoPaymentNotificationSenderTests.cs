@@ -70,6 +70,7 @@ public class BrevoPaymentNotificationSenderTests
         var httpHandler = new CapturingHttpMessageHandler();
         var sender = CreateSender(httpHandler);
         var booking = CreateNotification(isFullyPaid: true);
+        var companionId = Guid.NewGuid();
 
         await sender.SendETicketsAsync(
             new ETicketNotification(
@@ -89,7 +90,11 @@ public class BrevoPaymentNotificationSenderTests
                         "Nguoi lon",
                         "TK123",
                         "ticket-qr",
-                        "passenger@example.com")
+                        "passenger@example.com",
+                        IsLapInfant: true,
+                        CompanionPassengerId: companionId,
+                        CompanionPassengerName: "Nguoi Lon Di Kem",
+                        UsesCompanionTicket: true)
                 ]),
             CancellationToken.None);
 
@@ -109,6 +114,10 @@ public class BrevoPaymentNotificationSenderTests
         ticket.GetProperty("qrCodeUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
         ticket.GetProperty("ticketQrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
         ticket.GetProperty("ticketQrCodeUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+        ticket.GetProperty("isLapInfant").GetBoolean().ShouldBeTrue();
+        ticket.GetProperty("usesCompanionTicket").GetBoolean().ShouldBeTrue();
+        ticket.GetProperty("companionPassengerId").GetString().ShouldBe(companionId.ToString());
+        ticket.GetProperty("companionPassengerName").GetString().ShouldBe("Nguoi Lon Di Kem");
     }
 
     [Test]
@@ -144,7 +153,10 @@ public class BrevoPaymentNotificationSenderTests
                         "Bach Dang",
                         "Linh Dong",
                         new DateTimeOffset(2030, 1, 1, 8, 5, 0, TimeSpan.FromHours(7)),
-                        new DateTimeOffset(2030, 1, 1, 8, 25, 0, TimeSpan.FromHours(7)))
+                        new DateTimeOffset(2030, 1, 1, 8, 25, 0, TimeSpan.FromHours(7)),
+                        IsLapInfant: true,
+                        CompanionPassengerName: "Nguoi Lon Di Kem",
+                        UsesCompanionTicket: true)
                 ]),
             CancellationToken.None);
 
@@ -165,6 +177,9 @@ public class BrevoPaymentNotificationSenderTests
         parameters.GetProperty("departureTime").GetString().ShouldBe("08:05");
         parameters.GetProperty("arrivalDate").GetString().ShouldBe("01/01/2030");
         parameters.GetProperty("arrivalTime").GetString().ShouldBe("08:25");
+        parameters.GetProperty("isLapInfant").GetBoolean().ShouldBeTrue();
+        parameters.GetProperty("usesCompanionTicket").GetBoolean().ShouldBeTrue();
+        parameters.GetProperty("companionPassengerName").GetString().ShouldBe("Nguoi Lon Di Kem");
         parameters.GetProperty("TICKETS")[0].GetProperty("ticketCode").GetString().ShouldBe("TK123");
     }
 

@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
@@ -211,7 +212,7 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
         if (distanceFare.HasValue
             && seat.SeatTypeCode.Equals(DistanceFareSupport.DistanceFareSeatTypeCode, StringComparison.OrdinalIgnoreCase))
         {
-            return distanceFare.Value;
+            return PriceRoundingSupport.RoundFare(distanceFare.Value);
         }
 
         decimal basePrice;
@@ -226,7 +227,8 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                 : 0;
         }
 
-        return FareAdjustmentSupport.ApplySurcharge(basePrice, fareAdjustment);
+        return PriceRoundingSupport.RoundFare(
+            FareAdjustmentSupport.ApplySurcharge(basePrice, fareAdjustment));
     }
 
     private static string ResolveStatus(

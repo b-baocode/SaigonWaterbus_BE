@@ -4,6 +4,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Application.Tickets;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -231,7 +232,7 @@ public class BookingHoldAndETicketTests
             TripId = trip.Id,
             TripSeat = tripSeat,
             TripSeatId = tripSeat.Id,
-            FullName = "Nguyen Huu Hoang",
+            FullName = "Nguoi Lon Di Kem",
             PassengerType = "ADULT",
             UnitPrice = 9500,
             FromStation = stationA,
@@ -288,8 +289,10 @@ public class BookingHoldAndETicketTests
             .Tickets;
         bookerTickets.Count.ShouldBe(2);
         bookerTickets.ShouldAllBe(x => x.TicketCode == ticket.TicketCode);
-        bookerTickets.ShouldContain(x => x.PassengerName == "Nguyen Huu Hoang");
+        bookerTickets.ShouldContain(x => x.PassengerName == "Nguoi Lon Di Kem");
         bookerTickets.ShouldContain(x => x.PassengerName == "Em bé");
+        bookerTickets.Single(x => x.PassengerName == "Em bé").CompanionPassengerName
+            .ShouldBe("Nguoi Lon Di Kem");
 
         var manifest = await new GetBookingManifestQueryHandler(context, passengerContext)
             .Handle(new GetBookingManifestByQrTokenQuery(booking.CharterBookingQrToken!), CancellationToken.None);
@@ -302,14 +305,62 @@ public class BookingHoldAndETicketTests
         infantManifest.IsLapInfant.ShouldBeTrue();
         infantManifest.UsesCompanionTicket.ShouldBeTrue();
         infantManifest.CompanionPassengerId.ShouldBe(adult.Id);
+        infantManifest.CompanionPassengerName.ShouldBe("Nguoi Lon Di Kem");
+
+        var detail = await new GetBookingDetailQueryHandler(context, passengerContext)
+            .Handle(new GetBookingDetailQuery(booking.Id), CancellationToken.None);
+        var infantDetail = detail.Items.Single(x => x.BookingItemId == infant.Id);
+        infantDetail.TicketCode.ShouldBe(ticket.TicketCode);
+        infantDetail.TicketQrToken.ShouldBe(ticket.QrToken);
+        infantDetail.IsLapInfant.ShouldBeTrue();
+        infantDetail.UsesCompanionTicket.ShouldBeTrue();
+        infantDetail.CompanionPassengerId.ShouldBe(adult.Id);
+        infantDetail.CompanionPassengerName.ShouldBe("Nguoi Lon Di Kem");
+
+        var endedDetail = await new GetBookingDetailQueryHandler(
+                context,
+                passengerContext,
+                new FixedTimeProvider(trip.ArrivalTime.AddSeconds(1)))
+            .Handle(new GetBookingDetailQuery(booking.Id), CancellationToken.None);
+        endedDetail.Items.Single(x => x.BookingItemId == adult.Id).TicketStatus.ShouldBe("Used");
+        endedDetail.Items.Single(x => x.BookingItemId == infant.Id).TicketStatus.ShouldBe("Used");
+        ticket.TicketStatus.ShouldBe(TicketStatus.Active);
 
         var scan = await new ScanTicketQueryHandler(context, adminContext, TimeProvider.System)
             .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
         scan.PassengerCount.ShouldBe(2);
-        scan.Passengers.Select(x => x.FullName).ShouldBe(["Nguyen Huu Hoang", "Em bé"]);
+        scan.Passengers.Select(x => x.FullName).ShouldBe(["Nguoi Lon Di Kem", "Em bé"]);
         scan.Passengers.Single(x => x.PassengerId == infant.Id).IsLapInfant.ShouldBeTrue();
         scan.Passengers.Single(x => x.PassengerId == infant.Id).UsesCompanionTicket.ShouldBeTrue();
         scan.Passengers.Single(x => x.PassengerId == infant.Id).CompanionPassengerId.ShouldBe(adult.Id);
+        scan.Passengers.Single(x => x.PassengerId == infant.Id).CompanionPassengerName
+            .ShouldBe("Nguoi Lon Di Kem");
+
+        var onboardBeforeCheckIn = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
+            context,
+            trip.Id,
+            CancellationToken.None);
+        onboardBeforeCheckIn.ShouldBe(0);
+
+        ticket.TicketStatus = TicketStatus.CheckedIn;
+        ticket.CheckedInAt = trip.DepartureTime;
+        await context.SaveChangesAsync();
+
+        var onboardAfterCheckIn = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
+            context,
+            trip.Id,
+            CancellationToken.None);
+        onboardAfterCheckIn.ShouldBe(2);
+
+        ticket.TicketStatus = TicketStatus.CheckedOut;
+        ticket.CheckedOutAt = trip.ArrivalTime;
+        await context.SaveChangesAsync();
+
+        var onboardAfterCheckOut = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
+            context,
+            trip.Id,
+            CancellationToken.None);
+        onboardAfterCheckOut.ShouldBe(0);
     }
 
     [Test]

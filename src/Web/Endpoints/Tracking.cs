@@ -403,6 +403,10 @@ public sealed class Tracking : IEndpointGroup
             trip.Value,
             currentStop,
             now);
+        var onboardPassengerCount = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
+            dbContext,
+            trip.Value?.Id,
+            cancellationToken);
 
         await PublishBoatLocationAsync(
             trackingHubContext,
@@ -418,6 +422,7 @@ public sealed class Tracking : IEndpointGroup
                 route.Value?.RouteCode ?? trip.Value?.Route.RouteCode,
                 trip.Value?.Id,
                 trip.Value?.TripCode,
+                onboardPassengerCount,
                 movementStatus,
                 currentStop?.StationId,
                 currentStop?.Station?.StationCode,
@@ -494,11 +499,19 @@ public sealed class Tracking : IEndpointGroup
             dbContext,
             locations.Select(x => x.BoatId),
             cancellationToken);
+        var onboardPassengerCounts = await TripPassengerCountSupport.LoadOnboardPassengerCountsByTripIdAsync(
+            dbContext,
+            locations.Where(x => x.TripId.HasValue).Select(x => x.TripId!.Value),
+            cancellationToken);
 
         return locations.Select(x =>
         {
             incidentsByBoatId.TryGetValue(x.BoatId, out var activeIncident);
-            return ToLatestLocationDto(x, now, activeIncident);
+            return ToLatestLocationDto(
+                x,
+                now,
+                activeIncident,
+                x.TripId.HasValue ? onboardPassengerCounts.GetValueOrDefault(x.TripId.Value) : 0);
         }).ToArray();
     }
 
@@ -576,8 +589,12 @@ public sealed class Tracking : IEndpointGroup
             dbContext,
             location.BoatId,
             cancellationToken);
+        var onboardPassengerCount = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
+            dbContext,
+            location.TripId,
+            cancellationToken);
 
-        return ToLatestLocationDto(location, now, activeIncident);
+        return ToLatestLocationDto(location, now, activeIncident, onboardPassengerCount);
     }
 
     private static async Task<TripLatestTrackingDto?> LoadLatestBoatLocationDtoByTripIdAsync(
@@ -596,6 +613,10 @@ public sealed class Tracking : IEndpointGroup
             return null;
         }
 
+        var onboardPassengerCount = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
+            dbContext,
+            trip.Id,
+            cancellationToken);
         BoatLatestLocationDto? latestLocation = null;
         if (trip.BoatId.HasValue)
         {
@@ -615,7 +636,11 @@ public sealed class Tracking : IEndpointGroup
                     dbContext,
                     location.BoatId,
                     cancellationToken);
-                latestLocation = ToLatestLocationDto(location, now, activeIncident);
+                latestLocation = ToLatestLocationDto(
+                    location,
+                    now,
+                    activeIncident,
+                    location.TripId == trip.Id ? onboardPassengerCount : 0);
             }
         }
 
@@ -623,6 +648,7 @@ public sealed class Tracking : IEndpointGroup
             trip.Id,
             trip.TripCode,
             trip.TripStatus.ToString(),
+            onboardPassengerCount,
             trip.BoatId,
             ToTripBoatDto(trip.Boat, trip.CapacitySnapshot),
             latestLocation,
@@ -1188,7 +1214,8 @@ public sealed class Tracking : IEndpointGroup
     private static BoatLatestLocationDto ToLatestLocationDto(
         BoatLatestLocation location,
         DateTimeOffset now,
-        ActiveIncidentTrackingDto? activeIncident)
+        ActiveIncidentTrackingDto? activeIncident,
+        int onboardPassengerCount)
     {
         var tripStops = location.Trip?.TripStops
             .OrderBy(x => x.StopOrder)
@@ -1209,6 +1236,7 @@ public sealed class Tracking : IEndpointGroup
             location.Route?.RouteCode,
             location.TripId,
             location.Trip?.TripCode,
+            onboardPassengerCount,
             ResolveTrackingMovementStatus(
                 location.Trip,
                 tripStops,
@@ -1420,6 +1448,7 @@ public sealed class Tracking : IEndpointGroup
         string? RouteCode,
         Guid? TripId,
         string? TripCode,
+        int OnboardPassengerCount,
         string MovementStatus,
         Guid? CurrentStationId,
         string? CurrentStationCode,
@@ -1456,6 +1485,7 @@ public sealed class Tracking : IEndpointGroup
         Guid TripId,
         string TripCode,
         string TripStatus,
+        int OnboardPassengerCount,
         Guid? BoatId,
         TripBoatDto? Boat,
         BoatLatestLocationDto? LatestLocation,
@@ -1473,6 +1503,7 @@ public sealed class Tracking : IEndpointGroup
         string? RouteCode,
         Guid? TripId,
         string? TripCode,
+        int OnboardPassengerCount,
         string MovementStatus,
         Guid? CurrentStationId,
         string? CurrentStationCode,

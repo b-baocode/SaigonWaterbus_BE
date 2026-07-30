@@ -355,6 +355,23 @@ internal static class AuthSupport
         }
     }
 
+    /// <summary>Bán vé tại quầy là nghiệp vụ của quầy vé nên Staff hoặc Manager được phép.</summary>
+    public static async Task<User> EnsureCurrentUserCanSellAtCounterAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        var currentUser = await GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
+        EnsureUserCanLogin(currentUser);
+
+        if (!IsStaff(currentUser) && !IsManager(currentUser))
+        {
+            throw new ForbiddenAccessException();
+        }
+
+        return currentUser;
+    }
+
     /// <summary>Bán vé tại quầy là nghiệp vụ của quầy vé nên chỉ tài khoản Staff được phép.</summary>
     public static async Task<User> EnsureCurrentUserIsStaffAsync(
         IApplicationDbContext context,

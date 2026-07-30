@@ -139,4 +139,8 @@ public sealed record BookingItemDto(
     string? TicketQrToken,
     string? TicketStatus,
     Guid? FromStationId = null,
-    Guid? ToStationId = null);
+    Guid? ToStationId = null,
+    bool IsLapInfant = false,
+    Guid? CompanionPassengerId = null,
+    string? CompanionPassengerName = null,
+    bool UsesCompanionTicket = false);

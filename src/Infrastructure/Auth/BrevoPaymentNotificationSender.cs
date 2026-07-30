@@ -338,6 +338,10 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                     ["qrCodeUrl"] = ticketQrImageUrl,
                     ["ticketQrImageUrl"] = ticketQrImageUrl,
                     ["ticketQrCodeUrl"] = ticketQrImageUrl,
+                    ["isLapInfant"] = ticket.IsLapInfant,
+                    ["usesCompanionTicket"] = ticket.UsesCompanionTicket,
+                    ["companionPassengerId"] = ticket.CompanionPassengerId?.ToString(),
+                    ["companionPassengerName"] = ticket.CompanionPassengerName,
                     ["tripCode"] = ticketTripCodes.TryGetValue(ticket.TicketCode, out var legTripCode)
                         ? legTripCode
                         : notification.TripCode,
@@ -391,6 +395,10 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         parameters["qrCodeUrl"] = ticketQrImageUrl;
         parameters["ticketQrImageUrl"] = ticketQrImageUrl;
         parameters["ticketQrCodeUrl"] = ticketQrImageUrl;
+        parameters["isLapInfant"] = ticket.IsLapInfant;
+        parameters["usesCompanionTicket"] = ticket.UsesCompanionTicket;
+        parameters["companionPassengerId"] = ticket.CompanionPassengerId?.ToString();
+        parameters["companionPassengerName"] = ticket.CompanionPassengerName;
         parameters["tripCode"] = notification.TripCode;
         parameters["routeName"] = notification.RouteName;
         parameters["fromStationName"] = ResolveText(ticket.FromStationName ?? notification.FromStationName);

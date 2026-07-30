@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Domain.Entities;
@@ -55,5 +56,5 @@ internal static class CharterBookingPricingSupport
     }
 
     public static decimal CalculateDiscount(Promotion? promotion, decimal subtotal) =>
-        promotion?.CalculateDiscount(subtotal) ?? 0;
+        PriceRoundingSupport.RoundFare(promotion?.CalculateDiscount(subtotal) ?? 0);
 }

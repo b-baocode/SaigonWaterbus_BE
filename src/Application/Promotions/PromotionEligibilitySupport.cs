@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -86,7 +87,7 @@ public static class PromotionEligibilitySupport
             return Invalid("Khuyến mãi không áp dụng cho chuyến/tuyến này.");
         }
 
-        var discount = promotion.CalculateDiscount(subtotal);
+        var discount = PriceRoundingSupport.RoundFare(promotion.CalculateDiscount(subtotal));
 
         // Lượt dùng và ngân sách suy ra từ bookings (không dùng counter).
         var usedBookings = PromotionSupport.ActiveUsageQuery(context, promotion.Id)

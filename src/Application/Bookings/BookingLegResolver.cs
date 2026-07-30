@@ -382,6 +382,8 @@ internal sealed class BookingLegResolver
                         cancellationToken,
                         trip.Id);
                 }
+
+                unitPrice = PriceRoundingSupport.RoundFare(unitPrice);
             }
 
             itemPrices.Add((resolved, unitPrice));

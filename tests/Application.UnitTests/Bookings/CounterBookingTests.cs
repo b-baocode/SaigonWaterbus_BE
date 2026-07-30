@@ -56,6 +56,31 @@ public class CounterBookingTests
         payment.Amount.ShouldBe(booking.TotalAmount);
     }
 
+    [Test]
+    public async Task ManagerCanSellAtCounterWithBankTransfer()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        await SeedTripAsync(context, "TR-CTR-MGR", TripStatus.Scheduled);
+        var handler = CreateHandler(context, managerContext);
+
+        var result = await handler.Handle(
+            CashCommand("TR-CTR-MGR", "A1") with { PaymentMethod = CounterPaymentMethod.BankTransfer },
+            CancellationToken.None);
+
+        result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
+        result.PaymentStatus.ShouldBe("Paid");
+        result.PaymentMethod.ShouldBe(PaymentSupport.BankTransferPaymentMethod);
+
+        var booking = context.Set<Booking>().Single(b => b.Id == result.BookingId);
+        booking.SoldByStaffId.ShouldBe(managerContext.UserId);
+
+        var payment = context.Set<Payment>().Single(p => p.BookingId == result.BookingId);
+        payment.Provider.ShouldBe(PaymentSupport.CounterProvider);
+        payment.PaymentMethod.ShouldBe(PaymentSupport.BankTransferPaymentMethod);
+        payment.PaidAt.ShouldBe(Now);
+    }
+
     [TestCase(TripStatus.Boarding)]
     [TestCase(TripStatus.InProgress)]
     [TestCase(TripStatus.Delayed)]
@@ -128,7 +153,8 @@ public class CounterBookingTests
             new CreateBookingCommand("TR-ANY", [Adult("A1")], null),
             CancellationToken.None));
 
-        exception.Errors.SelectMany(x => x.Value).ShouldContain(m => m.Contains("email"));
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("email liên hệ", StringComparison.OrdinalIgnoreCase));
     }
 
     [Test]

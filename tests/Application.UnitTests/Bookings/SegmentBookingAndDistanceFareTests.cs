@@ -106,7 +106,7 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
-    public async Task CancellingSegmentBookingReleasesOnlyThatSegment()
+    public async Task CancelledSegmentBookingReleasesOnlyThatSegment()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
@@ -121,17 +121,9 @@ public class SegmentBookingAndDistanceFareTests
             new CreateBookingCommand("TR-SEG-4", [Adult("A1", "HB", "LT")], null),
             CancellationToken.None);
 
-        var notifier = new RecordingTripSeatNotifier();
-        var cancelHandler = new CancelBookingCommandHandler(
-            context, userContext, new FixedTimeProvider(Now), notifier);
-        await cancelHandler.Handle(new CancelBookingCommand(tail.BookingId), CancellationToken.None);
-
-        // Chỉ chặng HB→LT được nhả, KHÔNG phải cả trip (null/null) — vé BB→HB vẫn đang giữ ghế.
-        var change = notifier.Published.SelectMany(p => p.Changes).Single();
-        change.SeatCode.ShouldBe("A1");
-        change.Status.ShouldBe("Available");
-        change.FromStopOrder.ShouldBe(2);
-        change.ToStopOrder.ShouldBe(3);
+        var tailBooking = context.Set<Booking>().Single(x => x.Id == tail.BookingId);
+        tailBooking.BookingStatus = BookingStatus.Cancelled;
+        await context.SaveChangesAsync();
 
         // Sơ đồ ghế chặng BB→HB vẫn phải báo A1 đã bán.
         var seatMapHandler = new GetTripSeatMapQueryHandler(
@@ -139,6 +131,11 @@ public class SegmentBookingAndDistanceFareTests
         var headView = await seatMapHandler.Handle(
             new GetTripSeatMapQuery(trip.Trip.Id, "BB", "HB"), CancellationToken.None);
         headView.Seats.Single(s => s.SeatNumber == "A1").Status.ShouldBe("Booked");
+
+        // Chặng HB→LT của booking đã Cancelled được xem là trống.
+        var tailView = await seatMapHandler.Handle(
+            new GetTripSeatMapQuery(trip.Trip.Id, "HB", "LT"), CancellationToken.None);
+        tailView.Seats.Single(s => s.SeatNumber == "A1").Status.ShouldBe("Available");
     }
 
     [Test]
@@ -196,28 +193,6 @@ public class SegmentBookingAndDistanceFareTests
             new CreateBookingCommand("TR-CUT-1", [Adult("A1", "HB", "LT")], null),
             CancellationToken.None);
         late.BookingId.ShouldNotBe(Guid.Empty);
-    }
-
-    [Test]
-    public async Task CancelIsAllowedUntilBoardingStationNotFirstStation()
-    {
-        await using var context = SeatFlowTestData.CreateContext();
-        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
-        await SeedThreeStopTripAsync(context, "TR-CUT-2", withDistances: true);
-
-        // Đặt vé chặng HB→LT từ sớm (còn trong hạn bán).
-        var booked = await CreateHandler(context, userContext).Handle(
-            new CreateBookingCommand("TR-CUT-2", [Adult("A1", "HB", "LT")], null),
-            CancellationToken.None);
-
-        // Tàu đã rời BB (bến đầu) nhưng chưa tới HB → khách vẫn phải hủy được.
-        var afterFirstStationDeparture = Now.AddHours(2).AddMinutes(1);
-        var cancelHandler = new CancelBookingCommandHandler(
-            context, userContext, new FixedTimeProvider(afterFirstStationDeparture));
-        await cancelHandler.Handle(new CancelBookingCommand(booked.BookingId), CancellationToken.None);
-
-        var cancelled = context.Set<Booking>().Single(b => b.Id == booked.BookingId);
-        cancelled.BookingStatus.ShouldBe(BookingStatus.Cancelled);
     }
 
     [Test]
@@ -308,11 +283,11 @@ public class SegmentBookingAndDistanceFareTests
                 null),
             CancellationToken.None);
 
-        // Policy mặc định: 5000 + 1500đ/km, roundingStep=1 nên không làm tròn lên nghìn.
-        // BB→HB: 5000 + 1500×2.5 = 8750. BB→LT: 5000 + 1500×6 = 14000.
+        // Policy mặc định làm tròn về 1.000đ gần nhất.
+        // BB→HB: 5000 + 1500×2.5 = 8750 → 9000. BB→LT: 5000 + 1500×6 = 14000.
         var expectedShort = DistanceFareSupport.CalculateFare(FarePolicyDefaults.Dto, LegOneKm);
         var expectedFull = DistanceFareSupport.CalculateFare(FarePolicyDefaults.Dto, LegOneKm + LegTwoKm);
-        expectedShort.ShouldBe(8750m);
+        expectedShort.ShouldBe(9000m);
         expectedFull.ShouldBe(14000m);
         result.SubtotalAmount.ShouldBe(expectedShort + expectedFull);
 
@@ -320,7 +295,7 @@ public class SegmentBookingAndDistanceFareTests
             .Where(p => p.BookingId == result.BookingId)
             .Select(p => p.UnitPrice)
             .ToList();
-        prices.ShouldBe([8750m, 14000m], ignoreOrder: true);
+        prices.ShouldBe([9000m, 14000m], ignoreOrder: true);
     }
 
     [Test]
@@ -383,7 +358,7 @@ public class SegmentBookingAndDistanceFareTests
         passengers.Where(x => x.PassengerType == "ADULT")
             .Select(x => x.UnitPrice)
             .ToList()
-            .ShouldBe([8750m, 10250m], ignoreOrder: true);
+            .ShouldBe([9000m, 10000m], ignoreOrder: true);
     }
 
     [Test]
@@ -535,11 +510,11 @@ public class SegmentBookingAndDistanceFareTests
         var seatMapHandler = new GetTripSeatMapQueryHandler(
             context, userContext, new FixedTimeProvider(Now));
 
-        // Xem chặng HB→LT: khách trước đã xuống → A1 trống, giá = km chặng sau (5000+1500×3.5=10250).
+        // Xem chặng HB→LT: khách trước đã xuống → A1 trống, giá km chặng sau làm tròn 10250 → 10000.
         var tailView = await seatMapHandler.Handle(
             new GetTripSeatMapQuery(trip.Trip.Id, "HB", "LT"), CancellationToken.None);
         tailView.Seats.Single(s => s.SeatNumber == "A1").Status.ShouldBe("Available");
-        tailView.Seats.Single(s => s.SeatNumber == "A1").BasePrice.ShouldBe(10250m);
+        tailView.Seats.Single(s => s.SeatNumber == "A1").BasePrice.ShouldBe(10000m);
         tailView.SegmentDistanceKm.ShouldBe(LegTwoKm);
 
         // Xem chặng giao (BB→HB) và cả tuyến: A1 bận.
@@ -575,14 +550,14 @@ public class SegmentBookingAndDistanceFareTests
             new SearchTripsQuery(hb.Id, lt.Id, date), CancellationToken.None);
         var tailTrip = tailResults.Single(x => x.TripCode == "TR-SRCH-1");
         tailTrip.AvailableSeats.ShouldBe(2);
-        tailTrip.MinPrice.ShouldBe(10250m);
+        tailTrip.MinPrice.ShouldBe(10000m);
 
         // Chặng BB→HB (giao vé đã bán): còn 1 ghế; giá "từ" lấy loại vé trả tiền rẻ nhất (ADULT).
         var headResults = await searchHandler.Handle(
             new SearchTripsQuery(bb.Id, hb.Id, date), CancellationToken.None);
         var headTrip = headResults.Single(x => x.TripCode == "TR-SRCH-1");
         headTrip.AvailableSeats.ShouldBe(1);
-        headTrip.MinPrice.ShouldBe(8750m);
+        headTrip.MinPrice.ShouldBe(9000m);
     }
 
     [Test]
@@ -845,9 +820,9 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
-    public void DefaultFarePolicyDoesNotRoundUpToNearestThousand()
+    public void DefaultFarePolicyRoundsUpToNearestThousand()
     {
-        DistanceFareSupport.CalculateFare(FarePolicyDefaults.Dto, 8.32m).ShouldBe(17480m);
+        DistanceFareSupport.CalculateFare(FarePolicyDefaults.Dto, 8.32m).ShouldBe(17000m);
         DistanceFareSupport.CalculateFare(new FarePolicyDto(null, 7000m, 500m, 1m, "VND"), 8.32m)
             .ShouldBe(11160m);
     }

@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Seats;
@@ -52,7 +53,7 @@ public sealed class FareCalculator : IFareCalculator
             ticketType,
             tripPricingContext?.RouteType,
             cancellationToken);
-        return basePrice * priceModifier;
+        return PriceRoundingSupport.RoundFare(basePrice * priceModifier);
     }
 
     private async Task<decimal> ResolveBasePriceAsync(

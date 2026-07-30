@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
@@ -10,13 +11,20 @@ public sealed record GetBookingDetailQuery(Guid BookingId) : IRequest<BookingDet
 
 public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDetailQuery, BookingDetailDto>
 {
+    private const string UsedTicketStatus = "Used";
+
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
 
-    public GetBookingDetailQueryHandler(IApplicationDbContext context, IUserContext userContext)
+    public GetBookingDetailQueryHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider? timeProvider = null)
     {
         _context = context;
         _userContext = userContext;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public async Task<BookingDetailDto> Handle(GetBookingDetailQuery request, CancellationToken cancellationToken)
@@ -47,6 +55,9 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                      && t.TicketStatus != Domain.Enums.TicketStatus.Expired)
             .GroupBy(t => t.BookingPassengerId!.Value)
             .ToDictionary(g => g.Key, g => g.OrderByDescending(t => t.IssuedAt).First());
+        var passengerById = booking.Passengers.ToDictionary(x => x.Id);
+        var companionByPassengerId = LapInfantTicketSupport.AssignCompanionTicketPassengersToAdults(booking.Passengers);
+        var now = _timeProvider.GetUtcNow();
 
         var items = booking.Passengers.Select(i =>
         {
@@ -65,7 +76,18 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 ? default((DateTimeOffset Departure, DateTimeOffset Arrival)?)
                 : Trips.TripStopScheduleSupport.ResolveSegmentTimes(legTrip, i.FromStopOrder, i.ToStopOrder);
 
-            ticketsByPassengerId.TryGetValue(i.Id, out var ticket);
+            var isLapInfant = LapInfantTicketSupport.IsLapInfant(i);
+            var usesCompanionTicket = LapInfantTicketSupport.UsesCompanionTicket(i);
+            BookingPassenger? companion = null;
+            if (usesCompanionTicket
+                && companionByPassengerId.TryGetValue(i.Id, out var companionPassengerId)
+                && passengerById.TryGetValue(companionPassengerId, out var assignedCompanion))
+            {
+                companion = assignedCompanion;
+            }
+
+            var ticketPassengerId = companion?.Id ?? i.Id;
+            ticketsByPassengerId.TryGetValue(ticketPassengerId, out var ticket);
             return new BookingItemDto(
                 i.Id,
                 legTrip?.TripCode ?? string.Empty,
@@ -83,9 +105,13 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 booking.BookingStatus.ToString(),
                 ticket?.TicketCode,
                 ticket?.QrToken,
-                ticket?.TicketStatus.ToString(),
+                ResolveDisplayTicketStatus(ticket, legTrip, now),
                 fromStationId,
-                toStationId);
+                toStationId,
+                isLapInfant,
+                companion?.Id,
+                companion?.FullName,
+                usesCompanionTicket && companion is not null);
         }).ToList();
 
         return new BookingDetailDto(
@@ -131,6 +157,29 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             booking.ReturnTrip?.DepartureTime,
             BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
     }
+
+    private static string? ResolveDisplayTicketStatus(
+        Ticket? ticket,
+        Trip? trip,
+        DateTimeOffset now)
+    {
+        if (ticket is null)
+        {
+            return null;
+        }
+
+        if (ticket.TicketStatus == TicketStatus.Active && IsTripEnded(trip, now))
+        {
+            return UsedTicketStatus;
+        }
+
+        return ticket.TicketStatus.ToString();
+    }
+
+    private static bool IsTripEnded(Trip? trip, DateTimeOffset now) =>
+        trip is not null
+        && (trip.TripStatus == TripStatus.Completed
+            || (trip.AdjustedArrivalTime ?? trip.ArrivalTime) <= now);
 
     private async Task<Trip?> LoadTripAsync(Guid? tripId, CancellationToken cancellationToken)
     {

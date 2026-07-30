@@ -15,7 +15,7 @@ public static class FarePolicyDefaults
 {
     public const decimal BaseFare = 5000m;
     public const decimal PricePerKm = 1500m;
-    public const decimal RoundingStep = 1m;
+    public const decimal RoundingStep = 1000m;
 
     public static FarePolicyDto Dto { get; } = new(null, BaseFare, PricePerKm, RoundingStep, "VND");
 }
@@ -36,7 +36,7 @@ public sealed class GetFarePolicyQueryHandler : IRequestHandler<GetFarePolicyQue
 public sealed record UpdateFarePolicyCommand(
     decimal BaseFare,
     decimal PricePerKm,
-    decimal RoundingStep = 1m) : IRequest<FarePolicyDto>;
+    decimal RoundingStep = 1000m) : IRequest<FarePolicyDto>;
 
 public sealed class UpdateFarePolicyCommandValidator : AbstractValidator<UpdateFarePolicyCommand>
 {

@@ -101,6 +101,7 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         IReadOnlyList<TripStopDto>? stops = null,
         IReadOnlyList<TripStaffAssignmentDto>? onBoardStaff = null,
         int totalPassengerCount = 0,
+        int onboardPassengerCount = 0,
         TripIncidentInfoDto? incidentInfo = null) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
@@ -115,6 +116,7 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         TripMediaSupport.ToBoatDto(trip.Boat, trip.CapacitySnapshot),
         onBoardStaff ?? [],
         totalPassengerCount,
+        onboardPassengerCount,
         trip.Route.RouteCode,
         TripMediaSupport.ResolveFromStation(trip),
         TripMediaSupport.ResolveToStation(trip),
