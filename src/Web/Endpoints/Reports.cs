@@ -27,7 +27,7 @@ public sealed class Reports : IEndpointGroup
                 "paymentMethod optional: Cash | BankTransfer | PayOs | Free.",
                 "Doanh thu ròng = tổng payment đã thu - refundAmount."));
 
-        group.MapGet(GetBookings, "bookings")
+        group.MapGet(GetReportBookings, "bookings")
             .RequireAuthorization()
             .WithSummary("Tong hop / quan ly booking")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -90,7 +90,7 @@ public sealed class Reports : IEndpointGroup
             cancellationToken));
     }
 
-    private static async Task<IResult> GetBookings(
+    private static async Task<IResult> GetReportBookings(
         ISender sender,
         [FromQuery] string? keyword,
         [FromQuery] string? bookingStatus,
