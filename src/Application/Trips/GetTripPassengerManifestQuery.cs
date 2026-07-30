@@ -57,7 +57,11 @@ public sealed record TripPassengerManifestItemDto(
     string? TicketStatus,
     DateTimeOffset? CheckedInAt,
     DateTimeOffset? CheckedOutAt,
-    bool CanCheckIn);
+    bool CanCheckIn,
+    bool IsLapInfant = false,
+    Guid? CompanionPassengerId = null,
+    string? CompanionPassengerName = null,
+    bool UsesCompanionTicket = false);
 
 public sealed record GetTripPassengerManifestQuery(Guid TripId) : IRequest<TripPassengerManifestDto>;
 
@@ -122,13 +126,32 @@ public sealed class GetTripPassengerManifestQueryHandler
         var firstEndpoint = ResolveEndpoint(orderedStops, orderedRouteStops, null, orderedRouteStops.FirstOrDefault()?.StopOrder);
         var lastEndpoint = ResolveEndpoint(orderedStops, orderedRouteStops, null, orderedRouteStops.LastOrDefault()?.StopOrder);
 
+        var passengerById = passengers.ToDictionary(x => x.Id);
+        var companionByPassengerId = LapInfantTicketSupport.AssignCompanionTicketPassengersToAdults(passengers);
+        var ticketsByPassengerId = passengers
+            .SelectMany(p => p.Tickets
+                .Where(t => t.TicketStatus != TicketStatus.Cancelled && t.TicketStatus != TicketStatus.Expired)
+                .Select(t => new { PassengerId = p.Id, Ticket = t }))
+            .GroupBy(x => x.PassengerId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.Ticket).OrderByDescending(t => t.IssuedAt).First());
+
         var passengerDtos = passengers
             .Select(passenger =>
             {
-                var currentTicket = passenger.Tickets
-                    .Where(x => x.TicketStatus != TicketStatus.Cancelled && x.TicketStatus != TicketStatus.Expired)
-                    .OrderByDescending(x => x.IssuedAt)
-                    .FirstOrDefault();
+                var isLapInfant = LapInfantTicketSupport.IsLapInfant(passenger);
+                var usesCompanionTicket = LapInfantTicketSupport.UsesCompanionTicket(passenger);
+                BookingPassenger? companion = null;
+                if (usesCompanionTicket
+                    && companionByPassengerId.TryGetValue(passenger.Id, out var companionPassengerId)
+                    && passengerById.TryGetValue(companionPassengerId, out var assignedCompanion))
+                {
+                    companion = assignedCompanion;
+                }
+
+                var ticketPassengerId = companion?.Id ?? passenger.Id;
+                ticketsByPassengerId.TryGetValue(ticketPassengerId, out var currentTicket);
                 var from = ResolveEndpoint(
                     orderedStops,
                     orderedRouteStops,
@@ -140,7 +163,8 @@ public sealed class GetTripPassengerManifestQueryHandler
                     passenger.ToStation,
                     passenger.ToStopOrder) ?? lastEndpoint;
                 var canCheckIn = BookingManifestSupport.CanCheckInBooking(passenger.Booking)
-                    && currentTicket?.TicketStatus == TicketStatus.Active;
+                    && currentTicket?.TicketStatus == TicketStatus.Active
+                    && !usesCompanionTicket;
 
                 return new TripPassengerManifestItemDto(
                     passenger.Id,
@@ -174,7 +198,11 @@ public sealed class GetTripPassengerManifestQueryHandler
                     currentTicket?.TicketStatus.ToString(),
                     currentTicket?.CheckedInAt,
                     currentTicket?.CheckedOutAt,
-                    canCheckIn);
+                    canCheckIn,
+                    isLapInfant,
+                    companion?.Id,
+                    companion?.FullName,
+                    usesCompanionTicket && companion is not null);
             })
             .OrderBy(x => x.FromStopOrder ?? int.MaxValue)
             .ThenBy(x => x.SeatNumber)

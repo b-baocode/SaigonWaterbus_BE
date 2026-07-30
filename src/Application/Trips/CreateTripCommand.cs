@@ -99,7 +99,9 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             TripStopScheduleSupport.ResolveStayDurationMinutesByStopOrder(
                 route,
                 request.Stops,
-                nameof(request.Stops)));
+                nameof(request.Stops)),
+            route.RouteType,
+            route.EstimatedDurationMin);
         var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
         await EnsureNoRouteDepartureConflictAsync(route.Id, departureTime, cancellationToken);

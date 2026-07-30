@@ -317,9 +317,18 @@ internal static class IncidentSupport
             .Where(x => x.RouteId == trip.RouteId)
             .OrderBy(x => x.StopOrder)
             .ToListAsync(cancellationToken);
+        var routeInfo = await context.Set<Route>()
+            .AsNoTracking()
+            .Where(x => x.Id == trip.RouteId)
+            .Select(x => new { x.RouteType, x.EstimatedDurationMin })
+            .SingleAsync(cancellationToken);
 
         return SaigonWaterbus.Application.Trips.TripStopScheduleSupport
-            .BuildFromRouteStops(routeStops, trip.DepartureTime)
+            .BuildFromRouteStops(
+                routeStops,
+                trip.DepartureTime,
+                routeType: routeInfo.RouteType,
+                routeEstimatedDurationMin: routeInfo.EstimatedDurationMin)
             .Select(x => new IncidentStopPlanItem(
                 x.StationId,
                 x.Station?.StationCode ?? string.Empty,

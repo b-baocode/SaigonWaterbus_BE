@@ -281,7 +281,9 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         // Trip cũ chưa có trip_stops: suy lịch dừng từ route stops (cùng cách BuildStopDtos fallback).
         var drafts = TripStopScheduleSupport.BuildFromRouteStops(
             trip.Route.RouteStops.OrderBy(rs => rs.StopOrder).ToList(),
-            trip.DepartureTime);
+            trip.DepartureTime,
+            routeType: trip.Route.RouteType,
+            routeEstimatedDurationMin: trip.Route.EstimatedDurationMin);
         var fromDraft = drafts.FirstOrDefault(d => d.StopOrder == segment.FromOrder);
         var toDraft = drafts.FirstOrDefault(d => d.StopOrder == segment.ToOrder);
         return (
@@ -328,7 +330,11 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             return stopTimesByOrder;
         }
 
-        return TripStopScheduleSupport.BuildFromRouteStops(routeStops, trip.DepartureTime)
+        return TripStopScheduleSupport.BuildFromRouteStops(
+                routeStops,
+                trip.DepartureTime,
+                routeType: trip.Route.RouteType,
+                routeEstimatedDurationMin: trip.Route.EstimatedDurationMin)
             .ToDictionary(
                 x => x.StopOrder,
                 x => (x.PlannedArrivalTime, x.PlannedDepartureTime));
