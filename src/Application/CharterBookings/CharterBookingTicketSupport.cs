@@ -1,4 +1,3 @@
-using System.Security.Cryptography;
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Tickets;
@@ -11,7 +10,6 @@ namespace SaigonWaterbus.Application.CharterBookings;
 internal static class CharterBookingTicketSupport
 {
     private const string PaidBookingPaymentStatus = "Paid";
-    private const int CharterBookingQrTokenByteCount = 24;
 
     public static async Task<PassengerTicketEnsureResult?> EnsurePassengerTicketsAsync(
         IApplicationDbContext context,
@@ -57,13 +55,14 @@ internal static class CharterBookingTicketSupport
         var createdTickets = new List<Ticket>();
         foreach (var passenger in passengers.Where(x => !ticketedPassengerIds.Contains(x.Id)))
         {
+            var ticketCode = await TicketIssueSupport.GenerateTicketCodeAsync(context, now, cancellationToken);
             var ticket = new Ticket
             {
                 BookingId = booking.Id,
                 BookingPassengerId = passenger.Id,
                 BookingPassenger = passenger,
-                TicketCode = await TicketIssueSupport.GenerateTicketCodeAsync(context, now, cancellationToken),
-                QrToken = await TicketIssueSupport.GenerateQrTokenAsync(context, cancellationToken),
+                TicketCode = ticketCode,
+                QrToken = await TicketIssueSupport.GenerateQrTokenAsync(context, ticketCode, cancellationToken),
                 TicketStatus = TicketStatus.Active,
                 IssuedAt = now
             };
@@ -145,20 +144,24 @@ internal static class CharterBookingTicketSupport
             return;
         }
 
-        booking.CharterBookingQrToken = await GenerateCharterBookingQrTokenAsync(context, cancellationToken);
+        booking.CharterBookingQrToken = await GenerateCharterBookingQrTokenAsync(context, booking, cancellationToken);
     }
 
     private static async Task<string> GenerateCharterBookingQrTokenAsync(
         IApplicationDbContext context,
+        Booking booking,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 50; attempt++)
+        var token = booking.BookingCode.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(token))
         {
-            var token = "CB" + Convert.ToHexString(RandomNumberGenerator.GetBytes(CharterBookingQrTokenByteCount));
-            if (!await context.Set<Booking>().AnyAsync(x => x.CharterBookingQrToken == token, cancellationToken))
-            {
-                return token;
-            }
+            throw new ValidationException([new ValidationFailure("charterBookingQrToken",
+                "Khong the tao QR token tong khi bookingCode rong.")]);
+        }
+
+        if (!await context.Set<Booking>().AnyAsync(x => x.CharterBookingQrToken == token, cancellationToken))
+        {
+            return token;
         }
 
         throw new ValidationException([new ValidationFailure("charterBookingQrToken",
