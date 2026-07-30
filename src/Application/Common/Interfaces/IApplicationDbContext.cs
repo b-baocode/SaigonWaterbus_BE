@@ -44,6 +44,8 @@ public interface IApplicationDbContext
 
     DbSet<Voice> Voices { get; }
 
+    DbSet<KnowledgeEntry> KnowledgeEntries { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

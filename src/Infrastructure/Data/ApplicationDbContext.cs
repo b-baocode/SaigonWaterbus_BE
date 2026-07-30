@@ -70,6 +70,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Landmark> Landmarks => Set<Landmark>();
 
+    public DbSet<KnowledgeEntry> KnowledgeEntries => Set<KnowledgeEntry>();
+
     public DbSet<GpsDevice> GpsDevices => Set<GpsDevice>();
 
     public DbSet<BoatLatestLocation> BoatLatestLocations => Set<BoatLatestLocation>();
