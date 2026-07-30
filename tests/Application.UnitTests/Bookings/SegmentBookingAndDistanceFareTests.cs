@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -343,7 +344,14 @@ public class SegmentBookingAndDistanceFareTests
                     Adult("A1", "BB", "HB"),
                     Adult("A2", "BB", "HB") with { TicketTypeCode = "CHILD", BirthYear = 2020 },
                     Adult("A1", "HB", "LT"),
-                    Adult("A2", "HB", "LT") with { TicketTypeCode = "INFANT", BirthYear = 2026 }
+                    Adult("A2", "HB", "LT") with
+                    {
+                        SeatNumber = null,
+                        TicketTypeCode = "INFANT",
+                        PassengerName = "Em Be",
+                        BirthYear = 2026,
+                        CompanionPassengerName = "Nguyen Van A"
+                    }
                 ],
                 null),
             CancellationToken.None);
@@ -359,6 +367,45 @@ public class SegmentBookingAndDistanceFareTests
             .Select(x => x.UnitPrice)
             .ToList()
             .ShouldBe([9000m, 10000m], ignoreOrder: true);
+    }
+
+    [Test]
+    public async Task LapInfantUsesRequestedCompanionNameInsteadOfFirstAdultOnSegment()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-INFANT-NAMED-COMPANION", withDistances: true);
+        var handler = CreateHandler(context, userContext);
+
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-INFANT-NAMED-COMPANION",
+                [
+                    Adult("A1", "BB", "LT") with { PassengerName = "Nguoi Lon Mot" },
+                    Adult("A2", "BB", "LT") with { PassengerName = "Nguoi Lon Hai" },
+                    Adult("A1", "BB", "LT") with
+                    {
+                        SeatNumber = null,
+                        TicketTypeCode = "INFANT",
+                        PassengerName = "Em Be",
+                        BirthYear = 2026,
+                        CompanionPassengerName = "Nguoi Lon Hai"
+                    }
+                ],
+                null),
+            CancellationToken.None);
+
+        var passengers = context.Set<BookingPassenger>()
+            .Where(p => p.BookingId == result.BookingId)
+            .Include(p => p.TripSeat)
+                .ThenInclude(ts => ts!.Seat)
+            .ToList();
+        var infant = passengers.Single(x => x.PassengerType == "INFANT");
+        var secondAdult = passengers.Single(x => x.FullName == "Nguoi Lon Hai");
+
+        infant.Note.ShouldBe($"{LapInfantTicketSupport.CompanionNotePrefix}Nguoi Lon Hai");
+        var companionByInfantId = LapInfantTicketSupport.AssignInfantsToCompanions(passengers);
+        companionByInfantId[infant.Id].ShouldBe(secondAdult.Id);
     }
 
     [Test]
@@ -378,8 +425,15 @@ public class SegmentBookingAndDistanceFareTests
             new CreateBookingCommand(
                 "TR-INFANT-FUTURE",
                 [
-                    Adult("A1", "BB", "HB"),
-                    Adult("A2", "HB", "LT") with { TicketTypeCode = "INFANT", BirthYear = 2027 }
+                    Adult("A1", "HB", "LT"),
+                    Adult("A2", "HB", "LT") with
+                    {
+                        SeatNumber = null,
+                        TicketTypeCode = "INFANT",
+                        PassengerName = "Em Be",
+                        BirthYear = 2027,
+                        CompanionPassengerName = "Nguyen Van A"
+                    }
                 ],
                 null),
             CancellationToken.None));

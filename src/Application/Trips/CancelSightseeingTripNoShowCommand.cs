@@ -121,6 +121,13 @@ public sealed class CancelSightseeingTripNoShowCommandHandler
                 "Chuyến đã chạy hoặc đã hoàn thành nên không thể hủy no-show.")]);
         }
 
+        if (trip.TripStops.Any(x => x.ActualDepartureTime.HasValue
+            || string.Equals(x.StopStatus, TripStopStatuses.Departed, StringComparison.OrdinalIgnoreCase)))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(trip.TripStatus),
+                "Tàu đã rời bến nên không thể hủy no-show.")]);
+        }
+
         if (trip.TripStatus == TripStatus.Cancelled)
         {
             throw new ValidationException([new ValidationFailure(nameof(trip.TripStatus),

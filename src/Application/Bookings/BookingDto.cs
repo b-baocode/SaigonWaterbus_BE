@@ -38,7 +38,16 @@ public sealed record BookingDetailDto(
     string? RouteType,
     string? ReturnTripCode = null,
     DateTimeOffset? ReturnDeparture = null,
-    BookingInsuranceDto? Insurance = null);
+    BookingInsuranceDto? Insurance = null,
+    Guid? TripId = null,
+    string? BoatCode = null,
+    string? BoatName = null,
+    Guid? ReturnTripId = null,
+    string? ReturnBoatCode = null,
+    string? ReturnBoatName = null,
+    string? ContactName = null,
+    string? ContactPhone = null,
+    string? ContactEmail = null);
 
 public sealed record BookingInsuranceDto(
     Guid InsurancePackageId,
@@ -143,4 +152,9 @@ public sealed record BookingItemDto(
     bool IsLapInfant = false,
     Guid? CompanionPassengerId = null,
     string? CompanionPassengerName = null,
-    bool UsesCompanionTicket = false);
+    bool UsesCompanionTicket = false,
+    int? BirthYear = null,
+    string? BoatCode = null,
+    string? BoatName = null,
+    Guid? TripId = null,
+    string? PassengerEmail = null);

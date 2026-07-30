@@ -111,7 +111,12 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 isLapInfant,
                 companion?.Id,
                 companion?.FullName,
-                usesCompanionTicket && companion is not null);
+                usesCompanionTicket && companion is not null,
+                i.BirthYear,
+                legTrip?.Boat?.Code,
+                legTrip?.Boat?.Name,
+                legTrip?.Id,
+                i.Email);
         }).ToList();
 
         return new BookingDetailDto(
@@ -155,7 +160,16 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             booking.Trip?.Route.RouteType,
             booking.ReturnTrip?.TripCode,
             booking.ReturnTrip?.DepartureTime,
-            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            booking.Trip?.Id,
+            booking.Trip?.Boat?.Code,
+            booking.Trip?.Boat?.Name,
+            booking.ReturnTrip?.Id,
+            booking.ReturnTrip?.Boat?.Code,
+            booking.ReturnTrip?.Boat?.Name,
+            booking.ContactName,
+            booking.ContactPhone,
+            booking.ContactEmail);
     }
 
     private static string? ResolveDisplayTicketStatus(
@@ -190,6 +204,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
 
         return await _context.Set<Trip>()
             .AsNoTracking()
+            .Include(t => t.Boat)
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)

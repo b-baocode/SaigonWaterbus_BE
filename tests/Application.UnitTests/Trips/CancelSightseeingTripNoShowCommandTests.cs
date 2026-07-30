@@ -75,6 +75,39 @@ public class CancelSightseeingTripNoShowCommandTests
         trip.TripStatus.ShouldBe(TripStatus.Scheduled);
     }
 
+    [Test]
+    public async Task RejectsNoShowCancellationWhenBoatAlreadyDepartedEvenIfTripStatusWasNotUpdated()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var trip = await SeedTripAsync(context, "SIG-NO-SHOW-3", RouteTypes.SightseeingLoop);
+        var station = new Station
+        {
+            StationCode = "BD",
+            StationName = "Bến Bạch Đằng",
+            Status = StationStatus.Active
+        };
+        context.Set<TripStop>().Add(new TripStop
+        {
+            Trip = trip,
+            TripId = trip.Id,
+            Station = station,
+            StationId = station.Id,
+            StopOrder = 1,
+            PlannedDepartureTime = Now.AddMinutes(-5),
+            ActualDepartureTime = Now,
+            StopStatus = TripStopStatuses.Departed
+        });
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new CancelSightseeingTripNoShowCommandHandler(context, new FixedTimeProvider(Now))
+                .Handle(new CancelSightseeingTripNoShowCommand(trip.Id), CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("Tàu đã rời bến"));
+        trip.TripStatus.ShouldBe(TripStatus.Scheduled);
+    }
+
     private static async Task<Trip> SeedTripAsync(
         Infrastructure.Data.ApplicationDbContext context,
         string tripCode,

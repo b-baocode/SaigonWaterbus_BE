@@ -371,7 +371,9 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
             plan.RouteStops,
             departureTime,
-            plan.StayDurationMinutesByStopOrder);
+            plan.StayDurationMinutesByStopOrder,
+            plan.Route.RouteType,
+            plan.Route.EstimatedDurationMin);
         var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
 
         if (existingDepartureKeys.Contains((plan.Route.Id, departureTime)))

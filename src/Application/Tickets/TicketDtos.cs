@@ -66,7 +66,10 @@ public sealed record TicketScanDto(
     Guid? ToStationId = null,
     Guid? BoatId = null,
     bool CanCheckIn = false,
-    bool CanCheckOut = false);
+    bool CanCheckOut = false,
+    /// <summary>Giá vé của hành khách gắn QR (BookingPassenger.UnitPrice). INFANT đi kèm thường 0.</summary>
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    decimal? UnitPrice = null);
 
 public sealed record TicketScanPassengerDto(
     Guid PassengerId,
@@ -84,4 +87,6 @@ public sealed record TicketScanPassengerDto(
     bool IsLapInfant = false,
     Guid? CompanionPassengerId = null,
     string? CompanionPassengerName = null,
-    bool UsesCompanionTicket = false);
+    bool UsesCompanionTicket = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    decimal? UnitPrice = null);

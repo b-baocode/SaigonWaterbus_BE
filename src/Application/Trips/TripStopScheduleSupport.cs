@@ -98,9 +98,15 @@ internal static class TripStopScheduleSupport
     public static IReadOnlyList<TripStopDraft> BuildFromRouteStops(
         IEnumerable<RouteStop> routeStops,
         DateTimeOffset departureTimeUtc,
-        IReadOnlyDictionary<int, int>? stayDurationMinutesByStopOrder = null)
+        IReadOnlyDictionary<int, int>? stayDurationMinutesByStopOrder = null,
+        string? routeType = null,
+        decimal? routeEstimatedDurationMin = null)
     {
         var orderedStops = routeStops.OrderBy(x => x.StopOrder).ToList();
+        var fallbackTravelMinutes = ResolveFallbackTravelMinutes(
+            orderedStops,
+            routeType,
+            routeEstimatedDurationMin);
         var drafts = new List<TripStopDraft>();
         var previousDeparture = departureTimeUtc;
         for (var i = 0; i < orderedStops.Count; i++)
@@ -115,7 +121,7 @@ internal static class TripStopScheduleSupport
             else
             {
                 plannedArrival = RoundUpToWholeMinute(previousDeparture.AddMinutes(
-                    (double)(orderedStops[i].StandardTravelMin ?? DefaultTravelMinutes)));
+                    (double)(orderedStops[i].StandardTravelMin ?? fallbackTravelMinutes)));
                 var stayDurationMinutes = ResolveStayDurationMinutes(
                     orderedStops[i].StopOrder,
                     isFirstStop: false,
@@ -143,6 +149,35 @@ internal static class TripStopScheduleSupport
         }
 
         return drafts;
+    }
+
+    private static decimal ResolveFallbackTravelMinutes(
+        IReadOnlyList<RouteStop> orderedStops,
+        string? routeType,
+        decimal? routeEstimatedDurationMin)
+    {
+        if (!string.Equals(routeType, RouteTypes.SightseeingLoop, StringComparison.OrdinalIgnoreCase)
+            || !routeEstimatedDurationMin.HasValue
+            || routeEstimatedDurationMin.Value <= 0
+            || orderedStops.Count < 2)
+        {
+            return DefaultTravelMinutes;
+        }
+
+        var travelLegs = orderedStops.Skip(1).ToList();
+        var missingLegCount = travelLegs.Count(x => !x.StandardTravelMin.HasValue);
+        if (missingLegCount == 0)
+        {
+            return DefaultTravelMinutes;
+        }
+
+        var knownTravelMinutes = travelLegs
+            .Where(x => x.StandardTravelMin.HasValue)
+            .Sum(x => x.StandardTravelMin!.Value);
+        var remainingTravelMinutes = routeEstimatedDurationMin.Value - knownTravelMinutes;
+        return remainingTravelMinutes > 0
+            ? remainingTravelMinutes / missingLegCount
+            : DefaultTravelMinutes;
     }
 
     public static DateTimeOffset RoundUpToWholeMinute(DateTimeOffset value)
@@ -221,7 +256,11 @@ internal static class TripStopScheduleSupport
         }
         else if (trip.Route is not null && trip.Route.RouteStops.Count > 0)
         {
-            var drafts = BuildFromRouteStops(trip.Route.RouteStops, trip.DepartureTime);
+            var drafts = BuildFromRouteStops(
+                trip.Route.RouteStops,
+                trip.DepartureTime,
+                routeType: trip.Route.RouteType,
+                routeEstimatedDurationMin: trip.Route.EstimatedDurationMin);
             var fromDraft = fromStopOrder.HasValue
                 ? drafts.FirstOrDefault(d => d.StopOrder == fromStopOrder.Value)
                 : null;
@@ -324,7 +363,11 @@ internal static class TripStopScheduleSupport
         }
 
         var orderedRouteStops = trip.Route.RouteStops.OrderBy(x => x.StopOrder).ToList();
-        return BuildFromRouteStops(orderedRouteStops, trip.DepartureTime)
+        return BuildFromRouteStops(
+                orderedRouteStops,
+                trip.DepartureTime,
+                routeType: trip.Route.RouteType,
+                routeEstimatedDurationMin: trip.Route.EstimatedDurationMin)
             .Select((draft, index) =>
             {
                 var stationImageUrls = TripMediaSupport.CreateStationImageUrls(draft.Station);

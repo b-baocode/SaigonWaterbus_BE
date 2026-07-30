@@ -109,7 +109,8 @@ public sealed record TripIncidentInfoDto(
 public sealed record TripBoatDto(
     Guid VesselId,
     string VesselName,
-    [property: JsonIgnore] string VesselCode,
+    [property: JsonIgnore]
+    string VesselCode,
     [property: JsonIgnore] int Capacity,
     [property: JsonIgnore] string Status,
     [property: JsonIgnore] string? ImageUrl = null,

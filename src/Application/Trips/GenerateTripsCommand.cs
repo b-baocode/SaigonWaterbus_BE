@@ -269,7 +269,9 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
                 routeStops,
                 departureTime,
-                stayDurationMinutesByStopOrder);
+                stayDurationMinutesByStopOrder,
+                route.RouteType,
+                route.EstimatedDurationMin);
             var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
             var requestedWindow = new TripScheduleSupport.BoatScheduleWindow(
                 "(new)",

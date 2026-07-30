@@ -11,8 +11,6 @@ namespace SaigonWaterbus.Application.Tickets;
 
 internal static class TicketIssueSupport
 {
-    private const int BookingQrTokenByteCount = 24;
-
     public static async Task<IReadOnlyList<Ticket>> EnsureRegularBookingPassengerTicketsAsync(
         IApplicationDbContext context,
         Booking booking,
@@ -74,10 +72,10 @@ internal static class TicketIssueSupport
                 BookingId = booking.Id,
                 BookingPassengerId = passenger.Id,
                 TicketCode = await GenerateTicketCodeAsync(context, now, cancellationToken),
-                QrToken = await GenerateQrTokenAsync(context, cancellationToken),
                 TicketStatus = TicketStatus.Active,
                 IssuedAt = now
             };
+            ticket.QrToken = await GenerateQrTokenAsync(context, ticket.TicketCode, cancellationToken);
 
             context.Tickets.Add(ticket);
             createdTickets.Add(ticket);
@@ -117,15 +115,18 @@ internal static class TicketIssueSupport
 
     public static async Task<string> GenerateQrTokenAsync(
         IApplicationDbContext context,
+        string ticketCode,
         CancellationToken cancellationToken)
     {
-        for (var attempt = 0; attempt < 50; attempt++)
+        var token = ticketCode.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(token))
         {
-            var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(24));
-            if (!await context.Tickets.AnyAsync(x => x.QrToken == token, cancellationToken))
-            {
-                return token;
-            }
+            throw new ValidationException([new ValidationFailure("qrToken", "Khong the tao QR token rong.")]);
+        }
+
+        if (!await context.Tickets.AnyAsync(x => x.QrToken == token, cancellationToken))
+        {
+            return token;
         }
 
         throw new ValidationException([new ValidationFailure("qrToken", "Khong the tao QR token duy nhat.")]);
@@ -145,14 +146,17 @@ internal static class TicketIssueSupport
             return false;
         }
 
-        for (var attempt = 0; attempt < 50; attempt++)
+        var token = booking.BookingCode.Trim().ToUpperInvariant();
+        if (string.IsNullOrWhiteSpace(token))
         {
-            var token = "BK" + Convert.ToHexString(RandomNumberGenerator.GetBytes(BookingQrTokenByteCount));
-            if (!await context.Set<Booking>().AnyAsync(x => x.CharterBookingQrToken == token, cancellationToken))
-            {
-                booking.CharterBookingQrToken = token;
-                return true;
-            }
+            throw new ValidationException([new ValidationFailure("bookingQrToken",
+                "Khong the tao QR chung khi bookingCode rong.")]);
+        }
+
+        if (!await context.Set<Booking>().AnyAsync(x => x.CharterBookingQrToken == token, cancellationToken))
+        {
+            booking.CharterBookingQrToken = token;
+            return true;
         }
 
         throw new ValidationException([new ValidationFailure("bookingQrToken",

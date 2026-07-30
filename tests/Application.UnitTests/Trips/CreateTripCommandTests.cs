@@ -508,6 +508,30 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task CreateTripUsesRouteEstimatedDurationForSightseeingLoopWhenStopTravelIsMissing()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var station = Station("BD", "Bến Bạch Đằng");
+        var route = Route("LOOP-BD", station, station);
+        route.RouteType = RouteTypes.SightseeingLoop;
+        route.EstimatedDurationMin = 49.94m;
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = null;
+        var boat = BoatWithSeats("BOAT-SIGHT", seatCount: 3, seatSetupType: SeatSetupType.StandardAndVip);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, departureTime);
+
+        var result = await new CreateTripCommandHandler(context)
+            .Handle(new CreateTripCommand("LOOP-BD", "BOAT-SIGHT", DateOnly.FromDateTime(departureTime.Date), departureTime), CancellationToken.None);
+
+        result.ArrivalTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay.ShouldBe(new TimeSpan(8, 50, 0));
+        var trip = await context.Trips.SingleAsync();
+        (trip.ArrivalTime - trip.DepartureTime).TotalMinutes.ShouldBe(50);
+    }
+
+    [Test]
     public async Task ReplaceTripBoatRemapsBookedPassengersToSameSeatCodesOnNewBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();

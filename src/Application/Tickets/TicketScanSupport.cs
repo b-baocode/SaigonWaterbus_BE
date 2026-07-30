@@ -217,7 +217,8 @@ internal static class TicketScanSupport
             booking.ToStationId,
             booking.BoatId,
             CanCheckIn(ticket, booking, now),
-            CanCheckOut(ticket, booking, now));
+            CanCheckOut(ticket, booking, now),
+            ticketPassenger?.UnitPrice);
     }
 
     private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking, DateTimeOffset? now)
@@ -307,7 +308,8 @@ internal static class TicketScanSupport
             toStationId,
             trip?.BoatId,
             CanCheckIn(ticket, booking, now),
-            CanCheckOut(ticket, booking, now));
+            CanCheckOut(ticket, booking, now),
+            ticketPassenger?.UnitPrice);
     }
 
     private static bool CanCheckIn(Ticket ticket, Booking booking, DateTimeOffset? now) =>
@@ -347,5 +349,6 @@ internal static class TicketScanSupport
             LapInfantTicketSupport.IsLapInfant(passenger),
             companion?.Id,
             companion?.FullName,
-            LapInfantTicketSupport.UsesCompanionTicket(passenger));
+            LapInfantTicketSupport.UsesCompanionTicket(passenger),
+            passenger.UnitPrice);
 }
