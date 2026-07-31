@@ -29,8 +29,22 @@ public static class KnowledgeSearchSupport
     public const int DefaultTake = 3;
     public const int MaxTake = 5;
 
-    /// <summary>Cắt content mỗi hit để một entry viết quá dài không làm phình context của LLM.</summary>
-    public const int MaxContentChars = 2000;
+    /// <summary>
+    /// Cắt content MỖI hit để một entry viết quá dài không làm phình context của LLM.
+    /// Đủ rộng cho admin gom cả một chính sách vào một mục (yêu cầu của ô cố định bên FE) —
+    /// vượt mức này thì phần đuôi model KHÔNG nhìn thấy, dù web vẫn hiển thị đầy đủ.
+    /// </summary>
+    public const int MaxContentChars = 4000;
+
+    /// <summary>
+    /// Hạn mức TỔNG cho toàn bộ hit trả về một lượt. Cần vì tool trả tối đa
+    /// <see cref="MaxTake"/> hit: không có hạn mức tổng thì mấy mục dài cùng khớp sẽ nhân lên
+    /// thành hàng chục nghìn ký tự nhét vào mỗi lượt gọi LLM.
+    /// </summary>
+    public const int MaxTotalContentChars = 8000;
+
+    /// <summary>Còn ít hơn ngần này thì thôi không kèm hit tiếp — một mẩu cụt chẳng giúp được model.</summary>
+    private const int MinUsefulContentChars = 300;
 
     /// <summary>Điểm cho mỗi token khớp, theo độ tin cậy của vùng khớp.</summary>
     private const int KeywordWeight = 3;
@@ -167,8 +181,35 @@ public static class KnowledgeSearchSupport
         return new KnowledgeMatchScore(score, matchedTokens, strongKeywordHit);
     }
 
-    public static string TruncateContent(string content) =>
-        content.Length <= MaxContentChars
-            ? content
-            : content[..MaxContentChars] + "...";
+    public static string TruncateContent(string content) => TruncateContent(content, MaxContentChars);
+
+    private static string TruncateContent(string content, int limit) =>
+        content.Length <= limit ? content : content[..limit] + "...";
+
+    /// <summary>
+    /// Cắt nội dung của cả loạt hit sao cho tổng không vượt <see cref="MaxTotalContentChars"/>.
+    /// Hit xếp trước (khớp tốt hơn) được ưu tiên giữ nguyên; hết ngân sách thì DỪNG kèm hit
+    /// tiếp thay vì trả về một mẩu cụt vô nghĩa.
+    ///
+    /// Trả về danh sách có thể NGẮN HƠN đầu vào — bên gọi ghép lại theo thứ tự (đã giữ nguyên).
+    /// </summary>
+    public static IReadOnlyList<string> ApplyContentBudget(IEnumerable<string> contents)
+    {
+        var result = new List<string>();
+        var remaining = MaxTotalContentChars;
+
+        foreach (var content in contents)
+        {
+            if (remaining < MinUsefulContentChars)
+            {
+                break;
+            }
+
+            var trimmed = TruncateContent(content, Math.Min(MaxContentChars, remaining));
+            result.Add(trimmed);
+            remaining -= trimmed.Length;
+        }
+
+        return result;
+    }
 }

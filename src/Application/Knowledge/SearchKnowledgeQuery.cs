@@ -42,11 +42,15 @@ public sealed class SearchKnowledgeQueryHandler
             .Select(x => new KnowledgeSearchCandidate(x.Title, x.Content, x.Category, x.Keywords, x.DisplayOrder))
             .ToListAsync(cancellationToken);
 
-        return KnowledgeSearchSupport.Rank(corpus, request.Query, request.Take)
-            .Select(x => new KnowledgeSearchHitDto(
-                x.Title,
-                x.Category,
-                KnowledgeSearchSupport.TruncateContent(x.Content)))
+        var ranked = KnowledgeSearchSupport.Rank(corpus, request.Query, request.Take);
+
+        // Cắt theo hạn mức TỔNG, không phải từng hit riêng lẻ: hit xếp trước giữ nguyên, hết
+        // ngân sách thì bỏ hẳn hit sau. Danh sách trả về có thể ngắn hơn ranked nên phải Take.
+        var contents = KnowledgeSearchSupport.ApplyContentBudget(ranked.Select(x => x.Content));
+
+        return ranked
+            .Take(contents.Count)
+            .Select((x, i) => new KnowledgeSearchHitDto(x.Title, x.Category, contents[i]))
             .ToList();
     }
 }

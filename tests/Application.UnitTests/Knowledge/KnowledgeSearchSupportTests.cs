@@ -175,4 +175,31 @@ public class KnowledgeSearchSupportTests
         truncated.ShouldEndWith("...");
         KnowledgeSearchSupport.TruncateContent("ngan gon").ShouldBe("ngan gon");
     }
+
+    [Test]
+    public void NhieuHitDaiKhongDuocVuotHanMucTong()
+    {
+        // 5 muc dai bang nhau: neu chi cat tung hit thi tong = 5 x MaxContentChars,
+        // phinh context LLM. Hạn muc tong phai chan lai.
+        var contents = Enumerable.Range(0, 5)
+            .Select(_ => new string('x', KnowledgeSearchSupport.MaxContentChars))
+            .ToArray();
+
+        var budgeted = KnowledgeSearchSupport.ApplyContentBudget(contents);
+
+        budgeted.Sum(c => c.Length).ShouldBeLessThanOrEqualTo(KnowledgeSearchSupport.MaxTotalContentChars);
+        budgeted.Count.ShouldBeLessThan(contents.Length);   // hit sau bi bo han
+    }
+
+    [Test]
+    public void HitXepTruocDuocGiuNguyenKhiConNganSach()
+    {
+        var contents = new[] { "ngan gon", new string('y', 500) };
+
+        var budgeted = KnowledgeSearchSupport.ApplyContentBudget(contents);
+
+        budgeted.Count.ShouldBe(2);
+        budgeted[0].ShouldBe("ngan gon");          // khong bi dung toi
+        budgeted[1].Length.ShouldBe(500);          // van con nam trong ngan sach
+    }
 }

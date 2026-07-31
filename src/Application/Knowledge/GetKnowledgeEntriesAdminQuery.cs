@@ -50,10 +50,12 @@ public sealed class GetKnowledgeEntriesAdminQueryHandler
             query = query.Where(x => x.Category == category);
         }
 
+        // Cùng thứ tự với danh sách công khai (DisplayOrder rồi ngày tạo) để admin nhìn màn
+        // quản lý là biết web đang hiển thị theo thứ tự nào.
         var entries = await query
             .OrderBy(x => x.Category)
             .ThenBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Title)
+            .ThenBy(x => x.Created)
             .ToListAsync(cancellationToken);
 
         return entries.Select(KnowledgeEntrySupport.ToDto).ToList();
