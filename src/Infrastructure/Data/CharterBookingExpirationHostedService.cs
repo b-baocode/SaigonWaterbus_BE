@@ -78,12 +78,15 @@ public sealed class CharterBookingExpirationHostedService : BackgroundService
             _databaseUnavailableWarningLogged = false;
             var processor = scope.ServiceProvider.GetRequiredService<ICharterBookingExpirationProcessor>();
             var result = await processor.CleanupExpiredAsync(_timeProvider.GetUtcNow(), cancellationToken);
-            if (result.ExpiredPayments > 0 || result.ExpiredCharterBookings > 0)
+            if (result.ExpiredPayments > 0
+                || result.ExpiredCharterBookings > 0
+                || result.CleanedCharterRoutes > 0)
             {
                 _logger.LogInformation(
-                    "Expired {ExpiredPaymentCount} payment links and {ExpiredCharterBookingCount} charter bookings.",
+                    "Expired {ExpiredPaymentCount} payment links, {ExpiredCharterBookingCount} charter bookings and cleaned {CleanedCharterRouteCount} charter routes.",
                     result.ExpiredPayments,
-                    result.ExpiredCharterBookings);
+                    result.ExpiredCharterBookings,
+                    result.CleanedCharterRoutes);
             }
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

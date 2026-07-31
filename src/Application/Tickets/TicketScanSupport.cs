@@ -218,7 +218,9 @@ internal static class TicketScanSupport
             booking.BoatId,
             CanCheckIn(ticket, booking, now),
             CanCheckOut(ticket, booking, now),
-            ticketPassenger?.UnitPrice);
+            ticketPassenger?.UnitPrice,
+            booking.FromStation?.StationCode,
+            booking.ToStation?.StationCode);
     }
 
     private static TicketScanDto ToBookingScanDto(Ticket ticket, Booking booking, DateTimeOffset? now)
@@ -244,6 +246,8 @@ internal static class TicketScanSupport
         // thấy đúng chỗ khách lên/xuống; dữ liệu cũ chưa lưu chặng thì rơi về đầu/cuối chuyến.
         var fromStationName = ticketPassenger?.FromStation?.StationName ?? fromStop?.Station.StationName;
         var toStationName = ticketPassenger?.ToStation?.StationName ?? toStop?.Station.StationName;
+        var fromStationCode = ticketPassenger?.FromStation?.StationCode ?? fromStop?.Station.StationCode;
+        var toStationCode = ticketPassenger?.ToStation?.StationCode ?? toStop?.Station.StationCode;
         var fromStationId = ticketPassenger?.FromStationId ?? fromStop?.StationId;
         var toStationId = ticketPassenger?.ToStationId ?? toStop?.StationId;
         var segmentTimes = trip is null
@@ -309,7 +313,9 @@ internal static class TicketScanSupport
             trip?.BoatId,
             CanCheckIn(ticket, booking, now),
             CanCheckOut(ticket, booking, now),
-            ticketPassenger?.UnitPrice);
+            ticketPassenger?.UnitPrice,
+            fromStationCode,
+            toStationCode);
     }
 
     private static bool CanCheckIn(Ticket ticket, Booking booking, DateTimeOffset? now) =>

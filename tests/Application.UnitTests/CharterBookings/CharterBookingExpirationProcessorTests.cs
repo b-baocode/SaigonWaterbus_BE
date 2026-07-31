@@ -2,6 +2,7 @@ using NUnit.Framework;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
@@ -170,6 +171,56 @@ public class CharterBookingExpirationProcessorTests
         booking.HoldExpiresAt.ShouldBeNull();
     }
 
+    [Test]
+    public async Task CleanupRemovesOwnedRouteForPreviouslyCancelledCharterBookingWithoutTrips()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var route = OwnedRoute("CB-CANCELLED-ROUTE");
+        var booking = CharterBooking("CB-CANCELLED-ROUTE", BookingStatus.Cancelled, route);
+        context.AddRange(route, booking);
+        await context.SaveChangesAsync();
+        var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
+
+        var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
+
+        result.CleanedCharterRoutes.ShouldBe(1);
+        context.Set<Route>().Any(x => x.Id == route.Id).ShouldBeFalse();
+        booking.CharterRouteId.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task CleanupInactivatesOwnedRouteForPreviouslyExpiredCharterBookingWithTrips()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var route = OwnedRoute("CB-EXPIRED-ROUTE");
+        var booking = CharterBooking("CB-EXPIRED-ROUTE", BookingStatus.Expired, route);
+        var trip = new Trip
+        {
+            RouteId = route.Id,
+            Route = route,
+            TripCode = "TRIP-CB-EXPIRED-ROUTE",
+            TripType = TripTypes.Charter,
+            SourceBookingId = booking.Id,
+            OperatingDate = new DateOnly(2026, 7, 7),
+            DepartureTime = now.AddHours(1),
+            ArrivalTime = now.AddHours(2),
+            CapacitySnapshot = 10,
+            TripStatus = TripStatus.Cancelled
+        };
+        context.AddRange(route, booking, trip);
+        await context.SaveChangesAsync();
+        var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
+
+        var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
+
+        result.CleanedCharterRoutes.ShouldBe(1);
+        var savedRoute = context.Set<Route>().Single(x => x.Id == route.Id);
+        savedRoute.Status.ShouldBe("Inactive");
+        booking.CharterRouteId.ShouldBe(route.Id);
+    }
+
     private sealed class TestBoatHoldService : IBoatHoldService
     {
         public List<ReleaseCall> Releases { get; } = [];
@@ -212,4 +263,28 @@ public class CharterBookingExpirationProcessorTests
         TimeOnly? StartTime,
         BoatRentalUnit RentalUnit,
         int DurationValue);
+
+    private static Route OwnedRoute(string bookingCode) =>
+        new()
+        {
+            RouteCode = CharterBookingRouteSupport.BuildCompactRouteCodeBase(bookingCode),
+            RouteName = $"Charter {bookingCode}: Bến A - Bến B",
+            RouteType = RouteTypes.Charter,
+            Description = $"Route charter ghép từ booking {bookingCode}.",
+            Status = "Active",
+            IsBookable = false
+        };
+
+    private static Booking CharterBooking(string bookingCode, BookingStatus status, Route route) =>
+        new()
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = bookingCode,
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = status,
+            PaymentStatus = "Unpaid",
+            CharterRouteId = route.Id,
+            CharterRoute = route
+        };
 }

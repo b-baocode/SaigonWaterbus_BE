@@ -69,7 +69,11 @@ public sealed record TicketScanDto(
     bool CanCheckOut = false,
     /// <summary>Giá vé của hành khách gắn QR (BookingPassenger.UnitPrice). INFANT đi kèm thường 0.</summary>
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    decimal? UnitPrice = null);
+    decimal? UnitPrice = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? FromStationCode = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ToStationCode = null);
 
 public sealed record TicketScanPassengerDto(
     Guid PassengerId,

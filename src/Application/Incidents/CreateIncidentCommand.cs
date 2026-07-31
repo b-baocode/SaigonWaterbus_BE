@@ -115,6 +115,12 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
         }
 
         _context.Incidents.Add(incident);
+        await IncidentSupport.ClearBoatLiveTripAsync(
+            _context,
+            boat.Id,
+            now,
+            IncidentSupport.IncidentLocationStatus,
+            cancellationToken);
         IReadOnlyList<Notification> createdNotifications = trip is not null && oldTripStatus.HasValue
             ? await NotificationSupport.AddTripStatusChangedNotificationsAsync(
                 _context,

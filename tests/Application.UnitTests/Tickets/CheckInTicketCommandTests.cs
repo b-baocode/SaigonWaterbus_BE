@@ -192,6 +192,81 @@ public class CheckInTicketCommandTests
     }
 
     [Test]
+    public async Task CheckInBeforeBoardingStopArrivesIsRejected()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context);
+        await AddTripStopAsync(context, ticket, 1, TripStopStatuses.Scheduled, actualArrival: null, stayDurationMinutes: 5);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(1));
+        var handler = new CheckInTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var ex = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        ex.Errors["ticket"].Single().ShouldContain("chưa cập bến khách lên");
+        context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.Active);
+        context.TicketScanEvents.Single().Result.ShouldBe(TicketScanResult.Failed);
+    }
+
+    [Test]
+    public async Task CheckInWithinBoardingStopDwellWindowSucceeds()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context);
+        await AddTripStopAsync(
+            context,
+            ticket,
+            1,
+            TripStopStatuses.Arrived,
+            actualArrival: now.AddMinutes(-2),
+            stayDurationMinutes: 5);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(1));
+        var handler = new CheckInTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None);
+
+        result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedIn));
+        context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.CheckedIn);
+    }
+
+    [Test]
+    public async Task CheckInAfterBoardingStopDwellWindowIsRejected()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context);
+        await AddTripStopAsync(
+            context,
+            ticket,
+            1,
+            TripStopStatuses.Arrived,
+            actualArrival: now.AddMinutes(-6),
+            stayDurationMinutes: 5);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(1));
+        var handler = new CheckInTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var ex = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        ex.Errors["ticket"].Single().ShouldContain("quá thời gian dừng tại bến khách lên");
+        context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.Active);
+    }
+
+    [Test]
     public async Task CheckedInTicketCannotBeCheckedInAgain()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -353,6 +428,46 @@ public class CheckInTicketCommandTests
             handler.Handle(new CheckOutTicketCommand(ticket.TicketCode), CancellationToken.None));
 
         ex.Errors["ticket"].Single().ShouldBe("Ve chua check-in nen chua the check-out.");
+    }
+
+    [Test]
+    public async Task CheckOutBeforeAlightingStopArrivesIsRejected()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var now = new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(
+            context,
+            TicketStatus.CheckedIn,
+            checkedInAt);
+        await AddTripStopAsync(
+            context,
+            ticket,
+            1,
+            TripStopStatuses.Departed,
+            actualArrival: checkedInAt.AddMinutes(-2),
+            stayDurationMinutes: 5,
+            actualDeparture: checkedInAt.AddMinutes(3));
+        await AddTripStopAsync(
+            context,
+            ticket,
+            2,
+            TripStopStatuses.Scheduled,
+            actualArrival: null,
+            stayDurationMinutes: 5,
+            isLastStop: true);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, checkedInAt.AddHours(-1), now.AddHours(1));
+        var handler = new CheckOutTicketCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(now));
+
+        var ex = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        ex.Errors["ticket"].Single().ShouldContain("chưa cập bến khách xuống");
+        context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.CheckedIn);
     }
 
     [Test]
@@ -600,6 +715,36 @@ public class CheckInTicketCommandTests
             AssignedAt = startAt.AddHours(-1)
         });
         await context.SaveChangesAsync();
+    }
+
+    private static async Task<TripStop> AddTripStopAsync(
+        DbContext context,
+        Ticket ticket,
+        int stopOrder,
+        string stopStatus,
+        DateTimeOffset? actualArrival,
+        int stayDurationMinutes,
+        DateTimeOffset? actualDeparture = null,
+        bool isLastStop = false)
+    {
+        var trip = ticket.Booking.Trip
+            ?? throw new InvalidOperationException("Ticket test data must have a trip.");
+        var tripStop = new TripStop
+        {
+            TripId = trip.Id,
+            StationId = Guid.NewGuid(),
+            StopOrder = stopOrder,
+            StayDurationMinutes = stayDurationMinutes,
+            PlannedArrivalTime = stopOrder == 1 ? null : trip.ArrivalTime,
+            PlannedDepartureTime = isLastStop ? null : trip.DepartureTime,
+            ActualArrivalTime = actualArrival,
+            ActualDepartureTime = actualDeparture,
+            StopStatus = stopStatus
+        };
+
+        context.Set<TripStop>().Add(tripStop);
+        await context.SaveChangesAsync();
+        return tripStop;
     }
 
     private static async Task<Ticket> AddTicketToBookingAsync(
