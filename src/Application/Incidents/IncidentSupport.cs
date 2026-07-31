@@ -16,6 +16,8 @@ internal static class IncidentSupport
     public const string IncidentResolvedEvent = "IncidentResolved";
     public const string CriticalSeverity = "Critical";
     public const string HighSeverity = "High";
+    public const string IncidentLocationStatus = "incident";
+    public const string MaintenanceLocationStatus = "maintenance";
 
     public static async Task<User> EnsureCurrentUserCanReportIncidentAsync(
         IApplicationDbContext context,
@@ -149,6 +151,31 @@ internal static class IncidentSupport
                 location?.Latitude,
                 location?.Longitude),
             cancellationToken);
+    }
+
+    public static async Task ClearBoatLiveTripAsync(
+        IApplicationDbContext context,
+        Guid boatId,
+        DateTimeOffset clearedAt,
+        string status,
+        CancellationToken cancellationToken)
+    {
+        var latestLocation = await context.BoatLatestLocations
+            .SingleOrDefaultAsync(x => x.BoatId == boatId, cancellationToken);
+        if (latestLocation is null)
+        {
+            return;
+        }
+
+        latestLocation.RouteId = null;
+        latestLocation.TripId = null;
+        latestLocation.NextStationId = null;
+        latestLocation.RemainingDistanceKmToNextStation = null;
+        latestLocation.RemainingMinutesToNextStation = null;
+        latestLocation.SpeedKmh = 0;
+        latestLocation.Status = status;
+        latestLocation.ReceivedAt = clearedAt;
+        latestLocation.UpdatedAt = clearedAt;
     }
 
     public static async Task<IncidentPassengerImpactPlan> BuildPassengerImpactPlanAsync(

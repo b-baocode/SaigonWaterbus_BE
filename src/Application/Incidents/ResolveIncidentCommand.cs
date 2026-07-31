@@ -120,23 +120,11 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
     private async Task ClearBoatLiveTripAsync(
         Guid boatId,
         DateTimeOffset clearedAt,
-        CancellationToken cancellationToken)
-    {
-        var latestLocation = await _context.BoatLatestLocations
-            .SingleOrDefaultAsync(x => x.BoatId == boatId, cancellationToken);
-        if (latestLocation is null)
-        {
-            return;
-        }
-
-        latestLocation.RouteId = null;
-        latestLocation.TripId = null;
-        latestLocation.NextStationId = null;
-        latestLocation.RemainingDistanceKmToNextStation = null;
-        latestLocation.RemainingMinutesToNextStation = null;
-        latestLocation.SpeedKmh = 0;
-        latestLocation.Status = "maintenance";
-        latestLocation.ReceivedAt = clearedAt;
-        latestLocation.UpdatedAt = clearedAt;
-    }
+        CancellationToken cancellationToken) =>
+        await IncidentSupport.ClearBoatLiveTripAsync(
+            _context,
+            boatId,
+            clearedAt,
+            IncidentSupport.MaintenanceLocationStatus,
+            cancellationToken);
 }

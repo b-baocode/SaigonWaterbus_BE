@@ -133,7 +133,7 @@ public class GetTripPassengerManifestQueryTests
             DepartureTime = departure,
             ArrivalTime = departure.AddHours(1),
             CapacitySnapshot = 10,
-            TripStatus = TripStatus.Scheduled
+            TripStatus = TripStatus.Boarding
         };
         trip.TripStops.Add(new TripStop
         {
@@ -141,7 +141,10 @@ public class GetTripPassengerManifestQueryTests
             Station = stationA,
             StationId = stationA.Id,
             StopOrder = 1,
-            PlannedDepartureTime = trip.DepartureTime
+            StayDurationMinutes = 5,
+            PlannedDepartureTime = trip.DepartureTime,
+            ActualArrivalTime = Now.AddMinutes(-1),
+            StopStatus = TripStopStatuses.Arrived
         });
         trip.TripStops.Add(new TripStop
         {

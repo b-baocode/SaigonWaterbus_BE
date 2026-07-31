@@ -29,6 +29,7 @@ public sealed class Gps : IEndpointGroup
     private const double StationMatchThresholdMeters = 500;
     private const double FallbackSpeedKmh = 16;
     private const decimal DefaultTripStopTravelMinutes = 15m;
+    private const string OpenIncidentStatus = "Open";
 
     private const string StartSessionExample =
         """
@@ -563,6 +564,14 @@ public sealed class Gps : IEndpointGroup
             return Results.BadRequest(new { message = "boatCode không khớp với tàu của trip." });
         }
 
+        if (await HasOpenIncidentForBoatAsync(dbContext, trip.BoatId, cancellationToken))
+        {
+            return Results.Conflict(new
+            {
+                message = "Tàu của trip đang có sự cố mở. GPS không được hoàn tất trip cho đến khi điều tàu thay thế hoặc xử lý sự cố."
+            });
+        }
+
         if (trip.TripStatus == TripStatus.Cancelled)
         {
             return Results.BadRequest(new { message = "Trip đã bị hủy, không thể hoàn tất từ GPS." });
@@ -638,6 +647,14 @@ public sealed class Gps : IEndpointGroup
             return Results.BadRequest(new { message = "boatCode không khớp với tàu của trip." });
         }
 
+        if (await HasOpenIncidentForBoatAsync(dbContext, trip.BoatId, cancellationToken))
+        {
+            return Results.Conflict(new
+            {
+                message = "Tàu của trip đang có sự cố mở. GPS không được cập nhật stop event cho đến khi điều tàu thay thế hoặc xử lý sự cố."
+            });
+        }
+
         var tripStop = await EnsureTripStopExistsAsync(dbContext, trip, stationId, cancellationToken);
         if (tripStop is null)
         {
@@ -707,6 +724,16 @@ public sealed class Gps : IEndpointGroup
 
         return Results.Ok(response);
     }
+
+    private static Task<bool> HasOpenIncidentForBoatAsync(
+        ApplicationDbContext dbContext,
+        Guid? boatId,
+        CancellationToken cancellationToken) =>
+        boatId.HasValue
+            ? dbContext.Incidents.AnyAsync(
+                x => x.BoatId == boatId.Value && x.ResolutionStatus == OpenIncidentStatus,
+                cancellationToken)
+            : Task.FromResult(false);
 
     private static Dictionary<string, string[]> ValidateStartSessionRequest(
         string? headerDeviceId,

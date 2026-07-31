@@ -302,12 +302,15 @@ public sealed class Tickets : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new ReissueTicketCommand(codeOrToken, request.Reason), ct));
 
-    private static IResult QrImage(string codeOrToken)
+    private static IResult QrImage(HttpContext context, string codeOrToken)
     {
         if (string.IsNullOrWhiteSpace(codeOrToken))
         {
             return Results.BadRequest(new { message = "codeOrToken is required." });
         }
+
+        context.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
 
         using var qrGenerator = new QRCodeGenerator();
         using var qrData = qrGenerator.CreateQrCode(codeOrToken.Trim(), QRCodeGenerator.ECCLevel.Q);

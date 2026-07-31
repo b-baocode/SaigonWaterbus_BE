@@ -670,12 +670,15 @@ public sealed class CharterBookings : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCharterBookingManifestByQrTokenQuery(qrToken), ct));
 
-    private static IResult CharterBookingQrImage(string qrToken)
+    private static IResult CharterBookingQrImage(HttpContext context, string qrToken)
     {
         if (string.IsNullOrWhiteSpace(qrToken))
         {
             return Results.BadRequest(new { message = "qrToken is required." });
         }
+
+        context.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+        context.Response.Headers["X-Content-Type-Options"] = "nosniff";
 
         return Results.File(BuildQrPngBytes(qrToken.Trim()), "image/png");
     }

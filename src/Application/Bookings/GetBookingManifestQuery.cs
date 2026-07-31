@@ -40,7 +40,9 @@ public sealed record BookingManifestPassengerDto(
     bool IsLapInfant = false,
     Guid? CompanionPassengerId = null,
     string? CompanionPassengerName = null,
-    bool UsesCompanionTicket = false);
+    bool UsesCompanionTicket = false,
+    DateTimeOffset? IssuedAt = null,
+    int? BirthYear = null);
 
 // Booking khứ hồi: các field Return* mô tả chiều về (null với booking một chiều);
 // mỗi passenger mang TripCode của chiều mình thuộc về.
@@ -68,7 +70,9 @@ public sealed record BookingManifestDto(
     DateTimeOffset? ReturnDepartureTime = null,
     DateTimeOffset? ReturnArrivalTime = null,
     string? ReturnFromStationName = null,
-    string? ReturnToStationName = null);
+    string? ReturnToStationName = null,
+    string? BoatName = null,
+    DateOnly? OperatingDate = null);
 
 public sealed record GetBookingManifestByCodeQuery(string BookingCode) : IRequest<BookingManifestDto>;
 
@@ -150,11 +154,15 @@ internal static class BookingManifestSupport
         context.Set<Booking>()
             .AsNoTracking()
             .Include(x => x.Trip)
+                .ThenInclude(t => t!.Boat)
+            .Include(x => x.Trip)
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
                         .ThenInclude(rs => rs.Station)
             .Include(x => x.Trip)
                 .ThenInclude(t => t!.TripStops)
+            .Include(x => x.ReturnTrip)
+                .ThenInclude(t => t!.Boat)
             .Include(x => x.ReturnTrip)
                 .ThenInclude(t => t!.Route)
                     .ThenInclude(r => r.RouteStops)
@@ -281,7 +289,9 @@ internal static class BookingManifestSupport
                     isLapInfant,
                     companion?.Id,
                     companion?.FullName,
-                    usesCompanionTicket && companion is not null);
+                    usesCompanionTicket && companion is not null,
+                    ticket?.IssuedAt,
+                    passenger.BirthYear);
             })
             .ToList();
 
@@ -309,6 +319,8 @@ internal static class BookingManifestSupport
             booking.ReturnTrip?.DepartureTime,
             booking.ReturnTrip?.ArrivalTime,
             returnFromStop?.Station.StationName,
-            returnToStop?.Station.StationName);
+            returnToStop?.Station.StationName,
+            booking.Trip?.Boat?.Name,
+            booking.Trip?.OperatingDate);
     }
 }

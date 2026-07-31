@@ -2,6 +2,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -164,7 +165,8 @@ public sealed class GetTripPassengerManifestQueryHandler
                     passenger.ToStopOrder) ?? lastEndpoint;
                 var canCheckIn = BookingManifestSupport.CanCheckInBooking(passenger.Booking)
                     && currentTicket?.TicketStatus == TicketStatus.Active
-                    && !usesCompanionTicket;
+                    && !usesCompanionTicket
+                    && TicketAttendanceWindowSupport.IsWithinCheckInWindow(trip, passenger, now);
 
                 return new TripPassengerManifestItemDto(
                     passenger.Id,

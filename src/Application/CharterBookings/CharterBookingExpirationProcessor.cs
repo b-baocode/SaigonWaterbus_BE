@@ -9,7 +9,8 @@ namespace SaigonWaterbus.Application.CharterBookings;
 
 public sealed record CharterBookingExpirationCleanupResult(
     int ExpiredPayments,
-    int ExpiredCharterBookings);
+    int ExpiredCharterBookings,
+    int CleanedCharterRoutes);
 
 public interface ICharterBookingExpirationProcessor
 {
@@ -37,10 +38,12 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
     {
         var expiredPaymentCount = await ExpirePaymentLinksAsync(now, cancellationToken);
         var expiredBookings = await ExpireCharterBookingsAsync(now, cancellationToken);
+        var cleanedRoutes = await CleanupTerminalCharterRoutesAsync(cancellationToken);
 
         return new CharterBookingExpirationCleanupResult(
             expiredPaymentCount,
-            expiredBookings);
+            expiredBookings,
+            cleanedRoutes);
     }
 
     private async Task<int> ExpirePaymentLinksAsync(
@@ -186,6 +189,42 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
         }
 
         return expiredCount;
+    }
+
+    private async Task<int> CleanupTerminalCharterRoutesAsync(CancellationToken cancellationToken)
+    {
+        var bookings = await _context.Set<Booking>()
+            .Include(x => x.CharterRoute)
+            .Where(x => x.BookingType == Booking.CharterBookingType
+                && x.CharterRouteId.HasValue
+                && x.CharterRoute != null
+                && x.CharterRoute.Status == "Active"
+                && (x.BookingStatus == BookingStatus.Cancelled || x.BookingStatus == BookingStatus.Expired))
+            .ToListAsync(cancellationToken);
+
+        if (bookings.Count == 0)
+        {
+            return 0;
+        }
+
+        var routeIds = bookings
+            .Select(x => x.CharterRouteId)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .Distinct()
+            .ToHashSet();
+
+        foreach (var booking in bookings)
+        {
+            await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(_context, booking, cancellationToken);
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+
+        var remainingActiveRouteCount = await _context.Set<Route>()
+            .CountAsync(x => routeIds.Contains(x.Id) && x.Status == "Active", cancellationToken);
+
+        return routeIds.Count - remainingActiveRouteCount;
     }
 
     private sealed record BoatHoldReleaseRequest(
