@@ -10,6 +10,8 @@ public class BoatLatestLocation
 
     public Guid? TripId { get; set; }
 
+    public Guid? CurrentStationId { get; set; }
+
     public Guid? NextStationId { get; set; }
 
     public decimal Latitude { get; set; }
@@ -34,6 +36,10 @@ public class BoatLatestLocation
 
     public string Status { get; set; } = "unknown";
 
+    public string? Source { get; set; }
+
+    public DateTimeOffset? LiveAuthorityUntil { get; set; }
+
     public string? Direction { get; set; }
 
     public int? BatteryPercent { get; set; }
@@ -51,6 +57,8 @@ public class BoatLatestLocation
     public Route? Route { get; set; }
 
     public Trip? Trip { get; set; }
+
+    public Station? CurrentStation { get; set; }
 
     public Station? NextStation { get; set; }
 }

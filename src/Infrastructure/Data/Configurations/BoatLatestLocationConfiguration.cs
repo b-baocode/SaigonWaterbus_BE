@@ -15,6 +15,7 @@ public sealed class BoatLatestLocationConfiguration : IEntityTypeConfiguration<B
         builder.Property(x => x.GpsDeviceId).HasColumnName("gps_device_id").IsRequired();
         builder.Property(x => x.RouteId).HasColumnName("route_id");
         builder.Property(x => x.TripId).HasColumnName("trip_id");
+        builder.Property(x => x.CurrentStationId).HasColumnName("current_station_id");
         builder.Property(x => x.NextStationId).HasColumnName("next_station_id");
         builder.Property(x => x.Latitude).HasColumnName("latitude").HasColumnType("numeric(10,7)").IsRequired();
         builder.Property(x => x.Longitude).HasColumnName("longitude").HasColumnType("numeric(10,7)").IsRequired();
@@ -29,6 +30,8 @@ public sealed class BoatLatestLocationConfiguration : IEntityTypeConfiguration<B
         builder.Property(x => x.ReceivedAt).HasColumnName("received_at").IsRequired();
         builder.Property(x => x.Sequence).HasColumnName("sequence").IsRequired();
         builder.Property(x => x.Status).HasColumnName("status").HasMaxLength(30).IsRequired();
+        builder.Property(x => x.Source).HasColumnName("source").HasMaxLength(30);
+        builder.Property(x => x.LiveAuthorityUntil).HasColumnName("live_authority_until");
         builder.Property(x => x.Direction).HasColumnName("direction").HasMaxLength(30);
         builder.Property(x => x.BatteryPercent).HasColumnName("battery_percent");
         builder.Property(x => x.SignalStrength).HasColumnName("signal_strength");
@@ -38,6 +41,7 @@ public sealed class BoatLatestLocationConfiguration : IEntityTypeConfiguration<B
         builder.HasIndex(x => x.GpsDeviceId);
         builder.HasIndex(x => x.RouteId);
         builder.HasIndex(x => x.TripId);
+        builder.HasIndex(x => x.CurrentStationId);
         builder.HasIndex(x => x.NextStationId);
         builder.HasIndex(x => x.RecordedAt);
         builder.HasIndex(x => new { x.RouteId, x.Status });
@@ -62,6 +66,11 @@ public sealed class BoatLatestLocationConfiguration : IEntityTypeConfiguration<B
         builder.HasOne(x => x.Trip)
             .WithMany()
             .HasForeignKey(x => x.TripId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(x => x.CurrentStation)
+            .WithMany()
+            .HasForeignKey(x => x.CurrentStationId)
             .OnDelete(DeleteBehavior.SetNull);
 
         builder.HasOne(x => x.NextStation)

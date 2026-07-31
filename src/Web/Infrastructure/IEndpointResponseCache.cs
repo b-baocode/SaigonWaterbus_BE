@@ -13,6 +13,8 @@ public interface IEndpointResponseCache
         TimeSpan ttl,
         Func<CancellationToken, Task<T>> factory,
         CancellationToken cancellationToken);
+
+    Task RemoveAsync(string key, CancellationToken cancellationToken);
 }
 
 public sealed class RedisBackedEndpointResponseCache : IEndpointResponseCache
@@ -78,6 +80,19 @@ public sealed class RedisBackedEndpointResponseCache : IEndpointResponseCache
         return value;
     }
 
+    public async Task RemoveAsync(string key, CancellationToken cancellationToken)
+    {
+        _memoryCache.Remove(key);
+
+        var database = ResolveRedisDatabase();
+        if (database is null)
+        {
+            return;
+        }
+
+        await TryDeleteRedisKeyAsync(database, BuildRedisKey(key), cancellationToken);
+    }
+
     private IDatabase? ResolveRedisDatabase()
     {
         if (!_redisOptions.Enabled)
@@ -121,6 +136,21 @@ public sealed class RedisBackedEndpointResponseCache : IEndpointResponseCache
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             _logger.LogWarning(ex, "Redis response cache write failed for key {CacheKey}.", key);
+        }
+    }
+
+    private async Task TryDeleteRedisKeyAsync(
+        IDatabase database,
+        RedisKey key,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await database.KeyDeleteAsync(key).WaitAsync(cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Redis response cache delete failed for key {CacheKey}.", key);
         }
     }
 

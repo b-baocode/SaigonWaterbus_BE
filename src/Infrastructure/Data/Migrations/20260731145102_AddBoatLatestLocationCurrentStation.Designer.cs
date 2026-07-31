@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260731145102_AddBoatLatestLocationCurrentStation")]
+    partial class AddBoatLatestLocationCurrentStation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -267,10 +270,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("numeric(10,7)")
                         .HasColumnName("latitude");
 
-                    b.Property<DateTimeOffset?>("LiveAuthorityUntil")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("live_authority_until");
-
                     b.Property<decimal>("Longitude")
                         .HasColumnType("numeric(10,7)")
                         .HasColumnName("longitude");
@@ -306,11 +305,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<int?>("SignalStrength")
                         .HasColumnType("integer")
                         .HasColumnName("signal_strength");
-
-                    b.Property<string>("Source")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("source");
 
                     b.Property<decimal?>("SpeedKmh")
                         .HasColumnType("numeric(6,2)")

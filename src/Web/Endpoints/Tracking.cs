@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tracking;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -20,6 +21,8 @@ public sealed class Tracking : IEndpointGroup
     private const decimal MovingSpeedThresholdKmh = 0.5m;
     private const double IdleJumpDistanceThresholdKm = 0.5d;
     private static readonly TimeSpan IdleJumpWindow = TimeSpan.FromMinutes(5);
+    private const int DefaultLiveAuthoritySeconds = 90;
+    private const double CurrentStationRadiusKm = 0.08d;
     private const double TeleportJumpDistanceThresholdKm = 0.25d;
     private const double DefaultMaxPlausibleSpeedKmh = 60d;
     private const double MaxPlausibleSpeedMultiplier = 2d;
@@ -77,9 +80,10 @@ public sealed class Tracking : IEndpointGroup
                 LocationExample,
                 "Header bắt buộc: X-Device-Id, đây là mã định danh/key do phần mềm GPS sinh ra.",
                 "deviceId trong body nếu gửi phải trùng với X-Device-Id.",
+                "Header tùy chọn: X-Tracking-Source=live/railway/wb-gps để ưu tiên packet từ live GPS trusted.",
                 "Backend dùng gps_devices để map thiết bị sang tàu, không tin boatId từ client.",
                 "GPS có thể gửi nextStationId, remainingDistanceKmToNextStation, remainingMinutesToNextStation để FE hiển thị ETA tới bến kế tiếp.",
-                "sequence phải tăng dần theo từng thiết bị."));
+                "recordedAt quyết định latest; sequence chỉ dùng để phá hòa khi recordedAt trùng."));
 
         group.MapGet(GetLatestBoatLocations, "boats/latest")
             .AllowAnonymous()
@@ -112,9 +116,12 @@ public sealed class Tracking : IEndpointGroup
     private static async Task<IResult> ReceiveLocation(
         ApplicationDbContext dbContext,
         TimeProvider timeProvider,
+        IConfiguration configuration,
+        IEndpointResponseCache responseCache,
         IHubContext<TrackingHub> trackingHubContext,
         ILogger<Tracking> logger,
         [FromHeader(Name = "X-Device-Id")] string? headerDeviceId,
+        [FromHeader(Name = "X-Tracking-Source")] string? headerTrackingSource,
         TrackingLocationRequest request,
         CancellationToken cancellationToken)
     {
@@ -149,18 +156,11 @@ public sealed class Tracking : IEndpointGroup
             });
         }
 
-        if (gpsDevice.LastSequence.HasValue && request.Sequence <= gpsDevice.LastSequence.Value)
-        {
-            return Results.Conflict(new
-            {
-                accepted = false,
-                message = "sequence cũ hơn hoặc trùng với bản tin đã nhận.",
-                lastSequence = gpsDevice.LastSequence.Value
-            });
-        }
-
+        var speedKmh = ResolveRequestSpeedKmh(request);
         var now = timeProvider.GetUtcNow();
         var recordedAt = request.RecordedAt.ToUniversalTime();
+        var liveAuthorityWindow = ResolveLiveAuthorityWindow(configuration);
+        var trackingSource = ResolveTrackingSource(headerTrackingSource, request.Source);
         var activeIncident = await LoadActiveIncidentForBoatAsync(
             dbContext,
             gpsDevice.BoatId,
@@ -169,13 +169,18 @@ public sealed class Tracking : IEndpointGroup
         {
             return await ReceiveIncidentLocationAsync(
                 dbContext,
+                timeProvider,
                 trackingHubContext,
                 logger,
                 gpsDevice,
                 request,
                 now,
                 recordedAt,
+                liveAuthorityWindow,
+                trackingSource,
+                speedKmh,
                 activeIncident,
+                responseCache,
                 cancellationToken);
         }
 
@@ -231,15 +236,69 @@ public sealed class Tracking : IEndpointGroup
             return nextStationLookup.Error;
         }
         var resolvedNextStation = nextStationLookup.Value;
-
-        var status = NormalizeOptionalText(request.Status) ?? "unknown";
-        var direction = NormalizeOptionalText(request.Direction);
-        var gpsFixQuality = NormalizeOptionalText(request.GpsFixQuality);
-
+        var status = ResolveRequestStatus(request);
+        var incomingBreaksLiveAuthority = IsTrustedLivePacket(trip.Value, status, speedKmh, trackingSource);
         var previousLocation = await LoadPreviousLatestLocationAsync(
             dbContext,
             gpsDevice.BoatId,
             cancellationToken);
+        var mergeDecision = TrackingLatestMergePolicy.Decide(
+            previousLocation?.RecordedAt,
+            previousLocation?.Sequence,
+            recordedAt,
+            request.Sequence,
+            trackingSource,
+            now,
+            liveAuthorityWindow,
+            previousLocation?.Source,
+            previousLocation?.LiveAuthorityUntil,
+            incomingBreaksLiveAuthority);
+        if (!mergeDecision.LatestUpdated)
+        {
+            await TouchGpsDeviceSequenceAsync(
+                dbContext,
+                gpsDevice.Id,
+                request.Sequence,
+                now,
+                cancellationToken);
+
+            logger.LogInformation(
+                "Ignored GPS latest-location update for boat {BoatCode}: {Rejected}, incoming sequence {Sequence}, recordedAt {RecordedAt:O}.",
+                gpsDevice.Boat.Code,
+                mergeDecision.Rejected,
+                request.Sequence,
+                recordedAt);
+
+            var current = await LoadLatestBoatLocationDtoByCodeAsync(
+                dbContext,
+                timeProvider,
+                gpsDevice.Boat.Code,
+                cancellationToken);
+
+            return Results.Ok(new TrackingLocationAcceptedResponse(
+                true,
+                request.MessageId,
+                gpsDevice.DeviceId,
+                gpsDevice.Boat.Code,
+                gpsDevice.BoatId,
+                routeId,
+                trip.Value?.Id,
+                now,
+                LatestUpdated: false,
+                Rejected: mergeDecision.Rejected,
+                Current: ToCurrentLocationResponse(current)));
+        }
+
+        var currentStation = await ResolveCurrentStationAsync(
+            dbContext,
+            request.CurrentStationCode,
+            request.Lat,
+            request.Lng,
+            cancellationToken);
+
+        var direction = NormalizeOptionalText(request.Direction);
+        var gpsFixQuality = NormalizeOptionalText(request.GpsFixQuality);
+
         var writeLat = request.Lat;
         var writeLng = request.Lng;
         var locationJumpHeld = ShouldHoldLocationJump(
@@ -247,9 +306,10 @@ public sealed class Tracking : IEndpointGroup
             gpsDevice.Boat,
             trip.Value,
             status,
-            request.SpeedKmh,
+            speedKmh,
             request.Lat,
             request.Lng,
+            trackingSource,
             now,
             out var jumpDistanceKm,
             out var jumpReason);
@@ -268,29 +328,30 @@ public sealed class Tracking : IEndpointGroup
                 previousLocation.Longitude);
         }
 
-        var sequenceUpdate = await TryUpdateGpsDeviceSequenceAsync(
+        await TouchGpsDeviceSequenceAsync(
             dbContext,
             gpsDevice.Id,
             request.Sequence,
             now,
             cancellationToken);
-        if (!sequenceUpdate.Updated)
-        {
-            return Results.Conflict(new
-            {
-                accepted = false,
-                message = "sequence cũ hơn hoặc trùng với bản tin đã nhận.",
-                sequenceUpdate.LastSequence
-            });
-        }
 
-        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+        var latestSource = NormalizeOptionalText(trackingSource);
+        var liveAuthorityUntil = TrackingLatestMergePolicy.IsLiveSource(latestSource)
+            ? now.Add(liveAuthorityWindow)
+            : (DateTimeOffset?)null;
+        var canLiveAuthorityOverride = TrackingLatestMergePolicy.CanLiveAuthorityOverride(
+            latestSource,
+            recordedAt,
+            now,
+            liveAuthorityWindow);
+        var latestRows = await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"""
              INSERT INTO boat_latest_locations (
                  boat_id,
                  gps_device_id,
                  route_id,
                  trip_id,
+                 current_station_id,
                  next_station_id,
                  latitude,
                  longitude,
@@ -303,6 +364,8 @@ public sealed class Tracking : IEndpointGroup
                  received_at,
                  sequence,
                  status,
+                 source,
+                 live_authority_until,
                  direction,
                  battery_percent,
                  signal_strength,
@@ -314,18 +377,21 @@ public sealed class Tracking : IEndpointGroup
                  {gpsDevice.Id},
                  {routeId},
                  {trip.Value?.Id},
+                 {currentStation?.Id},
                  {resolvedNextStation?.Id},
                  {writeLat},
                  {writeLng},
                  {request.RemainingDistanceKmToNextStation},
                  {request.RemainingMinutesToNextStation},
-                 {request.SpeedKmh},
+                 {speedKmh},
                  {request.Heading},
                  {request.AccuracyMeters},
                  {recordedAt},
                  {now},
                  {request.Sequence},
                  {status},
+                 {latestSource},
+                 {liveAuthorityUntil},
                  {direction},
                  {request.BatteryPercent},
                  {request.SignalStrength},
@@ -336,6 +402,7 @@ public sealed class Tracking : IEndpointGroup
              SET gps_device_id = EXCLUDED.gps_device_id,
                  route_id = EXCLUDED.route_id,
                  trip_id = EXCLUDED.trip_id,
+                 current_station_id = EXCLUDED.current_station_id,
                  next_station_id = EXCLUDED.next_station_id,
                  latitude = EXCLUDED.latitude,
                  longitude = EXCLUDED.longitude,
@@ -348,18 +415,69 @@ public sealed class Tracking : IEndpointGroup
                  received_at = EXCLUDED.received_at,
                  sequence = EXCLUDED.sequence,
                  status = EXCLUDED.status,
+                 source = EXCLUDED.source,
+                 live_authority_until = EXCLUDED.live_authority_until,
                  direction = EXCLUDED.direction,
                  battery_percent = EXCLUDED.battery_percent,
                  signal_strength = EXCLUDED.signal_strength,
                  gps_fix_quality = EXCLUDED.gps_fix_quality,
                  updated_at = EXCLUDED.updated_at
-             WHERE boat_latest_locations.sequence < EXCLUDED.sequence;
+             WHERE ((boat_latest_locations.recorded_at < EXCLUDED.recorded_at
+                    OR (boat_latest_locations.recorded_at = EXCLUDED.recorded_at
+                        AND boat_latest_locations.sequence < EXCLUDED.sequence))
+                    AND NOT (boat_latest_locations.source = 'live'
+                        AND boat_latest_locations.live_authority_until IS NOT NULL
+                        AND boat_latest_locations.live_authority_until >= {now}
+                        AND NOT {incomingBreaksLiveAuthority}))
+                OR ({canLiveAuthorityOverride}
+                    AND boat_latest_locations.recorded_at >= EXCLUDED.recorded_at);
             """,
             cancellationToken);
 
-        var tripStatusChanged = ApplyTripStatusFromLocation(trip.Value, status, request.SpeedKmh, now);
+        if (latestRows == 0)
+        {
+            var rejected = ResolveLatestRejectedReason(
+                trackingSource,
+                recordedAt,
+                now,
+                liveAuthorityWindow);
+            logger.LogInformation(
+                "Ignored GPS latest-location update for boat {BoatCode}: {Rejected}, incoming sequence {Sequence}, recordedAt {RecordedAt:O}.",
+                gpsDevice.Boat.Code,
+                rejected,
+                request.Sequence,
+                recordedAt);
 
-        if (session.Value is not null)
+            var current = await LoadLatestBoatLocationDtoByCodeAsync(
+                dbContext,
+                timeProvider,
+                gpsDevice.Boat.Code,
+                cancellationToken);
+
+            return Results.Ok(new TrackingLocationAcceptedResponse(
+                true,
+                request.MessageId,
+                gpsDevice.DeviceId,
+                gpsDevice.Boat.Code,
+                gpsDevice.BoatId,
+                routeId,
+                trip.Value?.Id,
+                now,
+                LatestUpdated: false,
+                Rejected: rejected,
+                Current: ToCurrentLocationResponse(current)));
+        }
+
+        var tripStatusChanged = ApplyTripStatusFromLocation(trip.Value, status, speedKmh, now);
+
+        if (session.Value is not null
+            && !await HasStoredTrackPointAsync(
+                dbContext,
+                session.Value.Id,
+                gpsDevice.Id,
+                request.Sequence,
+                request.MessageId,
+                cancellationToken))
         {
             dbContext.GpsTrackPoints.Add(new GpsTrackPoint
             {
@@ -371,7 +489,7 @@ public sealed class Tracking : IEndpointGroup
                 MessageId = request.MessageId,
                 Latitude = request.Lat,
                 Longitude = request.Lng,
-                SpeedKmh = request.SpeedKmh,
+                SpeedKmh = speedKmh,
                 Heading = request.Heading,
                 AccuracyMeters = request.AccuracyMeters,
                 RecordedAt = recordedAt,
@@ -390,6 +508,26 @@ public sealed class Tracking : IEndpointGroup
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
+        await InvalidateLatestLocationCachesAsync(
+            responseCache,
+            gpsDevice.Boat.Code,
+            previousLocation?.TripId,
+            trip.Value?.Id,
+            cancellationToken);
+        var latestLocation = await LoadLatestBoatLocationDtoByCodeAsync(
+            dbContext,
+            timeProvider,
+            gpsDevice.Boat.Code,
+            cancellationToken);
+        if (latestLocation is not null)
+        {
+            await PublishBoatLocationAsync(
+                trackingHubContext,
+                logger,
+                latestLocation,
+                cancellationToken);
+        }
+
         var acceptedResponse = new TrackingLocationAcceptedResponse(
             true,
             request.MessageId,
@@ -398,88 +536,27 @@ public sealed class Tracking : IEndpointGroup
             gpsDevice.BoatId,
             routeId,
             trip.Value?.Id,
-            now);
-
-        var tripStops = trip.Value is null
-            ? []
-            : await LoadTripStopsAsync(dbContext, trip.Value.Id, cancellationToken);
-        var currentStop = ResolveCurrentStop(tripStops);
-        var lastStopEvent = ResolveLastStopEvent(tripStops);
-        var movementStatus = ResolveTrackingMovementStatus(
-            trip.Value,
-            tripStops,
-            status,
-            request.SpeedKmh,
-            now);
-        var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
-            trip.Value,
-            currentStop,
-            now);
-        var onboardPassengerCount = await TripPassengerCountSupport.LoadOnboardPassengerCountAsync(
-            dbContext,
-            trip.Value?.Id,
-            cancellationToken);
-
-        await PublishBoatLocationAsync(
-            trackingHubContext,
-            logger,
-            new BoatLocationRealtimeDto(
-                gpsDevice.BoatId,
-                gpsDevice.Boat.Code,
-                gpsDevice.Boat.Name,
-                gpsDevice.Boat.Status.ToString(),
-                gpsDevice.DeviceId,
-                request.MessageId,
-                routeId,
-                route.Value?.RouteCode ?? trip.Value?.Route.RouteCode,
-                trip.Value?.Id,
-                trip.Value?.TripCode,
-                onboardPassengerCount,
-                movementStatus,
-                currentStop?.StationId,
-                currentStop?.Station?.StationCode,
-                currentStop?.Station?.StationName,
-                resolvedNextStation?.Id,
-                resolvedNextStation?.StationCode,
-                resolvedNextStation?.StationName,
-                lastStopEvent.Event,
-                lastStopEvent.OccurredAt,
-                TripStatusTransitionSupport.ResolveScheduledDepartureAt(trip.Value, currentStop),
-                ResolveMinutesUntilDeparture(trip.Value, currentStop, now),
-                request.RemainingDistanceKmToNextStation,
-                request.RemainingMinutesToNextStation,
-                writeLat,
-                writeLng,
-                request.SpeedKmh,
-                request.Heading,
-                request.AccuracyMeters,
-                recordedAt,
-                now,
-                request.Sequence,
-                status,
-                direction,
-                request.BatteryPercent,
-                request.SignalStrength,
-                gpsFixQuality,
-                activeIncident,
-                IsOnline: true,
-                DwellCountdown: dwellCountdown,
-                BoatImageUrl: CreateBoatImageUrls(gpsDevice.Boat).FirstOrDefault(),
-                BoatImageUrls: CreateBoatImageUrls(gpsDevice.Boat)),
-            cancellationToken);
+            now,
+            ReplacedBy: mergeDecision.ReplacedBy,
+            Current: ToCurrentLocationResponse(latestLocation));
 
         return Results.Ok(acceptedResponse);
     }
 
     private static async Task<IResult> ReceiveIncidentLocationAsync(
         ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
         IHubContext<TrackingHub> trackingHubContext,
         ILogger<Tracking> logger,
         GpsDevice gpsDevice,
         TrackingLocationRequest request,
         DateTimeOffset now,
         DateTimeOffset recordedAt,
+        TimeSpan liveAuthorityWindow,
+        string? trackingSource,
+        decimal? speedKmh,
         ActiveIncidentTrackingDto? activeIncident,
+        IEndpointResponseCache responseCache,
         CancellationToken cancellationToken)
     {
         var direction = NormalizeOptionalText(request.Direction);
@@ -488,6 +565,64 @@ public sealed class Tracking : IEndpointGroup
             dbContext,
             gpsDevice.BoatId,
             cancellationToken);
+        var incomingBreaksLiveAuthority = IsTrustedLivePacket(
+            trip: null,
+            IncidentLocationStatus,
+            speedKmh,
+            trackingSource);
+        var mergeDecision = TrackingLatestMergePolicy.Decide(
+            previousLocation?.RecordedAt,
+            previousLocation?.Sequence,
+            recordedAt,
+            request.Sequence,
+            trackingSource,
+            now,
+            liveAuthorityWindow,
+            previousLocation?.Source,
+            previousLocation?.LiveAuthorityUntil,
+            incomingBreaksLiveAuthority);
+        if (!mergeDecision.LatestUpdated)
+        {
+            await TouchGpsDeviceSequenceAsync(
+                dbContext,
+                gpsDevice.Id,
+                request.Sequence,
+                now,
+                cancellationToken);
+
+            logger.LogInformation(
+                "Ignored incident GPS latest-location update for boat {BoatCode}: {Rejected}, incoming sequence {Sequence}, recordedAt {RecordedAt:O}.",
+                gpsDevice.Boat.Code,
+                mergeDecision.Rejected,
+                request.Sequence,
+                recordedAt);
+
+            var current = await LoadLatestBoatLocationDtoByCodeAsync(
+                dbContext,
+                timeProvider,
+                gpsDevice.Boat.Code,
+                cancellationToken);
+
+            return Results.Ok(new TrackingLocationAcceptedResponse(
+                true,
+                request.MessageId,
+                gpsDevice.DeviceId,
+                gpsDevice.Boat.Code,
+                gpsDevice.BoatId,
+                null,
+                null,
+                now,
+                LatestUpdated: false,
+                Rejected: mergeDecision.Rejected,
+                Current: ToCurrentLocationResponse(current)));
+        }
+
+        var currentStation = await ResolveCurrentStationAsync(
+            dbContext,
+            request.CurrentStationCode,
+            request.Lat,
+            request.Lng,
+            cancellationToken);
         var writeLat = request.Lat;
         var writeLng = request.Lng;
         var locationJumpHeld = ShouldHoldLocationJump(
@@ -495,9 +630,10 @@ public sealed class Tracking : IEndpointGroup
             gpsDevice.Boat,
             trip: null,
             IncidentLocationStatus,
-            request.SpeedKmh,
+            speedKmh,
             request.Lat,
             request.Lng,
+            trackingSource,
             now,
             out var jumpDistanceKm,
             out var jumpReason);
@@ -516,29 +652,30 @@ public sealed class Tracking : IEndpointGroup
                 previousLocation.Longitude);
         }
 
-        var sequenceUpdate = await TryUpdateGpsDeviceSequenceAsync(
+        await TouchGpsDeviceSequenceAsync(
             dbContext,
             gpsDevice.Id,
             request.Sequence,
             now,
             cancellationToken);
-        if (!sequenceUpdate.Updated)
-        {
-            return Results.Conflict(new
-            {
-                accepted = false,
-                message = "sequence cũ hơn hoặc trùng với bản tin đã nhận.",
-                sequenceUpdate.LastSequence
-            });
-        }
 
-        await dbContext.Database.ExecuteSqlInterpolatedAsync(
+        var latestSource = NormalizeOptionalText(trackingSource);
+        var liveAuthorityUntil = TrackingLatestMergePolicy.IsLiveSource(latestSource)
+            ? now.Add(liveAuthorityWindow)
+            : (DateTimeOffset?)null;
+        var canLiveAuthorityOverride = TrackingLatestMergePolicy.CanLiveAuthorityOverride(
+            latestSource,
+            recordedAt,
+            now,
+            liveAuthorityWindow);
+        var latestRows = await dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"""
              INSERT INTO boat_latest_locations (
                  boat_id,
                  gps_device_id,
                  route_id,
                  trip_id,
+                 current_station_id,
                  next_station_id,
                  latitude,
                  longitude,
@@ -551,6 +688,8 @@ public sealed class Tracking : IEndpointGroup
                  received_at,
                  sequence,
                  status,
+                 source,
+                 live_authority_until,
                  direction,
                  battery_percent,
                  signal_strength,
@@ -562,18 +701,21 @@ public sealed class Tracking : IEndpointGroup
                  {gpsDevice.Id},
                  NULL,
                  NULL,
+                 {currentStation?.Id},
                  NULL,
                  {writeLat},
                  {writeLng},
                  NULL,
                  NULL,
-                 {request.SpeedKmh},
+                 {speedKmh},
                  {request.Heading},
                  {request.AccuracyMeters},
                  {recordedAt},
                  {now},
                  {request.Sequence},
                  {IncidentLocationStatus},
+                 {latestSource},
+                 {liveAuthorityUntil},
                  {direction},
                  {request.BatteryPercent},
                  {request.SignalStrength},
@@ -584,6 +726,7 @@ public sealed class Tracking : IEndpointGroup
              SET gps_device_id = EXCLUDED.gps_device_id,
                  route_id = NULL,
                  trip_id = NULL,
+                 current_station_id = EXCLUDED.current_station_id,
                  next_station_id = NULL,
                  latitude = EXCLUDED.latitude,
                  longitude = EXCLUDED.longitude,
@@ -596,62 +739,78 @@ public sealed class Tracking : IEndpointGroup
                  received_at = EXCLUDED.received_at,
                  sequence = EXCLUDED.sequence,
                  status = EXCLUDED.status,
+                 source = EXCLUDED.source,
+                 live_authority_until = EXCLUDED.live_authority_until,
                  direction = EXCLUDED.direction,
                  battery_percent = EXCLUDED.battery_percent,
                  signal_strength = EXCLUDED.signal_strength,
                  gps_fix_quality = EXCLUDED.gps_fix_quality,
                  updated_at = EXCLUDED.updated_at
-             WHERE boat_latest_locations.sequence < EXCLUDED.sequence;
+             WHERE ((boat_latest_locations.recorded_at < EXCLUDED.recorded_at
+                    OR (boat_latest_locations.recorded_at = EXCLUDED.recorded_at
+                        AND boat_latest_locations.sequence < EXCLUDED.sequence))
+                    AND NOT (boat_latest_locations.source = 'live'
+                        AND boat_latest_locations.live_authority_until IS NOT NULL
+                        AND boat_latest_locations.live_authority_until >= {now}
+                        AND NOT {incomingBreaksLiveAuthority}))
+                OR ({canLiveAuthorityOverride}
+                    AND boat_latest_locations.recorded_at >= EXCLUDED.recorded_at);
             """,
             cancellationToken);
 
-        await PublishBoatLocationAsync(
-            trackingHubContext,
-            logger,
-            new BoatLocationRealtimeDto(
-                gpsDevice.BoatId,
-                gpsDevice.Boat.Code,
-                gpsDevice.Boat.Name,
-                gpsDevice.Boat.Status.ToString(),
-                gpsDevice.DeviceId,
-                request.MessageId,
-                null,
-                null,
-                null,
-                null,
-                0,
-                MovementStatusIncident,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                null,
-                writeLat,
-                writeLng,
-                request.SpeedKmh,
-                request.Heading,
-                request.AccuracyMeters,
+        if (latestRows == 0)
+        {
+            var rejected = ResolveLatestRejectedReason(
+                trackingSource,
                 recordedAt,
                 now,
+                liveAuthorityWindow);
+            logger.LogInformation(
+                "Ignored incident GPS latest-location update for boat {BoatCode}: {Rejected}, incoming sequence {Sequence}, recordedAt {RecordedAt:O}.",
+                gpsDevice.Boat.Code,
+                rejected,
                 request.Sequence,
-                IncidentLocationStatus,
-                direction,
-                request.BatteryPercent,
-                request.SignalStrength,
-                gpsFixQuality,
-                activeIncident,
-                IsOnline: true,
-                DwellCountdown: null,
-                BoatImageUrl: CreateBoatImageUrls(gpsDevice.Boat).FirstOrDefault(),
-                BoatImageUrls: CreateBoatImageUrls(gpsDevice.Boat)),
+                recordedAt);
+
+            var current = await LoadLatestBoatLocationDtoByCodeAsync(
+                dbContext,
+                timeProvider,
+                gpsDevice.Boat.Code,
+                cancellationToken);
+
+            return Results.Ok(new TrackingLocationAcceptedResponse(
+                true,
+                request.MessageId,
+                gpsDevice.DeviceId,
+                gpsDevice.Boat.Code,
+                gpsDevice.BoatId,
+                null,
+                null,
+                now,
+                LatestUpdated: false,
+                Rejected: rejected,
+                Current: ToCurrentLocationResponse(current)));
+        }
+
+        await InvalidateLatestLocationCachesAsync(
+            responseCache,
+            gpsDevice.Boat.Code,
+            previousLocation?.TripId,
+            newTripId: null,
             cancellationToken);
+        var latestLocation = await LoadLatestBoatLocationDtoByCodeAsync(
+            dbContext,
+            timeProvider,
+            gpsDevice.Boat.Code,
+            cancellationToken);
+        if (latestLocation is not null)
+        {
+            await PublishBoatLocationAsync(
+                trackingHubContext,
+                logger,
+                latestLocation,
+                cancellationToken);
+        }
 
         return Results.Ok(new TrackingLocationAcceptedResponse(
             true,
@@ -661,40 +820,43 @@ public sealed class Tracking : IEndpointGroup
             gpsDevice.BoatId,
             null,
             null,
-            now));
+            now,
+            ReplacedBy: mergeDecision.ReplacedBy,
+            Current: ToCurrentLocationResponse(latestLocation)));
     }
 
-    private static async Task<GpsSequenceUpdateResult> TryUpdateGpsDeviceSequenceAsync(
+    private static Task TouchGpsDeviceSequenceAsync(
         ApplicationDbContext dbContext,
         Guid gpsDeviceId,
         long sequence,
         DateTimeOffset now,
-        CancellationToken cancellationToken)
-    {
-        var deviceRows = await dbContext.Database.ExecuteSqlInterpolatedAsync(
+        CancellationToken cancellationToken) =>
+        dbContext.Database.ExecuteSqlInterpolatedAsync(
             $"""
              UPDATE gps_devices
-             SET last_sequence = {sequence},
+             SET last_sequence = CASE
+                     WHEN last_sequence IS NULL OR last_sequence < {sequence} THEN {sequence}
+                     ELSE last_sequence
+                 END,
                  last_seen_at = {now},
                  updated_at = {now}
-             WHERE gps_device_id = {gpsDeviceId}
-               AND (last_sequence IS NULL OR last_sequence < {sequence});
+             WHERE gps_device_id = {gpsDeviceId};
              """,
             cancellationToken);
 
-        if (deviceRows > 0)
-        {
-            return new GpsSequenceUpdateResult(true, null);
-        }
-
-        var lastSequence = await dbContext.GpsDevices
+    private static Task<bool> HasStoredTrackPointAsync(
+        ApplicationDbContext dbContext,
+        Guid sessionId,
+        Guid gpsDeviceId,
+        long sequence,
+        Guid messageId,
+        CancellationToken cancellationToken) =>
+        dbContext.GpsTrackPoints
             .AsNoTracking()
-            .Where(x => x.Id == gpsDeviceId)
-            .Select(x => x.LastSequence)
-            .FirstOrDefaultAsync(cancellationToken);
-
-        return new GpsSequenceUpdateResult(false, lastSequence);
-    }
+            .AnyAsync(
+                x => (x.SessionId == sessionId && x.Sequence == sequence)
+                    || (x.GpsDeviceId == gpsDeviceId && x.MessageId == messageId),
+                cancellationToken);
 
     private static async Task<IResult> GetLatestBoatLocations(
         IApplicationDbContext dbContext,
@@ -728,6 +890,7 @@ public sealed class Tracking : IEndpointGroup
             .Include(x => x.Trip)
                 .ThenInclude(x => x!.TripStops)
                     .ThenInclude(x => x.Station)
+            .Include(x => x.CurrentStation)
             .Include(x => x.NextStation)
             .OrderBy(x => x.Boat.Code)
             .ToListAsync(cancellationToken);
@@ -813,6 +976,7 @@ public sealed class Tracking : IEndpointGroup
             .Include(x => x.Trip)
                 .ThenInclude(x => x!.TripStops)
                     .ThenInclude(x => x.Station)
+            .Include(x => x.CurrentStation)
             .Include(x => x.NextStation)
             .Where(x => x.Boat.Code == normalizedBoatCode)
             .FirstOrDefaultAsync(cancellationToken);
@@ -864,6 +1028,7 @@ public sealed class Tracking : IEndpointGroup
                 .Include(x => x.Trip)
                     .ThenInclude(x => x!.TripStops)
                         .ThenInclude(x => x.Station)
+                .Include(x => x.CurrentStation)
                 .Include(x => x.NextStation)
                 .SingleOrDefaultAsync(x => x.BoatId == trip.BoatId.Value, cancellationToken);
 
@@ -926,6 +1091,11 @@ public sealed class Tracking : IEndpointGroup
         if (request.SpeedKmh is < 0)
         {
             errors["speedKmh"] = ["speedKmh không được âm."];
+        }
+
+        if (request.Speed is < 0)
+        {
+            errors["speed"] = ["speed không được âm."];
         }
 
         if (request.Heading is < 0 or > 359)
@@ -1325,6 +1495,9 @@ public sealed class Tracking : IEndpointGroup
                 x.Longitude,
                 x.SpeedKmh,
                 x.Status,
+                x.Source,
+                x.LiveAuthorityUntil,
+                x.RecordedAt,
                 x.ReceivedAt,
                 x.Sequence))
             .FirstOrDefaultAsync(cancellationToken);
@@ -1337,6 +1510,7 @@ public sealed class Tracking : IEndpointGroup
         decimal? speedKmh,
         decimal incomingLat,
         decimal incomingLng,
+        string? trackingSource,
         DateTimeOffset now,
         out double distanceKm,
         out string reason)
@@ -1345,6 +1519,12 @@ public sealed class Tracking : IEndpointGroup
         reason = string.Empty;
         if (previousLocation is null
             || now - previousLocation.ReceivedAt > IdleJumpWindow)
+        {
+            return false;
+        }
+
+        if (IsTrustedLivePacket(trip, gpsStatus, speedKmh, trackingSource)
+            || IsTrustedLiveMovement(previousLocation.Status, previousLocation.SpeedKmh))
         {
             return false;
         }
@@ -1387,11 +1567,30 @@ public sealed class Tracking : IEndpointGroup
         return true;
     }
 
+    private static bool IsTrustedLivePacket(
+        Trip? trip,
+        string gpsStatus,
+        decimal? speedKmh,
+        string? trackingSource) =>
+        trip is not null
+        || IsTrustedLiveMovement(gpsStatus, speedKmh)
+        || IsTrustedTrackingSource(trackingSource);
+
+    private static bool IsTrustedLiveMovement(string gpsStatus, decimal? speedKmh) =>
+        IsMovingGpsStatus(gpsStatus) || speedKmh is > MovingSpeedThresholdKmh;
+
+    private static bool IsTrustedTrackingSource(string? trackingSource) =>
+        string.Equals(trackingSource, "live", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(trackingSource, "railway", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(trackingSource, "wb-gps", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(trackingSource, "gps-live", StringComparison.OrdinalIgnoreCase);
+
     private static bool IsIdleGpsStatus(string status) =>
         string.Equals(status, "idle", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "docked", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "stopped", StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, "waiting", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, MovementStatusAtStation, StringComparison.OrdinalIgnoreCase)
         || string.Equals(status, IncidentLocationStatus, StringComparison.OrdinalIgnoreCase);
 
     private static double ResolveMaxPlausibleSpeedKmh(Boat boat)
@@ -1477,8 +1676,134 @@ public sealed class Tracking : IEndpointGroup
         return true;
     }
 
+    private static TimeSpan ResolveLiveAuthorityWindow(IConfiguration configuration)
+    {
+        var configuredValue = NormalizeOptionalText(configuration["TRACKING_LIVE_AUTHORITY_SECONDS"])
+            ?? NormalizeOptionalText(configuration["Tracking:LiveAuthoritySeconds"]);
+
+        return int.TryParse(configuredValue, out var seconds) && seconds > 0
+            ? TimeSpan.FromSeconds(seconds)
+            : TimeSpan.FromSeconds(DefaultLiveAuthoritySeconds);
+    }
+
+    private static decimal? ResolveRequestSpeedKmh(TrackingLocationRequest request) =>
+        request.SpeedKmh ?? request.Speed;
+
+    private static string ResolveRequestStatus(TrackingLocationRequest request) =>
+        NormalizeOptionalText(request.Status)
+        ?? NormalizeOptionalText(request.MovementStatus)
+        ?? "unknown";
+
+    private static string ResolveLatestRejectedReason(
+        string? trackingSource,
+        DateTimeOffset recordedAt,
+        DateTimeOffset now,
+        TimeSpan liveAuthorityWindow) =>
+        TrackingLatestMergePolicy.IsLiveSource(trackingSource)
+            && !TrackingLatestMergePolicy.CanLiveAuthorityOverride(
+                trackingSource,
+                recordedAt,
+                now,
+                liveAuthorityWindow)
+            ? TrackingLatestMergePolicy.LiveStaleRejectedReason
+            : TrackingLatestMergePolicy.OlderRejectedReason;
+
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string? ResolveTrackingSource(string? headerValue, string? bodyValue)
+    {
+        var headerSource = NormalizeOptionalText(headerValue);
+        var bodySource = NormalizeOptionalText(bodyValue);
+        if (TrackingLatestMergePolicy.IsLiveSource(headerSource)
+            || TrackingLatestMergePolicy.IsLiveSource(bodySource))
+        {
+            return "live";
+        }
+
+        return headerSource ?? bodySource;
+    }
+
+    private static async Task<Station?> ResolveCurrentStationAsync(
+        ApplicationDbContext dbContext,
+        string? currentStationCode,
+        decimal lat,
+        decimal lng,
+        CancellationToken cancellationToken)
+    {
+        var stations = await dbContext.Stations
+            .AsNoTracking()
+            .Where(x => x.IsWaterbusStation
+                && x.Status == StationStatus.Active)
+            .ToListAsync(cancellationToken);
+
+        var requestedStationCode = NormalizeOptionalText(currentStationCode);
+        if (requestedStationCode is not null)
+        {
+            var requestedStation = stations.FirstOrDefault(x =>
+                StationCodeMatches(x.StationCode, requestedStationCode));
+            if (requestedStation is not null)
+            {
+                return requestedStation;
+            }
+        }
+
+        return stations
+            .Where(x => x.Latitude.HasValue && x.Longitude.HasValue)
+            .Select(x => new
+            {
+                Station = x,
+                DistanceKm = CalculateDistanceKm(lat, lng, x.Latitude!.Value, x.Longitude!.Value)
+            })
+            .Where(x => x.DistanceKm <= CurrentStationRadiusKm)
+            .OrderBy(x => x.DistanceKm)
+            .Select(x => x.Station)
+            .FirstOrDefault();
+    }
+
+    private static bool StationCodeMatches(string stationCode, string requestedStationCode)
+    {
+        var normalizedStationCode = NormalizeStationCode(stationCode);
+        var normalizedRequestedCode = NormalizeStationCode(requestedStationCode);
+        return string.Equals(normalizedStationCode, normalizedRequestedCode, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(WithoutStationPrefix(normalizedStationCode), WithoutStationPrefix(normalizedRequestedCode), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string NormalizeStationCode(string value) => value.Trim().ToUpperInvariant();
+
+    private static string WithoutStationPrefix(string value) =>
+        value.StartsWith("ST-", StringComparison.OrdinalIgnoreCase)
+            ? value[3..]
+            : value;
+
+    private static async Task InvalidateLatestLocationCachesAsync(
+        IEndpointResponseCache responseCache,
+        string boatCode,
+        Guid? previousTripId,
+        Guid? newTripId,
+        CancellationToken cancellationToken)
+    {
+        var keys = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "tracking:boats:latest",
+            $"tracking:boats:{boatCode.Trim().ToUpperInvariant()}:latest"
+        };
+
+        if (previousTripId.HasValue)
+        {
+            keys.Add($"tracking:trips:{previousTripId.Value:N}:latest");
+        }
+
+        if (newTripId.HasValue)
+        {
+            keys.Add($"tracking:trips:{newTripId.Value:N}:latest");
+        }
+
+        foreach (var key in keys)
+        {
+            await responseCache.RemoveAsync(key, cancellationToken);
+        }
+    }
 
     private static BoatLatestLocationDto ToLatestLocationDto(
         BoatLatestLocation location,
@@ -1490,6 +1815,9 @@ public sealed class Tracking : IEndpointGroup
             .OrderBy(x => x.StopOrder)
             .ToArray() ?? [];
         var currentStop = ResolveCurrentStop(tripStops);
+        var currentStationId = location.CurrentStationId ?? currentStop?.StationId;
+        var currentStationCode = location.CurrentStation?.StationCode ?? currentStop?.Station?.StationCode;
+        var currentStationName = location.CurrentStation?.StationName ?? currentStop?.Station?.StationName;
         var lastStopEvent = ResolveLastStopEvent(tripStops);
         var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
             location.Trip,
@@ -1512,9 +1840,9 @@ public sealed class Tracking : IEndpointGroup
                 location.Status,
                 location.SpeedKmh,
                 now),
-            currentStop?.StationId,
-            currentStop?.Station?.StationCode,
-            currentStop?.Station?.StationName,
+            currentStationId,
+            currentStationCode,
+            currentStationName,
             location.NextStationId,
             location.NextStation?.StationCode,
             location.NextStation?.StationName,
@@ -1543,6 +1871,19 @@ public sealed class Tracking : IEndpointGroup
             CreateBoatImageUrls(location.Boat).FirstOrDefault(),
             CreateBoatImageUrls(location.Boat));
     }
+
+    private static TrackingCurrentLocationResponse? ToCurrentLocationResponse(BoatLatestLocationDto? location) =>
+        location is null
+            ? null
+            : new TrackingCurrentLocationResponse(
+                location.BoatCode,
+                location.Lat,
+                location.Lng,
+                location.CurrentStationCode,
+                location.CurrentStationName,
+                location.MovementStatus,
+                location.RecordedAt,
+                location.Sequence);
 
     private static TripBoatDto? ToTripBoatDto(Boat? boat, int capacity)
     {
@@ -1634,7 +1975,7 @@ public sealed class Tracking : IEndpointGroup
     private static async Task PublishBoatLocationAsync(
         IHubContext<TrackingHub> trackingHubContext,
         ILogger logger,
-        BoatLocationRealtimeDto payload,
+        BoatLatestLocationDto payload,
         CancellationToken cancellationToken)
     {
         try
@@ -1664,8 +2005,11 @@ public sealed class Tracking : IEndpointGroup
         Guid? NextStationId,
         decimal? RemainingDistanceKmToNextStation,
         int? RemainingMinutesToNextStation,
+        string? CurrentStationCode,
+        string? CurrentStationName,
         decimal Lat,
         decimal Lng,
+        decimal? Speed,
         decimal? SpeedKmh,
         int? Heading,
         decimal? AccuracyMeters,
@@ -1675,7 +2019,9 @@ public sealed class Tracking : IEndpointGroup
         int? SignalStrength,
         string? GpsFixQuality,
         string? Direction,
+        string? MovementStatus,
         string? Status,
+        string? Source,
         TrackingCapturedRouteRequest? CapturedRoute);
 
     public sealed record TrackingCapturedRouteRequest(
@@ -1696,7 +2042,21 @@ public sealed class Tracking : IEndpointGroup
         Guid BoatId,
         Guid? RouteId,
         Guid? TripId,
-        DateTimeOffset ReceivedAt);
+        DateTimeOffset ReceivedAt,
+        bool LatestUpdated = true,
+        string? ReplacedBy = null,
+        string? Rejected = null,
+        TrackingCurrentLocationResponse? Current = null);
+
+    private sealed record TrackingCurrentLocationResponse(
+        string BoatCode,
+        decimal Lat,
+        decimal Lng,
+        string? CurrentStationCode,
+        string? CurrentStationName,
+        string MovementStatus,
+        DateTimeOffset RecordedAt,
+        long Sequence);
 
     private sealed record PreviousLatestLocationSnapshot(
         Guid? RouteId,
@@ -1705,10 +2065,11 @@ public sealed class Tracking : IEndpointGroup
         decimal Longitude,
         decimal? SpeedKmh,
         string Status,
+        string? Source,
+        DateTimeOffset? LiveAuthorityUntil,
+        DateTimeOffset RecordedAt,
         DateTimeOffset ReceivedAt,
         long Sequence);
-
-    private sealed record GpsSequenceUpdateResult(bool Updated, long? LastSequence);
 
     public sealed record BoatLatestLocationDto(
         Guid BoatId,
@@ -1762,50 +2123,6 @@ public sealed class Tracking : IEndpointGroup
         BoatLatestLocationDto? LatestLocation,
         bool HasLiveLocationForTrip,
         bool IsBoatOnline);
-
-    private sealed record BoatLocationRealtimeDto(
-        Guid BoatId,
-        string BoatCode,
-        string BoatName,
-        string BoatStatus,
-        string DeviceId,
-        Guid MessageId,
-        Guid? RouteId,
-        string? RouteCode,
-        Guid? TripId,
-        string? TripCode,
-        int OnboardPassengerCount,
-        string MovementStatus,
-        Guid? CurrentStationId,
-        string? CurrentStationCode,
-        string? CurrentStationName,
-        Guid? NextStationId,
-        string? NextStationCode,
-        string? NextStationName,
-        string? LastStopEvent,
-        DateTimeOffset? LastStopEventAt,
-        DateTimeOffset? ScheduledDepartureAt,
-        int? MinutesUntilDeparture,
-        decimal? RemainingDistanceKmToNextStation,
-        int? RemainingMinutesToNextStation,
-        decimal Lat,
-        decimal Lng,
-        decimal? SpeedKmh,
-        int? Heading,
-        decimal? AccuracyMeters,
-        DateTimeOffset RecordedAt,
-        DateTimeOffset ReceivedAt,
-        long Sequence,
-        string Status,
-        string? Direction,
-        int? BatteryPercent,
-        int? SignalStrength,
-        string? GpsFixQuality,
-        ActiveIncidentTrackingDto? ActiveIncident,
-        bool IsOnline,
-        TripStopDwellCountdownDto? DwellCountdown = null,
-        string? BoatImageUrl = null,
-        IReadOnlyList<string>? BoatImageUrls = null);
 
     public sealed record ActiveIncidentTrackingDto(
         Guid IncidentId,
