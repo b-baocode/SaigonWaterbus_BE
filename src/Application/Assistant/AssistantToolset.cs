@@ -475,13 +475,18 @@ public sealed class AssistantToolset
     /// Tuyến và lộ trình. Không có route_name → danh sách tuyến; có → chi tiết kèm các ga theo
     /// thứ tự và số km từng đoạn.
     ///
-    /// Bỏ tuyến RouteType=Charter: đó là tuyến hệ thống tự sinh cho từng booking thuê tàu,
-    /// khách hỏi "có tuyến nào" mà liệt kê ra thì rác. Cũng bỏ RouteGeometry (mảng toạ độ, rất nặng).
+    /// CHỈ lấy Regular và SightseeingLoop — đó là tuyến khách thật sự đi được. Hai loại kia bị
+    /// loại vì đều là chuyện nội bộ của nghiệp vụ thuê tàu: Charter là tuyến hệ thống tự sinh cho
+    /// từng booking, còn CharterReference là các đoạn nối rời rạc (0.37–2.99 km) chỉ dùng để ghép
+    /// lộ trình khi báo giá. Liệt kê chúng ra làm câu trả lời dài gấp mấy lần mà khách không dùng
+    /// được gì. Giá thuê tàu đã có get_charter_prices lo.
+    ///
+    /// Cũng bỏ RouteGeometry (mảng toạ độ, rất nặng).
     /// </summary>
     private async Task<string> GetRouteInfoAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
         var routes = (await _sender.Send(new GetRouteListQuery(), cancellationToken))
-            .Where(r => r.RouteType != RouteTypes.Charter)
+            .Where(r => r.RouteType == RouteTypes.Regular || r.RouteType == RouteTypes.SightseeingLoop)
             .ToList();
 
         var wanted = GetString(arguments, "route_name");
@@ -659,9 +664,10 @@ public sealed class AssistantToolset
 
         new ChatToolDefinition(
             "get_route_info",
-            "Thông tin TUYẾN: danh sách các tuyến đang hoạt động, hoặc lộ trình chi tiết của một tuyến "
-            + "(đi qua những ga nào theo thứ tự, mỗi đoạn bao nhiêu km, bao nhiêu phút). Gọi khi khách "
-            + "hỏi có những tuyến nào, tuyến đó đi qua đâu, dài bao nhiêu km, đi mất bao lâu.",
+            "Thông tin TUYẾN khách đi được (waterbus thường và tuyến ngắm cảnh): danh sách tuyến, hoặc "
+            + "lộ trình chi tiết của một tuyến (đi qua những ga nào theo thứ tự, mỗi đoạn bao nhiêu km, "
+            + "bao nhiêu phút). Gọi khi khách hỏi có những tuyến nào, tuyến đó đi qua đâu, dài bao nhiêu "
+            + "km, đi mất bao lâu. KHÔNG dùng cho câu hỏi về thuê nguyên tàu — cái đó gọi get_charter_prices.",
             ParseSchema("""
             {
               "type": "object",
