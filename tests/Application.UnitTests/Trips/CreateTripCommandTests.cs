@@ -823,7 +823,7 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task GenerateTripsSkipsSameDirectionTripsBeforeBoatCanReturnToStart()
+    public async Task GenerateTripsAdvancesContinuousScheduleWhenBoatMustReturnToStart()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
@@ -851,20 +851,15 @@ public class CreateTripCommandTests
                 CancellationToken.None);
 
         result.Created.ShouldBe(2);
-        result.SkippedBoatBusy.ShouldBe(1);
-        result.SkippedItems.ShouldNotBeNull();
-        result.SkippedItems.Single().RequestedDepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
-            .ShouldBe(new TimeSpan(8, 30, 0));
-        result.SkippedItems.Single().EarliestAllowedDepartureTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
-            .ShouldBe(new TimeSpan(8, 45, 0));
-        result.SkippedItems.Single().Reason.ShouldContain("Chuyến mới chỉ được khởi hành sớm nhất lúc");
+        result.SkippedBoatBusy.ShouldBe(0);
+        result.SkippedItems.ShouldBeEmpty();
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BB-20300101-R1-", StringComparison.Ordinal));
         context.Trips
             .OrderBy(x => x.DepartureTime)
             .Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
             .ShouldBe([
                 new TimeSpan(8, 0, 0),
-                new TimeSpan(9, 0, 0)
+                new TimeSpan(8, 45, 0)
             ]);
     }
 
@@ -1042,6 +1037,54 @@ public class CreateTripCommandTests
         result.Created.ShouldBe(2);
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BS-20300101-SIGHT-1-", StringComparison.Ordinal));
         context.Trips.All(x => x.RouteId == route.Id).ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task GenerateTripsUsesSightseeingDurationAndTurnaroundForContinuousSchedule()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var station = Station("BD", "Bến Bạch Đằng");
+        var route = Route("LOOP-BD", station, station);
+        route.RouteType = RouteTypes.SightseeingLoop;
+        route.IsBookable = true;
+        route.EstimatedDurationMin = 49.94m;
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = null;
+        var boat = BoatWithSeats("BOAT-SIGHT", seatCount: 3, seatSetupType: SeatSetupType.StandardAndVip);
+        var date = new DateOnly(2030, 1, 1);
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(
+            context,
+            boat,
+            new DateTimeOffset(2030, 1, 1, 18, 0, 0, TimeSpan.FromHours(7)));
+
+        var result = await new GenerateTripsCommandHandler(context)
+            .Handle(
+                new GenerateTripsCommand(
+                    RouteCode: "LOOP-BD",
+                    BoatCode: "BOAT-SIGHT",
+                    DepartureTimes: null,
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(18, 0),
+                    EndTime: new TimeOnly(20, 10),
+                    IntervalMinutes: 15),
+                CancellationToken.None);
+
+        result.Created.ShouldBe(3);
+        result.SkippedBoatBusy.ShouldBe(0);
+        context.Trips
+            .OrderBy(x => x.DepartureTime)
+            .Select(x => new
+            {
+                Departure = x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay,
+                Arrival = x.ArrivalTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            })
+            .ShouldBe([
+                new { Departure = new TimeSpan(18, 0, 0), Arrival = new TimeSpan(18, 50, 0) },
+                new { Departure = new TimeSpan(19, 5, 0), Arrival = new TimeSpan(19, 55, 0) },
+                new { Departure = new TimeSpan(20, 10, 0), Arrival = new TimeSpan(21, 0, 0) }
+            ]);
     }
 
     [Test]

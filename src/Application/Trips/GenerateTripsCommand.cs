@@ -392,14 +392,45 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             if (allowedDays is not null && !allowedDays.Contains(date.DayOfWeek))
                 continue;
 
-            foreach (var time in departureTimes)
+            if (departureTimes is not null)
             {
-                var departureTime = new DateTimeOffset(
-                    date.Year, date.Month, date.Day,
-                    time.Hour, time.Minute, 0,
-                    VietnamOffset).ToUniversalTime();
+                foreach (var time in departureTimes)
+                {
+                    var departureTime = new DateTimeOffset(
+                        date.Year, date.Month, date.Day,
+                        time.Hour, time.Minute, 0,
+                        VietnamOffset).ToUniversalTime();
 
-                _ = await TryCreateTripAsync(date, departureTime);
+                    _ = await TryCreateTripAsync(date, departureTime);
+                }
+
+                continue;
+            }
+
+            var localCursor = new DateTimeOffset(
+                date.Year, date.Month, date.Day,
+                request.StartTime!.Value.Hour, request.StartTime.Value.Minute, 0,
+                VietnamOffset);
+            var localEnd = new DateTimeOffset(
+                date.Year, date.Month, date.Day,
+                request.EndTime!.Value.Hour, request.EndTime.Value.Minute, 0,
+                VietnamOffset);
+            var interval = TimeSpan.FromMinutes(request.IntervalMinutes!.Value);
+
+            while (localCursor <= localEnd)
+            {
+                var departureTime = localCursor.ToUniversalTime();
+                var suggestedNextDeparture = await TryCreateTripAsync(date, departureTime);
+                var nextByInterval = departureTime.Add(interval);
+                var nextDeparture = suggestedNextDeparture > nextByInterval
+                    ? suggestedNextDeparture
+                    : nextByInterval;
+                if (nextDeparture <= departureTime)
+                {
+                    nextDeparture = departureTime.Add(interval);
+                }
+
+                localCursor = nextDeparture.ToOffset(VietnamOffset);
             }
         }
 
@@ -421,7 +452,7 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
             skippedItems);
     }
 
-    private static IReadOnlyList<TimeOnly> ResolveDepartureTimes(GenerateTripsCommand request)
+    private static IReadOnlyList<TimeOnly>? ResolveDepartureTimes(GenerateTripsCommand request)
     {
         if (request.DepartureTimes is { Count: > 0 })
         {
@@ -431,14 +462,6 @@ public sealed class GenerateTripsCommandHandler : IRequestHandler<GenerateTripsC
                 .ToList();
         }
 
-        var times = new List<TimeOnly>();
-        var currentMinutes = request.StartTime!.Value.Hour * 60 + request.StartTime.Value.Minute;
-        var endMinutes = request.EndTime!.Value.Hour * 60 + request.EndTime.Value.Minute;
-        for (var minute = currentMinutes; minute <= endMinutes; minute += request.IntervalMinutes!.Value)
-        {
-            times.Add(TimeOnly.FromTimeSpan(TimeSpan.FromMinutes(minute)));
-        }
-
-        return times;
+        return null;
     }
 }
