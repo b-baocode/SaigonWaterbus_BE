@@ -39,6 +39,7 @@ public sealed class Tracking : IEndpointGroup
     private const string MovementStatusCancelled = "Cancelled";
     private const string MovementStatusIncident = "Incident";
     private const string IncidentLocationStatus = "incident";
+    private const string BoatStatusRejectedReason = "boat-status";
 
     private const string LocationExample =
         """
@@ -146,18 +147,37 @@ public sealed class Tracking : IEndpointGroup
             return Results.BadRequest(new { message = "boatCode không khớp với thiết bị GPS đã đăng ký." });
         }
 
+        var now = timeProvider.GetUtcNow();
         if (gpsDevice.Boat.Status is BoatStatus.UnderMaintenance or BoatStatus.Inactive or BoatStatus.Retired)
         {
-            return Results.Conflict(new
-            {
-                accepted = false,
-                message = "Tàu không ở trạng thái vận hành nên backend không nhận GPS chạy tuyến.",
-                boatStatus = gpsDevice.Boat.Status.ToString()
-            });
+            logger.LogInformation(
+                "Ignored GPS latest-location update for boat {BoatCode}: {Rejected}, boat status {BoatStatus}, incoming sequence {Sequence}.",
+                gpsDevice.Boat.Code,
+                BoatStatusRejectedReason,
+                gpsDevice.Boat.Status,
+                request.Sequence);
+
+            var current = await LoadLatestBoatLocationDtoByCodeAsync(
+                dbContext,
+                timeProvider,
+                gpsDevice.Boat.Code,
+                cancellationToken);
+
+            return Results.Ok(new TrackingLocationAcceptedResponse(
+                false,
+                request.MessageId,
+                gpsDevice.DeviceId,
+                gpsDevice.Boat.Code,
+                gpsDevice.BoatId,
+                null,
+                null,
+                now,
+                LatestUpdated: false,
+                Rejected: BoatStatusRejectedReason,
+                Current: ToCurrentLocationResponse(current)));
         }
 
         var speedKmh = ResolveRequestSpeedKmh(request);
-        var now = timeProvider.GetUtcNow();
         var recordedAt = request.RecordedAt.ToUniversalTime();
         var liveAuthorityWindow = ResolveLiveAuthorityWindow(configuration);
         var trackingSource = ResolveTrackingSource(headerTrackingSource, request.Source);
