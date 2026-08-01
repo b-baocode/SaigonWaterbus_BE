@@ -1737,44 +1737,13 @@ public sealed class Tracking : IEndpointGroup
                 && x.Status == StationStatus.Active)
             .ToListAsync(cancellationToken);
 
-        var requestedStationCode = NormalizeOptionalText(currentStationCode);
-        if (requestedStationCode is not null)
-        {
-            var requestedStation = stations.FirstOrDefault(x =>
-                StationCodeMatches(x.StationCode, requestedStationCode));
-            if (requestedStation is not null)
-            {
-                return requestedStation;
-            }
-        }
-
-        return stations
-            .Where(x => x.Latitude.HasValue && x.Longitude.HasValue)
-            .Select(x => new
-            {
-                Station = x,
-                DistanceKm = CalculateDistanceKm(lat, lng, x.Latitude!.Value, x.Longitude!.Value)
-            })
-            .Where(x => x.DistanceKm <= CurrentStationRadiusKm)
-            .OrderBy(x => x.DistanceKm)
-            .Select(x => x.Station)
-            .FirstOrDefault();
+        return TrackingCurrentStationResolver.Resolve(
+            stations,
+            currentStationCode,
+            lat,
+            lng,
+            CurrentStationRadiusKm);
     }
-
-    private static bool StationCodeMatches(string stationCode, string requestedStationCode)
-    {
-        var normalizedStationCode = NormalizeStationCode(stationCode);
-        var normalizedRequestedCode = NormalizeStationCode(requestedStationCode);
-        return string.Equals(normalizedStationCode, normalizedRequestedCode, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(WithoutStationPrefix(normalizedStationCode), WithoutStationPrefix(normalizedRequestedCode), StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeStationCode(string value) => value.Trim().ToUpperInvariant();
-
-    private static string WithoutStationPrefix(string value) =>
-        value.StartsWith("ST-", StringComparison.OrdinalIgnoreCase)
-            ? value[3..]
-            : value;
 
     private static async Task InvalidateLatestLocationCachesAsync(
         IEndpointResponseCache responseCache,
