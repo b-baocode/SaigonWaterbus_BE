@@ -39,6 +39,7 @@ public sealed class Tracking : IEndpointGroup
     private const string MovementStatusCancelled = "Cancelled";
     private const string MovementStatusIncident = "Incident";
     private const string IncidentLocationStatus = "incident";
+    private const string BoatStatusRejectedReason = "boat-status";
 
     private const string LocationExample =
         """
@@ -146,18 +147,37 @@ public sealed class Tracking : IEndpointGroup
             return Results.BadRequest(new { message = "boatCode không khớp với thiết bị GPS đã đăng ký." });
         }
 
+        var now = timeProvider.GetUtcNow();
         if (gpsDevice.Boat.Status is BoatStatus.UnderMaintenance or BoatStatus.Inactive or BoatStatus.Retired)
         {
-            return Results.Conflict(new
-            {
-                accepted = false,
-                message = "Tàu không ở trạng thái vận hành nên backend không nhận GPS chạy tuyến.",
-                boatStatus = gpsDevice.Boat.Status.ToString()
-            });
+            logger.LogInformation(
+                "Ignored GPS latest-location update for boat {BoatCode}: {Rejected}, boat status {BoatStatus}, incoming sequence {Sequence}.",
+                gpsDevice.Boat.Code,
+                BoatStatusRejectedReason,
+                gpsDevice.Boat.Status,
+                request.Sequence);
+
+            var current = await LoadLatestBoatLocationDtoByCodeAsync(
+                dbContext,
+                timeProvider,
+                gpsDevice.Boat.Code,
+                cancellationToken);
+
+            return Results.Ok(new TrackingLocationAcceptedResponse(
+                false,
+                request.MessageId,
+                gpsDevice.DeviceId,
+                gpsDevice.Boat.Code,
+                gpsDevice.BoatId,
+                null,
+                null,
+                now,
+                LatestUpdated: false,
+                Rejected: BoatStatusRejectedReason,
+                Current: ToCurrentLocationResponse(current)));
         }
 
         var speedKmh = ResolveRequestSpeedKmh(request);
-        var now = timeProvider.GetUtcNow();
         var recordedAt = request.RecordedAt.ToUniversalTime();
         var liveAuthorityWindow = ResolveLiveAuthorityWindow(configuration);
         var trackingSource = ResolveTrackingSource(headerTrackingSource, request.Source);
@@ -1737,44 +1757,13 @@ public sealed class Tracking : IEndpointGroup
                 && x.Status == StationStatus.Active)
             .ToListAsync(cancellationToken);
 
-        var requestedStationCode = NormalizeOptionalText(currentStationCode);
-        if (requestedStationCode is not null)
-        {
-            var requestedStation = stations.FirstOrDefault(x =>
-                StationCodeMatches(x.StationCode, requestedStationCode));
-            if (requestedStation is not null)
-            {
-                return requestedStation;
-            }
-        }
-
-        return stations
-            .Where(x => x.Latitude.HasValue && x.Longitude.HasValue)
-            .Select(x => new
-            {
-                Station = x,
-                DistanceKm = CalculateDistanceKm(lat, lng, x.Latitude!.Value, x.Longitude!.Value)
-            })
-            .Where(x => x.DistanceKm <= CurrentStationRadiusKm)
-            .OrderBy(x => x.DistanceKm)
-            .Select(x => x.Station)
-            .FirstOrDefault();
+        return TrackingCurrentStationResolver.Resolve(
+            stations,
+            currentStationCode,
+            lat,
+            lng,
+            CurrentStationRadiusKm);
     }
-
-    private static bool StationCodeMatches(string stationCode, string requestedStationCode)
-    {
-        var normalizedStationCode = NormalizeStationCode(stationCode);
-        var normalizedRequestedCode = NormalizeStationCode(requestedStationCode);
-        return string.Equals(normalizedStationCode, normalizedRequestedCode, StringComparison.OrdinalIgnoreCase)
-            || string.Equals(WithoutStationPrefix(normalizedStationCode), WithoutStationPrefix(normalizedRequestedCode), StringComparison.OrdinalIgnoreCase);
-    }
-
-    private static string NormalizeStationCode(string value) => value.Trim().ToUpperInvariant();
-
-    private static string WithoutStationPrefix(string value) =>
-        value.StartsWith("ST-", StringComparison.OrdinalIgnoreCase)
-            ? value[3..]
-            : value;
 
     private static async Task InvalidateLatestLocationCachesAsync(
         IEndpointResponseCache responseCache,
