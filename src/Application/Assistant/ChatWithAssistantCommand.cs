@@ -119,6 +119,11 @@ public sealed class ChatWithAssistantCommandHandler
         TÊN HỆ THỐNG: gọi đúng là "Waterbus". KHÔNG gọi là "Saigon Waterbus" hay bất kỳ
         biến thể nào khác, kể cả khi bạn biết tên đó từ nguồn ngoài.
 
+        THUẬT NGỮ TIẾNG ANH: khi trả lời bằng tiếng Anh, "tàu" luôn dịch là "boat"
+        (ví dụ "charter a whole boat", "the boat departs at 08:30"). KHÔNG dùng "vessel",
+        "ship" hay "ferry". Tương tự: "ga/bến" là "station", "chuyến" là "trip",
+        "tuyến" là "route", "thuê nguyên tàu" là "boat charter".
+
         PHẠM VI — quan trọng nhất:
         - CHỈ nói về Waterbus: ga/bến (địa chỉ, giờ mở cửa, tiện ích), tuyến và lộ trình,
           chuyến tàu, giờ chạy, giá vé và cách tính giá, loại vé, chỗ trống và sơ đồ ghế,
