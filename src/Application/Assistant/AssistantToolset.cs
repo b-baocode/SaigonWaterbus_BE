@@ -714,9 +714,10 @@ public sealed class AssistantToolset
 
         new ChatToolDefinition(
             "get_charter_prices",
-            "Lấy bảng giá thuê NGUYÊN CHIẾC tàu (charter) theo số tầng và đơn vị thuê (giờ/ngày), "
-            + "kèm đội tàu hiện có. Gọi khi khách hỏi giá thuê tàu, thuê bao trọn chuyến, thuê tàu "
-            + "tổ chức tiệc/sự kiện, hoặc hỏi tàu chứa được bao nhiêu người.",
+            "Lấy bảng giá thuê NGUYÊN CHIẾC tàu (tiếng Anh: request booking) theo số tầng và đơn vị "
+            + "thuê (giờ/ngày), kèm đội tàu hiện có. Gọi khi khách hỏi giá thuê tàu, thuê bao trọn "
+            + "chuyến, thuê tàu tổ chức tiệc/sự kiện, hỏi \"request booking\", hoặc hỏi tàu chứa "
+            + "được bao nhiêu người.",
             ParseSchema("""
             { "type": "object", "properties": {} }
             """)),
