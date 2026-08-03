@@ -1,4 +1,5 @@
 using System.Globalization;
+using SaigonWaterbus.Application.Landmarks;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Enums;
 
@@ -140,6 +141,23 @@ public sealed class Trips : IEndpointGroup
                 "Trip cu tao truoc khi co trip_stops -> BE tu suy lich trinh tu route stops + gio khoi hanh nhu truoc.",
                 "incidentInfo neu co su co gan voi trip: gom tau goc bi su co, tau cuu ho, tau thay the, mission, so khach bi anh huong va delay de FE show banner.",
                 "Ben dau chi co gio di, ben cuoi chi co gio den."));
+
+        group.MapGet(GetTripLandmarks, "{id:guid}/landmarks")
+            .AllowAnonymous()
+            .WithSummary("Diem thuyet minh cua mot chuyen (huong dan vien)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "Tron bo du lieu man huong dan vien cua 1 chuyen: routePath (toa do ve duong di), stations (ben kem toa do) "
+                + "va landmarks[] ma tuyen di ngang qua — da loc theo triggerRadiusMeters va sap theo thu tu gap doc duong.",
+                "Landmark khong gan tuyen (dinh danh bang toa do); viec 'chuyen nay di qua diem nao' tinh o BE de moi client giong nhau. "
+                + "Thay cho viec tu goi GET /api/routes/{routeId} + GET /api/stations + GET /api/landmarks roi tu chieu hinh hoc.",
+                "voiceId (optional): chon giong. Bo trong (hoac giong da tat) thi dung giong mac dinh (displayOrder nho nhat).",
+                "alongMeters = quang duong doc tuyen toi diem do; distanceToPathMeters = khoang cach tu diem toi tim tuyen.",
+                "audioUrl null = giong do chua bake tieng cho diem nay; missingAudioCount dem so diem nhu vay.",
+                "Tuyen chua ve routeGeometry thi routePath lay tam duong noi cac ben.",
+                "FE tai 1 lan luc mo man hinh, sau do bam GPS (GET /api/tracking/trips/{tripId}/latest + hub /hubs/tracking) "
+                + "va tu phat audio khi tau vao trong ban kinh."));
 
         group.MapGet(GetTripPassengers, "{id:guid}/passengers")
             .RequireAuthorization()
@@ -342,6 +360,10 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> GetTripById(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripDetailQuery(id), ct));
+
+    private static async Task<IResult> GetTripLandmarks(
+        ISender sender, Guid id, Guid? voiceId, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetTripLandmarksQuery(id, voiceId), ct));
 
     private static async Task<IResult> GetTripPassengers(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripPassengerManifestQuery(id), ct));
