@@ -502,3 +502,6 @@ $RECYCLE.BIN/
 
 # Claude Code local config
 .claude/
+
+# Local design docs / diagrams (not shipped with the solution)
+docs/
