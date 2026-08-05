@@ -95,6 +95,12 @@ public class BookingHoldAndETicketTests
 
         // Không gửi email xác nhận thanh toán kiểu cũ cho booking thường.
         sender.Notifications.ShouldBeEmpty();
+
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var manifestByBookingCode = await new GetBookingManifestQueryHandler(context, staffContext)
+            .Handle(new GetBookingManifestByCodeOrQrTokenQuery("BK-ETICKET"), CancellationToken.None);
+        manifestByBookingCode.BookingId.ShouldBe(booking.Id);
+        manifestByBookingCode.BookingQrToken.ShouldBe(booking.CharterBookingQrToken);
     }
 
     [Test]

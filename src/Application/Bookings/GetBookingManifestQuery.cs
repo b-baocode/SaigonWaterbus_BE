@@ -78,6 +78,8 @@ public sealed record GetBookingManifestByCodeQuery(string BookingCode) : IReques
 
 public sealed record GetBookingManifestByQrTokenQuery(string QrToken) : IRequest<BookingManifestDto>;
 
+public sealed record GetBookingManifestByCodeOrQrTokenQuery(string CodeOrToken) : IRequest<BookingManifestDto>;
+
 public sealed class GetBookingManifestByCodeQueryValidator : AbstractValidator<GetBookingManifestByCodeQuery>
 {
     public GetBookingManifestByCodeQueryValidator()
@@ -94,9 +96,18 @@ public sealed class GetBookingManifestByQrTokenQueryValidator : AbstractValidato
     }
 }
 
+public sealed class GetBookingManifestByCodeOrQrTokenQueryValidator : AbstractValidator<GetBookingManifestByCodeOrQrTokenQuery>
+{
+    public GetBookingManifestByCodeOrQrTokenQueryValidator()
+    {
+        RuleFor(x => x.CodeOrToken).NotEmpty().MaximumLength(100);
+    }
+}
+
 public sealed class GetBookingManifestQueryHandler :
     IRequestHandler<GetBookingManifestByCodeQuery, BookingManifestDto>,
-    IRequestHandler<GetBookingManifestByQrTokenQuery, BookingManifestDto>
+    IRequestHandler<GetBookingManifestByQrTokenQuery, BookingManifestDto>,
+    IRequestHandler<GetBookingManifestByCodeOrQrTokenQuery, BookingManifestDto>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
@@ -132,15 +143,25 @@ public sealed class GetBookingManifestQueryHandler :
             cancellationToken);
     }
 
+    public async Task<BookingManifestDto> Handle(
+        GetBookingManifestByCodeOrQrTokenQuery request,
+        CancellationToken cancellationToken)
+    {
+        var codeOrToken = request.CodeOrToken.Trim();
+        var normalizedBookingCode = codeOrToken.ToUpperInvariant();
+        return await GetManifestAsync(
+            x => x.CharterBookingQrToken == codeOrToken
+                || x.BookingCode.ToUpper() == normalizedBookingCode,
+            cancellationToken);
+    }
+
     private async Task<BookingManifestDto> GetManifestAsync(
         System.Linq.Expressions.Expression<Func<Booking, bool>> predicate,
         CancellationToken cancellationToken)
     {
         var currentUser = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
 
-        var booking = await BookingManifestSupport.BuildQuery(_context)
-            .Where(x => x.BookingType == Booking.SeatBookingType)
-            .SingleOrDefaultAsync(predicate, cancellationToken)
+        var booking = await BookingManifestSupport.FindSeatBookingAsync(_context, predicate, cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
 
         BookingManifestSupport.EnsureCanView(currentUser, booking);
@@ -150,36 +171,83 @@ public sealed class GetBookingManifestQueryHandler :
 
 internal static class BookingManifestSupport
 {
-    public static IQueryable<Booking> BuildQuery(IApplicationDbContext context) =>
-        context.Set<Booking>()
+    public static async Task<Booking?> FindSeatBookingAsync(
+        IApplicationDbContext context,
+        System.Linq.Expressions.Expression<Func<Booking, bool>> predicate,
+        CancellationToken cancellationToken)
+    {
+        var booking = await context.Set<Booking>()
             .AsNoTracking()
-            .Include(x => x.Trip)
-                .ThenInclude(t => t!.Boat)
-            .Include(x => x.Trip)
-                .ThenInclude(t => t!.Route)
-                    .ThenInclude(r => r.RouteStops)
-                        .ThenInclude(rs => rs.Station)
-            .Include(x => x.Trip)
-                .ThenInclude(t => t!.TripStops)
-            .Include(x => x.ReturnTrip)
-                .ThenInclude(t => t!.Boat)
-            .Include(x => x.ReturnTrip)
-                .ThenInclude(t => t!.Route)
-                    .ThenInclude(r => r.RouteStops)
-                        .ThenInclude(rs => rs.Station)
-            .Include(x => x.ReturnTrip)
-                .ThenInclude(t => t!.TripStops)
-            .Include(x => x.Passengers)
-                .ThenInclude(p => p.TripSeat)
-                    .ThenInclude(ts => ts!.Seat)
-            .Include(x => x.Passengers)
-                .ThenInclude(p => p.FromStation)
-            .Include(x => x.Passengers)
-                .ThenInclude(p => p.ToStation)
-            .Include(x => x.Tickets)
-                .ThenInclude(t => t.CheckedInByUser)
-            .Include(x => x.Tickets)
-                .ThenInclude(t => t.CheckedOutByUser);
+            .Where(x => x.BookingType == Booking.SeatBookingType)
+            .SingleOrDefaultAsync(predicate, cancellationToken);
+
+        if (booking is not null)
+        {
+            await LoadRegularBookingManifestGraphAsync(context, booking, cancellationToken);
+        }
+
+        return booking;
+    }
+
+    public static async Task<Booking> GetByIdAsync(
+        IApplicationDbContext context,
+        Guid bookingId,
+        CancellationToken cancellationToken)
+    {
+        var booking = await context.Set<Booking>()
+            .AsNoTracking()
+            .SingleAsync(x => x.Id == bookingId, cancellationToken);
+
+        await LoadRegularBookingManifestGraphAsync(context, booking, cancellationToken);
+        return booking;
+    }
+
+    private static async Task LoadRegularBookingManifestGraphAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        if (booking.TripId.HasValue)
+        {
+            booking.Trip = await LoadTripAsync(context, booking.TripId.Value, cancellationToken);
+        }
+
+        if (booking.ReturnTripId.HasValue)
+        {
+            booking.ReturnTrip = booking.ReturnTripId == booking.TripId
+                ? booking.Trip
+                : await LoadTripAsync(context, booking.ReturnTripId.Value, cancellationToken);
+        }
+
+        booking.Passengers = await context.Set<BookingPassenger>()
+            .AsNoTracking()
+            .Include(x => x.TripSeat)
+                .ThenInclude(x => x!.Seat)
+            .Include(x => x.FromStation)
+            .Include(x => x.ToStation)
+            .Where(x => x.BookingId == booking.Id)
+            .ToListAsync(cancellationToken);
+
+        booking.Tickets = await context.Set<Ticket>()
+            .AsNoTracking()
+            .Include(x => x.CheckedInByUser)
+            .Include(x => x.CheckedOutByUser)
+            .Where(x => x.BookingId == booking.Id)
+            .ToListAsync(cancellationToken);
+    }
+
+    private static async Task<Trip?> LoadTripAsync(
+        IApplicationDbContext context,
+        Guid tripId,
+        CancellationToken cancellationToken) =>
+        await context.Set<Trip>()
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .Include(x => x.Route)
+                .ThenInclude(x => x.RouteStops)
+                    .ThenInclude(x => x.Station)
+            .Include(x => x.TripStops)
+            .SingleOrDefaultAsync(x => x.Id == tripId, cancellationToken);
 
     public static void EnsureCanView(User currentUser, Booking booking)
     {
