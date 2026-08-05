@@ -62,6 +62,11 @@ public sealed class SetLandmarkAudioCommandHandler : IRequestHandler<SetLandmark
                 DurationSeconds = request.DurationSeconds,
             };
             landmark.Audios.Add(audio);
+            // Vẫn phải Add tường minh qua DbSet (giống chỗ thêm Payment vào booking): chỉ nhét vào
+            // collection của landmark đang được tracking thì EF thấy Id đã có sẵn (BaseGuidEntity gán
+            // Guid.NewGuid() lúc khởi tạo) nên xếp vào trạng thái Modified -> sinh UPDATE trúng 0 dòng
+            // -> DbUpdateConcurrencyException -> API trả 409.
+            _context.Set<LandmarkAudio>().Add(audio);
         }
         else
         {
