@@ -34,7 +34,7 @@ public sealed record VoiceAdminDto(
 
 /// <summary>Một bản thu đã bake của landmark (dùng ở màn admin để biết giọng nào đã có audio).</summary>
 public sealed record LandmarkAudioDto(
-    Guid LandmarkAudioId,
+    Guid AudioId,
     Guid VoiceId,
     string VoiceName,
     string AudioUrl,

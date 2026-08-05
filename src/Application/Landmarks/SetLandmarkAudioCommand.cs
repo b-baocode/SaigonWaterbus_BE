@@ -8,13 +8,15 @@ namespace SaigonWaterbus.Application.Landmarks;
 /// <summary>
 /// Ghi nhận audio đã pre-bake cho (landmark × giọng). Upsert: có rồi thì cập nhật URL,
 /// chưa có thì tạo mới — nhờ UNIQUE(landmark_id, voice_id).
+/// Trả về nguyên landmark kèm toàn bộ audio (giống GET admin) để màn admin vẽ lại
+/// danh sách ngay, không phải gọi thêm một lượt lấy danh sách.
 /// </summary>
 [Authorize(Roles = "Admin")]
 public sealed record SetLandmarkAudioCommand(
     Guid LandmarkId,
     Guid VoiceId,
     string AudioUrl,
-    decimal? DurationSeconds = null) : IRequest<LandmarkAudioDto>;
+    decimal? DurationSeconds = null) : IRequest<LandmarkAdminDto>;
 
 public sealed class SetLandmarkAudioCommandValidator : AbstractValidator<SetLandmarkAudioCommand>
 {
@@ -29,17 +31,18 @@ public sealed class SetLandmarkAudioCommandValidator : AbstractValidator<SetLand
     }
 }
 
-public sealed class SetLandmarkAudioCommandHandler : IRequestHandler<SetLandmarkAudioCommand, LandmarkAudioDto>
+public sealed class SetLandmarkAudioCommandHandler : IRequestHandler<SetLandmarkAudioCommand, LandmarkAdminDto>
 {
     private readonly IApplicationDbContext _context;
 
     public SetLandmarkAudioCommandHandler(IApplicationDbContext context) => _context = context;
 
-    public async Task<LandmarkAudioDto> Handle(SetLandmarkAudioCommand request, CancellationToken cancellationToken)
+    public async Task<LandmarkAdminDto> Handle(SetLandmarkAudioCommand request, CancellationToken cancellationToken)
     {
-        var landmarkExists = await _context.Set<Landmark>()
-            .AnyAsync(l => l.Id == request.LandmarkId, cancellationToken);
-        if (!landmarkExists)
+        var landmark = await _context.Set<Landmark>()
+            .Include(l => l.Audios).ThenInclude(a => a.Voice)
+            .SingleOrDefaultAsync(l => l.Id == request.LandmarkId, cancellationToken);
+        if (landmark is null)
             throw new ValidationException([new ValidationFailure(nameof(request.LandmarkId), "Landmark not found.")]);
 
         var voice = await _context.Set<Voice>()
@@ -47,8 +50,7 @@ public sealed class SetLandmarkAudioCommandHandler : IRequestHandler<SetLandmark
         if (voice is null)
             throw new ValidationException([new ValidationFailure(nameof(request.VoiceId), "Voice not found.")]);
 
-        var audio = await _context.Set<LandmarkAudio>()
-            .SingleOrDefaultAsync(a => a.LandmarkId == request.LandmarkId && a.VoiceId == request.VoiceId, cancellationToken);
+        var audio = landmark.Audios.SingleOrDefault(a => a.VoiceId == request.VoiceId);
 
         if (audio is null)
         {
@@ -59,7 +61,7 @@ public sealed class SetLandmarkAudioCommandHandler : IRequestHandler<SetLandmark
                 AudioUrl = request.AudioUrl.Trim(),
                 DurationSeconds = request.DurationSeconds,
             };
-            _context.Set<LandmarkAudio>().Add(audio);
+            landmark.Audios.Add(audio);
         }
         else
         {
@@ -69,6 +71,6 @@ public sealed class SetLandmarkAudioCommandHandler : IRequestHandler<SetLandmark
 
         await _context.SaveChangesAsync(cancellationToken);
         audio.Voice = voice;
-        return LandmarkAudioDto.From(audio);
+        return LandmarkAdminDto.From(landmark);
     }
 }

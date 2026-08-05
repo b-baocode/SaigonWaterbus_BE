@@ -71,7 +71,8 @@ public sealed class Landmarks : IEndpointGroup
             .WithSummary("Ghi nhan audio pre-bake cho landmark")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", SetAudioExample,
                 "Upsert audio cho (landmark x giong): co roi thi cap nhat URL, chua co thi tao.",
-                "audioUrl la link mp3 da bake bang VieNeu-TTS va up Cloudinary."));
+                "audioUrl la link mp3 da bake bang VieNeu-TTS va up Cloudinary.",
+                "Tra ve nguyen landmark kem audios[] (giong GET admin) de FE ve lai danh sach ngay."));
 
         group.MapDelete(DeleteLandmarkAudio, "audios/{audioId:guid}")
             .RequireAuthorization()
