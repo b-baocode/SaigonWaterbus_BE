@@ -120,7 +120,7 @@ public static class KnowledgeSearchSupport
 
         return corpus
             .Select(entry => new { entry, match = Score(entry, tokens) })
-            .Where(x => x.match.MatchedTokens >= requiredMatches || x.match.HasStrongKeywordHit)
+            .Where(x => IsAccepted(x.match, requiredMatches))
             .OrderByDescending(x => x.match.Score)
             .ThenBy(x => x.entry.DisplayOrder)
             .ThenBy(x => x.entry.Title, StringComparer.Ordinal)
@@ -128,6 +128,11 @@ public static class KnowledgeSearchSupport
             .Select(x => x.entry)
             .ToList();
     }
+
+    public static int GetRequiredMatchCount(int tokenCount) => Math.Min(MinMatchedTokens, tokenCount);
+
+    public static bool IsAccepted(KnowledgeMatchScore match, int requiredMatches) =>
+        match.MatchedTokens >= requiredMatches || match.HasStrongKeywordHit;
 
     /// <summary>Điểm khớp và số token khác nhau khớp được — cần cả hai để lọc ra kết quả thật sự liên quan.</summary>
     public static KnowledgeMatchScore Score(KnowledgeSearchCandidate entry, string[] tokens)
