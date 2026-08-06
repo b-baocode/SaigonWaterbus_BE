@@ -105,6 +105,28 @@ public class CreateRoundTripBookingTests
     }
 
     [Test]
+    public async Task ReturnLegBeforeOutboundArrivalIsRejected()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedTripAsync(context, "TR-OUT-LATE", "BD", "TADA", Now.AddHours(12));
+        await SeedTripAsync(context, "TR-RET-EARLY", "TADA", "BD", Now.AddHours(10));
+        var handler = CreateHandler(context, userContext);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new CreateBookingCommand(
+                "TR-OUT-LATE",
+                [Adult("A1", "BD", "TADA")],
+                null,
+                "TR-RET-EARLY",
+                [Adult("A1", "TADA", "BD")]),
+            CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("Giờ chiều về phải sau giờ khách xuống ở chiều đi"));
+    }
+
+    [Test]
     public async Task ReturnLegOccupiedSeatIsRejected()
     {
         await using var context = SeatFlowTestData.CreateContext();

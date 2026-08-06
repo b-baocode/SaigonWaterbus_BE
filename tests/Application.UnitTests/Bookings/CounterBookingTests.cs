@@ -5,6 +5,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Payments;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -81,6 +82,206 @@ public class CounterBookingTests
         payment.PaidAt.ShouldBe(Now);
     }
 
+    [Test]
+    public async Task CounterCustomerLookupFindsActiveCustomerByPhoneAndEmail()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var customer = context.Set<User>().Single(u => u.Id == customerContext.UserId);
+        customer.FullName = "Nguyen Thi Loyalty";
+        customer.PhoneNumber = PhoneRules.ToInternationalFormat("0901234567");
+        customer.NormalizedPhoneNumber = customer.PhoneNumber;
+        customer.Email = "loyalty@example.test";
+        customer.NormalizedEmail = customer.Email.ToUpperInvariant();
+        customer.PointBalance = 250;
+        await context.SaveChangesAsync();
+
+        var handler = new LookupCounterBookingCustomerQueryHandler(context, staffContext);
+
+        var byPhone = await handler.Handle(new LookupCounterBookingCustomerQuery("0901234567"), CancellationToken.None);
+        var byEmail = await handler.Handle(new LookupCounterBookingCustomerQuery("loyalty@example.test"), CancellationToken.None);
+
+        byPhone.Count.ShouldBe(1);
+        byPhone.Single().CustomerUserId.ShouldBe(customer.Id);
+        byPhone.Single().FullName.ShouldBe("Nguyen Thi Loyalty");
+        byPhone.Single().PointBalance.ShouldBe(250);
+        byEmail.Single().CustomerUserId.ShouldBe(customer.Id);
+    }
+
+    [Test]
+    public void CounterCustomerLookupRejectsCustomerCodeKeyword()
+    {
+        var result = new LookupCounterBookingCustomerQueryValidator()
+            .Validate(new LookupCounterBookingCustomerQuery("CU00042"));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(x => x.PropertyName == nameof(LookupCounterBookingCustomerQuery.Keyword));
+    }
+
+    [Test]
+    public async Task NonStaffCannotLookupCounterCustomers()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var handler = new LookupCounterBookingCustomerQueryHandler(context, customerContext);
+
+        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+            handler.Handle(new LookupCounterBookingCustomerQuery("0901234567"), CancellationToken.None));
+    }
+
+    [Test]
+    public async Task CounterSaleCanLinkCustomerAccountForLaterPointAccrual()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedTripAsync(context, "TR-CTR-POINT", TripStatus.Scheduled);
+        var handler = CreateHandler(context, staffContext);
+
+        var result = await handler.Handle(
+            CashCommand("TR-CTR-POINT", "A1") with
+            {
+                CustomerUserId = customerContext.UserId,
+                CustomerConfirmedForPoints = true
+            },
+            CancellationToken.None);
+
+        var booking = context.Set<Booking>().Single(b => b.Id == result.BookingId);
+        booking.UserId.ShouldBe(customerContext.UserId);
+        booking.SoldByStaffId.ShouldBe(staffContext.UserId);
+        booking.PointsEarned.ShouldBe(0);
+        context.Set<User>().Single(u => u.Id == customerContext.UserId).PointBalance.ShouldBe(0);
+
+        var trip = context.Set<Trip>().Single(t => t.TripCode == "TR-CTR-POINT");
+        var oldStatus = trip.TripStatus;
+        trip.TripStatus = TripStatus.Completed;
+        await PointSupport.AwardCompletionPointsForCompletedTripAsync(
+            context,
+            trip,
+            oldStatus,
+            Now.AddHours(3),
+            CancellationToken.None);
+        await context.SaveChangesAsync();
+
+        booking.PointsEarned.ShouldBe(100);
+        context.Set<User>().Single(u => u.Id == customerContext.UserId).PointBalance.ShouldBe(100);
+        var transaction = context.Set<PointTransaction>().Single();
+        transaction.BookingId.ShouldBe(booking.Id);
+        transaction.TransactionType.ShouldBe(PointTransactionTypes.Earn);
+        transaction.Points.ShouldBe(100);
+    }
+
+    [Test]
+    public async Task CounterSaleCanUseConfirmedCustomerPointsAtCounter()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var customer = context.Set<User>().Single(u => u.Id == customerContext.UserId);
+        customer.PointBalance = 6_000;
+        await SeedTripAsync(context, "TR-CTR-REDEEM", TripStatus.Scheduled);
+        await context.SaveChangesAsync();
+        var handler = CreateHandler(context, staffContext);
+
+        var result = await handler.Handle(
+            CashCommand("TR-CTR-REDEEM", "A1") with
+            {
+                CustomerUserId = customerContext.UserId,
+                CustomerConfirmedForPoints = true,
+                PointsToUse = 5_000
+            },
+            CancellationToken.None);
+
+        result.TotalAmount.ShouldBe(5_000m);
+        var booking = context.Set<Booking>().Single(b => b.Id == result.BookingId);
+        booking.UserId.ShouldBe(customerContext.UserId);
+        booking.PointsUsed.ShouldBe(5_000);
+        booking.TotalAmount.ShouldBe(5_000m);
+        context.Set<User>().Single(u => u.Id == customerContext.UserId).PointBalance.ShouldBe(1_000);
+
+        var payment = context.Set<Payment>().Single(p => p.BookingId == booking.Id);
+        payment.Amount.ShouldBe(5_000m);
+        var transaction = context.Set<PointTransaction>()
+            .Single(t => t.BookingId == booking.Id && t.TransactionType == PointTransactionTypes.Redeem);
+        transaction.Points.ShouldBe(-5_000);
+        transaction.BalanceAfter.ShouldBe(1_000);
+    }
+
+    [Test]
+    public async Task CounterSaleRequiresStaffConfirmationBeforeLinkingCustomerPoints()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedTripAsync(context, "TR-CTR-CONFIRM", TripStatus.Scheduled);
+        var handler = CreateHandler(context, staffContext);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CashCommand("TR-CTR-CONFIRM", "A1") with { CustomerUserId = customerContext.UserId },
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("Staff phải xác nhận đúng tài khoản"));
+    }
+
+    [Test]
+    public async Task CounterSaleRejectsConfirmationWithoutSelectedCustomer()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        await SeedTripAsync(context, "TR-CTR-NO-CUSTOMER", TripStatus.Scheduled);
+        var handler = CreateHandler(context, staffContext);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CashCommand("TR-CTR-NO-CUSTOMER", "A1") with { CustomerConfirmedForPoints = true },
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("chưa chọn tài khoản khách hàng"));
+    }
+
+    [Test]
+    public async Task CounterSaleRejectsPointUseWithoutSelectedCustomer()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        await SeedTripAsync(context, "TR-CTR-POINT-NO-CUSTOMER", TripStatus.Scheduled);
+        var handler = CreateHandler(context, staffContext);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CashCommand("TR-CTR-POINT-NO-CUSTOMER", "A1") with { PointsToUse = 1_000 },
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("Chỉ dùng điểm khi đã chọn"));
+    }
+
+    [Test]
+    public async Task CounterSaleRejectsLinkedAccountThatIsNotActiveCustomer()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        await SeedTripAsync(context, "TR-CTR-BAD-CUSTOMER", TripStatus.Scheduled);
+        var handler = CreateHandler(context, staffContext);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CashCommand("TR-CTR-BAD-CUSTOMER", "A1") with
+                {
+                    CustomerUserId = managerContext.UserId,
+                    CustomerConfirmedForPoints = true
+                },
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("Tài khoản khách hàng không hợp lệ"));
+    }
+
     [TestCase(TripStatus.Boarding)]
     [TestCase(TripStatus.InProgress)]
     [TestCase(TripStatus.Delayed)]
@@ -95,6 +296,28 @@ public class CounterBookingTests
         var result = await handler.Handle(CashCommand("TR-CTR-2", "A1"), CancellationToken.None);
 
         result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
+    }
+
+    [Test]
+    public async Task CounterSaleRejectsReturnTripBeforeOutboundArrival()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        await SeedTripAsync(context, "TR-CTR-OUT-LATE", TripStatus.Scheduled, departureTime: Now.AddHours(12));
+        await SeedTripAsync(context, "TR-CTR-RET-EARLY", TripStatus.Scheduled, departureTime: Now.AddHours(10));
+        var handler = CreateHandler(context, staffContext);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CashCommand("TR-CTR-OUT-LATE", "A1") with
+                {
+                    ReturnTripCode = "TR-CTR-RET-EARLY",
+                    ReturnItems = [Adult("A1")]
+                },
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("Giờ chiều về phải sau giờ khách xuống ở chiều đi"));
     }
 
     [TestCase(TripStatus.Completed)]

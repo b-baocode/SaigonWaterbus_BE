@@ -46,7 +46,7 @@ public sealed class Tickets : IEndpointGroup
                 """,
                 "Khuyen dung cho FE scan QR de tranh loi URL path khi token co ky tu dac biet.",
                 "codeOrToken nhan ticketCode hoac qrToken ve le; BE cung chap nhan alias ticketCode, qrToken, bookingQrToken.",
-                "Neu codeOrToken la QR tong booking thuong prefix BK thi tra BookingManifestDto.",
+                "Neu codeOrToken la QR tong booking thuong hoac bookingCode prefix BK thi tra BookingManifestDto.",
                 "Neu codeOrToken la QR tong charter prefix CB thi tra CharterBookingManifestDto.",
                 "Neu codeOrToken la ticketCode/qrToken ve le thi tra TicketScanDto.",
                 "BookingManifestDto.passengers show full hanh khach cua QR tong. CHILD co ticketCode/qrToken rieng; INFANT khong ghe co usesCompanionTicket=true va dung ticketCode/qrToken cua ADULT.",
@@ -199,7 +199,7 @@ public sealed class Tickets : IEndpointGroup
 
         if (codeOrToken.StartsWith("BK", StringComparison.OrdinalIgnoreCase))
         {
-            return Results.Ok(await sender.Send(new GetBookingManifestByQrTokenQuery(codeOrToken), ct));
+            return Results.Ok(await sender.Send(new GetBookingManifestByCodeOrQrTokenQuery(codeOrToken), ct));
         }
 
         if (codeOrToken.StartsWith("CB", StringComparison.OrdinalIgnoreCase))

@@ -1,3 +1,4 @@
+using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -100,8 +101,9 @@ public static class PointSupport
         }
 
         var user = await context.Set<User>()
+            .Include(u => u.Role)
             .SingleOrDefaultAsync(u => u.Id == booking.UserId.Value, cancellationToken);
-        if (user is null)
+        if (user is null || !AuthSupport.IsCustomer(user))
         {
             return;
         }

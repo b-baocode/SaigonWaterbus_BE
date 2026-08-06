@@ -15,11 +15,12 @@ public sealed class Points : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "1 point = 1 VND. Tich 1% so tien thuc tra sau khi dich vu hoan tat (trip Completed / charter Completed).",
+                "1 point = 1 VND. Chi tai khoan Customer duoc tich/dung diem; Staff/Manager/Admin khong duoc dung diem cho booking cua chinh ho.",
+                "Tich 1% so tien thuc tra sau khi dich vu hoan tat (trip Completed / charter Completed).",
                 "So tien thuc tra = payment Paid - refundAmount; diem da tich luu trong booking.pointsEarned va khong cong lap.",
                 "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100).",
                 "transactionType: Earn (tich diem), Redeem (dung diem), RedeemCancelled (doi muc dung tai checkout), RedeemReturned (hoan diem do booking het han/huy/hoan tien), EarnRevoked (thu hoi diem do hoan tien).",
-                "Diem duoc dung toi da 50% gia tri don tai buoc tao thanh toan (pointsToUse)."));
+                "Diem duoc dung toi da 50% gia tri don tai buoc tao thanh toan (pointsToUse), hoac tai quay khi staff da lookup va OK dung customer."));
 
         group.MapPost(BackfillCompletedBookingPoints, "admin/backfill-completed-bookings")
             .RequireAuthorization()

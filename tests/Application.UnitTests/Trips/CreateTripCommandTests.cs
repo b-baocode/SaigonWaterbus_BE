@@ -823,7 +823,7 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task GenerateTripsAdvancesContinuousScheduleWhenBoatMustReturnToStart()
+    public async Task GenerateTripsKeepsContinuousScheduleOnFixedIntervalGridWhenBoatMustReturnToStart()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
@@ -851,16 +851,64 @@ public class CreateTripCommandTests
                 CancellationToken.None);
 
         result.Created.ShouldBe(2);
-        result.SkippedBoatBusy.ShouldBe(0);
-        result.SkippedItems.ShouldBeEmpty();
+        result.SkippedBoatBusy.ShouldBe(1);
+        result.SkippedItems!.Single().RequestedDepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            .ShouldBe(new TimeSpan(8, 30, 0));
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BB-20300101-R1-", StringComparison.Ordinal));
         context.Trips
             .OrderBy(x => x.DepartureTime)
             .Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
             .ShouldBe([
                 new TimeSpan(8, 0, 0),
-                new TimeSpan(8, 45, 0)
+                new TimeSpan(9, 0, 0)
             ]);
+    }
+
+    [Test]
+    public async Task PreviewTripsScheduleWarnsForBlockedFixedDepartureTimesWithoutCreatingTrips()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        route.IsBookable = true;
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = 70;
+        var boat = BoatWithSeats("BOAT-1", seatCount: 3);
+        var date = new DateOnly(2030, 1, 1);
+        var firstDeparture = new DateTimeOffset(2030, 1, 1, 18, 0, 0, TimeSpan.FromHours(7));
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(context, boat, firstDeparture);
+
+        var result = await new PreviewTripsScheduleCommandHandler(context)
+            .Handle(
+                new PreviewTripsScheduleCommand(
+                    RouteCode: "R1",
+                    BoatCode: "BOAT-1",
+                    DepartureTimes:
+                    [
+                        new TimeOnly(18, 0),
+                        new TimeOnly(18, 30),
+                        new TimeOnly(19, 0)
+                    ],
+                    FromDate: date,
+                    ToDate: date),
+                CancellationToken.None);
+
+        result.WouldCreate.ShouldBe(1);
+        result.WouldSkip.ShouldBe(2);
+        result.HasWarnings.ShouldBeTrue();
+        result.SkippedBoatBusy.ShouldBe(2);
+        result.Items.Select(x => new
+            {
+                Departure = x.RequestedDepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay,
+                x.CanCreate
+            })
+            .ShouldBe([
+                new { Departure = new TimeSpan(18, 0, 0), CanCreate = true },
+                new { Departure = new TimeSpan(18, 30, 0), CanCreate = false },
+                new { Departure = new TimeSpan(19, 0, 0), CanCreate = false }
+            ]);
+        result.Items.Skip(1).ShouldAllBe(x => x.Reason!.Contains("Chuyến mới chỉ được khởi hành sớm nhất"));
+        context.Trips.Count().ShouldBe(0);
     }
 
     [Test]
@@ -1040,7 +1088,7 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task GenerateTripsUsesSightseeingDurationAndTurnaroundForContinuousSchedule()
+    public async Task GenerateTripsKeepsSightseeingScheduleOnFixedIntervalGrid()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var station = Station("BD", "Bến Bạch Đằng");
@@ -1071,8 +1119,8 @@ public class CreateTripCommandTests
                     IntervalMinutes: 15),
                 CancellationToken.None);
 
-        result.Created.ShouldBe(3);
-        result.SkippedBoatBusy.ShouldBe(0);
+        result.Created.ShouldBe(2);
+        result.SkippedBoatBusy.ShouldBe(7);
         context.Trips
             .OrderBy(x => x.DepartureTime)
             .Select(x => new
@@ -1082,9 +1130,56 @@ public class CreateTripCommandTests
             })
             .ShouldBe([
                 new { Departure = new TimeSpan(18, 0, 0), Arrival = new TimeSpan(18, 50, 0) },
-                new { Departure = new TimeSpan(19, 5, 0), Arrival = new TimeSpan(19, 55, 0) },
-                new { Departure = new TimeSpan(20, 10, 0), Arrival = new TimeSpan(21, 0, 0) }
+                new { Departure = new TimeSpan(19, 15, 0), Arrival = new TimeSpan(20, 5, 0) }
             ]);
+    }
+
+    [TestCase(30, "18:00:00,18:30:00,19:00:00,19:30:00,20:00:00")]
+    [TestCase(45, "18:00:00,18:45:00,19:30:00")]
+    [TestCase(60, "18:00:00,19:00:00,20:00:00")]
+    public async Task GenerateTripsUsesSelectedIntervalAsFixedDepartureGrid(
+        int intervalMinutes,
+        string expectedDepartures)
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var station = Station("BD", "Bến Bạch Đằng");
+        var route = Route("LOOP-BD", station, station);
+        route.RouteType = RouteTypes.SightseeingLoop;
+        route.IsBookable = true;
+        route.EstimatedDurationMin = 10m;
+        route.RouteStops.Single(x => x.StopOrder == 2).StandardTravelMin = null;
+        var boat = BoatWithSeats("BOAT-SIGHT", seatCount: 3, seatSetupType: SeatSetupType.StandardAndVip);
+        var date = new DateOnly(2030, 1, 1);
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+        await AddRequiredOnBoardStaffAsync(
+            context,
+            boat,
+            new DateTimeOffset(2030, 1, 1, 18, 0, 0, TimeSpan.FromHours(7)));
+
+        var result = await new GenerateTripsCommandHandler(context)
+            .Handle(
+                new GenerateTripsCommand(
+                    RouteCode: "LOOP-BD",
+                    BoatCode: "BOAT-SIGHT",
+                    DepartureTimes: null,
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(18, 0),
+                    EndTime: new TimeOnly(20, 0),
+                    IntervalMinutes: intervalMinutes),
+                CancellationToken.None);
+
+        var expected = expectedDepartures
+            .Split(',')
+            .Select(TimeSpan.Parse)
+            .ToArray();
+        result.Created.ShouldBe(expected.Length);
+        result.SkippedBoatBusy.ShouldBe(0);
+        context.Trips
+            .OrderBy(x => x.DepartureTime)
+            .Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
+            .ShouldBe(expected);
     }
 
     [Test]

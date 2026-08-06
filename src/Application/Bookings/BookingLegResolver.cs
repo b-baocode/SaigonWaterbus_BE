@@ -423,6 +423,35 @@ internal sealed class BookingLegResolver
     }
 
     /// <summary>
+    /// Khứ hồi phải đi trước rồi mới về: lấy giờ khách xuống muộn nhất của chiều đi và
+    /// giờ khách lên sớm nhất của chiều về để đúng cả booking theo chặng.
+    /// </summary>
+    public static void EnsureReturnLegStartsAfterOutboundLeg(
+        ResolvedLeg outboundLeg,
+        ResolvedLeg returnLeg,
+        string returnTripCodePropertyName)
+    {
+        var outboundArrival = outboundLeg.ItemPrices
+            .Select(x => Trips.TripStopScheduleSupport.ResolveSegmentTimes(
+                outboundLeg.Trip,
+                x.Resolved.FromStop.StopOrder,
+                x.Resolved.ToStop.StopOrder).Arrival)
+            .Max();
+        var returnDeparture = returnLeg.ItemPrices
+            .Select(x => Trips.TripStopScheduleSupport.ResolveSegmentTimes(
+                returnLeg.Trip,
+                x.Resolved.FromStop.StopOrder,
+                x.Resolved.ToStop.StopOrder).Departure)
+            .Min();
+
+        if (returnDeparture <= outboundArrival)
+        {
+            throw new ValidationException([new ValidationFailure(returnTripCodePropertyName,
+                "Giờ chiều về phải sau giờ khách xuống ở chiều đi.")]);
+        }
+    }
+
+    /// <summary>
     /// Booking chỉ được giữ tối đa 15 phút và không được vượt hạn đóng bán của bất kỳ chặng nào
     /// trong đơn. Ví dụ tàu rời bến lên 20:47, đóng bán trước 10 phút, thì hold muộn nhất là 20:37.
     /// </summary>
