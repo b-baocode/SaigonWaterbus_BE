@@ -6,7 +6,10 @@ namespace SaigonWaterbus.Application.Assistant;
 /// <summary>Một lượt hội thoại gửi lên từ client. Role chỉ nhận "user" hoặc "assistant".</summary>
 public sealed record AssistantTurn(string Role, string Text);
 
-public sealed record AssistantReply(string Text);
+public sealed record AssistantReply(
+    string Text,
+    IReadOnlyList<string>? SuggestedQuestions = null,
+    IReadOnlyList<AssistantAction>? Actions = null);
 
 /// <summary>
 /// Điều phối một lượt trả lời của trợ lý ảo: chạy vòng lặp gọi LLM ↔ chạy tool cho
@@ -80,13 +83,13 @@ public sealed class ChatWithAssistantCommandHandler
                 // LLM lỗi (thiếu key, quá tải, rate limit provider, mạng) — trả lời lịch sự
                 // thay vì 500, nhưng PHẢI log để còn biết nguyên nhân (đừng nuốt im lặng).
                 _logger.LogError(ex, "Assistant LLM call failed");
-                return new AssistantReply(
+                return BuildReply(request,
                     "Xin lỗi, trợ lý đang bận. Bạn vui lòng thử lại sau ít phút nhé.");
             }
 
             if (result.ToolCalls.Count == 0)
             {
-                return new AssistantReply(result.Text ?? string.Empty);
+                return BuildReply(request, result.Text ?? string.Empty);
             }
 
             messages.Add(ChatMessage.FromAssistant(result.Text, result.ToolCalls));
@@ -98,8 +101,15 @@ public sealed class ChatWithAssistantCommandHandler
             }
         }
 
-        return new AssistantReply(
+        return BuildReply(request,
             "Xin lỗi, mình chưa xử lý được yêu cầu này. Bạn thử hỏi lại theo cách khác nhé.");
+    }
+
+    private static AssistantReply BuildReply(ChatWithAssistantCommand request, string text)
+    {
+        var question = request.History.LastOrDefault(x => string.Equals(x.Role, "user", StringComparison.OrdinalIgnoreCase))?.Text ?? string.Empty;
+        var suggestions = AssistantSuggestions.Build(question, request.Language);
+        return new AssistantReply(text, suggestions.Questions, suggestions.Actions);
     }
 
     private string BuildSystemPrompt(string? language)
