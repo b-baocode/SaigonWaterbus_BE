@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using SaigonWaterbus.Application.Common.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.TourGuide;
@@ -44,10 +45,38 @@ public sealed class TourGuideVoice : IEndpointGroup
           language         = VN
         """;
 
+    /// <summary>
+    /// Danh muc giọng cho client (mobile/web) dựng ô chọn. Chép từ `voices.list` của Google
+    /// ngày 2026-08-07 — 40 giọng tiếng Việt.
+    ///
+    /// Để trong code chứ không gọi `voices.list` lúc chạy vì danh sách gần như không đổi, mà
+    /// thêm một vòng gọi mạng vào đúng luồng đang phải tiết kiệm từng trăm mili giây thì không
+    /// đáng. Google có thêm giọng mới thì cập nhật ở đây.
+    /// </summary>
+    private const string VoiceCatalogNote =
+        """
+        voice (optional): ma giong Google. BO TRONG thi dung giong mac dinh theo language
+        (VN -> vi-VN-Wavenet-A nu, ENG -> en-US-Neural2-F nu). Cac ma dung duoc:
+
+        [Chirp3-HD] doi moi nhat, tu nhien nhat, doc gon hon han cac doi cu. Ma day du dang
+        vi-VN-Chirp3-HD-<Ten>, vi du vi-VN-Chirp3-HD-Kore
+          Nu : Achernar, Aoede, Autonoe, Callirrhoe, Despina, Erinome, Gacrux, Kore,
+               Laomedeia, Leda, Pulcherrima, Sulafat, Vindemiatrix, Zephyr
+          Nam: Achird, Algenib, Algieba, Alnilam, Charon, Enceladus, Fenrir, Iapetus,
+               Orus, Puck, Rasalgethi, Sadachbia, Sadaltager, Schedar, Umbriel, Zubenelgenubi
+
+        [Neural2]  vi-VN-Neural2-A (nu), vi-VN-Neural2-D (nam)
+        [Wavenet]  vi-VN-Wavenet-A (nu), -B (nam), -C (nu), -D (nam)
+        [Standard] vi-VN-Standard-A (nu), -B (nam), -C (nu), -D (nam)  — may moc nhat, re nhat
+
+        Ma sai se tra 400 kem ly do tu Google (vi du: Voice 'abc' does not exist).
+        """;
+
     private const string SpeakExample =
         """
         {
           "text": "Bên trái bạn là Bến Bạch Đằng, bến trung tâm ngay sát phố đi bộ Nguyễn Huệ.",
+          "voice": "vi-VN-Chirp3-HD-Kore",
           "language": "VN"
         }
         """;
@@ -93,8 +122,7 @@ public sealed class TourGuideVoice : IEndpointGroup
                 SpeakExample,
                 "Tra ve audio/mpeg (mp3) chu khong phai JSON.",
                 $"text toi da {MaxSpeakCharacters} ky tu.",
-                "voice (optional): ten giong theo cach goi cua nha cung cap TTS. Bo trong thi dung "
-                + "giong mac dinh theo language."));
+                VoiceCatalogNote));
     }
 
     private static async Task<IResult> Ask(
@@ -161,10 +189,10 @@ public sealed class TourGuideVoice : IEndpointGroup
                     language),
                 ct);
         }
-        catch (NotSupportedException ex)
+        catch (Exception ex) when (ex is NotSupportedException or SpeechRequestException)
         {
-            // Định dạng audio client gửi lên provider không nuốt được — lỗi của client, không
-            // phải của server. Thông báo có kèm danh sách định dạng chấp nhận được.
+            // Lỗi do REQUEST sai, không phải server hỏng: định dạng audio không đọc được, hoặc
+            // nhà cung cấp từ chối tham số. Nói thẳng lý do để người gọi sửa được.
             return Results.BadRequest(new { error = ex.Message });
         }
         // Client tự huỷ (đóng tab, bấm dừng) — không phải lỗi, để nguyên cho pipeline xử lý.
@@ -215,6 +243,12 @@ public sealed class TourGuideVoice : IEndpointGroup
                 new SpeechSynthesisRequest(request.Text, request.Voice, request.Language),
                 ct);
         }
+        catch (SpeechRequestException ex)
+        {
+            // Ví dụ: voice = "string" (giá trị Swagger điền sẵn) → Google trả "Voice 'string'
+            // does not exist". Đó là lỗi người gọi sửa được, đừng báo thành sự cố hệ thống.
+            return Results.BadRequest(new { error = ex.Message });
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw; // client tự huỷ — không phải lỗi.
@@ -231,7 +265,11 @@ public sealed class TourGuideVoice : IEndpointGroup
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        return Results.File(speech.Data, speech.ContentType);
+        // Kèm tên file → header Content-Disposition. Nhờ nó Swagger UI hiện link "Download file"
+        // thay vì nhúng trình phát: Chrome khoá "Save audio as…" khi nguồn là blob nên không có
+        // header này thì không tài nào lấy file ra khỏi trang được.
+        // FE không bị ảnh hưởng — bên đó đọc bằng responseType 'blob', header này bị bỏ qua.
+        return Results.File(speech.Data, speech.ContentType, "tour-guide-reply.mp3");
     }
 
     /// <summary>
