@@ -40,7 +40,7 @@ public sealed class GoogleLoginRequestUseCase
     private readonly ILoginNotificationSender _loginNotificationSender;
     private readonly ILogger<GoogleLoginRequestUseCase> _logger;
     private readonly TimeProvider _timeProvider;
-    private readonly string _googleClientId;
+    private readonly IReadOnlyCollection<string> _googleClientIds;
 
     public GoogleLoginRequestUseCase(
         IApplicationDbContext context,
@@ -63,7 +63,7 @@ public sealed class GoogleLoginRequestUseCase
         _loginNotificationSender = loginNotificationSender;
         _logger = logger;
         _timeProvider = timeProvider;
-        _googleClientId = configuration["OAuth:Google:ClientId"] ?? throw new InvalidOperationException("Google ClientId not configured");
+        _googleClientIds = LoadGoogleClientIds(configuration);
     }
 
     public async Task<GoogleLoginResultDto> ExecuteAsync(GoogleLoginRequest request, CancellationToken cancellationToken)
@@ -139,13 +139,33 @@ public sealed class GoogleLoginRequestUseCase
                 idToken,
                 new GoogleJsonWebSignature.ValidationSettings
                 {
-                    Audience = [_googleClientId]
+                    Audience = _googleClientIds.ToList()
                 });
         }
         catch (InvalidJwtException ex)
         {
             throw new UnauthorizedAccessException($"Google token is invalid: {ex.Message}");
         }
+    }
+
+    private static IReadOnlyCollection<string> LoadGoogleClientIds(IConfiguration configuration)
+    {
+        var configuredClientIds = configuration
+            .GetSection("OAuth:Google:ClientIds")
+            .Get<string[]>()
+            ?? [];
+
+        var legacyClientId = configuration["OAuth:Google:ClientId"];
+        var clientIds = configuredClientIds
+            .Append(legacyClientId)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x!.Trim())
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        return clientIds.Count > 0
+            ? clientIds
+            : throw new InvalidOperationException("Google ClientId not configured");
     }
 
     private async Task<GoogleLoginResultDto> CreateNewGoogleUserLoggedInResultAsync(

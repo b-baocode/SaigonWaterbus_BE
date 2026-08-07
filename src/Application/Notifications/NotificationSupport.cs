@@ -14,11 +14,16 @@ public static class NotificationTypes
     public const string TripReminder = "trip_reminder";
     public const string TripCompleted = "trip_completed";
     public const string PromotionNew = "promotion_new";
+    public const string IncidentReported = "incident_reported";
+    public const string IncidentDispatched = "incident_dispatched";
+    public const string IncidentProgress = "incident_progress";
+    public const string IncidentResolved = "incident_resolved";
 }
 
 public static class NotificationRelatedEntityTypes
 {
     public const string Booking = "booking";
+    public const string Incident = "incident";
     public const string Trip = "trip";
     public const string Promotion = "promotion";
 }
@@ -286,6 +291,150 @@ public static class NotificationSupport
         return created;
     }
 
+    public static async Task<IReadOnlyList<Notification>> AddIncidentReportedNotificationsAsync(
+        IApplicationDbContext context,
+        Incident incident,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var recipientIds = await LoadOperationalRecipientIdsAsync(context, cancellationToken);
+        if (recipientIds.Count == 0)
+        {
+            return [];
+        }
+
+        var title = "Sự cố tàu mới";
+        var body = $"{DescribeIncident(incident)} vừa được ghi nhận. "
+            + "Vui lòng kiểm tra và điều tàu cứu hộ/thay thế nếu cần.";
+        return AddNotifications(
+            context,
+            recipientIds,
+            title,
+            body,
+            NotificationTypes.IncidentReported,
+            NotificationRelatedEntityTypes.Incident,
+            incident.Id,
+            now);
+    }
+
+    public static async Task<IReadOnlyList<Notification>> AddIncidentDispatchedNotificationsAsync(
+        IApplicationDbContext context,
+        Incident incident,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var created = new List<Notification>();
+        var operationalRecipients = await LoadOperationalRecipientIdsAsync(context, cancellationToken);
+        if (operationalRecipients.Count > 0)
+        {
+            var supportText = DescribeIncidentSupport(incident);
+            created.AddRange(AddNotifications(
+                context,
+                operationalRecipients,
+                "Đã điều tàu xử lý sự cố",
+                $"{DescribeIncident(incident)}. {supportText}",
+                NotificationTypes.IncidentDispatched,
+                NotificationRelatedEntityTypes.Incident,
+                incident.Id,
+                now));
+        }
+
+        var affectedBookings = await LoadAffectedConfirmedBookingsAsync(context, incident, cancellationToken);
+        foreach (var booking in affectedBookings)
+        {
+            var notification = new Notification
+            {
+                UserId = booking.UserId,
+                Title = "Chuyến đi đang được hỗ trợ",
+                Body = $"{DescribeCustomerTrip(incident)} đang được xử lý sự cố. "
+                    + $"{DescribeCustomerSupport(incident)} Booking {booking.BookingCode} của bạn bị ảnh hưởng, vui lòng theo dõi thông báo giờ chạy mới.",
+                Type = NotificationTypes.IncidentDispatched,
+                RelatedEntityType = NotificationRelatedEntityTypes.Booking,
+                RelatedEntityId = booking.BookingId,
+                CreatedAt = now
+            };
+            context.Set<Notification>().Add(notification);
+            created.Add(notification);
+        }
+
+        return created;
+    }
+
+    public static async Task<IReadOnlyList<Notification>> AddIncidentProgressNotificationsAsync(
+        IApplicationDbContext context,
+        Incident incident,
+        string eventType,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var recipientIds = await LoadOperationalRecipientIdsAsync(context, cancellationToken);
+        if (recipientIds.Count == 0)
+        {
+            return [];
+        }
+
+        var progressText = eventType switch
+        {
+            "RescueArrived" => "Tàu cứu hộ đã tới vị trí sự cố.",
+            "ReplacementArrived" => "Tàu thay thế đã tới điểm tiếp nhận.",
+            "PassengerTransferCompleted" => "Đã hoàn tất chuyển khách sang tàu thay thế.",
+            "TowingStarted" => "Tàu cứu hộ đã bắt đầu lai dắt tàu gặp sự cố.",
+            "TowingCompleted" => "Đã hoàn tất lai dắt tàu gặp sự cố.",
+            _ => $"GPS cập nhật tiến độ: {eventType}."
+        };
+        return AddNotifications(
+            context,
+            recipientIds,
+            "Cập nhật xử lý sự cố",
+            $"{DescribeIncident(incident)}. {progressText}",
+            NotificationTypes.IncidentProgress,
+            NotificationRelatedEntityTypes.Incident,
+            incident.Id,
+            now);
+    }
+
+    public static async Task<IReadOnlyList<Notification>> AddIncidentResolvedNotificationsAsync(
+        IApplicationDbContext context,
+        Incident incident,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var created = new List<Notification>();
+        var operationalRecipients = await LoadOperationalRecipientIdsAsync(context, cancellationToken);
+        if (operationalRecipients.Count > 0)
+        {
+            created.AddRange(AddNotifications(
+                context,
+                operationalRecipients,
+                "Sự cố đã được xử lý",
+                $"{DescribeIncident(incident)} đã được đóng. {NormalizeOptional(incident.ResolutionNote) ?? "Vui lòng kiểm tra trạng thái tàu/chuyến sau xử lý."}",
+                NotificationTypes.IncidentResolved,
+                NotificationRelatedEntityTypes.Incident,
+                incident.Id,
+                now));
+        }
+
+        var affectedBookings = await LoadAffectedConfirmedBookingsAsync(context, incident, cancellationToken);
+        foreach (var booking in affectedBookings)
+        {
+            var notification = new Notification
+            {
+                UserId = booking.UserId,
+                Title = "Sự cố chuyến đi đã được xử lý",
+                Body = $"{DescribeCustomerTrip(incident)} đã được xử lý sự cố. "
+                    + "Vui lòng kiểm tra lại giờ chạy/trạng thái vé trước khi ra bến.",
+                Type = NotificationTypes.IncidentResolved,
+                RelatedEntityType = NotificationRelatedEntityTypes.Booking,
+                RelatedEntityId = booking.BookingId,
+                CreatedAt = now
+            };
+            context.Set<Notification>().Add(notification);
+            created.Add(notification);
+        }
+
+        return created;
+    }
+
     internal static string DescribeTrip(Trip trip) =>
         string.IsNullOrWhiteSpace(trip.Route?.RouteName)
             ? $"Chuyến {trip.TripCode}"
@@ -299,6 +448,134 @@ public static class NotificationSupport
 
     private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
 
+    private static async Task<IReadOnlyList<Guid>> LoadOperationalRecipientIdsAsync(
+        IApplicationDbContext context,
+        CancellationToken cancellationToken) =>
+        await context.Set<User>()
+            .AsNoTracking()
+            .Where(u => u.Status == UserStatus.Active
+                && (u.Role.Code == Roles.AdminCode
+                    || u.Role.Code == Roles.ManagerCode
+                    || u.Role.Code == Roles.StaffCode))
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken);
+
+    private static IReadOnlyList<Notification> AddNotifications(
+        IApplicationDbContext context,
+        IReadOnlyList<Guid> userIds,
+        string title,
+        string body,
+        string type,
+        string relatedEntityType,
+        Guid relatedEntityId,
+        DateTimeOffset now)
+    {
+        var created = new List<Notification>(userIds.Count);
+        foreach (var userId in userIds.Distinct())
+        {
+            var notification = new Notification
+            {
+                UserId = userId,
+                Title = title,
+                Body = body,
+                Type = type,
+                RelatedEntityType = relatedEntityType,
+                RelatedEntityId = relatedEntityId,
+                CreatedAt = now
+            };
+            context.Set<Notification>().Add(notification);
+            created.Add(notification);
+        }
+
+        return created;
+    }
+
+    private static async Task<IReadOnlyList<AffectedBookingNotificationRecipient>> LoadAffectedConfirmedBookingsAsync(
+        IApplicationDbContext context,
+        Incident incident,
+        CancellationToken cancellationToken)
+    {
+        if (!incident.TripId.HasValue)
+        {
+            return [];
+        }
+
+        var affectedBookings = await context.Set<Booking>()
+            .AsNoTracking()
+            .Where(b => b.UserId != null
+                && b.BookingStatus == BookingStatus.Confirmed
+                && (b.TripId == incident.TripId.Value
+                    || b.ReturnTripId == incident.TripId.Value
+                    || b.Passengers.Any(p => p.TripId == incident.TripId.Value)
+                    || (incident.Trip != null && incident.Trip.SourceBookingId != null && b.Id == incident.Trip.SourceBookingId)))
+            .Select(b => new AffectedBookingNotificationRecipient(
+                b.Id,
+                b.UserId!.Value,
+                b.BookingCode))
+            .ToListAsync(cancellationToken);
+
+        return affectedBookings
+            .GroupBy(b => b.BookingId)
+            .Select(g => g.First())
+            .ToList();
+    }
+
+    private static string DescribeIncident(Incident incident)
+    {
+        var boatName = string.IsNullOrWhiteSpace(incident.Boat?.Name)
+            ? "tàu"
+            : $"tàu {incident.Boat.Name}";
+        var tripText = incident.Trip is null
+            ? ""
+            : $" trên chuyến {incident.Trip.TripCode}";
+        var severityText = string.IsNullOrWhiteSpace(incident.Severity)
+            ? ""
+            : $" Mức độ: {incident.Severity}.";
+        return $"Sự cố {incident.IncidentType} của {boatName}{tripText}.{severityText}";
+    }
+
+    private static string DescribeCustomerTrip(Incident incident) =>
+        incident.Trip is null
+            ? "Chuyến đi của bạn"
+            : $"Chuyến {incident.Trip.TripCode} của bạn";
+
+    private static string DescribeIncidentSupport(Incident incident)
+    {
+        var rescueText = incident.RescueBoat is null
+            ? "Chưa có tàu cứu hộ."
+            : $"Tàu cứu hộ: {incident.RescueBoat.Name}.";
+        var replacementText = incident.ReplacementBoat is null
+            ? " Chưa có tàu thay thế."
+            : $" Tàu thay thế: {incident.ReplacementBoat.Name}.";
+        var delayText = incident.ReplacementDelayMinutes > 0
+            ? $" Dự kiến trễ {incident.ReplacementDelayMinutes} phút."
+            : "";
+        return rescueText + replacementText + delayText;
+    }
+
+    private static string DescribeCustomerSupport(Incident incident)
+    {
+        if (incident.ReplacementBoat is not null)
+        {
+            return $"Hệ thống đã điều tàu thay thế {incident.ReplacementBoat.Name}.";
+        }
+
+        if (incident.RescueBoat is not null)
+        {
+            return "Hệ thống đã điều tàu cứu hộ.";
+        }
+
+        return "Đội vận hành đang xử lý.";
+    }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static string FormatAmount(decimal amount, string currency) =>
         string.Create(CultureInfo.GetCultureInfo("vi-VN"), $"{amount:N0} {currency}");
+
+    private sealed record AffectedBookingNotificationRecipient(
+        Guid BookingId,
+        Guid UserId,
+        string BookingCode);
 }

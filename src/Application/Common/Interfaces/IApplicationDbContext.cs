@@ -24,6 +24,8 @@ public interface IApplicationDbContext
 
     DbSet<Incident> Incidents { get; }
 
+    DbSet<IncidentMissionEvent> IncidentMissionEvents { get; }
+
     DbSet<StaffWorkAssignment> StaffWorkAssignments { get; }
 
     DbSet<GpsDevice> GpsDevices { get; }

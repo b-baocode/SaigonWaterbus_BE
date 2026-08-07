@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -81,7 +82,8 @@ public sealed record StaffAssignedTripDto(
     Guid? TripStopId = null,
     int? StopOrder = null,
     DateTimeOffset? StopScheduledArrival = null,
-    DateTimeOffset? StopScheduledDeparture = null);
+    DateTimeOffset? StopScheduledDeparture = null,
+    IReadOnlyList<TripStaffAssignmentDto>? OnBoardStaff = null);
 
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateStaffWorkAssignmentCommand(
@@ -718,13 +720,67 @@ public sealed class GetMyStaffTripsQueryHandler
             .ToListAsync(cancellationToken);
 
         var now = _timeProvider.GetUtcNow();
-        return trips
+        var matchedTrips = trips
             .Select(trip => new { Trip = trip, Assignment = FindBestMatchingAssignment(trip, assignments) })
             .Where(x => x.Assignment is not null)
-            .Select(x => ToAssignedTripDto(x.Trip, x.Assignment!, now))
+            .ToList();
+        var onBoardStaffByTripId = await LoadOnBoardStaffByTripIdAsync(
+            matchedTrips.Select(x => x.Trip).ToList(),
+            now,
+            cancellationToken);
+
+        return matchedTrips
+            .Select(x => ToAssignedTripDto(
+                x.Trip,
+                x.Assignment!,
+                now,
+                onBoardStaffByTripId.GetValueOrDefault(x.Trip.Id) ?? []))
             .OrderBy(x => x.DepartureTime)
             .ThenBy(x => x.TripCode)
             .ToList();
+    }
+
+    private async Task<IReadOnlyDictionary<Guid, IReadOnlyList<TripStaffAssignmentDto>>> LoadOnBoardStaffByTripIdAsync(
+        IReadOnlyList<Trip> trips,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var tripsWithBoat = trips
+            .Where(x => x.BoatId.HasValue)
+            .ToList();
+        if (tripsWithBoat.Count == 0)
+        {
+            return new Dictionary<Guid, IReadOnlyList<TripStaffAssignmentDto>>();
+        }
+
+        var boatIds = tripsWithBoat
+            .Select(x => x.BoatId!.Value)
+            .Distinct()
+            .ToArray();
+        var windowStart = tripsWithBoat.Min(x => x.DepartureTime);
+        var windowEnd = tripsWithBoat.Max(x => x.ArrivalTime);
+        var assignments = await _context.StaffWorkAssignments
+            .AsNoTracking()
+            .Include(x => x.StaffUser)
+            .Where(x => x.AssignmentType == StaffWorkAssignmentType.Boat
+                && x.BoatId.HasValue
+                && boatIds.Contains(x.BoatId.Value)
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
+                && x.StaffUser.StaffType == StaffType.OnBoard
+                && x.StartAt < windowEnd
+                && windowStart < x.EndAt)
+            .OrderBy(x => x.StartAt)
+            .ThenBy(x => x.StaffUser.FullName)
+            .ToListAsync(cancellationToken);
+
+        return tripsWithBoat.ToDictionary(
+            trip => trip.Id,
+            trip => (IReadOnlyList<TripStaffAssignmentDto>)assignments
+                .Where(assignment => assignment.BoatId == trip.BoatId!.Value
+                    && TimeRangesOverlap(assignment.StartAt, assignment.EndAt, trip.DepartureTime, trip.ArrivalTime))
+                .Select(assignment => OnBoardStaffTripSupport.ToTripStaffDto(assignment, now))
+                .ToList());
     }
 
     private static StaffWorkAssignment? FindBestMatchingAssignment(
@@ -760,7 +816,8 @@ public sealed class GetMyStaffTripsQueryHandler
     private static StaffAssignedTripDto ToAssignedTripDto(
         Trip trip,
         StaffWorkAssignment assignment,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        IReadOnlyList<TripStaffAssignmentDto> onBoardStaff)
     {
         var station = assignment.AssignmentType == StaffWorkAssignmentType.Station
             ? assignment.Station
@@ -793,7 +850,8 @@ public sealed class GetMyStaffTripsQueryHandler
             tripStop?.Id,
             tripStop?.StopOrder,
             tripStop?.PlannedArrivalTime,
-            tripStop?.PlannedDepartureTime);
+            tripStop?.PlannedDepartureTime,
+            onBoardStaff);
     }
 
     private static bool TimeRangesOverlap(

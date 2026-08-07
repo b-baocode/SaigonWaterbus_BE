@@ -20,9 +20,6 @@ public enum CounterPaymentMethod
     /// <summary>Staff thu tiền mặt tại quầy — booking xác nhận và phát hành vé ngay.</summary>
     Cash = 0,
 
-    /// <summary>Staff/Manager ghi nhận khách đã chuyển khoản tại quầy — booking xác nhận và phát hành vé ngay.</summary>
-    BankTransfer = 1,
-
     /// <summary>Khách quét QR PayOS tại quầy — vé chỉ phát hành sau khi cổng báo đã thanh toán.</summary>
     PayOs = 2
 }
@@ -44,7 +41,8 @@ public sealed record CounterBookingResult(
     DateTimeOffset? PaidAt,
     Guid? ReturnTripId = null,
     string? ReturnTripCode = null,
-    BookingInsuranceDto? Insurance = null);
+    BookingInsuranceDto? Insurance = null,
+    BookingManifestDto? Manifest = null);
 
 /// <summary>
 /// Bán vé tại quầy: staff/manager đặt hộ khách trực tiếp và thu tiền ngay.
@@ -56,7 +54,7 @@ public sealed record CreateCounterBookingCommand(
     IReadOnlyList<BookingItemRequest> Items,
     string ContactName,
     string ContactPhone,
-    string ContactEmail,
+    string? ContactEmail,
     CounterPaymentMethod PaymentMethod = CounterPaymentMethod.Cash,
     string? ReturnTripCode = null,
     IReadOnlyList<BookingItemRequest>? ReturnItems = null,
@@ -75,7 +73,10 @@ public sealed class CreateCounterBookingCommandValidator : AbstractValidator<Cre
             .Must(items => items.Count <= 10).WithMessage("Maximum 10 items per booking.");
         RuleFor(x => x.ContactName).NotEmpty().MaximumLength(150);
         RuleFor(x => x.ContactPhone).NotEmpty().MaximumLength(20);
-        RuleFor(x => x.ContactEmail).NotEmpty().EmailAddress().MaximumLength(255);
+        RuleFor(x => x.ContactEmail)
+            .EmailAddress()
+            .MaximumLength(255)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail));
         RuleFor(x => x.PaymentMethod).IsInEnum();
         RuleFor(x => x.ReturnTripCode).MaximumLength(50);
         RuleFor(x => x.ReturnItems!)
@@ -205,7 +206,7 @@ public sealed class CreateCounterBookingCommandHandler
             BookingCode = await _bookingCodeGenerator.GenerateAsync(cancellationToken),
             ContactName = request.ContactName.Trim(),
             ContactPhone = request.ContactPhone.Trim(),
-            ContactEmail = request.ContactEmail.Trim(),
+            ContactEmail = NormalizeOptionalEmail(request.ContactEmail),
             BookingStatus = BookingStatus.PendingPayment,
             SubtotalAmount = subtotal,
             DiscountAmount = 0,
@@ -255,9 +256,9 @@ public sealed class CreateCounterBookingCommandHandler
         var counterPaymentMethod = booking.TotalAmount <= 0
             ? CounterPaymentMethod.Cash
             : request.PaymentMethod;
-        var settleAtCounter = counterPaymentMethod is CounterPaymentMethod.Cash or CounterPaymentMethod.BankTransfer;
+        var settleAtCounter = counterPaymentMethod is CounterPaymentMethod.Cash;
         var payment = settleAtCounter
-            ? await SettleAtCounterAsync(booking, counterPaymentMethod, now, cancellationToken)
+            ? await SettleAtCounterAsync(booking, now, cancellationToken)
             : null;
 
         if (payment is null)
@@ -266,7 +267,12 @@ public sealed class CreateCounterBookingCommandHandler
             return ToResult(booking, returnLeg, CounterPaymentMethod.PayOs.ToString(), payOsPayment);
         }
 
-        return ToResult(booking, returnLeg, payment.PaymentMethod, payment);
+        return ToResult(
+            booking,
+            returnLeg,
+            payment.PaymentMethod,
+            payment,
+            await BuildPrintableManifestAsync(booking.Id, now, cancellationToken));
     }
 
     private async Task<User?> ResolveCounterBookingCustomerAsync(
@@ -339,11 +345,10 @@ public sealed class CreateCounterBookingCommandHandler
 
     /// <summary>
     /// Thu tại quầy: ghi nhận payment đã thanh toán ngay (không qua cổng) rồi chạy đúng nhánh
-    /// hậu-thanh-toán của booking online — xác nhận booking, phát hành vé/QR và gửi email vé điện tử.
+    /// hậu-thanh-toán của booking online — xác nhận booking, phát hành vé/QR và gửi email vé điện tử nếu có email.
     /// </summary>
     private async Task<Payment> SettleAtCounterAsync(
         Booking booking,
-        CounterPaymentMethod paymentMethod,
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -355,7 +360,7 @@ public sealed class CreateCounterBookingCommandHandler
             Provider = PaymentSupport.CounterProvider,
             Amount = booking.TotalAmount,
             Currency = booking.Currency,
-            PaymentMethod = ResolveSettlementPaymentMethod(paymentMethod),
+            PaymentMethod = PaymentSupport.CashPaymentMethod,
             PaymentPurpose = PaymentSupport.FullPurpose,
             PaymentStatus = PaymentSupport.PendingStatus
         };
@@ -380,16 +385,24 @@ public sealed class CreateCounterBookingCommandHandler
         return payment;
     }
 
-    private static string ResolveSettlementPaymentMethod(CounterPaymentMethod paymentMethod) =>
-        paymentMethod == CounterPaymentMethod.BankTransfer
-            ? PaymentSupport.BankTransferPaymentMethod
-            : PaymentSupport.CashPaymentMethod;
+    private async Task<BookingManifestDto> BuildPrintableManifestAsync(
+        Guid bookingId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var printableBooking = await BookingManifestSupport.GetByIdAsync(_context, bookingId, cancellationToken);
+        return BookingManifestSupport.ToDto(printableBooking, now);
+    }
+
+    private static string? NormalizeOptionalEmail(string? email) =>
+        string.IsNullOrWhiteSpace(email) ? null : email.Trim();
 
     private static CounterBookingResult ToResult(
         Booking booking,
         ResolvedLeg? returnLeg,
         string paymentMethod,
-        Payment payment) =>
+        Payment payment,
+        BookingManifestDto? manifest = null) =>
         new(
             booking.Id, booking.BookingCode,
             booking.SubtotalAmount, booking.TotalAmount,
@@ -399,7 +412,8 @@ public sealed class CreateCounterBookingCommandHandler
             payment.CheckoutUrl, payment.QrCode, payment.PaidAt,
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
-            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            manifest);
 
     private static CounterBookingResult ToResult(
         Booking booking,

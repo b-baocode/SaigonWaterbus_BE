@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
@@ -60,7 +61,7 @@ internal static class BoatSupport
             ? null
             : registrationNumber.Trim().ToUpperInvariant();
 
-    public static BoatDto CreateDto(Boat boat)
+    public static BoatDto CreateDto(Boat boat, Trip? activeTrip = null, Incident? activeIncident = null)
     {
         var imageUrls = CreateImageUrls(boat);
 
@@ -82,7 +83,8 @@ internal static class BoatSupport
             boat.Description,
             boat.SeatSetupType,
             boat.MaintenanceStartedAt,
-            BoatDocumentSupport.RequiresDocumentRefresh(boat));
+            BoatDocumentSupport.RequiresDocumentRefresh(boat),
+            OperatingStatusSupport.ForBoat(boat, activeTrip, activeIncident));
     }
 
     public static IReadOnlyCollection<string> CreateImageUrls(Boat boat) =>

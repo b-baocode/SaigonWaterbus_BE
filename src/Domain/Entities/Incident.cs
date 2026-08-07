@@ -30,6 +30,13 @@ public class Incident : BaseGuidEntity
     public int OnboardPassengerCountSnapshot { get; set; }
     public int FuturePassengerCountSnapshot { get; set; }
     public string? ReplacementNote { get; set; }
+    public string MissionStatus { get; set; } = "IncidentCreated";
+    public DateTimeOffset? RescueArrivedAt { get; set; }
+    public DateTimeOffset? ReplacementArrivedAt { get; set; }
+    public DateTimeOffset? PassengerTransferCompletedAt { get; set; }
+    public DateTimeOffset? TowingStartedAt { get; set; }
+    public DateTimeOffset? TowingCompletedAt { get; set; }
+    public int? EstimatedTowingMinutes { get; set; }
     public string? ResolutionNote { get; set; }
     public DateTimeOffset? ResolvedAt { get; set; }
     public Guid? ResolvedByUserId { get; set; }
@@ -45,4 +52,5 @@ public class Incident : BaseGuidEntity
     public User? ReplacementAssignedByUser { get; set; }
     public Station? ReplacementTargetStation { get; set; }
     public User? Resolver { get; set; }
+    public ICollection<IncidentMissionEvent> MissionEvents { get; set; } = new List<IncidentMissionEvent>();
 }

@@ -104,7 +104,7 @@ public class BookingHoldAndETicketTests
     }
 
     [Test]
-    public async Task WebhookPaidRoundTripBookingSendsETicketWithBothLegs()
+    public async Task WebhookPaidRoundTripBookingSendsSeparateBookerETicketsPerLeg()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var outboundTrip = CreateTrip("TR-OUT");
@@ -166,16 +166,22 @@ public class BookingHoldAndETicketTests
             new HandlePaymentWebhookCommand(CreatePaidWebhook(2000002, 20000)),
             CancellationToken.None);
 
-        // Email tổng cho người đặt: đủ 2 vé + 2 legs đúng chiều.
-        var bookerETicket = sender.ETickets.Single(x => x.Booking.Email == "booker@gmail.com");
-        bookerETicket.Tickets.Count.ShouldBe(2);
-        bookerETicket.TripCode.ShouldBe("TR-OUT");
-        bookerETicket.Legs.ShouldNotBeNull();
-        bookerETicket.Legs.Count.ShouldBe(2);
-        bookerETicket.Legs[0].TripCode.ShouldBe("TR-OUT");
-        bookerETicket.Legs[0].Tickets.ShouldHaveSingleItem().PassengerName.ShouldBe("Khach Chieu Di");
-        bookerETicket.Legs[1].TripCode.ShouldBe("TR-RET");
-        bookerETicket.Legs[1].Tickets.ShouldHaveSingleItem().PassengerName.ShouldBe("Khach Chieu Ve");
+        // Email tổng cho người đặt được tách theo chiều, không gộp cả 2 chuyến vào một email/PDF.
+        var bookerETickets = sender.ETickets
+            .Where(x => x.Booking.Email == "booker@gmail.com")
+            .OrderBy(x => x.TripCode)
+            .ToList();
+        bookerETickets.Count.ShouldBe(2);
+
+        var outboundBookerETicket = bookerETickets.Single(x => x.TripCode == "TR-OUT");
+        outboundBookerETicket.BookingQrToken.ShouldBe(booking.CharterBookingQrToken);
+        outboundBookerETicket.Legs.ShouldBeNull();
+        outboundBookerETicket.Tickets.ShouldHaveSingleItem().PassengerName.ShouldBe("Khach Chieu Di");
+
+        var returnBookerETicket = bookerETickets.Single(x => x.TripCode == "TR-RET");
+        returnBookerETicket.BookingQrToken.ShouldBe(booking.CharterBookingQrToken);
+        returnBookerETicket.Legs.ShouldBeNull();
+        returnBookerETicket.Tickets.ShouldHaveSingleItem().PassengerName.ShouldBe("Khach Chieu Ve");
 
         // Email riêng của hành khách chiều về hiển thị trip chiều về.
         var passengerETicket = sender.ETickets.Single(x => x.Booking.Email == "passenger-return@gmail.com");

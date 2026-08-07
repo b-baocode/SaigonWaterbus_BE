@@ -155,16 +155,13 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         incident.FuturePassengerCountSnapshot = passengerImpact.FuturePassengerCount;
         incident.ReplacementNote = NormalizeNote(request.Note)
             ?? BuildDefaultReplacementNote(passengerImpact, replacementBoat);
+        incident.MissionStatus = replacementBoat is null
+            ? IncidentMissionStatuses.RescueDispatched
+            : IncidentMissionStatuses.ReplacementDispatched;
 
         var createdNotifications = new List<Notification>();
         if (incident.Trip is not null)
         {
-            if (replacementBoat is not null)
-            {
-                incident.Trip.BoatId = replacementBoat.Id;
-                incident.Trip.Boat = replacementBoat;
-            }
-
             if (incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
             {
                 if (delayMinutes > 0)
@@ -213,6 +210,12 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                     cancellationToken));
             }
         }
+
+        createdNotifications.AddRange(await NotificationSupport.AddIncidentDispatchedNotificationsAsync(
+            _context,
+            incident,
+            assignedAt,
+            cancellationToken));
 
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(

@@ -50,6 +50,17 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
             .HasColumnName("future_passenger_count_snapshot")
             .HasDefaultValue(0);
         builder.Property(x => x.ReplacementNote).HasColumnName("replacement_note").HasMaxLength(1000);
+        builder.Property(x => x.MissionStatus)
+            .HasColumnName("mission_status")
+            .HasMaxLength(50)
+            .HasDefaultValue("IncidentCreated")
+            .IsRequired();
+        builder.Property(x => x.RescueArrivedAt).HasColumnName("rescue_arrived_at");
+        builder.Property(x => x.ReplacementArrivedAt).HasColumnName("replacement_arrived_at");
+        builder.Property(x => x.PassengerTransferCompletedAt).HasColumnName("passenger_transfer_completed_at");
+        builder.Property(x => x.TowingStartedAt).HasColumnName("towing_started_at");
+        builder.Property(x => x.TowingCompletedAt).HasColumnName("towing_completed_at");
+        builder.Property(x => x.EstimatedTowingMinutes).HasColumnName("estimated_towing_minutes");
         builder.Property(x => x.ResolutionNote).HasColumnName("resolution_note").HasMaxLength(1000);
         builder.Property(x => x.ResolvedAt).HasColumnName("resolved_at");
         builder.Property(x => x.ResolvedByUserId).HasColumnName("resolved_by_user_id");
@@ -64,6 +75,7 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
         builder.HasIndex(x => x.ReplacementBoatId);
         builder.HasIndex(x => x.ReplacementAssignedByUserId);
         builder.HasIndex(x => x.ReplacementTargetStationId);
+        builder.HasIndex(x => x.MissionStatus);
         builder.HasIndex(x => x.ResolvedByUserId);
 
         builder.HasOne(x => x.Boat)
@@ -120,5 +132,10 @@ public sealed class IncidentConfiguration : IEntityTypeConfiguration<Incident>
             .WithMany()
             .HasForeignKey(x => x.ResolvedByUserId)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasMany(x => x.MissionEvents)
+            .WithOne(x => x.Incident)
+            .HasForeignKey(x => x.IncidentId)
+            .OnDelete(DeleteBehavior.Cascade);
     }
 }
