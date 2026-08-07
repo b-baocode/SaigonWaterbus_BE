@@ -34,6 +34,14 @@ public sealed class AssistantToolset
     /// <summary>Chặn payload địa danh phình to khi dữ liệu tour guide tăng lên.</summary>
     private const int MaxLandmarks = 25;
 
+    /// <summary>Địa danh quanh tàu: kể vài cái gần nhất là đủ, nói nhiều thì rối người nghe.</summary>
+    private const int MaxNearbyLandmarks = 5;
+
+    private const double DefaultNearbyRadiusMeters = 800;
+
+    /// <summary>Xa hơn mức này thì không còn là "cái khách đang nhìn thấy" nữa.</summary>
+    private const double MaxNearbyRadiusMeters = 3000;
+
     private readonly ISender _sender;
     private readonly IApplicationDbContext _context;
 
@@ -62,6 +70,7 @@ public sealed class AssistantToolset
                 "get_route_info" => await GetRouteInfoAsync(arguments, cancellationToken),
                 "get_charter_prices" => await GetCharterPricesAsync(cancellationToken),
                 "search_knowledge" => await SearchKnowledgeAsync(arguments, cancellationToken),
+                "get_nearby_landmarks" => await GetNearbyLandmarksAsync(arguments, cancellationToken),
                 _ => Error($"Tool '{name}' không tồn tại."),
             };
         }
@@ -358,6 +367,75 @@ public sealed class AssistantToolset
     }
 
     /// <summary>
+    /// Địa danh quanh MỘT toạ độ, sắp theo khoảng cách. Dùng cho hướng dẫn viên bằng giọng nói:
+    /// khách đang ngồi trên tàu chỉ ra ngoài hỏi "toà nhà kia là gì".
+    ///
+    /// Khác <see cref="GetSightseeingInfoAsync"/> (liệt kê toàn bộ địa danh để giới thiệu tour):
+    /// tool này gắn với vị trí THỰC của tàu ngay lúc hỏi.
+    ///
+    /// Có heading thì tính luôn hướng tương đối (trái/phải/trước/sau) trong code — đừng bắt
+    /// model tự làm lượng giác, nó sẽ nói sai bên.
+    /// </summary>
+    private async Task<string> GetNearbyLandmarksAsync(JsonElement arguments, CancellationToken cancellationToken)
+    {
+        var latitude = GetDouble(arguments, "latitude");
+        var longitude = GetDouble(arguments, "longitude");
+
+        if (latitude is null || longitude is null)
+        {
+            return Error("Thiếu latitude/longitude. Toạ độ tàu do hệ thống cung cấp trong ngữ cảnh, "
+                       + "không được tự bịa số.");
+        }
+
+        var radius = GetDouble(arguments, "radius_meters") ?? DefaultNearbyRadiusMeters;
+        radius = Math.Clamp(radius, 50, MaxNearbyRadiusMeters);
+        var heading = GetDouble(arguments, "heading_degrees");
+
+        var landmarks = await _sender.Send(new GetLandmarksQuery(null), cancellationToken);
+
+        var nearby = landmarks
+            .Select(l => new
+            {
+                Landmark = l,
+                Distance = RouteGeoJsonImportSupport.HaversineMeters(
+                    latitude.Value, longitude.Value, (double)l.Latitude, (double)l.Longitude),
+                Bearing = BearingDegrees(
+                    latitude.Value, longitude.Value, (double)l.Latitude, (double)l.Longitude),
+            })
+            .Where(x => x.Distance <= radius)
+            .OrderBy(x => x.Distance)
+            .Take(MaxNearbyLandmarks)
+            .Select(x => new
+            {
+                ten = x.Landmark.LandmarkName,
+                mo_ta = x.Landmark.Description,
+                khoang_cach_m = (int)Math.Round(x.Distance),
+                phia = RelativeSide(x.Bearing, heading),
+            })
+            .ToArray();
+
+        if (nearby.Length == 0)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                dia_danh_gan_day = Array.Empty<object>(),
+                ban_kinh_m = (int)radius,
+                message = "Khong co dia danh nao trong ban kinh nay. Noi that voi khach la doan nay "
+                        + "chua co diem thuyet minh, DUNG bia ten dia danh.",
+            });
+        }
+
+        return JsonSerializer.Serialize(new
+        {
+            dia_danh_gan_day = nearby,
+            ban_kinh_m = (int)radius,
+            luu_y = heading is null
+                ? "Khong biet huong mui tau nen truong 'phia' de trong — dung noi trai/phai voi khach."
+                : "Truong 'phia' tinh theo huong mui tau, dung duoc de noi 'ben trai/ben phai'.",
+        });
+    }
+
+    /// <summary>
     /// Mọi thứ liên quan tới giá: công thức tính, loại vé, giá theo loại ghế, phụ thu theo ngày,
     /// gói bảo hiểm. Gộp 5 nguồn vào 1 tool để khỏi tốn thêm vòng gọi LLM cho từng câu hỏi giá.
     /// </summary>
@@ -586,6 +664,65 @@ public sealed class AssistantToolset
             ? value.GetString() ?? string.Empty
             : string.Empty;
 
+    /// <summary>
+    /// Số từ tham số tool. Nhận cả dạng chuỗi vì model thỉnh thoảng trả "10.7726" thay vì
+    /// 10.7726 dù schema khai number.
+    /// </summary>
+    private static double? GetDouble(JsonElement args, string property)
+    {
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(property, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.Number => value.TryGetDouble(out var number) ? number : null,
+            JsonValueKind.String => double.TryParse(
+                value.GetString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)
+                ? parsed
+                : null,
+            _ => null,
+        };
+    }
+
+    /// <summary>Góc phương vị từ điểm 1 tới điểm 2, 0° = chính Bắc, tăng theo chiều kim đồng hồ.</summary>
+    private static double BearingDegrees(double lat1, double lon1, double lat2, double lon2)
+    {
+        var phi1 = double.DegreesToRadians(lat1);
+        var phi2 = double.DegreesToRadians(lat2);
+        var deltaLambda = double.DegreesToRadians(lon2 - lon1);
+
+        var y = Math.Sin(deltaLambda) * Math.Cos(phi2);
+        var x = (Math.Cos(phi1) * Math.Sin(phi2))
+              - (Math.Sin(phi1) * Math.Cos(phi2) * Math.Cos(deltaLambda));
+
+        return (double.RadiansToDegrees(Math.Atan2(y, x)) + 360) % 360;
+    }
+
+    /// <summary>
+    /// Địa danh nằm bên nào so với mũi tàu. Không biết mũi tàu quay đâu thì trả null —
+    /// thà không nói còn hơn nói nhầm trái thành phải.
+    /// </summary>
+    private static string? RelativeSide(double bearing, double? heading)
+    {
+        if (heading is null)
+        {
+            return null;
+        }
+
+        // Đưa về [-180, 180): âm là bên trái, dương là bên phải.
+        var relative = ((bearing - heading.Value + 540) % 360) - 180;
+
+        return relative switch
+        {
+            >= -45 and <= 45 => "phía trước",
+            > 45 and <= 135 => "bên phải",
+            < -45 and >= -135 => "bên trái",
+            _ => "phía sau",
+        };
+    }
+
     private static ChatToolDefinition[] BuildDefinitions() =>
     [
         new ChatToolDefinition(
@@ -720,6 +857,27 @@ public sealed class AssistantToolset
             + "được bao nhiêu người.",
             ParseSchema("""
             { "type": "object", "properties": {} }
+            """)),
+
+        new ChatToolDefinition(
+            "get_nearby_landmarks",
+            "Địa danh Ở NGAY QUANH TÀU lúc này, sắp theo khoảng cách gần nhất. Gọi khi khách đang "
+            + "đi tàu và hỏi về thứ họ NHÌN THẤY: \"toà nhà kia là gì\", \"bên trái là cầu gì\", "
+            + "\"chỗ mình đang đi qua có gì hay\", \"kể về nơi này đi\". Toạ độ tàu và hướng mũi tàu "
+            + "đã được cung cấp trong phần ngữ cảnh của cuộc trò chuyện — dùng đúng số đó, TUYỆT ĐỐI "
+            + "không tự bịa toạ độ. KHÁC get_sightseeing_info (liệt kê địa danh để giới thiệu tour, "
+            + "không gắn vị trí thật).",
+            ParseSchema("""
+            {
+              "type": "object",
+              "properties": {
+                "latitude":        { "type": "number", "description": "Vĩ độ hiện tại của tàu, lấy từ ngữ cảnh cuộc trò chuyện." },
+                "longitude":       { "type": "number", "description": "Kinh độ hiện tại của tàu, lấy từ ngữ cảnh cuộc trò chuyện." },
+                "radius_meters":   { "type": "number", "description": "Bán kính tìm, mặc định 800m. Tăng lên khi quanh đó không có gì; tối đa 3000." },
+                "heading_degrees": { "type": "number", "description": "Hướng mũi tàu (0=Bắc, 90=Đông), lấy từ ngữ cảnh. Bỏ trống thì không nói được trái/phải." }
+              },
+              "required": ["latitude", "longitude"]
+            }
             """)),
     ];
 

@@ -131,6 +131,12 @@ public static class DependencyInjection
         // Phân vùng theo IP client (ưu tiên X-Forwarded-For vì sau reverse proxy của Azure).
         var assistantPermit = builder.Configuration.GetValue<int?>("RateLimiting:AssistantChatPerWindow") ?? 8;
         var assistantWindowSeconds = builder.Configuration.GetValue<int?>("RateLimiting:AssistantChatWindowSeconds") ?? 60;
+
+        // Hướng dẫn viên bằng giọng nói: mỗi lượt tốn STT + LLM + TTS (chatbox chỉ tốn LLM),
+        // nên siết chặt hơn.
+        var tourGuideVoicePermit = builder.Configuration.GetValue<int?>("RateLimiting:TourGuideVoicePerWindow") ?? 5;
+        var tourGuideVoiceWindowSeconds = builder.Configuration.GetValue<int?>("RateLimiting:TourGuideVoiceWindowSeconds") ?? 60;
+
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -141,6 +147,15 @@ public static class DependencyInjection
                     {
                         PermitLimit = assistantPermit,
                         Window = TimeSpan.FromSeconds(assistantWindowSeconds),
+                        QueueLimit = 0,
+                    }));
+            options.AddPolicy(SaigonWaterbus.Web.Endpoints.TourGuideVoice.RateLimitPolicy, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: ResolveClientKey(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = tourGuideVoicePermit,
+                        Window = TimeSpan.FromSeconds(tourGuideVoiceWindowSeconds),
                         QueueLimit = 0,
                     }));
         });

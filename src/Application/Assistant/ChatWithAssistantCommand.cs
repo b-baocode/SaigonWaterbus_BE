@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Logging;
 using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Assistant;
@@ -27,27 +26,18 @@ public sealed record ChatWithAssistantCommand(
 public sealed class ChatWithAssistantCommandHandler
     : IRequestHandler<ChatWithAssistantCommand, AssistantReply>
 {
-    /// <summary>Chặn vòng lặp tool vô hạn (mỗi vòng là một lần gọi LLM tốn phí).</summary>
-    private const int MaxToolIterations = 6;
-
     /// <summary>Chỉ giữ lại N lượt gần nhất khi gửi cho LLM để khỏi phình token.</summary>
     private const int MaxHistoryTurns = 8;
 
-    private readonly IChatCompletionService _chat;
-    private readonly AssistantToolset _tools;
+    private readonly AssistantConversationRunner _runner;
     private readonly TimeProvider _timeProvider;
-    private readonly ILogger<ChatWithAssistantCommandHandler> _logger;
 
     public ChatWithAssistantCommandHandler(
-        IChatCompletionService chat,
-        AssistantToolset tools,
-        TimeProvider timeProvider,
-        ILogger<ChatWithAssistantCommandHandler> logger)
+        AssistantConversationRunner runner,
+        TimeProvider timeProvider)
     {
-        _chat = chat;
-        _tools = tools;
+        _runner = runner;
         _timeProvider = timeProvider;
-        _logger = logger;
     }
 
     public async Task<AssistantReply> Handle(ChatWithAssistantCommand request, CancellationToken cancellationToken)
@@ -61,45 +51,15 @@ public sealed class ChatWithAssistantCommandHandler
         }
 
         var systemPrompt = BuildSystemPrompt(AssistantLanguage.Resolve(request.Language));
+        var result = await _runner.RunAsync(systemPrompt, messages, cancellationToken);
 
-        for (var i = 0; i < MaxToolIterations; i++)
+        return new AssistantReply(result.Status switch
         {
-            ChatCompletionResult result;
-            try
-            {
-                result = await _chat.CompleteAsync(
-                    new ChatCompletionRequest(systemPrompt, messages, _tools.Definitions),
-                    cancellationToken);
-            }
-            catch (OperationCanceledException)
-            {
-                throw; // client hủy / timeout thật — để nguyên.
-            }
-            catch (Exception ex)
-            {
-                // LLM lỗi (thiếu key, quá tải, rate limit provider, mạng) — trả lời lịch sự
-                // thay vì 500, nhưng PHẢI log để còn biết nguyên nhân (đừng nuốt im lặng).
-                _logger.LogError(ex, "Assistant LLM call failed");
-                return new AssistantReply(
-                    "Xin lỗi, trợ lý đang bận. Bạn vui lòng thử lại sau ít phút nhé.");
-            }
-
-            if (result.ToolCalls.Count == 0)
-            {
-                return new AssistantReply(result.Text ?? string.Empty);
-            }
-
-            messages.Add(ChatMessage.FromAssistant(result.Text, result.ToolCalls));
-
-            foreach (var call in result.ToolCalls)
-            {
-                var toolResult = await _tools.ExecuteAsync(call.Name, call.Arguments, cancellationToken);
-                messages.Add(ChatMessage.FromTool(call.Id, call.Name, toolResult));
-            }
-        }
-
-        return new AssistantReply(
-            "Xin lỗi, mình chưa xử lý được yêu cầu này. Bạn thử hỏi lại theo cách khác nhé.");
+            AssistantRunStatus.Completed => result.Text ?? string.Empty,
+            AssistantRunStatus.ProviderFailed =>
+                "Xin lỗi, trợ lý đang bận. Bạn vui lòng thử lại sau ít phút nhé.",
+            _ => "Xin lỗi, mình chưa xử lý được yêu cầu này. Bạn thử hỏi lại theo cách khác nhé.",
+        });
     }
 
     private string BuildSystemPrompt(string? language)

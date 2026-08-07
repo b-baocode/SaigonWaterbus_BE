@@ -72,6 +72,15 @@ public static class DependencyInjection
         builder.Services.AddHttpClient(PayOsHttpClientName);
         builder.Services.AddHttpClient(GeminiChatCompletionService.HttpClientName);
         builder.Services.AddScoped<IChatCompletionService, GeminiChatCompletionService>();
+        // Singleton: GoogleCredential tự cache và tự làm mới access token bên trong nó.
+        builder.Services.AddSingleton<GoogleCloudCredentials>();
+        builder.Services.AddHttpClient(GoogleTextToSpeechService.HttpClientName, (provider, client) =>
+        {
+            var options = provider.GetRequiredService<IOptions<GoogleTextToSpeechOptions>>().Value;
+            client.Timeout = TimeSpan.FromSeconds(Math.Max(1, options.TimeoutSeconds));
+        });
+        builder.Services.AddScoped<ITextToSpeechService, GoogleTextToSpeechService>();
+        AddSpeechToText(builder);
         builder.Services.AddHttpClient(IncidentGpsHookHttpClientName, (provider, client) =>
         {
             var options = provider.GetRequiredService<IOptions<IncidentGpsHookOptions>>().Value;
@@ -176,11 +185,44 @@ public static class DependencyInjection
         });
         builder.Services.Configure<CharterRouteEstimateOptions>(builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName));
         builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection(GeminiOptions.SectionName));
+        builder.Services.Configure<GoogleTextToSpeechOptions>(
+            builder.Configuration.GetSection(GoogleTextToSpeechOptions.SectionName));
+        builder.Services.Configure<GoogleCloudSpeechToTextOptions>(
+            builder.Configuration.GetSection(GoogleCloudSpeechToTextOptions.SectionName));
+        builder.Services.Configure<GoogleCloudCredentialsOptions>(
+            builder.Configuration.GetSection(GoogleCloudCredentialsOptions.SectionName));
         CharterRouteEstimateOptionsSetup.ConfigureDefaults(
             builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName).Get<CharterRouteEstimateOptions>());
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<CharterBookingExpirationHostedService>();
+    }
+
+    /// <summary>
+    /// Chọn provider chép lời theo cấu hình "SpeechToText:Provider".
+    ///
+    /// Mặc định là Gemini vì nó chạy được NGAY với key sẵn có, nhưng đo thật cho thấy nó mất
+    /// 3.5–4.5s/lượt — nên khi có key Google Cloud thì đổi sang "GoogleCloud" (nhanh hơn hẳn
+    /// vì là dịch vụ chuyên chép lời). Đổi provider chỉ là đổi một dòng config, không sửa code:
+    /// đó là điểm của ISpeechToTextService.
+    /// </summary>
+    private static void AddSpeechToText(IHostApplicationBuilder builder)
+    {
+        var provider = builder.Configuration["SpeechToText:Provider"];
+
+        if (string.Equals(provider, "GoogleCloud", StringComparison.OrdinalIgnoreCase))
+        {
+            builder.Services.AddHttpClient(GoogleCloudSpeechToTextService.HttpClientName, (sp, client) =>
+            {
+                var options = sp.GetRequiredService<IOptions<GoogleCloudSpeechToTextOptions>>().Value;
+                client.Timeout = TimeSpan.FromSeconds(Math.Max(1, options.TimeoutSeconds));
+            });
+            builder.Services.AddScoped<ISpeechToTextService, GoogleCloudSpeechToTextService>();
+            return;
+        }
+
+        // HttpClient "Gemini" đã đăng ký ở trên — dùng chung để giữ nguyên cấu hình proxy.
+        builder.Services.AddScoped<ISpeechToTextService, GeminiSpeechToTextService>();
     }
 
     private static void AddRedis(IHostApplicationBuilder builder)
