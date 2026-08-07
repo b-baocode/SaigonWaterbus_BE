@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -100,9 +101,13 @@ public sealed class TourGuideVoice : IEndpointGroup
         ISender sender,
         ILogger<TourGuideVoice> logger,
         IFormFile audio,
-        [FromForm] double? latitude,
-        [FromForm] double? longitude,
-        [FromForm] double? heading,
+        // Nhận số dưới dạng CHUỖI rồi tự parse, KHÔNG khai `double?`. Lý do: client gửi trường
+        // rỗng (`-F 'longitude='` — Swagger UI làm đúng vậy) thì binder của minimal API cố parse
+        // "" thành double và ném 400 với body RỖNG, trước cả khi vào handler. Người gọi không có
+        // manh mối gì để sửa. Tự parse thì coi rỗng là "không gửi", đúng như ý nghĩa của nó.
+        [FromForm] string? latitude,
+        [FromForm] string? longitude,
+        [FromForm] string? heading,
         [FromForm] string? currentLandmark,
         [FromForm] string? history,
         [FromForm] string? language,
@@ -131,6 +136,16 @@ public sealed class TourGuideVoice : IEndpointGroup
             return Results.BadRequest(new { error = "history khong phai JSON hop le." });
         }
 
+        if (!TryParseCoordinate(latitude, out var lat)
+            || !TryParseCoordinate(longitude, out var lng)
+            || !TryParseCoordinate(heading, out var head))
+        {
+            return Results.BadRequest(new
+            {
+                error = "latitude/longitude/heading phai la so (vi du 10.775). Bo trong neu khong co.",
+            });
+        }
+
         TourGuideAnswer answer;
         try
         {
@@ -138,9 +153,9 @@ public sealed class TourGuideVoice : IEndpointGroup
                 new AskTourGuideCommand(
                     buffer.ToArray(),
                     audio.ContentType,
-                    latitude,
-                    longitude,
-                    heading,
+                    lat,
+                    lng,
+                    head,
                     currentLandmark,
                     turns,
                     language),
@@ -152,14 +167,19 @@ public sealed class TourGuideVoice : IEndpointGroup
             // phải của server. Thông báo có kèm danh sách định dạng chấp nhận được.
             return Results.BadRequest(new { error = ex.Message });
         }
-        catch (OperationCanceledException)
+        // Client tự huỷ (đóng tab, bấm dừng) — không phải lỗi, để nguyên cho pipeline xử lý.
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            throw; // client huỷ / timeout thật — để nguyên.
+            throw;
         }
-        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+        // STT chết (chưa bật API, thiếu quyền, provider lỗi, mạng) KHÔNG được thành 500 trần:
+        // FE cần thông điệp để nói lại với khách thay vì treo ở trạng thái "đang nghĩ".
+        //
+        // PHẢI bắt cả OperationCanceledException ở đây: HttpClient hết giờ cũng ném
+        // TaskCanceledException, và nếu chỉ nhìn kiểu ngoại lệ thì không phân biệt được với
+        // client huỷ — dấu hiệu phân biệt duy nhất là ct.IsCancellationRequested ở trên.
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or OperationCanceledException)
         {
-            // STT chết (chưa bật API, thiếu quyền, provider lỗi, mạng) KHÔNG được thành 500 trần:
-            // FE cần thông điệp để nói lại với khách thay vì treo ở trạng thái "đang nghĩ".
             logger.LogError(ex, "Tour guide speech-to-text failed");
             return Results.Json(
                 new { error = "Khong nhan dang duoc giong noi luc nay. Ban thu lai sau it phut nhe." },
@@ -195,14 +215,16 @@ public sealed class TourGuideVoice : IEndpointGroup
                 new SpeechSynthesisRequest(request.Text, request.Voice, request.Language),
                 ct);
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
-            throw; // client huỷ / timeout thật — để nguyên.
+            throw; // client tự huỷ — không phải lỗi.
         }
-        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException)
+        // Xem ghi chú ở Ask: HttpClient hết giờ cũng ném TaskCanceledException nên phải bắt luôn
+        // OperationCanceledException, phân biệt bằng ct.IsCancellationRequested ở nhánh trên.
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or OperationCanceledException)
         {
-            // TTS chết (thiếu key, provider lỗi, mạng) KHÔNG được thành 500 trần: FE cần biết để
-            // xuống cấp mềm — hiện phụ đề, bỏ phần đọc tiếng. Câu trả lời khách vẫn đọc được.
+            // TTS chết KHÔNG được thành 500 trần: FE cần biết để xuống cấp mềm — hiện phụ đề,
+            // bỏ phần đọc tiếng. Câu trả lời khách vẫn đọc được.
             logger.LogError(ex, "Tour guide TTS failed");
             return Results.Json(
                 new { error = "Khong doc thanh tieng duoc luc nay. Hien phu de cho khach doc." },
@@ -210,6 +232,28 @@ public sealed class TourGuideVoice : IEndpointGroup
         }
 
         return Results.File(speech.Data, speech.ContentType);
+    }
+
+    /// <summary>
+    /// Rỗng = không gửi (hợp lệ, trả true kèm null). Có chữ mà không phải số = sai thật (false).
+    /// Ép <see cref="CultureInfo.InvariantCulture"/> vì client luôn gửi dấu chấm thập phân,
+    /// trong khi máy chủ chạy locale Việt Nam sẽ hiểu dấu phẩy.
+    /// </summary>
+    private static bool TryParseCoordinate(string? raw, out double? value)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        {
+            value = parsed;
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>
