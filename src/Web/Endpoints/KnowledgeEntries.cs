@@ -4,11 +4,7 @@ using SaigonWaterbus.Domain.Constants;
 namespace SaigonWaterbus.Web.Endpoints;
 
 /// <summary>
-/// Kho kiến thức (chính sách, quy định, hướng dẫn). Hai nhóm route:
-/// - GET "" : CÔNG KHAI, chỉ trả entry Published để web hiển thị cho khách.
-/// - Còn lại: quản lý, chỉ Admin.
-///
-/// Trợ lý ảo KHÔNG đi qua HTTP: tool search_knowledge gọi thẳng MediatR trong process.
+/// Kho kien thuc: public route chi doc Published; cac route quan ly chi danh cho Admin.
 /// </summary>
 public sealed class KnowledgeEntries : IEndpointGroup
 {
@@ -31,42 +27,55 @@ public sealed class KnowledgeEntries : IEndpointGroup
         { "status": "Draft" }
         """;
 
+    private const string TestSearchExample =
+        """
+        {
+          "query": "toi muon hoan ve",
+          "take": 3
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetPublishedEntries, string.Empty)
             .AllowAnonymous()
             .WithSummary("Kien thuc cong khai (khach)")
             .WithDescription(OpenApiDescriptionBuilder.Build("Anonymous", null,
-                "Tra ve cac muc kien thuc dang Published de hien thi cho khach (chinh sach, quy dinh, huong dan).",
+                "Tra ve cac muc kien thuc dang Published de hien thi cho khach.",
                 "Entry dang Draft KHONG bao gio xuat hien o day.",
-                "Query: category — bo trong la lay tat ca. "
+                "Query: category - bo trong la lay tat ca. "
                 + $"Hop le: {string.Join(" | ", KnowledgeCategories.All)}.",
-                "Sap xep: category, roi displayOrder, roi NGAY TAO (khong phai tieu de) — muc them "
-                + "sau luon nam cuoi, khong hat muc dang hien thi o vi tri co dinh tren web.",
-                "QUY UOC VAN HANH: moi category nen chi co MOT muc chinh (displayOrder nho nhat). "
-                + "FE render vi tri co dinh (vi du o chinh sach o trang thanh toan) se lay theo "
-                + "category, nen them muc thu hai cung category la khach thay ca hai.",
+                "Sap xep: category, displayOrder, ngay tao.",
                 "Khong tra ve keywords/status/author: keywords chi phuc vu tim kiem cua tro ly ao."));
 
         group.MapGet(GetEntries, "admin")
             .RequireAuthorization()
             .WithSummary("Danh sach kien thuc (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", null,
-                "Tra ve tat ca entry ke ca Draft, kem noi dung day du. Khong phan trang.",
-                "Query: status (Draft | Published), category — bo trong la lay tat ca.",
+                "Tra ve entry ke ca Draft, kem noi dung day du, co phan trang.",
+                "Query: status (Draft | Published), category, keyword, page, pageSize.",
                 $"Category hop le: {string.Join(" | ", KnowledgeCategories.All)}."));
+
+        group.MapGet(GetMetadata, "metadata")
+            .RequireAuthorization()
+            .WithSummary("Metadata quan ly knowledge")
+            .WithDescription(OpenApiDescriptionBuilder.Build("Admin", null,
+                "Tra ve categories, statuses va cac gioi han de FE khong can fix cung."));
+
+        group.MapPost(TestSearch, "admin/test-search")
+            .RequireAuthorization()
+            .WithSummary("Test search knowledge cho chatbot")
+            .WithDescription(OpenApiDescriptionBuilder.Build("Admin", TestSearchExample,
+                "Nhap cau hoi thu de xem chatbot se match entry Published nao.",
+                "Chi dung entry Published, vi day la phan user that se duoc chatbot tra cuu.",
+                "Tra ve token, score, matchedTokens va content da cat theo ngan sach context."));
 
         group.MapPost(CreateEntry, string.Empty)
             .RequireAuthorization()
             .WithSummary("Tao muc kien thuc")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", CreateExample,
                 "title = cau hoi hoac tieu de chu de; content = cau tra loi tro ly se doc.",
-                "keywords RAT QUAN TRONG: tro ly tim bang KHOP TU, khong hieu tu dong nghia. "
-                + "Khach hoi 'tra lai ve' se khong khop entry 'hoan ve' neu khong khai tu khoa. "
-                + "Hay liet ke moi cach khach hay hoi ve chu de nay.",
-                "DO DAI content: moi category nen chi MOT muc gom het noi dung, va giu duoi ~4000 "
-                + "ky tu. Web hien thi day du, nhung tro ly ao chi doc 4000 ky tu dau — viet dai hon "
-                + "thi phan duoi bot KHONG nhin thay du khach van doc duoc tren web.",
+                "keywords RAT QUAN TRONG: tro ly tim bang KHOP TU, khong hieu tu dong nghia.",
                 "status bo trong = Draft; chi entry Published moi duoc tro ly dung.",
                 "Tac gia lay tu token, khong nhan tu payload."));
 
@@ -74,7 +83,7 @@ public sealed class KnowledgeEntries : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Cap nhat muc kien thuc")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", CreateExample,
-                "Full replace — gui lai toan bo, field bo trong se bi ghi de.",
+                "Full replace - gui lai toan bo, field bo trong se bi ghi de.",
                 "Sua noi dung la tro ly dung ngay lap tuc, khong can deploy lai."));
 
         group.MapPut(UpdateEntryStatus, "{id:guid}/status")
@@ -94,8 +103,22 @@ public sealed class KnowledgeEntries : IEndpointGroup
         Results.Ok(await sender.Send(new GetPublishedKnowledgeEntriesQuery(category), ct));
 
     private static async Task<IResult> GetEntries(
-        ISender sender, string? status, string? category, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new GetKnowledgeEntriesAdminQuery(status, category), ct));
+        ISender sender,
+        string? status,
+        string? category,
+        string? keyword,
+        int? page,
+        int? pageSize,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetKnowledgeEntriesAdminQuery(
+            status, category, keyword, page ?? 1, pageSize ?? 20), ct));
+
+    private static async Task<IResult> GetMetadata(ISender sender, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetKnowledgeEntryMetadataQuery(), ct));
+
+    private static async Task<IResult> TestSearch(
+        ISender sender, TestKnowledgeSearchQuery request, CancellationToken ct) =>
+        Results.Ok(await sender.Send(request, ct));
 
     private static async Task<IResult> CreateEntry(
         ISender sender, CreateKnowledgeEntryCommand command, CancellationToken ct) =>

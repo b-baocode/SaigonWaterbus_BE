@@ -6,6 +6,7 @@ using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Payments;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
@@ -46,9 +47,9 @@ public sealed record CounterBookingResult(
     BookingInsuranceDto? Insurance = null);
 
 /// <summary>
-/// Bán vé tại quầy: staff/manager đặt hộ khách vãng lai (không cần tài khoản) và thu tiền ngay.
-/// Khác booking online ở ba điểm: booking không gắn user (chỉ lưu thông tin liên hệ người bán nhập),
-/// bán được cả khi tàu đã rời bến, và có thể thu tiền mặt để xác nhận tức thì.
+/// Bán vé tại quầy: staff/manager đặt hộ khách trực tiếp và thu tiền ngay.
+/// Nếu khách xác nhận tài khoản đã lookup, booking được gắn user để tích điểm sau khi hoàn tất dịch vụ;
+/// nếu không thì giữ dạng khách vãng lai.
 /// </summary>
 public sealed record CreateCounterBookingCommand(
     string TripCode,
@@ -60,7 +61,10 @@ public sealed record CreateCounterBookingCommand(
     string? ReturnTripCode = null,
     IReadOnlyList<BookingItemRequest>? ReturnItems = null,
     bool? InsuranceSelected = null,
-    Guid? InsurancePackageId = null) : IRequest<CounterBookingResult>;
+    Guid? InsurancePackageId = null,
+    Guid? CustomerUserId = null,
+    bool CustomerConfirmedForPoints = false,
+    int? PointsToUse = null) : IRequest<CounterBookingResult>;
 
 public sealed class CreateCounterBookingCommandValidator : AbstractValidator<CreateCounterBookingCommand>
 {
@@ -81,6 +85,13 @@ public sealed class CreateCounterBookingCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.InsurancePackageId)
             .NotEmpty()
             .When(x => x.InsurancePackageId.HasValue);
+        RuleFor(x => x.CustomerUserId)
+            .NotEmpty()
+            .When(x => x.CustomerUserId.HasValue);
+        RuleFor(x => x.PointsToUse)
+            .GreaterThanOrEqualTo(0)
+            .When(x => x.PointsToUse.HasValue)
+            .WithMessage("Số điểm sử dụng không được âm.");
     }
 }
 
@@ -131,6 +142,10 @@ public sealed class CreateCounterBookingCommandHandler
     {
         var seller = await AuthSupport.EnsureCurrentUserCanSellAtCounterAsync(_context, _userContext, cancellationToken);
         var now = _timeProvider.GetUtcNow();
+        var loyaltyCustomer = await ResolveCounterBookingCustomerAsync(
+            request.CustomerUserId,
+            request.CustomerConfirmedForPoints,
+            cancellationToken);
 
         // allowDepartedTrip: quầy vé bán được cả khi tàu đã rời bến (khách lên ở bến giữa tuyến),
         // chỉ chặn chuyến đã kết thúc/hủy. Pre-hold ghế tính theo người bán đang thao tác.
@@ -150,6 +165,8 @@ public sealed class CreateCounterBookingCommandHandler
                 nameof(request.ReturnTripCode), allowDepartedTrip: true, cancellationToken);
 
             BookingLegResolver.EnsureLegsDoNotShareSeats(outboundLeg, returnLeg);
+            BookingLegResolver.EnsureReturnLegStartsAfterOutboundLeg(
+                outboundLeg, returnLeg, nameof(request.ReturnTripCode));
         }
         else if (request.ReturnItems is { Count: > 0 })
         {
@@ -175,12 +192,13 @@ public sealed class CreateCounterBookingCommandHandler
             cancellationToken);
         var subtotal = PriceRoundingSupport.RoundFare(
             ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m));
+        EnsureCounterPointsRequestIsValid(request, loyaltyCustomer, subtotal);
 
-        // Khách vãng lai: booking không gắn user nên không tích/dùng điểm và không áp mã khuyến mãi
-        // (mã khuyến mãi kiểm tra hạn mức theo từng tài khoản).
+        // Nếu quầy đã lookup và khách xác nhận tài khoản, gắn UserId để tích điểm sau khi hoàn tất dịch vụ.
+        // Vẫn không dùng khuyến mãi tại quầy; khách vãng lai giữ UserId null như trước.
         var booking = new Booking
         {
-            UserId = null,
+            UserId = loyaltyCustomer?.Id,
             SoldByStaffId = seller.Id,
             TripId = outboundLeg.Trip.Id,
             ReturnTripId = returnLeg?.Trip.Id,
@@ -211,6 +229,12 @@ public sealed class CreateCounterBookingCommandHandler
                         _context, _legResolver, legs, seller.Id, now, ct);
 
                     await _context.SaveChangesAsync(ct);
+
+                    if (request.PointsToUse.HasValue)
+                    {
+                        await PaymentSupport.ApplyPointsForCheckoutAsync(
+                            _context, booking, request.PointsToUse, now, ct);
+                    }
                 },
                 cancellationToken);
         }
@@ -243,6 +267,74 @@ public sealed class CreateCounterBookingCommandHandler
         }
 
         return ToResult(booking, returnLeg, payment.PaymentMethod, payment);
+    }
+
+    private async Task<User?> ResolveCounterBookingCustomerAsync(
+        Guid? customerUserId,
+        bool customerConfirmedForPoints,
+        CancellationToken cancellationToken)
+    {
+        if (!customerUserId.HasValue)
+        {
+            if (customerConfirmedForPoints)
+            {
+                throw new ValidationException([new ValidationFailure(
+                    nameof(CreateCounterBookingCommand.CustomerConfirmedForPoints),
+                    "Không thể xác nhận tích điểm khi chưa chọn tài khoản khách hàng.")]);
+            }
+
+            return null;
+        }
+
+        if (!customerConfirmedForPoints)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(CreateCounterBookingCommand.CustomerConfirmedForPoints),
+                "Staff phải xác nhận đúng tài khoản khách hàng trước khi tích điểm.")]);
+        }
+
+        var customer = await _context.Set<User>()
+            .Include(u => u.Role)
+            .SingleOrDefaultAsync(u => u.Id == customerUserId.Value, cancellationToken);
+
+        if (customer is null || customer.Status != UserStatus.Active || !AuthSupport.IsCustomer(customer))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.CustomerUserId),
+                "Tài khoản khách hàng không hợp lệ hoặc không còn hoạt động.")]);
+        }
+
+        return customer;
+    }
+
+    private static void EnsureCounterPointsRequestIsValid(
+        CreateCounterBookingCommand request,
+        User? loyaltyCustomer,
+        decimal subtotal)
+    {
+        var pointsToUse = request.PointsToUse ?? 0;
+        if (pointsToUse <= 0)
+        {
+            return;
+        }
+
+        if (loyaltyCustomer is null)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.PointsToUse),
+                "Chỉ dùng điểm khi đã chọn và xác nhận tài khoản khách hàng.")]);
+        }
+
+        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(subtotal);
+        if (pointsToUse > maxRedeemable)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.PointsToUse),
+                $"Điểm chỉ được trả tối đa 50% giá trị đơn ({maxRedeemable} điểm cho đơn này).")]);
+        }
+
+        if (pointsToUse > loyaltyCustomer.PointBalance)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.PointsToUse),
+                $"Số dư điểm không đủ (hiện có {loyaltyCustomer.PointBalance} điểm khả dụng).")]);
+        }
     }
 
     /// <summary>

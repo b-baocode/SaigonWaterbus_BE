@@ -1,10 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
+using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.UnitTests.Points;
 
@@ -94,6 +96,57 @@ public class PointSupportTests
         var transaction = await context.Set<PointTransaction>().SingleAsync();
         transaction.Points.ShouldBe(1_000);
         transaction.BookingId.ShouldBe(booking.Id);
+    }
+
+    [Test]
+    public async Task CompletingTripDoesNotAwardPointsForNonCustomerOwner()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var staff = await context.Set<User>().SingleAsync(u => u.Id == staffContext.UserId);
+        var trip = Trip("TR-POINT-STAFF", TripStatus.Completed);
+        var booking = Booking(staff.Id, trip, "BK-POINT-STAFF");
+        var payment = PaidPayment(booking, 100_000m);
+        context.AddRange(trip, booking, payment);
+        await context.SaveChangesAsync();
+
+        await PointSupport.AwardCompletionPointsForCompletedTripAsync(
+            context,
+            trip,
+            TripStatus.InProgress,
+            Now,
+            CancellationToken.None);
+        await context.SaveChangesAsync();
+
+        staff.PointBalance.ShouldBe(0);
+        booking.PointsEarned.ShouldBe(0);
+        (await context.Set<PointTransaction>().CountAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task NonCustomerOwnerCannotUsePointsForCheckout()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var staff = await context.Set<User>().SingleAsync(u => u.Id == staffContext.UserId);
+        staff.PointBalance = 10_000;
+        var trip = Trip("TR-POINT-REDEEM-STAFF", TripStatus.Scheduled);
+        var booking = Booking(staff.Id, trip, "BK-POINT-REDEEM-STAFF");
+        context.AddRange(trip, booking);
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            PaymentSupport.ApplyPointsForCheckoutAsync(
+                context,
+                booking,
+                5_000,
+                Now,
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("Chỉ tài khoản khách hàng mới được dùng điểm"));
+        staff.PointBalance.ShouldBe(10_000);
+        booking.PointsUsed.ShouldBe(0);
     }
 
     private static Trip Trip(string code, TripStatus status) => new()

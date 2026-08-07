@@ -72,6 +72,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<KnowledgeEntry> KnowledgeEntries => Set<KnowledgeEntry>();
 
+    public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
+
+    public DbSet<SaigonWaterbus.Domain.Entities.ChatMessage> ChatMessages => Set<SaigonWaterbus.Domain.Entities.ChatMessage>();
+
     public DbSet<GpsDevice> GpsDevices => Set<GpsDevice>();
 
     public DbSet<BoatLatestLocation> BoatLatestLocations => Set<BoatLatestLocation>();

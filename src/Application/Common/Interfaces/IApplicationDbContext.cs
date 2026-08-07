@@ -46,6 +46,10 @@ public interface IApplicationDbContext
 
     DbSet<KnowledgeEntry> KnowledgeEntries { get; }
 
+    DbSet<ChatConversation> ChatConversations { get; }
+
+    DbSet<SaigonWaterbus.Domain.Entities.ChatMessage> ChatMessages { get; }
+
     DbSet<TEntity> Set<TEntity>()
         where TEntity : class;
 

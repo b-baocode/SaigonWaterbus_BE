@@ -1633,9 +1633,16 @@ internal static class PaymentSupport
         }
 
         var user = await context.Set<User>()
+            .Include(u => u.Role)
             .SingleOrDefaultAsync(u => u.Id == booking.UserId.Value, cancellationToken)
             ?? throw new ValidationException([new ValidationFailure("pointsToUse",
                 "Không tìm thấy tài khoản để trừ điểm.")]);
+
+        if (targetPoints > 0 && !AuthSupport.IsCustomer(user))
+        {
+            throw new ValidationException([new ValidationFailure("pointsToUse",
+                "Chỉ tài khoản khách hàng mới được dùng điểm tích lũy.")]);
+        }
 
         if (targetPoints > maxRedeemable)
         {

@@ -20,6 +20,20 @@ namespace Microsoft.Extensions.DependencyInjection;
 
 public static class DependencyInjection
 {
+    private static readonly string[] DefaultCorsAllowedOrigins =
+    [
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://localhost:5174",
+        "http://localhost:5177",
+        "https://localhost:3000",
+        "https://localhost:5173",
+        "https://localhost:5174",
+        "https://localhost:5177",
+        "https://waterbus.top",
+        "https://www.waterbus.top"
+    ];
+
     /// <summary>Khóa phân vùng rate limit: IP client thật (X-Forwarded-For sau proxy Azure).</summary>
     private static string ResolveClientKey(HttpContext context)
     {
@@ -34,15 +48,7 @@ public static class DependencyInjection
 
     public static void AddWebServices(this IHostApplicationBuilder builder)
     {
-        var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>()
-            ?? [
-                "http://localhost:3000",
-                "http://localhost:5173",
-                "http://localhost:5177",
-                "https://localhost:3000",
-                "https://localhost:5173",
-                "https://localhost:5177"
-            ];
+        var allowedOrigins = ResolveAllowedOrigins(builder.Configuration);
 
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
         builder.Services.AddMemoryCache();
@@ -257,6 +263,40 @@ public static class DependencyInjection
                     .AllowCredentials();
             });
         });
+    }
+
+    private static string[] ResolveAllowedOrigins(IConfiguration configuration)
+    {
+        var origins = new List<string>();
+        var section = configuration.GetSection("Cors:AllowedOrigins");
+        var configuredOrigins = section.Get<string[]>();
+        if (configuredOrigins is not null)
+        {
+            origins.AddRange(configuredOrigins);
+        }
+
+        origins.AddRange(SplitOrigins(section.Value));
+        origins.AddRange(SplitOrigins(configuration["Cors:AdditionalAllowedOrigins"]));
+        origins.AddRange(DefaultCorsAllowedOrigins);
+
+        return origins
+            .Select(NormalizeOrigin)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+    }
+
+    private static IEnumerable<string> SplitOrigins(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+    private static string NormalizeOrigin(string origin)
+    {
+        var trimmed = origin.Trim().TrimEnd('/');
+        return Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            ? uri.GetLeftPart(UriPartial.Authority)
+            : trimmed;
     }
 
     public static void AddKeyVaultIfConfigured(this IHostApplicationBuilder builder)

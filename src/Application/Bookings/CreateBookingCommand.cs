@@ -295,6 +295,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
                 nameof(request.ReturnTripCode), allowDepartedTrip: false, cancellationToken);
 
             BookingLegResolver.EnsureLegsDoNotShareSeats(outboundLeg, returnLeg);
+            BookingLegResolver.EnsureReturnLegStartsAfterOutboundLeg(
+                outboundLeg, returnLeg, nameof(request.ReturnTripCode));
         }
         else if (request.ReturnItems is { Count: > 0 })
         {

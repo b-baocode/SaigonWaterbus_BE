@@ -4,13 +4,15 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Application.Knowledge;
 
-/// <summary>
-/// Danh sách knowledge cho màn quản lý (kể cả Draft). Không phân trang — knowledge base cỡ
-/// vài chục entry, giống cách GetBlogPostManagementListQuery đang làm.
-/// </summary>
+/// <summary>Danh sach knowledge cho man quan ly cua Admin, gom ca Draft.</summary>
 [Authorize(Roles = "Admin")]
-public sealed record GetKnowledgeEntriesAdminQuery(string? Status = null, string? Category = null)
-    : IRequest<IReadOnlyList<KnowledgeEntryDto>>;
+public sealed record GetKnowledgeEntriesAdminQuery(
+    string? Status = null,
+    string? Category = null,
+    string? Keyword = null,
+    int Page = 1,
+    int PageSize = 20)
+    : IRequest<KnowledgeEntryListDto>;
 
 public sealed class GetKnowledgeEntriesAdminQueryValidator : AbstractValidator<GetKnowledgeEntriesAdminQuery>
 {
@@ -22,17 +24,19 @@ public sealed class GetKnowledgeEntriesAdminQueryValidator : AbstractValidator<G
         RuleFor(x => x.Category)
             .Must(x => string.IsNullOrWhiteSpace(x) || KnowledgeCategories.IsValid(x))
             .WithMessage($"Category hop le: {string.Join(" | ", KnowledgeCategories.All)}.");
+        RuleFor(x => x.Page).GreaterThan(0);
+        RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
     }
 }
 
 public sealed class GetKnowledgeEntriesAdminQueryHandler
-    : IRequestHandler<GetKnowledgeEntriesAdminQuery, IReadOnlyList<KnowledgeEntryDto>>
+    : IRequestHandler<GetKnowledgeEntriesAdminQuery, KnowledgeEntryListDto>
 {
     private readonly IApplicationDbContext _context;
 
     public GetKnowledgeEntriesAdminQueryHandler(IApplicationDbContext context) => _context = context;
 
-    public async Task<IReadOnlyList<KnowledgeEntryDto>> Handle(
+    public async Task<KnowledgeEntryListDto> Handle(
         GetKnowledgeEntriesAdminQuery request,
         CancellationToken cancellationToken)
     {
@@ -50,14 +54,33 @@ public sealed class GetKnowledgeEntriesAdminQueryHandler
             query = query.Where(x => x.Category == category);
         }
 
-        // Cùng thứ tự với danh sách công khai (DisplayOrder rồi ngày tạo) để admin nhìn màn
-        // quản lý là biết web đang hiển thị theo thứ tự nào.
-        var entries = await query
+        var orderedEntries = await query
             .OrderBy(x => x.Category)
             .ThenBy(x => x.DisplayOrder)
             .ThenBy(x => x.Created)
             .ToListAsync(cancellationToken);
 
-        return entries.Select(KnowledgeEntrySupport.ToDto).ToList();
+        if (!string.IsNullOrWhiteSpace(request.Keyword))
+        {
+            var keyword = request.Keyword.Trim();
+            orderedEntries = orderedEntries
+                .Where(x =>
+                    x.Title.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || x.Content.Contains(keyword, StringComparison.OrdinalIgnoreCase)
+                    || x.Keywords.Any(k => k.Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        var totalCount = orderedEntries.Count;
+        var entries = orderedEntries
+            .Skip((request.Page - 1) * request.PageSize)
+            .Take(request.PageSize)
+            .ToList();
+
+        return new KnowledgeEntryListDto(
+            totalCount,
+            request.Page,
+            request.PageSize,
+            entries.Select(KnowledgeEntrySupport.ToDto).ToList());
     }
 }

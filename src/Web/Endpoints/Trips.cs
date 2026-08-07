@@ -215,6 +215,18 @@ public sealed class Trips : IEndpointGroup
             .WithName("CreateTripLegacy")
             .ExcludeFromDescription();
 
+        group.MapPost(PreviewTripsSchedule, "schedule/preview")
+            .RequireAuthorization()
+            .WithSummary("Preview tao mot hoac nhieu chuyen tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                ScheduleTripsExample,
+                "API chi kiem tra lich, KHONG tao trip.",
+                "Payload giong POST /api/trips/schedule.",
+                "Tra ve items[] theo tung moc gio co dinh, moi item co canCreate=true/false.",
+                "Neu canCreate=false thi co reason, earliestAllowedDepartureTime va conflictTripCode de FE canh bao truoc khi tao.",
+                "FE nen goi endpoint nay truoc, hien canh bao neu hasWarnings=true, roi chi goi POST /api/trips/schedule sau khi admin xac nhan."));
+
         group.MapPost(ScheduleTrips, "schedule")
             .RequireAuthorization()
             .WithSummary("Tao mot hoac nhieu chuyen tau")
@@ -223,11 +235,12 @@ public sealed class Trips : IEndpointGroup
                 ScheduleTripsExample,
                 "routeCode, boatCode: bat buoc.",
                 "API nay dung chung cho tao 1 chuyen va tao nhieu chuyen.",
+                "Khuyen nghi FE goi POST /api/trips/schedule/preview truoc de canh bao admin; endpoint nay moi tao trip that.",
                 "Tao 1 chuyen: fromDate = toDate va departureTimes co dung 1 gio.",
                 "Tao nhieu chuyen: fromDate/toDate la khoang ngay; moi ngay lay cac gio trong departureTimes hoac khoang startTime/endTime/intervalMinutes.",
                 "Neu khoang ngay tu 3 ngay tro len, FE co the hien daysOfWeek de chon thu trong tuan; bo trong = tat ca ngay trong khoang.",
                 "Cach 1: gui departureTimes: mang gio khoi hanh (gio Vietnam +07:00), dinh dang HH:mm:ss.",
-                "Cach 2: gui startTime/endTime/intervalMinutes de BE tu tao chuyen lien tuc trong khoang gio. Vi du 06:00-18:00 moi 30 phut.",
+                "Cach 2: gui startTime/endTime/intervalMinutes de BE thu tao chuyen theo cac gio khoi hanh co dinh: startTime, startTime + intervalMinutes, ... den endTime. Gio nao tau/ben/nhan su ban thi skip va nam trong skippedItems; BE khong tu doi sang gio khac.",
                 "fromDate / toDate: khoang ngay tao chuyen (toi da 365 ngay).",
                 "daysOfWeek (optional): [0=CN, 1=T2, ..., 6=T7]. Bo trong = tat ca cac ngay.",
                 "stops: voi tuyen thuong co ben giua thi bat buoc gui stayDurationMinutes cho tung stopOrder ben giua, giong tao 1 chuyen.",
@@ -393,6 +406,12 @@ public sealed class Trips : IEndpointGroup
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> ScheduleTrips(ISender sender, GenerateTripsCommand command, CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> PreviewTripsSchedule(
+        ISender sender,
+        PreviewTripsScheduleCommand command,
+        CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> GenerateTrips(ISender sender, GenerateTripsCommand command, CancellationToken ct) =>

@@ -137,8 +137,7 @@ public sealed class CheckInAllBookingTicketsCommandHandler
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        var refreshed = await BookingManifestSupport.BuildQuery(_context)
-            .SingleAsync(x => x.Id == booking.Id, cancellationToken);
+        var refreshed = await BookingManifestSupport.GetByIdAsync(_context, booking.Id, cancellationToken);
         return BookingManifestSupport.ToDto(refreshed, now);
     }
 
@@ -277,8 +276,7 @@ public sealed class CheckOutAllBookingTicketsCommandHandler
 
         await _context.SaveChangesAsync(cancellationToken);
 
-        var refreshed = await BookingManifestSupport.BuildQuery(_context)
-            .SingleAsync(x => x.Id == booking.Id, cancellationToken);
+        var refreshed = await BookingManifestSupport.GetByIdAsync(_context, booking.Id, cancellationToken);
         return BookingManifestSupport.ToDto(refreshed, now);
     }
 

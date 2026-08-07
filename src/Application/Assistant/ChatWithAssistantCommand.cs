@@ -5,7 +5,10 @@ namespace SaigonWaterbus.Application.Assistant;
 /// <summary>Một lượt hội thoại gửi lên từ client. Role chỉ nhận "user" hoặc "assistant".</summary>
 public sealed record AssistantTurn(string Role, string Text);
 
-public sealed record AssistantReply(string Text);
+public sealed record AssistantReply(
+    string Text,
+    IReadOnlyList<string>? SuggestedQuestions = null,
+    IReadOnlyList<AssistantAction>? Actions = null);
 
 /// <summary>
 /// Điều phối một lượt trả lời của trợ lý ảo: chạy vòng lặp gọi LLM ↔ chạy tool cho
@@ -53,13 +56,25 @@ public sealed class ChatWithAssistantCommandHandler
         var systemPrompt = BuildSystemPrompt(AssistantLanguage.Resolve(request.Language));
         var result = await _runner.RunAsync(systemPrompt, messages, cancellationToken);
 
-        return new AssistantReply(result.Status switch
+        // Vòng lặp LLM↔tool nằm ở AssistantConversationRunner (dùng chung với hướng dẫn viên
+        // giọng nói); ở đây chỉ chọn cách diễn đạt cho khung chat text.
+        var text = result.Status switch
         {
             AssistantRunStatus.Completed => result.Text ?? string.Empty,
             AssistantRunStatus.ProviderFailed =>
                 "Xin lỗi, trợ lý đang bận. Bạn vui lòng thử lại sau ít phút nhé.",
             _ => "Xin lỗi, mình chưa xử lý được yêu cầu này. Bạn thử hỏi lại theo cách khác nhé.",
-        });
+        };
+
+        // Mọi đường ra đều đi qua BuildReply để câu gợi ý + nút hành động không bị rơi mất.
+        return BuildReply(request, text);
+    }
+
+    private static AssistantReply BuildReply(ChatWithAssistantCommand request, string text)
+    {
+        var question = request.History.LastOrDefault(x => string.Equals(x.Role, "user", StringComparison.OrdinalIgnoreCase))?.Text ?? string.Empty;
+        var suggestions = AssistantSuggestions.Build(question, request.Language);
+        return new AssistantReply(text, suggestions.Questions, suggestions.Actions);
     }
 
     private string BuildSystemPrompt(string? language)

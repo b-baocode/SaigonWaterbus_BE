@@ -65,7 +65,10 @@ public sealed class Bookings : IEndpointGroup
           "contactEmail": "nguyenvana@example.com",
           "insuranceSelected": true,
           "insurancePackageId": "00000000-0000-0000-0000-000000000000",
-          "paymentMethod": "Cash"
+          "paymentMethod": "Cash",
+          "customerUserId": null,
+          "customerConfirmedForPoints": false,
+          "pointsToUse": 0
         }
         """;
 
@@ -180,13 +183,26 @@ public sealed class Bookings : IEndpointGroup
                 "bookingStatus sau khi tao: PendingPayment; ghe duoc giu toi da 15 phut, nhung holdExpiresAt khong vuot gio dong ban cua chang (gio tau roi ben len - 10 phut). Qua han booking tu Expired va nha ghe ca 2 chieu.",
                 "Tra ve 400 neu ghe da bi dat hoac dang duoc nguoi khac tam giu (race condition)."));
 
+        group.MapGet(LookupCounterBookingCustomer, "counter/customers/lookup")
+            .RequireAuthorization()
+            .WithSummary("Tra cuu tai khoan khach hang tai quay")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Staff hoặc Manager",
+                null,
+                "Query: keyword = so dien thoai hoac email.",
+                "Chi tra ve customer Active. FE phai hien thong tin khach + pointBalance de staff/khach xac nhan truoc khi tao booking.",
+                "Sau khi staff bam OK xac nhan, gui customerUserId + customerConfirmedForPoints=true trong POST /api/bookings/counter de booking duoc tich diem khi hoan tat dich vu; neu khach muon dung diem thi gui them pointsToUse.",
+                "Neu khong tim thay hoac khach khong xac nhan thi tao booking khach vang lai, customerUserId = null."));
+
         group.MapPost(CreateCounterBooking, "counter")
             .RequireAuthorization()
             .WithSummary("Ban ve tai quay (staff)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Staff hoặc Manager",
                 CreateCounterBookingExample,
-                "Staff/Manager dat ve ho khach mua truc tiep tai quay; khach KHONG can co tai khoan.",
+                "Staff/Manager dat ve ho khach mua truc tiep tai quay; khach KHONG bat buoc co tai khoan.",
+                "Neu khach muon tich diem: FE goi GET /api/bookings/counter/customers/lookup?keyword=<phone|email>, hien khach tim thay, staff bam OK thi gui customerUserId + customerConfirmedForPoints=true.",
+                "Neu khach muon dung diem tai quay: gui pointsToUse > 0 cung customerUserId + customerConfirmedForPoints=true; BE tru diem ngay de giu so du, toi da 50% gia tri don.",
                 "items / returnItems / ticketTypeCode / fromStationCode / toStationCode: giong het POST /api/bookings.",
                 "contactName + contactPhone + contactEmail bat buoc (staff nhap); contactEmail nhan email tong QR booking.",
                 "passengerEmail trong items/returnItems optional; neu nhap them thi gui them email ve rieng cho hanh khach do.",
@@ -197,7 +213,7 @@ public sealed class Bookings : IEndpointGroup
                 "Ban duoc CA KHI TAU DA KHOI HANH: bo han dong ban truoc gio chay, chap nhan chuyen Scheduled/Boarding/Delayed/InProgress; "
                     + "chi tu choi chuyen da Completed hoac Cancelled.",
                 "Ghe van kiem tra nhu binh thuong: da ban / dang duoc nguoi khac giu tren chang giao nhau se bi tu choi.",
-                "Khong ho tro ma khuyen mai va diem tich luy (booking khach vang lai khong gan tai khoan).",
+                "Khong ho tro ma khuyen mai tai quay. Diem chi duoc TICH sau khi booking/trip hoan tat neu customerUserId hop le va customerConfirmedForPoints=true; customerUserId null thi khong tich diem.",
                 "Bao hiem PassengerInsurance active/default duoc cong theo so passenger item; gui insuranceSelected=false de khong chon.",
                 "Don 0d (tong tien sau tinh gia/giam gia bang 0) luon ghi nhan nhu thu tai quay du chon paymentMethod nao."));
     }
@@ -215,6 +231,10 @@ public sealed class Bookings : IEndpointGroup
     private static async Task<IResult> CreateCounterBooking(
         ISender sender, CreateCounterBookingCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> LookupCounterBookingCustomer(
+        ISender sender, string keyword, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new LookupCounterBookingCustomerQuery(keyword), ct));
 
     private static async Task<IResult> GetBookingManifestByCode(
         ISender sender, string bookingCode, CancellationToken ct) =>
