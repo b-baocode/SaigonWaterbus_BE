@@ -58,6 +58,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Incident> Incidents => Set<Incident>();
 
+    public DbSet<IncidentMissionEvent> IncidentMissionEvents => Set<IncidentMissionEvent>();
+
     public DbSet<StaffWorkAssignment> StaffWorkAssignments => Set<StaffWorkAssignment>();
 
     public DbSet<Review> Reviews => Set<Review>();

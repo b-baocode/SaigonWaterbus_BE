@@ -36,7 +36,7 @@ public class BookingRevenueReportsTests
         result.TicketCount.ShouldBe(2);
         result.CounterBookingCount.ShouldBe(1);
 
-        result.ByPaymentMethod.Single(x => x.Key == PaymentSupport.BankTransferPaymentMethod).NetRevenue.ShouldBe(100m);
+        result.ByPaymentMethod.Single(x => x.Key == PaymentSupport.CashPaymentMethod).NetRevenue.ShouldBe(100m);
         result.ByPaymentMethod.Single(x => x.Key == PaymentSupport.PayOsProvider).NetRevenue.ShouldBe(150m);
         result.ByServiceType.Single(x => x.Key == "Waterbus").GrossRevenue.ShouldBe(100m);
         result.ByServiceType.Single(x => x.Key == "Sightseeing").NetRevenue.ShouldBe(150m);
@@ -52,14 +52,14 @@ public class BookingRevenueReportsTests
         var handler = new GetBookingManagementListQueryHandler(context, staffContext);
 
         var result = await handler.Handle(
-            new GetBookingManagementListQuery(PaymentMethod: "ck"),
+            new GetBookingManagementListQuery(PaymentMethod: "cash"),
             CancellationToken.None);
 
         result.TotalCount.ShouldBe(1);
         result.Summary.CounterBookingCount.ShouldBe(1);
         result.Summary.PaidAmount.ShouldBe(100m);
         result.Items.Single().BookingCode.ShouldBe("BK-RPT-COUNTER");
-        result.Items.Single().LatestPaymentMethod.ShouldBe(PaymentSupport.BankTransferPaymentMethod);
+        result.Items.Single().LatestPaymentMethod.ShouldBe(PaymentSupport.CashPaymentMethod);
     }
 
     [Test]
@@ -165,7 +165,7 @@ public class BookingRevenueReportsTests
             Booking = counterBooking,
             PaymentCode = "PAY-RPT-1",
             Provider = PaymentSupport.CounterProvider,
-            PaymentMethod = PaymentSupport.BankTransferPaymentMethod,
+            PaymentMethod = PaymentSupport.CashPaymentMethod,
             PaymentPurpose = PaymentSupport.FullPurpose,
             PaymentStatus = PaymentSupport.PaidStatus,
             Amount = 100m,

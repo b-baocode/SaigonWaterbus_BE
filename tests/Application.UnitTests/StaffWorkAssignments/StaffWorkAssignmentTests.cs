@@ -360,6 +360,16 @@ public class StaffWorkAssignmentTests
         await using var context = SeatFlowTestData.CreateContext();
         var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var primaryStaff = context.Users.Single(x => x.Id == staffContext.UserId!.Value);
+        var secondStaff = new User
+        {
+            FullName = "Second onboard staff",
+            Email = "second-onboard@example.test",
+            RoleId = primaryStaff.RoleId,
+            Role = primaryStaff.Role,
+            StaffType = StaffType.OnBoard,
+            Status = UserStatus.Active
+        };
         var boat = Boat("WB-01");
         var otherBoat = Boat("WB-02");
         var stationA = Station("BD");
@@ -383,13 +393,21 @@ public class StaffWorkAssignmentTests
             otherBoat,
             new DateTimeOffset(2030, 1, 2, 9, 0, 0, TimeSpan.FromHours(7)),
             new DateTimeOffset(2030, 1, 2, 10, 0, 0, TimeSpan.FromHours(7)));
-        context.AddRange(boat, otherBoat, stationA, stationB, route, inShiftTrip, outsideShiftTrip, otherBoatTrip);
+        context.AddRange(secondStaff, boat, otherBoat, stationA, stationB, route, inShiftTrip, outsideShiftTrip, otherBoatTrip);
         await context.SaveChangesAsync();
 
         var createHandler = new CreateStaffWorkAssignmentCommandHandler(context, adminContext, TimeProvider.System);
         await createHandler.Handle(
             new CreateStaffWorkAssignmentCommand(
                 staffContext.UserId!.Value,
+                StaffWorkAssignmentType.Boat,
+                BoatId: boat.Id,
+                StartAt: new DateTimeOffset(2030, 1, 2, 8, 0, 0, TimeSpan.FromHours(7)),
+                EndAt: new DateTimeOffset(2030, 1, 2, 16, 0, 0, TimeSpan.FromHours(7))),
+            CancellationToken.None);
+        await createHandler.Handle(
+            new CreateStaffWorkAssignmentCommand(
+                secondStaff.Id,
                 StaffWorkAssignmentType.Boat,
                 BoatId: boat.Id,
                 StartAt: new DateTimeOffset(2030, 1, 2, 8, 0, 0, TimeSpan.FromHours(7)),
@@ -408,6 +426,9 @@ public class StaffWorkAssignmentTests
         trip.AssignmentType.ShouldBe(StaffWorkAssignmentType.Boat);
         trip.BoatId.ShouldBe(boat.Id);
         trip.AssignmentShiftState.ShouldBe("Active");
+        trip.OnBoardStaff.ShouldNotBeNull().Count.ShouldBe(2);
+        trip.OnBoardStaff.Select(x => x.StaffUserId).ShouldContain(staffContext.UserId.Value);
+        trip.OnBoardStaff.Select(x => x.StaffUserId).ShouldContain(secondStaff.Id);
     }
 
     [Test]

@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260807072250_AddIncidentMissionEvents")]
+    partial class AddIncidentMissionEvents
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1032,122 +1035,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.ToTable("charter_route_draw_request_stops", (string)null);
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ChatConversation", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("conversation_id");
-
-                    b.Property<string>("AnonymousSessionId")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)")
-                        .HasColumnName("anonymous_session_id");
-
-                    b.Property<DateTimeOffset?>("AutoCloseMessageSentAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("auto_close_message_sent_at");
-
-                    b.Property<string>("CloseReason")
-                        .HasMaxLength(30)
-                        .HasColumnType("character varying(30)")
-                        .HasColumnName("close_reason");
-
-                    b.Property<DateTimeOffset?>("ClosedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("closed_at");
-
-                    b.Property<DateTimeOffset>("InactivityDeadlineAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("inactivity_deadline_at");
-
-                    b.Property<string>("Language")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasColumnName("language");
-
-                    b.Property<DateTimeOffset>("LastActivityAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_activity_at");
-
-                    b.Property<DateTimeOffset>("LastAssistantMessageAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("last_assistant_message_at");
-
-                    b.Property<DateTimeOffset?>("RetentionExpiresAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("retention_expires_at");
-
-                    b.Property<DateTimeOffset>("StartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("started_at");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("status");
-
-                    b.Property<Guid?>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("AnonymousSessionId");
-
-                    b.HasIndex("RetentionExpiresAt");
-
-                    b.HasIndex("UserId");
-
-                    b.HasIndex("Status", "InactivityDeadlineAt");
-
-                    b.ToTable("chat_conversations", (string)null);
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ChatMessage", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("message_id");
-
-                    b.Property<string>("Content")
-                        .IsRequired()
-                        .HasColumnType("text")
-                        .HasColumnName("content");
-
-                    b.Property<Guid>("ConversationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("conversation_id");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<bool>("IsAutoCloseMessage")
-                        .HasColumnType("boolean")
-                        .HasColumnName("is_auto_close_message");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(20)
-                        .HasColumnType("character varying(20)")
-                        .HasColumnName("role");
-
-                    b.Property<int>("SequenceNumber")
-                        .HasColumnType("integer")
-                        .HasColumnName("sequence_number");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ConversationId", "SequenceNumber")
-                        .IsUnique();
-
-                    b.ToTable("chat_messages", (string)null);
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.FareAdjustment", b =>
@@ -4164,27 +4051,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Station");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ChatConversation", b =>
-                {
-                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("User");
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ChatMessage", b =>
-                {
-                    b.HasOne("SaigonWaterbus.Domain.Entities.ChatConversation", "Conversation")
-                        .WithMany("Messages")
-                        .HasForeignKey("ConversationId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Conversation");
-                });
-
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.GpsDevice", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.Boat", "Boat")
@@ -4805,11 +4671,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.CharterRouteDrawRequest", b =>
                 {
                     b.Navigation("Stops");
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.ChatConversation", b =>
-                {
-                    b.Navigation("Messages");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.GpsTrackingSession", b =>

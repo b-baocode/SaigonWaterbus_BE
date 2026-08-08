@@ -30,6 +30,13 @@ public sealed record IncidentRealtimeEvent(
     int? OnboardPassengerCount = null,
     int? FuturePassengerCount = null,
     string? ResolutionStatus = null,
+    string? MissionStatus = null,
+    string? OperatingStatus = null,
+    DateTimeOffset? RescueArrivedAt = null,
+    DateTimeOffset? ReplacementArrivedAt = null,
+    DateTimeOffset? PassengerTransferCompletedAt = null,
+    DateTimeOffset? TowingStartedAt = null,
+    DateTimeOffset? TowingCompletedAt = null,
     DateTimeOffset? OccurredAt = null);
 
 public sealed class NullIncidentRealtimeNotifier : IIncidentRealtimeNotifier

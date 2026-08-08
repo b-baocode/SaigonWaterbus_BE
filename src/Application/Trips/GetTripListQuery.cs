@@ -1,6 +1,8 @@
 using System.Text.Json.Serialization;
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -18,6 +20,7 @@ public sealed record TripAdminListItemDto(
     DateTimeOffset ArrivalTime,
     int CapacitySnapshot,
     string TripStatus,
+    string? OperatingStatus,
     string? StatusNote,
     string TripType,
     Guid? SourceBookingId,
@@ -122,6 +125,24 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
             .ThenBy(t => t.DepartureTime)
             .ToListAsync(cancellationToken);
 
+        var rowTripIds = tripRows.Select(x => x.Id).ToArray();
+        IReadOnlyList<Incident> activeIncidents = rowTripIds.Length == 0
+            ? []
+            : await _context.Incidents
+                .AsNoTracking()
+                .Where(x => x.TripId.HasValue
+                    && rowTripIds.Contains(x.TripId.Value)
+                    && x.ResolutionStatus == IncidentSupport.OpenStatus)
+                .ToListAsync(cancellationToken);
+        var activeIncidentsByTripId = activeIncidents
+            .GroupBy(x => x.TripId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g
+                    .OrderByDescending(x => x.OccurredAt)
+                    .ThenByDescending(x => x.Id)
+                    .First());
+
         var sourceBookingIds = tripRows
             .Where(t => t.SourceBookingId.HasValue)
             .Select(t => t.SourceBookingId!.Value)
@@ -143,7 +164,12 @@ public sealed class GetTripListQueryHandler : IRequestHandler<GetTripListQuery, 
                 t.Id, t.TripCode,
                 t.Route.RouteCode, t.Route.RouteName, t.Route.RouteType,
                 t.OperatingDate, t.DepartureTime, t.ArrivalTime,
-                t.CapacitySnapshot, t.TripStatus.ToString(), t.StatusNote,
+                t.CapacitySnapshot,
+                t.TripStatus.ToString(),
+                OperatingStatusSupport.ForTrip(
+                    t,
+                    activeIncidentsByTripId.GetValueOrDefault(t.Id)),
+                t.StatusNote,
                 t.TripType, t.SourceBookingId, 0, 0,
                 t.SourceBookingId.HasValue ? sourceBookingCodes.GetValueOrDefault(t.SourceBookingId.Value) : null,
                 t.BoatId,

@@ -1,4 +1,6 @@
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Incidents;
+using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Boats;
@@ -32,7 +34,8 @@ public sealed record BoatDto(
     string? Description,
     SeatSetupType SeatSetupType,
     DateTimeOffset? MaintenanceStartedAt,
-    bool DocumentsRequireRefresh);
+    bool DocumentsRequireRefresh,
+    string OperatingStatus);
 
 public sealed class GetBoatsRequestValidator : AbstractValidator<GetBoatsRequest>
 {
@@ -106,6 +109,46 @@ public sealed class GetBoatsRequestUseCase
             .ThenBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        return boats.Select(BoatSupport.CreateDto).ToArray();
+        var boatIds = boats.Select(x => x.Id).ToArray();
+        IReadOnlyList<Incident> activeIncidents = boatIds.Length == 0
+            ? []
+            : await _context.Incidents
+                .AsNoTracking()
+                .Where(x => boatIds.Contains(x.BoatId)
+                    && x.ResolutionStatus == IncidentSupport.OpenStatus)
+                .ToListAsync(cancellationToken);
+        var activeIncidentsByBoatId = activeIncidents
+            .GroupBy(x => x.BoatId)
+            .ToDictionary(
+                g => g.Key,
+                g => g
+                    .OrderByDescending(x => x.OccurredAt)
+                    .ThenByDescending(x => x.Id)
+                    .First());
+
+        IReadOnlyList<Trip> activeTrips = boatIds.Length == 0
+            ? []
+            : await _context.Set<Trip>()
+                .AsNoTracking()
+                .Where(x => x.BoatId.HasValue
+                    && boatIds.Contains(x.BoatId.Value)
+                    && x.TripStatus != TripStatus.Completed
+                    && x.TripStatus != TripStatus.Cancelled)
+                .ToListAsync(cancellationToken);
+        var activeTripsByBoatId = activeTrips
+            .GroupBy(x => x.BoatId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => g
+                    .OrderBy(x => x.DepartureTime)
+                    .ThenBy(x => x.Id)
+                    .First());
+
+        return boats
+            .Select(x => BoatSupport.CreateDto(
+                x,
+                activeTripsByBoatId.GetValueOrDefault(x.Id),
+                activeIncidentsByBoatId.GetValueOrDefault(x.Id)))
+            .ToArray();
     }
 }

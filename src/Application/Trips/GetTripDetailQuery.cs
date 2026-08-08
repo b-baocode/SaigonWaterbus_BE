@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Application.StaffWorkAssignments;
@@ -134,7 +135,14 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             incident.ReplacementNote,
             incident.RescueDispatchedAt,
             incident.ReplacementAssignedAt,
-            incident.ResolvedAt);
+            incident.ResolvedAt,
+            OperatingStatusSupport.ToPublicMissionStatus(incident),
+            incident.RescueArrivedAt,
+            incident.ReplacementArrivedAt,
+            incident.PassengerTransferCompletedAt,
+            incident.TowingStartedAt,
+            incident.TowingCompletedAt,
+            OperatingStatusSupport.ForIncident(incident));
     }
 
     private async Task<IReadOnlyList<StaffWorkAssignment>> LoadTripAssignmentsAsync(

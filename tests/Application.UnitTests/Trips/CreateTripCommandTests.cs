@@ -823,7 +823,7 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task GenerateTripsKeepsContinuousScheduleOnFixedIntervalGridWhenBoatMustReturnToStart()
+    public async Task GenerateTripsContinuousScheduleAddsLayoverAndReturnToStart()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
@@ -851,9 +851,8 @@ public class CreateTripCommandTests
                 CancellationToken.None);
 
         result.Created.ShouldBe(2);
-        result.SkippedBoatBusy.ShouldBe(1);
-        result.SkippedItems!.Single().RequestedDepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
-            .ShouldBe(new TimeSpan(8, 30, 0));
+        result.SkippedBoatBusy.ShouldBe(0);
+        result.SkippedItems.ShouldBeEmpty();
         result.CreatedTripCodes.ShouldAllBe(x => x.StartsWith("BB-20300101-R1-", StringComparison.Ordinal));
         context.Trips
             .OrderBy(x => x.DepartureTime)
@@ -1088,7 +1087,7 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task GenerateTripsKeepsSightseeingScheduleOnFixedIntervalGrid()
+    public async Task GenerateTripsContinuousSightseeingScheduleUsesArrivalPlusLayover()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var station = Station("BD", "Bến Bạch Đằng");
@@ -1119,8 +1118,9 @@ public class CreateTripCommandTests
                     IntervalMinutes: 15),
                 CancellationToken.None);
 
-        result.Created.ShouldBe(2);
-        result.SkippedBoatBusy.ShouldBe(7);
+        result.Created.ShouldBe(3);
+        result.SkippedBoatBusy.ShouldBe(0);
+        result.SkippedItems.ShouldBeEmpty();
         context.Trips
             .OrderBy(x => x.DepartureTime)
             .Select(x => new
@@ -1130,14 +1130,15 @@ public class CreateTripCommandTests
             })
             .ShouldBe([
                 new { Departure = new TimeSpan(18, 0, 0), Arrival = new TimeSpan(18, 50, 0) },
-                new { Departure = new TimeSpan(19, 15, 0), Arrival = new TimeSpan(20, 5, 0) }
+                new { Departure = new TimeSpan(19, 5, 0), Arrival = new TimeSpan(19, 55, 0) },
+                new { Departure = new TimeSpan(20, 10, 0), Arrival = new TimeSpan(21, 0, 0) }
             ]);
     }
 
-    [TestCase(30, "18:00:00,18:30:00,19:00:00,19:30:00,20:00:00")]
-    [TestCase(45, "18:00:00,18:45:00,19:30:00")]
-    [TestCase(60, "18:00:00,19:00:00,20:00:00")]
-    public async Task GenerateTripsUsesSelectedIntervalAsFixedDepartureGrid(
+    [TestCase(30, "18:00:00,18:40:00,19:20:00,20:00:00")]
+    [TestCase(45, "18:00:00,18:55:00,19:50:00")]
+    [TestCase(60, "18:00:00,19:10:00")]
+    public async Task GenerateTripsUsesSelectedIntervalAsPostArrivalLayover(
         int intervalMinutes,
         string expectedDepartures)
     {

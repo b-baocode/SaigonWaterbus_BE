@@ -56,6 +56,23 @@ public sealed class Incidents : IEndpointGroup
         }
         """;
 
+    private const string GpsEventExample =
+        """
+        {
+          "gpsEventId": "uuid-from-gps",
+          "event": "RescueArrived",
+          "boatCode": "RESCUE_001",
+          "occurredAt": "2026-08-07T10:30:00+07:00",
+          "lat": 10.8,
+          "lng": 106.7,
+          "stationId": null,
+          "stationCode": null,
+          "note": "Tau cuu ho da toi vi tri su co.",
+          "previousMissionStatus": "Dispatched",
+          "estimatedTowingMinutes": null
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapGet(GetIncidentList, string.Empty)
@@ -103,6 +120,19 @@ public sealed class Incidents : IEndpointGroup
                 ResolveIncidentExample,
                 "resolutionNote bat buoc.",
                 "boatStatus/tripStatus optional de cap nhat trang thai sau khi xu ly."));
+
+        group.MapPost(RecordGpsEvent, "{incidentId:guid}/gps-event")
+            .AllowAnonymous()
+            .WithSummary("GPS bao tien do cuu ho/thay the tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS service",
+                GpsEventExample,
+                $"Header bat buoc: {LiveHookSecretHeaderName}.",
+                "event hop le: RescueArrived | ReplacementArrived | PassengerTransferCompleted | TowingStarted | TowingCompleted.",
+                "gpsEventId bat buoc de GPS retry khong tao trung event. Cung gpsEventId + payload khac tra 409.",
+                "previousMissionStatus optional, chi dung debug; BE validate sequence theo missionStatus trong DB.",
+                "ReplacementArrived voi mission ContinueFromStation phai gui stationId hoac stationCode dung replacementTargetStation.",
+                "TowingStarted bi tu choi neu con khach onboard ma chua PassengerTransferCompleted."));
 
         group.MapPost(CompleteRescueMission, "rescue-mission-completed")
             .AllowAnonymous()
@@ -166,6 +196,36 @@ public sealed class Incidents : IEndpointGroup
                 request.TripStatus),
             cancellationToken));
 
+    private static async Task<IResult> RecordGpsEvent(
+        ISender sender,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        Guid incidentId,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        IncidentGpsEventRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        return Results.Ok(await sender.Send(
+            new RecordIncidentGpsEventCommand(
+                incidentId,
+                request.GpsEventId,
+                request.Event,
+                request.BoatCode,
+                request.OccurredAt,
+                request.Lat,
+                request.Lng,
+                request.StationId,
+                request.StationCode,
+                request.Note,
+                request.PreviousMissionStatus,
+                request.EstimatedTowingMinutes),
+            cancellationToken));
+    }
+
     private static async Task<IResult> CompleteRescueMission(
         ISender sender,
         IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
@@ -219,6 +279,19 @@ public sealed class Incidents : IEndpointGroup
         string ResolutionNote,
         BoatStatus? BoatStatus,
         TripStatus? TripStatus);
+
+    public sealed record IncidentGpsEventRequest(
+        string GpsEventId,
+        string Event,
+        string BoatCode,
+        DateTimeOffset OccurredAt,
+        decimal? Lat,
+        decimal? Lng,
+        Guid? StationId,
+        string? StationCode,
+        string? Note,
+        string? PreviousMissionStatus,
+        int? EstimatedTowingMinutes);
 
     public sealed record CompleteRescueMissionRequest(
         Guid IncidentId,

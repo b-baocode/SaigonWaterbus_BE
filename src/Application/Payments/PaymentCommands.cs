@@ -1198,12 +1198,11 @@ internal static class PaymentSupport
 {
     public const string PayOsProvider = "PayOS";
 
-    /// <summary>Payment thu tại quầy (tiền mặt hoặc chuyển khoản nội bộ) — không đi qua cổng thanh toán.</summary>
+    /// <summary>Payment thu tiền mặt tại quầy — không đi qua cổng thanh toán.</summary>
     public const string CounterProvider = "Counter";
     /// <summary>Payment 0đ của booking thường — hoàn tất nội bộ, không đi qua PayOS.</summary>
     public const string FreeProvider = "System";
     public const string CashPaymentMethod = "Cash";
-    public const string BankTransferPaymentMethod = "BankTransfer";
     public const string FreePaymentMethod = "Free";
     public const string PendingStatus = "Pending";
     public const string PaidStatus = "Paid";
@@ -1833,7 +1832,7 @@ internal static class PaymentSupport
         string.Equals(payment.Provider, FreeProvider, StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Payment được tính vào số tiền đã thu của booking: PayOS (online) và thu tại quầy (tiền mặt).
+    /// Payment được tính vào số tiền đã thu của booking: PayOS (online), thu tiền mặt tại quầy và đơn 0đ.
     /// Dùng cho mọi phép cộng tiền/hoàn tiền; các chỗ chỉ liên quan tới cổng PayOS (đồng bộ trạng thái,
     /// hết hạn link thanh toán) vẫn lọc riêng bằng <see cref="IsPayOsPayment"/>.
     /// </summary>

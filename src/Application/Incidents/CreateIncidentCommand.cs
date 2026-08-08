@@ -104,7 +104,8 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
             Description = request.Description.Trim(),
             Severity = severity,
             OccurredAt = request.OccurredAt?.ToUniversalTime() ?? now,
-            ResolutionStatus = IncidentSupport.OpenStatus
+            ResolutionStatus = IncidentSupport.OpenStatus,
+            MissionStatus = IncidentMissionStatuses.IncidentCreated
         };
 
         boat.Status = BoatStatus.Incident;
@@ -121,14 +122,22 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
             now,
             IncidentSupport.IncidentLocationStatus,
             cancellationToken);
-        IReadOnlyList<Notification> createdNotifications = trip is not null && oldTripStatus.HasValue
-            ? await NotificationSupport.AddTripStatusChangedNotificationsAsync(
+        var createdNotifications = new List<Notification>();
+        if (trip is not null && oldTripStatus.HasValue)
+        {
+            createdNotifications.AddRange(await NotificationSupport.AddTripStatusChangedNotificationsAsync(
                 _context,
                 trip,
                 oldTripStatus.Value,
                 now,
-                cancellationToken)
-            : [];
+                cancellationToken));
+        }
+
+        createdNotifications.AddRange(await NotificationSupport.AddIncidentReportedNotificationsAsync(
+            _context,
+            incident,
+            now,
+            cancellationToken));
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(
             _notificationRealtimeNotifier,
