@@ -112,6 +112,88 @@ public static class TripPassengerCountSupport
         return counts.GetValueOrDefault(tripId.Value);
     }
 
+    public static async Task<Dictionary<Guid, int>> LoadAlightedPassengerCountsByTripIdAsync(
+        IApplicationDbContext context,
+        IEnumerable<Guid> tripIds,
+        CancellationToken cancellationToken)
+    {
+        var tripIdList = tripIds
+            .Where(x => x != Guid.Empty)
+            .Distinct()
+            .ToArray();
+        if (tripIdList.Length == 0)
+        {
+            return new Dictionary<Guid, int>();
+        }
+
+        var alightedTickets = await context.Set<Ticket>()
+            .AsNoTracking()
+            .Include(x => x.Booking)
+            .Include(x => x.BookingPassenger)
+            .Where(x => x.TicketStatus == TicketStatus.CheckedOut
+                && x.BookingPassengerId.HasValue
+                && ((x.BookingPassenger!.TripId.HasValue
+                        && tripIdList.Contains(x.BookingPassenger.TripId.Value))
+                    || (!x.BookingPassenger.TripId.HasValue
+                        && x.Booking.TripId.HasValue
+                        && tripIdList.Contains(x.Booking.TripId.Value))))
+            .ToListAsync(cancellationToken);
+
+        if (alightedTickets.Count == 0)
+        {
+            return tripIdList.ToDictionary(x => x, _ => 0);
+        }
+
+        var bookingIds = alightedTickets
+            .Select(x => x.BookingId)
+            .Distinct()
+            .ToArray();
+        var passengersByBookingId = (await context.Set<BookingPassenger>()
+                .AsNoTracking()
+                .Where(x => bookingIds.Contains(x.BookingId)
+                    && ((x.TripId.HasValue && tripIdList.Contains(x.TripId.Value))
+                        || (!x.TripId.HasValue
+                            && x.Booking.TripId.HasValue
+                            && tripIdList.Contains(x.Booking.TripId.Value))))
+                .ToListAsync(cancellationToken))
+            .GroupBy(x => x.BookingId)
+            .ToDictionary(x => x.Key, x => x.ToList());
+
+        var passengerIdsByTripId = tripIdList.ToDictionary(
+            x => x,
+            _ => new HashSet<Guid>());
+
+        foreach (var ticket in alightedTickets)
+        {
+            var tripId = ResolveTicketTripId(ticket);
+            if (!tripId.HasValue || !passengerIdsByTripId.ContainsKey(tripId.Value))
+            {
+                continue;
+            }
+
+            if (!passengersByBookingId.TryGetValue(ticket.BookingId, out var bookingPassengers))
+            {
+                bookingPassengers = ticket.BookingPassenger is null
+                    ? []
+                    : [ticket.BookingPassenger];
+            }
+
+            var legPassengers = bookingPassengers
+                .Where(x => ResolvePassengerTripId(x, ticket.Booking) == tripId.Value)
+                .ToList();
+            var representedPassengers = LapInfantTicketSupport.ResolvePassengersRepresentedByTicket(
+                legPassengers,
+                ticket.BookingPassenger);
+
+            foreach (var passenger in representedPassengers)
+            {
+                passengerIdsByTripId[tripId.Value].Add(passenger.Id);
+            }
+        }
+
+        return passengerIdsByTripId.ToDictionary(x => x.Key, x => x.Value.Count);
+    }
+
     private static Guid? ResolveTicketTripId(Ticket ticket) =>
         ticket.BookingPassenger?.TripId ?? ticket.Booking.TripId;
 
