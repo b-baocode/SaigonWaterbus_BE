@@ -71,7 +71,9 @@ public sealed class GoogleTextToSpeechService : ITextToSpeechService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Google TTS lỗi {(int)response.StatusCode}: {json}");
+            // 4xx = tham số mình gửi sai (tên giọng không có thật, ngôn ngữ lạ) → lỗi của người
+            // gọi, phải nói rõ ra. 5xx / mạng mới là "provider đang hỏng".
+            throw GoogleApiCall.ToException("Google TTS", response.StatusCode, json);
         }
 
         using var document = JsonDocument.Parse(json);

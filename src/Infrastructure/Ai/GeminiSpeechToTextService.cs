@@ -149,7 +149,7 @@ public sealed class GeminiSpeechToTextService : ISpeechToTextService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Gemini STT lỗi {(int)response.StatusCode}: {json}");
+            throw GoogleApiCall.ToException("Gemini STT", response.StatusCode, json);
         }
 
         var transcript = ParseTranscript(json);

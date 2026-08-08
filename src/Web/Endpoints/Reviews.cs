@@ -23,9 +23,9 @@ public sealed class Reviews : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token (khach hang co ve tren chuyen)",
                 CreateExample,
-                "Chi danh gia duoc chuyen tripStatus=Completed ma minh co booking Confirmed/Completed (chieu di, chieu ve hoac charter).",
+                "Review tinh theo booking: mot chieu/charter duoc danh gia khi chuyen da Completed; khu hoi chi duoc danh gia khi ca chieu di va chieu ve deu Completed.",
                 "rating: 1-5. comment: optional, toi da 1000 ky tu.",
-                "Moi khach chi danh gia 1 lan/chuyen, khong sua duoc sau khi gui.",
+                "Moi khach chi danh gia 1 lan/booking, khong sua duoc sau khi gui.",
                 "Review moi tao o status=Hidden (cho duyet), chi hien thi public sau khi admin chuyen sang Published."));
 
         group.MapGet(GetMyReviewableTrips, "my/reviewable-trips")
@@ -34,7 +34,8 @@ public sealed class Reviews : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Tra ve cac chuyen da hoan thanh ma toi co ve, moi nhat truoc.",
+                "Tra ve cac booking da hoan tat dich vu va co the danh gia, moi nhat truoc. Response co bookingId/bookingCode/isRoundTrip de FE hien theo booking.",
+                "Booking khu hoi chi xuat hien sau khi ca trip di va trip ve deu Completed.",
                 "myReview=null nghia la chua danh gia -> hien nut 'Danh gia'; nguoc lai hien noi dung da gui kem status (Hidden = cho duyet).",
                 "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100)."));
 

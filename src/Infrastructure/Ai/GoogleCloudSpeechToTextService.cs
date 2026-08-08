@@ -50,6 +50,7 @@ public sealed class GoogleCloudSpeechToTextService : ISpeechToTextService
             return string.Empty;
         }
 
+        EnsureSupportedFormat(request.ContentType);
         var projectId = ResolveProjectId();
 
         var config = new JsonObject
@@ -97,10 +98,42 @@ public sealed class GoogleCloudSpeechToTextService : ISpeechToTextService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Google Cloud STT lỗi {(int)response.StatusCode}: {json}");
+            throw GoogleApiCall.ToException("Google Cloud STT", response.StatusCode, json);
         }
 
         return ParseTranscript(json);
+    }
+
+    /// <summary>
+    /// Định dạng `autoDecodingConfig` của Cloud STT v2 đọc được.
+    ///
+    /// **m4a/aac KHÔNG có trong danh sách** — mà đó chính là thứ iOS Safari và ứng dụng ghi âm
+    /// mặc định của iPhone sinh ra. Chặn sớm ở đây kèm thông báo rõ ràng, thay vì để Google trả
+    /// về một lỗi khó hiểu (hoặc tệ hơn: đóng kết nối giữa lúc đang tải audio lên, hiện thành
+    /// lỗi socket).
+    /// </summary>
+    private static readonly string[] SupportedMimeTypes =
+    [
+        "audio/wav", "audio/wave", "audio/x-wav",
+        "audio/mpeg", "audio/mp3",
+        "audio/ogg", "audio/opus",
+        "audio/webm",
+        "audio/flac", "audio/x-flac",
+    ];
+
+    private static void EnsureSupportedFormat(string? contentType)
+    {
+        var bare = (contentType ?? string.Empty).Split(';')[0].Trim();
+
+        if (SupportedMimeTypes.Contains(bare, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new NotSupportedException(
+            $"Dinh dang audio '{bare}' khong doc duoc. Hay gui WAV (16kHz mono la tot nhat). "
+            + "Rieng m4a/aac cua iPhone KHONG duoc ho tro — trinh duyet co the chuyen sang WAV "
+            + "bang AudioContext truoc khi gui. Chap nhan: " + string.Join(", ", SupportedMimeTypes) + ".");
     }
 
     /// <summary>
