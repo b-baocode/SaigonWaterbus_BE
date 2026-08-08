@@ -67,6 +67,18 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             oldStatus,
             now,
             cancellationToken));
+        createdNotifications.AddRange(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+            _context,
+            trip,
+            oldStatus,
+            now,
+            cancellationToken));
+        createdNotifications.AddRange(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+            _context,
+            trip,
+            oldStatus,
+            now,
+            cancellationToken));
         createdNotifications.AddRange(await NotificationSupport.AddTripCompletedReviewInviteNotificationsAsync(
             _context,
             trip,

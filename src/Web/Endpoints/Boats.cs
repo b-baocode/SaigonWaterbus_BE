@@ -35,7 +35,9 @@ public sealed class Boats : IEndpointGroup
     private const string UpdateStatusExample =
         """
         {
-          "status": "UnderMaintenance"
+          "status": "UnderMaintenance",
+          "estimatedMaintenanceEndAt": "2026-08-10T17:00:00+07:00",
+          "maintenanceNote": "Kiem tra dong co sau su co."
         }
         """;
 
@@ -123,6 +125,8 @@ public sealed class Boats : IEndpointGroup
                 "Muốn chuyển Active thì tàu phải setup đủ ghế.",
                 "Muốn chuyển Active thì tàu phải có đủ 4 hồ sơ: Inspection, Registration, Insurance, OperationLicense.",
                 "Flow thường không cần gọi API này để Active: setup đủ ghế và upload đủ hồ sơ thì backend tự Active.",
+                "Khi status=UnderMaintenance, có thể gửi estimatedMaintenanceEndAt và maintenanceNote để FE hiển thị dự kiến bảo trì.",
+                "Khi chuyển sang trạng thái khác UnderMaintenance, backend tự xóa estimatedMaintenanceEndAt và maintenanceNote.",
                 "Nếu tàu đã vào UnderMaintenance, upload lại hồ sơ Inspection sau thời điểm vào bảo trì thì backend tự Active khi các điều kiện khác đã đủ.",
                 "Tàu ở trạng thái không phải Active hoặc chưa setup ghế sẽ không hiện với Manager và Staff."));
 
@@ -225,7 +229,11 @@ public sealed class Boats : IEndpointGroup
         UpdateBoatStatusApiRequest request,
         CancellationToken cancellationToken) =>
         Results.Ok(await boatManagementService.UpdateBoatStatusAsync(
-            new UpdateBoatStatusRequest(boatId, request.Status),
+            new UpdateBoatStatusRequest(
+                boatId,
+                request.Status,
+                request.EstimatedMaintenanceEndAt,
+                request.MaintenanceNote),
             cancellationToken));
 
     private static async Task<IResult> UpdateBoatDocument(
@@ -332,6 +340,8 @@ public sealed class Boats : IEndpointGroup
             body?.MaxSpeedKmh,
             body?.YearBuilt,
             body?.Description,
+            body?.EstimatedMaintenanceEndAt,
+            body?.MaintenanceNote,
             body?.ImageUrl,
             ServiceType: body?.ServiceType,
             SeatSetupType: body?.SeatSetupType,
@@ -354,6 +364,8 @@ public sealed class Boats : IEndpointGroup
             ParseOptionalInt(GetFormValue(form, "maxSpeedKmh")),
             ParseOptionalInt(GetFormValue(form, "yearBuilt")),
             GetFormValue(form, "description"),
+            ParseOptionalDateTimeOffset(GetFormValue(form, "estimatedMaintenanceEndAt")),
+            GetFormValue(form, "maintenanceNote"),
             GetFormValue(form, "imageUrl"),
             ServiceType: ParseOptionalEnum<BoatServiceType>(GetFormValue(form, "serviceType")),
             SeatSetupType: ParseOptionalEnum<SeatSetupType>(GetFormValue(form, "seatSetupType")),
@@ -505,6 +517,22 @@ public sealed class Boats : IEndpointGroup
             : null;
     }
 
+    private static DateTimeOffset? ParseOptionalDateTimeOffset(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(
+            value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
+            out var result)
+            ? result
+            : null;
+    }
+
     private static T? ParseOptionalEnum<T>(string? value) where T : struct, Enum =>
         Enum.TryParse<T>(value, ignoreCase: true, out var result) ? result : null;
 
@@ -531,10 +559,15 @@ public sealed class Boats : IEndpointGroup
         int? MaxSpeedKmh = null,
         int? YearBuilt = null,
         string? Description = null,
+        DateTimeOffset? EstimatedMaintenanceEndAt = null,
+        string? MaintenanceNote = null,
         string? ImageUrl = null,
         IReadOnlyCollection<string>? ImageUrls = null);
 
-    private sealed record UpdateBoatStatusApiRequest(BoatStatus Status);
+    private sealed record UpdateBoatStatusApiRequest(
+        BoatStatus Status,
+        DateTimeOffset? EstimatedMaintenanceEndAt = null,
+        string? MaintenanceNote = null);
 
     private sealed record BoatDocumentFormRequest(
         IFormFile File,

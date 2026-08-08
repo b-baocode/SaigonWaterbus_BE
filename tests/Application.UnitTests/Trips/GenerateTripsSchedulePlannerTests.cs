@@ -1,5 +1,4 @@
 using Microsoft.EntityFrameworkCore;
-using NUnit.Framework;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;

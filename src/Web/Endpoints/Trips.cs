@@ -143,10 +143,10 @@ public sealed class Trips : IEndpointGroup
                 "Ben dau chi co gio di, ben cuoi chi co gio den."));
 
         group.MapGet(GetTripLandmarks, "{id:guid}/landmarks")
-            .RequireAuthorization()
+            .AllowAnonymous()
             .WithSummary("Diem thuyet minh cua mot chuyen (huong dan vien)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token (khach da dang nhap)",
+                "Anonymous",
                 null,
                 "Tron bo du lieu man huong dan vien cua 1 chuyen: routePath (toa do ve duong di), stations (ben kem toa do) "
                 + "va landmarks[] ma tuyen di ngang qua — da loc theo triggerRadiusMeters va sap theo thu tu gap doc duong.",
@@ -157,9 +157,7 @@ public sealed class Trips : IEndpointGroup
                 "audioUrl null = giong do chua bake tieng cho diem nay; missingAudioCount dem so diem nhu vay.",
                 "Tuyen chua ve routeGeometry thi routePath lay tam duong noi cac ben.",
                 "FE tai 1 lan luc mo man hinh, sau do bam GPS (GET /api/tracking/trips/{tripId}/latest + hub /hubs/tracking) "
-                + "va tu phat audio khi tau vao trong ban kinh.",
-                "DOI DANG NHAP (bat 2026-08-08): chi kiem tra co token hop le, KHONG kiem tra khach co ve "
-                + "cua dung chuyen do — nhan vien tren tau va khach mua ve tai quay deu phai dung duoc."));
+                + "va tu phat audio khi tau vao trong ban kinh."));
 
         group.MapGet(GetTripPassengers, "{id:guid}/passengers")
             .RequireAuthorization()

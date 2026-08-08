@@ -1,3 +1,5 @@
+using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Application.Incidents;
@@ -22,7 +24,14 @@ public sealed class GetIncidentListQueryHandler : IRequestHandler<GetIncidentLis
         GetIncidentListQuery request,
         CancellationToken cancellationToken)
     {
-        await IncidentSupport.EnsureCurrentUserCanReportIncidentAsync(_context, _userContext, cancellationToken);
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(
+            _context,
+            _userContext,
+            cancellationToken);
+        if (!AuthSupport.IsAdmin(actor) && !AuthSupport.IsStaff(actor) && !AuthSupport.IsManager(actor))
+        {
+            throw new ForbiddenAccessException();
+        }
 
         var query = _context.Incidents
             .Include(x => x.Boat)
@@ -37,6 +46,11 @@ public sealed class GetIncidentListQueryHandler : IRequestHandler<GetIncidentLis
             .Include(x => x.ReplacementTargetStation)
             .Include(x => x.Resolver)
             .AsNoTracking();
+
+        if (AuthSupport.IsManager(actor))
+        {
+            query = query.Where(x => x.AssignedManagerId == actor.Id);
+        }
 
         if (request.BoatId.HasValue)
         {

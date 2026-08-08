@@ -32,7 +32,7 @@ public sealed record TripReviewListDto(
 
 public sealed record MyTripReviewDto(
     Guid ReviewId,
-    Guid TripId,
+    Guid BookingId,
     int Rating,
     string? Comment,
     string Status,
@@ -80,7 +80,7 @@ internal static class ReviewSupport
                     || (tripSourceBookingId != null && b.Id == tripSourceBookingId)));
 
     public static MyTripReviewDto ToMyDto(Review review) =>
-        new(review.Id, review.TripId!.Value, review.Rating, review.Comment, review.Status, review.Created);
+        new(review.Id, review.BookingId!.Value, review.Rating, review.Comment, review.Status, review.Created);
 
     public static bool ContainsTrip(Booking booking, Guid tripId, Guid? tripSourceBookingId) =>
         booking.TripId == tripId
@@ -132,85 +132,71 @@ internal static class ReviewSupport
     }
 }
 
-public sealed record CreateTripReviewCommand(
-    Guid TripId,
+public sealed record CreateBookingReviewCommand(
+    Guid BookingId,
     int Rating,
     string? Comment) : IRequest<MyTripReviewDto>;
 
-public sealed class CreateTripReviewCommandValidator : AbstractValidator<CreateTripReviewCommand>
+public sealed class CreateBookingReviewCommandValidator : AbstractValidator<CreateBookingReviewCommand>
 {
-    public CreateTripReviewCommandValidator()
+    public CreateBookingReviewCommandValidator()
     {
-        RuleFor(x => x.TripId).NotEmpty();
+        RuleFor(x => x.BookingId).NotEmpty();
         RuleFor(x => x.Rating).InclusiveBetween(1, 5);
         RuleFor(x => x.Comment).MaximumLength(1000);
     }
 }
 
-public sealed class CreateTripReviewCommandHandler : IRequestHandler<CreateTripReviewCommand, MyTripReviewDto>
+public sealed class CreateBookingReviewCommandHandler : IRequestHandler<CreateBookingReviewCommand, MyTripReviewDto>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
 
-    public CreateTripReviewCommandHandler(IApplicationDbContext context, IUserContext userContext)
+    public CreateBookingReviewCommandHandler(IApplicationDbContext context, IUserContext userContext)
     {
         _context = context;
         _userContext = userContext;
     }
 
-    public async Task<MyTripReviewDto> Handle(CreateTripReviewCommand request, CancellationToken cancellationToken)
+    public async Task<MyTripReviewDto> Handle(CreateBookingReviewCommand request, CancellationToken cancellationToken)
     {
         var userId = ReviewSupport.GetRequiredUserId(_userContext);
 
-        var trip = await _context.Set<Trip>()
+        var booking = await _context.Set<Booking>()
             .AsNoTracking()
-            .Where(t => t.Id == request.TripId)
-            .Select(t => new { t.Id, t.TripStatus, t.SourceBookingId })
-            .SingleOrDefaultAsync(cancellationToken)
-            ?? throw new NotFoundException("Trip not found.");
-
-        if (trip.TripStatus != TripStatus.Completed)
-        {
-            throw new ValidationException(
-                [new ValidationFailure("tripId", "Chỉ có thể đánh giá chuyến đã hoàn thành.")]);
-        }
-
-        var candidateBookings = await ReviewSupport
-            .EligibleBookingsForTrip(_context, userId, trip.Id, trip.SourceBookingId)
             .Include(b => b.Trip!)
             .Include(b => b.ReturnTrip!)
             .Include(b => b.Passengers)
                 .ThenInclude(p => p.Trip!)
             .Include(b => b.CharterBoats)
                 .ThenInclude(cb => cb.Trip!)
-            .OrderBy(b => b.Created)
-            .ToListAsync(cancellationToken);
-        if (candidateBookings.Count == 0)
-        {
-            throw new ValidationException(
-                [new ValidationFailure("tripId", "Bạn không có vé trên chuyến này nên không thể đánh giá.")]);
-        }
+            .Where(b => b.Id == request.BookingId
+                && b.UserId == userId
+                && (b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Completed))
+            .SingleOrDefaultAsync(cancellationToken)
+            ?? throw new NotFoundException("Booking not found.");
 
-        var booking = candidateBookings.FirstOrDefault(ReviewSupport.IsServiceCompleted);
-        if (booking is null)
-        {
+        if (!ReviewSupport.IsServiceCompleted(booking))
             throw new ValidationException(
-                [new ValidationFailure("tripId", "Booking chưa hoàn tất toàn bộ chuyến nên chưa thể đánh giá.")]);
-        }
+                [new ValidationFailure("bookingId", "Booking chưa hoàn tất toàn bộ chuyến nên chưa thể đánh giá.")]);
+
+        var displayTrip = ReviewSupport.ResolveDisplayTrip(booking)
+            ?? throw new ValidationException(
+                [new ValidationFailure("bookingId", "Booking chưa gắn với chuyến nào nên không thể đánh giá.")]);
 
         var alreadyReviewed = await _context.Set<Review>()
             .AnyAsync(r => r.CustomerId == userId && r.BookingId == booking.Id, cancellationToken);
         if (alreadyReviewed)
         {
             throw new ValidationException(
-                [new ValidationFailure("tripId", "Bạn đã đánh giá booking này rồi.")]);
+                [new ValidationFailure("bookingId", "Bạn đã đánh giá booking này rồi.")]);
         }
 
         var review = new Review
         {
             CustomerId = userId,
             BookingId = booking.Id,
-            TripId = trip.Id,
+            TripId = displayTrip.Id,
             Rating = request.Rating,
             Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim(),
             Status = ReviewStatuses.Hidden

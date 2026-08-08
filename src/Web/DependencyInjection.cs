@@ -34,35 +34,9 @@ public static class DependencyInjection
         "https://www.waterbus.top"
     ];
 
-    /// <summary>
-    /// Khóa phân vùng rate limit, theo thứ tự ưu tiên: người dùng đã đăng nhập → thiết bị →
-    /// IP client thật (X-Forwarded-For sau proxy Azure).
-    ///
-    /// VÌ SAO KHÔNG DÙNG THẲNG IP: hướng dẫn viên giọng nói chạy trên tàu, cả khoang chung một
-    /// wifi hoặc chung NAT nhà mạng → chia theo IP là người thứ hai bấm mic đã ăn 429 trong khi
-    /// hạn mức của chính họ còn nguyên. Chia theo người/thiết bị mới đúng thứ đang muốn chặn
-    /// (một người gọi quá nhiều), IP chỉ là lưới cuối cho khách ẩn danh không gửi device id.
-    /// </summary>
+    /// <summary>Khóa phân vùng rate limit: IP client thật (X-Forwarded-For sau proxy Azure).</summary>
     private static string ResolveClientKey(HttpContext context)
     {
-        var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
-        if (!string.IsNullOrWhiteSpace(userId))
-        {
-            return $"user:{userId}";
-        }
-
-        // App mobile tự sinh một id ngẫu nhiên lúc cài và gửi kèm mọi request. Client giả mạo được
-        // header này, nhưng kẻ muốn lách hạn mức thì đổi IP cũng dễ ngang — cái được lớn hơn:
-        // khách thật đi chung tàu không chặn nhầm nhau.
-        var deviceId = context.Request.Headers["X-Device-Id"].FirstOrDefault();
-        if (!string.IsNullOrWhiteSpace(deviceId))
-        {
-            // Cắt ngắn: khoá phân vùng nằm trong bộ nhớ tiến trình, để client tự quyết độ dài là
-            // mở đường cho việc bơm header khổng lồ.
-            var trimmed = deviceId.Trim();
-            return $"device:{trimmed[..Math.Min(trimmed.Length, 64)]}";
-        }
-
         var forwarded = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(forwarded))
         {

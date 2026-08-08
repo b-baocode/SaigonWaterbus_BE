@@ -31,7 +31,9 @@ public sealed class Incidents : IEndpointGroup
         {
           "resolutionNote": "Da dieu tau thay the va dua tau cu ve bao tri.",
           "boatStatus": "UnderMaintenance",
-          "tripStatus": "Cancelled"
+          "tripStatus": "Cancelled",
+          "estimatedMaintenanceEndAt": "2026-08-10T17:00:00+07:00",
+          "maintenanceNote": "Kiem tra dong co va cap nhat lai ho so Inspection."
         }
         """;
 
@@ -42,6 +44,13 @@ public sealed class Incidents : IEndpointGroup
           "replacementBoatId": "00000000-0000-0000-0000-000000000000",
           "delayMinutes": 30,
           "note": "Dieu tau cuu ho va tau thay the ho tro khach tai vi tri su co."
+        }
+        """;
+
+    private const string AssignManagerExample =
+        """
+        {
+          "managerUserId": "00000000-0000-0000-0000-000000000000"
         }
         """;
 
@@ -79,10 +88,20 @@ public sealed class Incidents : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Danh sach su co tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin hoặc Staff",
+                "Admin, Staff hoặc Manager được gán",
                 null,
                 "Query params optional: boatId, tripId, resolutionStatus.",
-                "Dung de xem cac su co dang Open hoac da Resolved."));
+                "Admin/Staff xem danh sach su co dang Open hoac da Resolved.",
+                "Manager chi xem su co duoc gan assignedManagerId la chinh minh."));
+
+        group.MapGet(GetIncidentDetail, "{incidentId:guid}")
+            .RequireAuthorization()
+            .WithSummary("Chi tiet su co tau")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Staff hoặc Manager được gán",
+                null,
+                "Tra IncidentDto day du cho mot su co.",
+                "Manager chi xem duoc su co duoc gan assignedManagerId la chinh minh."));
 
         group.MapPost(CreateIncident, string.Empty)
             .RequireAuthorization()
@@ -98,7 +117,7 @@ public sealed class Incidents : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Gan tau thay the/cuu ho cho su co")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
+                "Admin hoặc Manager được gán",
                 AssignReplacementBoatExample,
                 "rescueBoatId bat buoc, phai la tau serviceType Rescue dang Active.",
                 "BE tinh khach bi anh huong theo vi tri tau: onboardPassengerCount va futurePassengerCount.",
@@ -112,14 +131,24 @@ public sealed class Incidents : IEndpointGroup
                 "BE tinh day chuyen cho cac trip sau cua cung tau gap su co, cung ngay van hanh theo cong thuc: gio tau san sang = adjustedArrival chuyen truoc + 15 phut quay dau.",
                 "Neu gio tau san sang lon hon gio khoi hanh du kien cua chuyen sau thi chuyen sau bi delay dung phan bi lan gio; route khac van co the bi anh huong neu cung tau."));
 
+        group.MapPatch(AssignManager, "{incidentId:guid}/assign-manager")
+            .RequireAuthorization()
+            .WithSummary("Gan Manager phu trach su co")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                AssignManagerExample,
+                "managerUserId bat buoc, phai la tai khoan Manager dang Active.",
+                "Sau khi gan, Manager do co the xem chi tiet/list su co duoc gan va dieu tau/resolve su co."));
+
         group.MapPatch(ResolveIncident, "{incidentId:guid}/resolve")
             .RequireAuthorization()
             .WithSummary("Xu ly/dong su co tau")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin",
+                "Admin hoặc Manager được gán",
                 ResolveIncidentExample,
                 "resolutionNote bat buoc.",
-                "boatStatus/tripStatus optional de cap nhat trang thai sau khi xu ly."));
+                "boatStatus/tripStatus optional de cap nhat trang thai sau khi xu ly.",
+                "Khi boatStatus=UnderMaintenance, co the gui estimatedMaintenanceEndAt va maintenanceNote cho phan thong tin bao tri cua tau."));
 
         group.MapPost(RecordGpsEvent, "{incidentId:guid}/gps-event")
             .AllowAnonymous()
@@ -155,6 +184,14 @@ public sealed class Incidents : IEndpointGroup
             new GetIncidentListQuery(boatId, tripId, resolutionStatus),
             cancellationToken));
 
+    private static async Task<IResult> GetIncidentDetail(
+        ISender sender,
+        Guid incidentId,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new GetIncidentDetailQuery(incidentId),
+            cancellationToken));
+
     private static async Task<IResult> CreateIncident(
         ISender sender,
         CreateIncidentRequest request,
@@ -167,6 +204,17 @@ public sealed class Incidents : IEndpointGroup
                 request.Description,
                 request.Severity,
                 request.OccurredAt),
+            cancellationToken));
+
+    private static async Task<IResult> AssignManager(
+        ISender sender,
+        Guid incidentId,
+        AssignManagerRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new AssignIncidentManagerCommand(
+                incidentId,
+                request.ManagerUserId),
             cancellationToken));
 
     private static async Task<IResult> AssignReplacementBoat(
@@ -193,7 +241,9 @@ public sealed class Incidents : IEndpointGroup
                 incidentId,
                 request.ResolutionNote,
                 request.BoatStatus,
-                request.TripStatus),
+                request.TripStatus,
+                request.EstimatedMaintenanceEndAt,
+                request.MaintenanceNote),
             cancellationToken));
 
     private static async Task<IResult> RecordGpsEvent(
@@ -275,10 +325,14 @@ public sealed class Incidents : IEndpointGroup
         int? DelayMinutes,
         string? Note);
 
+    public sealed record AssignManagerRequest(Guid ManagerUserId);
+
     public sealed record ResolveIncidentRequest(
         string ResolutionNote,
         BoatStatus? BoatStatus,
-        TripStatus? TripStatus);
+        TripStatus? TripStatus,
+        DateTimeOffset? EstimatedMaintenanceEndAt,
+        string? MaintenanceNote);
 
     public sealed record IncidentGpsEventRequest(
         string GpsEventId,

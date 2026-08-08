@@ -19,13 +19,6 @@ public class ChatConversation
     public DateTimeOffset? RetentionExpiresAt { get; set; }
     public DateTimeOffset? AutoCloseMessageSentAt { get; set; }
 
-    /// <summary>
-    /// Structured booking state collected during the current chat flow.
-    /// The full conversation remains in ChatMessages; this JSON is only the
-    /// server-side draft used to resume and validate the booking flow.
-    /// </summary>
-    public string? BookingDraftJson { get; set; }
-
     public User? User { get; set; }
     public ICollection<ChatMessage> Messages { get; set; } = new List<ChatMessage>();
 }

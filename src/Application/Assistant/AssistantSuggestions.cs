@@ -15,46 +15,43 @@ public static class AssistantSuggestions
         {
             return english
                 ? (["How do I book a Waterbus ticket?", "What payment methods are supported?"],
-                    [new("View ticket policies", "/terms-and-policy"), new("Book a ticket in chat", "/waterbus-booking", "booking")])
+                    [new("View ticket policies", "/terms-and-policy"), new("Book a ticket", "/waterbus-booking")])
                 : (["Tôi đặt vé Waterbus như thế nào?", "Waterbus hỗ trợ thanh toán bằng cách nào?"],
-                    [new("Xem chính sách vé", "/terms-and-policy"), new("Đặt vé trong chat", "/waterbus-booking", "booking")]);
+                    [new("Xem chính sách vé", "/terms-and-policy"), new("Đặt vé", "/waterbus-booking")]);
         }
 
         if (ContainsAny(q, "dat ve", "dat ve", "booking", "book", "ticket"))
         {
             return english
                 ? (["What trips are available today?", "Can I change or cancel my ticket?"],
-                    [new("Book a ticket in chat", "/waterbus-booking", "booking"), new("View schedule", "/schedule")])
+                    [new("View schedule", "/schedule"), new("View ticket policies", "/terms-and-policy")])
                 : (["Hôm nay có những chuyến nào?", "Tôi có thể đổi hoặc hủy vé không?"],
-                    [new("Đặt vé trong chat", "/waterbus-booking", "booking"), new("Xem lịch trình", "/schedule")]);
+                    [new("Xem lịch trình", "/schedule"), new("Xem chính sách vé", "/terms-and-policy")]);
         }
 
         if (ContainsAny(q, "lich", "chuyen", "gio", "ga", "schedule", "station", "trip"))
         {
             return english
                 ? (["How much is a Waterbus ticket?", "How do I book a ticket?"],
-                    [new("View all schedules", "/schedule")])
+                    [new("Book a ticket", "/waterbus-booking"), new("View all schedules", "/schedule")])
                 : (["Giá vé Waterbus là bao nhiêu?", "Tôi đặt vé như thế nào?"],
-                    [new("Xem toàn bộ lịch trình", "/schedule")]);
+                    [new("Đặt vé", "/waterbus-booking"), new("Xem toàn bộ lịch trình", "/schedule")]);
         }
 
         if (ContainsAny(q, "thanh toan", "payment", "pay", "khong nhan", "chua nhan"))
         {
             return english
                 ? (["How do I book a Waterbus ticket?", "Can I cancel or refund my ticket?"],
-                    [new("Book a ticket in chat", "/waterbus-booking", "booking")])
+                    [new("Book a ticket", "/waterbus-booking"), new("View ticket policies", "/terms-and-policy")])
                 : (["Tôi đặt vé Waterbus như thế nào?", "Tôi có thể hủy hoặc hoàn vé không?"],
-                    [new("Đặt vé trong chat", "/waterbus-booking", "booking")]);
+                    [new("Đặt vé", "/waterbus-booking"), new("Xem chính sách vé", "/terms-and-policy")]);
         }
 
-        // Không hiển thị nút điều hướng cho lời chào hoặc câu hỏi ngoài nhóm
-        // chức năng. Nút chỉ xuất hiện khi nội dung user thực sự đề cập tới
-        // đặt vé, lịch trình, chính sách hoặc thanh toán.
         return english
             ? (["What trips are available today?", "How much is a Waterbus ticket?"],
-                [])
+                [new("Book a ticket", "/waterbus-booking"), new("View schedule", "/schedule"), new("Contact support", "/contact")])
             : (["Hôm nay có những chuyến nào?", "Giá vé Waterbus là bao nhiêu?"],
-                []);
+                [new("Đặt vé", "/waterbus-booking"), new("Xem lịch trình", "/schedule"), new("Liên hệ hỗ trợ", "/contact")]);
     }
 
     private static string Normalize(string value)

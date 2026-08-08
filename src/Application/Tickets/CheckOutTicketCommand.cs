@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -27,15 +28,18 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CheckOutTicketCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<TicketScanDto> Handle(CheckOutTicketCommand request, CancellationToken cancellationToken)
@@ -100,6 +104,19 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
             cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        var tripId = ticket.BookingPassenger?.TripId ?? ticket.Booking.TripId;
+        if (tripId.HasValue)
+        {
+            var notifications = await StaffTripNotificationSupport.AddPassengerScanNotificationsAsync(
+                _context, tripId.Value, isCheckIn: false, now, cancellationToken);
+            if (notifications.Count > 0)
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                await NotificationSupport.PublishCreatedAsync(
+                    _notificationRealtimeNotifier, notifications, cancellationToken);
+            }
+        }
 
         return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken, now);
     }

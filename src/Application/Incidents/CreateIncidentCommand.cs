@@ -131,6 +131,18 @@ public sealed class CreateIncidentCommandHandler : IRequestHandler<CreateInciden
                 oldTripStatus.Value,
                 now,
                 cancellationToken));
+            createdNotifications.AddRange(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+                _context,
+                trip,
+                oldTripStatus.Value,
+                now,
+                cancellationToken));
+            createdNotifications.AddRange(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                _context,
+                trip,
+                oldTripStatus.Value,
+                now,
+                cancellationToken));
         }
 
         createdNotifications.AddRange(await NotificationSupport.AddIncidentReportedNotificationsAsync(

@@ -40,9 +40,24 @@ internal static class IncidentSupport
         CancellationToken cancellationToken)
     {
         var actor = await AuthSupport.GetCurrentUserWithRoleAsync(context, userContext, cancellationToken);
-        if (AuthSupport.IsAdmin(actor))
+        if (AuthSupport.IsAdmin(actor) || AuthSupport.IsManager(actor))
         {
             return actor;
+        }
+
+        throw new ForbiddenAccessException();
+    }
+
+    public static void EnsureManagerCanAccessIncident(User actor, Incident incident)
+    {
+        if (!AuthSupport.IsManager(actor))
+        {
+            return;
+        }
+
+        if (incident.AssignedManagerId == actor.Id)
+        {
+            return;
         }
 
         throw new ForbiddenAccessException();
@@ -53,6 +68,7 @@ internal static class IncidentSupport
             incident.Id,
             incident.BoatId,
             incident.Boat.Name,
+            incident.Boat.Code,
             incident.TripId,
             incident.Trip?.TripCode,
             incident.IncidentType,
@@ -69,11 +85,13 @@ internal static class IncidentSupport
             incident.AssignedByUser?.FullName,
             incident.RescueBoatId,
             incident.RescueBoat?.Name,
+            incident.RescueBoat?.Code,
             incident.RescueDispatchedAt,
             incident.RescueDispatchedByUserId,
             incident.RescueDispatchedByUser?.FullName,
             incident.ReplacementBoatId,
             incident.ReplacementBoat?.Name,
+            incident.ReplacementBoat?.Code,
             incident.ReplacementAssignedAt,
             incident.ReplacementAssignedByUserId,
             incident.ReplacementAssignedByUser?.FullName,

@@ -158,6 +158,15 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("maintenance_started_at");
 
+                    b.Property<DateTimeOffset?>("EstimatedMaintenanceEndAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("estimated_maintenance_end_at");
+
+                    b.Property<string>("MaintenanceNote")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)")
+                        .HasColumnName("maintenance_note");
+
                     b.Property<int?>("MaxSpeedKmh")
                         .HasColumnType("integer")
                         .HasColumnName("max_speed_kmh");
@@ -1049,10 +1058,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<DateTimeOffset?>("AutoCloseMessageSentAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("auto_close_message_sent_at");
-
-                    b.Property<string>("BookingDraftJson")
-                        .HasColumnType("jsonb")
-                        .HasColumnName("booking_draft_json");
 
                     b.Property<string>("CloseReason")
                         .HasMaxLength(30)

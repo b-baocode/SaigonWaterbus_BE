@@ -16,6 +16,7 @@ public sealed class Notifications : IEndpointGroup
                 "Bearer token",
                 null,
                 "Tra ve thong bao cua user dang dang nhap, moi nhat truoc, kem totalCount/unreadCount.",
+                "Staff, Manager, Admin va Customer deu dung chung endpoint nay; server tu loc theo userId trong access token.",
                 "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100), unreadOnly (mac dinh false).",
                 "unreadCount luon la tong so chua doc, khong phu thuoc unreadOnly — dung cho badge chuong.",
                 "type + relatedEntityType/relatedEntityId dung de dieu huong khi bam vao thong bao."));

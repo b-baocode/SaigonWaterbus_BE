@@ -170,11 +170,8 @@ if (!app.Environment.IsDevelopment())
 }
 app.UseCors("FrontendClientPolicy");
 app.UseResponseCompression();
-app.UseAuthentication();
-// SAU UseAuthentication: rate limit chia theo người dùng đã đăng nhập (xem ResolveClientKey),
-// mà HttpContext.User chỉ có sau khi xác thực xong. Đứng trước thì mọi request đều là ẩn danh
-// và cả tàu chung một khoá IP.
 app.UseRateLimiter();
+app.UseAuthentication();
 app.UseAuthorization();
 
 app.UseFileServer();

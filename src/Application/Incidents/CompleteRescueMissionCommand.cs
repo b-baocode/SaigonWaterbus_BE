@@ -67,6 +67,7 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
         }
 
         var completedAt = request.CompletedAt?.ToUniversalTime() ?? _timeProvider.GetUtcNow();
+        var oldTripStatus = incident.Trip?.TripStatus;
         incident.ResolutionStatus = IncidentSupport.ResolvedStatus;
         incident.ResolutionNote = NormalizeNote(request.Note) ?? DefaultResolutionNote;
         incident.ResolvedAt = completedAt;
@@ -97,6 +98,23 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
             incident,
             completedAt,
             cancellationToken);
+        if (incident.Trip is not null && oldTripStatus.HasValue)
+        {
+            createdNotifications = createdNotifications
+                .Concat(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+                    _context,
+                    incident.Trip,
+                    oldTripStatus.Value,
+                    completedAt,
+                    cancellationToken))
+                .Concat(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                    _context,
+                    incident.Trip,
+                    oldTripStatus.Value,
+                    completedAt,
+                    cancellationToken))
+                .ToList();
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(

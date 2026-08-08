@@ -17,13 +17,13 @@ public sealed class Reviews : IEndpointGroup
 
     public static void Map(RouteGroupBuilder group)
     {
-        group.MapPost(CreateTripReview, "trips/{tripId:guid}")
+        group.MapPost(CreateBookingReview, "bookings/{bookingId:guid}")
             .RequireAuthorization()
-            .WithSummary("Danh gia mot chuyen da hoan thanh")
+            .WithSummary("Danh gia mot booking da hoan thanh")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Bearer token (khach hang co ve tren chuyen)",
+                "Bearer token (khach hang so huu booking)",
                 CreateExample,
-                "Review tinh theo booking: mot chieu/charter duoc danh gia khi chuyen da Completed; khu hoi chi duoc danh gia khi ca chieu di va chieu ve deu Completed.",
+                "Gui bookingId tren URL. Review tinh theo booking: mot chieu/charter duoc danh gia khi chuyen da Completed; khu hoi chi duoc danh gia khi ca chieu di va chieu ve deu Completed.",
                 "rating: 1-5. comment: optional, toi da 1000 ky tu.",
                 "Moi khach chi danh gia 1 lan/booking, khong sua duoc sau khi gui.",
                 "Review moi tao o status=Hidden (cho duyet), chi hien thi public sau khi admin chuyen sang Published."));
@@ -67,13 +67,13 @@ public sealed class Reviews : IEndpointGroup
                 "Idempotent: gui lai status hien tai thi giu nguyen."));
     }
 
-    private static async Task<IResult> CreateTripReview(
+    private static async Task<IResult> CreateBookingReview(
         ISender sender,
-        Guid tripId,
-        CreateTripReviewRequest request,
+        Guid bookingId,
+        CreateBookingReviewRequest request,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(
-            new CreateTripReviewCommand(tripId, request.Rating, request.Comment), ct));
+            new CreateBookingReviewCommand(bookingId, request.Rating, request.Comment), ct));
 
     private static async Task<IResult> GetMyReviewableTrips(
         ISender sender,
@@ -108,7 +108,7 @@ public sealed class Reviews : IEndpointGroup
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateReviewStatusCommand(id, request.Status), ct));
 
-    public sealed record CreateTripReviewRequest(int Rating, string? Comment);
+    public sealed record CreateBookingReviewRequest(int Rating, string? Comment);
 
     public sealed record UpdateReviewStatusRequest(string Status);
 }

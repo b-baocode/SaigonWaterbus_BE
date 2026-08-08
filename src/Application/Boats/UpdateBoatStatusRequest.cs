@@ -1,3 +1,4 @@
+using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Enums;
 
@@ -5,7 +6,9 @@ namespace SaigonWaterbus.Application.Boats;
 
 public sealed record UpdateBoatStatusRequest(
     Guid BoatId,
-    BoatStatus Status);
+    BoatStatus Status,
+    DateTimeOffset? EstimatedMaintenanceEndAt = null,
+    string? MaintenanceNote = null);
 
 public sealed class UpdateBoatStatusRequestValidator : AbstractValidator<UpdateBoatStatusRequest>
 {
@@ -18,6 +21,10 @@ public sealed class UpdateBoatStatusRequestValidator : AbstractValidator<UpdateB
         RuleFor(x => x.Status)
             .IsInEnum()
             .WithMessage("Trạng thái tàu không hợp lệ.");
+
+        RuleFor(x => x.MaintenanceNote)
+            .MaximumLength(1000)
+            .WithMessage("Ghi chú bảo trì không được vượt quá 1000 ký tự.");
     }
 }
 
@@ -73,6 +80,17 @@ public sealed class UpdateBoatStatusRequestUseCase
         }
 
         boat.Status = request.Status;
+        if (request.Status == BoatStatus.UnderMaintenance)
+        {
+            boat.EstimatedMaintenanceEndAt = request.EstimatedMaintenanceEndAt?.ToUniversalTime();
+            boat.MaintenanceNote = AuthSupport.NormalizeOptionalText(request.MaintenanceNote);
+        }
+        else
+        {
+            boat.EstimatedMaintenanceEndAt = null;
+            boat.MaintenanceNote = null;
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
         return BoatSupport.CreateDto(boat);

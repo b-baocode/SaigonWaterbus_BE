@@ -30,6 +30,7 @@ public sealed record OperationScheduleItemDto(
     int CapacitySnapshot,
     int TotalPassengerCount,
     int OnboardPassengerCount,
+    int AlightedPassengerCount,
     Guid? FromStationId,
     string? FromStationCode,
     string FromLocation,
@@ -214,6 +215,10 @@ public sealed class GetOperationScheduleQueryHandler
             _context,
             tripIds,
             cancellationToken);
+        var alightedPassengerCounts = await TripPassengerCountSupport.LoadAlightedPassengerCountsByTripIdAsync(
+            _context,
+            tripIds,
+            cancellationToken);
 
         return trips
             .Select(trip =>
@@ -225,7 +230,8 @@ public sealed class GetOperationScheduleQueryHandler
                     tripLatestLocation,
                     now,
                     passengerCounts.GetValueOrDefault(trip.Id),
-                    onboardPassengerCounts.GetValueOrDefault(trip.Id));
+                    onboardPassengerCounts.GetValueOrDefault(trip.Id),
+                    alightedPassengerCounts.GetValueOrDefault(trip.Id));
             })
             .ToArray();
     }
@@ -235,7 +241,8 @@ public sealed class GetOperationScheduleQueryHandler
         BoatLatestLocation? latestLocation,
         DateTimeOffset now,
         int totalPassengerCount,
-        int onboardPassengerCount)
+        int onboardPassengerCount,
+        int alightedPassengerCount)
     {
         var tripStops = trip.TripStops
             .OrderBy(x => x.StopOrder)
@@ -283,6 +290,7 @@ public sealed class GetOperationScheduleQueryHandler
             trip.CapacitySnapshot,
             totalPassengerCount,
             onboardPassengerCount,
+            alightedPassengerCount,
             fromStation.StationId,
             fromStation.StationCode,
             fromStation.LocationName,

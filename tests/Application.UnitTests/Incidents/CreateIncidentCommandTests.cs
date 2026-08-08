@@ -325,6 +325,88 @@ public class CreateIncidentCommandTests
     }
 
     [Test]
+    public async Task AdminCanAssignManagerToIncident()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var incidentBoat = Boat("WB-01");
+        var incident = new Incident
+        {
+            Boat = incidentBoat,
+            BoatId = incidentBoat.Id,
+            IncidentType = "MechanicalFailure",
+            Description = "Tau can Manager phu trach.",
+            Severity = "High",
+            OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ResolutionStatus = IncidentSupport.OpenStatus
+        };
+        context.AddRange(incidentBoat, incident);
+        await context.SaveChangesAsync();
+
+        var assignedAt = new DateTimeOffset(2030, 1, 1, 1, 30, 0, TimeSpan.Zero);
+        var handler = new AssignIncidentManagerCommandHandler(
+            context,
+            adminContext,
+            new FixedTimeProvider(assignedAt));
+
+        var result = await handler.Handle(
+            new AssignIncidentManagerCommand(incident.Id, managerContext.UserId!.Value),
+            CancellationToken.None);
+
+        result.AssignedManagerId.ShouldBe(managerContext.UserId!.Value);
+        result.AssignedManagerName.ShouldNotBeNull();
+        result.AssignedAt.ShouldBe(assignedAt);
+        result.AssignedByUserId.ShouldBe(adminContext.UserId!.Value);
+
+        var savedIncident = context.Incidents.Single();
+        savedIncident.AssignedManagerId.ShouldBe(managerContext.UserId!.Value);
+        savedIncident.AssignedAt.ShouldBe(assignedAt);
+        savedIncident.AssignedByUserId.ShouldBe(adminContext.UserId!.Value);
+    }
+
+    [Test]
+    public async Task AssignedManagerCanDispatchRescueBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
+        var incidentBoat = Boat("WB-01");
+        var rescueBoat = RescueBoat("RS-01");
+        var incident = new Incident
+        {
+            Boat = incidentBoat,
+            BoatId = incidentBoat.Id,
+            AssignedManagerId = managerContext.UserId!.Value,
+            IncidentType = "MechanicalFailure",
+            Description = "Tau can cuu ho tren song.",
+            Severity = "High",
+            OccurredAt = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ResolutionStatus = IncidentSupport.OpenStatus
+        };
+        context.AddRange(incidentBoat, rescueBoat, incident);
+        await context.SaveChangesAsync();
+
+        var dispatchedAt = new DateTimeOffset(2030, 1, 1, 2, 0, 0, TimeSpan.Zero);
+        var handler = new AssignReplacementBoatCommandHandler(
+            context,
+            managerContext,
+            new FixedTimeProvider(dispatchedAt));
+
+        var result = await handler.Handle(
+            new AssignReplacementBoatCommand(
+                incident.Id,
+                rescueBoat.Id,
+                ReplacementBoatId: null,
+                DelayMinutes: null,
+                Note: "Manager duoc gan dieu tau."),
+            CancellationToken.None);
+
+        result.RescueBoatId.ShouldBe(rescueBoat.Id);
+        result.RescueDispatchedByUserId.ShouldBe(managerContext.UserId!.Value);
+        result.RescueDispatchedAt.ShouldBe(dispatchedAt);
+    }
+
+    [Test]
     public async Task ManagerCannotDispatchRescueBoat()
     {
         await using var context = SeatFlowTestData.CreateContext();

@@ -95,6 +95,20 @@ public sealed class CancelSightseeingTripNoShowCommandHandler
             oldStatus,
             now,
             cancellationToken);
+        createdNotifications = createdNotifications
+            .Concat(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+                _context,
+                trip,
+                oldStatus,
+                now,
+                cancellationToken))
+            .Concat(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                _context,
+                trip,
+                oldStatus,
+                now,
+                cancellationToken))
+            .ToList();
 
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(

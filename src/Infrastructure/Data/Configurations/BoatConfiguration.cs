@@ -65,6 +65,13 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
         builder.Property(x => x.MaintenanceStartedAt)
             .HasColumnName("maintenance_started_at");
 
+        builder.Property(x => x.EstimatedMaintenanceEndAt)
+            .HasColumnName("estimated_maintenance_end_at");
+
+        builder.Property(x => x.MaintenanceNote)
+            .HasColumnName("maintenance_note")
+            .HasMaxLength(1000);
+
         builder.Property(x => x.SeatCount)
             .HasColumnName("seat_count");
 

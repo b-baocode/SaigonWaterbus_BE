@@ -1,4 +1,5 @@
 using FluentValidation.Results;
+using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Enums;
@@ -11,7 +12,9 @@ public sealed record ResolveIncidentCommand(
     Guid IncidentId,
     string ResolutionNote,
     BoatStatus? BoatStatus,
-    TripStatus? TripStatus) : IRequest<IncidentDto>;
+    TripStatus? TripStatus,
+    DateTimeOffset? EstimatedMaintenanceEndAt = null,
+    string? MaintenanceNote = null) : IRequest<IncidentDto>;
 
 public sealed class ResolveIncidentCommandValidator : AbstractValidator<ResolveIncidentCommand>
 {
@@ -21,6 +24,7 @@ public sealed class ResolveIncidentCommandValidator : AbstractValidator<ResolveI
         RuleFor(x => x.ResolutionNote).NotEmpty().MaximumLength(1000);
         RuleFor(x => x.BoatStatus).IsInEnum();
         RuleFor(x => x.TripStatus).IsInEnum();
+        RuleFor(x => x.MaintenanceNote).MaximumLength(1000);
     }
 }
 
@@ -70,6 +74,7 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             .Include(x => x.Resolver)
             .SingleOrDefaultAsync(x => x.Id == request.IncidentId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy sự cố.");
+        IncidentSupport.EnsureManagerCanAccessIncident(actor, incident);
 
         if (string.Equals(incident.ResolutionStatus, IncidentSupport.ResolvedStatus, StringComparison.OrdinalIgnoreCase))
         {
@@ -77,6 +82,7 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
         }
 
         var resolvedAt = _timeProvider.GetUtcNow();
+        var oldTripStatus = incident.Trip?.TripStatus;
         incident.ResolutionStatus = IncidentSupport.ResolvedStatus;
         incident.ResolutionNote = request.ResolutionNote.Trim();
         incident.ResolvedAt = resolvedAt;
@@ -95,8 +101,16 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             incident.Boat.Status = request.BoatStatus.Value;
             if (request.BoatStatus.Value == BoatStatus.UnderMaintenance)
             {
+                incident.Boat.EstimatedMaintenanceEndAt = request.EstimatedMaintenanceEndAt?.ToUniversalTime();
+                incident.Boat.MaintenanceNote = AuthSupport.NormalizeOptionalText(request.MaintenanceNote)
+                    ?? request.ResolutionNote.Trim();
                 await ClearBoatLiveTripAsync(incident.BoatId, resolvedAt, cancellationToken);
                 IncidentSupport.EnsureTripIsNotRunningOnMaintainedBoat(incident);
+            }
+            else
+            {
+                incident.Boat.EstimatedMaintenanceEndAt = null;
+                incident.Boat.MaintenanceNote = null;
             }
         }
 
@@ -111,6 +125,23 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             incident,
             resolvedAt,
             cancellationToken);
+        if (incident.Trip is not null && oldTripStatus.HasValue)
+        {
+            createdNotifications = createdNotifications
+                .Concat(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+                    _context,
+                    incident.Trip,
+                    oldTripStatus.Value,
+                    resolvedAt,
+                    cancellationToken))
+                .Concat(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                    _context,
+                    incident.Trip,
+                    oldTripStatus.Value,
+                    resolvedAt,
+                    cancellationToken))
+                .ToList();
+        }
 
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(

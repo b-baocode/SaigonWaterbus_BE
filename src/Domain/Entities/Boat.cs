@@ -16,6 +16,10 @@ public class Boat : BaseAuditableEntity
 
     public DateTimeOffset? MaintenanceStartedAt { get; set; }
 
+    public DateTimeOffset? EstimatedMaintenanceEndAt { get; set; }
+
+    public string? MaintenanceNote { get; set; }
+
     public int SeatCount { get; set; }
 
     public int NumberOfDecks { get; set; }

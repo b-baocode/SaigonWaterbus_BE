@@ -67,6 +67,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         var incident = await LoadIncidentQuery()
             .SingleOrDefaultAsync(x => x.Id == request.IncidentId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy sự cố.");
+        IncidentSupport.EnsureManagerCanAccessIncident(actor, incident);
 
         if (incident.BoatId == request.RescueBoatId)
         {
@@ -160,6 +161,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             : IncidentMissionStatuses.ReplacementDispatched;
 
         var createdNotifications = new List<Notification>();
+        var oldTripStatus = incident.Trip?.TripStatus;
         if (incident.Trip is not null)
         {
             if (incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
@@ -209,6 +211,22 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                     assignedAt,
                     cancellationToken));
             }
+        }
+
+        if (incident.Trip is not null && oldTripStatus.HasValue)
+        {
+            createdNotifications.AddRange(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+                _context,
+                incident.Trip,
+                oldTripStatus.Value,
+                assignedAt,
+                cancellationToken));
+            createdNotifications.AddRange(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                _context,
+                incident.Trip,
+                oldTripStatus.Value,
+                assignedAt,
+                cancellationToken));
         }
 
         createdNotifications.AddRange(await NotificationSupport.AddIncidentDispatchedNotificationsAsync(

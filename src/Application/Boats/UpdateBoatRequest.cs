@@ -13,6 +13,8 @@ public sealed record UpdateBoatRequest(
     int? MaxSpeedKmh = null,
     int? YearBuilt = null,
     string? Description = null,
+    DateTimeOffset? EstimatedMaintenanceEndAt = null,
+    string? MaintenanceNote = null,
     string? ImageUrl = null,
     string? ImageFileName = null,
     string? ImageContentType = null,
@@ -65,6 +67,10 @@ public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatReq
         RuleFor(x => x.Description)
             .MaximumLength(1000)
             .WithMessage("Mô tả tàu không được vượt quá 1000 ký tự.");
+
+        RuleFor(x => x.MaintenanceNote)
+            .MaximumLength(1000)
+            .WithMessage("Ghi chú bảo trì không được vượt quá 1000 ký tự.");
 
         RuleFor(x => x.ImageUrl)
             .MaximumLength(1000)
@@ -186,6 +192,16 @@ public sealed class UpdateBoatRequestUseCase
         if (request.Description is not null)
         {
             boat.Description = string.IsNullOrWhiteSpace(request.Description) ? null : request.Description.Trim();
+        }
+
+        if (request.EstimatedMaintenanceEndAt.HasValue)
+        {
+            boat.EstimatedMaintenanceEndAt = request.EstimatedMaintenanceEndAt.Value.ToUniversalTime();
+        }
+
+        if (request.MaintenanceNote is not null)
+        {
+            boat.MaintenanceNote = AuthSupport.NormalizeOptionalText(request.MaintenanceNote);
         }
 
         if (request.MaxSpeedKmh.HasValue)

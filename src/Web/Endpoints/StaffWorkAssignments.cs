@@ -285,7 +285,8 @@ public sealed class Staff : IEndpointGroup
                 "Query optional: date=yyyy-MM-dd/dd-MM-yyyy/dd/MM/yyyy. Nếu bỏ trống thì lấy hôm nay theo giờ Việt Nam.",
                 "BE tự suy ra trip từ phân công Boat hoặc Station của staff.",
                 "Boat: trip có boatId trùng và thời gian trip overlap ca.",
-                "Station: trip có route đi qua station và thời gian trip overlap ca."));
+                "Station: trip có route đi qua station và thời gian trip overlap ca.",
+                "Response có tripStatus, totalPassengerCount, onboardPassengerCount và alightedPassengerCount; trip bị hủy vẫn được giữ trong danh sách để mobile hiển thị."));
 
         group.MapGet(GetMyScanHistory, "me/scan-history")
             .RequireAuthorization()

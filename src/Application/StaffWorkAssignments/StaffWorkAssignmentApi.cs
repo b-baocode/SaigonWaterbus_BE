@@ -1,7 +1,9 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -83,7 +85,10 @@ public sealed record StaffAssignedTripDto(
     int? StopOrder = null,
     DateTimeOffset? StopScheduledArrival = null,
     DateTimeOffset? StopScheduledDeparture = null,
-    IReadOnlyList<TripStaffAssignmentDto>? OnBoardStaff = null);
+    IReadOnlyList<TripStaffAssignmentDto>? OnBoardStaff = null,
+    int TotalPassengerCount = 0,
+    int OnboardPassengerCount = 0,
+    int AlightedPassengerCount = 0);
 
 [Authorize(Roles = "Admin,Manager")]
 public sealed record CreateStaffWorkAssignmentCommand(
@@ -175,15 +180,18 @@ public sealed class CreateStaffWorkAssignmentCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CreateStaffWorkAssignmentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<StaffWorkAssignmentDto> Handle(
@@ -236,7 +244,19 @@ public sealed class CreateStaffWorkAssignmentCommandHandler
         };
 
         _context.StaffWorkAssignments.Add(assignment);
+        var notification = NotificationSupport.AddStaffAssignmentNotification(
+            _context,
+            staff.Id,
+            assignment.Id,
+            "Bạn được phân công ca làm mới",
+            $"Bạn được phân công ca {assignment.AssignmentType} từ {NotificationSupport.FormatVietnamTime(assignment.StartAt)} đến {NotificationSupport.FormatVietnamTime(assignment.EndAt)}. Vui lòng mở lịch làm để xem chi tiết.",
+            NotificationTypes.StaffAssignmentCreated,
+            assignment.AssignedAt);
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            [notification],
+            cancellationToken);
 
         return await StaffWorkAssignmentSupport.LoadDtoAsync(
             _context,
@@ -252,15 +272,18 @@ public sealed class CreateBulkStaffWorkAssignmentsCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CreateBulkStaffWorkAssignmentsCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<IReadOnlyList<StaffWorkAssignmentDto>> Handle(
@@ -321,7 +344,19 @@ public sealed class CreateBulkStaffWorkAssignmentsCommandHandler
             .ToArray();
 
         _context.StaffWorkAssignments.AddRange(assignments);
+        var notification = NotificationSupport.AddStaffAssignmentNotification(
+            _context,
+            staff.Id,
+            assignments[0].Id,
+            "Bạn được phân công lịch làm mới",
+            $"Bạn được phân công {assignments.Length} ca {request.AssignmentType} trong khoảng {request.FromDate:dd/MM/yyyy} - {request.ToDate:dd/MM/yyyy}. Vui lòng mở lịch làm để xem chi tiết.",
+            NotificationTypes.StaffAssignmentCreated,
+            assignedAt);
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            [notification],
+            cancellationToken);
 
         var assignmentIds = assignments.Select(x => x.Id).ToArray();
         var savedAssignments = await StaffWorkAssignmentSupport.BuildDtoQuery(_context)
@@ -340,15 +375,18 @@ public sealed class ReplaceStaffWorkAssignmentCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public ReplaceStaffWorkAssignmentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<StaffWorkAssignmentReplacementDto> Handle(
@@ -436,7 +474,19 @@ public sealed class ReplaceStaffWorkAssignmentCommandHandler
             assignment.DutyRole);
 
         _context.StaffWorkAssignments.Add(replacement);
+        var notification = NotificationSupport.AddStaffAssignmentNotification(
+            _context,
+            replacementStaff.Id,
+            replacement.Id,
+            "Bạn được thay vào ca làm",
+            $"Bạn được phân công thay thế ca {replacement.AssignmentType} từ {NotificationSupport.FormatVietnamTime(replacement.StartAt)} đến {NotificationSupport.FormatVietnamTime(replacement.EndAt)}. Vui lòng mở lịch làm để xem chi tiết.",
+            NotificationTypes.StaffAssignmentReplaced,
+            now);
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            [notification],
+            cancellationToken);
 
         var originalDto = await StaffWorkAssignmentSupport.LoadDtoAsync(
             _context,
@@ -714,8 +764,7 @@ public sealed class GetMyStaffTripsQueryHandler
                 .ThenInclude(x => x.RouteStops)
                     .ThenInclude(x => x.Station)
             .Include(x => x.TripStops)
-            .Where(x => x.TripStatus != TripStatus.Cancelled
-                && x.DepartureTime < windowEnd
+            .Where(x => x.DepartureTime < windowEnd
                 && windowStart < x.ArrivalTime)
             .ToListAsync(cancellationToken);
 
@@ -728,13 +777,35 @@ public sealed class GetMyStaffTripsQueryHandler
             matchedTrips.Select(x => x.Trip).ToList(),
             now,
             cancellationToken);
+        var matchedTripIds = matchedTrips.Select(x => x.Trip.Id).ToArray();
+        var totalPassengerCounts = await _context.Set<BookingPassenger>()
+            .AsNoTracking()
+            .Where(x => ((x.TripId.HasValue && matchedTripIds.Contains(x.TripId.Value))
+                    || (!x.TripId.HasValue && x.Booking.TripId.HasValue && matchedTripIds.Contains(x.Booking.TripId.Value))))
+            .Where(BookingSeatOccupancySupport.PassengerOccupiesSeat(now))
+            .Select(x => new { TripId = x.TripId ?? x.Booking.TripId })
+            .Where(x => x.TripId.HasValue)
+            .GroupBy(x => x.TripId!.Value)
+            .Select(g => new { TripId = g.Key, Count = g.Count() })
+            .ToDictionaryAsync(x => x.TripId, x => x.Count, cancellationToken);
+        var onboardPassengerCounts = await TripPassengerCountSupport.LoadOnboardPassengerCountsByTripIdAsync(
+            _context,
+            matchedTripIds,
+            cancellationToken);
+        var alightedPassengerCounts = await TripPassengerCountSupport.LoadAlightedPassengerCountsByTripIdAsync(
+            _context,
+            matchedTripIds,
+            cancellationToken);
 
         return matchedTrips
             .Select(x => ToAssignedTripDto(
                 x.Trip,
                 x.Assignment!,
                 now,
-                onBoardStaffByTripId.GetValueOrDefault(x.Trip.Id) ?? []))
+                onBoardStaffByTripId.GetValueOrDefault(x.Trip.Id) ?? [],
+                totalPassengerCounts.GetValueOrDefault(x.Trip.Id),
+                onboardPassengerCounts.GetValueOrDefault(x.Trip.Id),
+                alightedPassengerCounts.GetValueOrDefault(x.Trip.Id)))
             .OrderBy(x => x.DepartureTime)
             .ThenBy(x => x.TripCode)
             .ToList();
@@ -817,7 +888,10 @@ public sealed class GetMyStaffTripsQueryHandler
         Trip trip,
         StaffWorkAssignment assignment,
         DateTimeOffset now,
-        IReadOnlyList<TripStaffAssignmentDto> onBoardStaff)
+        IReadOnlyList<TripStaffAssignmentDto> onBoardStaff,
+        int totalPassengerCount,
+        int onboardPassengerCount,
+        int alightedPassengerCount)
     {
         var station = assignment.AssignmentType == StaffWorkAssignmentType.Station
             ? assignment.Station
@@ -851,7 +925,10 @@ public sealed class GetMyStaffTripsQueryHandler
             tripStop?.StopOrder,
             tripStop?.PlannedArrivalTime,
             tripStop?.PlannedDepartureTime,
-            onBoardStaff);
+            onBoardStaff,
+            totalPassengerCount,
+            onboardPassengerCount,
+            alightedPassengerCount);
     }
 
     private static bool TimeRangesOverlap(

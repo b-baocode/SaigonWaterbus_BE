@@ -584,6 +584,12 @@ public sealed class Gps : IEndpointGroup
             trip.TripStatus = TripStatus.Completed;
             trip.StatusNote = NormalizeOptionalText(request.Note)
                 ?? $"GPS đã hoàn tất chuyến lúc {completedAt:O}.";
+            var staffTripNotifications = await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+                dbContext, trip, oldStatus, completedAt, cancellationToken);
+            staffTripNotifications = staffTripNotifications
+                .Concat(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                    dbContext, trip, oldStatus, completedAt, cancellationToken))
+                .ToList();
             var reviewInvites = await NotificationSupport.AddTripCompletedReviewInviteNotificationsAsync(
                 dbContext, trip, oldStatus, completedAt, cancellationToken);
             await PointSupport.AwardCompletionPointsForCompletedTripAsync(
@@ -595,6 +601,8 @@ public sealed class Gps : IEndpointGroup
             await dbContext.SaveChangesAsync(cancellationToken);
             await NotificationSupport.PublishCreatedAsync(
                 notificationRealtimeNotifier, reviewInvites, cancellationToken);
+            await NotificationSupport.PublishCreatedAsync(
+                notificationRealtimeNotifier, staffTripNotifications, cancellationToken);
         }
 
         return Results.Ok(new GpsTripStatusResponse(
@@ -610,6 +618,7 @@ public sealed class Gps : IEndpointGroup
         TimeProvider timeProvider,
         IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
         IHubContext<TrackingHub> trackingHubContext,
+        INotificationRealtimeNotifier notificationRealtimeNotifier,
         ILogger<Gps> logger,
         [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
         Guid tripId,
@@ -662,6 +671,7 @@ public sealed class Gps : IEndpointGroup
         }
 
         var occurredAt = request.OccurredAt?.ToUniversalTime() ?? timeProvider.GetUtcNow();
+        var oldStatus = trip.TripStatus;
         ApplyTripStopEvent(tripStop, eventType, occurredAt, request.Note);
         ApplyTripStatusFromStopEvent(trip, tripStop, eventType, occurredAt);
         var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
@@ -670,6 +680,22 @@ public sealed class Gps : IEndpointGroup
             occurredAt);
 
         await dbContext.SaveChangesAsync(cancellationToken);
+
+        var staffTripNotifications = new List<Notification>();
+        staffTripNotifications.AddRange(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+            dbContext, trip, oldStatus, occurredAt, cancellationToken));
+        staffTripNotifications.AddRange(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+            dbContext, trip, oldStatus, occurredAt, cancellationToken));
+        staffTripNotifications.AddRange(await StaffTripNotificationSupport.AddTripStopEventNotificationsAsync(
+            dbContext, trip, tripStop, eventType, occurredAt, cancellationToken));
+        if (staffTripNotifications.Count > 0)
+        {
+            await dbContext.SaveChangesAsync(cancellationToken);
+            await NotificationSupport.PublishCreatedAsync(
+                notificationRealtimeNotifier,
+                staffTripNotifications,
+                cancellationToken);
+        }
 
         var response = new GpsTripStopStatusResponse(
             trip.Id,

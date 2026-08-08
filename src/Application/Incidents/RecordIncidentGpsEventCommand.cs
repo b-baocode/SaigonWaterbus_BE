@@ -102,6 +102,7 @@ public sealed class RecordIncidentGpsEventCommandHandler
         }
 
         var previousMissionStatus = ResolveMissionStatus(incident);
+        var oldTripStatus = incident.Trip?.TripStatus;
         var occurredAt = request.OccurredAt.ToUniversalTime();
         var eventType = request.Event.Trim();
         var boatCode = request.BoatCode.Trim();
@@ -139,6 +140,23 @@ public sealed class RecordIncidentGpsEventCommandHandler
                 gpsEvent.Event,
                 gpsEvent.OccurredAt,
                 cancellationToken);
+        if (incident.Trip is not null && oldTripStatus.HasValue)
+        {
+            createdNotifications = createdNotifications
+                .Concat(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+                    _context,
+                    incident.Trip,
+                    oldTripStatus.Value,
+                    gpsEvent.OccurredAt,
+                    cancellationToken))
+                .Concat(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                    _context,
+                    incident.Trip,
+                    oldTripStatus.Value,
+                    gpsEvent.OccurredAt,
+                    cancellationToken))
+                .ToList();
+        }
         if (gpsEvent.Event == IncidentGpsEventTypes.TowingCompleted)
         {
             await IncidentSupport.ClearBoatLiveTripAsync(
