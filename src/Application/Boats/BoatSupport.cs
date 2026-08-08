@@ -83,6 +83,8 @@ internal static class BoatSupport
             boat.Description,
             boat.SeatSetupType,
             boat.MaintenanceStartedAt,
+            boat.EstimatedMaintenanceEndAt,
+            boat.MaintenanceNote,
             BoatDocumentSupport.RequiresDocumentRefresh(boat),
             OperatingStatusSupport.ForBoat(boat, activeTrip, activeIncident));
     }

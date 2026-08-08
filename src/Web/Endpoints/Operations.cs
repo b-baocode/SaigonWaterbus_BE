@@ -40,6 +40,7 @@ public sealed class Operations : IEndpointGroup
                 "Query: fromDate, toDate dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy; bỏ toDate thì lấy một ngày.",
                 "serviceType optional: booking | bus | sightseeing | charter | all.",
                 "Anonymous/Customer xem tối đa 7 ngày và chỉ thấy Bus + Sightseeing.",
+                "Staff tàu dùng API này để theo dõi status, movementStatus, actualStartAt, actualEndAt, nextStation, nextPlannedArrivalAt, totalPassengerCount, onboardPassengerCount và alightedPassengerCount.",
                 "Response chính: operatingDate, fromLocation, toLocation, scheduledDepartureAt, endAt, stops[]."));
 
         groupBuilder.MapPost(RefreshSchedule, "schedule/sync")
@@ -62,7 +63,68 @@ public sealed class Operations : IEndpointGroup
                 "Flow cũ của operation_schedule_entries đã bỏ. FE KHONG dung endpoint nay de bao delay.",
                 "Delay dung API trip: POST /api/trips/{id}/delay/start va POST /api/trips/{id}/delay/resume.",
                 "Sau khi resume, BE tu cap nhat adjusted time, day chuyen cac trip sau va gui notification cho customer."));
+
+        groupBuilder.MapPost(PreviewBoatReplan, "replan/preview")
+            .RequireAuthorization()
+            .WithSummary("Xem trước phương án điều phối lại tàu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc Manager",
+                null,
+                "Body: incidentId hoặc sourceTripId, replacementAvailableAt là thời điểm tàu thay thế dự kiến sẵn sàng.",
+                "BE trả candidates và affectedTrips, gồm chuyến xung đột của cả tàu cũ và tàu được đề xuất.",
+                "Preview không thay đổi dữ liệu; Admin phải gọi replan/confirm để áp dụng."));
+
+        groupBuilder.MapPost(ConfirmBoatReplan, "replan/confirm")
+            .RequireAuthorization()
+            .WithSummary("Xác nhận điều phối lại tàu và lịch chuyến")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc Manager",
+                null,
+                "Body gửi sourceTripId, replacementBoatId, replacementAvailableAt và decisions lấy từ affectedTrips của preview.",
+                "action của decision: Keep | ReplaceBoat | Delay | Cancel.",
+                "BE kiểm tra lại xung đột, thay tàu, cập nhật delay/hủy trong một transaction rồi mới gửi notification realtime.",
+                "GPS không cần gọi để xác nhận phương án; GPS chỉ cập nhật actual time sau đó."));
     }
+
+    private static async Task<IResult> PreviewBoatReplan(
+        ISender sender,
+        BoatReplanPreviewRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new PreviewBoatReplanQuery(
+                request.IncidentId,
+                request.SourceTripId,
+                request.ReplacementAvailableAt,
+                request.ReplacementBoatId),
+            cancellationToken));
+
+    private static async Task<IResult> ConfirmBoatReplan(
+        ISender sender,
+        ConfirmBoatReplanRequest request,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new ConfirmBoatReplanCommand(
+                request.IncidentId,
+                request.SourceTripId,
+                request.ReplacementBoatId,
+                request.ReplacementAvailableAt,
+                request.Decisions ?? [],
+                request.Reason),
+            cancellationToken));
+
+    public sealed record BoatReplanPreviewRequest(
+        Guid? IncidentId = null,
+        Guid? SourceTripId = null,
+        DateTimeOffset? ReplacementAvailableAt = null,
+        Guid? ReplacementBoatId = null);
+
+    public sealed record ConfirmBoatReplanRequest(
+        Guid? IncidentId,
+        Guid SourceTripId,
+        Guid ReplacementBoatId,
+        DateTimeOffset ReplacementAvailableAt,
+        IReadOnlyList<BoatReplanTripDecision>? Decisions = null,
+        string? Reason = null);
 
     private static async Task<IResult> GetSchedule(
         ISender sender,

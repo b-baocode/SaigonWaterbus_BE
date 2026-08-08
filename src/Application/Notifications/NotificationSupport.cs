@@ -1,5 +1,6 @@
 using System.Globalization;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Reviews;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -18,6 +19,27 @@ public static class NotificationTypes
     public const string IncidentDispatched = "incident_dispatched";
     public const string IncidentProgress = "incident_progress";
     public const string IncidentResolved = "incident_resolved";
+    public const string StaffAssignmentCreated = "staff_assignment_created";
+    public const string StaffAssignmentReplaced = "staff_assignment_replaced";
+    public const string StaffShiftStarting = "staff_shift_starting";
+    public const string StaffShiftEnding = "staff_shift_ending";
+    public const string StaffTripUpcoming = "staff_trip_upcoming";
+    public const string StaffTripArriving = "staff_trip_arriving";
+    public const string StaffTripDeparted = "staff_trip_departed";
+    public const string StaffTripArrived = "staff_trip_arrived";
+    public const string StaffTripCompleted = "staff_trip_completed";
+    public const string StaffTripCancelled = "staff_trip_cancelled";
+    public const string StaffPassengerBoarded = "staff_passenger_boarded";
+    public const string StaffPassengerAlighted = "staff_passenger_alighted";
+    public const string OperationsTripBoarding = "operations_trip_boarding";
+    public const string OperationsTripDeparted = "operations_trip_departed";
+    public const string OperationsTripCompleted = "operations_trip_completed";
+    public const string OperationsTripCancelled = "operations_trip_cancelled";
+    public const string OperationsTripDelayed = "operations_trip_delayed";
+    public const string TripReplanned = "trip_replanned";
+    public const string StaffTripReplanned = "staff_trip_replanned";
+    public const string OperationsTripReplanned = "operations_trip_replanned";
+    public const string OperationsReplanRequired = "operations_replan_required";
 }
 
 public static class NotificationRelatedEntityTypes
@@ -26,10 +48,34 @@ public static class NotificationRelatedEntityTypes
     public const string Incident = "incident";
     public const string Trip = "trip";
     public const string Promotion = "promotion";
+    public const string StaffAssignment = "staff_assignment";
 }
 
 public static class NotificationSupport
 {
+    public static Notification AddStaffAssignmentNotification(
+        IApplicationDbContext context,
+        Guid staffUserId,
+        Guid assignmentId,
+        string title,
+        string body,
+        string type,
+        DateTimeOffset now)
+    {
+        var notification = new Notification
+        {
+            UserId = staffUserId,
+            Title = title,
+            Body = body,
+            Type = type,
+            RelatedEntityType = NotificationRelatedEntityTypes.StaffAssignment,
+            RelatedEntityId = assignmentId,
+            CreatedAt = now
+        };
+        context.Set<Notification>().Add(notification);
+        return notification;
+    }
+
     /// <summary>
     /// Push realtime các notification ĐÃ được SaveChanges thành công. Gọi sau save để
     /// client không nhận sự kiện cho bản ghi chưa/không tồn tại.
@@ -167,9 +213,9 @@ public static class NotificationSupport
     }
 
     /// <summary>
-    /// Chuyến vừa chuyển sang Completed → mời khách có booking Confirmed/Completed trên chuyến
-    /// vào đánh giá. RelatedEntity là trip để client mở thẳng màn đánh giá chuyến đó; dedup theo
-    /// (user, trip) nên chuyến bị đổi trạng thái qua lại không bắn trùng. Caller chịu trách nhiệm SaveChanges.
+    /// Chuyến vừa chuyển sang Completed → mời khách đánh giá khi toàn bộ booking đã hoàn tất.
+    /// Booking khứ hồi chờ cả chiều đi và chiều về Completed; dedup theo (user, booking).
+    /// Caller chịu trách nhiệm SaveChanges.
     /// </summary>
     public static async Task<IReadOnlyList<Notification>> AddTripCompletedReviewInviteNotificationsAsync(
         IApplicationDbContext context,
@@ -183,43 +229,60 @@ public static class NotificationSupport
             return [];
         }
 
-        var userIds = await context.Set<Booking>()
+        var bookings = await context.Set<Booking>()
+            .Include(b => b.Trip!)
+            .Include(b => b.ReturnTrip!)
+            .Include(b => b.Passengers)
+                .ThenInclude(p => p.Trip!)
+            .Include(b => b.CharterBoats)
+                .ThenInclude(cb => cb.Trip!)
             .Where(b => b.UserId != null
                 && (b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Completed)
                 && (b.TripId == trip.Id
                     || b.ReturnTripId == trip.Id
                     || b.Passengers.Any(p => p.TripId == trip.Id)
+                    || b.CharterBoats.Any(cb => cb.TripId == trip.Id)
                     || (trip.SourceBookingId != null && b.Id == trip.SourceBookingId)))
-            .Select(b => b.UserId!.Value)
-            .Distinct()
             .ToListAsync(cancellationToken);
-        if (userIds.Count == 0)
+
+        var reviewableBookings = bookings
+            .Where(ReviewSupport.IsServiceCompleted)
+            .ToList();
+        if (reviewableBookings.Count == 0)
         {
             return [];
         }
 
-        var alreadyInvitedUserIds = await context.Set<Notification>()
+        var bookingIds = reviewableBookings.Select(b => b.Id).ToList();
+        var alreadyInvitedBookingIds = await context.Set<Notification>()
             .Where(n => n.Type == NotificationTypes.TripCompleted
-                && n.RelatedEntityId == trip.Id
-                && userIds.Contains(n.UserId))
-            .Select(n => n.UserId)
+                && n.RelatedEntityType == NotificationRelatedEntityTypes.Booking
+                && n.RelatedEntityId.HasValue
+                && bookingIds.Contains(n.RelatedEntityId.Value))
+            .Select(n => n.RelatedEntityId!.Value)
+            .ToListAsync(cancellationToken);
+        var reviewedBookingIds = await context.Set<Review>()
+            .Where(r => r.BookingId.HasValue
+                && bookingIds.Contains(r.BookingId.Value))
+            .Select(r => r.BookingId!.Value)
             .ToListAsync(cancellationToken);
 
         var tripLabel = DescribeTrip(trip);
         var departureText = FormatVietnamTime(trip.DepartureTime);
-        var body = $"{tripLabel} khởi hành lúc {departureText} đã hoàn thành. "
-            + "Hãy đánh giá trải nghiệm để giúp chúng tôi phục vụ tốt hơn.";
         var created = new List<Notification>();
-        foreach (var userId in userIds.Except(alreadyInvitedUserIds))
+        foreach (var booking in reviewableBookings
+            .Where(b => !alreadyInvitedBookingIds.Contains(b.Id)
+                && !reviewedBookingIds.Contains(b.Id)))
         {
             var notification = new Notification
             {
-                UserId = userId,
+                UserId = booking.UserId!.Value,
                 Title = "Đánh giá chuyến đi của bạn",
-                Body = body,
+                Body = $"Booking {booking.BookingCode} đã hoàn tất sau {tripLabel} khởi hành lúc {departureText}. "
+                    + "Hãy đánh giá trải nghiệm để giúp chúng tôi phục vụ tốt hơn.",
                 Type = NotificationTypes.TripCompleted,
-                RelatedEntityType = NotificationRelatedEntityTypes.Trip,
-                RelatedEntityId = trip.Id,
+                RelatedEntityType = NotificationRelatedEntityTypes.Booking,
+                RelatedEntityId = booking.Id,
                 CreatedAt = now
             };
             context.Set<Notification>().Add(notification);

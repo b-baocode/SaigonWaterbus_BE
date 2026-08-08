@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
@@ -34,15 +35,18 @@ public sealed class CheckInAllBookingTicketsCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CheckInAllBookingTicketsCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<BookingManifestDto> Handle(
@@ -137,6 +141,22 @@ public sealed class CheckInAllBookingTicketsCommandHandler
 
         await _context.SaveChangesAsync(cancellationToken);
 
+        var notifications = new List<Notification>();
+        foreach (var trip in ResolveTargetTrips(booking, activeTickets))
+        {
+            notifications.AddRange(await StaffTripNotificationSupport.AddPassengerScanNotificationsAsync(
+                _context,
+                trip.Id,
+                isCheckIn: true,
+                now,
+                cancellationToken));
+        }
+        await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            notifications,
+            cancellationToken);
+
         var refreshed = await BookingManifestSupport.GetByIdAsync(_context, booking.Id, cancellationToken);
         return BookingManifestSupport.ToDto(refreshed, now);
     }
@@ -186,15 +206,18 @@ public sealed class CheckOutAllBookingTicketsCommandHandler
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CheckOutAllBookingTicketsCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<BookingManifestDto> Handle(
@@ -275,6 +298,22 @@ public sealed class CheckOutAllBookingTicketsCommandHandler
         }
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        var notifications = new List<Notification>();
+        foreach (var trip in ResolveTargetTrips(booking, checkedInTickets))
+        {
+            notifications.AddRange(await StaffTripNotificationSupport.AddPassengerScanNotificationsAsync(
+                _context,
+                trip.Id,
+                isCheckIn: false,
+                now,
+                cancellationToken));
+        }
+        await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            notifications,
+            cancellationToken);
 
         var refreshed = await BookingManifestSupport.GetByIdAsync(_context, booking.Id, cancellationToken);
         return BookingManifestSupport.ToDto(refreshed, now);

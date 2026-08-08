@@ -34,6 +34,8 @@ public sealed record BoatDto(
     string? Description,
     SeatSetupType SeatSetupType,
     DateTimeOffset? MaintenanceStartedAt,
+    DateTimeOffset? EstimatedMaintenanceEndAt,
+    string? MaintenanceNote,
     bool DocumentsRequireRefresh,
     string OperatingStatus);
 

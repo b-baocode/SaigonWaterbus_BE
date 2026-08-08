@@ -334,6 +334,8 @@ internal static class BoatDocumentSupport
             && HasFreshInspectionAfterMaintenance(boat))
         {
             boat.Status = BoatStatus.Active;
+            boat.EstimatedMaintenanceEndAt = null;
+            boat.MaintenanceNote = null;
         }
     }
 

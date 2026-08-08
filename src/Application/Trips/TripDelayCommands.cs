@@ -69,17 +69,20 @@ public sealed class StartTripDelayCommandHandler
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly ITripDelayRealtimeNotifier _tripDelayRealtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public StartTripDelayCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        ITripDelayRealtimeNotifier? tripDelayRealtimeNotifier = null)
+        ITripDelayRealtimeNotifier? tripDelayRealtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _tripDelayRealtimeNotifier = tripDelayRealtimeNotifier ?? NullTripDelayRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<TripDelayActionResultDto> Handle(
@@ -127,6 +130,7 @@ public sealed class StartTripDelayCommandHandler
             return activeResult;
         }
 
+        var oldStatus = trip.TripStatus;
         trip.DelayStartedAt = now;
         trip.DelayEndedAt = null;
         trip.DelayStartStopOrder = startStopOrder;
@@ -134,7 +138,26 @@ public sealed class StartTripDelayCommandHandler
         trip.TripStatus = TripStatus.Delayed;
         trip.StatusNote = reason;
 
+        var staffNotifications = await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+            _context,
+            trip,
+            oldStatus,
+            now,
+            cancellationToken);
+        staffNotifications = staffNotifications
+            .Concat(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+                _context,
+                trip,
+                oldStatus,
+                now,
+                cancellationToken))
+            .ToList();
+
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            staffNotifications,
+            cancellationToken);
 
         var result = await TripDelayCommandSupport.BuildResultAsync(
             _context,
@@ -198,6 +221,7 @@ public sealed class ResumeTripDelayCommandHandler
         }
 
         var delayStartedAt = trip.DelayStartedAt.Value;
+        var oldStatus = trip.TripStatus;
         var activeDelayMinutes = Math.Max(
             1,
             (int)Math.Ceiling((now - delayStartedAt).TotalMinutes));
@@ -245,6 +269,18 @@ public sealed class ResumeTripDelayCommandHandler
                 now,
                 cancellationToken));
         }
+        notifications.AddRange(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+            _context,
+            trip,
+            oldStatus,
+            now,
+            cancellationToken));
+        notifications.AddRange(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+            _context,
+            trip,
+            oldStatus,
+            now,
+            cancellationToken));
 
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(
@@ -553,6 +589,12 @@ internal static class TripDelayCommandSupport
         {
             throw new ValidationException([new ValidationFailure("boat",
                 "Trip chưa gắn tàu nên không thể bấm delay.")]);
+        }
+
+        if (trip.Boat?.Status == BoatStatus.UnderMaintenance)
+        {
+            throw new ValidationException([new ValidationFailure("boat",
+                "Tàu đang bảo trì, không được kéo dài delay. Hãy dùng API replan để chọn tàu thay thế hoặc xác nhận hủy chuyến.")]);
         }
     }
 
