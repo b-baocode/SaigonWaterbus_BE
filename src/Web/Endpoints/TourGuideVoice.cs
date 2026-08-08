@@ -86,12 +86,12 @@ public sealed class TourGuideVoice : IEndpointGroup
     public static void Map(RouteGroupBuilder group)
     {
         group.MapPost(Ask, "ask")
-            .AllowAnonymous()
+            .RequireAuthorization()
             .DisableAntiforgery()
             .RequireRateLimiting(RateLimitPolicy)
             .WithSummary("Hoi huong dan vien bang giong noi (audio -> text tra loi)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
+                "Bearer token (khach da dang nhap)",
                 AskExample,
                 "Gui audio dang multipart/form-data. FE NEN encode WAV 16kHz mono bang AudioContext "
                 + "truoc khi gui: dinh dang MediaRecorder mac dinh (webm tren Chrome, mp4 tren iOS "
@@ -119,15 +119,18 @@ public sealed class TourGuideVoice : IEndpointGroup
                 "(khong co body)",
                 "FE goi luc khach bam 'Bat dau huong dan'. Azure F1/D1-Shared ngu sau vai phut va "
                 + "mat ~17s de day — voi hoi thoai giong noi thi khach se tuong app chet.",
-                "KHONG rate limit: request cuc re, ma chan no chinh la chan cai minh dang muon lam."))
+                "KHONG rate limit: request cuc re, ma chan no chinh la chan cai minh dang muon lam.",
+                "Van de ANONYMOUS trong khi /ask va /speak doi dang nhap: no khong doc/ghi gi ca, va "
+                + "FE goi no NGAY khi mo man de danh thuc server — bat token o day chi lam hong viec "
+                + "ham nong khi phien vua het han."))
             .Produces<PingResponse>();
 
         group.MapPost(Speak, "speak")
-            .AllowAnonymous()
+            .RequireAuthorization()
             .RequireRateLimiting(RateLimitPolicy)
             .WithSummary("Doc mot doan text thanh tieng (TTS)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
+                "Bearer token (khach da dang nhap)",
                 SpeakExample,
                 "Tra ve audio/mpeg (mp3) chu khong phai JSON.",
                 $"text toi da {MaxSpeakCharacters} ky tu.",
