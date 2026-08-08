@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260808073943_AddChatConversationBookingDraft")]
+    partial class AddChatConversationBookingDraft
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1542,10 +1545,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("description");
 
-                    b.Property<int?>("EstimatedTowingMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("estimated_towing_minutes");
-
                     b.Property<int>("FuturePassengerCountSnapshot")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("integer")
@@ -1558,14 +1557,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(50)")
                         .HasColumnName("incident_type");
 
-                    b.Property<string>("MissionStatus")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasDefaultValue("IncidentCreated")
-                        .HasColumnName("mission_status");
-
                     b.Property<DateTimeOffset>("OccurredAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("occurred_at");
@@ -1575,14 +1566,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("integer")
                         .HasDefaultValue(0)
                         .HasColumnName("onboard_passenger_count_snapshot");
-
-                    b.Property<DateTimeOffset?>("PassengerTransferCompletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("passenger_transfer_completed_at");
-
-                    b.Property<DateTimeOffset?>("ReplacementArrivedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("replacement_arrived_at");
 
                     b.Property<DateTimeOffset?>("ReplacementAssignedAt")
                         .HasColumnType("timestamp with time zone")
@@ -1631,10 +1614,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("reported_by_user_id");
 
-                    b.Property<DateTimeOffset?>("RescueArrivedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("rescue_arrived_at");
-
                     b.Property<Guid?>("RescueBoatId")
                         .HasColumnType("uuid")
                         .HasColumnName("rescue_boat_id");
@@ -1671,14 +1650,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(30)")
                         .HasColumnName("severity");
 
-                    b.Property<DateTimeOffset?>("TowingCompletedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("towing_completed_at");
-
-                    b.Property<DateTimeOffset?>("TowingStartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("towing_started_at");
-
                     b.Property<Guid?>("TripId")
                         .HasColumnType("uuid")
                         .HasColumnName("trip_id");
@@ -1688,8 +1659,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("AssignedByUserId");
 
                     b.HasIndex("AssignedManagerId");
-
-                    b.HasIndex("MissionStatus");
 
                     b.HasIndex("ReplacementAssignedByUserId");
 
@@ -1710,100 +1679,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("BoatId", "ResolutionStatus");
 
                     b.ToTable("incidents", (string)null);
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.IncidentMissionEvent", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("incident_mission_event_id");
-
-                    b.Property<string>("BoatCode")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("boat_code");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at");
-
-                    b.Property<int?>("EstimatedTowingMinutes")
-                        .HasColumnType("integer")
-                        .HasColumnName("estimated_towing_minutes");
-
-                    b.Property<string>("Event")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("event");
-
-                    b.Property<string>("GpsEventId")
-                        .IsRequired()
-                        .HasMaxLength(100)
-                        .HasColumnType("character varying(100)")
-                        .HasColumnName("gps_event_id");
-
-                    b.Property<Guid>("IncidentId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("incident_id");
-
-                    b.Property<decimal?>("Latitude")
-                        .HasColumnType("numeric(10,7)")
-                        .HasColumnName("latitude");
-
-                    b.Property<decimal?>("Longitude")
-                        .HasColumnType("numeric(10,7)")
-                        .HasColumnName("longitude");
-
-                    b.Property<string>("MissionStatus")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("mission_status");
-
-                    b.Property<string>("Note")
-                        .HasMaxLength(1000)
-                        .HasColumnType("character varying(1000)")
-                        .HasColumnName("note");
-
-                    b.Property<DateTimeOffset>("OccurredAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("occurred_at");
-
-                    b.Property<string>("PreviousMissionStatus")
-                        .IsRequired()
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("previous_mission_status");
-
-                    b.Property<string>("ReportedPreviousMissionStatus")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("reported_previous_mission_status");
-
-                    b.Property<string>("StationCode")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("station_code");
-
-                    b.Property<Guid?>("StationId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("station_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("Event");
-
-                    b.HasIndex("OccurredAt");
-
-                    b.HasIndex("StationId");
-
-                    b.HasIndex("IncidentId", "GpsEventId")
-                        .IsUnique();
-
-                    b.ToTable("incident_mission_events", (string)null);
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.InsurancePackage", b =>
@@ -4369,24 +4244,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Navigation("Trip");
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.IncidentMissionEvent", b =>
-                {
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Incident", "Incident")
-                        .WithMany("MissionEvents")
-                        .HasForeignKey("IncidentId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("SaigonWaterbus.Domain.Entities.Station", "Station")
-                        .WithMany()
-                        .HasForeignKey("StationId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.Navigation("Incident");
-
-                    b.Navigation("Station");
-                });
-
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.KnowledgeEntry", b =>
                 {
                     b.HasOne("SaigonWaterbus.Domain.Entities.User", "Author")
@@ -4819,11 +4676,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.GpsTrackingSession", b =>
                 {
                     b.Navigation("TrackPoints");
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Incident", b =>
-                {
-                    b.Navigation("MissionEvents");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.Landmark", b =>

@@ -183,6 +183,16 @@ public sealed class Bookings : IEndpointGroup
                 "bookingStatus sau khi tao: PendingPayment; ghe duoc giu toi da 15 phut, nhung holdExpiresAt khong vuot gio dong ban cua chang (gio tau roi ben len - 10 phut). Qua han booking tu Expired va nha ghe ca 2 chieu.",
                 "Tra ve 400 neu ghe da bi dat hoac dang duoc nguoi khac tam giu (race condition)."));
 
+        group.MapPost(PreviewBooking, "preview")
+            .RequireAuthorization()
+            .WithSummary("Kiem tra va tinh gia booking truoc khi tao")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                CreateBookingExample,
+                "Validate chuyến, ghế, hành khách, bảo hiểm và mã khuyến mãi nhưng không tạo booking, không giữ ghế.",
+                "Response trả về subtotal/discount/total, line items và holdExpiresAt dự kiến.",
+                "Luôn kiểm tra lại lần cuối khi POST /api/bookings vì ghế và giá có thể thay đổi."));
+
         group.MapGet(LookupCounterBookingCustomer, "counter/customers/lookup")
             .RequireAuthorization()
             .WithSummary("Tra cuu tai khoan khach hang tai quay")
@@ -226,6 +236,10 @@ public sealed class Bookings : IEndpointGroup
 
     private static async Task<IResult> CreateBooking(
         ISender sender, CreateBookingCommand command, CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> PreviewBooking(
+        ISender sender, PreviewBookingCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
 
     private static async Task<IResult> CreateCounterBooking(
