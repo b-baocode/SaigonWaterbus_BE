@@ -36,13 +36,15 @@ public sealed class TourGuideVoice : IEndpointGroup
     private const string AskExample =
         """
         multipart/form-data:
-          audio            = <file WAV 16kHz mono, <= 15s>
-          latitude         = 10.775
-          longitude        = 106.705
-          heading          = 45
-          currentLandmark  = Bến Bạch Đằng
-          history          = [{"role":"user","text":"..."},{"role":"assistant","text":"..."}]
-          language         = VN
+          audio             = <file WAV 16kHz mono, <= 15s>
+          tripId            = 3f2a...  (chuyen khach dang di)
+          latitude          = 10.775
+          longitude         = 106.705
+          heading           = 45
+          currentLandmarkId = 8b1c...  (dia danh dang thuyet minh)
+          currentLandmark   = Bến Bạch Đằng
+          history           = [{"role":"user","text":"..."},{"role":"assistant","text":"..."}]
+          language          = VN
         """;
 
     /// <summary>
@@ -95,8 +97,15 @@ public sealed class TourGuideVoice : IEndpointGroup
                 + "truoc khi gui: dinh dang MediaRecorder mac dinh (webm tren Chrome, mp4 tren iOS "
                 + "Safari) khong provider STT nao nhan duoc ca hai.",
                 $"Gioi han {MaxAudioBytes / 1024}KB moi lan goi.",
+                "tripId cho tro ly biet tuyen, cac ben con lai, ben ke tiep va gio den — thieu no thi "
+                + "khong tra loi duoc \"bao lau nua toi noi\", \"con ghe ben nao\".",
                 "latitude/longitude/heading la vi tri tau luc khach hoi — thieu thi tro ly khong tra "
-                + "loi duoc cau hoi ve canh vat xung quanh, nhung van tra loi duoc lich tau/gia ve.",
+                + "loi duoc cau hoi ve canh vat xung quanh, nhung van tra loi duoc lich tau/gia ve. "
+                + "Bo trong ma co tripId thi he thong tu lay ban tin GPS moi nhat cua chuyen.",
+                "currentLandmarkId la dia danh dang thuyet minh — de khach hoi tiep \"ke them ve cho "
+                + "do di\". Uu tien gui id thay vi ten (currentLandmark) de lay dung loi da duyet.",
+                "tripId/currentLandmarkId sai hoac khong ton tai thi van tra loi binh thuong, chi "
+                + "mat phan ngu canh do — khong tra loi loi.",
                 "heardSpeech = false nghia la khong nghe ra tieng noi nao; FE nen nhac khach noi lai "
                 + "va DUNG ghi luot nay vao lich su hoi thoai.",
                 "Khong sinh audio o day — goi tiep /api/tour-guide/speak voi replyText."))
@@ -139,6 +148,10 @@ public sealed class TourGuideVoice : IEndpointGroup
         [FromForm] string? currentLandmark,
         [FromForm] string? history,
         [FromForm] string? language,
+        // Guid cũng nhận dạng chuỗi, cùng lý do với toạ độ: `-F 'tripId='` mà khai Guid? thì
+        // binder ném 400 body rỗng trước khi vào handler.
+        [FromForm] string? tripId,
+        [FromForm] string? currentLandmarkId,
         CancellationToken ct)
     {
         if (audio.Length == 0)
@@ -174,6 +187,14 @@ public sealed class TourGuideVoice : IEndpointGroup
             });
         }
 
+        if (!TryParseId(tripId, out var trip) || !TryParseId(currentLandmarkId, out var landmark))
+        {
+            return Results.BadRequest(new
+            {
+                error = "tripId/currentLandmarkId phai la GUID. Bo trong neu khong co.",
+            });
+        }
+
         TourGuideAnswer answer;
         try
         {
@@ -186,7 +207,9 @@ public sealed class TourGuideVoice : IEndpointGroup
                     head,
                     currentLandmark,
                     turns,
-                    language),
+                    language,
+                    trip,
+                    landmark),
                 ct);
         }
         catch (Exception ex) when (ex is NotSupportedException or SpeechRequestException)
@@ -286,6 +309,24 @@ public sealed class TourGuideVoice : IEndpointGroup
         }
 
         if (double.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed))
+        {
+            value = parsed;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>Rỗng = không gửi (hợp lệ). Xem ghi chú ở <see cref="TryParseCoordinate"/>.</summary>
+    private static bool TryParseId(string? raw, out Guid? value)
+    {
+        value = null;
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (Guid.TryParse(raw, out var parsed))
         {
             value = parsed;
             return true;

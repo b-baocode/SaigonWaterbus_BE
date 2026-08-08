@@ -177,9 +177,25 @@ public sealed class GeminiChatCompletionService : IChatCompletionService
 
         foreach (var part in parts.EnumerateArray())
         {
+            // Part suy nghĩ (thought=true) KHÔNG phải câu trả lời: model thinking trả kèm phần
+            // nháp "khách đang hỏi..., nhớ quy tắc...". Ghép nhầm vào là khách đọc được — mà ở
+            // hướng dẫn viên giọng nói thì còn bị ĐỌC LÊN thành tiếng.
+            if (part.TryGetProperty("thought", out var thought)
+                && thought.ValueKind == JsonValueKind.True)
+            {
+                continue;
+            }
+
+            // LẤY PART TEXT CUỐI CÙNG, KHÔNG NỐI HẾT LẠI. Khi model trả nhiều part text thì
+            // các part trước là bản nháp ("Khách đang hỏi..., theo quy tắc...") và part cuối mới
+            // là câu nói với khách — đo thật 2026-08-08 trên gemini-flash-lite-latest. Nối hết
+            // lại là đọc cả bản nháp lên cho khách nghe.
+            //
+            // Dấu hiệu nhận ra ở dữ liệu thật: chỗ nối thiếu hẳn dấu cách ("...thông tin chuyến
+            // tàu.Dạ anh chị..."), và chỉ part cuối mang thoughtSignature.
             if (part.TryGetProperty("text", out var textElement))
             {
-                text = (text ?? string.Empty) + textElement.GetString();
+                text = textElement.GetString();
             }
             else if (part.TryGetProperty("functionCall", out var functionCall))
             {

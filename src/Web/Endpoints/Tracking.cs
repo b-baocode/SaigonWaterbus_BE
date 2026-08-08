@@ -201,6 +201,7 @@ public sealed class Tracking : IEndpointGroup
                 speedKmh,
                 activeIncident,
                 responseCache,
+                UseScopedLocationBroadcast(configuration),
                 cancellationToken);
         }
 
@@ -545,6 +546,7 @@ public sealed class Tracking : IEndpointGroup
                 trackingHubContext,
                 logger,
                 latestLocation,
+                UseScopedLocationBroadcast(configuration),
                 cancellationToken);
         }
 
@@ -577,6 +579,7 @@ public sealed class Tracking : IEndpointGroup
         decimal? speedKmh,
         ActiveIncidentTrackingDto? activeIncident,
         IEndpointResponseCache responseCache,
+        bool scopedLocationBroadcast,
         CancellationToken cancellationToken)
     {
         var direction = NormalizeOptionalText(request.Direction);
@@ -829,6 +832,7 @@ public sealed class Tracking : IEndpointGroup
                 trackingHubContext,
                 logger,
                 latestLocation,
+                scopedLocationBroadcast,
                 cancellationToken);
         }
 
@@ -1961,15 +1965,35 @@ public sealed class Tracking : IEndpointGroup
             incident.ReplacementBoatId,
             incident.ReplacementBoat?.Name);
 
+    /// <summary>
+    /// "boat" = chỉ gửi cho client đã gọi JoinBoat của đúng tàu đó; mọi giá trị khác (mặc định)
+    /// giữ nguyên cách cũ là gửi cho tất cả.
+    ///
+    /// Mặc định vẫn là "all" vì web đang có màn hình nghe bản tin của MỌI tàu mà không join
+    /// nhóm nào — bật "boat" trước khi web chuyển xong là những màn đó đứng hình. Cái đáng bật
+    /// là app mobile: mỗi giây một bản tin của từng tàu trong hệ thống chảy qua 4G và pin của
+    /// khách, trong khi họ chỉ cần đúng con tàu đang ngồi.
+    /// </summary>
+    private static bool UseScopedLocationBroadcast(IConfiguration configuration) =>
+        string.Equals(
+            configuration["Tracking:LocationBroadcastScope"],
+            "boat",
+            StringComparison.OrdinalIgnoreCase);
+
     private static async Task PublishBoatLocationAsync(
         IHubContext<TrackingHub> trackingHubContext,
         ILogger logger,
         BoatLatestLocationDto payload,
+        bool scopedToBoat,
         CancellationToken cancellationToken)
     {
         try
         {
-            await trackingHubContext.Clients.All.SendAsync(
+            var target = scopedToBoat
+                ? trackingHubContext.Clients.Group(TrackingHub.BoatGroupName(payload.BoatId))
+                : trackingHubContext.Clients.All;
+
+            await target.SendAsync(
                 TrackingHub.BoatLocationEventName,
                 payload,
                 cancellationToken);

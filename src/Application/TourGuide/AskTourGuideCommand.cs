@@ -22,11 +22,22 @@ public sealed record TourGuideAnswer(string Transcript, string ReplyText, bool H
 /// riêng để FE hiện phụ đề ngay khi có text, và để TTS hỏng thì vẫn còn chữ mà đọc.
 /// Xem CSDocument/tour-guide-voice-plan.md.
 /// </summary>
-/// <param name="Latitude">Vị trí tàu lúc khách hỏi — cần để trả lời "toà nhà kia là gì".</param>
+/// <param name="Latitude">
+/// Vị trí tàu lúc khách hỏi — cần để trả lời "toà nhà kia là gì". Bỏ trống mà có
+/// <paramref name="TripId"/> thì lấy bản tin GPS mới nhất của chuyến.
+/// </param>
 /// <param name="Heading">Hướng mũi tàu (độ, 0 = Bắc). Không có thì không nói trái/phải được.</param>
+/// <param name="TripId">
+/// Chuyến khách đang đi. Không có nó thì hướng dẫn viên không biết tàu này chạy tuyến nào, còn
+/// ghé bến nào, mấy giờ tới nơi — mà đó là những câu hỏi thường gặp nhất trên tàu.
+/// </param>
+/// <param name="CurrentLandmarkId">
+/// Địa danh đang/vừa được thuyết minh. Chính xác hơn <paramref name="CurrentLandmarkName"/> vì
+/// hệ thống lấy được đúng lời mô tả đã duyệt thay vì để model tự nhớ.
+/// </param>
 /// <param name="CurrentLandmarkName">
 /// Địa danh đang/vừa được thuyết minh, nếu có. Cho phép khách hỏi tiếp "kể thêm về chỗ đó đi"
-/// mà không phải nói lại tên.
+/// mà không phải nói lại tên. Chỉ dùng khi client không có sẵn id.
 /// </param>
 public sealed record AskTourGuideCommand(
     byte[] Audio,
@@ -36,7 +47,9 @@ public sealed record AskTourGuideCommand(
     double? Heading = null,
     string? CurrentLandmarkName = null,
     IReadOnlyList<TourGuideTurn>? History = null,
-    string? Language = null) : IRequest<TourGuideAnswer>;
+    string? Language = null,
+    Guid? TripId = null,
+    Guid? CurrentLandmarkId = null) : IRequest<TourGuideAnswer>;
 
 public sealed class AskTourGuideCommandValidator : AbstractValidator<AskTourGuideCommand>
 {
@@ -68,17 +81,20 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
 
     private readonly ISpeechToTextService _speechToText;
     private readonly AssistantConversationRunner _runner;
+    private readonly TourGuideContextReader _contextReader;
     private readonly ISender _sender;
     private readonly TimeProvider _timeProvider;
 
     public AskTourGuideCommandHandler(
         ISpeechToTextService speechToText,
         AssistantConversationRunner runner,
+        TourGuideContextReader contextReader,
         ISender sender,
         TimeProvider timeProvider)
     {
         _speechToText = speechToText;
         _runner = runner;
+        _contextReader = contextReader;
         _sender = sender;
         _timeProvider = timeProvider;
     }
@@ -117,7 +133,9 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
 
         messages.Add(ChatMessage.FromUser(transcript));
 
-        var result = await _runner.RunAsync(BuildSystemPrompt(request), messages, cancellationToken);
+        var context = await ResolveContextAsync(request, cancellationToken);
+        var result = await _runner.RunAsync(
+            BuildSystemPrompt(request, context), messages, cancellationToken);
 
         // Câu lỗi phải NGẮN: nó sẽ được đọc lên thành tiếng, không phải hiện trong khung chat.
         var reply = result.Status switch
@@ -162,19 +180,78 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
         }
     }
 
+    /// <summary>Ngữ cảnh đã gộp từ những gì client gửi và những gì hệ thống tra được.</summary>
+    private sealed record ResolvedContext(
+        double? Latitude,
+        double? Longitude,
+        double? Heading,
+        string? TripBlock,
+        string? LandmarkName,
+        string? LandmarkDescription);
+
+    /// <summary>
+    /// TOẠ ĐỘ: ưu tiên số client gửi (mới nhất, không phải chờ bản tin GPS kế tiếp), thiếu thì
+    /// lấy vị trí tàu của chuyến — nhờ vậy app chỉ cần gửi tripId là hỏi được "quanh đây có gì".
+    ///
+    /// Tra hỏng thì bỏ ngữ cảnh chứ không làm chết lượt hỏi: mất phần lịch trình vẫn hơn là
+    /// khách bấm mic rồi không nghe được gì.
+    /// </summary>
+    private async Task<ResolvedContext> ResolveContextAsync(
+        AskTourGuideCommand request, CancellationToken cancellationToken)
+    {
+        TourGuideTripContext? trip = null;
+        TourGuideLandmarkContext? landmark = null;
+
+        try
+        {
+            if (request.TripId is { } tripId)
+            {
+                trip = await _contextReader.ReadTripAsync(tripId, cancellationToken);
+            }
+
+            if (request.CurrentLandmarkId is { } landmarkId)
+            {
+                landmark = await _contextReader.ReadLandmarkAsync(landmarkId, cancellationToken);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            // bỏ qua — xem ghi chú trên.
+        }
+
+        var hasClientPosition = request.Latitude is not null && request.Longitude is not null;
+
+        return new ResolvedContext(
+            hasClientPosition ? request.Latitude : trip?.Position?.Latitude,
+            hasClientPosition ? request.Longitude : trip?.Position?.Longitude,
+            // Hướng thì lấy được từ đâu cũng dùng: app hiếm khi có la bàn, mà hướng mũi tàu đổi
+            // chậm hơn vị trí nhiều nên bản tin GPS vẫn còn đúng.
+            request.Heading ?? trip?.Position?.Heading,
+            trip?.PromptBlock,
+            landmark?.Name ?? request.CurrentLandmarkName,
+            landmark?.Description);
+    }
+
     private static TourGuideAnswer NotHeard() =>
         new(string.Empty, "Mình chưa nghe rõ, bạn nói lại giúp mình nhé.", HeardSpeech: false);
 
-    private string BuildSystemPrompt(AskTourGuideCommand request)
+    private string BuildSystemPrompt(AskTourGuideCommand request, ResolvedContext context)
     {
         var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime.AddHours(7));
         var languageInstruction = AssistantLanguage.PromptInstruction(
             AssistantLanguage.Resolve(request.Language));
 
-        // Có toạ độ = khách đang đi tàu thật → vào vai hướng dẫn viên. Không có toạ độ = khách
-        // đang hỏi từ khung chat ở nhà → chỉ là trợ lý nói chuyện bằng giọng, đừng vào vai
-        // hướng dẫn viên "trên tàu" vì nghe rất vô lý.
-        var persona = request.Latitude is not null && request.Longitude is not null
+        // Có toạ độ HOẶC có chuyến = khách đang đi tàu thật → vào vai hướng dẫn viên. Không có
+        // gì cả = khách đang hỏi từ khung chat ở nhà → chỉ là trợ lý nói chuyện bằng giọng,
+        // đừng vào vai hướng dẫn viên "trên tàu" vì nghe rất vô lý.
+        var onBoard = (context.Latitude is not null && context.Longitude is not null)
+            || context.TripBlock is not null;
+
+        var persona = onBoard
             ? """
               Bạn là hướng dẫn viên du lịch trên tàu buýt đường sông Waterbus tại TP.HCM. Khách
               đang NGỒI TRÊN TÀU và nói chuyện với bạn bằng giọng nói.
@@ -189,10 +266,14 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
         {persona}
         Câu trả lời của bạn sẽ được ĐỌC THÀNH TIẾNG cho khách nghe.
 
-        {BuildContextBlock(request)}
+        {context.TripBlock}
+        {BuildContextBlock(context)}
         Hôm nay là {today:yyyy-MM-dd} (giờ Việt Nam).
 
         CÁCH NÓI — quan trọng nhất, vì khách NGHE chứ không ĐỌC:
+        - CHỈ xuất đúng lời nói với khách. Không viết lại câu hỏi, không nhắc lại quy tắc trong
+          hướng dẫn này, không kể quá trình suy nghĩ hay giải thích vì sao chọn cách trả lời đó.
+          Toàn bộ những gì bạn xuất ra sẽ bị đọc thành tiếng nguyên văn.
         - Tối đa 3 câu. Ngắn, tự nhiên, như người thật đang đứng cạnh khách kể chuyện.
         - TUYỆT ĐỐI không dùng gạch đầu dòng, đánh số, dấu sao, emoji hay bất kỳ định dạng nào.
           Viết thành câu văn xuôi liền mạch.
@@ -236,9 +317,9 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
     /// Khối ngữ cảnh vị trí. Không có toạ độ thì nói rõ là không có, để model đừng gọi
     /// get_nearby_landmarks rồi tự bịa số toạ độ.
     /// </summary>
-    private static string BuildContextBlock(AskTourGuideCommand request)
+    private static string BuildContextBlock(ResolvedContext context)
     {
-        if (request.Latitude is null || request.Longitude is null)
+        if (context.Latitude is null || context.Longitude is null)
         {
             return """
                 VỊ TRÍ: không có. KHÔNG gọi get_nearby_landmarks và không đoán khách đang ở đâu.
@@ -248,20 +329,20 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
                 """;
         }
 
-        var latitude = request.Latitude.Value.ToString("F6", CultureInfo.InvariantCulture);
-        var longitude = request.Longitude.Value.ToString("F6", CultureInfo.InvariantCulture);
+        var latitude = context.Latitude.Value.ToString("F6", CultureInfo.InvariantCulture);
+        var longitude = context.Longitude.Value.ToString("F6", CultureInfo.InvariantCulture);
 
-        var heading = request.Heading is null
+        var heading = context.Heading is null
             ? "Không rõ hướng mũi tàu — không nói trái/phải với khách."
-            : $"Hướng mũi tàu: {request.Heading.Value.ToString("F0", CultureInfo.InvariantCulture)} độ "
+            : $"Hướng mũi tàu: {context.Heading.Value.ToString("F0", CultureInfo.InvariantCulture)} độ "
               + "(0 là hướng Bắc, 90 là hướng Đông).";
 
-        var landmark = string.IsNullOrWhiteSpace(request.CurrentLandmarkName)
+        var landmark = string.IsNullOrWhiteSpace(context.LandmarkName)
             ? string.Empty
             : $"""
 
-                Địa danh vừa thuyết minh: {request.CurrentLandmarkName}. Khách nói "chỗ đó", "nơi này",
-                "cái vừa nãy" nhiều khả năng là đang nhắc tới nó.
+                Địa danh vừa thuyết minh: {context.LandmarkName}. Khách nói "chỗ đó", "nơi này",
+                "cái vừa nãy" nhiều khả năng là đang nhắc tới nó.{DescribeLandmark(context)}
                 """;
 
         return $"""
@@ -271,4 +352,17 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
 
             """;
     }
+
+    /// <summary>
+    /// Lời thuyết minh đã DUYỆT của địa danh đang phát. Có sẵn ở đây thì khách hỏi "kể thêm về
+    /// chỗ đó" là trả lời được ngay, khỏi thêm một vòng gọi tool.
+    /// </summary>
+    private static string DescribeLandmark(ResolvedContext context) =>
+        string.IsNullOrWhiteSpace(context.LandmarkDescription)
+            ? string.Empty
+            : $"""
+
+                Lời thuyết minh của địa danh này (đã duyệt, chỉ được kể trong phạm vi nội dung sau):
+                {context.LandmarkDescription}
+                """;
 }
