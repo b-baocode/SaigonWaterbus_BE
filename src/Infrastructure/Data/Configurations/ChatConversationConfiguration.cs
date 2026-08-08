@@ -23,6 +23,10 @@ public sealed class ChatConversationConfiguration : IEntityTypeConfiguration<Cha
         builder.Property(x => x.CloseReason).HasColumnName("close_reason").HasMaxLength(30);
         builder.Property(x => x.RetentionExpiresAt).HasColumnName("retention_expires_at");
         builder.Property(x => x.AutoCloseMessageSentAt).HasColumnName("auto_close_message_sent_at");
+        builder.Property(x => x.BookingDraftJson)
+            .HasColumnName("booking_draft_json")
+            .HasColumnType("jsonb")
+            .IsRequired(false);
         builder.HasIndex(x => new { x.Status, x.InactivityDeadlineAt });
         builder.HasIndex(x => x.RetentionExpiresAt);
         builder.HasIndex(x => x.UserId);
