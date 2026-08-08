@@ -124,6 +124,7 @@ public sealed class TourGuideVoice : IEndpointGroup
 
         using var buffer = new MemoryStream();
         await audio.CopyToAsync(buffer, ct);
+        var normalizedAudioContentType = NormalizeAudioContentType(audio.ContentType);
 
         var turns = ParseHistory(history);
         if (turns is null)
@@ -137,7 +138,7 @@ public sealed class TourGuideVoice : IEndpointGroup
             answer = await sender.Send(
                 new AskTourGuideCommand(
                     buffer.ToArray(),
-                    audio.ContentType,
+                    normalizedAudioContentType,
                     latitude,
                     longitude,
                     heading,
@@ -167,6 +168,15 @@ public sealed class TourGuideVoice : IEndpointGroup
         }
 
         return Results.Ok(new AskResponse(answer.Transcript, answer.ReplyText, answer.HeardSpeech));
+    }
+
+    private static string NormalizeAudioContentType(string? contentType)
+    {
+        var bare = (contentType ?? string.Empty).Split(';')[0].Trim();
+        return bare.Equals("audio/vnd.wave", StringComparison.OrdinalIgnoreCase)
+            || bare.Equals("audio/vnd.wav", StringComparison.OrdinalIgnoreCase)
+            ? "audio/wav"
+            : bare;
     }
 
     private static async Task<IResult> Speak(

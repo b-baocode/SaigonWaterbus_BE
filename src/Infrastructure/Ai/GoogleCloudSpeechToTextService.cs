@@ -50,6 +50,7 @@ public sealed class GoogleCloudSpeechToTextService : ISpeechToTextService
             return string.Empty;
         }
 
+        EnsureSupportedFormat(request.ContentType);
         var projectId = ResolveProjectId();
 
         var config = new JsonObject
@@ -101,6 +102,33 @@ public sealed class GoogleCloudSpeechToTextService : ISpeechToTextService
         }
 
         return ParseTranscript(json);
+    }
+
+    /// <summary>
+    /// Cloud STT v2 đọc được các định dạng này với autoDecodingConfig. M4A/AAC từ iOS không
+    /// được provider hỗ trợ nên chặn sớm với thông báo rõ ràng cho client.
+    /// </summary>
+    private static readonly string[] SupportedMimeTypes =
+    [
+        "audio/wav", "audio/wave", "audio/x-wav", "audio/vnd.wave", "audio/vnd.wav",
+        "audio/mpeg", "audio/mp3",
+        "audio/ogg", "audio/opus",
+        "audio/webm",
+        "audio/flac", "audio/x-flac",
+    ];
+
+    private static void EnsureSupportedFormat(string? contentType)
+    {
+        var bare = (contentType ?? string.Empty).Split(';')[0].Trim();
+        if (SupportedMimeTypes.Contains(bare, StringComparer.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        throw new NotSupportedException(
+            $"Dinh dang audio '{bare}' khong doc duoc. Hay gui WAV (16kHz mono la tot nhat). "
+            + "Rieng m4a/aac cua iPhone khong duoc ho tro. Chap nhan: "
+            + string.Join(", ", SupportedMimeTypes) + ".");
     }
 
     /// <summary>

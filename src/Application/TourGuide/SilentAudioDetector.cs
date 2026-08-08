@@ -34,7 +34,9 @@ public static class SilentAudioDetector
         var bare = (contentType ?? string.Empty).Split(';')[0].Trim();
         if (!bare.Equals("audio/wav", StringComparison.OrdinalIgnoreCase)
             && !bare.Equals("audio/wave", StringComparison.OrdinalIgnoreCase)
-            && !bare.Equals("audio/x-wav", StringComparison.OrdinalIgnoreCase))
+            && !bare.Equals("audio/x-wav", StringComparison.OrdinalIgnoreCase)
+            && !bare.Equals("audio/vnd.wave", StringComparison.OrdinalIgnoreCase)
+            && !bare.Equals("audio/vnd.wav", StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }

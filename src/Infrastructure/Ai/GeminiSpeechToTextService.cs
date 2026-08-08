@@ -30,6 +30,8 @@ public sealed class GeminiSpeechToTextService : ISpeechToTextService
         ["audio/wav"] = "audio/wav",
         ["audio/wave"] = "audio/wav",
         ["audio/x-wav"] = "audio/wav",
+        ["audio/vnd.wave"] = "audio/wav",
+        ["audio/vnd.wav"] = "audio/wav",
         ["audio/mpeg"] = "audio/mp3",
         ["audio/mp3"] = "audio/mp3",
         ["audio/aac"] = "audio/aac",
