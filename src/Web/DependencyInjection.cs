@@ -34,9 +34,35 @@ public static class DependencyInjection
         "https://www.waterbus.top"
     ];
 
-    /// <summary>Khóa phân vùng rate limit: IP client thật (X-Forwarded-For sau proxy Azure).</summary>
+    /// <summary>
+    /// Khóa phân vùng rate limit, theo thứ tự ưu tiên: người dùng đã đăng nhập → thiết bị →
+    /// IP client thật (X-Forwarded-For sau proxy Azure).
+    ///
+    /// VÌ SAO KHÔNG DÙNG THẲNG IP: hướng dẫn viên giọng nói chạy trên tàu, cả khoang chung một
+    /// wifi hoặc chung NAT nhà mạng → chia theo IP là người thứ hai bấm mic đã ăn 429 trong khi
+    /// hạn mức của chính họ còn nguyên. Chia theo người/thiết bị mới đúng thứ đang muốn chặn
+    /// (một người gọi quá nhiều), IP chỉ là lưới cuối cho khách ẩn danh không gửi device id.
+    /// </summary>
     private static string ResolveClientKey(HttpContext context)
     {
+        var userId = context.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        if (!string.IsNullOrWhiteSpace(userId))
+        {
+            return $"user:{userId}";
+        }
+
+        // App mobile tự sinh một id ngẫu nhiên lúc cài và gửi kèm mọi request. Client giả mạo được
+        // header này, nhưng kẻ muốn lách hạn mức thì đổi IP cũng dễ ngang — cái được lớn hơn:
+        // khách thật đi chung tàu không chặn nhầm nhau.
+        var deviceId = context.Request.Headers["X-Device-Id"].FirstOrDefault();
+        if (!string.IsNullOrWhiteSpace(deviceId))
+        {
+            // Cắt ngắn: khoá phân vùng nằm trong bộ nhớ tiến trình, để client tự quyết độ dài là
+            // mở đường cho việc bơm header khổng lồ.
+            var trimmed = deviceId.Trim();
+            return $"device:{trimmed[..Math.Min(trimmed.Length, 64)]}";
+        }
+
         var forwarded = context.Request.Headers["X-Forwarded-For"].FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(forwarded))
         {
@@ -137,6 +163,12 @@ public static class DependencyInjection
         // Phân vùng theo IP client (ưu tiên X-Forwarded-For vì sau reverse proxy của Azure).
         var assistantPermit = builder.Configuration.GetValue<int?>("RateLimiting:AssistantChatPerWindow") ?? 8;
         var assistantWindowSeconds = builder.Configuration.GetValue<int?>("RateLimiting:AssistantChatWindowSeconds") ?? 60;
+
+        // Hướng dẫn viên bằng giọng nói: mỗi lượt tốn STT + LLM + TTS (chatbox chỉ tốn LLM),
+        // nên siết chặt hơn.
+        var tourGuideVoicePermit = builder.Configuration.GetValue<int?>("RateLimiting:TourGuideVoicePerWindow") ?? 5;
+        var tourGuideVoiceWindowSeconds = builder.Configuration.GetValue<int?>("RateLimiting:TourGuideVoiceWindowSeconds") ?? 60;
+
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -147,6 +179,15 @@ public static class DependencyInjection
                     {
                         PermitLimit = assistantPermit,
                         Window = TimeSpan.FromSeconds(assistantWindowSeconds),
+                        QueueLimit = 0,
+                    }));
+            options.AddPolicy(SaigonWaterbus.Web.Endpoints.TourGuideVoice.RateLimitPolicy, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: ResolveClientKey(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = tourGuideVoicePermit,
+                        Window = TimeSpan.FromSeconds(tourGuideVoiceWindowSeconds),
                         QueueLimit = 0,
                     }));
         });

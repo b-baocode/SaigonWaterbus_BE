@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -32,17 +33,20 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
     private readonly TimeProvider _timeProvider;
     private readonly IIncidentRealtimeNotifier _realtimeNotifier;
     private readonly IIncidentGpsHookNotifier _gpsHookNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CompleteRescueMissionCommandHandler(
         IApplicationDbContext context,
         TimeProvider timeProvider,
         IIncidentRealtimeNotifier? realtimeNotifier = null,
-        IIncidentGpsHookNotifier? gpsHookNotifier = null)
+        IIncidentGpsHookNotifier? gpsHookNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
         _gpsHookNotifier = gpsHookNotifier ?? NullIncidentGpsHookNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(
@@ -68,6 +72,8 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
         incident.ResolvedAt = completedAt;
         incident.ResolvedByUserId = null;
         incident.Resolver = null;
+        incident.MissionStatus = IncidentMissionStatuses.TowingCompleted;
+        incident.TowingCompletedAt ??= completedAt;
 
         if (incident.Boat.Status != BoatStatus.UnderMaintenance)
         {
@@ -84,8 +90,19 @@ public sealed class CompleteRescueMissionCommandHandler : IRequestHandler<Comple
         {
             incident.RescueBoat.Status = BoatStatus.Active;
         }
+        IncidentSupport.EnsureTripIsNotRunningOnMaintainedBoat(incident);
+
+        var createdNotifications = await NotificationSupport.AddIncidentResolvedNotificationsAsync(
+            _context,
+            incident,
+            completedAt,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            createdNotifications,
+            cancellationToken);
         await IncidentSupport.PublishGpsHookAsync(
             _context,
             _gpsHookNotifier,

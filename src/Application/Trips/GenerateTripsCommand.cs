@@ -243,6 +243,11 @@ internal sealed record GenerateTripsSchedulePlan(
     }
 }
 
+internal sealed record TripScheduleAttempt(
+    DateTimeOffset RequestedDepartureTime,
+    DateTimeOffset RequestedArrivalTime,
+    DateTimeOffset? EarliestAllowedDepartureTime);
+
 internal sealed class GenerateTripsSchedulePlanner
 {
     private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
@@ -388,8 +393,16 @@ internal sealed class GenerateTripsSchedulePlanner
                 ConflictArrivalTime: item.ConflictArrivalTime));
         }
 
-        async Task TryCreateTripAsync(DateOnly date, DateTimeOffset departureTime)
+        async Task<TripScheduleAttempt> TryCreateTripAsync(DateOnly date, DateTimeOffset departureTime)
         {
+            var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
+                routeStops,
+                departureTime,
+                stayDurationMinutesByStopOrder,
+                route.RouteType,
+                route.EstimatedDurationMin);
+            var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
+
             // Cùng chuẩn với tạo lẻ (phải trước giờ chạy tối thiểu theo TripScheduleSupport): không sinh chuyến
             // đã trôi qua hoặc quá sát giờ, nhưng batch thì skip đếm riêng thay vì fail cả lô.
             if (TripScheduleSupport.IsTooSoonToCreate(departureTime, now))
@@ -400,10 +413,10 @@ internal sealed class GenerateTripsSchedulePlanner
                     date,
                     route.RouteCode,
                     departureTime,
-                    RequestedArrivalTime: null,
+                    arrivalTime,
                     TripScheduleSupport.BuildTooSoonMessage(),
                     minimumDeparture));
-                return;
+                return new TripScheduleAttempt(departureTime, arrivalTime, minimumDeparture);
             }
 
             if (existingDepartures.Contains(departureTime))
@@ -413,19 +426,15 @@ internal sealed class GenerateTripsSchedulePlanner
                     date,
                     route.RouteCode,
                     departureTime,
-                    RequestedArrivalTime: null,
+                    arrivalTime,
                     "Tuyến đã có chuyến cùng giờ.",
                     departureTime.Add(TripScheduleSupport.BoatTurnaroundBuffer)));
-                return;
+                return new TripScheduleAttempt(
+                    departureTime,
+                    arrivalTime,
+                    departureTime.Add(TripScheduleSupport.BoatTurnaroundBuffer));
             }
 
-            var stopDrafts = TripStopScheduleSupport.BuildFromRouteStops(
-                routeStops,
-                departureTime,
-                stayDurationMinutesByStopOrder,
-                route.RouteType,
-                route.EstimatedDurationMin);
-            var arrivalTime = stopDrafts[^1].PlannedArrivalTime ?? departureTime;
             var requestedWindow = new TripScheduleSupport.BoatScheduleWindow(
                 "(new)",
                 departureTime,
@@ -459,7 +468,10 @@ internal sealed class GenerateTripsSchedulePlanner
                     stationConflict.Existing.TripCode,
                     stationConflict.Existing.DepartureTime,
                     ConflictArrivalTime: null));
-                return;
+                return new TripScheduleAttempt(
+                    departureTime,
+                    arrivalTime,
+                    stationConflict.EarliestAllowedDeparture);
             }
 
             // Tau da ban trong khung gio nay (ke ca chuyen vua sinh trong lo nay) -> bo qua.
@@ -485,7 +497,10 @@ internal sealed class GenerateTripsSchedulePlanner
                     conflict.Existing.TripCode,
                     conflict.Existing.DepartureTime,
                     conflict.Existing.ArrivalTime));
-                return;
+                return new TripScheduleAttempt(
+                    departureTime,
+                    arrivalTime,
+                    earliestAllowedDepartureTime);
             }
 
             if (!await OnBoardStaffTripSupport.HasRequiredOnBoardStaffAsync(
@@ -499,7 +514,10 @@ internal sealed class GenerateTripsSchedulePlanner
                     arrivalTime,
                     "Tàu thiếu nhân viên OnBoard trong khung giờ này.",
                     arrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer)));
-                return;
+                return new TripScheduleAttempt(
+                    departureTime,
+                    arrivalTime,
+                    arrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer));
             }
 
             var localDeparture = departureTime.ToOffset(VietnamOffset);
@@ -542,6 +560,42 @@ internal sealed class GenerateTripsSchedulePlanner
                 arrivalTime,
                 CanCreate: true,
                 TripCode: tripCode));
+
+            return new TripScheduleAttempt(departureTime, arrivalTime, null);
+        }
+
+        DateTimeOffset ResolveNextContinuousDeparture(TripScheduleAttempt attempt)
+        {
+            var requestedGap = TimeSpan.FromMinutes(request.IntervalMinutes!.Value);
+            var layover = requestedGap > TripScheduleSupport.BoatTurnaroundBuffer
+                ? requestedGap
+                : TripScheduleSupport.BoatTurnaroundBuffer;
+            var previousWindow = new TripScheduleSupport.BoatScheduleWindow(
+                "(continuous)",
+                attempt.RequestedDepartureTime,
+                attempt.RequestedArrivalTime,
+                routeStartStationId,
+                routeEndStationId,
+                routeStops);
+            var nextWindow = new TripScheduleSupport.BoatScheduleWindow(
+                "(continuous-next)",
+                attempt.RequestedArrivalTime,
+                attempt.RequestedArrivalTime,
+                routeStartStationId,
+                routeEndStationId,
+                routeStops);
+            var nextDeparture = TripStopScheduleSupport.RoundUpToWholeMinute(
+                attempt.RequestedArrivalTime
+                    .Add(layover)
+                    .Add(TripScheduleSupport.ResolveRepositionDuration(previousWindow, nextWindow)));
+
+            if (attempt.EarliestAllowedDepartureTime.HasValue
+                && attempt.EarliestAllowedDepartureTime.Value > nextDeparture)
+            {
+                return TripStopScheduleSupport.RoundUpToWholeMinute(attempt.EarliestAllowedDepartureTime.Value);
+            }
+
+            return nextDeparture;
         }
 
         for (var date = request.FromDate; date <= request.ToDate; date = date.AddDays(1))
@@ -572,13 +626,11 @@ internal sealed class GenerateTripsSchedulePlanner
                 date.Year, date.Month, date.Day,
                 request.EndTime!.Value.Hour, request.EndTime.Value.Minute, 0,
                 VietnamOffset);
-            var interval = TimeSpan.FromMinutes(request.IntervalMinutes!.Value);
-
             while (localCursor <= localEnd)
             {
                 var departureTime = localCursor.ToUniversalTime();
-                await TryCreateTripAsync(date, departureTime);
-                localCursor = localCursor.Add(interval);
+                var attempt = await TryCreateTripAsync(date, departureTime);
+                localCursor = ResolveNextContinuousDeparture(attempt).ToOffset(VietnamOffset);
             }
         }
 

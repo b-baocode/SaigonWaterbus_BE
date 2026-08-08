@@ -16,6 +16,7 @@ public sealed record TripSummaryDto(
     int TotalSeats,
     decimal? MinPrice,
     string TripStatus,
+    string? OperatingStatus = null,
     bool IsBookingClosed = false,
     bool IsBookable = true,
     string? BookingClosedReason = null,
@@ -73,7 +74,8 @@ public sealed record TripDetailDto(
     TripDelayInfoDto? DelayInfo = null,
     DateTimeOffset? AdjustedDepartureTime = null,
     DateTimeOffset? AdjustedArrivalTime = null,
-    TripIncidentInfoDto? IncidentInfo = null);
+    TripIncidentInfoDto? IncidentInfo = null,
+    string? OperatingStatus = null);
 
 public sealed record TripIncidentInfoDto(
     Guid IncidentId,
@@ -104,7 +106,14 @@ public sealed record TripIncidentInfoDto(
     string? ReplacementNote,
     DateTimeOffset? RescueDispatchedAt,
     DateTimeOffset? ReplacementAssignedAt,
-    DateTimeOffset? ResolvedAt);
+    DateTimeOffset? ResolvedAt,
+    string? MissionStatus = null,
+    DateTimeOffset? RescueArrivedAt = null,
+    DateTimeOffset? ReplacementArrivedAt = null,
+    DateTimeOffset? PassengerTransferCompletedAt = null,
+    DateTimeOffset? TowingStartedAt = null,
+    DateTimeOffset? TowingCompletedAt = null,
+    string? OperatingStatus = null);
 
 public sealed record TripBoatDto(
     Guid VesselId,

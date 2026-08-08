@@ -15,6 +15,13 @@ public sealed class GeminiOptions
 
     public string ApiBaseUrl { get; set; } = "https://generativelanguage.googleapis.com/v1beta";
 
+    /// <summary>
+    /// Model dùng để nghe audio → text (hướng dẫn viên bằng giọng nói). Tách khỏi
+    /// <see cref="Model"/> vì không phải model nào cũng nhận audio input — đổi được model chat
+    /// mà không vô tình làm hỏng STT, và ngược lại.
+    /// </summary>
+    public string SpeechToTextModel { get; set; } = "gemini-flash-lite-latest";
+
     public int MaxOutputTokens { get; set; } = 2048;
 
     /// <summary>

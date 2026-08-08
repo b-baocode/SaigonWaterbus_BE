@@ -44,7 +44,10 @@ public sealed record ReviewableTripDto(
     string RouteName,
     DateTimeOffset DepartureTime,
     DateTimeOffset ArrivalTime,
-    MyTripReviewDto? MyReview);
+    MyTripReviewDto? MyReview,
+    Guid BookingId,
+    string BookingCode,
+    bool IsRoundTrip);
 
 public sealed record ReviewableTripListDto(
     int TotalCount,
@@ -78,6 +81,55 @@ internal static class ReviewSupport
 
     public static MyTripReviewDto ToMyDto(Review review) =>
         new(review.Id, review.TripId!.Value, review.Rating, review.Comment, review.Status, review.Created);
+
+    public static bool ContainsTrip(Booking booking, Guid tripId, Guid? tripSourceBookingId) =>
+        booking.TripId == tripId
+        || booking.ReturnTripId == tripId
+        || booking.Passengers.Any(p => p.TripId == tripId)
+        || booking.CharterBoats.Any(cb => cb.TripId == tripId)
+        || (tripSourceBookingId.HasValue && booking.Id == tripSourceBookingId.Value);
+
+    public static bool IsServiceCompleted(Booking booking)
+    {
+        var trips = ResolveAssociatedTrips(booking);
+        return trips.Count > 0 && trips.All(t => t.TripStatus == TripStatus.Completed);
+    }
+
+    public static Trip? ResolveDisplayTrip(Booking booking) =>
+        ResolveAssociatedTrips(booking)
+            .OrderBy(t => t.DepartureTime)
+            .ThenBy(t => t.TripCode)
+            .FirstOrDefault();
+
+    private static IReadOnlyList<Trip> ResolveAssociatedTrips(Booking booking)
+    {
+        var trips = new List<Trip>();
+        var seenTripIds = new HashSet<Guid>();
+
+        void AddTrip(Guid? tripId, Trip? trip)
+        {
+            if (!tripId.HasValue || trip is null || !seenTripIds.Add(tripId.Value))
+            {
+                return;
+            }
+
+            trips.Add(trip);
+        }
+
+        AddTrip(booking.TripId, booking.Trip);
+        AddTrip(booking.ReturnTripId, booking.ReturnTrip);
+        foreach (var passenger in booking.Passengers)
+        {
+            AddTrip(passenger.TripId, passenger.Trip);
+        }
+
+        foreach (var charterBoat in booking.CharterBoats)
+        {
+            AddTrip(charterBoat.TripId, charterBoat.Trip);
+        }
+
+        return trips;
+    }
 }
 
 public sealed record CreateTripReviewCommand(
@@ -123,26 +175,41 @@ public sealed class CreateTripReviewCommandHandler : IRequestHandler<CreateTripR
                 [new ValidationFailure("tripId", "Chỉ có thể đánh giá chuyến đã hoàn thành.")]);
         }
 
-        var bookingId = await ReviewSupport
+        var candidateBookings = await ReviewSupport
             .EligibleBookingsForTrip(_context, userId, trip.Id, trip.SourceBookingId)
+            .Include(b => b.Trip!)
+            .Include(b => b.ReturnTrip!)
+            .Include(b => b.Passengers)
+                .ThenInclude(p => p.Trip!)
+            .Include(b => b.CharterBoats)
+                .ThenInclude(cb => cb.Trip!)
             .OrderBy(b => b.Created)
-            .Select(b => (Guid?)b.Id)
-            .FirstOrDefaultAsync(cancellationToken)
-            ?? throw new ValidationException(
+            .ToListAsync(cancellationToken);
+        if (candidateBookings.Count == 0)
+        {
+            throw new ValidationException(
                 [new ValidationFailure("tripId", "Bạn không có vé trên chuyến này nên không thể đánh giá.")]);
+        }
+
+        var booking = candidateBookings.FirstOrDefault(ReviewSupport.IsServiceCompleted);
+        if (booking is null)
+        {
+            throw new ValidationException(
+                [new ValidationFailure("tripId", "Booking chưa hoàn tất toàn bộ chuyến nên chưa thể đánh giá.")]);
+        }
 
         var alreadyReviewed = await _context.Set<Review>()
-            .AnyAsync(r => r.CustomerId == userId && r.TripId == trip.Id, cancellationToken);
+            .AnyAsync(r => r.CustomerId == userId && r.BookingId == booking.Id, cancellationToken);
         if (alreadyReviewed)
         {
             throw new ValidationException(
-                [new ValidationFailure("tripId", "Bạn đã đánh giá chuyến này rồi.")]);
+                [new ValidationFailure("tripId", "Bạn đã đánh giá booking này rồi.")]);
         }
 
         var review = new Review
         {
             CustomerId = userId,
-            BookingId = bookingId,
+            BookingId = booking.Id,
             TripId = trip.Id,
             Rating = request.Rating,
             Comment = string.IsNullOrWhiteSpace(request.Comment) ? null : request.Comment.Trim(),
@@ -184,34 +251,68 @@ public sealed class GetMyReviewableTripsQueryHandler
     {
         var userId = ReviewSupport.GetRequiredUserId(_userContext);
 
-        var query = _context.Set<Trip>()
+        var bookings = await _context.Set<Booking>()
             .AsNoTracking()
-            .Where(t => t.TripStatus == TripStatus.Completed)
-            .Where(t => _context.Set<Booking>().Any(b => b.UserId == userId
+            .Include(b => b.Trip!)
+                .ThenInclude(t => t.Route)
+            .Include(b => b.ReturnTrip!)
+                .ThenInclude(t => t.Route)
+            .Include(b => b.Passengers)
+                .ThenInclude(p => p.Trip!)
+                    .ThenInclude(t => t.Route)
+            .Include(b => b.CharterBoats)
+                .ThenInclude(cb => cb.Trip!)
+                    .ThenInclude(t => t.Route)
+            .Where(b => b.UserId == userId
                 && (b.BookingStatus == BookingStatus.Confirmed || b.BookingStatus == BookingStatus.Completed)
-                && (b.TripId == t.Id
-                    || b.ReturnTripId == t.Id
-                    || b.Passengers.Any(p => p.TripId == t.Id)
-                    || (t.SourceBookingId != null && b.Id == t.SourceBookingId))));
+                && (b.TripId != null
+                    || b.ReturnTripId != null
+                    || b.Passengers.Any(p => p.TripId != null)
+                    || b.CharterBoats.Any(cb => cb.TripId != null)))
+            .ToListAsync(cancellationToken);
 
-        var totalCount = await query.CountAsync(cancellationToken);
-        var items = await query
-            .OrderByDescending(t => t.DepartureTime)
-            .ThenBy(t => t.TripCode)
+        var reviewableBookings = bookings
+            .Where(ReviewSupport.IsServiceCompleted)
+            .Select(b => new { Booking = b, DisplayTrip = ReviewSupport.ResolveDisplayTrip(b) })
+            .Where(x => x.DisplayTrip is not null)
+            .OrderByDescending(x => x.DisplayTrip!.DepartureTime)
+            .ThenBy(x => x.Booking.BookingCode)
+            .ToList();
+
+        var totalCount = reviewableBookings.Count;
+        var pageBookings = reviewableBookings
             .Skip((request.Page - 1) * request.PageSize)
             .Take(request.PageSize)
-            .Select(t => new ReviewableTripDto(
-                t.Id,
-                t.TripCode,
-                t.Route.RouteName,
-                t.DepartureTime,
-                t.ArrivalTime,
-                _context.Set<Review>()
-                    .Where(r => r.CustomerId == userId && r.TripId == t.Id)
-                    .Select(r => new MyTripReviewDto(
-                        r.Id, t.Id, r.Rating, r.Comment, r.Status, r.Created))
-                    .FirstOrDefault()))
+            .ToList();
+
+        var bookingIds = pageBookings.Select(x => x.Booking.Id).ToList();
+        var reviews = await _context.Set<Review>()
+            .AsNoTracking()
+            .Where(r => r.CustomerId == userId
+                && r.BookingId.HasValue
+                && bookingIds.Contains(r.BookingId.Value))
             .ToListAsync(cancellationToken);
+        var reviewsByBookingId = reviews
+            .GroupBy(r => r.BookingId!.Value)
+            .ToDictionary(g => g.Key, g => g.OrderByDescending(r => r.Created).First());
+
+        var items = pageBookings
+            .Select(x =>
+            {
+                var trip = x.DisplayTrip!;
+                reviewsByBookingId.TryGetValue(x.Booking.Id, out var review);
+                return new ReviewableTripDto(
+                    trip.Id,
+                    trip.TripCode,
+                    trip.Route.RouteName,
+                    trip.DepartureTime,
+                    trip.ArrivalTime,
+                    review is null ? null : ReviewSupport.ToMyDto(review),
+                    x.Booking.Id,
+                    x.Booking.BookingCode,
+                    x.Booking.ReturnTripId.HasValue);
+            })
+            .ToList();
 
         return new ReviewableTripListDto(totalCount, request.Page, request.PageSize, items);
     }

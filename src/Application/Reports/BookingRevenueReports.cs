@@ -662,10 +662,10 @@ internal static class BookingReportQuerySupport
         return value.Trim().ToLowerInvariant() switch
         {
             "cash" or "tienmat" or "tien-mat" => PaymentSupport.CashPaymentMethod,
-            "banktransfer" or "bank_transfer" or "bank-transfer" or "transfer" or "ck" or "chuyenkhoan" => PaymentSupport.BankTransferPaymentMethod,
             "payos" or "online" or "qr" => PaymentSupport.PayOsProvider,
             "free" => PaymentSupport.FreePaymentMethod,
-            _ => value.Trim()
+            _ => throw new ValidationException([new ValidationFailure("paymentMethod",
+                "paymentMethod chỉ hỗ trợ Cash, PayOs hoặc Free.")])
         };
     }
 

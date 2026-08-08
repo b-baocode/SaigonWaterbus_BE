@@ -119,6 +119,7 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                 t.AdjustedArrivalTime ?? t.ArrivalTime,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString(),
+                OperatingStatus: OperatingStatusSupport.ForTrip(t),
                 IsBookingClosed: false,
                 IsBookable: available > 0,
                 FareAdjustment: fareAdjustment,

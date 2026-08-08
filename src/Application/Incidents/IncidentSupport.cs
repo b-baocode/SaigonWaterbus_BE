@@ -1,4 +1,5 @@
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Constants;
@@ -87,6 +88,14 @@ internal static class IncidentSupport
             incident.FuturePassengerCountSnapshot,
             incident.ReplacementNote,
             activeTicketCount > 0 ? activeTicketCount : incident.ActiveTicketCountSnapshot,
+            OperatingStatusSupport.ToPublicMissionStatus(incident),
+            OperatingStatusSupport.ForIncident(incident),
+            incident.RescueArrivedAt,
+            incident.ReplacementArrivedAt,
+            incident.PassengerTransferCompletedAt,
+            incident.TowingStartedAt,
+            incident.TowingCompletedAt,
+            incident.EstimatedTowingMinutes,
             incident.ResolutionNote,
             incident.ResolvedAt,
             incident.ResolvedByUserId,
@@ -115,6 +124,13 @@ internal static class IncidentSupport
             incident.OnboardPassengerCountSnapshot,
             incident.FuturePassengerCountSnapshot,
             incident.ResolutionStatus,
+            OperatingStatusSupport.ToPublicMissionStatus(incident),
+            OperatingStatusSupport.ForIncident(incident),
+            incident.RescueArrivedAt,
+            incident.ReplacementArrivedAt,
+            incident.PassengerTransferCompletedAt,
+            incident.TowingStartedAt,
+            incident.TowingCompletedAt,
             occurredAt);
 
     public static async Task PublishGpsHookAsync(
@@ -178,6 +194,28 @@ internal static class IncidentSupport
         latestLocation.UpdatedAt = clearedAt;
     }
 
+    public static void EnsureTripIsNotRunningOnMaintainedBoat(Incident incident)
+    {
+        if (incident.Trip is null
+            || incident.Trip.BoatId != incident.BoatId
+            || incident.Trip.TripStatus is TripStatus.Completed or TripStatus.Cancelled)
+        {
+            return;
+        }
+
+        if (incident.ReplacementBoatId.HasValue)
+        {
+            incident.Trip.TripStatus = TripStatus.Delayed;
+            incident.Trip.StatusNote = incident.ReplacementBoat is null
+                ? "Tàu lỗi đã vào bảo trì, chuyến đang chờ tàu thay thế."
+                : $"Tàu lỗi đã vào bảo trì, chuyến đang chờ tàu thay thế {incident.ReplacementBoat.Name}.";
+            return;
+        }
+
+        incident.Trip.TripStatus = TripStatus.Cancelled;
+        incident.Trip.StatusNote = "Chuyến đã hủy do tàu gặp sự cố và được đưa vào bảo trì.";
+    }
+
     public static async Task<IncidentPassengerImpactPlan> BuildPassengerImpactPlanAsync(
         IApplicationDbContext context,
         Incident incident,
@@ -204,7 +242,7 @@ internal static class IncidentSupport
 
         if (stops.Count == 0)
         {
-            return BuildUnknownProgressPlan(activeTicketSegments.Count);
+            return BuildUnknownProgressPlan(activeTicketSegments);
         }
 
         var firstStopOrder = stops.Min(x => x.StopOrder);
@@ -218,7 +256,7 @@ internal static class IncidentSupport
             cancellationToken);
         if (!currentProgressStopOrder.HasValue)
         {
-            return BuildUnknownProgressPlan(activeTicketSegments.Count);
+            return BuildUnknownProgressPlan(activeTicketSegments);
         }
 
         var progressStopOrder = currentProgressStopOrder.Value;
@@ -236,16 +274,19 @@ internal static class IncidentSupport
                 continue;
             }
 
-            if (fromStopOrder <= progressStopOrder)
+            if (segment.IsOnboard)
             {
                 onboardPassengerCount++;
                 continue;
             }
 
-            futurePassengerCount++;
-            nextPassengerBoardingStopOrder = !nextPassengerBoardingStopOrder.HasValue
-                ? fromStopOrder
-                : Math.Min(nextPassengerBoardingStopOrder.Value, fromStopOrder);
+            if (segment.CanBoardLater && fromStopOrder > progressStopOrder)
+            {
+                futurePassengerCount++;
+                nextPassengerBoardingStopOrder = !nextPassengerBoardingStopOrder.HasValue
+                    ? fromStopOrder
+                    : Math.Min(nextPassengerBoardingStopOrder.Value, fromStopOrder);
+            }
         }
 
         var affectedPassengerCount = onboardPassengerCount + futurePassengerCount;
@@ -298,18 +339,29 @@ internal static class IncidentSupport
             targetStop?.PlannedDepartureTime);
     }
 
-    private static IncidentPassengerImpactPlan BuildUnknownProgressPlan(int activeTicketCount) =>
-        new(
-            activeTicketCount,
-            OnboardPassengerCount: activeTicketCount,
-            FuturePassengerCount: 0,
-            IncidentReplacementMissionTypes.PassengerRecoveryRequired,
+    private static IncidentPassengerImpactPlan BuildUnknownProgressPlan(
+        IReadOnlyList<TicketTripSegment> activeTicketSegments)
+    {
+        var onboardPassengerCount = activeTicketSegments.Count(x => x.IsOnboard);
+        var futurePassengerCount = activeTicketSegments.Count(x => x.CanBoardLater);
+        var replacementMissionType = onboardPassengerCount > 0
+            ? IncidentReplacementMissionTypes.TransferAtIncidentLocation
+            : futurePassengerCount > 0
+                ? IncidentReplacementMissionTypes.PassengerRecoveryRequired
+                : IncidentReplacementMissionTypes.None;
+
+        return new(
+            activeTicketSegments.Count,
+            onboardPassengerCount,
+            futurePassengerCount,
+            replacementMissionType,
             TargetStationId: null,
             TargetStationCode: null,
             TargetStationName: null,
             TargetStopOrder: null,
             TargetPlannedArrivalAt: null,
             TargetPlannedDepartureAt: null);
+    }
 
     private static async Task<IReadOnlyList<IncidentStopPlanItem>> LoadTripStopPlanAsync(
         IApplicationDbContext context,
@@ -441,7 +493,9 @@ internal static class IncidentSupport
                     && x.TicketStatus != TicketStatus.Expired)
             .Select(x => new TicketTripSegment(
                 x.BookingPassenger != null ? x.BookingPassenger.FromStopOrder : null,
-                x.BookingPassenger != null ? x.BookingPassenger.ToStopOrder : null))
+                x.BookingPassenger != null ? x.BookingPassenger.ToStopOrder : null,
+                x.TicketStatus,
+                x.CheckedOutAt))
             .ToListAsync(cancellationToken);
 
     private static int NormalizeFromStopOrder(int? fromStopOrder, int firstStopOrder, int lastStopOrder)
@@ -552,5 +606,14 @@ internal static class IncidentSupport
         DateTimeOffset? ActualArrivalTime,
         DateTimeOffset? ActualDepartureTime);
 
-    private sealed record TicketTripSegment(int? FromStopOrder, int? ToStopOrder);
+    private sealed record TicketTripSegment(
+        int? FromStopOrder,
+        int? ToStopOrder,
+        TicketStatus Status,
+        DateTimeOffset? CheckedOutAt)
+    {
+        public bool IsOnboard => Status == TicketStatus.CheckedIn && !CheckedOutAt.HasValue;
+
+        public bool CanBoardLater => Status == TicketStatus.Active;
+    }
 }

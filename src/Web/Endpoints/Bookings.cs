@@ -214,10 +214,10 @@ public sealed class Bookings : IEndpointGroup
                 "Neu khach muon tich diem: FE goi GET /api/bookings/counter/customers/lookup?keyword=<phone|email>, hien khach tim thay, staff bam OK thi gui customerUserId + customerConfirmedForPoints=true.",
                 "Neu khach muon dung diem tai quay: gui pointsToUse > 0 cung customerUserId + customerConfirmedForPoints=true; BE tru diem ngay de giu so du, toi da 50% gia tri don.",
                 "items / returnItems / ticketTypeCode / fromStationCode / toStationCode: giong het POST /api/bookings.",
-                "contactName + contactPhone + contactEmail bat buoc (staff nhap); contactEmail nhan email tong QR booking.",
+                "contactName + contactPhone bat buoc (staff nhap); contactEmail optional.",
+                "Neu co contactEmail thi BE gui email tong QR booking + toan bo ve; neu khong co email thi response manifest co QR/tickets de FE in ve.",
                 "passengerEmail trong items/returnItems optional; neu nhap them thi gui them email ve rieng cho hanh khach do.",
                 "paymentMethod = Cash: ghi nhan thu tien mat ngay -> booking Confirmed, phat hanh ve/QR va gui email ngay trong 1 lan goi.",
-                "paymentMethod = BankTransfer: ghi nhan khach da chuyen khoan tai quay -> booking Confirmed, phat hanh ve/QR va gui email ngay trong 1 lan goi.",
                 "paymentMethod = PayOs: tra ve checkoutUrl + qrCode cho khach quet; ve chi phat hanh sau khi PayOS bao da thanh toan. "
                     + "Staff theo doi bang POST /api/payments/{paymentId}/sync; qua holdExpiresAt chua tra thi booking het han va nha ghe.",
                 "Ban duoc CA KHI TAU DA KHOI HANH: bo han dong ban truoc gio chay, chap nhan chuyen Scheduled/Boarding/Delayed/InProgress; "
@@ -225,7 +225,7 @@ public sealed class Bookings : IEndpointGroup
                 "Ghe van kiem tra nhu binh thuong: da ban / dang duoc nguoi khac giu tren chang giao nhau se bi tu choi.",
                 "Khong ho tro ma khuyen mai tai quay. Diem chi duoc TICH sau khi booking/trip hoan tat neu customerUserId hop le va customerConfirmedForPoints=true; customerUserId null thi khong tich diem.",
                 "Bao hiem PassengerInsurance active/default duoc cong theo so passenger item; gui insuranceSelected=false de khong chon.",
-                "Don 0d (tong tien sau tinh gia/giam gia bang 0) luon ghi nhan nhu thu tai quay du chon paymentMethod nao."));
+                "Don 0d (tong tien sau tinh gia/giam gia bang 0) luon ghi nhan nhu thu tien mat tai quay du chon paymentMethod nao."));
     }
 
     private static async Task<IResult> GetBookings(ISender sender, CancellationToken ct) =>

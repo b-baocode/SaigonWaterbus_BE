@@ -35,6 +35,8 @@ public static class DependencyInjection
         builder.Services.AddValidatorsFromAssembly(Assembly.GetExecutingAssembly());
         builder.Services.AddScoped<IRequestValidator, RequestValidator>();
         builder.Services.AddScoped<SaigonWaterbus.Application.Assistant.AssistantToolset>();
+        builder.Services.AddScoped<SaigonWaterbus.Application.Assistant.AssistantConversationRunner>();
+        builder.Services.AddScoped<SaigonWaterbus.Application.TourGuide.TourGuideContextReader>();
         builder.Services.AddScoped<IOperationScheduleSynchronizer, OperationScheduleSynchronizer>();
         builder.Services.AddScoped<ICharterBookingExpirationProcessor, CharterBookingExpirationProcessor>();
 

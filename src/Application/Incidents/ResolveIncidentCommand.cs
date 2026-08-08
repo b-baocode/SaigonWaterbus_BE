@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -30,19 +31,22 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
     private readonly TimeProvider _timeProvider;
     private readonly IIncidentRealtimeNotifier _realtimeNotifier;
     private readonly IIncidentGpsHookNotifier _gpsHookNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public ResolveIncidentCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
         IIncidentRealtimeNotifier? realtimeNotifier = null,
-        IIncidentGpsHookNotifier? gpsHookNotifier = null)
+        IIncidentGpsHookNotifier? gpsHookNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullIncidentRealtimeNotifier.Instance;
         _gpsHookNotifier = gpsHookNotifier ?? NullIncidentGpsHookNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<IncidentDto> Handle(ResolveIncidentCommand request, CancellationToken cancellationToken)
@@ -78,6 +82,7 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
         incident.ResolvedAt = resolvedAt;
         incident.ResolvedByUserId = actor.Id;
         incident.Resolver = actor;
+        incident.MissionStatus = IncidentMissionStatuses.Resolved;
 
         if (request.BoatStatus.HasValue)
         {
@@ -91,6 +96,7 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             if (request.BoatStatus.Value == BoatStatus.UnderMaintenance)
             {
                 await ClearBoatLiveTripAsync(incident.BoatId, resolvedAt, cancellationToken);
+                IncidentSupport.EnsureTripIsNotRunningOnMaintainedBoat(incident);
             }
         }
 
@@ -100,7 +106,17 @@ public sealed class ResolveIncidentCommandHandler : IRequestHandler<ResolveIncid
             incident.Trip.StatusNote = request.ResolutionNote.Trim();
         }
 
+        var createdNotifications = await NotificationSupport.AddIncidentResolvedNotificationsAsync(
+            _context,
+            incident,
+            resolvedAt,
+            cancellationToken);
+
         await _context.SaveChangesAsync(cancellationToken);
+        await NotificationSupport.PublishCreatedAsync(
+            _notificationRealtimeNotifier,
+            createdNotifications,
+            cancellationToken);
         await IncidentSupport.PublishGpsHookAsync(
             _context,
             _gpsHookNotifier,

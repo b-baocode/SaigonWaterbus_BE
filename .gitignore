@@ -505,3 +505,10 @@ $RECYCLE.BIN/
 
 # Local design docs / diagrams (not shipped with the solution)
 docs/
+
+# Google Cloud service account keys — private key, KHONG duoc commit.
+# Lop chan phong ho: file that nen de ngoai thu muc repo (xem GoogleCloudCredentialsOptions).
+*service-account*.json
+*service_account*.json
+gcp-*.json
+google-credentials*.json

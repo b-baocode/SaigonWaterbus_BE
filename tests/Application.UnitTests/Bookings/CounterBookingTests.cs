@@ -30,7 +30,8 @@ public class CounterBookingTests
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         await SeedTripAsync(context, "TR-CTR-1", TripStatus.Scheduled);
-        var handler = CreateHandler(context, staffContext);
+        var notifications = new RecordingPaymentNotificationSender();
+        var handler = CreateHandler(context, staffContext, notifications);
 
         var result = await handler.Handle(CashCommand("TR-CTR-1", "A1"), CancellationToken.None);
 
@@ -39,6 +40,12 @@ public class CounterBookingTests
         result.PaymentMethod.ShouldBe("Cash");
         result.PaidAt.ShouldBe(Now);
         result.CheckoutUrl.ShouldBeNull();
+        result.Manifest.ShouldNotBeNull();
+        result.Manifest!.BookingQrToken.ShouldNotBeNullOrWhiteSpace();
+        result.Manifest.Passengers.Single().TicketCode.ShouldNotBeNullOrWhiteSpace();
+        result.Manifest.Passengers.Single().QrToken.ShouldNotBeNullOrWhiteSpace();
+        notifications.ETickets.Count.ShouldBe(1);
+        notifications.ETickets.Single().Booking.Email.ShouldBe("khach@example.test");
 
         // Vé + QR phải được phát hành ngay để staff in cho khách.
         context.Set<Ticket>().Count(t => t.BookingId == result.BookingId).ShouldBe(1);
@@ -58,27 +65,25 @@ public class CounterBookingTests
     }
 
     [Test]
-    public async Task ManagerCanSellAtCounterWithBankTransfer()
+    public async Task ManagerCanSellAtCounterWithCash()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var managerContext = await SeatFlowTestData.SeedManagerAsync(context);
         await SeedTripAsync(context, "TR-CTR-MGR", TripStatus.Scheduled);
         var handler = CreateHandler(context, managerContext);
 
-        var result = await handler.Handle(
-            CashCommand("TR-CTR-MGR", "A1") with { PaymentMethod = CounterPaymentMethod.BankTransfer },
-            CancellationToken.None);
+        var result = await handler.Handle(CashCommand("TR-CTR-MGR", "A1"), CancellationToken.None);
 
         result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
         result.PaymentStatus.ShouldBe("Paid");
-        result.PaymentMethod.ShouldBe(PaymentSupport.BankTransferPaymentMethod);
+        result.PaymentMethod.ShouldBe(PaymentSupport.CashPaymentMethod);
 
         var booking = context.Set<Booking>().Single(b => b.Id == result.BookingId);
         booking.SoldByStaffId.ShouldBe(managerContext.UserId);
 
         var payment = context.Set<Payment>().Single(p => p.BookingId == result.BookingId);
         payment.Provider.ShouldBe(PaymentSupport.CounterProvider);
-        payment.PaymentMethod.ShouldBe(PaymentSupport.BankTransferPaymentMethod);
+        payment.PaymentMethod.ShouldBe(PaymentSupport.CashPaymentMethod);
         payment.PaidAt.ShouldBe(Now);
     }
 
@@ -381,13 +386,44 @@ public class CounterBookingTests
     }
 
     [Test]
-    public void CounterBookingRequiresContactEmailForSharedTicketEmail()
+    public void CounterBookingAllowsMissingContactEmailForPrintedTicket()
     {
-        var result = new CreateCounterBookingCommandValidator()
-            .Validate(CashCommand("TR-CTR-EMAIL", "A1") with { ContactEmail = "" });
+        var validator = new CreateCounterBookingCommandValidator();
 
-        result.IsValid.ShouldBeFalse();
-        result.Errors.ShouldContain(x => x.PropertyName == nameof(CreateCounterBookingCommand.ContactEmail));
+        validator.Validate(CashCommand("TR-CTR-EMAIL", "A1") with { ContactEmail = null })
+            .IsValid
+            .ShouldBeTrue();
+        validator.Validate(CashCommand("TR-CTR-EMAIL", "A1") with { ContactEmail = "" })
+            .IsValid
+            .ShouldBeTrue();
+        validator.Validate(CashCommand("TR-CTR-EMAIL", "A1") with { ContactEmail = "not-an-email" })
+            .Errors
+            .ShouldContain(x => x.PropertyName == nameof(CreateCounterBookingCommand.ContactEmail));
+    }
+
+    [Test]
+    public async Task CounterSaleWithoutContactEmailIssuesPrintableTicketsWithoutSendingEmail()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        await SeedTripAsync(context, "TR-CTR-PRINT", TripStatus.Scheduled);
+        var notifications = new RecordingPaymentNotificationSender();
+        var handler = CreateHandler(context, staffContext, notifications);
+
+        var result = await handler.Handle(
+            CashCommand("TR-CTR-PRINT", "A1") with { ContactEmail = null },
+            CancellationToken.None);
+
+        result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
+        result.PaymentStatus.ShouldBe("Paid");
+        result.Manifest.ShouldNotBeNull();
+        result.Manifest!.BookingQrToken.ShouldNotBeNullOrWhiteSpace();
+        result.Manifest.Passengers.Single().TicketCode.ShouldNotBeNullOrWhiteSpace();
+        result.Manifest.Passengers.Single().QrToken.ShouldNotBeNullOrWhiteSpace();
+        notifications.ETickets.ShouldBeEmpty();
+
+        var booking = context.Set<Booking>().Single(b => b.Id == result.BookingId);
+        booking.ContactEmail.ShouldBeNull();
     }
 
     [Test]
@@ -473,7 +509,8 @@ public class CounterBookingTests
 
     private static CreateCounterBookingCommandHandler CreateHandler(
         ApplicationDbContext context,
-        TestUserContext userContext) =>
+        TestUserContext userContext,
+        IPaymentNotificationSender? paymentNotificationSender = null) =>
         new(
             context,
             userContext,
@@ -481,7 +518,7 @@ public class CounterBookingTests
             new FixedFareCalculator(10000m),
             new FixedTimeProvider(Now),
             new StubSender(context, userContext),
-            new NoopPaymentNotificationSender());
+            paymentNotificationSender ?? new NoopPaymentNotificationSender());
 
     /// <summary>Trip Regular BB → LT, tàu 1 ghế STANDARD (A1).</summary>
     private static async Task SeedTripAsync(
@@ -654,5 +691,36 @@ public class CounterBookingTests
         public Task SendETicketsAsync(
             ETicketNotification notification,
             CancellationToken cancellationToken) => Task.CompletedTask;
+    }
+
+    private sealed class RecordingPaymentNotificationSender : IPaymentNotificationSender
+    {
+        public List<PaymentSucceededNotification> PaymentSucceeded { get; } = [];
+        public List<BoardingPassNotification> BoardingPasses { get; } = [];
+        public List<ETicketNotification> ETickets { get; } = [];
+
+        public Task SendPaymentSucceededAsync(
+            PaymentSucceededNotification notification,
+            CancellationToken cancellationToken)
+        {
+            PaymentSucceeded.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task SendBoardingPassAsync(
+            BoardingPassNotification notification,
+            CancellationToken cancellationToken)
+        {
+            BoardingPasses.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task SendETicketsAsync(
+            ETicketNotification notification,
+            CancellationToken cancellationToken)
+        {
+            ETickets.Add(notification);
+            return Task.CompletedTask;
+        }
     }
 }

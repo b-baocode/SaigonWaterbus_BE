@@ -8,10 +8,10 @@ namespace SaigonWaterbus.Application.Payments;
 
 /// <summary>
 /// Gửi email vé điện tử cho booking thường sau khi thanh toán đủ:
-/// - Người đặt vé (ContactEmail) nhận 1 email tổng: QR chung + toàn bộ QR riêng + PDF đính kèm đầy đủ vé.
+/// - Nếu có ContactEmail, người đặt vé nhận 1 email tổng: QR chung + toàn bộ QR riêng + PDF đính kèm đầy đủ vé.
 /// - Hành khách nào có nhập email nhận thêm 1 email chứa vé của riêng người đó + PDF 1 vé
 ///   (không có QR chung — QR chung chỉ người đặt vé có).
-/// Booking khứ hồi: email tổng gộp cả 2 chiều (Legs), email hành khách hiển thị đúng chiều của vé đó.
+/// Booking khứ hồi: người đặt nhận email/PDF tách theo từng chiều; email hành khách hiển thị đúng chiều của vé đó.
 /// </summary>
 internal static class RegularBookingETicketSupport
 {
@@ -117,30 +117,41 @@ internal static class RegularBookingETicketSupport
                 contactEmail,
                 booking.ContactName);
 
-            // Bản người đặt: PDF có trang QR tổng + toàn bộ vé (khứ hồi: đủ cả 2 chiều).
-            var bookerAttachments = RenderPdfAttachment(
-                pdfRenderer,
-                booking,
-                outboundLeg,
-                booking.CharterBookingQrToken,
-                allTickets,
-                legs,
-                $"{booking.BookingCode}-tickets.pdf");
-
-            await paymentNotificationSender.SendETicketsAsync(
-                new ETicketNotification(
+            // Bản người đặt: booking một chiều giữ email tổng; booking khứ hồi tách email/PDF theo từng chiều.
+            if (returnLeg is null)
+            {
+                await SendBookerETicketEmailAsync(
+                    paymentNotificationSender,
+                    pdfRenderer,
+                    booking,
                     bookerNotification,
-                    booking.CharterBookingQrToken,
-                    outboundLeg.Trip?.TripCode,
-                    outboundLeg.Trip?.Route.RouteName,
-                    outboundLeg.Trip?.DepartureTime,
-                    outboundLeg.Trip?.ArrivalTime,
-                    outboundLeg.FromStationName,
-                    outboundLeg.ToStationName,
-                    allTickets,
-                    bookerAttachments,
-                    legs?.Select(ToETicketLeg).ToList()),
-                cancellationToken);
+                    outboundLeg,
+                    outboundLeg.Tickets,
+                    $"{booking.BookingCode}-tickets.pdf",
+                    cancellationToken);
+            }
+            else
+            {
+                var legIndex = 0;
+                foreach (var leg in new[] { outboundLeg, returnLeg })
+                {
+                    legIndex++;
+                    if (leg.Tickets.Count == 0)
+                    {
+                        continue;
+                    }
+
+                    await SendBookerETicketEmailAsync(
+                        paymentNotificationSender,
+                        pdfRenderer,
+                        booking,
+                        bookerNotification,
+                        leg,
+                        leg.Tickets,
+                        $"{booking.BookingCode}-{ResolveLegFileNameSuffix(legIndex)}-tickets.pdf",
+                        cancellationToken);
+                }
+            }
         }
 
         foreach (var leg in legs ?? [outboundLeg])
@@ -229,6 +240,43 @@ internal static class RegularBookingETicketSupport
             leg.FromStationName,
             leg.ToStationName,
             leg.Tickets);
+
+    private static async Task SendBookerETicketEmailAsync(
+        IPaymentNotificationSender paymentNotificationSender,
+        IBookingTicketPdfRenderer? pdfRenderer,
+        Booking booking,
+        PaymentSucceededNotification bookerNotification,
+        LegContext leg,
+        IReadOnlyList<ETicketPassenger> tickets,
+        string attachmentFileName,
+        CancellationToken cancellationToken)
+    {
+        var attachments = RenderPdfAttachment(
+            pdfRenderer,
+            booking,
+            leg,
+            booking.CharterBookingQrToken,
+            tickets,
+            legs: null,
+            fileName: attachmentFileName);
+
+        await paymentNotificationSender.SendETicketsAsync(
+            new ETicketNotification(
+                bookerNotification,
+                booking.CharterBookingQrToken,
+                leg.Trip?.TripCode,
+                leg.Trip?.Route.RouteName,
+                leg.Trip?.DepartureTime,
+                leg.Trip?.ArrivalTime,
+                leg.FromStationName,
+                leg.ToStationName,
+                tickets,
+                attachments),
+            cancellationToken);
+    }
+
+    private static string ResolveLegFileNameSuffix(int legIndex) =>
+        legIndex == 1 ? "outbound" : "return";
 
     private static BookingTicketPdfLegDto ToPdfLeg(LegContext leg) =>
         new(leg.Trip?.TripCode,

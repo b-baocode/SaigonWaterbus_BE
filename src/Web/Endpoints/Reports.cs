@@ -24,7 +24,7 @@ public sealed class Reports : IEndpointGroup
                 "fromDate/toDate dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy; toDate là ngày cuối được tính.",
                 "Nếu bỏ ngày thì mặc định lấy từ đầu tháng hiện tại đến hôm nay theo giờ Việt Nam.",
                 "serviceType optional: Waterbus | Sightseeing | Charter.",
-                "paymentMethod optional: Cash | BankTransfer | PayOs | Free.",
+                "paymentMethod optional: Cash | PayOs | Free.",
                 "Doanh thu ròng = tổng payment đã thu - refundAmount."));
 
         group.MapGet(GetReportBookings, "bookings")
@@ -38,7 +38,7 @@ public sealed class Reports : IEndpointGroup
                 "bookingStatus optional: PendingPayment | Confirmed | Cancelled | Expired | Refunded | Completed | ...",
                 "paymentStatus optional: Unpaid | DepositPaid | Paid | Refunded | PartiallyRefunded.",
                 "serviceType optional: Waterbus | Sightseeing | Charter.",
-                "paymentMethod optional: Cash | BankTransfer | PayOs | Free.",
+                "paymentMethod optional: Cash | PayOs | Free.",
                 "createdFrom/createdTo và departureFrom/departureTo dạng ngày; *To là ngày cuối được tính.",
                 "Response có summary và items để FE làm bảng tổng hợp/chọn booking."));
 

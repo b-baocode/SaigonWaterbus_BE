@@ -1,6 +1,8 @@
 using SaigonWaterbus.Application.CharterBookings;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
+using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Domain.Constants;
@@ -108,7 +110,9 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         trip.Route.RouteType,
         DistanceFareSupport.UsesDistanceFare(trip.TripType, trip.Route.RouteType),
         trip.DepartureTime, trip.ArrivalTime,
-        trip.CapacitySnapshot, trip.TripStatus.ToString(), trip.StatusNote,
+        trip.CapacitySnapshot,
+        trip.TripStatus.ToString(),
+        trip.StatusNote,
         stops ?? TripStopScheduleSupport.BuildStopDtos(trip),
         trip.TripType,
         trip.SourceBookingId,
@@ -124,7 +128,14 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         TripDelaySupport.ToDelayInfoDto(trip),
         trip.AdjustedDepartureTime,
         trip.AdjustedArrivalTime,
-        incidentInfo);
+        incidentInfo,
+        OperatingStatus: ResolveOperatingStatus(trip, incidentInfo));
+
+    private static string ResolveOperatingStatus(Trip trip, TripIncidentInfoDto? incidentInfo) =>
+        incidentInfo is not null
+        && string.Equals(incidentInfo.ResolutionStatus, IncidentSupport.OpenStatus, StringComparison.OrdinalIgnoreCase)
+            ? incidentInfo.OperatingStatus ?? OperatingStatusSupport.ForTrip(trip)
+            : OperatingStatusSupport.ForTrip(trip);
 
     private async Task<Booking?> LoadSourceBookingAsync(Trip trip, CancellationToken cancellationToken)
     {

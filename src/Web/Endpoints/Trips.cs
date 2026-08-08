@@ -143,10 +143,10 @@ public sealed class Trips : IEndpointGroup
                 "Ben dau chi co gio di, ben cuoi chi co gio den."));
 
         group.MapGet(GetTripLandmarks, "{id:guid}/landmarks")
-            .AllowAnonymous()
+            .RequireAuthorization()
             .WithSummary("Diem thuyet minh cua mot chuyen (huong dan vien)")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous",
+                "Bearer token (khach da dang nhap)",
                 null,
                 "Tron bo du lieu man huong dan vien cua 1 chuyen: routePath (toa do ve duong di), stations (ben kem toa do) "
                 + "va landmarks[] ma tuyen di ngang qua — da loc theo triggerRadiusMeters va sap theo thu tu gap doc duong.",
@@ -157,7 +157,9 @@ public sealed class Trips : IEndpointGroup
                 "audioUrl null = giong do chua bake tieng cho diem nay; missingAudioCount dem so diem nhu vay.",
                 "Tuyen chua ve routeGeometry thi routePath lay tam duong noi cac ben.",
                 "FE tai 1 lan luc mo man hinh, sau do bam GPS (GET /api/tracking/trips/{tripId}/latest + hub /hubs/tracking) "
-                + "va tu phat audio khi tau vao trong ban kinh."));
+                + "va tu phat audio khi tau vao trong ban kinh.",
+                "DOI DANG NHAP (bat 2026-08-08): chi kiem tra co token hop le, KHONG kiem tra khach co ve "
+                + "cua dung chuyen do — nhan vien tren tau va khach mua ve tai quay deu phai dung duoc."));
 
         group.MapGet(GetTripPassengers, "{id:guid}/passengers")
             .RequireAuthorization()
@@ -240,7 +242,7 @@ public sealed class Trips : IEndpointGroup
                 "Tao nhieu chuyen: fromDate/toDate la khoang ngay; moi ngay lay cac gio trong departureTimes hoac khoang startTime/endTime/intervalMinutes.",
                 "Neu khoang ngay tu 3 ngay tro len, FE co the hien daysOfWeek de chon thu trong tuan; bo trong = tat ca ngay trong khoang.",
                 "Cach 1: gui departureTimes: mang gio khoi hanh (gio Vietnam +07:00), dinh dang HH:mm:ss.",
-                "Cach 2: gui startTime/endTime/intervalMinutes de BE thu tao chuyen theo cac gio khoi hanh co dinh: startTime, startTime + intervalMinutes, ... den endTime. Gio nao tau/ben/nhan su ban thi skip va nam trong skippedItems; BE khong tu doi sang gio khac.",
+                "Cach 2: gui startTime/endTime/intervalMinutes de BE tao chuyen lien tuc theo kha nang van hanh: chuyen dau o startTime, chuyen tiep theo = gio den chuyen truoc + max(intervalMinutes, 15 phut quay dau) + thoi gian tau di chuyen ve ben xuat phat neu can. Chi tao cac chuyen co gio khoi hanh <= endTime.",
                 "fromDate / toDate: khoang ngay tao chuyen (toi da 365 ngay).",
                 "daysOfWeek (optional): [0=CN, 1=T2, ..., 6=T7]. Bo trong = tat ca cac ngay.",
                 "stops: voi tuyen thuong co ben giua thi bat buoc gui stayDurationMinutes cho tung stopOrder ben giua, giong tao 1 chuyen.",
@@ -249,7 +251,7 @@ public sealed class Trips : IEndpointGroup
                 "Khong nhap gia theo tung dot generate. Gia chuyen tu dong lay theo chinh sach gia hien hanh luc FE xem/dat ve.",
                 "Neu chuyen da ton tai (cung tuyen + cung gio), tu dong bo qua (skip).",
                 "Gio khoi hanh da troi qua HOAC cach hien tai chua du 20 phut cung bi bo qua, dem vao skippedPast.",
-                "CHAN TRUNG LICH TAU: chuyen nao lam tau chong gio voi chuyen khac (ke ca chuyen vua sinh trong cung lo) se bi bo qua va dem vao skippedBoatBusy. Giua 2 chuyen cua cung tau phai cach it nhat 15 phut quay dau.",
+                "CHAN TRUNG LICH TAU: chuyen nao lam tau chong gio voi chuyen khac (ke ca chuyen vua sinh trong cung lo) se bi bo qua va dem vao skippedBoatBusy. Giua 2 chuyen cua cung tau phai cach it nhat 15 phut quay dau va co them thoi gian dua tau ve ben xuat phat neu chuyen truoc ket thuc o ben khac.",
                 "CHAN TRUNG BEN: cac chuyen xuat phat cung mot ben phai cach nhau toi thieu 10 phut de staff check ve/len tau, neu khong se dem vao skippedStationBusy.",
                 "Moi chuyen bi bo qua nam trong skippedItems[] kem reason, conflictTripCode va earliestAllowedDepartureTime de FE hien gio som nhat co the chay lai.",
                 "Chuyen nao thieu 2 nhan vien OnBoard assignmentType=Boat phu thoi gian chuyen se bi bo qua va dem vao skippedMissingOnBoardStaff.",
