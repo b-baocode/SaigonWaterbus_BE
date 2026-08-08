@@ -154,20 +154,46 @@ public sealed class Assistant : IEndpointGroup
             return Results.NotFound(new { error = "Khong tim thay hoi thoai." });
         }
 
+        var orderedMessages = conversation.Messages
+            .OrderBy(x => x.SequenceNumber)
+            .ToArray();
+        var restoredMessages = new List<object>(orderedMessages.Length);
+        var previousUserText = string.Empty;
+        foreach (var message in orderedMessages)
+        {
+            IReadOnlyList<string> suggestedQuestions = Array.Empty<string>();
+            IReadOnlyList<AssistantAction> actions = Array.Empty<AssistantAction>();
+            if (message.Role == DomainChatMessage.AssistantRole && !message.IsAutoCloseMessage)
+            {
+                var suggestions = AssistantSuggestions.Build(previousUserText, conversation.Language);
+                suggestedQuestions = suggestions.Questions;
+                actions = suggestions.Actions;
+            }
+
+            restoredMessages.Add(new
+            {
+                id = message.Id,
+                role = message.Role,
+                text = message.Content,
+                createdAt = message.CreatedAt,
+                isAutoCloseMessage = message.IsAutoCloseMessage,
+                suggestedQuestions,
+                actions,
+            });
+
+            if (message.Role == DomainChatMessage.UserRole)
+            {
+                previousUserText = message.Content;
+            }
+        }
+
         return Results.Ok(new
         {
             conversationId = conversation.Id,
             status = conversation.Status,
             language = conversation.Language,
             bookingDraft = ParseBookingDraft(conversation.BookingDraftJson),
-            messages = conversation.Messages.Select(x => new
-            {
-                id = x.Id,
-                role = x.Role,
-                text = x.Content,
-                createdAt = x.CreatedAt,
-                isAutoCloseMessage = x.IsAutoCloseMessage
-            })
+            messages = restoredMessages
         });
     }
 
