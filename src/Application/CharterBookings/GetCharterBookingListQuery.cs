@@ -134,16 +134,16 @@ internal static class CharterBookingListItemMapper
             booking.BoatName,
             booking.BookingStatus == BookingStatus.PendingQuote ? null : booking.SubtotalAmount,
             booking.BookingStatus == BookingStatus.PendingQuote ? null : booking.TotalAmount,
-            // BE tính sẵn để FE hiển thị nút "Đặt cọc" enabled đúng (đã/s chưa cọc).
-            suggestedDepositAmount: booking.DepositAmount > 0
-                ? 0m
-                : decimal.Round(booking.TotalAmount * CharterBookingPaymentSupport.DefaultDepositPercent / 100m, 0, MidpointRounding.AwayFromZero),
-            hasDepositPaid: booking.DepositAmount > 0,
             ToRequestedBoatDtos(booking.RequestedBoatDecks, booking.RequestedBoatTypes, booking.PreferredSeatSetupType),
             booking.HoldExpiresAt,
             booking.FromStationId,
             booking.ToStationId,
-            booking.BoatId);
+            booking.BoatId,
+            // BE tính sẵn để FE hiển thị nút "Đặt cọc" enabled đúng (đã/s chưa cọc).
+            SuggestedDepositAmount: booking.DepositAmount > 0
+                ? 0m
+                : decimal.Round(booking.TotalAmount * CharterBookingPaymentSupport.DefaultDepositPercent / 100m, 0, MidpointRounding.AwayFromZero),
+            HasDepositPaid: booking.DepositAmount > 0);
 
     private static IReadOnlyList<CharterBookingListRequestedBoatDto> ToRequestedBoatDtos(
         string? requestedBoatDecks,

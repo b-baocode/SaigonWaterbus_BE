@@ -217,17 +217,17 @@ public sealed record CharterBookingListItemDto(
     decimal? SubtotalAmount,
     [property: JsonPropertyName("finalAmount")]
     decimal? FinalAmount,
+    IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? HoldExpiresAt,
+    Guid? FromStationId,
+    Guid? ToStationId,
+    Guid? BoatId,
     /// <summary>Số tiền cọc gợi ý = 50% TotalAmount khi chưa cọc, = 0 khi đã cọc xong.</summary>
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     decimal SuggestedDepositAmount = 0,
     /// <summary>true nếu booking đã có phần cọc thanh toán thành công.</summary>
-    bool HasDepositPaid = false,
-    IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateTimeOffset? HoldExpiresAt,
-    Guid? FromStationId = null,
-    Guid? ToStationId = null,
-    Guid? BoatId = null);
+    bool HasDepositPaid = false);
 
 public sealed record CharterBookingListRequestedBoatDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -276,10 +276,6 @@ public sealed record CharterBookingDetailDto(
     decimal TotalAmount,
     decimal DepositAmount,
     decimal RemainingAmount,
-    /// <summary>Số tiền cọc gợi ý = 50% TotalAmount khi chưa cọc, = 0 khi đã cọc xong.</summary>
-    decimal SuggestedDepositAmount,
-    /// <summary>true nếu booking đã có phần cọc thanh toán thành công (DepositAmount &gt; 0).</summary>
-    bool HasDepositPaid,
     /// <summary>true khi RemainingAmount &gt; 0 — cần thanh toán thêm.</summary>
     bool RequiresAdditionalPayment,
     string ContactName,
@@ -299,7 +295,12 @@ public sealed record CharterBookingDetailDto(
     Guid? InsurancePackageId = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingSelectedRouteDto? SelectedRoute = null,
-    Guid? BoatId = null);
+    Guid? BoatId = null,
+    /// <summary>Số tiền cọc gợi ý = 50% TotalAmount khi chưa cọc, = 0 khi đã cọc xong.</summary>
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    decimal SuggestedDepositAmount = 0,
+    /// <summary>true nếu booking đã có phần cọc thanh toán thành công (DepositAmount &gt; 0).</summary>
+    bool HasDepositPaid = false);
 
 public sealed record CharterBookingUserAssignmentDto(
     Guid UserId,
