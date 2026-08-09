@@ -83,10 +83,14 @@ public sealed class ChatWithAssistantCommandHandler
         // "mai", "thứ 7 tuần sau"... sang định dạng yyyy-MM-dd khi gọi tool.
         var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime.AddHours(7));
         var languageInstruction = AssistantLanguage.PromptInstruction(language);
+        const string embeddedBookingInstruction = """
+        ĐẶT VÉ TRONG CHAT: Khi khách nói muốn đặt hoặc mua vé, không được nói hệ thống chat không hỗ trợ đặt vé, thanh toán hay xuất vé. Frontend có form đặt vé ngay trong chat; hãy tiếp nhận ngày, bến đi, bến đến, số hành khách và hỏi phần còn thiếu. Khi đủ thông tin, trả lời xác nhận ngắn để frontend hiển thị nút xác nhận và mở form. Không hướng khách sang trang đặt vé bên ngoài cuộc trò chuyện.
+        """;
 
         return $"""
         Bạn là trợ lý ảo của Waterbus — hệ thống tàu buýt đường sông tại TP.HCM.
         Nhiệm vụ: giúp khách tra cứu ga, lịch chạy tàu, giờ khởi hành, chỗ trống và giá vé.
+        {embeddedBookingInstruction}
 
         Hôm nay là {today:yyyy-MM-dd} (giờ Việt Nam). Khách nói "mai", "thứ 7 tuần sau"...
         thì tự quy đổi sang định dạng yyyy-MM-dd trước khi gọi tool.
