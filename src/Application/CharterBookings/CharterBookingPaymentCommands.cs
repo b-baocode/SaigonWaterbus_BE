@@ -543,7 +543,24 @@ internal static class CharterBookingPaymentSupport
     public const string DepositPurpose = "Deposit";
     public const string FullPurpose = "Full";
     public const string RemainingPurpose = "Remaining";
-    private const decimal DefaultDepositPercent = 50m;
+    /// <summary>% đặt cọc mặc định cho charter booking khi FE không gửi <c>depositPercent</c>.</summary>
+    public const decimal DefaultDepositPercent = 50m;
+
+    /// <summary>
+    /// BE tính sẵn để FE không phải đoán:
+    /// - <c>hasDepositPaid</c> = true nếu đã thu phần cọc thành công (DepositAmount &gt; 0).
+    /// - <c>suggestedDepositAmount</c> = 50% TotalAmount khi chưa cọc, = 0 khi đã cọc xong.
+    /// </summary>
+    public static (bool HasDepositPaid, decimal SuggestedDepositAmount) ComputeDepositPlan(Booking booking)
+    {
+        var paidAmount = GetPaidAmount(booking);
+        var hasDepositPaid = paidAmount > 0 && paidAmount < booking.TotalAmount
+            || paidAmount >= booking.TotalAmount;
+        var suggestedDepositAmount = hasDepositPaid
+            ? 0m
+            : decimal.Round(booking.TotalAmount * DefaultDepositPercent / 100m, 0, MidpointRounding.AwayFromZero);
+        return (hasDepositPaid, suggestedDepositAmount);
+    }
 
     public static async Task<Booking> GetOwnedCharterBookingAsync(
         IApplicationDbContext context,
@@ -640,10 +657,25 @@ internal static class CharterBookingPaymentSupport
                     0);
         }
 
+        if (paymentOption == CharterBookingPaymentOption.Remaining)
+        {
+            if (paidAmount <= 0)
+            {
+                throw new ValidationException([new ValidationFailure(nameof(paymentOption),
+                    "Charter booking chưa thanh toán đặt cọc nên chưa có phần còn lại để thanh toán.")]);
+            }
+
+            return new CharterBookingPaymentPlan(
+                RemainingPurpose,
+                outstandingAmount,
+                booking.DepositAmount,
+                0);
+        }
+
         if (paidAmount > 0)
         {
             throw new ValidationException([new ValidationFailure("paymentOption",
-                "Booking đã có thanh toán đặt cọc. Chọn Full để thanh toán phần còn lại.")]);
+                "Charter booking đã có thanh toán đặt cọc. Chọn Remaining hoặc Full để thanh toán phần còn lại.")]);
         }
 
         var depositPercent = requestedDepositPercent ?? DefaultDepositPercent;

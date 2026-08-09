@@ -36,6 +36,7 @@ internal static class CharterBookingQuerySupport
         var rentalUnitForEstimate = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
         var requestedDurationValueForEstimate = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
         var selectedBoatDtos = CharterBookingBoatSelectionSupport.ToSelectedBoatDtos(booking.CharterBoats);
+        var depositPlan = CharterBookingPaymentSupport.ComputeDepositPlan(booking);
         var selectedChargeableDurationValue = selectedBoatDtos.FirstOrDefault()?.ChargeableDurationValue;
         var selectedChargeableDurationMinutes =
             selectedChargeableDurationValue.HasValue && rentalUnitForEstimate == Domain.Enums.BoatRentalUnit.Hour
@@ -103,6 +104,9 @@ internal static class CharterBookingQuerySupport
             booking.TotalAmount,
             booking.DepositAmount,
             booking.RemainingAmount,
+            // BE tính sẵn để FE không phải đoán — đảm bảo nút "Đặt cọc / Thanh toán đủ / Phần còn lại" enabled đúng.
+            suggestedDepositAmount: depositPlan.SuggestedDepositAmount,
+            hasDepositPaid: depositPlan.HasDepositPaid,
             booking.RemainingAmount > 0,
             booking.ContactName,
             booking.ContactPhone,

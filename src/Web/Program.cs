@@ -176,6 +176,34 @@ app.UseAuthorization();
 
 app.UseFileServer();
 
+// Override Content-Type cho Apple App Site Association (iOS yêu cầu application/json).
+app.MapGet("/.well-known/apple-app-site-association", async (HttpContext ctx, IWebHostEnvironment env) =>
+{
+    var path = Path.Combine(env.WebRootPath, ".well-known", "apple-app-site-association");
+    if (!File.Exists(path))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    ctx.Response.ContentType = "application/json";
+    await ctx.Response.SendFileAsync(path);
+});
+
+// Digital Asset Links cho Android App Links phải trả về application/json (không phải text/plain).
+app.MapGet("/.well-known/assetlinks.json", async (HttpContext ctx, IWebHostEnvironment env) =>
+{
+    var path = Path.Combine(env.WebRootPath, ".well-known", "assetlinks.json");
+    if (!File.Exists(path))
+    {
+        ctx.Response.StatusCode = StatusCodes.Status404NotFound;
+        return;
+    }
+
+    ctx.Response.ContentType = "application/json";
+    await ctx.Response.SendFileAsync(path);
+});
+
 app.MapOpenApi();
 app.UseSwagger();
 app.UseSwaggerUI();

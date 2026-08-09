@@ -42,7 +42,10 @@ public sealed record BookingManifestPassengerDto(
     string? CompanionPassengerName = null,
     bool UsesCompanionTicket = false,
     DateTimeOffset? IssuedAt = null,
-    int? BirthYear = null);
+    int? BirthYear = null,
+    string? SeatTypeCode = null,
+    string? SeatTypeName = null,
+    int? Deck = null);
 
 // Booking khứ hồi: các field Return* mô tả chiều về (null với booking một chiều);
 // mỗi passenger mang TripCode của chiều mình thuộc về.
@@ -223,6 +226,7 @@ internal static class BookingManifestSupport
             .AsNoTracking()
             .Include(x => x.TripSeat)
                 .ThenInclude(x => x!.Seat)
+                    .ThenInclude(x => x!.SeatType)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Where(x => x.BookingId == booking.Id)
@@ -359,7 +363,10 @@ internal static class BookingManifestSupport
                     companion?.FullName,
                     usesCompanionTicket && companion is not null,
                     ticket?.IssuedAt,
-                    passenger.BirthYear);
+                    passenger.BirthYear,
+                    passenger.TripSeat?.Seat?.SeatTypeCode,
+                    passenger.TripSeat?.Seat?.SeatType?.Name,
+                    passenger.TripSeat?.Seat?.Deck);
             })
             .ToList();
 

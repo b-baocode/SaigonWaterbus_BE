@@ -217,6 +217,11 @@ public sealed record CharterBookingListItemDto(
     decimal? SubtotalAmount,
     [property: JsonPropertyName("finalAmount")]
     decimal? FinalAmount,
+    /// <summary>Số tiền cọc gợi ý = 50% TotalAmount khi chưa cọc, = 0 khi đã cọc xong.</summary>
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
+    decimal SuggestedDepositAmount = 0,
+    /// <summary>true nếu booking đã có phần cọc thanh toán thành công.</summary>
+    bool HasDepositPaid = false,
     IReadOnlyList<CharterBookingListRequestedBoatDto> RequestedBoats,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? HoldExpiresAt,
@@ -271,6 +276,11 @@ public sealed record CharterBookingDetailDto(
     decimal TotalAmount,
     decimal DepositAmount,
     decimal RemainingAmount,
+    /// <summary>Số tiền cọc gợi ý = 50% TotalAmount khi chưa cọc, = 0 khi đã cọc xong.</summary>
+    decimal SuggestedDepositAmount,
+    /// <summary>true nếu booking đã có phần cọc thanh toán thành công (DepositAmount &gt; 0).</summary>
+    bool HasDepositPaid,
+    /// <summary>true khi RemainingAmount &gt; 0 — cần thanh toán thêm.</summary>
     bool RequiresAdditionalPayment,
     string ContactName,
     string ContactPhone,
@@ -364,8 +374,12 @@ public sealed record CharterBookingTicketDto(
 
 public enum CharterBookingPaymentOption
 {
+    /// <summary>Đặt cọc 50% (mặc định) hoặc theo <c>depositPercent</c>.</summary>
     Deposit = 0,
-    Full = 1
+    /// <summary>Thanh toán toàn bộ 100% ngay.</summary>
+    Full = 1,
+    /// <summary>Thanh toán phần còn lại sau khi đã đặt cọc.</summary>
+    Remaining = 2
 }
 
 public sealed record CreateCharterBookingPaymentRequest(
