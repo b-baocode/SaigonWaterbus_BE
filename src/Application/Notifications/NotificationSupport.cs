@@ -40,6 +40,7 @@ public static class NotificationTypes
     public const string StaffTripReplanned = "staff_trip_replanned";
     public const string OperationsTripReplanned = "operations_trip_replanned";
     public const string OperationsReplanRequired = "operations_replan_required";
+    public const string CharterQuoted = "charter_quoted";
 }
 
 public static class NotificationRelatedEntityTypes
@@ -237,6 +238,45 @@ public static class NotificationSupport
             Title = title,
             Body = body,
             Type = NotificationTypes.BookingConfirmed,
+            RelatedEntityType = NotificationRelatedEntityTypes.Booking,
+            RelatedEntityId = booking.Id,
+            CreatedAt = now
+        };
+        context.Set<Notification>().Add(notification);
+        return notification;
+    }
+
+    /// <summary>
+    /// Admin chốt giá charter booking (status chuyển sang Quoted) → tạo thông báo cho customer
+    /// để họ thanh toán đặt cọc trong khoảng thời gian hold. Skip nếu booking không có tài khoản
+    /// (khách vãng lai). Caller chịu trách nhiệm SaveChanges.
+    /// </summary>
+    public static Notification? AddCharterBookingQuotedNotification(
+        IApplicationDbContext context,
+        Booking booking,
+        DateTimeOffset now)
+    {
+        if (!booking.UserId.HasValue)
+        {
+            return null;
+        }
+
+        var totalText = FormatAmount(booking.TotalAmount, booking.Currency);
+        var amountText = totalText;
+        var depositText = booking.DepositAmount > 0
+            ? $" Tiền đặt cọc: {FormatAmount(booking.DepositAmount, booking.Currency)}."
+            : "";
+
+        var paymentDeadline = booking.HoldExpiresAt.HasValue
+            ? $" Vui lòng thanh toán trước {FormatVietnamTime(booking.HoldExpiresAt.Value)} để giữ chỗ."
+            : "";
+
+        var notification = new Notification
+        {
+            UserId = booking.UserId.Value,
+            Title = "Đơn thuê tàu đã được chốt giá",
+            Body = $"Booking {booking.BookingCode} đã được chốt giá {amountText}.{depositText}{paymentDeadline}",
+            Type = NotificationTypes.CharterQuoted,
             RelatedEntityType = NotificationRelatedEntityTypes.Booking,
             RelatedEntityId = booking.Id,
             CreatedAt = now

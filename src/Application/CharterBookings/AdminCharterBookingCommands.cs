@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Trips;
@@ -587,19 +588,25 @@ public sealed class QuoteCharterBookingCommandHandler
     private readonly IBoatHoldService _boatHoldService;
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly IPushNotificationSender _pushNotificationSender;
 
     public QuoteCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
         IBoatHoldService? boatHoldService = null,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        IPushNotificationSender? pushNotificationSender = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _pushNotificationSender = pushNotificationSender ?? NullPushNotificationSender.Instance;
     }
 
     public async Task<QuoteCharterBookingResult> Handle(
@@ -780,6 +787,23 @@ public sealed class QuoteCharterBookingCommandHandler
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+
+            // Tạo in-app notification + push mobile sau khi save thành công
+            // (chỉ cho customer có tài khoản, khách vãng lai bỏ qua).
+            var quotedNotification = NotificationSupport.AddCharterBookingQuotedNotification(
+                _context,
+                booking,
+                now);
+            if (quotedNotification is not null)
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                await NotificationSupport.PublishCreatedAsync(
+                    _notificationRealtimeNotifier,
+                    _pushNotificationSender,
+                    [quotedNotification],
+                    cancellationToken);
+            }
+
             await _realtimeNotifier.PublishChangedAsync(
                 new CharterBookingRealtimeEvent(
                     booking.Id,
