@@ -17,7 +17,9 @@ public sealed record GetRevenueReportQuery(
     DateTimeOffset To,
     string? ServiceType = null,
     string? PaymentMethod = null,
-    Guid? SoldByStaffId = null) : IRequest<RevenueReportDto>;
+    Guid? SoldByStaffId = null,
+    Guid? FromStationId = null,
+    Guid? ToStationId = null) : IRequest<RevenueReportDto>;
 
 public sealed record RevenueReportDto(
     DateTimeOffset From,
@@ -31,7 +33,23 @@ public sealed record RevenueReportDto(
     int CounterBookingCount,
     IReadOnlyList<RevenueBreakdownDto> ByPaymentMethod,
     IReadOnlyList<RevenueBreakdownDto> ByServiceType,
+    IReadOnlyList<StationRevenueDto> ByStation,
     IReadOnlyList<DailyRevenueDto> Daily);
+
+public sealed record StationRevenueDto(
+    Guid StationId,
+    string StationName,
+    string StationCode,
+    int DepartureBookingCount,
+    int DepartureTicketCount,
+    decimal DepartureRevenue,
+    decimal DepartureRefundAmount,
+    decimal DepartureNetRevenue,
+    int ArrivalBookingCount,
+    int ArrivalTicketCount,
+    decimal ArrivalRevenue,
+    decimal ArrivalRefundAmount,
+    decimal ArrivalNetRevenue);
 
 public sealed record RevenueBreakdownDto(
     string Key,
@@ -215,6 +233,16 @@ public sealed class GetRevenueReportQueryHandler
             query = query.Where(p => p.Booking.SoldByStaffId == request.SoldByStaffId.Value);
         }
 
+        if (request.FromStationId.HasValue)
+        {
+            query = query.Where(p => p.Booking.FromStationId == request.FromStationId.Value);
+        }
+
+        if (request.ToStationId.HasValue)
+        {
+            query = query.Where(p => p.Booking.ToStationId == request.ToStationId.Value);
+        }
+
         query = BookingReportQuerySupport.ApplyServiceTypeFilter(query, serviceType);
 
         var rows = await query
@@ -228,7 +256,13 @@ public sealed class GetRevenueReportQueryHandler
                 p.Booking.BookingType,
                 p.Booking.Trip != null ? p.Booking.Trip.Route.RouteType : null,
                 p.Booking.SoldByStaffId,
-                p.Booking.Tickets.Count(t => t.TicketStatus != TicketStatus.Cancelled)))
+                p.Booking.Tickets.Count(t => t.TicketStatus != TicketStatus.Cancelled),
+                p.Booking.FromStationId,
+                p.Booking.FromStation != null ? p.Booking.FromStation.StationName : null,
+                p.Booking.FromStation != null ? p.Booking.FromStation.StationCode : null,
+                p.Booking.ToStationId,
+                p.Booking.ToStation != null ? p.Booking.ToStation.StationName : null,
+                p.Booking.ToStation != null ? p.Booking.ToStation.StationCode : null))
             .ToListAsync(cancellationToken);
 
         var grossRevenue = rows.Sum(x => x.Amount);
@@ -247,6 +281,7 @@ public sealed class GetRevenueReportQueryHandler
             bookingGroups.Count(g => g.Any(x => x.SoldByStaffId.HasValue)),
             BuildBreakdown(rows, x => x.PaymentMethod),
             BuildBreakdown(rows, x => BookingReportQuerySupport.ResolveServiceType(x.BookingType, x.RouteType)),
+            BuildStationBreakdown(rows),
             BuildDaily(rows));
     }
 
@@ -277,6 +312,71 @@ public sealed class GetRevenueReportQueryHandler
                 x.Sum(r => r.RefundAmount),
                 x.Sum(r => r.Amount - r.RefundAmount)))
             .ToArray();
+
+    private static IReadOnlyList<StationRevenueDto> BuildStationBreakdown(IReadOnlyList<RevenuePaymentRow> rows)
+    {
+        // Build departure station breakdown
+        var departureGroups = rows
+            .Where(r => r.FromStationId.HasValue)
+            .GroupBy(r => r.FromStationId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => new
+                {
+                    StationName = g.First().FromStationName ?? "Unknown",
+                    StationCode = g.First().FromStationCode ?? "N/A",
+                    BookingIds = g.Select(r => r.BookingId).Distinct().ToList(),
+                    TicketCount = g.Sum(r => r.TicketCount),
+                    Revenue = g.Sum(r => r.Amount),
+                    RefundAmount = g.Sum(r => r.RefundAmount)
+                });
+
+        // Build arrival station breakdown
+        var arrivalGroups = rows
+            .Where(r => r.ToStationId.HasValue)
+            .GroupBy(r => r.ToStationId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => new
+                {
+                    StationName = g.First().ToStationName ?? "Unknown",
+                    StationCode = g.First().ToStationCode ?? "N/A",
+                    BookingIds = g.Select(r => r.BookingId).Distinct().ToList(),
+                    TicketCount = g.Sum(r => r.TicketCount),
+                    Revenue = g.Sum(r => r.Amount),
+                    RefundAmount = g.Sum(r => r.RefundAmount)
+                });
+
+        // Combine all station IDs (union of departure and arrival)
+        var allStationIds = departureGroups.Keys
+            .Union(arrivalGroups.Keys)
+            .OrderBy(id => departureGroups.GetValueOrDefault(id)?.StationName ?? arrivalGroups.GetValueOrDefault(id)?.StationName ?? "")
+            .ToList();
+
+        var result = new List<StationRevenueDto>();
+        foreach (var stationId in allStationIds)
+        {
+            var dep = departureGroups.GetValueOrDefault(stationId);
+            var arr = arrivalGroups.GetValueOrDefault(stationId);
+
+            result.Add(new StationRevenueDto(
+                stationId,
+                dep?.StationName ?? arr?.StationName ?? "Unknown",
+                dep?.StationCode ?? arr?.StationCode ?? "N/A",
+                dep?.BookingIds.Count ?? 0,
+                dep?.TicketCount ?? 0,
+                dep?.Revenue ?? 0m,
+                dep?.RefundAmount ?? 0m,
+                (dep?.Revenue ?? 0m) - (dep?.RefundAmount ?? 0m),
+                arr?.BookingIds.Count ?? 0,
+                arr?.TicketCount ?? 0,
+                arr?.Revenue ?? 0m,
+                arr?.RefundAmount ?? 0m,
+                (arr?.Revenue ?? 0m) - (arr?.RefundAmount ?? 0m)));
+        }
+
+        return result;
+    }
 }
 
 public sealed class GetBookingManagementListQueryHandler
@@ -407,7 +507,13 @@ internal sealed record RevenuePaymentRow(
     string BookingType,
     string? RouteType,
     Guid? SoldByStaffId,
-    int TicketCount);
+    int TicketCount,
+    Guid? FromStationId,
+    string? FromStationName,
+    string? FromStationCode,
+    Guid? ToStationId,
+    string? ToStationName,
+    string? ToStationCode);
 
 internal sealed record BookingManagementRow(
     Guid BookingId,
