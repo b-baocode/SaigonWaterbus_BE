@@ -31,15 +31,18 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
     private readonly IApplicationDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly IPushNotificationSender _pushNotificationSender;
 
     public UpdateTripStatusCommandHandler(
         IApplicationDbContext context,
         TimeProvider? timeProvider = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        IPushNotificationSender? pushNotificationSender = null)
     {
         _context = context;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _pushNotificationSender = pushNotificationSender ?? NullPushNotificationSender.Instance;
     }
 
     public async Task<TripDetailDto> Handle(UpdateTripStatusCommand request, CancellationToken cancellationToken)
@@ -107,7 +110,7 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
 
         await _context.SaveChangesAsync(cancellationToken);
         await NotificationSupport.PublishCreatedAsync(
-            _notificationRealtimeNotifier, createdNotifications, cancellationToken);
+            _notificationRealtimeNotifier, _pushNotificationSender, createdNotifications, cancellationToken);
 
         return ToDetailDto(trip, sourceBooking);
     }

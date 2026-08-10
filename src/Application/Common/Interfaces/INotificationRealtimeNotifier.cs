@@ -32,3 +32,19 @@ public sealed class NullNotificationRealtimeNotifier : INotificationRealtimeNoti
         IReadOnlyList<NotificationRealtimeEvent> notifications,
         CancellationToken cancellationToken) => Task.CompletedTask;
 }
+
+/// <summary>
+/// Null-object: gửi push lên Expo, dùng khi push sender chưa được DI inject
+/// (test, dev, hoặc trước khi feature flag bật).
+/// </summary>
+public sealed class NullPushNotificationSender : IPushNotificationSender
+{
+    public static readonly NullPushNotificationSender Instance = new();
+
+    private NullPushNotificationSender() { }
+
+    public Task SendAsync(
+        Guid userId,
+        PushNotificationPayload payload,
+        CancellationToken cancellationToken) => Task.CompletedTask;
+}

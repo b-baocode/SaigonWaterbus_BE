@@ -77,22 +77,114 @@ public static class NotificationSupport
     }
 
     /// <summary>
-    /// Push realtime các notification ĐÃ được SaveChanges thành công. Gọi sau save để
-    /// client không nhận sự kiện cho bản ghi chưa/không tồn tại.
+    /// Backward-compatible overload: chỉ realtime (SignalR), không gửi mobile push.
     /// </summary>
     public static Task PublishCreatedAsync(
         INotificationRealtimeNotifier? notifier,
         IReadOnlyList<Notification> notifications,
+        CancellationToken cancellationToken) =>
+        PublishCreatedAsync(notifier, pushSender: null, notifications, cancellationToken);
+
+    /// <summary>
+    /// Push realtime + mobile push các notification ĐÃ được SaveChanges thành công.
+    /// Gọi sau save để client không nhận sự kiện cho bản ghi chưa/không tồn tại.
+    /// </summary>
+    public static async Task PublishCreatedAsync(
+        INotificationRealtimeNotifier? notifier,
+        IPushNotificationSender? pushSender,
+        IReadOnlyList<Notification> notifications,
         CancellationToken cancellationToken)
     {
-        if (notifier is null || notifications.Count == 0)
+        if (notifications.Count == 0)
         {
-            return Task.CompletedTask;
+            return;
         }
 
-        return notifier.PublishCreatedAsync(
-            notifications.Select(ToRealtimeEvent).ToList(),
-            cancellationToken);
+        // Realtime (SignalR) - skip nếu không có client online.
+        if (notifier is not null)
+        {
+            await notifier.PublishCreatedAsync(
+                notifications.Select(ToRealtimeEvent).ToList(),
+                cancellationToken);
+        }
+
+        // Mobile push (Expo) - gửi song song theo từng notification.
+        if (pushSender is not null)
+        {
+            var pushTasks = notifications
+                .Select(n => SendPushSafelyAsync(pushSender, n, cancellationToken));
+            await Task.WhenAll(pushTasks);
+        }
+    }
+
+    private static async Task SendPushSafelyAsync(
+        IPushNotificationSender pushSender,
+        Notification notification,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var deepLink = BuildDeepLink(notification);
+            await pushSender.SendAsync(
+                notification.UserId,
+                new PushNotificationPayload(
+                    notification.Title,
+                    notification.Body ?? string.Empty,
+                    notification.Type,
+                    notification.RelatedEntityType,
+                    notification.RelatedEntityId,
+                    deepLink,
+                    ResolveChannelId(notification.Type)),
+                cancellationToken);
+        }
+        catch (Exception)
+        {
+            // Push fail không được làm fail toàn bộ flow.
+            // Logging đã được thực hiện trong ExpoPushNotificationSender.
+        }
+    }
+
+    private static string ResolveChannelId(string type)
+    {
+        if (type.StartsWith("booking_", StringComparison.OrdinalIgnoreCase)
+            || type.StartsWith("trip_", StringComparison.OrdinalIgnoreCase))
+        {
+            return "booking";
+        }
+        if (type.StartsWith("payment", StringComparison.OrdinalIgnoreCase))
+        {
+            return "payment";
+        }
+        if (type.StartsWith("promotion_", StringComparison.OrdinalIgnoreCase))
+        {
+            return "promotion";
+        }
+        if (type.StartsWith("staff_", StringComparison.OrdinalIgnoreCase)
+            || type.StartsWith("operations_", StringComparison.OrdinalIgnoreCase)
+            || type.StartsWith("incident_", StringComparison.OrdinalIgnoreCase))
+        {
+            return "operations";
+        }
+        return "default";
+    }
+
+    private static string? BuildDeepLink(Notification n)
+    {
+        if (!n.RelatedEntityId.HasValue) return null;
+        return (n.RelatedEntityType, n.Type) switch
+        {
+            (NotificationRelatedEntityTypes.Booking, _) =>
+                $"saigonwaterbus://booking/{n.RelatedEntityId.Value}",
+            (NotificationRelatedEntityTypes.Trip, _) =>
+                $"saigonwaterbus://trip/{n.RelatedEntityId.Value}",
+            (NotificationRelatedEntityTypes.Incident, _) =>
+                $"saigonwaterbus://incident/{n.RelatedEntityId.Value}",
+            (NotificationRelatedEntityTypes.Promotion, _) =>
+                $"saigonwaterbus://promotion/{n.RelatedEntityId.Value}",
+            (NotificationRelatedEntityTypes.StaffAssignment, _) =>
+                $"saigonwaterbus://staff-assignment/{n.RelatedEntityId.Value}",
+            _ => null
+        };
     }
 
     public static NotificationRealtimeEvent ToRealtimeEvent(Notification notification) =>

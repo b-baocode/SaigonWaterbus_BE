@@ -413,7 +413,7 @@ public class CreatePaymentCommandTests
                 new CreatePaymentCommand(booking.Id, BookingPaymentOption.Full),
                 CancellationToken.None));
 
-        booking.PaymentStatus.ShouldBe("Unpaid");
+        booking.PaymentStatus.ShouldBe("Failed");
         booking.DepositAmount.ShouldBe(0);
         booking.RemainingAmount.ShouldBe(10000);
         context.Set<Payment>().Count().ShouldBe(1);

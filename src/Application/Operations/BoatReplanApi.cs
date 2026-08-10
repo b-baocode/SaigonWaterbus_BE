@@ -140,17 +140,20 @@ public sealed class ConfirmBoatReplanCommandHandler
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly IPushNotificationSender _pushNotificationSender;
 
     public ConfirmBoatReplanCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        IPushNotificationSender? pushNotificationSender = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _pushNotificationSender = pushNotificationSender ?? NullPushNotificationSender.Instance;
     }
 
     public async Task<BoatReplanPreviewDto> Handle(
@@ -283,6 +286,7 @@ public sealed class ConfirmBoatReplanCommandHandler
 
         await NotificationSupport.PublishCreatedAsync(
             _notificationRealtimeNotifier,
+            _pushNotificationSender,
             createdNotifications,
             cancellationToken);
 
