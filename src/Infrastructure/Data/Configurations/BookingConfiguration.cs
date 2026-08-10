@@ -127,7 +127,6 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         {
             BookingStatus.PendingPayment => "Pending",
             BookingStatus.Expired => "Expired",
-            BookingStatus.Refunded => "Refunded",
             BookingStatus.Quoted => "Quoted",
             BookingStatus.Completed => "Completed",
             _ => status.ToString()

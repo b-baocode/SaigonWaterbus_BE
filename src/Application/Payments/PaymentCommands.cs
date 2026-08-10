@@ -1488,7 +1488,7 @@ internal static class PaymentSupport
                 "Thời hạn phản hồi hoặc thanh toán charter booking đã hết. Vui lòng tạo yêu cầu thuê tàu mới.")]);
         }
 
-        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded or BookingStatus.Expired)
+        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Cancelled or BookingStatus.Expired)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Không thể tạo thanh toán cho booking đã hoàn tất, đã hoàn tiền hoặc đã hết hạn giữ chỗ.")]);
@@ -2002,7 +2002,7 @@ internal static class PaymentSupport
         if (refundedAmount >= paidAmount)
         {
             booking.PaymentStatus = RefundedBookingPaymentStatus;
-            booking.BookingStatus = BookingStatus.Refunded;
+            booking.BookingStatus = BookingStatus.Cancelled;
             foreach (var payment in booking.Payments.Where(x => IsSettlementPayment(x) && IsPaid(x.PaymentStatus)))
             {
                 if (payment.RefundAmount >= payment.Amount)
@@ -2023,7 +2023,7 @@ internal static class PaymentSupport
         CancellationToken cancellationToken)
     {
         if (!Booking.IsCharterBookingType(booking.BookingType)
-            || booking.BookingStatus != BookingStatus.Refunded)
+            || booking.BookingStatus != BookingStatus.Cancelled)
         {
             return;
         }

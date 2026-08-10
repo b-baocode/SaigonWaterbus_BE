@@ -616,7 +616,7 @@ internal static class CharterBookingPaymentSupport
                 "Thời hạn phản hồi hoặc thanh toán charter booking đã hết. Vui lòng tạo yêu cầu thuê tàu mới.")]);
         }
 
-        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Cancelled)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Không thể tạo thanh toán cho charter booking đã hoàn tất.")]);

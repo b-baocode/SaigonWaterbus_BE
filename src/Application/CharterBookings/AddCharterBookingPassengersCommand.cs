@@ -75,7 +75,7 @@ public sealed class AddCharterBookingPassengersCommandHandler
             throw new NotFoundException("Charter booking not found.");
         }
 
-        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Không thể thêm hành khách cho booking đã hủy hoặc đã hoàn tất.")]);

@@ -65,7 +65,7 @@ public sealed class GetBookingsByStatusQueryHandler
 
 // ================================ PAYMENT STATUS ================================
 
-public sealed record GetBookingsByPaymentStatusQuery(BookingPaymentStatus PaymentStatus) : IRequest<IReadOnlyList<BookingListItemDto>>;
+public sealed record GetBookingsByPaymentStatusQuery(string PaymentStatus) : IRequest<IReadOnlyList<BookingListItemDto>>;
 
 public sealed class GetBookingsByPaymentStatusQueryHandler
     : IRequestHandler<GetBookingsByPaymentStatusQuery, IReadOnlyList<BookingListItemDto>>
@@ -87,7 +87,7 @@ public sealed class GetBookingsByPaymentStatusQueryHandler
         var rows = await _context.Set<Booking>()
             .Where(b => b.BookingType == Booking.SeatBookingType)
             .Where(b => b.UserId == userId)
-            .Where(b => b.PaymentStatus == request.PaymentStatus)
+            .Where(b => string.Equals(b.PaymentStatus, request.PaymentStatus.ToString(), StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(b => b.Created)
             .Select(b => new
             {

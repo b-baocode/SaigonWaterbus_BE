@@ -269,8 +269,6 @@ public sealed class UpdateCharterBookingStatusCommandHandler
                 "Quoted do hệ thống gán khi admin chốt giá bằng API quote.",
             BookingStatus.Confirmed =>
                 "Confirmed do hệ thống gán khi thanh toán đặt cọc hoặc thanh toán đủ thành công.",
-            BookingStatus.Refunded =>
-                "Refunded do hệ thống gán sau luồng hoàn tiền thành công.",
             _ => "Trạng thái charter booking không hợp lệ."
         };
 
@@ -280,19 +278,19 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
     private static void EnsureCanCancel(Booking booking, BookingStatus targetStatus)
     {
-        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Cancelled)
         {
             throw CreateStatusValidation(targetStatus,
-                "Không thể hủy charter booking đã hoàn tất hoặc đã hoàn tiền.");
+                "Không thể hủy charter booking đã hoàn tất hoặc đã hủy.");
         }
     }
 
     private static void EnsureCanExpire(Booking booking, BookingStatus targetStatus)
     {
-        if (booking.BookingStatus is BookingStatus.Confirmed or BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Confirmed or BookingStatus.Completed or BookingStatus.Cancelled)
         {
             throw CreateStatusValidation(targetStatus,
-                "Không thể chuyển charter booking đã xác nhận, đã hoàn tất hoặc đã hoàn tiền sang Expired.");
+                "Không thể chuyển charter booking đã xác nhận, đã hoàn tất hoặc đã hủy sang Expired.");
         }
 
         EnsureNoPendingOrPaidPayments(booking, targetStatus);

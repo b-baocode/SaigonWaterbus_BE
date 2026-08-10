@@ -245,10 +245,10 @@ internal static class CharterBookingQuoteSupport
     public static void EnsureCanQuote(Booking booking)
     {
         if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed
-            or BookingStatus.Refunded or BookingStatus.Confirmed)
+            or BookingStatus.Confirmed)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
-                "Không thể chốt giá cho booking đã hủy, đã xác nhận, đã hoàn tất hoặc đã hoàn tiền.")]);
+                "Không thể chốt giá cho booking đã hủy, đã xác nhận hoặc đã hoàn tất.")]);
         }
 
         if (booking.Payments.Any(x =>

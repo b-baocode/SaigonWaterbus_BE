@@ -1092,7 +1092,7 @@ public class CreatePaymentCommandTests
             CancellationToken.None);
 
         result.RefundAmount.ShouldBe(10000);
-        booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
+        booking.BookingStatus.ShouldBe(BookingStatus.Cancelled);
     }
 
     [Test]
@@ -1498,7 +1498,7 @@ public class CreatePaymentCommandTests
         result.RefundRequestedAmount.ShouldBe(10000);
         result.RefundReferenceId.ShouldStartWith("MRF");
         booking.PaymentStatus.ShouldBe("Refunded");
-        booking.BookingStatus.ShouldBe(BookingStatus.Refunded);
+        booking.BookingStatus.ShouldBe(BookingStatus.Cancelled);
         payment.PaymentStatus.ShouldBe("Refunded");
     }
 
@@ -1579,8 +1579,7 @@ public class CreatePaymentCommandTests
     private static int CountActivePromotionUsage(Infrastructure.Data.ApplicationDbContext context, Guid promotionId) =>
         context.Set<Booking>().Count(b => b.PromotionId == promotionId
             && b.BookingStatus != BookingStatus.Cancelled
-            && b.BookingStatus != BookingStatus.Expired
-            && b.BookingStatus != BookingStatus.Refunded);
+            && b.BookingStatus != BookingStatus.Expired);
 
     private static User SeedAdmin(Infrastructure.Data.ApplicationDbContext context)
     {

@@ -20,7 +20,6 @@ public static class BookingSeatOccupancySupport
     public static Expression<Func<Booking, bool>> BookingOccupiesSeats(DateTimeOffset now) =>
         b => b.BookingStatus != BookingStatus.Cancelled
           && b.BookingStatus != BookingStatus.Expired
-          && b.BookingStatus != BookingStatus.Refunded
           && (b.BookingStatus != BookingStatus.PendingPayment
               || b.HoldExpiresAt == null
               || b.HoldExpiresAt > now);
@@ -28,7 +27,6 @@ public static class BookingSeatOccupancySupport
     public static Expression<Func<BookingPassenger, bool>> PassengerOccupiesSeat(DateTimeOffset now) =>
         p => p.Booking.BookingStatus != BookingStatus.Cancelled
           && p.Booking.BookingStatus != BookingStatus.Expired
-          && p.Booking.BookingStatus != BookingStatus.Refunded
           && (p.Booking.BookingStatus != BookingStatus.PendingPayment
               || p.Booking.HoldExpiresAt == null
               || p.Booking.HoldExpiresAt > now);

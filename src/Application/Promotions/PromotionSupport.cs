@@ -18,8 +18,7 @@ internal static class PromotionSupport
     public static readonly BookingStatus[] ReleasedStatuses =
     [
         BookingStatus.Cancelled,
-        BookingStatus.Expired,
-        BookingStatus.Refunded
+        BookingStatus.Expired
     ];
 
     /// <summary>Các booking đang thực sự "chiếm" lượt của một mã (chưa bị nhả).</summary>
