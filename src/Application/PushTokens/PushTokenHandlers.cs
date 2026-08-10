@@ -31,7 +31,6 @@ public sealed class RegisterPushTokenCommandHandler
         var userId = GetRequiredUserId();
         var now = _timeProvider.GetUtcNow();
 
-        // 1) Nếu token đã tồn tại cho bất kỳ user nào → gán lại cho user hiện tại và reactivate.
         var existing = await _context.Set<UserPushToken>()
             .SingleOrDefaultAsync(t => t.ExpoPushToken == request.ExpoPushToken, cancellationToken);
 
@@ -52,7 +51,6 @@ public sealed class RegisterPushTokenCommandHandler
             return new RegisterPushTokenResult(existing.Id, AlreadyRegistered: true);
         }
 
-        // 2) Token mới: nếu cùng deviceId đã có token khác của user → deactivate token cũ.
         if (!string.IsNullOrWhiteSpace(request.DeviceId))
         {
             var previousOnSameDevice = await _context.Set<UserPushToken>()

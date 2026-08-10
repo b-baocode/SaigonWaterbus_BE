@@ -109,7 +109,6 @@ public static class NotificationSupport
                 cancellationToken);
         }
 
-        // Mobile push (Expo) - gửi song song theo từng notification.
         if (pushSender is not null)
         {
             var pushTasks = notifications
@@ -140,8 +139,6 @@ public static class NotificationSupport
         }
         catch (Exception)
         {
-            // Push fail không được làm fail toàn bộ flow.
-            // Logging đã được thực hiện trong ExpoPushNotificationSender.
         }
     }
 
@@ -246,11 +243,6 @@ public static class NotificationSupport
         return notification;
     }
 
-    /// <summary>
-    /// Admin chốt giá charter booking (status chuyển sang Quoted) → tạo thông báo cho customer
-    /// để họ thanh toán đặt cọc trong khoảng thời gian hold. Skip nếu booking không có tài khoản
-    /// (khách vãng lai). Caller chịu trách nhiệm SaveChanges.
-    /// </summary>
     public static Notification? AddCharterBookingQuotedNotification(
         IApplicationDbContext context,
         Booking booking,

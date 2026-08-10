@@ -788,8 +788,6 @@ public sealed class QuoteCharterBookingCommandHandler
         {
             await _context.SaveChangesAsync(cancellationToken);
 
-            // Tạo in-app notification + push mobile sau khi save thành công
-            // (chỉ cho customer có tài khoản, khách vãng lai bỏ qua).
             var quotedNotification = NotificationSupport.AddCharterBookingQuotedNotification(
                 _context,
                 booking,

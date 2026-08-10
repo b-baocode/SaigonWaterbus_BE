@@ -11,10 +11,6 @@ using SaigonWaterbus.Domain.Entities;
 
 namespace SaigonWaterbus.Infrastructure.Push;
 
-/// <summary>
-/// Gửi push notification thông qua Expo Push API.
-/// Tự động disable token khi Expo trả DeviceNotRegistered / InvalidExpoPushToken.
-/// </summary>
 public sealed class ExpoPushNotificationSender : IPushNotificationSender
 {
     public const string HttpClientName = "ExpoPush";
@@ -80,7 +76,6 @@ public sealed class ExpoPushNotificationSender : IPushNotificationSender
 
         var disabledTokens = new HashSet<string>(StringComparer.Ordinal);
 
-        // Retry policy: 3 lần với exponential backoff (1s, 5s, 25s) cho 5xx/network errors.
         for (var attempt = 0; attempt < _options.MaxRetries; attempt++)
         {
             try
@@ -93,7 +88,6 @@ public sealed class ExpoPushNotificationSender : IPushNotificationSender
 
                 if (response.StatusCode == HttpStatusCode.TooManyRequests)
                 {
-                    // Rate limited — backoff
                     if (attempt < _options.MaxRetries - 1)
                     {
                         await Task.Delay(TimeSpan.FromSeconds(Math.Pow(5, attempt)), cancellationToken);
@@ -139,7 +133,7 @@ public sealed class ExpoPushNotificationSender : IPushNotificationSender
                     }
                 }
 
-                break; // thành công
+                break;
             }
             catch (HttpRequestException ex) when (attempt < _options.MaxRetries - 1)
             {
@@ -153,7 +147,6 @@ public sealed class ExpoPushNotificationSender : IPushNotificationSender
             }
         }
 
-        // Disable token không hợp lệ
         if (disabledTokens.Count > 0)
         {
             await DisableInvalidTokensAsync(disabledTokens, cancellationToken);
@@ -179,8 +172,6 @@ public sealed class ExpoPushNotificationSender : IPushNotificationSender
         _logger.LogInformation("Disabled {Count} invalid Expo push tokens", toDisable.Count);
     }
 
-    // ── Expo Push API DTOs ─────────────────────────────────────────────────
-
     private sealed record ExpoPushMessage(
         [property: JsonPropertyName("to")] string To,
         [property: JsonPropertyName("title")] string Title,
@@ -204,7 +195,7 @@ public sealed class ExpoPushNotificationSender : IPushNotificationSender
         [property: JsonPropertyName("id")] string? Id,
         [property: JsonPropertyName("message")] string? Message,
         [property: JsonPropertyName("details")] ExpoPushTicketDetails? Details,
-        [property: JsonPropertyName("__expoPushToken")] string ExpoPushToken); // field phụ cho mapping
+        [property: JsonPropertyName("__expoPushToken")] string ExpoPushToken);
 
     private sealed record ExpoPushTicketDetails(
         [property: JsonPropertyName("error")] string? Error);
