@@ -25,6 +25,9 @@ public sealed class Reports : IEndpointGroup
                 "Nếu bỏ ngày thì mặc định lấy từ đầu tháng hiện tại đến hôm nay theo giờ Việt Nam.",
                 "serviceType optional: Waterbus | Sightseeing | Charter.",
                 "paymentMethod optional: Cash | PayOs | Free.",
+                "fromStationId / toStationId: lọc theo bến đi / bến đến.",
+                "soldByStaffId: lọc theo nhân viên bán.",
+                "Response có byStation để xem doanh thu theo từng bến (departure/arrival).",
                 "Doanh thu ròng = tổng payment đã thu - refundAmount."));
 
         group.MapGet(GetReportBookings, "bookings")
@@ -60,6 +63,8 @@ public sealed class Reports : IEndpointGroup
         [FromQuery] string? serviceType,
         [FromQuery] string? paymentMethod,
         [FromQuery] Guid? soldByStaffId,
+        [FromQuery] Guid? fromStationId,
+        [FromQuery] Guid? toStationId,
         CancellationToken cancellationToken)
     {
         if (!TryParseOptionalDateOnly(fromDate, out var from))
@@ -86,7 +91,9 @@ public sealed class Reports : IEndpointGroup
                 ToVietnamStartOfDay(endDate.AddDays(1)),
                 serviceType,
                 paymentMethod,
-                soldByStaffId),
+                soldByStaffId,
+                fromStationId,
+                toStationId),
             cancellationToken));
     }
 
