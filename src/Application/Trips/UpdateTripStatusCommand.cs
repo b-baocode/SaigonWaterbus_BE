@@ -59,6 +59,9 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         trip.StatusNote = request.StatusNote;
         var sourceBooking = await LoadSourceBookingAsync(trip, cancellationToken);
 
+        // Tự động cập nhật trạng thái vé khi trip kết thúc
+        await UpdateTicketStatusesForTripAsync(_context, trip, oldStatus, request.TripStatus, cancellationToken);
+
         var now = _timeProvider.GetUtcNow();
         var createdNotifications = new List<Notification>();
         createdNotifications.AddRange(await NotificationSupport.AddTripStatusChangedNotificationsAsync(
@@ -172,5 +175,46 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         && (trip.TripType == TripTypes.Charter
             || trip.Route.RouteType == RouteTypes.Charter
             || trip.Route.RouteType == RouteTypes.CharterReference);
+
+    private async Task UpdateTicketStatusesForTripAsync(
+        IApplicationDbContext context,
+        Trip trip,
+        TripStatus oldStatus,
+        TripStatus newStatus,
+        CancellationToken cancellationToken)
+    {
+        // Chỉ xử lý khi trip chuyển sang Completed hoặc Cancelled
+        if (newStatus != TripStatus.Completed && newStatus != TripStatus.Cancelled)
+        {
+            return;
+        }
+
+        // Load tickets via Booking -> TripId
+        var tickets = await context.Set<Booking>()
+            .Where(b => b.TripId == trip.Id)
+            .SelectMany(b => b.Tickets)
+            .ToListAsync(cancellationToken);
+
+        foreach (var ticket in tickets)
+        {
+            switch (ticket.TicketStatus)
+            {
+                case TicketStatus.Active:
+                case TicketStatus.CheckedIn:
+                    // Chưa check-in hoặc đã check-in nhưng chưa check-out → hết hạn
+                    ticket.TicketStatus = TicketStatus.Expired;
+                    break;
+
+                case TicketStatus.CheckedOut:
+                    // Đã check-in và check-out → đã sử dụng
+                    break;
+
+                case TicketStatus.Cancelled:
+                case TicketStatus.Expired:
+                    // Giữ nguyên
+                    break;
+            }
+        }
+    }
 
 }

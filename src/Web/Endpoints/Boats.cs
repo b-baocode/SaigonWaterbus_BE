@@ -61,10 +61,9 @@ public sealed class Boats : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Lấy chi tiết tàu")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Admin, Manager hoặc Staff",
+                "Người dùng đã đăng nhập (mọi vai trò)",
                 null,
-                "Admin xem được tàu ở mọi trạng thái.",
-                "Manager và Staff chỉ xem được tàu đang Active.",
+                "Chỉ xem được tàu đang Active.",
                 "Response có maintenanceStartedAt và documentsRequireRefresh để FE hiển thị banner hồ sơ sau bảo trì."));
 
         groupBuilder.MapGet(GetBoatDocuments, "{boatId:guid}/documents")

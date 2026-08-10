@@ -81,10 +81,38 @@ public sealed class Bookings : IEndpointGroup
                 "Bearer token",
                 null,
                 "Tra ve tat ca booking cua user dang dang nhap, moi nhat truoc.",
+                "Optional filters:",
+                "- status: BookingStatus (e.g. status=Confirmed, Completed, Cancelled)",
+                "- paymentStatus: PaymentStatus string (e.g. paymentStatus=Paid)",
+                "- ticketStatus: TicketStatus (e.g. ticketStatus=Active, CheckedIn, CheckedOut)",
                 "itemCount: so ve con hieu luc (chua bi cancel).",
                 "pointsUsed/pointsEarned va insurance duoc tra kem de FE hien nhanh tren danh sach.",
                 "serviceType = Waterbus | Sightseeing (dich vu khach mua, suy tu routeType cua chuyen); "
                 + "FE dung de hien dung nhan va man chi tiet."));
+
+        group.MapGet(GetBookingsByStatus, "status/{status}")
+            .RequireAuthorization()
+            .WithSummary("Danh sach booking theo BookingStatus")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve danh sach booking theo trang thai booking (Confirmed, Completed, Cancelled, ...)."));
+
+        group.MapGet(GetBookingsByPaymentStatus, "payment-status/{paymentStatus}")
+            .RequireAuthorization()
+            .WithSummary("Danh sach booking theo PaymentStatus")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve danh sach booking theo trang thai thanh toan (Unpaid, Partial, Paid)."));
+
+        group.MapGet(GetBookingsByTicketStatus, "ticket-status/{ticketStatus}")
+            .RequireAuthorization()
+            .WithSummary("Danh sach booking theo TicketStatus (check-in/check-out)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Tra ve danh sach booking co ve theo trang thai (Active, CheckedIn, CheckedOut, Expired, Cancelled)."));
 
         group.MapGet(GetBookingDetail, "{id:guid}")
             .RequireAuthorization()
@@ -255,4 +283,16 @@ public sealed class Bookings : IEndpointGroup
     private static async Task<IResult> ResendBookingTickets(
         ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new ResendBookingTicketsCommand(id), ct));
+
+    private static async Task<IResult> GetBookingsByStatus(
+        ISender sender, Domain.Enums.BookingStatus status, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetBookingsByStatusQuery(status), ct));
+
+    private static async Task<IResult> GetBookingsByPaymentStatus(
+        ISender sender, string paymentStatus, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetBookingsByPaymentStatusQuery(paymentStatus), ct));
+
+    private static async Task<IResult> GetBookingsByTicketStatus(
+        ISender sender, Domain.Enums.TicketStatus ticketStatus, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetBookingsByTicketStatusQuery(ticketStatus), ct));
 }
