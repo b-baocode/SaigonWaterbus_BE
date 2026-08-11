@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
@@ -6,10 +6,17 @@ using Microsoft.EntityFrameworkCore.Migrations;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     /// <inheritdoc />
-    public partial class AddUserPushTokens : Migration
+    public partial class RemoveUserPushTokens : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
+        {
+            migrationBuilder.DropTable(
+                name: "user_push_tokens");
+        }
+
+        /// <inheritdoc />
+        protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
                 name: "user_push_tokens",
@@ -47,13 +54,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                 table: "user_push_tokens",
                 column: "expo_push_token",
                 unique: true);
-        }
-
-        /// <inheritdoc />
-        protected override void Down(MigrationBuilder migrationBuilder)
-        {
-            migrationBuilder.DropTable(
-                name: "user_push_tokens");
         }
     }
 }

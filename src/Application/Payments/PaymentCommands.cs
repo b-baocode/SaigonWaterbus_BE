@@ -58,7 +58,6 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly TimeProvider _timeProvider;
     private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
-    private readonly IPushNotificationSender _pushNotificationSender;
 
     public CreatePaymentCommandHandler(
         IApplicationDbContext context,
@@ -69,8 +68,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         IPaymentProcessingLock? paymentProcessingLock = null,
         ITripSeatNotifier? tripSeatNotifier = null,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
-        IPushNotificationSender? pushNotificationSender = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
@@ -81,7 +79,6 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         _timeProvider = timeProvider;
         _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
-        _pushNotificationSender = pushNotificationSender ?? NullPushNotificationSender.Instance;
     }
 
     public async Task<PaymentDto> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
@@ -248,8 +245,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             wasPaid,
             cancellationToken,
             _bookingTicketPdfRenderer,
-            _notificationRealtimeNotifier,
-            _pushNotificationSender);
+            _notificationRealtimeNotifier);
 
         return PaymentSupport.ToDto(booking, payment);
     }
@@ -303,8 +299,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             wasPaid: false,
             cancellationToken,
             _bookingTicketPdfRenderer,
-            _notificationRealtimeNotifier,
-            _pushNotificationSender);
+            _notificationRealtimeNotifier);
 
         return PaymentSupport.ToDto(booking, payment);
     }
@@ -358,8 +353,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                 wasPaid,
                 cancellationToken,
                 _bookingTicketPdfRenderer,
-                _notificationRealtimeNotifier,
-                _pushNotificationSender);
+                _notificationRealtimeNotifier);
             return true;
         }
         catch (PaymentGatewayException)
@@ -401,7 +395,6 @@ public sealed class SyncPaymentCommandHandler :
     private readonly TimeProvider _timeProvider;
     private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
-    private readonly IPushNotificationSender _pushNotificationSender;
 
     public SyncPaymentCommandHandler(
         IApplicationDbContext context,
@@ -411,8 +404,7 @@ public sealed class SyncPaymentCommandHandler :
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
-        IPushNotificationSender? pushNotificationSender = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
@@ -422,7 +414,6 @@ public sealed class SyncPaymentCommandHandler :
         _timeProvider = timeProvider;
         _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
-        _pushNotificationSender = pushNotificationSender ?? NullPushNotificationSender.Instance;
     }
 
     public async Task<PaymentDto> Handle(SyncPaymentCommand request, CancellationToken cancellationToken)
@@ -510,8 +501,7 @@ public sealed class SyncPaymentCommandHandler :
             wasPaid,
             cancellationToken,
             _bookingTicketPdfRenderer,
-            _notificationRealtimeNotifier,
-            _pushNotificationSender);
+            _notificationRealtimeNotifier);
     }
 }
 
@@ -528,7 +518,6 @@ public sealed class HandlePaymentWebhookCommandHandler
     private readonly TimeProvider _timeProvider;
     private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
-    private readonly IPushNotificationSender _pushNotificationSender;
 
     public HandlePaymentWebhookCommandHandler(
         IApplicationDbContext context,
@@ -537,8 +526,7 @@ public sealed class HandlePaymentWebhookCommandHandler
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
-        IPushNotificationSender? pushNotificationSender = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _paymentGateway = paymentGateway;
@@ -547,7 +535,6 @@ public sealed class HandlePaymentWebhookCommandHandler
         _timeProvider = timeProvider;
         _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
-        _pushNotificationSender = pushNotificationSender ?? NullPushNotificationSender.Instance;
     }
 
     public async Task<PaymentWebhookResult> Handle(
@@ -619,8 +606,7 @@ public sealed class HandlePaymentWebhookCommandHandler
                 wasPaid,
                 cancellationToken,
                 _bookingTicketPdfRenderer,
-                _notificationRealtimeNotifier,
-                _pushNotificationSender);
+                _notificationRealtimeNotifier);
             return new PaymentWebhookResult(true, webhook.Data.OrderCode, payment.PaymentStatus, "Đã ghi nhận thanh toán.");
         }
 
@@ -2068,8 +2054,7 @@ internal static class PaymentSupport
         bool wasPaid,
         CancellationToken cancellationToken,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
-        IPushNotificationSender? pushNotificationSender = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         var isPaid = IsPaid(payment.PaymentStatus);
         IReadOnlyList<Ticket> issuedTickets = [];
@@ -2097,7 +2082,26 @@ internal static class PaymentSupport
         {
             await context.SaveChangesAsync(cancellationToken);
             await NotificationSupport.PublishCreatedAsync(
-                notificationRealtimeNotifier, pushNotificationSender, [inAppNotification], cancellationToken);
+                notificationRealtimeNotifier, [inAppNotification], cancellationToken);
+        }
+
+        // Charter booking → báo thêm admin/manager (kèm Manager được giao) để theo dõi.
+        if (Booking.IsCharterBookingType(booking.BookingType))
+        {
+            var isFullyPaid = booking.RemainingAmount <= 0;
+            var adminNotifications = await NotificationSupport.AddCharterPaymentReceivedNotificationsAsync(
+                context,
+                booking,
+                payment.Amount,
+                isFullyPaid,
+                payment.PaidAt.Value,
+                cancellationToken);
+            if (adminNotifications.Count > 0)
+            {
+                await context.SaveChangesAsync(cancellationToken);
+                await NotificationSupport.PublishCreatedAsync(
+                    notificationRealtimeNotifier, adminNotifications, cancellationToken);
+            }
         }
 
         if (!Booking.IsCharterBookingType(booking.BookingType))

@@ -32,15 +32,3 @@ public sealed class NullNotificationRealtimeNotifier : INotificationRealtimeNoti
         IReadOnlyList<NotificationRealtimeEvent> notifications,
         CancellationToken cancellationToken) => Task.CompletedTask;
 }
-
-public sealed class NullPushNotificationSender : IPushNotificationSender
-{
-    public static readonly NullPushNotificationSender Instance = new();
-
-    private NullPushNotificationSender() { }
-
-    public Task SendAsync(
-        Guid userId,
-        PushNotificationPayload payload,
-        CancellationToken cancellationToken) => Task.CompletedTask;
-}

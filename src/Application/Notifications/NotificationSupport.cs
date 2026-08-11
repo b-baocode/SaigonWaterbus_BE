@@ -41,6 +41,10 @@ public static class NotificationTypes
     public const string OperationsTripReplanned = "operations_trip_replanned";
     public const string OperationsReplanRequired = "operations_replan_required";
     public const string CharterQuoted = "charter_quoted";
+    public const string CharterRequested = "charter_requested";
+    public const string CharterPaymentReceived = "charter_payment_received";
+    public const string CharterPassengerAddRequested = "charter_passenger_add_requested";
+    public const string CharterCancelled = "charter_cancelled";
 }
 
 public static class NotificationRelatedEntityTypes
@@ -78,21 +82,11 @@ public static class NotificationSupport
     }
 
     /// <summary>
-    /// Backward-compatible overload: chỉ realtime (SignalR), không gửi mobile push.
-    /// </summary>
-    public static Task PublishCreatedAsync(
-        INotificationRealtimeNotifier? notifier,
-        IReadOnlyList<Notification> notifications,
-        CancellationToken cancellationToken) =>
-        PublishCreatedAsync(notifier, pushSender: null, notifications, cancellationToken);
-
-    /// <summary>
-    /// Push realtime + mobile push các notification ĐÃ được SaveChanges thành công.
+    /// Push realtime các notification ĐÃ được SaveChanges thành công tới client đang mở app (SignalR).
     /// Gọi sau save để client không nhận sự kiện cho bản ghi chưa/không tồn tại.
     /// </summary>
     public static async Task PublishCreatedAsync(
         INotificationRealtimeNotifier? notifier,
-        IPushNotificationSender? pushSender,
         IReadOnlyList<Notification> notifications,
         CancellationToken cancellationToken)
     {
@@ -108,81 +102,6 @@ public static class NotificationSupport
                 notifications.Select(ToRealtimeEvent).ToList(),
                 cancellationToken);
         }
-
-        if (pushSender is not null)
-        {
-            var pushTasks = notifications
-                .Select(n => SendPushSafelyAsync(pushSender, n, cancellationToken));
-            await Task.WhenAll(pushTasks);
-        }
-    }
-
-    private static async Task SendPushSafelyAsync(
-        IPushNotificationSender pushSender,
-        Notification notification,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var deepLink = BuildDeepLink(notification);
-            await pushSender.SendAsync(
-                notification.UserId,
-                new PushNotificationPayload(
-                    notification.Title,
-                    notification.Body ?? string.Empty,
-                    notification.Type,
-                    notification.RelatedEntityType,
-                    notification.RelatedEntityId,
-                    deepLink,
-                    ResolveChannelId(notification.Type)),
-                cancellationToken);
-        }
-        catch (Exception)
-        {
-        }
-    }
-
-    private static string ResolveChannelId(string type)
-    {
-        if (type.StartsWith("booking_", StringComparison.OrdinalIgnoreCase)
-            || type.StartsWith("trip_", StringComparison.OrdinalIgnoreCase))
-        {
-            return "booking";
-        }
-        if (type.StartsWith("payment", StringComparison.OrdinalIgnoreCase))
-        {
-            return "payment";
-        }
-        if (type.StartsWith("promotion_", StringComparison.OrdinalIgnoreCase))
-        {
-            return "promotion";
-        }
-        if (type.StartsWith("staff_", StringComparison.OrdinalIgnoreCase)
-            || type.StartsWith("operations_", StringComparison.OrdinalIgnoreCase)
-            || type.StartsWith("incident_", StringComparison.OrdinalIgnoreCase))
-        {
-            return "operations";
-        }
-        return "default";
-    }
-
-    private static string? BuildDeepLink(Notification n)
-    {
-        if (!n.RelatedEntityId.HasValue) return null;
-        return (n.RelatedEntityType, n.Type) switch
-        {
-            (NotificationRelatedEntityTypes.Booking, _) =>
-                $"saigonwaterbus://booking/{n.RelatedEntityId.Value}",
-            (NotificationRelatedEntityTypes.Trip, _) =>
-                $"saigonwaterbus://trip/{n.RelatedEntityId.Value}",
-            (NotificationRelatedEntityTypes.Incident, _) =>
-                $"saigonwaterbus://incident/{n.RelatedEntityId.Value}",
-            (NotificationRelatedEntityTypes.Promotion, _) =>
-                $"saigonwaterbus://promotion/{n.RelatedEntityId.Value}",
-            (NotificationRelatedEntityTypes.StaffAssignment, _) =>
-                $"saigonwaterbus://staff-assignment/{n.RelatedEntityId.Value}",
-            _ => null
-        };
     }
 
     public static NotificationRealtimeEvent ToRealtimeEvent(Notification notification) =>
@@ -276,6 +195,190 @@ public static class NotificationSupport
         context.Set<Notification>().Add(notification);
         return notification;
     }
+
+    /// <summary>
+    /// Customer vừa tạo yêu cầu thuê tàu → báo cho admin/manager xử lý.
+    /// </summary>
+    public static async Task<IReadOnlyList<Notification>> AddCharterBookingRequestedNotificationsAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var adminIds = await LoadAdminManagerRecipientIdsAsync(context, cancellationToken);
+        if (adminIds.Count == 0)
+        {
+            return [];
+        }
+
+        var passengerText = booking.PassengerCount.GetValueOrDefault() > 0
+            ? $" {booking.PassengerCount} khách"
+            : "";
+        var body = $"Yêu cầu thuê tàu mới từ {booking.ContactName}{passengerText}. "
+            + $"Ngày khởi hành {booking.DepartureDate.GetValueOrDefault():dd/MM/yyyy}.";
+        return AddNotifications(
+            context,
+            adminIds,
+            "Yêu cầu thuê tàu mới",
+            body,
+            NotificationTypes.CharterRequested,
+            NotificationRelatedEntityTypes.Booking,
+            booking.Id,
+            now);
+    }
+
+    /// <summary>
+    /// Customer vừa thanh toán charter → báo admin/manager (đặc biệt Manager được giao booking) để theo dõi.
+    /// </summary>
+    public static async Task<IReadOnlyList<Notification>> AddCharterPaymentReceivedNotificationsAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        decimal paidAmount,
+        bool isFullyPaid,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var recipientIds = new HashSet<Guid>();
+        var adminIds = await LoadAdminManagerRecipientIdsAsync(context, cancellationToken);
+        foreach (var id in adminIds)
+        {
+            recipientIds.Add(id);
+        }
+
+        // Kèm Manager được giao booking (nếu có) — kể cả khi role Manager không có trong adminIds chung.
+        if (booking.AssignedManagerId.HasValue)
+        {
+            recipientIds.Add(booking.AssignedManagerId.Value);
+        }
+
+        if (recipientIds.Count == 0)
+        {
+            return [];
+        }
+
+        var amountText = FormatAmount(paidAmount, booking.Currency);
+        var title = isFullyPaid ? "Charter booking đã thanh toán đủ" : "Charter booking vừa nhận đặt cọc";
+        var body = isFullyPaid
+            ? $"Booking {booking.BookingCode} đã thanh toán đủ {amountText}."
+            : $"Booking {booking.BookingCode} vừa nhận đặt cọc {amountText}.";
+        return AddNotifications(
+            context,
+            recipientIds.ToList(),
+            title,
+            body,
+            NotificationTypes.CharterPaymentReceived,
+            NotificationRelatedEntityTypes.Booking,
+            booking.Id,
+            now);
+    }
+
+    /// <summary>
+    /// Customer vừa gửi yêu cầu thêm hành khách → báo admin/manager duyệt.
+    /// </summary>
+    public static async Task<IReadOnlyList<Notification>> AddCharterPassengerAddRequestedNotificationsAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        int addedPassengerCount,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var recipientIds = new HashSet<Guid>();
+        var adminIds = await LoadAdminManagerRecipientIdsAsync(context, cancellationToken);
+        foreach (var id in adminIds)
+        {
+            recipientIds.Add(id);
+        }
+
+        if (booking.AssignedManagerId.HasValue)
+        {
+            recipientIds.Add(booking.AssignedManagerId.Value);
+        }
+
+        if (recipientIds.Count == 0)
+        {
+            return [];
+        }
+
+        var body = $"Booking {booking.BookingCode} có yêu cầu thêm {addedPassengerCount} hành khách. "
+            + $"Vui lòng duyệt trước khi chuyến khởi hành.";
+        return AddNotifications(
+            context,
+            recipientIds.ToList(),
+            "Yêu cầu thêm hành khách",
+            body,
+            NotificationTypes.CharterPassengerAddRequested,
+            NotificationRelatedEntityTypes.Booking,
+            booking.Id,
+            now);
+    }
+
+    /// <summary>
+    /// Charter booking bị hủy → báo customer (nếu có tài khoản) + admin/manager.
+    /// </summary>
+    public static async Task<IReadOnlyList<Notification>> AddCharterBookingCancelledNotificationsAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var recipientIds = new HashSet<Guid>();
+        var adminIds = await LoadAdminManagerRecipientIdsAsync(context, cancellationToken);
+        foreach (var id in adminIds)
+        {
+            recipientIds.Add(id);
+        }
+
+        if (booking.UserId.HasValue)
+        {
+            recipientIds.Add(booking.UserId.Value);
+        }
+
+        if (booking.AssignedManagerId.HasValue)
+        {
+            recipientIds.Add(booking.AssignedManagerId.Value);
+        }
+
+        if (recipientIds.Count == 0)
+        {
+            return [];
+        }
+
+        var customerBody = $"Charter booking {booking.BookingCode} đã bị hủy. "
+            + $"Mọi chuyến phát sinh từ booking cũng đã bị hủy.";
+        var adminBody = booking.UserId.HasValue
+            ? $"Charter booking {booking.BookingCode} đã bị hủy. Hành khách đã được thông báo."
+            : $"Charter booking {booking.BookingCode} đã bị hủy.";
+
+        var created = new List<Notification>();
+        foreach (var recipientId in recipientIds)
+        {
+            var isCustomer = booking.UserId.HasValue && recipientId == booking.UserId.Value;
+            var notification = new Notification
+            {
+                UserId = recipientId,
+                Title = "Charter booking đã bị hủy",
+                Body = isCustomer ? customerBody : adminBody,
+                Type = NotificationTypes.CharterCancelled,
+                RelatedEntityType = NotificationRelatedEntityTypes.Booking,
+                RelatedEntityId = booking.Id,
+                CreatedAt = now
+            };
+            context.Set<Notification>().Add(notification);
+            created.Add(notification);
+        }
+
+        return created;
+    }
+
+    private static async Task<IReadOnlyList<Guid>> LoadAdminManagerRecipientIdsAsync(
+        IApplicationDbContext context,
+        CancellationToken cancellationToken) =>
+        await context.Set<User>()
+            .AsNoTracking()
+            .Where(u => u.Status == UserStatus.Active
+                && (u.Role.Code == Roles.AdminCode || u.Role.Code == Roles.ManagerCode))
+            .Select(u => u.Id)
+            .ToListAsync(cancellationToken);
 
     /// <summary>
     /// Chuyến chuyển sang Cancelled/Delayed → tạo thông báo cho mọi booking Confirmed trên chuyến

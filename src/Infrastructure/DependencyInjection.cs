@@ -13,7 +13,6 @@ using SaigonWaterbus.Infrastructure.Data.Interceptors;
 using SaigonWaterbus.Infrastructure.Incidents;
 using SaigonWaterbus.Infrastructure.Media;
 using SaigonWaterbus.Infrastructure.Options;
-using SaigonWaterbus.Infrastructure.Push;
 using SaigonWaterbus.Infrastructure.Payments;
 using SaigonWaterbus.Infrastructure.Redis;
 using SaigonWaterbus.Infrastructure.Security;
@@ -68,8 +67,6 @@ public static class DependencyInjection
         builder.Services.AddScoped<IStationImageStorageService, CloudinaryStationImageStorageService>();
         builder.Services.AddScoped<IPromotionImageStorageService, CloudinaryPromotionImageStorageService>();
         builder.Services.AddScoped<IPromotionLock, PromotionLock>();
-        builder.Services.AddHttpClient(ExpoPushNotificationSender.HttpClientName);
-        builder.Services.AddScoped<IPushNotificationSender, ExpoPushNotificationSender>();
         builder.Services.AddHttpClient(BrevoHttpClientName);
         builder.Services.AddHttpClient(EsmsHttpClientName);
         builder.Services.AddHttpClient(PayOsHttpClientName);
@@ -189,7 +186,6 @@ public static class DependencyInjection
             }
         });
         builder.Services.Configure<CharterRouteEstimateOptions>(builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName));
-        builder.Services.Configure<ExpoPushOptions>(builder.Configuration.GetSection(ExpoPushOptions.SectionName));
         builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection(GeminiOptions.SectionName));
         builder.Services.Configure<GoogleTextToSpeechOptions>(
             builder.Configuration.GetSection(GoogleTextToSpeechOptions.SectionName));

@@ -3706,73 +3706,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.ToTable("users", (string)null);
                 });
 
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.UserPushToken", b =>
-                {
-                    b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_push_token_id");
-
-                    b.Property<string>("AppVersion")
-                        .HasMaxLength(50)
-                        .HasColumnType("character varying(50)")
-                        .HasColumnName("app_version");
-
-                    b.Property<DateTimeOffset>("CreatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("created_at")
-                        .HasDefaultValueSql("NOW()");
-
-                    b.Property<string>("DeviceId")
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("device_id");
-
-                    b.Property<DateTimeOffset?>("DisabledAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("disabled_at");
-
-                    b.Property<string>("ExpoPushToken")
-                        .IsRequired()
-                        .HasMaxLength(255)
-                        .HasColumnType("character varying(255)")
-                        .HasColumnName("expo_push_token");
-
-                    b.Property<bool>("IsActive")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("boolean")
-                        .HasDefaultValue(true)
-                        .HasColumnName("is_active");
-
-                    b.Property<string>("Platform")
-                        .IsRequired()
-                        .HasMaxLength(10)
-                        .HasColumnType("character varying(10)")
-                        .HasColumnName("platform");
-
-                    b.Property<DateTimeOffset>("UpdatedAt")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("updated_at")
-                        .HasDefaultValueSql("NOW()");
-
-                    b.Property<Guid>("UserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("user_id");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("ExpoPushToken")
-                        .IsUnique()
-                        .HasDatabaseName("ux_user_push_tokens_token");
-
-                    b.HasIndex("UserId", "IsActive")
-                        .HasDatabaseName("ix_user_push_tokens_user_active");
-
-                    b.ToTable("user_push_tokens", (string)null);
-                });
-
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.UserStationAssignment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -4822,17 +4755,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Role");
-                });
-
-            modelBuilder.Entity("SaigonWaterbus.Domain.Entities.UserPushToken", b =>
-                {
-                    b.HasOne("SaigonWaterbus.Domain.Entities.User", "User")
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SaigonWaterbus.Domain.Entities.UserStationAssignment", b =>

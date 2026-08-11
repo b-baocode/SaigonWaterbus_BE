@@ -126,6 +126,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
     private readonly IUserContext _userContext;
     private readonly IBoatHoldService _boatHoldService;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
     private readonly TimeProvider _timeProvider;
 
     public UpdateCharterBookingStatusCommandHandler(
@@ -133,12 +134,14 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         IUserContext userContext,
         IBoatHoldService? boatHoldService = null,
         ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
         TimeProvider? timeProvider = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -188,6 +191,24 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
         // Lượt khuyến mãi suy ra từ bookings — chuyển sang trạng thái nhả lượt là tự cập nhật, không cần bookkeeping.
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (request.BookingStatus == BookingStatus.Cancelled)
+        {
+            var cancelledNotifications = await NotificationSupport
+                .AddCharterBookingCancelledNotificationsAsync(
+                    _context,
+                    booking,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken);
+            if (cancelledNotifications.Count > 0)
+            {
+                await NotificationSupport.PublishCreatedAsync(
+                    _notificationRealtimeNotifier,
+                    cancelledNotifications,
+                    cancellationToken);
+            }
+        }
+
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(
                 booking.Id,
@@ -589,7 +610,6 @@ public sealed class QuoteCharterBookingCommandHandler
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
-    private readonly IPushNotificationSender _pushNotificationSender;
 
     public QuoteCharterBookingCommandHandler(
         IApplicationDbContext context,
@@ -597,8 +617,7 @@ public sealed class QuoteCharterBookingCommandHandler
         TimeProvider timeProvider,
         IBoatHoldService? boatHoldService = null,
         ICharterBookingRealtimeNotifier? realtimeNotifier = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
-        IPushNotificationSender? pushNotificationSender = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
@@ -606,7 +625,6 @@ public sealed class QuoteCharterBookingCommandHandler
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
-        _pushNotificationSender = pushNotificationSender ?? NullPushNotificationSender.Instance;
     }
 
     public async Task<QuoteCharterBookingResult> Handle(
@@ -797,7 +815,6 @@ public sealed class QuoteCharterBookingCommandHandler
                 await _context.SaveChangesAsync(cancellationToken);
                 await NotificationSupport.PublishCreatedAsync(
                     _notificationRealtimeNotifier,
-                    _pushNotificationSender,
                     [quotedNotification],
                     cancellationToken);
             }
