@@ -22,9 +22,16 @@ public sealed record AssistantReply(
 /// Ngôn ngữ khách chọn ở toggle của khung chat ("VN"/"ENG", hoặc mã ISO "vi"/"en").
 /// Bỏ trống thì trợ lý tự bám theo ngôn ngữ trong tin nhắn của khách.
 /// </param>
+/// <param name="BookingDraftJson">
+/// Trạng thái form đặt vé nhúng trong chat (JSON thô do FE gửi/đã lưu trên hội thoại). Dùng để
+/// trợ lý biết khách đang ở bước nào mà không hỏi lại. Chỉ được TRÍCH có chọn lọc qua
+/// <see cref="AssistantBookingDraftSummary"/> — tuyệt đối không nhét thẳng vào prompt, vì đây là
+/// dữ liệu do client kiểm soát.
+/// </param>
 public sealed record ChatWithAssistantCommand(
     IReadOnlyList<AssistantTurn> History,
-    string? Language = null) : IRequest<AssistantReply>;
+    string? Language = null,
+    string? BookingDraftJson = null) : IRequest<AssistantReply>;
 
 public sealed class ChatWithAssistantCommandHandler
     : IRequestHandler<ChatWithAssistantCommand, AssistantReply>
@@ -53,7 +60,9 @@ public sealed class ChatWithAssistantCommandHandler
                 : ChatMessage.FromUser(turn.Text));
         }
 
-        var systemPrompt = BuildSystemPrompt(AssistantLanguage.Resolve(request.Language));
+        var systemPrompt = BuildSystemPrompt(
+            AssistantLanguage.Resolve(request.Language),
+            AssistantBookingDraftSummary.Build(request.BookingDraftJson));
         var result = await _runner.RunAsync(systemPrompt, messages, cancellationToken);
 
         // Vòng lặp LLM↔tool nằm ở AssistantConversationRunner (dùng chung với hướng dẫn viên
@@ -77,20 +86,45 @@ public sealed class ChatWithAssistantCommandHandler
         return new AssistantReply(text, suggestions.Questions, suggestions.Actions);
     }
 
-    private string BuildSystemPrompt(string? language)
+    private string BuildSystemPrompt(string? language, string? bookingDraftSummary)
     {
         // Giờ Việt Nam (UTC+7). Đặt ngày hôm nay vào prompt để model tự quy đổi
         // "mai", "thứ 7 tuần sau"... sang định dạng yyyy-MM-dd khi gọi tool.
         var today = DateOnly.FromDateTime(_timeProvider.GetUtcNow().UtcDateTime.AddHours(7));
         var languageInstruction = AssistantLanguage.PromptInstruction(language);
+        // Ranh giới ở đây phải khớp ĐÚNG cái form nhúng của FE làm được, không hứa rộng hơn:
+        // form đi tới bước CHỌN GHẾ rồi bàn giao sang trang đặt vé để nhập hành khách và thanh
+        // toán. Hứa quá phạm vi là đẩy khách vào ngõ cụt.
         const string embeddedBookingInstruction = """
-        ĐẶT VÉ TRONG CHAT: Khi khách nói muốn đặt hoặc mua vé, không được nói hệ thống chat không hỗ trợ đặt vé, thanh toán hay xuất vé. Frontend có form đặt vé ngay trong chat; hãy tiếp nhận ngày, bến đi, bến đến, số hành khách và hỏi phần còn thiếu. Khi đủ thông tin, trả lời xác nhận ngắn để frontend hiển thị nút xác nhận và mở form. Không hướng khách sang trang đặt vé bên ngoài cuộc trò chuyện.
+        ĐẶT VÉ TRONG CHAT: khung chat có form đặt vé nhúng ngay trong đó, dùng được cho VÉ
+        WATERBUS THƯỜNG (đi giữa 2 bến) và cho TOUR NGẮM CẢNH. Đừng nói hệ thống không hỗ trợ
+        đặt vé.
+        Việc của bạn là thu thập thông tin cơ bản, hỏi từng thứ một, đừng hỏi dồn:
+        - Vé waterbus thường: ngày đi, bến đi, bến đến, số khách. Khách muốn khứ hồi thì hỏi
+          thêm ngày về.
+        - Tour ngắm cảnh: CHỈ ngày đi và số khách. TUYỆT ĐỐI không hỏi bến đi / bến đến — tour
+          đi vòng rồi về lại đúng bến ban đầu, hỏi vậy là vô nghĩa.
+        Đủ thông tin rồi thì đáp một câu ngắn xác nhận lại để khách mở form.
+
+        FORM TRONG CHAT DỪNG Ở BƯỚC CHỌN GHẾ. Sau khi khách chọn ghế xong, khách sẽ được chuyển
+        sang trang đặt vé để nhập thông tin hành khách và thanh toán. Nếu khách hỏi về hai bước
+        đó thì nói đúng như vậy, đừng hứa làm hộ trong chat.
+
+        GIỚI HẠN của bạn — nói không được vượt:
+        - KHÔNG tự chọn ghế và không hứa một ghế cụ thể ("đã giữ ghế A12 cho bạn" là SAI). Khách
+          tự chọn ghế trên form.
+        - KHÔNG hỏi tên, tuổi, số điện thoại hành khách — phần đó khách điền ở trang đặt vé.
+        - KHÔNG nói vé đã đặt xong hay đã thanh toán. Bạn không nhìn thấy kết quả thanh toán.
+        - Chỗ trống có thể thay đổi giữa lúc bạn trả lời và lúc khách chọn ghế, nên nói "hiện còn
+          chỗ", đừng cam kết chắc chắn.
+        - THUÊ NGUYÊN TÀU không đặt được trong chat: khách gửi yêu cầu rồi nhân viên báo giá.
         """;
 
         return $"""
         Bạn là trợ lý ảo của Waterbus — hệ thống tàu buýt đường sông tại TP.HCM.
         Nhiệm vụ: giúp khách tra cứu ga, lịch chạy tàu, giờ khởi hành, chỗ trống và giá vé.
         {embeddedBookingInstruction}
+        {bookingDraftSummary}
 
         Hôm nay là {today:yyyy-MM-dd} (giờ Việt Nam). Khách nói "mai", "thứ 7 tuần sau"...
         thì tự quy đổi sang định dạng yyyy-MM-dd trước khi gọi tool.

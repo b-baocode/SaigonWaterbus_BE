@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Assistant;
 using SaigonWaterbus.Application.Common.Interfaces;
@@ -22,6 +23,12 @@ public sealed class Assistant : IEndpointGroup
         group.MapGet(GetConversation, "conversations/{id:guid}").AllowAnonymous();
         group.MapPost(CloseConversation, "conversations/{id:guid}/close").AllowAnonymous();
     }
+
+    /// <summary>
+    /// Giới hạn kích thước draft nhận từ client, để một client lỗi (hoặc cố ý) không nhồi được
+    /// megabyte vào prompt.
+    /// </summary>
+    private const int MaxBookingDraftBytes = 64 * 1024;
 
     private static async Task<IResult> Chat(
         ISender sender,
@@ -79,7 +86,22 @@ public sealed class Assistant : IEndpointGroup
             .Append(new AssistantTurn(DomainChatMessage.UserRole, latestUserText))
             .ToArray();
 
-        var reply = await sender.Send(new ChatWithAssistantCommand(history, request.Language ?? conversation.Language), ct);
+        // Draft do FE gửi kèm khi form đặt vé trong chat đang mở. CỐ Ý KHÔNG LƯU: nó chỉ cần
+        // sống trong đúng lượt này để trợ lý biết khách đang ở bước nào mà không hỏi lại.
+        // Việc giữ draft qua F5 / đổi tab là của FE (localStorage) — nhờ vậy không cần cột DB,
+        // không cần migration.
+        var incomingDraft = NormalizeBookingDraft(request.BookingDraft);
+        if (incomingDraft is not null && incomingDraft.Length > MaxBookingDraftBytes)
+        {
+            return Results.BadRequest(new { error = "Booking draft qua lon." });
+        }
+
+        var reply = await sender.Send(
+            new ChatWithAssistantCommand(
+                history,
+                request.Language ?? conversation.Language,
+                incomingDraft),
+            ct);
         var nextSequence = conversation.Messages.Count == 0
             ? 1
             : conversation.Messages.Max(x => x.SequenceNumber) + 1;
@@ -184,11 +206,33 @@ public sealed class Assistant : IEndpointGroup
     private static string? NormalizeSession(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    /// <param name="BookingDraft">
+    /// Trạng thái form đặt vé nhúng trong chat, do FE gửi lên khi form đang mở. BE nhận nguyên
+    /// JSON, KHÔNG suy diễn cấu trúc và KHÔNG lưu lại — chỉ trích vài trường an toàn để đưa vào
+    /// prompt (xem <see cref="AssistantBookingDraftSummary"/>) rồi bỏ. Bỏ trống hoặc gửi null
+    /// nghĩa là lượt này không kèm form.
+    /// </param>
     public sealed record ChatRequest(
         List<ChatTurnRequest>? Messages,
         string? Language = null,
         Guid? ConversationId = null,
-        string? ClientSessionId = null);
+        string? ClientSessionId = null,
+        JsonElement? BookingDraft = null);
 
     public sealed record ChatTurnRequest(string? Role, string? Text);
+
+    /// <summary>
+    /// Chuẩn hoá draft từ client thành chuỗi JSON để chuyển xuống tầng Application. Trả null khi
+    /// client không gửi gì hoặc gửi JSON null — hai trường hợp đó mang nghĩa "không có draft".
+    /// </summary>
+    private static string? NormalizeBookingDraft(JsonElement? draft)
+    {
+        if (draft is not JsonElement element
+            || element.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            return null;
+        }
+
+        return element.GetRawText();
+    }
 }
