@@ -1,7 +1,75 @@
+## .NET build artifacts
 bin/
 obj/
 artifacts/
 *.user
+*.suo
+*.userosscache
+*.sln.docstates
+*.nuget.props
+*.nuget.targets
+
+## Visual Studio / Rider / VS Code / Cursor
 .vs/
 .vscode/
-*.suo
+.idea/
+
+## Local secrets - NEVER commit
+appsettings.Local.json
+appsettings.*.Local.json
+appsettings.Development.json
+appsettings.Development.*.json
+**/appsettings.Local.json
+**/appsettings.Development.json
+*.env
+.env
+.env.local
+.env.*.local
+
+## macOS / OS junk
+.DS_Store
+**/.DS_Store
+.AppleDouble
+.LSOverride
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+## Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+## Linux
+*~
+
+## .NET tool outputs
+TestResults/
+coverage/
+*.coverage
+*.coveragexml
+*.dll
+*.pdb
+*.exe
+
+## EF Core migrations designer/auto files (keep .cs but skip backups)
+*.Designer.cs.bak
+
+## NuGet
+*.nupkg
+*.snupkg
+.project.assets.json
+project.assets.json
+packages/
+
+## Rider
+*.sln.iml
+
+## Cursor workspace state
+.cursor/worktrees/
+.cursor/worktrees.json
