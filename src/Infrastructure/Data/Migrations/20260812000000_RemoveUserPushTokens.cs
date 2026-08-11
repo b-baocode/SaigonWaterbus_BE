@@ -11,8 +11,13 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.DropTable(
-                name: "user_push_tokens");
+            // Idempotent: drop table only if it exists (DB may have never run AddUserPushTokens
+            // because the original migration was removed before deploy, or the table was dropped
+            // manually). This prevents "relation does not exist" errors on this migration.
+            migrationBuilder.Sql(
+                """
+                DROP TABLE IF EXISTS "user_push_tokens";
+                """);
         }
 
         /// <inheritdoc />
