@@ -16,7 +16,21 @@ public sealed class PayOsOptions
 
     public string? PartnerCode { get; set; }
 
+    /// <summary>
+    /// URL PayOS redirect user về sau khi thanh toán. Phải là URL của endpoint
+    /// <c>GET /payment/success</c> trên BE (xem <see cref="SaigonWaterbus.Web.Endpoints.PaymentResults"/>).
+    /// VD: https://waterbus.top/payment/success
+    /// </summary>
     public string ReturnUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Base URL dùng để build Universal Link cho mobile app (iOS/Android).
+    /// Mặc định derive từ <see cref="ReturnUrl"/> (strip path <c>/payment/success</c>).
+    /// Universal Link phải trỏ về cùng path mà iOS/Android biết mở app
+    /// (đã đăng ký trong apple-app-site-association / assetlinks.json).
+    /// VD: https://waterbus.top
+    /// </summary>
+    public string? ReturnUniversalLinkBase { get; set; }
 
     public string CancelUrl { get; set; } = string.Empty;
 

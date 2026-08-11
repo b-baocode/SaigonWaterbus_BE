@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Bookings;
@@ -23,7 +24,6 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
         var userId = _userContext.UserId
             ?? throw new ValidationException([]);
 
-        // RouteType lấy ở DB, ServiceType map trong bộ nhớ (BookingServiceTypes.Resolve không dịch được sang SQL).
         var rows = await _context.Set<Booking>()
             .Where(b => b.BookingType == Booking.SeatBookingType)
             .Where(b => b.UserId == userId)

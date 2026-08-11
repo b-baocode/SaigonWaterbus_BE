@@ -36,6 +36,7 @@ internal static class CharterBookingQuerySupport
         var rentalUnitForEstimate = CharterBookingRoutePricingSupport.ResolveRentalUnit(booking);
         var requestedDurationValueForEstimate = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
         var selectedBoatDtos = CharterBookingBoatSelectionSupport.ToSelectedBoatDtos(booking.CharterBoats);
+        var depositPlan = CharterBookingPaymentSupport.ComputeDepositPlan(booking);
         var selectedChargeableDurationValue = selectedBoatDtos.FirstOrDefault()?.ChargeableDurationValue;
         var selectedChargeableDurationMinutes =
             selectedChargeableDurationValue.HasValue && rentalUnitForEstimate == Domain.Enums.BoatRentalUnit.Hour
@@ -103,15 +104,16 @@ internal static class CharterBookingQuerySupport
             booking.TotalAmount,
             booking.DepositAmount,
             booking.RemainingAmount,
-            booking.RemainingAmount > 0,
-            booking.ContactName,
-            booking.ContactPhone,
-            booking.ContactEmail,
-            booking.Passengers
+            // BE tính sẵn để FE không phải đoán — đảm bảo nút "Đặt cọc / Thanh toán đủ / Phần còn lại" enabled đúng.
+            RequiresAdditionalPayment: booking.RemainingAmount > 0,
+            ContactName: booking.ContactName,
+            ContactPhone: booking.ContactPhone,
+            ContactEmail: booking.ContactEmail,
+            Passengers: booking.Passengers
                 .OrderBy(x => x.FullName)
                 .Select(CharterBookingPassengerSupport.ToDto)
                 .ToList(),
-            booking.Payments
+            Payments: booking.Payments
                 .OrderByDescending(x => x.Created)
                 .Select(x => new CharterBookingPaymentDto(
                     x.Id,
@@ -138,13 +140,15 @@ internal static class CharterBookingQuerySupport
                     x.RefundProcessedByUserId,
                     x.RefundedAt))
                 .ToList(),
-            ticketDtos.Count,
-            ticketDtos,
-            CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
-            CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot),
-            booking.InsuranceSnapshot is not null,
-            booking.InsuranceSnapshot?.InsurancePackageId,
-            booking.CharterRoute is null
+            TicketCount: ticketDtos.Count,
+            Tickets: ticketDtos,
+            SuggestedDepositAmount: depositPlan.SuggestedDepositAmount,
+            HasDepositPaid: depositPlan.HasDepositPaid,
+            AssignedManager: CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
+            Insurance: CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot),
+            InsuranceSelected: booking.InsuranceSnapshot is not null,
+            InsurancePackageId: booking.InsuranceSnapshot?.InsurancePackageId,
+            SelectedRoute: booking.CharterRoute is null
                 ? null
                 : new CharterBookingSelectedRouteDto(
                     booking.CharterRoute.Id,
@@ -153,6 +157,6 @@ internal static class CharterBookingQuerySupport
                     booking.CharterRoute.RouteType,
                     RoutePresentationSupport.ResolveLabel(booking.CharterRoute.RouteType),
                     RoutePresentationSupport.IsGeneratedForBooking(booking.CharterRoute)),
-            booking.BoatId);
+            BoatId: booking.BoatId);
     }
 }

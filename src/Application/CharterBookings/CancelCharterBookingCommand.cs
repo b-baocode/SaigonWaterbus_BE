@@ -59,7 +59,7 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
             throw new ValidationException([new ValidationFailure(nameof(request.BookingId),
                 "Yêu cầu thuê tàu đã được hủy trước đó.")]);
 
-        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus == BookingStatus.Completed)
             throw new ValidationException([new ValidationFailure(nameof(request.BookingId),
                 "Không thể hủy yêu cầu thuê tàu đã hoàn tất.")]);
 

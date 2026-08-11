@@ -81,6 +81,22 @@ internal static class TripScheduleSupport
                 continue;
             }
 
+            // New trip departs BEFORE existing trip — check BOTH directions:
+            // 1) Existing trip is blocked by the new trip (already covered above — but for
+            //    completeness, we also need to check that the existing trip can START after
+            //    the new trip finishes + buffer). This is what the original check does.
+            // 2) New trip is blocked by the existing trip (MISSING before this fix).
+            //    The new trip cannot start if it overlaps with an already-running existing trip.
+            if (requested.DepartureTime < existing.DepartureTime
+                && requested.ArrivalTime.Add(BoatTurnaroundBuffer) >= existing.DepartureTime)
+            {
+                // New trip overlaps with existing trip's departure moment.
+                return new BoatScheduleConflict(
+                    existing,
+                    existing.DepartureTime.Add(BoatTurnaroundBuffer),
+                    ResolveRepositionDuration(requested, existing));
+            }
+
             var earliestExistingDeparture = ResolveEarliestDepartureAfter(requested, existing);
             if (existing.DepartureTime < earliestExistingDeparture)
             {

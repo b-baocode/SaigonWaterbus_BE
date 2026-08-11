@@ -116,7 +116,9 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 legTrip?.Boat?.Code,
                 legTrip?.Boat?.Name,
                 legTrip?.Id,
-                i.Email);
+                i.Email,
+                i.TripSeat?.Seat?.SeatTypeCode,
+                i.TripSeat?.Seat?.SeatType?.Name);
         }).ToList();
 
         return new BookingDetailDto(
@@ -220,6 +222,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             .Where(p => p.BookingId == bookingId)
             .Include(p => p.TripSeat)
                 .ThenInclude(ts => ts!.Seat)
+                    .ThenInclude(seat => seat!.SeatType)
             .Include(p => p.FromStation)
             .Include(p => p.ToStation)
             .ToListAsync(cancellationToken);

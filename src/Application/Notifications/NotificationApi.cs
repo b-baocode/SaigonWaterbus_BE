@@ -28,10 +28,30 @@ public sealed record UnreadNotificationCountDto(int UnreadCount);
 
 public sealed record MarkAllNotificationsReadResultDto(int MarkedCount);
 
+public sealed record MarkNotificationsReadByFilterCommand(
+    string? Type = null,
+    string? RelatedEntityType = null,
+    Guid? RelatedEntityId = null,
+    bool UnreadOnly = true) : IRequest<MarkNotificationsReadByFilterResultDto>;
+
+public sealed class MarkNotificationsReadByFilterCommandValidator : AbstractValidator<MarkNotificationsReadByFilterCommand>
+{
+    public MarkNotificationsReadByFilterCommandValidator()
+    {
+        RuleFor(x => x.Type).MaximumLength(50).When(x => x.Type is not null);
+        RuleFor(x => x.RelatedEntityType).MaximumLength(50).When(x => x.RelatedEntityType is not null);
+    }
+}
+
+public sealed record MarkNotificationsReadByFilterResultDto(int MarkedCount);
+
 public sealed record GetMyNotificationsQuery(
     int Page = 1,
     int PageSize = 20,
-    bool UnreadOnly = false) : IRequest<NotificationListDto>;
+    bool UnreadOnly = false,
+    string? Type = null,
+    string? RelatedEntityType = null,
+    Guid? RelatedEntityId = null) : IRequest<NotificationListDto>;
 
 public sealed class GetMyNotificationsQueryValidator : AbstractValidator<GetMyNotificationsQuery>
 {
@@ -39,6 +59,8 @@ public sealed class GetMyNotificationsQueryValidator : AbstractValidator<GetMyNo
     {
         RuleFor(x => x.Page).GreaterThanOrEqualTo(1);
         RuleFor(x => x.PageSize).InclusiveBetween(1, 100);
+        RuleFor(x => x.Type).MaximumLength(50).When(x => x.Type is not null);
+        RuleFor(x => x.RelatedEntityType).MaximumLength(50).When(x => x.RelatedEntityType is not null);
     }
 }
 
@@ -62,6 +84,16 @@ public sealed class GetMyNotificationsQueryHandler
         var myNotifications = _context.Set<Notification>()
             .AsNoTracking()
             .Where(n => n.UserId == userId);
+
+        // Apply filters
+        if (!string.IsNullOrWhiteSpace(request.Type))
+            myNotifications = myNotifications.Where(n => n.Type == request.Type);
+
+        if (!string.IsNullOrWhiteSpace(request.RelatedEntityType))
+            myNotifications = myNotifications.Where(n => n.RelatedEntityType == request.RelatedEntityType);
+
+        if (request.RelatedEntityId.HasValue)
+            myNotifications = myNotifications.Where(n => n.RelatedEntityId == request.RelatedEntityId);
 
         var unreadCount = await myNotifications.CountAsync(n => !n.IsRead, cancellationToken);
         var filtered = request.UnreadOnly
@@ -203,6 +235,61 @@ public sealed class MarkAllMyNotificationsReadCommandHandler
 
         await _context.SaveChangesAsync(cancellationToken);
         return new MarkAllNotificationsReadResultDto(unreadNotifications.Count);
+    }
+}
+
+public sealed class MarkNotificationsReadByFilterCommandHandler
+    : IRequestHandler<MarkNotificationsReadByFilterCommand, MarkNotificationsReadByFilterResultDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public MarkNotificationsReadByFilterCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<MarkNotificationsReadByFilterResultDto> Handle(
+        MarkNotificationsReadByFilterCommand request,
+        CancellationToken cancellationToken)
+    {
+        var userId = NotificationApiSupport.GetRequiredUserId(_userContext);
+
+        var query = _context.Set<Notification>()
+            .Where(n => n.UserId == userId);
+
+        if (request.UnreadOnly)
+            query = query.Where(n => !n.IsRead);
+
+        if (!string.IsNullOrWhiteSpace(request.Type))
+            query = query.Where(n => n.Type == request.Type);
+
+        if (!string.IsNullOrWhiteSpace(request.RelatedEntityType))
+            query = query.Where(n => n.RelatedEntityType == request.RelatedEntityType);
+
+        if (request.RelatedEntityId.HasValue)
+            query = query.Where(n => n.RelatedEntityId == request.RelatedEntityId);
+
+        var unreadNotifications = await query.ToListAsync(cancellationToken);
+
+        if (unreadNotifications.Count == 0)
+            return new MarkNotificationsReadByFilterResultDto(0);
+
+        var now = _timeProvider.GetUtcNow();
+        foreach (var notification in unreadNotifications)
+        {
+            notification.IsRead = true;
+            notification.ReadAt = now;
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return new MarkNotificationsReadByFilterResultDto(unreadNotifications.Count);
     }
 }
 

@@ -31,6 +31,7 @@ public sealed class GetBoatByIdRequestUseCase
         GetBoatByIdRequest request,
         CancellationToken cancellationToken)
     {
+        // Yêu cầu đăng nhập
         var actor = await BoatSupport.EnsureCurrentUserCanViewBoatsAsync(_context, _userContext, cancellationToken);
         var boat = await BoatSupport.ApplyVisibilityFilter(
                 _context.Boats

@@ -26,7 +26,9 @@ internal static class BoatSupport
             return actor;
         }
 
-        throw new ForbiddenAccessException();
+        // Customer đã đăng nhập → cho xem tàu Active (vì có vé → cần biết tàu)
+        // ApplyVisibilityFilter sẽ lọc chỉ tàu Active
+        return actor;
     }
 
     public static async Task EnsureCurrentUserCanManageBoatsAsync(

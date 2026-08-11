@@ -6,7 +6,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.Tickets;
 
-internal static class TicketAttendanceWindowSupport
+public static class TicketAttendanceWindowSupport
 {
     public const int CheckInLeadMinutes = 10;
     public const int CheckOutGraceMinutes = 10;

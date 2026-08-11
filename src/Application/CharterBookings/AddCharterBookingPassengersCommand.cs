@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -35,17 +36,20 @@ public sealed class AddCharterBookingPassengersCommandHandler
     private readonly IUserContext _userContext;
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public AddCharterBookingPassengersCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<UpdateCharterBookingPassengersResult> Handle(
@@ -75,7 +79,7 @@ public sealed class AddCharterBookingPassengersCommandHandler
             throw new NotFoundException("Charter booking not found.");
         }
 
-        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Không thể thêm hành khách cho booking đã hủy hoặc đã hoàn tất.")]);
@@ -131,6 +135,21 @@ public sealed class AddCharterBookingPassengersCommandHandler
         _context.Set<BookingPassenger>().AddRange(newPassengers);
 
         await _context.SaveChangesAsync(cancellationToken);
+
+        var addedNotifications = await NotificationSupport.AddCharterPassengerAddRequestedNotificationsAsync(
+            _context,
+            booking,
+            newPassengers.Count,
+            now,
+            cancellationToken);
+        if (addedNotifications.Count > 0)
+        {
+            await NotificationSupport.PublishCreatedAsync(
+                _notificationRealtimeNotifier,
+                addedNotifications,
+                cancellationToken);
+        }
+
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(
                 booking.Id,

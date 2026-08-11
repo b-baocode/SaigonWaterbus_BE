@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -125,19 +126,22 @@ public sealed class CreateCharterBookingCommandHandler
     private readonly IBookingCodeGenerator _bookingCodeGenerator;
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public CreateCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IBookingCodeGenerator bookingCodeGenerator,
         TimeProvider timeProvider,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _bookingCodeGenerator = bookingCodeGenerator;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<CreateCharterBookingResult> Handle(
@@ -273,6 +277,20 @@ public sealed class CreateCharterBookingCommandHandler
             throw new ValidationException([new ValidationFailure(nameof(request.DepartureDate),
                 "Tạo yêu cầu thuê tàu thất bại. Vui lòng thử lại.")]);
         }
+
+        var requestedNotifications = await NotificationSupport.AddCharterBookingRequestedNotificationsAsync(
+            _context,
+            booking,
+            now,
+            cancellationToken);
+        if (requestedNotifications.Count > 0)
+        {
+            await NotificationSupport.PublishCreatedAsync(
+                _notificationRealtimeNotifier,
+                requestedNotifications,
+                cancellationToken);
+        }
+
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(
                 booking.Id,

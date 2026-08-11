@@ -1,0 +1,27 @@
+{
+  "applinks": {
+    "apps": [],
+    "details": [
+      {
+        "appIDs": [
+          "{APPLE_TEAM_ID}.com.saigonwaterbus.app"
+        ],
+        "components": [
+          {
+            "/": "/payment/success",
+            "comment": "PayOS return URL - mở app khi user thanh toán xong"
+          },
+          {
+            "/": "/payment/*",
+            "comment": "Catch-all các path payment khác"
+          }
+        ]
+      }
+    ]
+  },
+  "webcredentials": {
+    "apps": [
+      "{APPLE_TEAM_ID}.com.saigonwaterbus.app"
+    ]
+  }
+}

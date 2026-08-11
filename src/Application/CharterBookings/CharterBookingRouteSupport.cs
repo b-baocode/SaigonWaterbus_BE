@@ -62,8 +62,7 @@ internal static class CharterBookingRouteSupport
                 && x.CharterRouteId == route.Id
                 && x.BookingStatus != BookingStatus.Cancelled
                 && x.BookingStatus != BookingStatus.Expired
-                && x.BookingStatus != BookingStatus.Completed
-                && x.BookingStatus != BookingStatus.Refunded,
+                && x.BookingStatus != BookingStatus.Completed,
                 cancellationToken);
 
         var hasTrips = await context.Set<Trip>()
@@ -85,7 +84,7 @@ internal static class CharterBookingRouteSupport
     }
 
     private static bool ShouldDeleteUnusedOwnedRoute(Booking booking) =>
-        booking.BookingStatus is not BookingStatus.Completed and not BookingStatus.Refunded;
+        booking.BookingStatus is not BookingStatus.Completed;
 
     private static bool IsOwnedComposedRoute(Route route, Booking booking)
     {

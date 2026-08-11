@@ -96,6 +96,8 @@ public class StationReferenceSerializationTests
             100000m,
             [],
             null,
+            null,
+            null,
             BoatId: boatId);
         var scan = new TicketScanDto(
             Guid.NewGuid(),

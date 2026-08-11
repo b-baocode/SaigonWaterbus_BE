@@ -1,4 +1,4 @@
-﻿using System.Net;
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Configuration;
@@ -198,6 +198,7 @@ public static class DependencyInjection
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<CharterBookingExpirationHostedService>();
+        builder.Services.AddHostedService<TicketExpirationHostedService>();
     }
 
     /// <summary>

@@ -157,4 +157,6 @@ public sealed record BookingItemDto(
     string? BoatCode = null,
     string? BoatName = null,
     Guid? TripId = null,
-    string? PassengerEmail = null);
+    string? PassengerEmail = null,
+    string? SeatTypeCode = null,
+    string? SeatTypeName = null);

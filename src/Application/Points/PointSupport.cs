@@ -216,7 +216,7 @@ public static class PointSupport
 
     /// <summary>
     /// Điều chỉnh point khi booking được hoàn tiền: thu hồi điểm đã tích (mọi mức refund)
-    /// và trả lại điểm đã dùng khi booking hoàn tiền đủ (BookingStatus.Refunded).
+    /// và trả lại điểm đã dùng khi booking hoàn tiền đủ (BookingStatus.Cancelled).
     /// Idempotent theo booking. Caller SaveChanges.
     /// </summary>
     public static async Task ApplyRefundPointAdjustmentsAsync(
@@ -259,7 +259,7 @@ public static class PointSupport
             }
         }
 
-        if (booking.BookingStatus == Domain.Enums.BookingStatus.Refunded)
+        if (booking.BookingStatus == Domain.Enums.BookingStatus.Cancelled)
         {
             await ReturnRedeemedPointsAsync(
                 context,

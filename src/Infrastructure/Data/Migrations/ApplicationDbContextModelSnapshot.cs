@@ -137,6 +137,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnName("documents")
                         .HasDefaultValueSql("'[]'::jsonb");
 
+                    b.Property<DateTimeOffset?>("EstimatedMaintenanceEndAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("estimated_maintenance_end_at");
+
                     b.Property<string>("ImagePublicId")
                         .HasMaxLength(500)
                         .HasColumnType("character varying(500)")
@@ -154,18 +158,14 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnName("image_urls")
                         .HasDefaultValueSql("ARRAY[]::text[]");
 
-                    b.Property<DateTimeOffset?>("MaintenanceStartedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("maintenance_started_at");
-
-                    b.Property<DateTimeOffset?>("EstimatedMaintenanceEndAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("estimated_maintenance_end_at");
-
                     b.Property<string>("MaintenanceNote")
                         .HasMaxLength(1000)
                         .HasColumnType("character varying(1000)")
                         .HasColumnName("maintenance_note");
+
+                    b.Property<DateTimeOffset?>("MaintenanceStartedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("maintenance_started_at");
 
                     b.Property<int?>("MaxSpeedKmh")
                         .HasColumnType("integer")

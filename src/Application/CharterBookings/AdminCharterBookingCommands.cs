@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Promotions;
 using SaigonWaterbus.Application.Trips;
@@ -125,6 +126,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
     private readonly IUserContext _userContext;
     private readonly IBoatHoldService _boatHoldService;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
     private readonly TimeProvider _timeProvider;
 
     public UpdateCharterBookingStatusCommandHandler(
@@ -132,12 +134,14 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         IUserContext userContext,
         IBoatHoldService? boatHoldService = null,
         ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
         TimeProvider? timeProvider = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
         _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
@@ -187,6 +191,24 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
         // Lượt khuyến mãi suy ra từ bookings — chuyển sang trạng thái nhả lượt là tự cập nhật, không cần bookkeeping.
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (request.BookingStatus == BookingStatus.Cancelled)
+        {
+            var cancelledNotifications = await NotificationSupport
+                .AddCharterBookingCancelledNotificationsAsync(
+                    _context,
+                    booking,
+                    _timeProvider.GetUtcNow(),
+                    cancellationToken);
+            if (cancelledNotifications.Count > 0)
+            {
+                await NotificationSupport.PublishCreatedAsync(
+                    _notificationRealtimeNotifier,
+                    cancelledNotifications,
+                    cancellationToken);
+            }
+        }
+
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(
                 booking.Id,
@@ -269,8 +291,6 @@ public sealed class UpdateCharterBookingStatusCommandHandler
                 "Quoted do hệ thống gán khi admin chốt giá bằng API quote.",
             BookingStatus.Confirmed =>
                 "Confirmed do hệ thống gán khi thanh toán đặt cọc hoặc thanh toán đủ thành công.",
-            BookingStatus.Refunded =>
-                "Refunded do hệ thống gán sau luồng hoàn tiền thành công.",
             _ => "Trạng thái charter booking không hợp lệ."
         };
 
@@ -280,19 +300,19 @@ public sealed class UpdateCharterBookingStatusCommandHandler
 
     private static void EnsureCanCancel(Booking booking, BookingStatus targetStatus)
     {
-        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Cancelled)
         {
             throw CreateStatusValidation(targetStatus,
-                "Không thể hủy charter booking đã hoàn tất hoặc đã hoàn tiền.");
+                "Không thể hủy charter booking đã hoàn tất hoặc đã hủy.");
         }
     }
 
     private static void EnsureCanExpire(Booking booking, BookingStatus targetStatus)
     {
-        if (booking.BookingStatus is BookingStatus.Confirmed or BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Confirmed or BookingStatus.Completed or BookingStatus.Cancelled)
         {
             throw CreateStatusValidation(targetStatus,
-                "Không thể chuyển charter booking đã xác nhận, đã hoàn tất hoặc đã hoàn tiền sang Expired.");
+                "Không thể chuyển charter booking đã xác nhận, đã hoàn tất hoặc đã hủy sang Expired.");
         }
 
         EnsureNoPendingOrPaidPayments(booking, targetStatus);
@@ -589,19 +609,22 @@ public sealed class QuoteCharterBookingCommandHandler
     private readonly IBoatHoldService _boatHoldService;
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public QuoteCharterBookingCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         TimeProvider timeProvider,
         IBoatHoldService? boatHoldService = null,
-        ICharterBookingRealtimeNotifier? realtimeNotifier = null)
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
     {
         _context = context;
         _userContext = userContext;
         _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
     }
 
     public async Task<QuoteCharterBookingResult> Handle(
@@ -782,6 +805,20 @@ public sealed class QuoteCharterBookingCommandHandler
         try
         {
             await _context.SaveChangesAsync(cancellationToken);
+
+            var quotedNotification = NotificationSupport.AddCharterBookingQuotedNotification(
+                _context,
+                booking,
+                now);
+            if (quotedNotification is not null)
+            {
+                await _context.SaveChangesAsync(cancellationToken);
+                await NotificationSupport.PublishCreatedAsync(
+                    _notificationRealtimeNotifier,
+                    [quotedNotification],
+                    cancellationToken);
+            }
+
             await _realtimeNotifier.PublishChangedAsync(
                 new CharterBookingRealtimeEvent(
                     booking.Id,

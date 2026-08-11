@@ -165,7 +165,7 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
 
     private static void EnsureBookingCanApprove(Booking booking, Guid requestBatchId)
     {
-        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed or BookingStatus.Refunded)
+        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Không thể duyệt thêm hành khách cho booking đã hủy hoặc đã hoàn tất.")]);

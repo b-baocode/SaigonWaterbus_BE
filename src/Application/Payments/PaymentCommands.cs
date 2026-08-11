@@ -1330,6 +1330,7 @@ internal static class PaymentSupport
     public const string DepositPaidBookingPaymentStatus = "DepositPaid";
     public const string PaidBookingPaymentStatus = "Paid";
     public const string RefundedBookingPaymentStatus = "Refunded";
+    public const string FailedBookingPaymentStatus = "Failed";
     public const string DepositPurpose = "Deposit";
     public const string FullPurpose = "Full";
     public const string RemainingPurpose = "Remaining";
@@ -1488,7 +1489,7 @@ internal static class PaymentSupport
                 "Thời hạn phản hồi hoặc thanh toán charter booking đã hết. Vui lòng tạo yêu cầu thuê tàu mới.")]);
         }
 
-        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Refunded or BookingStatus.Expired)
+        if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Cancelled or BookingStatus.Expired)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
                 "Không thể tạo thanh toán cho booking đã hoàn tất, đã hoàn tiền hoặc đã hết hạn giữ chỗ.")]);
@@ -1903,11 +1904,20 @@ internal static class PaymentSupport
         booking.DepositAmount = Math.Min(paidAmount, booking.TotalAmount);
         booking.RemainingAmount = Math.Max(booking.TotalAmount - paidAmount, 0);
         booking.PaymentStatus = paidAmount <= 0
-            ? UnpaidBookingPaymentStatus
+            ? HasAnyFailedSettlementPayment(booking)
+                ? FailedBookingPaymentStatus
+                : UnpaidBookingPaymentStatus
             : paidAmount >= booking.TotalAmount
                 ? PaidBookingPaymentStatus
                 : DepositPaidBookingPaymentStatus;
     }
+
+    public static bool HasAnyFailedSettlementPayment(Booking booking) =>
+        booking.Payments.Any(x => IsSettlementPayment(x) && IsFailed(x.PaymentStatus));
+
+    public static bool IsFailed(string status) =>
+        string.Equals(status, FailedStatus, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, CancelledStatus, StringComparison.OrdinalIgnoreCase);
 
     public static void ApplyPendingPaymentPlan(Booking booking, PaymentPlan paymentPlan, decimal paidAmount)
     {
@@ -2002,7 +2012,7 @@ internal static class PaymentSupport
         if (refundedAmount >= paidAmount)
         {
             booking.PaymentStatus = RefundedBookingPaymentStatus;
-            booking.BookingStatus = BookingStatus.Refunded;
+            booking.BookingStatus = BookingStatus.Cancelled;
             foreach (var payment in booking.Payments.Where(x => IsSettlementPayment(x) && IsPaid(x.PaymentStatus)))
             {
                 if (payment.RefundAmount >= payment.Amount)
@@ -2023,7 +2033,7 @@ internal static class PaymentSupport
         CancellationToken cancellationToken)
     {
         if (!Booking.IsCharterBookingType(booking.BookingType)
-            || booking.BookingStatus != BookingStatus.Refunded)
+            || booking.BookingStatus != BookingStatus.Cancelled)
         {
             return;
         }
@@ -2073,6 +2083,25 @@ internal static class PaymentSupport
             await context.SaveChangesAsync(cancellationToken);
             await NotificationSupport.PublishCreatedAsync(
                 notificationRealtimeNotifier, [inAppNotification], cancellationToken);
+        }
+
+        // Charter booking → báo thêm admin/manager (kèm Manager được giao) để theo dõi.
+        if (Booking.IsCharterBookingType(booking.BookingType))
+        {
+            var isFullyPaid = booking.RemainingAmount <= 0;
+            var adminNotifications = await NotificationSupport.AddCharterPaymentReceivedNotificationsAsync(
+                context,
+                booking,
+                payment.Amount,
+                isFullyPaid,
+                payment.PaidAt.Value,
+                cancellationToken);
+            if (adminNotifications.Count > 0)
+            {
+                await context.SaveChangesAsync(cancellationToken);
+                await NotificationSupport.PublishCreatedAsync(
+                    notificationRealtimeNotifier, adminNotifications, cancellationToken);
+            }
         }
 
         if (!Booking.IsCharterBookingType(booking.BookingType))

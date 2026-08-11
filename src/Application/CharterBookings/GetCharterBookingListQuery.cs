@@ -50,6 +50,7 @@ public sealed class GetCharterBookingListQueryHandler
                 b.Boat != null ? b.Boat.Name : null,
                 b.SubtotalAmount,
                 b.TotalAmount,
+                b.DepositAmount,
                 b.RequestedBoatDecks,
                 b.RequestedBoatTypes,
                 b.PreferredSeatSetupType,
@@ -80,6 +81,7 @@ internal sealed record CharterBookingListItemRow(
     string? BoatName,
     decimal SubtotalAmount,
     decimal TotalAmount,
+    decimal DepositAmount,
     string? RequestedBoatDecks,
     string? RequestedBoatTypes,
     SeatSetupType? PreferredSeatSetupType,
@@ -108,6 +110,7 @@ internal static class CharterBookingListItemMapper
             booking.Boat?.Name,
             booking.SubtotalAmount,
             booking.TotalAmount,
+            booking.DepositAmount,
             booking.RequestedBoatDecks,
             booking.RequestedBoatTypes,
             booking.PreferredSeatSetupType,
@@ -135,7 +138,12 @@ internal static class CharterBookingListItemMapper
             booking.HoldExpiresAt,
             booking.FromStationId,
             booking.ToStationId,
-            booking.BoatId);
+            booking.BoatId,
+            // BE tính sẵn để FE hiển thị nút "Đặt cọc" enabled đúng (đã/s chưa cọc).
+            SuggestedDepositAmount: booking.DepositAmount > 0
+                ? 0m
+                : decimal.Round(booking.TotalAmount * CharterBookingPaymentSupport.DefaultDepositPercent / 100m, 0, MidpointRounding.AwayFromZero),
+            HasDepositPaid: booking.DepositAmount > 0);
 
     private static IReadOnlyList<CharterBookingListRequestedBoatDto> ToRequestedBoatDtos(
         string? requestedBoatDecks,
