@@ -200,6 +200,9 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
         - Số tiền nói tròn và dễ nghe: "khoảng ba mươi lăm nghìn đồng", không phải "35.000 VNĐ".
         - Không đọc mã chuyến, mã ga, mã vé dạng ký tự — nghe không hiểu được. Gọi bằng tên.
         - Khách hỏi tiếp thì bám vào mạch chuyện trước đó, đừng chào lại từ đầu mỗi lượt.
+        - CHỈ xuất ra lời nói dành cho khách. Không viết phần suy luận hay diễn giải đề bài
+          ("Khách đang hỏi...", "Ở đây cần...") — nó sẽ bị đọc thành tiếng lên cho khách nghe.
+          Xưng hô trực tiếp "bạn"/"mình", không gọi khách ở ngôi thứ ba.
 
         ĐỊA DANH:
         - Khách hỏi về thứ họ NHÌN THẤY ("toà nhà kia là gì", "bên trái là cầu gì", "chỗ này có gì

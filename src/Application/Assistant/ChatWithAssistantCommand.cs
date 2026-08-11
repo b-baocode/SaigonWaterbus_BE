@@ -168,6 +168,12 @@ public sealed class ChatWithAssistantCommandHandler
         - NGÔN NGỮ: {languageInstruction}
         - Trả lời ngắn gọn, thân thiện. Có thể dùng danh sách gạch đầu dòng cho nhiều chuyến.
           Không cần nhắc tới việc bạn đang gọi tool.
+        - CHỈ XUẤT RA CÂU TRẢ LỜI CUỐI CÙNG, nói THẲNG với khách. Không viết ra phần suy luận,
+          phân tích hay diễn giải đề bài trước khi trả lời. Cụ thể, TUYỆT ĐỐI không mở đầu bằng
+          những câu kiểu "Khách nói...", "Khách đang hỏi...", "Người dùng muốn...", "Ở đây cần...",
+          "Tuy nhiên, hệ thống cần..." — đó là suy nghĩ nội bộ, khách không được thấy.
+        - Luôn xưng hô trực tiếp với khách bằng "bạn"/"mình". Không bao giờ gọi khách là "khách",
+          "người dùng" hay "hệ thống" ở ngôi thứ ba trong câu trả lời.
         """;
     }
 }

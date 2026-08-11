@@ -177,6 +177,14 @@ public sealed class GeminiChatCompletionService : IChatCompletionService
 
         foreach (var part in parts.EnumerateArray())
         {
+            // Part có "thought": true là phần SUY NGHĨ nội bộ của model, không phải câu trả lời.
+            // Gộp nhầm vào text là khách thấy nguyên đoạn "Khách nói ngắn gọn 'mai', nghĩa là..."
+            // hiện trong khung chat.
+            if (IsThought(part))
+            {
+                continue;
+            }
+
             if (part.TryGetProperty("text", out var textElement))
             {
                 text = (text ?? string.Empty) + textElement.GetString();
@@ -197,6 +205,10 @@ public sealed class GeminiChatCompletionService : IChatCompletionService
 
         return new ChatCompletionResult(text, toolCalls);
     }
+
+    private static bool IsThought(JsonElement part) =>
+        part.TryGetProperty("thought", out var thought)
+        && thought.ValueKind == JsonValueKind.True;
 
     private static JsonNode? ToNode(JsonElement element) =>
         JsonNode.Parse(element.GetRawText());
