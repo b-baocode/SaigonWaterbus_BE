@@ -55,8 +55,45 @@ public sealed class AssistantToolset
 
     public IReadOnlyList<ChatToolDefinition> Definitions { get; } = BuildDefinitions();
 
-    public async Task<string> ExecuteAsync(string name, JsonElement arguments, CancellationToken cancellationToken)
+    /// <summary>
+    /// Bộ tool rút gọn cho một luồng cụ thể. Truyền null = mở hết (chatbox text).
+    ///
+    /// Ném nếu tên không tồn tại: sai chính tả một cái tên ở đây thì tool đó lặng lẽ biến mất
+    /// khỏi prompt, và chỉ phát hiện được khi khách hỏi trúng câu đó.
+    /// </summary>
+    public IReadOnlyList<ChatToolDefinition> DefinitionsFor(IReadOnlySet<string>? allowed)
     {
+        if (allowed is null)
+        {
+            return Definitions;
+        }
+
+        var unknown = allowed.Where(name => !Definitions.Any(d => d.Name == name)).ToArray();
+        if (unknown.Length > 0)
+        {
+            throw new ArgumentException(
+                $"Không có tool nào tên: {string.Join(", ", unknown)}.", nameof(allowed));
+        }
+
+        return Definitions.Where(d => allowed.Contains(d.Name)).ToArray();
+    }
+
+    /// <param name="allowed">
+    /// Danh sách tool được phép ở luồng đang chạy (null = mở hết). Phải chặn ở đây chứ không chỉ
+    /// giấu định nghĩa: model vẫn có thể gọi tên tool nó nhớ từ lượt trước trong lịch sử hội thoại.
+    /// </param>
+    public async Task<string> ExecuteAsync(
+        string name,
+        JsonElement arguments,
+        IReadOnlySet<string>? allowed,
+        CancellationToken cancellationToken)
+    {
+        if (allowed is not null && !allowed.Contains(name))
+        {
+            return Error($"Tool '{name}' không dùng được ở đây. Trả lời khách bằng những tool đang có, "
+                       + "hoặc nói thẳng là phần này bạn không hỗ trợ.");
+        }
+
         try
         {
             return name switch

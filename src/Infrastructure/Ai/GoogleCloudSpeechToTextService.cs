@@ -98,7 +98,7 @@ public sealed class GoogleCloudSpeechToTextService : ISpeechToTextService
 
         if (!response.IsSuccessStatusCode)
         {
-            throw new InvalidOperationException($"Google Cloud STT lỗi {(int)response.StatusCode}: {json}");
+            throw GoogleApiCall.ToException("Google Cloud STT", response.StatusCode, json);
         }
 
         return ParseTranscript(json);

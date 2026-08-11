@@ -51,11 +51,18 @@ public sealed class AssistantConversationRunner
         _logger = logger;
     }
 
+    /// <param name="allowedTools">
+    /// Giới hạn tool cho luồng đang chạy; null = mở hết. Hướng dẫn viên giọng nói chỉ mở 4 tool
+    /// (xem <see cref="TourGuide.AskTourGuideCommandHandler"/>): mỗi định nghĩa tool đi kèm TẤT CẢ
+    /// các vòng gọi LLM, mà độ trễ là điểm yếu nhất của luồng nói.
+    /// </param>
     public async Task<AssistantRunResult> RunAsync(
         string systemPrompt,
         IReadOnlyList<ChatMessage> history,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        IReadOnlySet<string>? allowedTools = null)
     {
+        var tools = _tools.DefinitionsFor(allowedTools);
         var messages = new List<ChatMessage>(history);
 
         for (var i = 0; i < MaxToolIterations; i++)
@@ -64,7 +71,7 @@ public sealed class AssistantConversationRunner
             try
             {
                 result = await _chat.CompleteAsync(
-                    new ChatCompletionRequest(systemPrompt, messages, _tools.Definitions),
+                    new ChatCompletionRequest(systemPrompt, messages, tools),
                     cancellationToken);
             }
             catch (OperationCanceledException)
@@ -88,7 +95,8 @@ public sealed class AssistantConversationRunner
 
             foreach (var call in result.ToolCalls)
             {
-                var toolResult = await _tools.ExecuteAsync(call.Name, call.Arguments, cancellationToken);
+                var toolResult = await _tools.ExecuteAsync(
+                    call.Name, call.Arguments, allowedTools, cancellationToken);
                 messages.Add(ChatMessage.FromTool(call.Id, call.Name, toolResult));
             }
         }

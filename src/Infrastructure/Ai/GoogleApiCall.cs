@@ -1,6 +1,9 @@
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using SaigonWaterbus.Application.Common.Exceptions;
 
 namespace SaigonWaterbus.Infrastructure.Ai;
 
@@ -56,5 +59,43 @@ internal static class GoogleApiCall
         }
 
         return await client.SendAsync(message, cancellationToken);
+    }
+
+    /// <summary>
+    /// Dựng ngoại lệ đúng loại từ mã lỗi HTTP, để tầng Web trả đúng mã cho client.
+    ///
+    /// 4xx = request của mình sai (tên giọng không tồn tại, thiếu tham số, định dạng lạ) → lỗi
+    /// người gọi sửa được, phải nói rõ lý do. 5xx / quá tải / mạng → provider hỏng, người gọi
+    /// không làm gì được ngoài thử lại.
+    /// </summary>
+    public static Exception ToException(string providerName, HttpStatusCode statusCode, string body)
+    {
+        var reason = ExtractGoogleMessage(body) ?? body;
+        var code = (int)statusCode;
+
+        // 429 tuy là 4xx nhưng người gọi không sửa được gì — xếp cùng nhóm "thử lại sau".
+        if (code is >= 400 and < 500 and not 429)
+        {
+            return new SpeechRequestException($"{providerName}: {reason}");
+        }
+
+        return new InvalidOperationException($"{providerName} lỗi {code}: {body}");
+    }
+
+    /// <summary>Rút câu `error.message` của Google; không parse được thì trả null để dùng nguyên body.</summary>
+    private static string? ExtractGoogleMessage(string body)
+    {
+        try
+        {
+            using var document = JsonDocument.Parse(body);
+            return document.RootElement.TryGetProperty("error", out var error)
+                   && error.TryGetProperty("message", out var message)
+                ? message.GetString()
+                : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 }
