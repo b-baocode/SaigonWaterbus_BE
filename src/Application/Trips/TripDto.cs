@@ -16,6 +16,7 @@ public sealed record TripSummaryDto(
     int TotalSeats,
     decimal? MinPrice,
     string TripStatus,
+    Guid? BoatId = null,
     string? OperatingStatus = null,
     bool IsBookingClosed = false,
     bool IsBookable = true,

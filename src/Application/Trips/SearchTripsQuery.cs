@@ -70,6 +70,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             .Include(t => t.Route)
                 .ThenInclude(r => r.RouteStops)
                     .ThenInclude(rs => rs.Station)
+            .Include(t => t.Boat)
             .Where(t => routeIds.Contains(t.RouteId)
                      && t.Route.IsBookable
                      // Endpoint nay chi tim waterbus thuong; sightseeing co endpoint rieng,
@@ -223,6 +224,7 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                 selectedSegment.FromStopDeparture, selectedSegment.ToStopArrival,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString(),
+                t.BoatId,
                 OperatingStatus: OperatingStatusSupport.ForTrip(t),
                 IsBookingClosed: false,
                 IsBookable: isBookable,
