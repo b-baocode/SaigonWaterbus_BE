@@ -16,6 +16,7 @@ public sealed record TripSummaryDto(
     int TotalSeats,
     decimal? MinPrice,
     string TripStatus,
+    Guid? BoatId = null,
     string? OperatingStatus = null,
     bool IsBookingClosed = false,
     bool IsBookable = true,
@@ -51,7 +52,6 @@ public sealed record TripDetailDto(
     string TripCode,
     Guid RouteId,
     string RouteName,
-    // SellsBySegment: FE hỏi trạm lên/xuống khi true; false = đi nguyên chuyến (ngắm cảnh vòng lặp).
     string RouteType,
     bool SellsBySegment,
     DateTimeOffset DepartureTime,

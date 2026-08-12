@@ -36,6 +36,7 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
 
         var trips = await _context.Set<Trip>()
             .Include(t => t.Route)
+            .Include(t => t.Boat)
             .Where(t => t.Route.RouteType == RouteTypes.SightseeingLoop
                      && t.Route.IsBookable
                      && t.TripType == TripTypes.Regular
@@ -119,6 +120,7 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                 t.AdjustedArrivalTime ?? t.ArrivalTime,
                 Math.Max(0, available), capacity,
                 minPrice, t.TripStatus.ToString(),
+                t.BoatId,
                 OperatingStatus: OperatingStatusSupport.ForTrip(t),
                 IsBookingClosed: false,
                 IsBookable: available > 0,

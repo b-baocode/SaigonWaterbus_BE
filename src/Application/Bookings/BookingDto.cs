@@ -16,7 +16,8 @@ public sealed record BookingListItemDto(
     string? RouteType,
     int PointsUsed = 0,
     int PointsEarned = 0,
-    BookingInsuranceDto? Insurance = null);
+    BookingInsuranceDto? Insurance = null,
+    string? BoatImageUrl = null);
 
 public sealed record BookingDetailDto(
     Guid BookingId,
