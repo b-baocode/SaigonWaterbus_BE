@@ -56,11 +56,16 @@ public sealed class AssistantConversationRunner
     /// (xem <see cref="TourGuide.AskTourGuideCommandHandler"/>): mỗi định nghĩa tool đi kèm TẤT CẢ
     /// các vòng gọi LLM, mà độ trễ là điểm yếu nhất của luồng nói.
     /// </param>
+    /// <param name="runContext">
+    /// Ngữ cảnh lượt chat (form đặt vé đang mở) cho các tool cần nó, và là chỗ tool ghi lại thay
+    /// đổi cần trả về FE. Luồng không có form thì để null.
+    /// </param>
     public async Task<AssistantRunResult> RunAsync(
         string systemPrompt,
         IReadOnlyList<ChatMessage> history,
         CancellationToken cancellationToken,
-        IReadOnlySet<string>? allowedTools = null)
+        IReadOnlySet<string>? allowedTools = null,
+        AssistantRunContext? runContext = null)
     {
         var tools = _tools.DefinitionsFor(allowedTools);
         var messages = new List<ChatMessage>(history);
@@ -96,7 +101,7 @@ public sealed class AssistantConversationRunner
             foreach (var call in result.ToolCalls)
             {
                 var toolResult = await _tools.ExecuteAsync(
-                    call.Name, call.Arguments, allowedTools, cancellationToken);
+                    call.Name, call.Arguments, allowedTools, runContext, cancellationToken);
                 messages.Add(ChatMessage.FromTool(call.Id, call.Name, toolResult));
             }
         }

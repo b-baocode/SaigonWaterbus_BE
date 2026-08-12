@@ -16,22 +16,27 @@ public sealed class Assistant : IEndpointGroup
     private const string ChatExample =
         """
         {
-          "messages": [{ "role": "user", "text": "mai co chuyen nao tu Bach Dang khong" }],
+          "messages": [{ "role": "user", "text": "chon giup minh 2 ghe canh nhau" }],
           "language": "VN",
-          "conversationId": null,
+          "conversationId": "0f8b1d42-5c6a-4b7e-9d10-2a3b4c5d6e7f",
           "clientSessionId": "web-8f1c...",
           "bookingDraft": {
-            "stage": "SelectingTrip",
+            "stage": "SelectingSeats",
             "serviceType": "Waterbus",
             "fromStationName": "Bạch Đằng",
             "toStationName": "Thủ Thiêm",
+            "fromStationCode": "BD",
+            "toStationCode": "TT",
             "departureDate": "2026-08-20",
             "isRoundTrip": false,
             "returnDate": null,
             "adultCount": 2,
-            "childCount": 1,
+            "childCount": 0,
             "infantCount": 0,
-            "selectedDepartureTrip": null,
+            "selectedDepartureTrip": {
+              "tripId": "6d4e2f10-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
+              "tripCode": "TR-20260820-R5-BD-TT-4858"
+            },
             "selectedSeatsDeparture": []
           }
         }
@@ -47,7 +52,7 @@ public sealed class Assistant : IEndpointGroup
         bookingDraft (optional): trang thai form dat ve dang mo trong khung chat. LA MOT OBJECT
         JSON, khong phai chuoi — Swagger hien "string" chi vi khong sinh duoc schema cho kieu nay.
 
-        BE chi doc dung 12 truong duoi day, moi truong con lai (departureTrips, passengers,
+        BE chi doc dung cac truong duoi day, moi truong con lai (departureTrips, passengers,
         contact, preview...) bi BO QUA hoan toan — dung gui de khoi ton bang thong va han muc 64KB:
           stage                   : CollectingInfo | SelectingTrip | SelectingSeats |
                                     EnteringPassengers | AwaitingConfirmation (gia tri la = bo)
@@ -62,8 +67,31 @@ public sealed class Assistant : IEndpointGroup
           adultCount              : 0..100 (ngoai khoang = bo). Nhan ca so lan chuoi.
           childCount              : 0..100
           infantCount             : 0..100
-          selectedDepartureTrip   : CHI xet co hay khong, khong doc noi dung
+          fromStationCode         : ma ga di (dung cho tool chon ghe; thieu thi BE tu tra tu ten ga)
+          toStationCode           : ma ga den
+          selectedDepartureTrip   : object chuyen da chon. Prompt chi biet "da chon hay chua";
+                                    rieng tool chon ghe doc them tripId (Guid) va tripCode.
+                                    Gui thieu tripId thi tro ly khong chon ghe ho duoc.
           selectedSeatsDeparture  : CHI dem so phan tu
+
+        Tra ve them draftPatch (co the null) khi tro ly chon ghe ho khach:
+          { "kind": "seats-departure", "tripCode": "...",
+            "seats": [ { "seatNumber": "A12", "deck": 2, "price": 45000, "seatTypeName": "VIP" } ] }
+        Ghe do SERVER chon tu so do ghe that va da kiem tra con trong luc goi, NHUNG chua giu cho.
+        Client ghi mang seats vao selectedSeatsDeparture cua draft roi de khach bam giu ghe nhu
+        binh thuong — dung tu parse ma ghe trong cau tra loi text.
+
+        Dieu kien de tro ly chon duoc ghe: draft phai co selectedDepartureTrip.tripId va
+        adultCount/childCount (so ghe = adult + child). Thieu thi tro ly moi khach chon chuyen
+        hoac dien so khach tren form truoc, khong tu doan.
+
+        GIOI HAN da biet: tool CHI chon ghe CHIEU DI. Khach khu hoi dang o buoc chon ghe chieu ve
+        ma nho tro ly chon ho thi ghe CHIEU DI se bi ghi de (selectedReturnTrip chua duoc doc) —
+        chua ho tro, dung dua vao.
+
+        Luot chat co draftPatch KHONG duoc coi la "khach sua thong tin": client phai GIU form dang
+        mo va merge patch vao draft. Neu client xoa draft moi khi khach go chu thi ghe vua chon se
+        mat ngay.
         """;
 
     public static void Map(RouteGroupBuilder group)
@@ -90,7 +118,8 @@ public sealed class Assistant : IEndpointGroup
                 + "dang tin: BE lam sach tung gia tri va nhet vao prompt kem cau ra lenh bo qua moi "
                 + "chi dan an trong do. Dung trong cho no de dieu khien tro ly.",
                 "Response: reply (text tra loi), suggestedQuestions[], actions[] (nut dieu huong), "
-                + "conversationId, status (Open|Closed).",
+                + "draftPatch (thuong null; co gia tri khi tro ly vua chon ghe ho khach — xem note "
+                + "bookingDraft), conversationId, status (Open|Closed).",
                 "409 = hoi thoai da dong, phai bat dau hoi thoai moi (conversationId = null). "
                 + "404 = khong tim thay hoi thoai hoac khong phai cua minh.",
                 "Rate limit 8 luot/60s theo user (hoac X-Device-Id, hoac IP neu khong co ca hai); "
@@ -247,6 +276,7 @@ public sealed class Assistant : IEndpointGroup
             reply = reply.Text,
             suggestedQuestions = reply.SuggestedQuestions ?? [],
             actions = reply.Actions ?? [],
+            draftPatch = reply.DraftPatch,
             conversationId = conversation.Id,
             status = conversation.Status
         });

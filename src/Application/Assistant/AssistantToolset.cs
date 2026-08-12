@@ -82,10 +82,15 @@ public sealed class AssistantToolset
     /// Danh sách tool được phép ở luồng đang chạy (null = mở hết). Phải chặn ở đây chứ không chỉ
     /// giấu định nghĩa: model vẫn có thể gọi tên tool nó nhớ từ lượt trước trong lịch sử hội thoại.
     /// </param>
+    /// <param name="runContext">
+    /// Ngữ cảnh của lượt chat hiện tại (form đặt vé khách đang mở). Null ở những luồng không có
+    /// form — khi đó tool cần form sẽ báo lỗi tử tế thay vì ném.
+    /// </param>
     public async Task<string> ExecuteAsync(
         string name,
         JsonElement arguments,
         IReadOnlySet<string>? allowed,
+        AssistantRunContext? runContext,
         CancellationToken cancellationToken)
     {
         if (allowed is not null && !allowed.Contains(name))
@@ -101,6 +106,7 @@ public sealed class AssistantToolset
                 "list_stations" => await ListStationsAsync(arguments, cancellationToken),
                 "search_trips" => await SearchTripsAsync(arguments, cancellationToken),
                 "get_trip_seat_map" => await GetTripSeatMapAsync(arguments, cancellationToken),
+                "pick_seats" => await PickSeatsAsync(arguments, runContext, cancellationToken),
                 "get_sightseeing_info" => await GetSightseeingInfoAsync(arguments, cancellationToken),
                 "get_pricing_info" => await GetPricingInfoAsync(arguments, cancellationToken),
                 "get_promotions" => await GetPromotionsAsync(cancellationToken),
@@ -359,6 +365,165 @@ public sealed class AssistantToolset
                 + "ve tre em/nguoi cao tuoi con nhan them he so loai ve (xem get_pricing_info).",
         });
     }
+
+    /// <summary>
+    /// Chọn hộ khách ghế trống rồi ĐIỀN vào form đặt vé đang mở trong khung chat.
+    ///
+    /// Chuyến, chặng và số ghế lấy từ draft form (<see cref="AssistantRunContext"/>), KHÔNG lấy từ
+    /// tham số model sinh ra: model chỉ được quyết "chọn ghế kiểu gì", còn "chọn ghế của chuyến
+    /// nào, mấy ghế" là sự thật của form. Nhờ vậy trợ lý không thể điền ghế của một chuyến khác.
+    ///
+    /// Ghế trả về đã kiểm tra còn trống ngay lúc gọi, nhưng KHÔNG được giữ chỗ — khách vẫn phải
+    /// bấm "Giữ ghế và tiếp tục" trên form, và lúc đó hệ thống mới kiểm tra lần cuối.
+    /// </summary>
+    private async Task<string> PickSeatsAsync(
+        JsonElement arguments,
+        AssistantRunContext? runContext,
+        CancellationToken cancellationToken)
+    {
+        var draft = runContext?.BookingDraft;
+        if (draft?.TripId is null)
+        {
+            return Error("Chua biet khach dang xem chuyen nao. Chi chon ghe duoc khi form dat ve "
+                       + "trong chat DA chon xong chuyen di. Hay moi khach chon chuyen tren form truoc.");
+        }
+
+        if (draft.SeatCount <= 0)
+        {
+            return Error("Form chua co so khach nen chua biet can may ghe. Moi khach dien so hanh "
+                       + "khach tren form truoc.");
+        }
+
+        // Ghế bán theo chặng nên trạng thái ghế phụ thuộc chặng; thiếu mã ga thì thử tra từ tên ga
+        // khách đã chọn, không có nữa thì để null = xét cả tuyến (an toàn hơn: ghế bận sẽ bị loại).
+        var stations = await _sender.Send(new GetStationListQuery(), cancellationToken);
+        var fromCode = draft.FromStationCode ?? ResolveStation(stations, draft.FromStationName ?? string.Empty)?.StationCode;
+        var toCode = draft.ToStationCode ?? ResolveStation(stations, draft.ToStationName ?? string.Empty)?.StationCode;
+
+        var map = await _sender.Send(new GetTripSeatMapQuery(draft.TripId.Value, fromCode, toCode), cancellationToken);
+        if (map.IsBookingClosed)
+        {
+            return Error("Chuyen nay da dong ban ve nen khong chon ghe duoc nua. Noi that voi khach "
+                       + "va moi khach chon chuyen khac.");
+        }
+
+        var available = map.Seats
+            .Where(s => s.Status == GetTripSeatMapQueryHandler.StatusAvailable)
+            .ToList();
+
+        var deck = GetDouble(arguments, "deck") is { } deckValue ? (int)deckValue : (int?)null;
+        if (deck is not null)
+        {
+            available = available.Where(s => s.Deck == deck).ToList();
+        }
+
+        var seatType = GetString(arguments, "seat_type");
+        if (!string.IsNullOrWhiteSpace(seatType))
+        {
+            var wanted = Normalize(seatType);
+            available = available
+                .Where(s => Normalize(s.SeatTypeName ?? s.SeatTypeCode).Contains(wanted, StringComparison.Ordinal)
+                         || Normalize(s.SeatTypeCode).Contains(wanted, StringComparison.Ordinal))
+                .ToList();
+        }
+
+        if (available.Count < draft.SeatCount)
+        {
+            return Error($"Chi con {available.Count} ghe trong khop yeu cau, khong du {draft.SeatCount} ghe. "
+                       + "Noi that con lai bao nhieu va hoi khach co muon doi tang/loai ghe hay doi chuyen khong.");
+        }
+
+        var picked = PickBestSeats(available, draft.SeatCount, GetBool(arguments, "cheapest") == true);
+        var seats = picked
+            .Select(s => new AssistantPickedSeat(s.SeatNumber, s.Deck, s.BasePrice, s.SeatTypeName))
+            .ToArray();
+
+        runContext!.SetDraftPatch(new AssistantDraftPatch(AssistantDraftPatch.SeatsDeparture, map.TripCode, seats));
+
+        return JsonSerializer.Serialize(new
+        {
+            da_dien_vao_form = true,
+            trip_code = map.TripCode,
+            ghe_da_chon = seats.Select(s => new
+            {
+                ma_ghe = s.SeatNumber,
+                tang = s.Deck,
+                loai_ghe = s.SeatTypeName,
+                gia_ve_nguoi_lon = s.Price,
+            }).ToArray(),
+            ngoi_canh_nhau = IsAdjacentBlock(picked),
+            luu_y = "Ghe da duoc dien san vao form trong chat. Bao khach biet da chon ghe nao va "
+                  + "nhac khach bam nut giu ghe tren form de sang buoc tiep theo. TUYET DOI khong "
+                  + "noi la da giu cho — chua giu, ghe van co the bi nguoi khac lay. Khach muon doi "
+                  + "thi khach tu bam lai tren so do ghe, hoac goi lai tool nay voi tang/loai ghe khac.",
+        });
+    }
+
+    /// <summary>
+    /// Chọn <paramref name="count"/> ghế trong danh sách ghế trống.
+    ///
+    /// Ưu tiên: ngồi cạnh nhau (cùng tầng, cùng hàng, số cột liên tiếp) trước, rồi tới "ghế đẹp" =
+    /// tầng cao, hạng cao (lấy giá làm thước đo hạng ghế). Khách đòi rẻ thì đảo ngược tiêu chí giá.
+    /// Không đủ ghế liền kề thì lấy ghế rời — thà chọn được còn hơn bắt khách tự mò.
+    /// </summary>
+    private static IReadOnlyList<TripSeatMapSeatDto> PickBestSeats(
+        IReadOnlyList<TripSeatMapSeatDto> available,
+        int count,
+        bool cheapest)
+    {
+        var ranked = cheapest
+            ? available.OrderBy(s => s.BasePrice).ThenBy(s => s.Deck).ThenBy(s => s.Row).ThenBy(s => s.Column).ToList()
+            : available.OrderByDescending(s => s.Deck).ThenByDescending(s => s.BasePrice).ThenBy(s => s.Row).ThenBy(s => s.Column).ToList();
+
+        if (count <= 1)
+        {
+            return ranked.Take(count).ToList();
+        }
+
+        var blocks = new List<List<TripSeatMapSeatDto>>();
+        foreach (var group in available.GroupBy(s => new { s.Deck, s.Row }))
+        {
+            var run = new List<TripSeatMapSeatDto>();
+            foreach (var seat in group.OrderBy(s => s.Column))
+            {
+                if (run.Count > 0 && seat.Column != run[^1].Column + 1)
+                {
+                    AddIfLongEnough(blocks, run, count);
+                    run = [];
+                }
+
+                run.Add(seat);
+            }
+
+            AddIfLongEnough(blocks, run, count);
+        }
+
+        var windows = blocks.Select(block => block.Take(count).ToList()).ToList();
+        var best = cheapest
+            ? windows.OrderBy(w => w.Sum(s => s.BasePrice)).ThenBy(w => w[0].Deck).FirstOrDefault()
+            : windows.OrderByDescending(w => w[0].Deck).ThenByDescending(w => w.Sum(s => s.BasePrice)).FirstOrDefault();
+
+        return best ?? ranked.Take(count).ToList();
+    }
+
+    private static void AddIfLongEnough(
+        List<List<TripSeatMapSeatDto>> blocks,
+        List<TripSeatMapSeatDto> run,
+        int count)
+    {
+        if (run.Count >= count)
+        {
+            blocks.Add(run);
+        }
+    }
+
+    private static bool IsAdjacentBlock(IReadOnlyList<TripSeatMapSeatDto> seats) =>
+        seats.Count <= 1
+        || (seats.All(s => s.Deck == seats[0].Deck && s.Row == seats[0].Row)
+            && seats.Select(s => s.Column).OrderBy(x => x).Zip(
+                   seats.Select(s => s.Column).OrderBy(x => x).Skip(1),
+                   (previous, next) => next - previous)
+               .All(gap => gap == 1));
 
     /// <summary>
     /// Tour ngắm cảnh + địa danh dọc tuyến. Không có date thì chỉ trả địa danh và nhắc model
@@ -723,6 +888,23 @@ public sealed class AssistantToolset
         };
     }
 
+    /// <summary>Cờ boolean từ tham số tool. Nhận cả "true"/"false" dạng chuỗi cho chắc.</summary>
+    private static bool? GetBool(JsonElement args, string property)
+    {
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(property, out var value))
+        {
+            return null;
+        }
+
+        return value.ValueKind switch
+        {
+            JsonValueKind.True => true,
+            JsonValueKind.False => false,
+            JsonValueKind.String => bool.TryParse(value.GetString(), out var parsed) ? parsed : null,
+            _ => null,
+        };
+    }
+
     /// <summary>Góc phương vị từ điểm 1 tới điểm 2, 0° = chính Bắc, tăng theo chiều kim đồng hồ.</summary>
     private static double BearingDegrees(double lat1, double lon1, double lat2, double lon2)
     {
@@ -794,6 +976,25 @@ public sealed class AssistantToolset
                 "to_station":   { "type": "string", "description": "Tên ga đến." }
               },
               "required": ["trip_code"]
+            }
+            """)),
+
+        new ChatToolDefinition(
+            "pick_seats",
+            "CHỌN HỘ khách ghế trống rồi điền thẳng vào form đặt vé đang mở trong khung chat. Gọi khi "
+            + "khách nhờ chọn giúp: \"chọn giùm mình 2 ghế\", \"ghế nào cũng được\", \"cho mình 2 ghế "
+            + "cạnh nhau\", \"chọn ghế đẹp giúp mình\". Chuyến, chặng và SỐ GHẾ server tự lấy từ form "
+            + "nên KHÔNG cần truyền — chỉ truyền tham số khi khách nói rõ ý thích. Chỉ dùng được khi "
+            + "form đã chọn xong chuyến đi; chưa chọn chuyến thì tool báo lỗi và bạn mời khách chọn "
+            + "chuyến trước. Tool KHÔNG giữ chỗ: khách vẫn phải bấm nút giữ ghế trên form.",
+            ParseSchema("""
+            {
+              "type": "object",
+              "properties": {
+                "deck":      { "type": "number",  "description": "Chỉ chọn ghế ở tầng này (1, 2...). Bỏ trống = tầng nào cũng được." },
+                "seat_type": { "type": "string",  "description": "Lọc theo loại ghế khách muốn, ví dụ 'VIP'. Bỏ trống = loại nào cũng được." },
+                "cheapest":  { "type": "boolean", "description": "true khi khách muốn ghế rẻ nhất. Bỏ trống/false = ưu tiên ngồi cạnh nhau và ghế đẹp (tầng cao, hạng cao)." }
+              }
             }
             """)),
 
