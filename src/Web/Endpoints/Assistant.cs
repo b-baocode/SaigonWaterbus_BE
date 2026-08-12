@@ -13,15 +13,115 @@ public sealed class Assistant : IEndpointGroup
     public static string RoutePrefix => "/api/assistant";
     public const string RateLimitPolicy = "AssistantChat";
 
+    private const string ChatExample =
+        """
+        {
+          "messages": [{ "role": "user", "text": "mai co chuyen nao tu Bach Dang khong" }],
+          "language": "VN",
+          "conversationId": null,
+          "clientSessionId": "web-8f1c...",
+          "bookingDraft": {
+            "stage": "SelectingTrip",
+            "serviceType": "Waterbus",
+            "fromStationName": "Bạch Đằng",
+            "toStationName": "Thủ Thiêm",
+            "departureDate": "2026-08-20",
+            "isRoundTrip": false,
+            "returnDate": null,
+            "adultCount": 2,
+            "childCount": 1,
+            "infantCount": 0,
+            "selectedDepartureTrip": null,
+            "selectedSeatsDeparture": []
+          }
+        }
+        """;
+
+    /// <summary>
+    /// Hợp đồng của trường bookingDraft, viết dài vì đây là chỗ client hay hiểu sai nhất:
+    /// Swagger hiện `"bookingDraft": "string"` (kiểu JsonElement không sinh được schema),
+    /// nhưng phải gửi OBJECT.
+    /// </summary>
+    private const string BookingDraftNote =
+        """
+        bookingDraft (optional): trang thai form dat ve dang mo trong khung chat. LA MOT OBJECT
+        JSON, khong phai chuoi — Swagger hien "string" chi vi khong sinh duoc schema cho kieu nay.
+
+        BE chi doc dung 12 truong duoi day, moi truong con lai (departureTrips, passengers,
+        contact, preview...) bi BO QUA hoan toan — dung gui de khoi ton bang thong va han muc 64KB:
+          stage                   : CollectingInfo | SelectingTrip | SelectingSeats |
+                                    EnteringPassengers | AwaitingConfirmation (gia tri la = bo)
+          serviceType             : Waterbus | Sightseeing. BO TRONG = Waterbus. Tour ngam canh
+                                    PHAI gui "Sightseeing", neu khong tro ly se di hoi ben di/ben
+                                    den cho mot tour di vong.
+          fromStationName         : ten ben di (cat con 60 ky tu)
+          toStationName           : ten ben den (cat con 60 ky tu)
+          departureDate           : yyyy-MM-dd (sai dinh dang = bo)
+          isRoundTrip             : true|false
+          returnDate              : yyyy-MM-dd, chi doc khi isRoundTrip = true
+          adultCount              : 0..100 (ngoai khoang = bo). Nhan ca so lan chuoi.
+          childCount              : 0..100
+          infantCount             : 0..100
+          selectedDepartureTrip   : CHI xet co hay khong, khong doc noi dung
+          selectedSeatsDeparture  : CHI dem so phan tu
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapPost(Chat, "chat")
             .AllowAnonymous()
             .RequireRateLimiting(RateLimitPolicy)
-            .WithSummary("Chat voi tro ly ao Saigon Waterbus");
+            .WithSummary("Chat voi tro ly ao Saigon Waterbus")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous (co token thi hoi thoai gan vao tai khoan)",
+                ChatExample,
+                "messages: BE chi lay CAU USER CUOI CUNG trong mang nay. Lich su truoc do server tu "
+                + "doc lai tu DB theo conversationId, client khong can gui lai (gui cung khong sao, "
+                + "phan thua bi bo). Luot dau tien de conversationId = null, server tao roi tra ve.",
+                "clientSessionId: BAT BUOC voi khach chua dang nhap — no la thu duy nhat chung minh "
+                + "hoi thoai la cua minh. Gui sai/thieu o cac luot sau se bi 404. Khach da dang nhap "
+                + "thi so khop theo userId, bo qua truong nay.",
+                BookingDraftNote,
+                "bookingDraft KHONG duoc luu tren server: no chi song trong dung luot request do. "
+                + "Client PHAI tu giu (localStorage) va gui kem MOI luot, neu khong tro ly se hoi lai "
+                + "tu dau sau khi khach F5 — lich su hoi thoai KHONG thay the duoc draft. Draft lon "
+                + "hon 64KB tra 400.",
+                "Noi dung ben trong bookingDraft la du lieu do client kiem soat nen bi coi la KHONG "
+                + "dang tin: BE lam sach tung gia tri va nhet vao prompt kem cau ra lenh bo qua moi "
+                + "chi dan an trong do. Dung trong cho no de dieu khien tro ly.",
+                "Response: reply (text tra loi), suggestedQuestions[], actions[] (nut dieu huong), "
+                + "conversationId, status (Open|Closed).",
+                "409 = hoi thoai da dong, phai bat dau hoi thoai moi (conversationId = null). "
+                + "404 = khong tim thay hoi thoai hoac khong phai cua minh.",
+                "Rate limit 8 luot/60s theo user (hoac X-Device-Id, hoac IP neu khong co ca hai); "
+                + "vuot thi 429.",
+                "Hoi thoai tu dong dong sau 30 phut khong hoat dong."))
+            .Produces<object>();
 
-        group.MapGet(GetConversation, "conversations/{id:guid}").AllowAnonymous();
-        group.MapPost(CloseConversation, "conversations/{id:guid}/close").AllowAnonymous();
+        group.MapGet(GetConversation, "conversations/{id:guid}")
+            .AllowAnonymous()
+            .WithSummary("Doc lai mot hoi thoai da co")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous (khach vang lai phai kem clientSessionId)",
+                "(khong co body) — vi du: GET /api/assistant/conversations/{id}?clientSessionId=web-8f1c...",
+                "Dung khi client mo lai khung chat (F5, doi tab) de dung lai cac bong bong tin nhan.",
+                "KHONG tra bookingDraft — draft khong duoc luu tren server, xem note o POST /chat.",
+                "isAutoCloseMessage = true la cau thong bao he thong tu chen khi dong hoi thoai, "
+                + "khong phai loi tro ly noi voi khach.",
+                "404 khi khong tim thay hoac hoi thoai khong thuoc ve nguoi goi."))
+            .Produces<object>();
+
+        group.MapPost(CloseConversation, "conversations/{id:guid}/close")
+            .AllowAnonymous()
+            .WithSummary("Dong hoi thoai")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous (khach vang lai phai kem clientSessionId)",
+                "(khong co body) — vi du: POST /api/assistant/conversations/{id}/close?clientSessionId=web-8f1c...",
+                "Idempotent: goi lai tren hoi thoai da dong van tra 200 kem status Closed.",
+                "Dong roi thi KHONG chat tiep duoc (POST /chat tra 409) — phai mo hoi thoai moi.",
+                "Du lieu hoi thoai giu them 7 ngay ke tu luc dong roi moi den han xoa.",
+                "404 khi khong tim thay hoac hoi thoai khong thuoc ve nguoi goi."))
+            .Produces<object>();
     }
 
     /// <summary>
@@ -90,6 +190,21 @@ public sealed class Assistant : IEndpointGroup
         // sống trong đúng lượt này để trợ lý biết khách đang ở bước nào mà không hỏi lại.
         // Việc giữ draft qua F5 / đổi tab là của FE (localStorage) — nhờ vậy không cần cột DB,
         // không cần migration.
+        //
+        // CẢNH BÁO CHO NGƯỜI SỬA SAU — DB ĐANG CÓ CỘT MÀ CODE KHÔNG BIẾT:
+        // Bản trước từng lưu draft vào `chat_conversations.booking_draft_json` (migration
+        // 20260808073943_AddChatConversationBookingDraft). File migration đã bị xoá khỏi repo,
+        // NHƯNG cột thì vẫn còn thật trên cả Neon (prod) lẫn DB local, kèm dòng history tương ứng
+        // — đã kiểm tra 2026-08-12. Cột đang mồ côi: không entity nào map, nên EF hoàn toàn không
+        // nhìn thấy nó (EF chỉ so model với snapshot, không đọc schema thật) và sẽ không tự sinh
+        // AddColumn/DropColumn cho nó. Để nguyên là AN TOÀN.
+        //
+        // Nếu quay lại hướng lưu draft ở server thì ĐỪNG để EF tự sinh migration: nó sẽ ra
+        // AddColumn và chết 42701 "column already exists" trên mọi DB đã có cột. Phải sửa tay
+        // thành `ALTER TABLE "chat_conversations" ADD COLUMN IF NOT EXISTS "booking_draft_json"
+        // jsonb;` và đặt TÊN/timestamp MỚI — dùng lại đúng id cũ thì prod coi như đã áp rồi và bỏ
+        // qua, DB dựng mới sẽ không có cột. Mẫu migration idempotent: xem
+        // 20260812000000_RemoveUserPushTokens.
         var incomingDraft = NormalizeBookingDraft(request.BookingDraft);
         if (incomingDraft is not null && incomingDraft.Length > MaxBookingDraftBytes)
         {
