@@ -155,6 +155,17 @@ public sealed class Gps : IEndpointGroup
                 $"Header bat buoc: {LiveHookSecretHeaderName}.",
                 "event hop le: Arriving, Arrived, Departed, Skipped.",
                 "BE cap nhat trip_stops.stop_status, actual_arrival_time, actual_departure_time de FE hien bang tau di chuyen."));
+
+        group.MapGet(GetActiveTrips, "active-trips")
+            .AllowAnonymous()
+            .WithSummary("GPS lay danh sach trip chua ket thuc")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS driver app",
+                null,
+                "Tra ve tat ca trip chua ket thuc (Scheduled/Boarding/InProgress/Delayed).",
+                "Dung de auto-fill form khi driver chon tau va bat dau ghi GPS.",
+                "Include: routeId, routeCode, boatId, boatCode, stops, isCharter, bookingId, departureTime.",
+                $"Header bat buoc: {LiveHookSecretHeaderName}."));
     }
 
     private static async Task<IResult> StartSession(
@@ -532,6 +543,64 @@ public sealed class Gps : IEndpointGroup
             windowStart,
             windowEnd,
             trips.Select(ToGpsTripScheduleItem).ToArray()));
+    }
+
+    private static async Task<IResult> GetActiveTrips(
+        ApplicationDbContext dbContext,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        var activeTrips = await dbContext.Trips
+            .AsNoTracking()
+            .Include(x => x.Route)
+            .Include(x => x.Boat)
+            .Include(x => x.TripStops)
+                .ThenInclude(x => x.Station)
+            .Where(x => x.TripStatus == TripStatus.Scheduled
+                || x.TripStatus == TripStatus.Boarding
+                || x.TripStatus == TripStatus.InProgress
+                || x.TripStatus == TripStatus.Delayed)
+            .OrderBy(x => x.DepartureTime)
+            .ToListAsync(cancellationToken);
+
+        var response = activeTrips.Select(trip => new GpsActiveTripItemResponse(
+            trip.Id,
+            trip.TripCode,
+            trip.TripType,
+            trip.RouteId,
+            trip.Route.RouteCode,
+            trip.Route.RouteName,
+            trip.BoatId,
+            trip.Boat != null ? trip.Boat.Code : null,
+            trip.Boat != null ? trip.Boat.Name : null,
+            trip.OperatingDate,
+            trip.DepartureTime,
+            trip.ArrivalTime,
+            trip.TripStatus.ToString(),
+            trip.SourceBookingId,
+            trip.TripType == TripTypes.Charter,
+            trip.TripStops
+                .OrderBy(s => s.StopOrder)
+                .Select(s => new GpsActiveTripStopResponse(
+                    s.Id,
+                    s.StationId,
+                    s.Station.StationCode,
+                    s.Station.StationName,
+                    s.StopOrder,
+                    s.PlannedArrivalTime,
+                    s.PlannedDepartureTime,
+                    s.Station.Latitude,
+                    s.Station.Longitude))
+                .ToList()))
+            .ToList();
+
+        return Results.Ok(new GpsActiveTripsResponse(response));
     }
 
     private static async Task<IResult> CompleteGpsTrip(
@@ -1899,6 +1968,37 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset WindowStart,
         DateTimeOffset WindowEnd,
         IReadOnlyList<GpsTripScheduleItemResponse> Trips);
+
+    private sealed record GpsActiveTripsResponse(IReadOnlyList<GpsActiveTripItemResponse> Trips);
+
+    private sealed record GpsActiveTripItemResponse(
+        Guid TripId,
+        string TripCode,
+        string TripType,
+        Guid RouteId,
+        string RouteCode,
+        string RouteName,
+        Guid? BoatId,
+        string? BoatCode,
+        string? BoatName,
+        DateOnly OperatingDate,
+        DateTimeOffset DepartureTime,
+        DateTimeOffset ArrivalTime,
+        string TripStatus,
+        Guid? BookingId,
+        bool IsCharter,
+        IReadOnlyList<GpsActiveTripStopResponse> Stops);
+
+    private sealed record GpsActiveTripStopResponse(
+        Guid TripStopId,
+        Guid StationId,
+        string StationCode,
+        string StationName,
+        int StopOrder,
+        DateTimeOffset? PlannedArrivalTime,
+        DateTimeOffset? PlannedDepartureTime,
+        decimal? Latitude,
+        decimal? Longitude);
 
     private sealed record GpsTripScheduleItemResponse(
         Guid TripId,

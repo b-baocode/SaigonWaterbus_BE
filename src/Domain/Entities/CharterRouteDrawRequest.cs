@@ -4,6 +4,7 @@ public class CharterRouteDrawRequest : BaseGuidAuditableEntity
 {
     public const string PendingStatus = "Pending";
     public const string InProgressStatus = "InProgress";
+    public const string AcknowledgedStatus = "Acknowledged";
     public const string DoneStatus = "Done";
     public const string CancelledStatus = "Cancelled";
 
@@ -14,6 +15,7 @@ public class CharterRouteDrawRequest : BaseGuidAuditableEntity
     public Guid? RequestedByUserId { get; set; }
     public Guid? InProgressByUserId { get; set; }
     public DateTimeOffset? InProgressAt { get; set; }
+    public DateTimeOffset? AcknowledgedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
     public string? Notes { get; set; }
@@ -27,5 +29,10 @@ public class CharterRouteDrawRequest : BaseGuidAuditableEntity
 
     public static bool IsOpenStatus(string? status) =>
         string.Equals(status, PendingStatus, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(status, InProgressStatus, StringComparison.OrdinalIgnoreCase);
+        || string.Equals(status, InProgressStatus, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, AcknowledgedStatus, StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsFinalStatus(string? status) =>
+        string.Equals(status, DoneStatus, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(status, CancelledStatus, StringComparison.OrdinalIgnoreCase);
 }

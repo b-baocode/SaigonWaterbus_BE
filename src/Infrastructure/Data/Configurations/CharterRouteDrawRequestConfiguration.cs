@@ -18,6 +18,7 @@ public sealed class CharterRouteDrawRequestConfiguration : IEntityTypeConfigurat
         builder.Property(x => x.RequestedByUserId).HasColumnName("requested_by_user_id");
         builder.Property(x => x.InProgressByUserId).HasColumnName("in_progress_by_user_id");
         builder.Property(x => x.InProgressAt).HasColumnName("in_progress_at");
+        builder.Property(x => x.AcknowledgedAt).HasColumnName("acknowledged_at");
         builder.Property(x => x.CompletedAt).HasColumnName("completed_at");
         builder.Property(x => x.CancelledAt).HasColumnName("cancelled_at");
         builder.Property(x => x.Notes).HasColumnName("notes").HasMaxLength(1000);

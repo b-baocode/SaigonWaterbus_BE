@@ -1235,8 +1235,21 @@ internal static class PaymentSupport
                 "Theo chính sách hoàn tiền, hủy dưới 24 giờ trước giờ khởi hành sẽ không được hoàn.")]);
         }
 
-        var refundableAmount = payment.Amount - payment.RefundAmount;
-        var refundAmount = Math.Min(Math.Floor(payment.Amount * refundPercent), refundableAmount);
+        // Tính tổng tất cả payment đã thanh toán của booking (bao gồm payment gốc và thêm người)
+        var bookingPayments = payment.Booking.Payments;
+        var totalPaidAmount = bookingPayments
+            .Where(x => IsSettlementPayment(x) && IsPaid(x.PaymentStatus))
+            .Sum(x => x.Amount);
+
+        // Tổng đã hoàn (tất cả các payment trong booking đã refund)
+        var totalRefundedAmount = bookingPayments
+            .Sum(x => x.RefundAmount);
+
+        // Số tiền có thể hoàn = Tổng đã thanh toán - Tổng đã hoàn
+        var refundableAmount = totalPaidAmount - totalRefundedAmount;
+
+        // Tính refund = min(số tiền có thể hoàn, tổng thanh toán * %)
+        var refundAmount = Math.Min(Math.Floor(totalPaidAmount * refundPercent), refundableAmount);
 
         if (refundAmount <= 0)
         {
@@ -1256,7 +1269,14 @@ internal static class PaymentSupport
         var requestedAmount = payment.RefundRequestedAmount.GetValueOrDefault();
         if (requestedAmount > 0)
         {
-            var refundableAmount = payment.Amount - payment.RefundAmount;
+            // Tính tổng refundable của cả booking (không chỉ payment đang request)
+            var bookingPayments = payment.Booking.Payments;
+            var totalPaidAmount = bookingPayments
+                .Where(x => IsSettlementPayment(x) && IsPaid(x.PaymentStatus))
+                .Sum(x => x.Amount);
+            var totalRefundedAmount = bookingPayments.Sum(x => x.RefundAmount);
+            var refundableAmount = totalPaidAmount - totalRefundedAmount;
+
             var refundAmount = Math.Min(requestedAmount, refundableAmount);
             if (refundAmount <= 0)
             {
@@ -2296,4 +2316,127 @@ internal static class PaymentSupport
         decimal Amount,
         decimal DepositAmount,
         decimal RemainingAmount);
+}
+
+public sealed record CancelPaymentByOrderCodeCommand(long OrderCode) : IRequest<bool>;
+
+public sealed class CancelPaymentByOrderCodeCommandValidator : AbstractValidator<CancelPaymentByOrderCodeCommand>
+{
+    public CancelPaymentByOrderCodeCommandValidator()
+    {
+        RuleFor(x => x.OrderCode).GreaterThan(0);
+    }
+}
+
+public sealed class CancelPaymentByOrderCodeCommandHandler : IRequestHandler<CancelPaymentByOrderCodeCommand, bool>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IBoatHoldService _boatHoldService;
+    private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
+    private readonly TimeProvider _timeProvider;
+
+    public CancelPaymentByOrderCodeCommandHandler(
+        IApplicationDbContext context,
+        IBoatHoldService? boatHoldService = null,
+        ICharterBookingRealtimeNotifier? realtimeNotifier = null,
+        TimeProvider? timeProvider = null)
+    {
+        _context = context;
+        _boatHoldService = boatHoldService ?? NullBoatHoldService.Instance;
+        _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+    }
+
+    public async Task<bool> Handle(CancelPaymentByOrderCodeCommand request, CancellationToken cancellationToken)
+    {
+        var paymentCode = request.OrderCode.ToString(CultureInfo.InvariantCulture);
+
+        var payment = await _context.Set<Payment>()
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Tickets)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.CharterBoats)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Promotion)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Payments)
+            .SingleOrDefaultAsync(x =>
+                x.PaymentCode == paymentCode
+                && x.Provider == PaymentSupport.PayOsProvider,
+                cancellationToken);
+
+        if (payment is null)
+        {
+            return false;
+        }
+
+        // Chỉ cancel nếu payment đang Pending
+        if (!PaymentSupport.IsPending(payment.PaymentStatus))
+        {
+            return false;
+        }
+
+        payment.PaymentStatus = PaymentSupport.CancelledStatus;
+        var booking = payment.Booking;
+        var now = _timeProvider.GetUtcNow();
+
+        // Nếu là charter booking đang chờ thanh toán, hủy luôn booking
+        if (Booking.IsCharterBookingType(booking.BookingType)
+            && (booking.BookingStatus == BookingStatus.Quoted || booking.BookingStatus == BookingStatus.PendingPayment))
+        {
+            booking.BookingStatus = BookingStatus.Cancelled;
+            booking.HoldExpiresAt = null;
+
+            foreach (var ticket in booking.Tickets)
+            {
+                ticket.TicketStatus = TicketStatus.Cancelled;
+            }
+
+            await PointSupport.ReturnRedeemedPointsAsync(
+                _context,
+                booking,
+                $"Hoàn điểm do charter booking {booking.BookingCode} bị hủy khi khách cancel PayOS",
+                now,
+                cancellationToken);
+
+            await CharterBookingTripSupport.CancelLinkedTripsAsync(
+                _context,
+                booking.Id,
+                $"Charter booking {booking.BookingCode} đã bị hủy khi khách cancel PayOS.",
+                cancellationToken);
+
+            await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
+                _context,
+                booking,
+                cancellationToken);
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            await _realtimeNotifier.PublishChangedAsync(
+                new CharterBookingRealtimeEvent(
+                    booking.Id,
+                    "Cancelled",
+                    booking.BookingStatus.ToString(),
+                    booking.PaymentStatus),
+                cancellationToken);
+
+            foreach (var boatId in CharterBookingBoatSelectionSupport.ResolveSelectedBoatIds(booking))
+            {
+                await _boatHoldService.ReleaseAsync(
+                    booking.Id,
+                    boatId,
+                    booking.DepartureDate.GetValueOrDefault(),
+                    booking.StartTime,
+                    booking.RentalUnit.GetValueOrDefault(),
+                    booking.DurationValue.GetValueOrDefault(),
+                    cancellationToken);
+            }
+        }
+        else
+        {
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+
+        return true;
+    }
 }
