@@ -143,8 +143,9 @@ public static class AssistantBookingDraftSummary
         }
 
         builder.Append("Đừng hỏi lại những gì đã có ở trên. Nhắc khách làm tiếp đúng bước còn thiếu. ");
-        builder.Append("Khách nhờ chọn ghế hộ thì gọi tool pick_seats — ghế được điền vào form nhưng CHƯA giữ chỗ; ");
-        builder.Append("ngoài mã ghế tool đó trả về thì không được nêu mã ghế nào khác. ");
+        builder.Append("Khách nói thêm thông tin gì thì gọi update_booking_form để điền vào form ngay. ");
+        builder.Append("Khách nhờ chọn ghế hộ thì gọi tool đó với pick_seats = true — ghế được điền vào form ");
+        builder.Append("nhưng CHƯA giữ chỗ; ngoài mã ghế tool trả về thì không được nêu mã ghế nào khác. ");
         builder.Append("Bạn KHÔNG tự xác nhận đặt vé thay khách — khách bấm trên form. ");
         builder.Append("Form dừng ở bước chọn ghế; xong ghế thì khách sang trang đặt vé để nhập ");
         builder.Append("thông tin hành khách và thanh toán.");

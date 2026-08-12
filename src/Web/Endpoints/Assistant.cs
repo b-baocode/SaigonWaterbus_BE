@@ -68,23 +68,49 @@ public sealed class Assistant : IEndpointGroup
                                     Gui thieu tripId thi tro ly khong chon ghe ho duoc.
           selectedSeatsDeparture  : CHI dem so phan tu
 
-        Tra ve them draftPatch (co the null) khi tro ly chon ghe ho khach:
-          { "kind": "seats-departure", "tripCode": "...",
-            "seats": [ { "seatNumber": "A12", "deck": 2, "price": 45000, "seatTypeName": "VIP" } ] }
-        Ghe do SERVER chon tu so do ghe that va da kiem tra con trong luc goi, NHUNG chua giu cho.
-        Client ghi mang seats vao selectedSeatsDeparture cua draft roi de khach bam giu ghe nhu
-        binh thuong — dung tu parse ma ghe trong cau tra loi text.
+        RESPONSE co them draftPatch: thay doi ma tro ly muon ghi vao form. null = luot nay khong
+        dung toi form. CLIENT KHONG PHAI TU DOAN GI TU CAU TRA LOI TEXT — moi thu can dien deu o day.
 
-        Dieu kien de tro ly chon duoc ghe: draft phai co selectedDepartureTrip.tripId va
-        adultCount/childCount (so ghe = adult + child). Thieu thi tro ly moi khach chon chuyen
-        hoac dien so khach tren form truoc, khong tu doan.
+          "draftPatch": {
+            "serviceType": "Waterbus",            // hoac "Sightseeing"
+            "departureDate": "2026-08-14", "returnDate": null, "isRoundTrip": false,
+            "fromStationCode": "ST-BD", "fromStationName": "Ben Bach Dang",
+            "toStationCode": "ST-LD",   "toStationName": "Ben Linh Dong",
+            "adultCount": 2, "childCount": 0, "infantCount": 0,
+            "trip": {                             // chi co khi tro ly chon CHUYEN ho khach
+              "tripId": "a7b580cb-...", "tripCode": "BB-...",
+              "fromStopScheduledDeparture": "2026-08-14T01:00:00+00:00",
+              "toStopScheduledArrival": "2026-08-14T02:52:00+00:00",
+              "minPrice": 19000, "availableSeats": 79
+            },
+            "tripCode": "BB-...",                 // chi co khi tro ly chon GHE
+            "seats": [ { "seatNumber": "1-A1", "deck": 1, "price": 19000, "seatTypeName": "Standard" } ]
+          }
 
-        GIOI HAN da biet: tool CHI chon ghe CHIEU DI. Khach khu hoi dang o buoc chon ghe chieu ve
+        CACH MERGE — chi mot quy tac: field khac null thi GHI DE vao draft, field null thi GIU
+        NGUYEN gia tri dang co. Khong co truong phan loai, nen them field moi o phia server thi
+        client khong phai sua gi. Mot luot co the vua dien thong tin vua chon ghe.
+          Object.entries(patch).forEach(([k, v]) => { if (v !== null) draft[k] = v; });
+        Rieng hai truong dac biet: "seats" ghi vao selectedSeatsDeparture, "trip" ghi vao
+        selectedDepartureTrip. Ten field ben trong "trip" CO Y trung voi TripSummaryDto ma client
+        nhan tu /api/trips/search, nen gan thang duoc, khong phai anh xa lai.
+
+        MOI GIA TRI DA DUOC SERVER KIEM truoc khi phat ra: ten ben phai khop ben co that (tra ve ca
+        ma lan ten chuan), ngay dung yyyy-MM-dd va khong o qua khu, tong khach toi da 10 va it nhat
+        1 nguoi lon, tour ngam canh thi KHONG bao gio co ben di/ben den. Chuyen phai nam trong ket
+        qua tim chuyen cua DUNG ngay + chang do va con nhan dat cho — tro ly khong the dien mot
+        chuyen ngay khac hay tuyen khac. Ghe da kiem con trong tren so do ghe that NHUNG chua giu
+        cho — khach van phai bam nut giu ghe.
+
+        Dieu kien de tro ly chon duoc ghe: da co chuyen (tu selectedDepartureTrip cua draft, hoac
+        do chinh luot chat nay vua chon) va co so khach. Thieu thi tro ly hoi khach truoc.
+
+        GIOI HAN da biet: chi chon duoc ghe CHIEU DI. Khach khu hoi dang o buoc chon ghe chieu ve
         ma nho tro ly chon ho thi ghe CHIEU DI se bi ghi de (selectedReturnTrip chua duoc doc) —
         chua ho tro, dung dua vao.
 
         Luot chat co draftPatch KHONG duoc coi la "khach sua thong tin": client phai GIU form dang
-        mo va merge patch vao draft. Neu client xoa draft moi khi khach go chu thi ghe vua chon se
+        mo va merge patch vao draft. Neu client xoa draft moi khi khach go chu thi thu vua dien se
         mat ngay.
         """;
 
