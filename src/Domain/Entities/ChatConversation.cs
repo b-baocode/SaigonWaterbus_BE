@@ -5,6 +5,13 @@ public class ChatConversation
     public const string OpenStatus = "Open";
     public const string ClosedStatus = "Closed";
 
+    /// <summary>
+    /// Không ép ngôn ngữ: trợ lý tự bám theo ngôn ngữ khách đang viết. Đây là giá trị của mọi hội
+    /// thoại mới kể từ khi bỏ trường <c>language</c> khỏi request chat. Các hàng cũ vẫn giữ
+    /// "VN"/"ENG" và vẫn được tôn trọng, nên hội thoại cũ không đổi hành vi giữa chừng.
+    /// </summary>
+    public const string AutoLanguage = "Auto";
+
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid? UserId { get; set; }
     public string? AnonymousSessionId { get; set; }

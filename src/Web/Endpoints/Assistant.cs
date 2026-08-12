@@ -16,8 +16,7 @@ public sealed class Assistant : IEndpointGroup
     private const string ChatExample =
         """
         {
-          "messages": [{ "role": "user", "text": "chon giup minh 2 ghe canh nhau" }],
-          "language": "VN",
+          "messages": [{ "text": "chon giup minh 2 ghe canh nhau" }],
           "conversationId": "0f8b1d42-5c6a-4b7e-9d10-2a3b4c5d6e7f",
           "clientSessionId": "web-8f1c...",
           "bookingDraft": {
@@ -98,9 +97,22 @@ public sealed class Assistant : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous (co token thi hoi thoai gan vao tai khoan)",
                 ChatExample,
-                "messages: BE chi lay CAU USER CUOI CUNG trong mang nay. Lich su truoc do server tu "
-                + "doc lai tu DB theo conversationId, client khong can gui lai (gui cung khong sao, "
-                + "phan thua bi bo). Luot dau tien de conversationId = null, server tao roi tra ve.",
+                "messages: moi phan tu CHI co truong text. BE lay PHAN TU CUOI CUNG co chu lam cau "
+                + "hoi cua khach; lich su truoc do server tu doc lai tu DB theo conversationId, client "
+                + "khong can gui lai. Luot dau tien de conversationId = null, server tao roi tra ve.",
+                "Truong \"role\" DA BO (truoc day nhan \"user\"/\"assistant\"). Client cu con gui kem "
+                + "role thi van chay binh thuong — truong la bi bo qua. Nhung DUNG gui ca luot assistant "
+                + "nua: BE khong con loc theo role, gui vao ma luot cuoi la cau cua tro ly thi no se bi "
+                + "hieu nham thanh cau hoi cua khach.",
+                "Truong \"language\" DA BO. Tro ly TU BAM theo ngon ngu khach dang viet: khach nhan "
+                + "tieng Anh thi tra loi tieng Anh, tieng Viet thi tra loi tieng Viet, khong can client "
+                + "khai bao. Gui kem language cung khong sao, truong la bi bo qua.",
+                "HE QUA can biet: suggestedQuestions va nhan trong actions[] luon la TIENG VIET, vi "
+                + "chung duoc chon theo tu khoa chu khong do LLM sinh. Rieng cau tra loi (reply) van "
+                + "dung ngon ngu cua khach.",
+                "Hoi thoai tao truoc thay doi nay con luu language \"VN\"/\"ENG\" thi VAN bi ep ngon ngu "
+                + "do cho toi khi khach bat dau hoi thoai moi — co y, de hoi thoai dang do khong doi "
+                + "giong giua chung.",
                 "clientSessionId: BAT BUOC voi khach chua dang nhap — no la thu duy nhat chung minh "
                 + "hoi thoai la cua minh. Gui sai/thieu o cac luot sau se bi 404. Khach da dang nhap "
                 + "thi so khop theo userId, bo qua truong nay.",
@@ -162,10 +174,12 @@ public sealed class Assistant : IEndpointGroup
         ChatRequest request,
         CancellationToken ct)
     {
-        var incoming = (request.Messages ?? [])
-            .Where(m => !string.IsNullOrWhiteSpace(m.Text))
-            .ToArray();
-        var latestUserText = incoming.LastOrDefault(x => string.Equals(x.Role, "user", StringComparison.OrdinalIgnoreCase))?.Text?.Trim();
+        // Client chỉ gửi text, KHÔNG còn gửi role: lượt assistant vốn đã bị bỏ (lịch sử đọc từ DB
+        // theo conversationId), nên role không mang thêm thông tin gì. Lấy phần tử cuối cùng có
+        // chữ — client cũ còn gửi kèm "role" thì System.Text.Json tự bỏ qua, không vỡ.
+        var latestUserText = (request.Messages ?? [])
+            .LastOrDefault(m => !string.IsNullOrWhiteSpace(m.Text))
+            ?.Text?.Trim();
         if (string.IsNullOrWhiteSpace(latestUserText))
         {
             return Results.BadRequest(new { error = "Tin nhan user khong duoc rong." });
@@ -194,7 +208,7 @@ public sealed class Assistant : IEndpointGroup
             {
                 UserId = userContext.UserId,
                 AnonymousSessionId = userContext.UserId is null ? NormalizeSession(request.ClientSessionId) : null,
-                Language = string.IsNullOrWhiteSpace(request.Language) ? "VN" : request.Language!,
+                Language = ChatConversation.AutoLanguage,
                 StartedAt = now,
                 LastActivityAt = now,
                 LastAssistantMessageAt = now,
@@ -217,11 +231,11 @@ public sealed class Assistant : IEndpointGroup
             return Results.BadRequest(new { error = "Booking draft qua lon." });
         }
 
+        // Ngôn ngữ lấy từ hội thoại, không nhận từ request nữa. Hội thoại mới mang "Auto" nên
+        // AssistantLanguage.Resolve trả null = trợ lý tự bám ngôn ngữ khách viết; hội thoại cũ còn
+        // "VN"/"ENG" thì vẫn giữ nguyên hành vi đã có, không đổi giữa chừng.
         var reply = await sender.Send(
-            new ChatWithAssistantCommand(
-                history,
-                request.Language ?? conversation.Language,
-                incomingDraft),
+            new ChatWithAssistantCommand(history, conversation.Language, incomingDraft),
             ct);
         var nextSequence = conversation.Messages.Count == 0
             ? 1
@@ -242,7 +256,6 @@ public sealed class Assistant : IEndpointGroup
             Content = reply.Text,
             CreatedAt = now
         });
-        conversation.Language = request.Language ?? conversation.Language;
         conversation.LastActivityAt = now;
         conversation.LastAssistantMessageAt = now;
         conversation.InactivityDeadlineAt = now.AddMinutes(30);
@@ -336,12 +349,11 @@ public sealed class Assistant : IEndpointGroup
     /// </param>
     public sealed record ChatRequest(
         List<ChatTurnRequest>? Messages,
-        string? Language = null,
         Guid? ConversationId = null,
         string? ClientSessionId = null,
         JsonElement? BookingDraft = null);
 
-    public sealed record ChatTurnRequest(string? Role, string? Text);
+    public sealed record ChatTurnRequest(string? Text);
 
     /// <summary>
     /// Chuẩn hoá draft từ client thành chuỗi JSON để chuyển xuống tầng Application. Trả null khi
