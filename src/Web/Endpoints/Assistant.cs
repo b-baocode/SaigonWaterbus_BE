@@ -37,11 +37,6 @@ public sealed class Assistant : IEndpointGroup
         }
         """;
 
-    /// <summary>
-    /// Hợp đồng của trường bookingDraft, viết dài vì đây là chỗ client hay hiểu sai nhất:
-    /// Swagger hiện `"bookingDraft": "string"` (kiểu JsonElement không sinh được schema),
-    /// nhưng phải gửi OBJECT.
-    /// </summary>
     private const string BookingDraftNote =
         """
         bookingDraft (optional): trang thai form dat ve dang mo trong khung chat. LA MOT OBJECT
@@ -186,25 +181,7 @@ public sealed class Assistant : IEndpointGroup
             .Append(new AssistantTurn(DomainChatMessage.UserRole, latestUserText))
             .ToArray();
 
-        // Draft do FE gửi kèm khi form đặt vé trong chat đang mở. CỐ Ý KHÔNG LƯU: nó chỉ cần
-        // sống trong đúng lượt này để trợ lý biết khách đang ở bước nào mà không hỏi lại.
-        // Việc giữ draft qua F5 / đổi tab là của FE (localStorage) — nhờ vậy không cần cột DB,
-        // không cần migration.
-        //
-        // CẢNH BÁO CHO NGƯỜI SỬA SAU — DB ĐANG CÓ CỘT MÀ CODE KHÔNG BIẾT:
-        // Bản trước từng lưu draft vào `chat_conversations.booking_draft_json` (migration
-        // 20260808073943_AddChatConversationBookingDraft). File migration đã bị xoá khỏi repo,
-        // NHƯNG cột thì vẫn còn thật trên cả Neon (prod) lẫn DB local, kèm dòng history tương ứng
-        // — đã kiểm tra 2026-08-12. Cột đang mồ côi: không entity nào map, nên EF hoàn toàn không
-        // nhìn thấy nó (EF chỉ so model với snapshot, không đọc schema thật) và sẽ không tự sinh
-        // AddColumn/DropColumn cho nó. Để nguyên là AN TOÀN.
-        //
-        // Nếu quay lại hướng lưu draft ở server thì ĐỪNG để EF tự sinh migration: nó sẽ ra
-        // AddColumn và chết 42701 "column already exists" trên mọi DB đã có cột. Phải sửa tay
-        // thành `ALTER TABLE "chat_conversations" ADD COLUMN IF NOT EXISTS "booking_draft_json"
-        // jsonb;` và đặt TÊN/timestamp MỚI — dùng lại đúng id cũ thì prod coi như đã áp rồi và bỏ
-        // qua, DB dựng mới sẽ không có cột. Mẫu migration idempotent: xem
-        // 20260812000000_RemoveUserPushTokens.
+     
         var incomingDraft = NormalizeBookingDraft(request.BookingDraft);
         if (incomingDraft is not null && incomingDraft.Length > MaxBookingDraftBytes)
         {
