@@ -30,6 +30,11 @@ public sealed record CompleteCharterRouteDrawRequestCommand(Guid RequestId, Guid
 public sealed record CancelCharterRouteDrawRequestCommand(Guid RequestId)
     : IRequest;
 
+public sealed record AcknowledgeCharterRouteDrawRequestCommand(Guid RequestId)
+    : IRequest<AcknowledgeCharterRouteDrawRequestResult>;
+
+public sealed record AcknowledgeCharterRouteDrawRequestResult(bool Acknowledged);
+
 public sealed record CharterRouteDrawRequestListItemDto(
     Guid RequestId,
     Guid BookingId,
@@ -43,6 +48,7 @@ public sealed record CharterRouteDrawRequestListItemDto(
     Guid? ResultRouteId,
     DateTimeOffset CreatedAt,
     DateTimeOffset? InProgressAt,
+    DateTimeOffset? AcknowledgedAt,
     DateTimeOffset? CompletedAt,
     DateTimeOffset? CancelledAt);
 
@@ -63,6 +69,7 @@ public sealed record CharterRouteDrawRequestDetailDto(
     string? Notes,
     DateTimeOffset CreatedAt,
     DateTimeOffset? InProgressAt,
+    DateTimeOffset? AcknowledgedAt,
     DateTimeOffset? CompletedAt,
     DateTimeOffset? CancelledAt);
 
@@ -229,6 +236,7 @@ public sealed class GetCharterRouteDrawRequestListQueryHandler
                 x.ResultRouteId,
                 x.Created,
                 x.InProgressAt,
+                x.AcknowledgedAt,
                 x.CompletedAt,
                 x.CancelledAt))
             .ToListAsync(cancellationToken);
@@ -426,6 +434,50 @@ public sealed class CancelCharterRouteDrawRequestCommandHandler
     }
 }
 
+public sealed class AcknowledgeCharterRouteDrawRequestCommandHandler
+    : IRequestHandler<AcknowledgeCharterRouteDrawRequestCommand, AcknowledgeCharterRouteDrawRequestResult>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
+
+    public AcknowledgeCharterRouteDrawRequestCommandHandler(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _userContext = userContext;
+        _timeProvider = timeProvider;
+    }
+
+    public async Task<AcknowledgeCharterRouteDrawRequestResult> Handle(
+        AcknowledgeCharterRouteDrawRequestCommand request,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        if (!AuthSupport.IsAdmin(actor))
+        {
+            throw new ForbiddenAccessException();
+        }
+
+        var drawRequest = await _context.Set<CharterRouteDrawRequest>()
+            .SingleOrDefaultAsync(x => x.Id == request.RequestId, cancellationToken)
+            ?? throw new NotFoundException("Charter route draw request not found.");
+
+        if (CharterRouteDrawRequest.IsFinalStatus(drawRequest.Status))
+        {
+            return new AcknowledgeCharterRouteDrawRequestResult(true);
+        }
+
+        drawRequest.Status = CharterRouteDrawRequest.AcknowledgedStatus;
+        drawRequest.AcknowledgedAt = _timeProvider.GetUtcNow();
+        await _context.SaveChangesAsync(cancellationToken);
+
+        return new AcknowledgeCharterRouteDrawRequestResult(true);
+    }
+}
+
 internal static class CharterRouteDrawRequestSupport
 {
     public static IQueryable<CharterRouteDrawRequest> LoadRequestDetailQuery(IApplicationDbContext context) =>
@@ -478,6 +530,7 @@ internal static class CharterRouteDrawRequestSupport
             request.Notes,
             request.Created,
             request.InProgressAt,
+            request.AcknowledgedAt,
             request.CompletedAt,
             request.CancelledAt);
     }

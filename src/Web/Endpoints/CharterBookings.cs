@@ -315,7 +315,19 @@ public sealed class CharterBookings : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 null,
-                "Chi huy request Pending/InProgress. Request Done khong duoc huy."));
+                "Chi huy request Pending/InProgress/Acknowledged. Request Done khong duoc huy."));
+
+        group.MapPatch(AcknowledgeCharterRouteDrawRequest, "admin/route-draw-requests/{requestId:guid}/acknowledge")
+            .AllowAnonymous()
+            .WithSummary("GPS driver bao da ve xong route, loai khoi hang doi")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous (GPS driver app)",
+                null,
+                "Khi driver ve xong route charter (nhieu chang), goi API nay de loai khoi queue.",
+                "Khac voi complete: complete can routeId, khong phu hop khi ve nhieu chung.",
+                "Status chuyen thanh Acknowledged, khong can routeId.",
+                "Acknowledge khi da ve xong roi, nhung chua gan routeId (vi du ve nhieu chung, can tong hop).",
+                "Tra ve 200 + { acknowledged: true }."));
 
         group.MapPost(CreateCharterBookingTrip, "admin/{id:guid}/trip")
             .RequireAuthorization()
@@ -774,6 +786,12 @@ public sealed class CharterBookings : IEndpointGroup
         await sender.Send(new CancelCharterRouteDrawRequestCommand(requestId), ct);
         return Results.NoContent();
     }
+
+    private static async Task<IResult> AcknowledgeCharterRouteDrawRequest(
+        ISender sender,
+        Guid requestId,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new AcknowledgeCharterRouteDrawRequestCommand(requestId), ct));
 
     private static async Task<IResult> CreateCharterBookingTrip(
         ISender sender,

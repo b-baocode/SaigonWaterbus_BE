@@ -92,6 +92,8 @@ public static class DependencyInjection
         builder.Services.AddHostedService<TripReminderService>();
         builder.Services.AddHostedService<StaffOperationalNotificationService>();
         builder.Services.AddHostedService<SightseeingTripAutoCancellationService>();
+        builder.Services.AddHostedService<CharterTripExpirationHostedService>();
+        builder.Services.AddHostedService<PaymentPendingExpirationHostedService>();
         builder.Services.AddHostedService<ChatConversationLifecycleService>();
         builder.Services.AddScoped<EsmsSmsSender>();
         builder.Services.AddScoped<ISmsOtpSender>(provider =>

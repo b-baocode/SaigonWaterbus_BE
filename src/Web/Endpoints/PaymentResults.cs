@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using SaigonWaterbus.Infrastructure.Payments;
+using SaigonWaterbus.Application.Payments;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -39,12 +40,21 @@ public sealed class PaymentResults : IEndpointGroup
             .WithSummary("PayOS cancel URL - smart redirect app/web");
     }
 
-    private static IResult Cancel(
+    private static async Task<IResult> Cancel(
         [FromQuery] long? orderCode,
         [FromQuery(Name = "status")] string? status,
         [FromQuery(Name = "code")] string? code,
-        [FromServices] IOptions<PayOsOptions> payOsOptions) =>
-        Success(orderCode, string.IsNullOrWhiteSpace(status) ? "CANCELLED" : status, code, payOsOptions);
+        [FromServices] IOptions<PayOsOptions> payOsOptions,
+        [FromServices] ISender sender,
+        CancellationToken ct)
+    {
+        if (orderCode.HasValue)
+        {
+            await sender.Send(new CancelPaymentByOrderCodeCommand(orderCode.Value), ct);
+        }
+
+        return Success(orderCode, string.IsNullOrWhiteSpace(status) ? "CANCELLED" : status, code, payOsOptions);
+    }
 
     private static IResult Success(
         [FromQuery] long? orderCode,
