@@ -39,7 +39,8 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
                 b.PointsEarned,
                 b.InsuranceSnapshot,
                 ItemCount = b.Passengers.Count,
-                RouteType = b.Trip != null ? b.Trip.Route.RouteType : null
+                RouteType = b.Trip != null ? b.Trip.Route.RouteType : null,
+                BoatImageUrl = b.Trip != null && b.Trip.Boat != null ? b.Trip.Boat.ImageUrl : null
             })
             .ToListAsync(cancellationToken);
 
@@ -55,7 +56,8 @@ public sealed class GetBookingListQueryHandler : IRequestHandler<GetBookingListQ
                 b.RouteType,
                 b.PointsUsed,
                 b.PointsEarned,
-                BookingInsuranceDtoMapper.ToDto(b.InsuranceSnapshot)))
+                BookingInsuranceDtoMapper.ToDto(b.InsuranceSnapshot),
+                b.BoatImageUrl))
             .ToList();
     }
 }
