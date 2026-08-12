@@ -143,16 +143,24 @@ public sealed class GeminiChatCompletionService : IChatCompletionService
             generationConfig["thinkingConfig"] = new JsonObject { ["thinkingBudget"] = _options.ThinkingBudget };
         }
 
-        return new JsonObject
+        var body = new JsonObject
         {
             ["systemInstruction"] = new JsonObject
             {
                 ["parts"] = new JsonArray { new JsonObject { ["text"] = request.SystemPrompt } },
             },
             ["contents"] = contents,
-            ["tools"] = new JsonArray { new JsonObject { ["functionDeclarations"] = declarations } },
             ["generationConfig"] = generationConfig,
         };
+
+        // Không tool thì BỎ HẲN khoá "tools": gửi functionDeclarations rỗng là Gemini trả 400.
+        // Trường hợp này có thật — admin xem trước prompt ở chế độ không tra dữ liệu.
+        if (declarations.Count > 0)
+        {
+            body["tools"] = new JsonArray { new JsonObject { ["functionDeclarations"] = declarations } };
+        }
+
+        return body;
     }
 
     private static ChatCompletionResult ParseResponse(string json)

@@ -143,6 +143,11 @@ public static class DependencyInjection
         var tourGuideVoicePermit = builder.Configuration.GetValue<int?>("RateLimiting:TourGuideVoicePerWindow") ?? 5;
         var tourGuideVoiceWindowSeconds = builder.Configuration.GetValue<int?>("RateLimiting:TourGuideVoiceWindowSeconds") ?? 60;
 
+        // Chạy thử prompt: admin tinh chỉnh câu chữ thì hay bấm liên tục, mà mỗi lần là một lượt
+        // LLM thật ăn vào hạn mức free-tier dùng chung với khách. Siết chặt nhất trong ba policy.
+        var promptPreviewPermit = builder.Configuration.GetValue<int?>("RateLimiting:AssistantPromptPreviewPerWindow") ?? 5;
+        var promptPreviewWindowSeconds = builder.Configuration.GetValue<int?>("RateLimiting:AssistantPromptPreviewWindowSeconds") ?? 300;
+
         builder.Services.AddRateLimiter(options =>
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -162,6 +167,15 @@ public static class DependencyInjection
                     {
                         PermitLimit = tourGuideVoicePermit,
                         Window = TimeSpan.FromSeconds(tourGuideVoiceWindowSeconds),
+                        QueueLimit = 0,
+                    }));
+            options.AddPolicy(SaigonWaterbus.Web.Endpoints.AssistantPrompts.RateLimitPolicy, httpContext =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: ResolveClientKey(httpContext),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        PermitLimit = promptPreviewPermit,
+                        Window = TimeSpan.FromSeconds(promptPreviewWindowSeconds),
                         QueueLimit = 0,
                     }));
         });

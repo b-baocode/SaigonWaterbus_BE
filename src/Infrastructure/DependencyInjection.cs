@@ -72,6 +72,8 @@ public static class DependencyInjection
         builder.Services.AddHttpClient(PayOsHttpClientName);
         builder.Services.AddHttpClient(GeminiChatCompletionService.HttpClientName);
         builder.Services.AddScoped<IChatCompletionService, GeminiChatCompletionService>();
+        // Singleton: chỉ giữ đường dẫn thư mục, không giữ nội dung prompt (đọc lại file mỗi lượt).
+        builder.Services.AddSingleton<IAssistantPromptStore, FileAssistantPromptStore>();
         // Singleton: GoogleCredential tự cache và tự làm mới access token bên trong nó.
         builder.Services.AddSingleton<GoogleCloudCredentials>();
         builder.Services.AddHttpClient(GoogleTextToSpeechService.HttpClientName, (provider, client) =>
@@ -189,6 +191,8 @@ public static class DependencyInjection
         });
         builder.Services.Configure<CharterRouteEstimateOptions>(builder.Configuration.GetSection(CharterRouteEstimateOptions.SectionName));
         builder.Services.Configure<GeminiOptions>(builder.Configuration.GetSection(GeminiOptions.SectionName));
+        builder.Services.Configure<AssistantPromptOptions>(
+            builder.Configuration.GetSection(AssistantPromptOptions.SectionName));
         builder.Services.Configure<GoogleTextToSpeechOptions>(
             builder.Configuration.GetSection(GoogleTextToSpeechOptions.SectionName));
         builder.Services.Configure<GoogleCloudSpeechToTextOptions>(
