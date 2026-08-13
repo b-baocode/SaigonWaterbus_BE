@@ -68,8 +68,20 @@ public sealed class Assistant : IEndpointGroup
                                     Gui thieu tripId thi tro ly khong chon ghe ho duoc.
           selectedSeatsDeparture  : CHI dem so phan tu
 
-        RESPONSE co them draftPatch: thay doi ma tro ly muon ghi vao form. null = luot nay khong
-        dung toi form. CLIENT KHONG PHAI TU DOAN GI TU CAU TRA LOI TEXT — moi thu can dien deu o day.
+        RESPONSE tra ve bookingDraft ĐẦY ĐỦ (draft ban vua gui, da duoc server ap thay doi cua luot
+        nay). CACH DUNG DON GIAN NHAT — va la cach duoc khuyen dung:
+
+          draft = response.bookingDraft;   // copy nguyen khoi
+          // luot sau gui lai y nguyen: { messages: [...], conversationId, clientSessionId, bookingDraft: draft }
+
+        KHONG phai tu merge, KHONG phai doi ten field, KHONG phai doan gi tu cau tra loi text.
+        bookingDraft = null chi khi ban khong gui draft VA luot nay tro ly cung khong dien gi.
+        Moi field LA cua ban (stage, passengers, contact, preview...) duoc GIU NGUYEN, server chi
+        ghi de dung nhung khoa no vua doi.
+
+        RESPONSE con co draftPatch: RIENG phan tro ly vua doi trong luot nay (null = khong doi gi).
+        Chi dung khi ban muon highlight "AI vua dien o day" tren form; con de giu trang thai thi
+        dung bookingDraft o tren.
 
           "draftPatch": {
             "serviceType": "Waterbus",            // hoac "Sightseeing"
@@ -87,13 +99,13 @@ public sealed class Assistant : IEndpointGroup
             "seats": [ { "seatNumber": "1-A1", "deck": 1, "price": 19000, "seatTypeName": "Standard" } ]
           }
 
-        CACH MERGE — chi mot quy tac: field khac null thi GHI DE vao draft, field null thi GIU
-        NGUYEN gia tri dang co. Khong co truong phan loai, nen them field moi o phia server thi
-        client khong phai sua gi. Mot luot co the vua dien thong tin vua chon ghe.
+        NEU van muon tu merge draftPatch (khong bat buoc — server da merge san o bookingDraft):
+        field khac null thi GHI DE, field null thi GIU NGUYEN gia tri dang co.
           Object.entries(patch).forEach(([k, v]) => { if (v !== null) draft[k] = v; });
-        Rieng hai truong dac biet: "seats" ghi vao selectedSeatsDeparture, "trip" ghi vao
-        selectedDepartureTrip. Ten field ben trong "trip" CO Y trung voi TripSummaryDto ma client
-        nhan tu /api/trips/search, nen gan thang duoc, khong phai anh xa lai.
+        DUNG dung Object.assign(draft, patch): patch luon co DU field nen cac null se xoa sach thu
+        khach da dien. Rieng hai truong doi ten: "seats" ghi vao selectedSeatsDeparture, "trip" ghi
+        vao selectedDepartureTrip. Ten field ben trong "trip" CO Y trung voi TripSummaryDto ma
+        client nhan tu /api/trips/search, nen gan thang duoc, khong phai anh xa lai.
 
         MOI GIA TRI DA DUOC SERVER KIEM truoc khi phat ra: ten ben phai khop ben co that (tra ve ca
         ma lan ten chuan), ngay dung yyyy-MM-dd va khong o qua khu, tong khach toi da 10 va it nhat
@@ -110,8 +122,13 @@ public sealed class Assistant : IEndpointGroup
         chua ho tro, dung dua vao.
 
         Luot chat co draftPatch KHONG duoc coi la "khach sua thong tin": client phai GIU form dang
-        mo va merge patch vao draft. Neu client xoa draft moi khi khach go chu thi thu vua dien se
-        mat ngay.
+        mo va nhan lai bookingDraft tra ve. Neu client xoa draft moi khi khach go chu thi thu vua
+        dien se mat ngay.
+
+        SERVER KHONG XOA FIELD: patch chi GHI DE, khong co cach bao "bo chuyen nay di". Nen khi
+        khach doi ngay/doi chang sau luc da chon chuyen + ghe, bookingDraft tra ve VAN con
+        selectedDepartureTrip va selectedSeatsDeparture cua ngay cu — client tu don hai khoa do khi
+        thay departureDate/fromStationCode/toStationCode/serviceType thay doi.
         """;
 
     public static void Map(RouteGroupBuilder group)
@@ -151,8 +168,9 @@ public sealed class Assistant : IEndpointGroup
                 + "dang tin: BE lam sach tung gia tri va nhet vao prompt kem cau ra lenh bo qua moi "
                 + "chi dan an trong do. Dung trong cho no de dieu khien tro ly.",
                 "Response: reply (text tra loi), suggestedQuestions[], actions[] (nut dieu huong), "
-                + "draftPatch (thuong null; co gia tri khi tro ly vua chon ghe ho khach — xem note "
-                + "bookingDraft), conversationId, status (Open|Closed).",
+                + "bookingDraft (DRAFT DAY DU da merge san — copy nguyen khoi vao request luot sau), "
+                + "draftPatch (rieng phan tro ly vua doi, thuong null), conversationId, "
+                + "status (Open|Closed).",
                 "409 = hoi thoai da dong, phai bat dau hoi thoai moi (conversationId = null). "
                 + "404 = khong tim thay hoi thoai hoac khong phai cua minh.",
                 "Rate limit 8 luot/60s theo user (hoac X-Device-Id, hoac IP neu khong co ca hai); "
@@ -292,6 +310,7 @@ public sealed class Assistant : IEndpointGroup
             reply = reply.Text,
             suggestedQuestions = reply.SuggestedQuestions ?? [],
             actions = reply.Actions ?? [],
+            bookingDraft = reply.BookingDraft,
             draftPatch = reply.DraftPatch,
             conversationId = conversation.Id,
             status = conversation.Status

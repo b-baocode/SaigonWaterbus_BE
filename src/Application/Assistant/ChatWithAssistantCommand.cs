@@ -1,3 +1,4 @@
+using System.Text.Json.Nodes;
 using SaigonWaterbus.Application.Assistant.Prompts;
 using SaigonWaterbus.Application.Common.Interfaces;
 
@@ -7,14 +8,19 @@ namespace SaigonWaterbus.Application.Assistant;
 public sealed record AssistantTurn(string Role, string Text);
 
 /// <param name="DraftPatch">
-/// Thay đổi trợ lý muốn ghi vào form đặt vé đang mở (hiện chỉ có: ghế đã chọn hộ khách).
-/// Null = lượt này không đụng vào form.
+/// RIÊNG những thay đổi của lượt này (field null = không đụng tới). Giữ lại cho client nào muốn
+/// biết "trợ lý vừa sửa gì" để highlight trên form; client thường KHÔNG cần tự merge nữa.
+/// </param>
+/// <param name="BookingDraft">
+/// Draft ĐẦY ĐỦ sau khi server đã áp <paramref name="DraftPatch"/> — client copy nguyên khối này
+/// vào request lượt sau là xong. Null khi client không gửi draft và lượt này cũng không đổi gì.
 /// </param>
 public sealed record AssistantReply(
     string Text,
     IReadOnlyList<string>? SuggestedQuestions = null,
     IReadOnlyList<AssistantAction>? Actions = null,
-    AssistantDraftPatch? DraftPatch = null);
+    AssistantDraftPatch? DraftPatch = null,
+    JsonNode? BookingDraft = null);
 
 /// <summary>
 /// Điều phối một lượt trả lời của trợ lý ảo: chạy vòng lặp gọi LLM ↔ chạy tool cho
@@ -106,6 +112,10 @@ public sealed class ChatWithAssistantCommandHandler
     {
         var question = request.History.LastOrDefault(x => string.Equals(x.Role, "user", StringComparison.OrdinalIgnoreCase))?.Text ?? string.Empty;
         var suggestions = AssistantSuggestions.Build(question, request.Language);
-        return new AssistantReply(text, suggestions.Questions, suggestions.Actions, draftPatch);
+
+        // Server merge sẵn thay vì bắt client tự làm: luật merge tuy ngắn nhưng sai thì im lặng
+        // mất dữ liệu khách đã điền (xem AssistantBookingDraftMerger).
+        var mergedDraft = AssistantBookingDraftMerger.Merge(request.BookingDraftJson, draftPatch);
+        return new AssistantReply(text, suggestions.Questions, suggestions.Actions, draftPatch, mergedDraft);
     }
 }
