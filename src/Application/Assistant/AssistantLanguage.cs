@@ -33,6 +33,42 @@ public static class AssistantLanguage
         };
     }
 
+    /// <summary>
+    /// Client mở khung chat bằng một tin nhắn mồi: "start" = khách đang xem giao diện tiếng Anh,
+    /// "bắt đầu" = tiếng Việt. Trả về mã ngôn ngữ tương ứng, hoặc null nếu đây là câu hỏi thật.
+    ///
+    /// CHỈ dùng cho LƯỢT ĐẦU của hội thoại và KHÔNG lưu lại: lời chào phải đúng ngôn ngữ giao diện,
+    /// nhưng từ lượt sau khách gõ tiếng gì thì trả lời tiếng đó — khách bấm nút tiếng Anh rồi hỏi
+    /// bằng tiếng Việt mà bị đáp tiếng Anh là khó chịu.
+    ///
+    /// So khớp sau khi bỏ dấu nên "bắt đầu", "Bat dau", "BẮT ĐẦU" đều nhận; chấm/than cuối câu
+    /// cũng bỏ qua vì client hay thêm.
+    /// </summary>
+    public static string? ResolveGreetingTrigger(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var normalized = new string(text
+                .Normalize(System.Text.NormalizationForm.FormD)
+                .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c)
+                    != System.Globalization.UnicodeCategory.NonSpacingMark)
+                .ToArray())
+            .Replace('đ', 'd').Replace('Đ', 'D')
+            .Trim()
+            .Trim('.', '!', '/')
+            .ToLowerInvariant();
+
+        return normalized switch
+        {
+            "start" => English,
+            "bat dau" => Vietnamese,
+            _ => null,
+        };
+    }
+
     /// <summary>Câu chỉ dẫn ngôn ngữ nhét vào system prompt.</summary>
     public static string PromptInstruction(string? resolvedLanguage) => resolvedLanguage switch
     {

@@ -233,8 +233,16 @@ public sealed class Assistant : IEndpointGroup
         // Ngôn ngữ lấy từ hội thoại, không nhận từ request nữa. Hội thoại mới mang "Auto" nên
         // AssistantLanguage.Resolve trả null = trợ lý tự bám ngôn ngữ khách viết; hội thoại cũ còn
         // "VN"/"ENG" thì vẫn giữ nguyên hành vi đã có, không đổi giữa chừng.
+        //
+        // Ngoại lệ: tin nhắn mồi "start"/"bắt đầu" lúc client mở khung chat quyết định ngôn ngữ của
+        // riêng LỜI CHÀO. Cố ý KHÔNG ghi vào conversation.Language — từ lượt sau khách gõ tiếng gì
+        // thì trả lời tiếng đó.
+        var language = request.ConversationId is null
+            ? AssistantLanguage.ResolveGreetingTrigger(latestUserText) ?? conversation.Language
+            : conversation.Language;
+
         var reply = await sender.Send(
-            new ChatWithAssistantCommand(history, conversation.Language, incomingDraft),
+            new ChatWithAssistantCommand(history, language, incomingDraft),
             ct);
         var nextSequence = conversation.Messages.Count == 0
             ? 1

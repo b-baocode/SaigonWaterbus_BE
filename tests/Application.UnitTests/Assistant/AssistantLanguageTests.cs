@@ -34,6 +34,30 @@ public class AssistantLanguageTests
     public void KhongNhanRaThiTraNullDeTuPhatHien(string? input) =>
         AssistantLanguage.Resolve(input).ShouldBeNull();
 
+    [TestCase("start")]
+    [TestCase("Start")]
+    [TestCase("  START  ")]
+    [TestCase("start.")]
+    public void TinNhanMoiStart_ChaoBangTiengAnh(string input) =>
+        AssistantLanguage.ResolveGreetingTrigger(input).ShouldBe(AssistantLanguage.English);
+
+    [TestCase("bắt đầu")]
+    [TestCase("Bắt đầu")]
+    [TestCase("BẮT ĐẦU")]
+    [TestCase("bat dau")]
+    [TestCase("bắt đầu!")]
+    public void TinNhanMoiBatDau_ChaoBangTiengViet(string input) =>
+        AssistantLanguage.ResolveGreetingTrigger(input).ShouldBe(AssistantLanguage.Vietnamese);
+
+    // Cau hoi that thi de tro ly tu bam ngon ngu, dung ep theo tu khoa nam giua cau.
+    [TestCase(null)]
+    [TestCase("")]
+    [TestCase("bắt đầu đặt vé giúp mình")]
+    [TestCase("start booking for me")]
+    [TestCase("mai co chuyen nao khong")]
+    public void KhongPhaiTinNhanMoi_ThiTraNull(string? input) =>
+        AssistantLanguage.ResolveGreetingTrigger(input).ShouldBeNull();
+
     [Test]
     public void ChiDanPromptKhacNhauTheoTungNgonNgu()
     {

@@ -567,7 +567,12 @@ public sealed class AssistantToolset
         var seatResults = new List<object>();
         foreach (var isReturnLeg in Legs)
         {
-            if (GetBool(arguments, isReturnLeg ? "pick_return_seats" : "pick_seats") != true)
+            // Model đọc mã ghế ra là đã có ý chọn ghế, nhiều lúc nó quên bật cờ pick_seats kèm theo.
+            // Đòi đủ cả hai thì ghế bị bỏ qua LẶNG LẼ mà model vẫn tưởng đã chọn xong, rồi nói với
+            // khách là "đã chọn ghế 1-A3" trong khi không có gì được ghi.
+            var wantsSeats = GetBool(arguments, isReturnLeg ? "pick_return_seats" : "pick_seats") == true
+                || GetStringArray(arguments, isReturnLeg ? "return_seat_numbers" : "seat_numbers").Count > 0;
+            if (!wantsSeats)
             {
                 continue;
             }
@@ -761,11 +766,16 @@ public sealed class AssistantToolset
                   + $"goi lai tool nay kem {(isReturnLeg ? "return_trip_code" : "trip_code")}.", null, false);
         }
 
-        var seatCount = ReadCount(arguments, "seat_count") ?? 0;
+        // Khách nêu đích danh mã ghế thì phải lấy ĐÚNG ghế đó; số lượng suy ra từ danh sách, không
+        // cần seat_count. Đây là hai chế độ tách bạch: chọn theo mã, hoặc để server chọn hộ.
+        var requestedSeatNumbers = GetStringArray(arguments, isReturnLeg ? "return_seat_numbers" : "seat_numbers");
+        var seatCount = requestedSeatNumbers.Count > 0
+            ? requestedSeatNumbers.Count
+            : ReadCount(arguments, "seat_count") ?? 0;
         if (seatCount <= 0)
         {
-            return ("Chua biet can chon may ghe. Hoi khach can may ghe roi goi lai tool nay kem "
-                  + "seat_count.", null, false);
+            return ("Chua biet can chon may ghe. Hoi khach can may ghe (hoac khach doc ma ghe cu the) "
+                  + "roi goi lai tool nay kem seat_count hoac seat_numbers.", null, false);
         }
 
         if (seatCount > MaxSeatsPerRequest)
@@ -797,6 +807,11 @@ public sealed class AssistantToolset
             .Where(s => s.Status == GetTripSeatMapQueryHandler.StatusAvailable)
             .ToList();
 
+        if (requestedSeatNumbers.Count > 0)
+        {
+            return PickNamedSeats(requestedSeatNumbers, map.Seats, available, isReturnLeg);
+        }
+
         var deck = GetDouble(arguments, "seat_deck") is { } deckValue ? (int)deckValue : (int?)null;
         if (deck is not null)
         {
@@ -826,6 +841,108 @@ public sealed class AssistantToolset
             .ToArray();
 
         return (null, seats, IsAdjacentBlock(picked));
+    }
+
+    /// <summary>
+    /// Lấy ĐÚNG những ghế khách đọc tên, thay vì để server chọn hộ.
+    ///
+    /// Phân biệt rõ hai loại hỏng để model nói thật với khách: mã KHÔNG CÓ trên tàu (khách đọc
+    /// nhầm) khác hẳn với ghế CÓ nhưng đã bị người khác lấy. Gộp chung thành "không chọn được" thì
+    /// khách không biết nên đọc lại mã hay chọn ghế khác.
+    ///
+    /// Hỏng một ghế là hỏng cả lượt: chọn nửa vời rồi im lặng bỏ phần còn lại đúng là kiểu lỗi
+    /// khách chỉ phát hiện lúc ra bến.
+    /// </summary>
+    private static (string? Error, IReadOnlyList<AssistantPickedSeat>? Seats, bool Adjacent) PickNamedSeats(
+        IReadOnlyList<string> requested,
+        IReadOnlyList<TripSeatMapSeatDto> allSeats,
+        IReadOnlyList<TripSeatMapSeatDto> available,
+        bool isReturnLeg)
+    {
+        var leg = LegLabel(isReturnLeg);
+        var picked = new List<TripSeatMapSeatDto>();
+        var notFound = new List<string>();
+        var taken = new List<string>();
+        var ambiguous = new List<string>();
+
+        foreach (var raw in requested)
+        {
+            var matches = MatchSeats(allSeats, raw);
+            if (matches.Count == 0)
+            {
+                notFound.Add(raw);
+                continue;
+            }
+
+            // "A5" khớp cả 1-A5 lẫn 2-A5 → hỏi lại tầng, đừng tự chọn một cái rồi khách ngồi nhầm.
+            if (matches.Count > 1)
+            {
+                ambiguous.Add($"{raw} (khop {string.Join(", ", matches.Select(s => s.SeatNumber))})");
+                continue;
+            }
+
+            var seat = matches[0];
+            if (!available.Any(s => string.Equals(s.SeatNumber, seat.SeatNumber, StringComparison.OrdinalIgnoreCase)))
+            {
+                taken.Add(seat.SeatNumber);
+                continue;
+            }
+
+            if (!picked.Any(s => string.Equals(s.SeatNumber, seat.SeatNumber, StringComparison.OrdinalIgnoreCase)))
+            {
+                picked.Add(seat);
+            }
+        }
+
+        if (ambiguous.Count > 0)
+        {
+            return ($"Ma ghe chua ro tang: {string.Join("; ", ambiguous)}. Hoi khach muon tang nao roi "
+                  + "goi lai voi ma day du.", null, false);
+        }
+
+        if (notFound.Count > 0)
+        {
+            var samples = string.Join(", ", available.Take(MaxSeatSamples).Select(s => s.SeatNumber));
+            return ($"Chuyen chieu {leg} khong co ghe: {string.Join(", ", notFound)}. Noi that voi khach "
+                  + $"la ma nay khong co tren tau. Vai ma ghe con trong: {samples}.", null, false);
+        }
+
+        if (taken.Count > 0)
+        {
+            var samples = string.Join(", ", available.Take(MaxSeatSamples).Select(s => s.SeatNumber));
+            return ($"Ghe {string.Join(", ", taken)} (chieu {leg}) da co nguoi dat. Noi that voi khach roi "
+                  + $"moi khach chon ma khac. Vai ma con trong: {samples}.", null, false);
+        }
+
+        var seats = picked
+            .Select(s => new AssistantPickedSeat(s.SeatNumber, s.Deck, s.Row, s.Column, s.BasePrice, s.SeatTypeName))
+            .ToArray();
+
+        return (null, seats, IsAdjacentBlock(picked));
+    }
+
+    /// <summary>
+    /// Tìm ghế theo mã khách đọc. Khớp chính xác trước; không thấy thì thử khớp phần đuôi để khách
+    /// nói "A5" vẫn ra "1-A5" — nhưng trả về TẤT CẢ ứng viên để phía trên biết mà hỏi lại khi mã
+    /// trùng ở nhiều tầng.
+    /// </summary>
+    private static List<TripSeatMapSeatDto> MatchSeats(IReadOnlyList<TripSeatMapSeatDto> seats, string raw)
+    {
+        var code = raw.Trim();
+        if (code.Length == 0)
+        {
+            return [];
+        }
+
+        var exact = seats.Where(s => string.Equals(s.SeatNumber, code, StringComparison.OrdinalIgnoreCase)).ToList();
+        if (exact.Count > 0)
+        {
+            return exact;
+        }
+
+        return seats
+            .Where(s => s.SeatNumber.EndsWith("-" + code, StringComparison.OrdinalIgnoreCase))
+            .ToList();
     }
 
     /// <summary>
@@ -1275,6 +1392,32 @@ public sealed class AssistantToolset
             : string.Empty;
 
     /// <summary>
+    /// Mảng chuỗi từ tham số tool. Nhận cả một chuỗi đơn lẻ và chuỗi ngăn bằng dấu phẩy, vì model
+    /// hay trả "1-A5" hoặc "1-A5, 1-A6" thay vì mảng dù schema khai array.
+    /// </summary>
+    private static IReadOnlyList<string> GetStringArray(JsonElement args, string property)
+    {
+        if (args.ValueKind != JsonValueKind.Object || !args.TryGetProperty(property, out var value))
+        {
+            return [];
+        }
+
+        var raw = value.ValueKind switch
+        {
+            JsonValueKind.Array => value.EnumerateArray()
+                .Where(x => x.ValueKind == JsonValueKind.String)
+                .Select(x => x.GetString() ?? string.Empty),
+            JsonValueKind.String => [value.GetString() ?? string.Empty],
+            _ => Enumerable.Empty<string>(),
+        };
+
+        return raw
+            .SelectMany(x => x.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            .Where(x => x.Length > 0)
+            .ToArray();
+    }
+
+    /// <summary>
     /// Số từ tham số tool. Nhận cả dạng chuỗi vì model thỉnh thoảng trả "10.7726" thay vì
     /// 10.7726 dù schema khai number.
     /// </summary>
@@ -1411,7 +1554,9 @@ public sealed class AssistantToolset
                 "return_trip_code": { "type": "string",  "description": "Chọn hộ khách CHUYẾN VỀ (chỉ khi đi khứ hồi). Mã lấy từ search_trips chạy NGƯỢC chặng (bến đến → bến đi) vào NGÀY VỀ. Không dùng cho tour ngắm cảnh." },
                 "pick_seats":       { "type": "boolean", "description": "true khi khách nhờ CHỌN GHẾ HỘ cho chiều đi ('chọn giùm mình 2 ghế', 'ghế nào cũng được', 'cho mình 2 ghế cạnh nhau'). Phải kèm seat_count, và chỉ dùng được khi đã có chuyến đi." },
                 "pick_return_seats":{ "type": "boolean", "description": "true khi khách nhờ chọn ghế hộ cho CHIỀU VỀ. Cần có chuyến về trước. Khách nói 'chọn ghế cả hai chiều' thì bật cả pick_seats lẫn cờ này trong CÙNG một lần gọi." },
-                "seat_count":       { "type": "number",  "description": "Số ghế cần chọn, lấy từ câu khách nói ('cho mình 2 ghế', 'đoàn 4 người'). Bắt buộc khi chọn ghế hộ; dùng chung cho cả hai chiều. Tối đa 10." },
+                "seat_count":       { "type": "number",  "description": "Số ghế cần chọn, lấy từ câu khách nói ('cho mình 2 ghế', 'đoàn 4 người'). Bắt buộc khi chọn ghế hộ, TRỪ khi đã truyền seat_numbers. Dùng chung cho cả hai chiều. Tối đa 10." },
+                "seat_numbers":     { "type": "array", "items": { "type": "string" }, "description": "Khách đọc ĐÍCH DANH mã ghế chiều đi ('cho mình ghế 1-A5', 'lấy A5 với A6') thì truyền đúng mã khách nói vào đây; server lấy đúng ghế đó thay vì tự chọn. Chép nguyên mã khách đọc, đừng tự thêm/bớt tầng. Không truyền khi khách chỉ nói số lượng." },
+                "return_seat_numbers": { "type": "array", "items": { "type": "string" }, "description": "Như seat_numbers nhưng cho CHIỀU VỀ." },
                 "seat_deck":        { "type": "number",  "description": "Chỉ chọn ghế ở tầng này (1, 2...). Bỏ trống = tầng nào cũng được." },
                 "seat_type":        { "type": "string",  "description": "Lọc theo loại ghế khách muốn, ví dụ 'VIP'." },
                 "cheapest":         { "type": "boolean", "description": "true khi khách muốn ghế rẻ nhất. Bỏ trống = ưu tiên ngồi cạnh nhau và ghế đẹp (tầng cao, hạng cao)." }
