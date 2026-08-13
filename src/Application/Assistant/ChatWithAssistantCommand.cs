@@ -116,6 +116,23 @@ public sealed class ChatWithAssistantCommandHandler
         // Server merge sẵn thay vì bắt client tự làm: luật merge tuy ngắn nhưng sai thì im lặng
         // mất dữ liệu khách đã điền (xem AssistantBookingDraftMerger).
         var mergedDraft = AssistantBookingDraftMerger.Merge(request.BookingDraftJson, draftPatch);
-        return new AssistantReply(text, suggestions.Questions, suggestions.Actions, draftPatch, mergedDraft);
+
+        // Nút "sang trang đặt vé" chỉ xuất hiện ở lượt trợ lý VỪA ghi nhận thêm thông tin. Để nó
+        // hiện dai dẳng mọi lượt sau thì khách đang hỏi giá vé cũng thấy nút giục đi đặt vé —
+        // phiền và dễ bấm nhầm.
+        var english = string.Equals(
+            AssistantLanguage.Resolve(request.Language),
+            AssistantLanguage.English,
+            StringComparison.OrdinalIgnoreCase);
+        var bookingAction = draftPatch is { IsEmpty: false }
+            ? AssistantBookingReadiness.BuildAction(mergedDraft, english)
+            : null;
+
+        // Nút này đứng ĐẦU vì nó là hành động đúng lúc; các nút gợi ý chung đứng sau.
+        var actions = bookingAction is null
+            ? suggestions.Actions
+            : [bookingAction, .. suggestions.Actions];
+
+        return new AssistantReply(text, suggestions.Questions, actions, draftPatch, mergedDraft);
     }
 }

@@ -1,6 +1,10 @@
 namespace SaigonWaterbus.Application.Assistant;
 
-public sealed record AssistantAction(string Label, string Route, string Type = "navigate");
+/// <param name="Step">
+/// Bước của wizard đặt vé mà client nên mở thẳng (1 = tìm chuyến, 2 = chọn ghế). Chỉ có ở action
+/// <see cref="AssistantBookingReadiness.OpenBookingActionType"/>; các nút điều hướng chung để null.
+/// </param>
+public sealed record AssistantAction(string Label, string Route, string Type = "navigate", int? Step = null);
 
 public static class AssistantSuggestions
 {

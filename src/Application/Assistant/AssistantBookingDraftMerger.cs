@@ -14,15 +14,17 @@ namespace SaigonWaterbus.Application.Assistant;
 /// ngắm cảnh biến thành waterbus); (b) quên đổi tên `trip`→`selectedDepartureTrip`,
 /// `seats`→`selectedSeatsDeparture` nên chuyến/ghế trợ lý chọn rơi mất. Cả hai lỗi đều im lặng.
 ///
-/// VẪN KHÔNG SỞ HỮU CẤU TRÚC FORM: chỉ chạm đúng những khoá nằm trong patch; mọi field lạ của
+/// VẪN KHÔNG SỞ HỮU CẤU TRÚC DRAFT: chỉ chạm đúng những khoá nằm trong patch; mọi field lạ của
 /// client (stage, passengers, contact, preview...) được GIỮ NGUYÊN vị trí và giá trị. Nhờ vậy FE
 /// đổi bước hay thêm trường vẫn không cần BE sửa gì.
 /// </summary>
 public static class AssistantBookingDraftMerger
 {
-    /// <summary>Patch dùng tên ngắn, form dùng tên dài — chỉ hai khoá này lệch nhau.</summary>
+    /// <summary>Patch dùng tên ngắn, draft của client dùng tên dài — chỉ bốn khoá này lệch nhau.</summary>
     private const string TripDraftProperty = "selectedDepartureTrip";
+    private const string ReturnTripDraftProperty = "selectedReturnTrip";
     private const string SeatsDraftProperty = "selectedSeatsDeparture";
+    private const string ReturnSeatsDraftProperty = "selectedSeatsReturn";
 
     /// <summary>JsonSerializerDefaults.Web = camelCase, khớp với JSON mà endpoint đang trả.</summary>
     private static readonly JsonSerializerOptions NodeOptions = new(JsonSerializerDefaults.Web);
@@ -49,23 +51,31 @@ public static class AssistantBookingDraftMerger
         Set(root, "departureDate", patch.DepartureDate);
         Set(root, "returnDate", patch.ReturnDate);
         SetValue(root, "isRoundTrip", patch.IsRoundTrip);
+        SetValue(root, "fromStationId", patch.FromStationId);
         Set(root, "fromStationCode", patch.FromStationCode);
         Set(root, "fromStationName", patch.FromStationName);
+        SetValue(root, "toStationId", patch.ToStationId);
         Set(root, "toStationCode", patch.ToStationCode);
         Set(root, "toStationName", patch.ToStationName);
-        SetValue(root, "adultCount", patch.AdultCount);
-        SetValue(root, "childCount", patch.ChildCount);
-        SetValue(root, "infantCount", patch.InfantCount);
-        Set(root, "tripCode", patch.TripCode);
 
         if (patch.Trip is not null)
         {
             root[TripDraftProperty] = JsonSerializer.SerializeToNode(patch.Trip, NodeOptions);
         }
 
+        if (patch.ReturnTrip is not null)
+        {
+            root[ReturnTripDraftProperty] = JsonSerializer.SerializeToNode(patch.ReturnTrip, NodeOptions);
+        }
+
         if (patch.Seats is not null)
         {
             root[SeatsDraftProperty] = JsonSerializer.SerializeToNode(patch.Seats, NodeOptions);
+        }
+
+        if (patch.ReturnSeats is not null)
+        {
+            root[ReturnSeatsDraftProperty] = JsonSerializer.SerializeToNode(patch.ReturnSeats, NodeOptions);
         }
 
         return root;

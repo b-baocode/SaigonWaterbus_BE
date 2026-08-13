@@ -20,18 +20,11 @@ public sealed class Assistant : IEndpointGroup
           "conversationId": "0f8b1d42-5c6a-4b7e-9d10-2a3b4c5d6e7f",
           "clientSessionId": "web-8f1c...",
           "bookingDraft": {
-            "stage": "SelectingSeats",
             "serviceType": "Waterbus",
-            "fromStationName": "Bạch Đằng",
-            "toStationName": "Thủ Thiêm",
-            "fromStationCode": "BD",
-            "toStationCode": "TT",
             "departureDate": "2026-08-20",
             "isRoundTrip": false,
-            "returnDate": null,
-            "adultCount": 2,
-            "childCount": 0,
-            "infantCount": 0,
+            "fromStationCode": "ST-BD", "fromStationName": "Ben Bach Dang",
+            "toStationCode": "ST-TT",   "toStationName": "Ben Thu Thiem",
             "selectedDepartureTrip": {
               "tripId": "6d4e2f10-1a2b-4c3d-8e9f-0a1b2c3d4e5f",
               "tripCode": "TR-20260820-R5-BD-TT-4858"
@@ -43,92 +36,127 @@ public sealed class Assistant : IEndpointGroup
 
     private const string BookingDraftNote =
         """
-        bookingDraft (optional): trang thai form dat ve dang mo trong khung chat. LA MOT OBJECT
-        JSON, khong phai chuoi — Swagger hien "string" chi vi khong sinh duoc schema cho kieu nay.
+        ============ bookingDraft: thong tin dat ve tro ly dang giup khach gom ============
 
-        BE chi doc dung cac truong duoi day, moi truong con lai (departureTrips, passengers,
-        contact, preview...) bi BO QUA hoan toan — dung gui de khoi ton bang thong va han muc 64KB:
-          stage                   : CollectingInfo | SelectingTrip | SelectingSeats |
-                                    EnteringPassengers | AwaitingConfirmation (gia tri la = bo)
-          serviceType             : Waterbus | Sightseeing. BO TRONG = Waterbus. Tour ngam canh
-                                    PHAI gui "Sightseeing", neu khong tro ly se di hoi ben di/ben
-                                    den cho mot tour di vong.
-          fromStationName         : ten ben di (cat con 60 ky tu)
-          toStationName           : ten ben den (cat con 60 ky tu)
-          departureDate           : yyyy-MM-dd (sai dinh dang = bo)
-          isRoundTrip             : true|false
-          returnDate              : yyyy-MM-dd, chi doc khi isRoundTrip = true
-          adultCount              : 0..100 (ngoai khoang = bo). Nhan ca so lan chuoi.
-          childCount              : 0..100
-          infantCount             : 0..100
-          fromStationCode         : ma ga di (dung cho tool chon ghe; thieu thi BE tu tra tu ten ga)
-          toStationCode           : ma ga den
-          selectedDepartureTrip   : object chuyen da chon. Prompt chi biet "da chon hay chua";
-                                    rieng tool chon ghe doc them tripId (Guid) va tripCode.
-                                    Gui thieu tripId thi tro ly khong chon ghe ho duoc.
-          selectedSeatsDeparture  : CHI dem so phan tu
+        1) CACH DUNG — chi can nho 2 dong nay:
 
-        RESPONSE tra ve bookingDraft ĐẦY ĐỦ (draft ban vua gui, da duoc server ap thay doi cua luot
-        nay). CACH DUNG DON GIAN NHAT — va la cach duoc khuyen dung:
+             const res = await postChat({ messages, conversationId, clientSessionId, bookingDraft: draft });
+             draft = res.bookingDraft;   // copy NGUYEN KHOI, khong sua gi, luot sau gui lai chinh no
 
-          draft = response.bookingDraft;   // copy nguyen khoi
-          // luot sau gui lai y nguyen: { messages: [...], conversationId, clientSessionId, bookingDraft: draft }
+           Server da merge san thay doi cua luot nay vao res.bookingDraft. Client KHONG phai tu
+           merge, KHONG phai doi ten field, KHONG phai doan gi tu cau tra loi text.
 
-        KHONG phai tu merge, KHONG phai doi ten field, KHONG phai doan gi tu cau tra loi text.
-        bookingDraft = null chi khi ban khong gui draft VA luot nay tro ly cung khong dien gi.
-        Moi field LA cua ban (stage, passengers, contact, preview...) duoc GIU NGUYEN, server chi
-        ghi de dung nhung khoa no vua doi.
+        2) LUOT DAU TIEN gui gi? Khong gui gi cung duoc — bo han bookingDraft, tro ly van tra ve
+           draft day du de ban dung tiep. Neu mo chat TU trang dat ve thi seed nhung gi trang dang
+           co (bang duoi) de tro ly khoi hoi lai.
 
-        RESPONSE con co draftPatch: RIENG phan tro ly vua doi trong luot nay (null = khong doi gi).
-        Chi dung khi ban muon highlight "AI vua dien o day" tren form; con de giu trang thai thi
-        dung bookingDraft o tren.
+        3) BE CHI DOC dung cac truong sau. Truong khac (departureTrips, passengers, contact,
+           preview, promotionCode...) van duoc giu nguyen va tra lai y nguyen, nhung BE khong doc —
+           dung gui cho nang request (tran 64KB, vuot thi 400):
 
-          "draftPatch": {
-            "serviceType": "Waterbus",            // hoac "Sightseeing"
-            "departureDate": "2026-08-14", "returnDate": null, "isRoundTrip": false,
-            "fromStationCode": "ST-BD", "fromStationName": "Ben Bach Dang",
-            "toStationCode": "ST-LD",   "toStationName": "Ben Linh Dong",
-            "adultCount": 2, "childCount": 0, "infantCount": 0,
-            "trip": {                             // chi co khi tro ly chon CHUYEN ho khach
-              "tripId": "a7b580cb-...", "tripCode": "BB-...",
-              "fromStopScheduledDeparture": "2026-08-14T01:00:00+00:00",
-              "toStopScheduledArrival": "2026-08-14T02:52:00+00:00",
-              "minPrice": 19000, "availableSeats": 79
-            },
-            "tripCode": "BB-...",                 // chi co khi tro ly chon GHE
-            "seats": [ { "seatNumber": "1-A1", "deck": 1, "price": 19000, "seatTypeName": "Standard" } ]
-          }
+             serviceType             Waterbus | Sightseeing. Bo trong = Waterbus.
+                                     Tour ngam canh PHAI gui "Sightseeing", khong thi tro ly di hoi
+                                     ben di/ben den cho mot tuyen chay vong.
+             departureDate           yyyy-MM-dd (sai dinh dang = coi nhu chua co)
+             isRoundTrip             true | false
+             returnDate              yyyy-MM-dd, chi doc khi isRoundTrip = true
+             fromStationCode         ma ben di. Thieu thi BE tu tra tu ten ben.
+             toStationCode           ma ben den
+             fromStationName         ten ben di (cat con 60 ky tu)
+             toStationName           ten ben den
+             selectedDepartureTrip   chuyen DI da chon. PHAI co tripId (Guid) neu muon tro ly chon
+                                     ghe ho; field khac trong object nay BE khong doc.
+             selectedReturnTrip      chuyen VE, cung quy tac (chi doc khi khu hoi)
+             selectedSeatsDeparture  CHI dem so phan tu
+             selectedSeatsReturn     CHI dem so phan tu (chi doc khi khu hoi)
 
-        NEU van muon tu merge draftPatch (khong bat buoc — server da merge san o bookingDraft):
-        field khac null thi GHI DE, field null thi GIU NGUYEN gia tri dang co.
-          Object.entries(patch).forEach(([k, v]) => { if (v !== null) draft[k] = v; });
-        DUNG dung Object.assign(draft, patch): patch luon co DU field nen cac null se xoa sach thu
-        khach da dien. Rieng hai truong doi ten: "seats" ghi vao selectedSeatsDeparture, "trip" ghi
-        vao selectedDepartureTrip. Ten field ben trong "trip" CO Y trung voi TripSummaryDto ma
-        client nhan tu /api/trips/search, nen gan thang duoc, khong phai anh xa lai.
+           adultCount/childCount/infantCount KHONG con duoc doc: tro ly khong hoi so khach nua, so
+           ghe lay tu chinh cau khach noi ("cho minh 2 ghe"). Gui kem cung khong sao.
 
-        MOI GIA TRI DA DUOC SERVER KIEM truoc khi phat ra: ten ben phai khop ben co that (tra ve ca
-        ma lan ten chuan), ngay dung yyyy-MM-dd va khong o qua khu, tong khach toi da 10 va it nhat
-        1 nguoi lon, tour ngam canh thi KHONG bao gio co ben di/ben den. Chuyen phai nam trong ket
-        qua tim chuyen cua DUNG ngay + chang do va con nhan dat cho — tro ly khong the dien mot
-        chuyen ngay khac hay tuyen khac. Ghe da kiem con trong tren so do ghe that NHUNG chua giu
-        cho — khach van phai bam nut giu ghe.
+        ============ Response tra ve gi ============
 
-        Dieu kien de tro ly chon duoc ghe: da co chuyen (tu selectedDepartureTrip cua draft, hoac
-        do chinh luot chat nay vua chon) va co so khach. Thieu thi tro ly hoi khach truoc.
+        bookingDraft  Draft DAY DU sau khi ap thay doi cua luot nay — dung cai nay de giu trang thai.
+                      null chi khi ban khong gui draft VA luot nay tro ly cung khong ghi nhan gi.
 
-        GIOI HAN da biet: chi chon duoc ghe CHIEU DI. Khach khu hoi dang o buoc chon ghe chieu ve
-        ma nho tro ly chon ho thi ghe CHIEU DI se bi ghi de (selectedReturnTrip chua duoc doc) —
-        chua ho tro, dung dua vao.
+        draftPatch    RIENG phan tro ly vua doi trong luot nay (null = khong doi gi). Chi can khi
+                      ban muon to sang "AI vua dien o day" tren giao dien:
 
-        Luot chat co draftPatch KHONG duoc coi la "khach sua thong tin": client phai GIU form dang
-        mo va nhan lai bookingDraft tra ve. Neu client xoa draft moi khi khach go chu thi thu vua
-        dien se mat ngay.
+                        {
+                          "serviceType": "Waterbus",
+                          "departureDate": "2026-08-14", "returnDate": null, "isRoundTrip": false,
+                          "fromStationId": "87714aa9-...", "fromStationCode": "ST-BD", "fromStationName": "Ben Bach Dang",
+                          "toStationId": "779d7b32-...",  "toStationCode": "ST-LD",   "toStationName": "Ben Linh Dong",
+                          "trip": {
+                            "tripId": "a7b580cb-...", "tripCode": "BB-...", "routeName": "Bach Dang - Linh Dong",
+                            "fromStopScheduledDeparture": "2026-08-14T01:00:00+00:00",
+                            "toStopScheduledArrival": "2026-08-14T02:52:00+00:00",
+                            "minPrice": 19000, "availableSeats": 79, "totalSeats": 80,
+                            "boatId": "3f2c1b90-..."
+                          },
+                          "returnTrip":  { /* cung shape, chuyen chieu ve */ },
+                          "seats":       [ { "seatNumber": "1-A1", "deck": 1, "row": "A", "column": 1,
+                                             "price": 19000, "seatTypeName": "Standard" } ],
+                          "returnSeats": [ /* cung shape, ghe chieu ve */ ]
+                        }
 
-        SERVER KHONG XOA FIELD: patch chi GHI DE, khong co cach bao "bo chuyen nay di". Nen khi
-        khach doi ngay/doi chang sau luc da chon chuyen + ghe, bookingDraft tra ve VAN con
-        selectedDepartureTrip va selectedSeatsDeparture cua ngay cu — client tu don hai khoa do khi
-        thay departureDate/fromStationCode/toStationCode/serviceType thay doi.
+                      Bon khoa doi ten khi vao draft:
+                        trip       -> selectedDepartureTrip     seats       -> selectedSeatsDeparture
+                        returnTrip -> selectedReturnTrip        returnSeats -> selectedSeatsReturn
+
+                      Neu tu merge (khong bat buoc): field khac null thi GHI DE, field null thi GIU
+                      NGUYEN gia tri cu. DUNG dung Object.assign(draft, patch) — patch luon co du
+                      field nen cac null se xoa sach thong tin khach da cho:
+                        Object.entries(patch).forEach(([k, v]) => { if (v !== null) draft[k] = v; });
+
+        Ten field trong "trip"/"seats" CO Y trung voi TripSummaryDto va TripSeatMapSeatDto ma client
+        nhan tu /api/trips/search va /api/trips/{id}/seats, nen gan thang sang state trang dat ve:
+          fromStationId/toStationId  Guid ben that — dung cho o chon ben va API tim chuyen
+          totalSeats                 de hien "con trong x/y"
+          boatId                     de tai anh tau
+          routeName                  tuyen ngam canh tach ten ben tu day (tuyen vong, khong co chang)
+          row/column                 vi tri ghe tren luoi so do ghe
+
+        ============ Server dam bao gi ============
+
+        Moi gia tri deu duoc kiem TRUOC khi phat ra, client khong phai kiem lai:
+          - ten ben khop ben co that (tra ve ca id, ma va ten chuan)
+          - ngay dung yyyy-MM-dd va khong nam trong qua khu
+          - chuyen nam trong ket qua tim chuyen cua DUNG ngay + chang do va con nhan dat cho; chuyen
+            VE tim theo ngay ve va chang DAO NGUOC — tro ly khong the ghi mot chuyen ngay khac hay
+            tuyen khac
+          - toi da 10 ghe moi lan chon, ghe da kiem con trong tren so do ghe that
+          - tour ngam canh KHONG bao gio co ben di/ben den va KHONG co chuyen ve
+
+        GHE CHUA DUOC GIU CHO: tro ly chi chon tam. Khach van phai bam giu ghe o trang dat ve, luc
+        do he thong moi kiem lan cuoi — dung hien "da giu ghe" cho khach.
+
+        Tro ly chon duoc ghe cua mot chieu khi chieu do da co chuyen (tu draft, hoac do chinh luot
+        chat nay vua chon) va khach da noi can may ghe. Thieu thi tro ly hoi truoc.
+
+        ============ Hai cai bay hay dinh ============
+
+        1. DUNG XOA DRAFT khi khach go chu. "Chon giup minh 2 ghe" cung la go chu — xoa draft luc do
+           la mat sach thu tro ly vua ghi nhan. Luot co draftPatch KHONG phai "khach sua thong tin"
+           ma la "tro ly vua dien them".
+
+        2. SERVER KHONG XOA FIELD: patch chi ghi de, khong co cach bao "bo chuyen nay di". Nen khi
+           khach doi ngay hoac doi chang sau luc da chon chuyen + ghe, bookingDraft tra ve VAN con
+           selectedDepartureTrip/selectedSeatsDeparture cu — client tu don cac khoa do khi thay
+           departureDate/fromStationCode/toStationCode/serviceType thay doi.
+
+        ============ actions[]: nut "open-booking" ============
+
+        Xuat hien o luot tro ly VUA ghi nhan them thong tin va da du de khach di tiep. Khac cac
+        action "navigate" thong thuong o cho co them "step":
+
+          { "type": "open-booking", "label": "Chon ghe", "route": "/waterbus-booking", "step": 2 }
+
+          step 1  du ngay + chang            -> mo o buoc tim chuyen
+          step 2  da co chuyen (khu hoi: du ca hai chieu) -> mo thang buoc chon ghe
+          route   tu doi sang /watersightseeing-booking khi la tour ngam canh
+
+        KHONG bao gio co step 3: buoc thanh toan doi ghe DA GIU, ma tro ly co y khong giu cho.
+        Client dung bookingDraft dung state cho trang dat ve roi dieu huong kem step nay.
         """;
 
     public static void Map(RouteGroupBuilder group)
@@ -140,41 +168,38 @@ public sealed class Assistant : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Anonymous (co token thi hoi thoai gan vao tai khoan)",
                 ChatExample,
-                "messages: moi phan tu CHI co truong text. BE lay PHAN TU CUOI CUNG co chu lam cau "
-                + "hoi cua khach; lich su truoc do server tu doc lai tu DB theo conversationId, client "
-                + "khong can gui lai. Luot dau tien de conversationId = null, server tao roi tra ve.",
-                "Truong \"role\" DA BO (truoc day nhan \"user\"/\"assistant\"). Client cu con gui kem "
-                + "role thi van chay binh thuong — truong la bi bo qua. Nhung DUNG gui ca luot assistant "
-                + "nua: BE khong con loc theo role, gui vao ma luot cuoi la cau cua tro ly thi no se bi "
-                + "hieu nham thanh cau hoi cua khach.",
-                "Truong \"language\" DA BO. Tro ly TU BAM theo ngon ngu khach dang viet: khach nhan "
-                + "tieng Anh thi tra loi tieng Anh, tieng Viet thi tra loi tieng Viet, khong can client "
-                + "khai bao. Gui kem language cung khong sao, truong la bi bo qua.",
-                "HE QUA can biet: suggestedQuestions va nhan trong actions[] luon la TIENG VIET, vi "
-                + "chung duoc chon theo tu khoa chu khong do LLM sinh. Rieng cau tra loi (reply) van "
-                + "dung ngon ngu cua khach.",
-                "Hoi thoai tao truoc thay doi nay con luu language \"VN\"/\"ENG\" thi VAN bi ep ngon ngu "
-                + "do cho toi khi khach bat dau hoi thoai moi — co y, de hoi thoai dang do khong doi "
-                + "giong giua chung.",
-                "clientSessionId: BAT BUOC voi khach chua dang nhap — no la thu duy nhat chung minh "
-                + "hoi thoai la cua minh. Gui sai/thieu o cac luot sau se bi 404. Khach da dang nhap "
-                + "thi so khop theo userId, bo qua truong nay.",
+                "GUI GI MOI LUOT: messages (mang, moi phan tu chi co truong text) + conversationId + "
+                + "clientSessionId + bookingDraft. Luot dau de conversationId = null, server tao roi "
+                + "tra ve; tu luot 2 gui lai dung Guid do.",
+                "messages CHI can cau MOI NHAT cua khach — BE lay phan tu cuoi cung co chu, con lich "
+                + "su thi server tu doc tu DB theo conversationId. DUNG gui lai ca hoi thoai, va nhat "
+                + "la dung gui luot cua tro ly: BE khong loc theo role nen luot cuoi la cau cua bot "
+                + "thi no bi hieu nham thanh cau hoi cua khach.",
+                "clientSessionId: BAT BUOC voi khach chua dang nhap — day la thu duy nhat chung minh "
+                + "hoi thoai la cua minh, doi giua chung se bi 404. Khach da dang nhap thi so khop "
+                + "theo userId, truong nay bi bo qua.",
+                "NGON NGU tu dong: khach viet tieng Anh thi tra loi tieng Anh, tieng Viet thi tieng "
+                + "Viet, client khong phai khai bao. Rieng suggestedQuestions va nhan trong actions[] "
+                + "LUON tieng Viet vi chung chon theo tu khoa chu khong do LLM sinh.",
+                "HAI TRUONG DA BO — client cu gui kem van chay, chi bi bo qua: \"role\" trong moi phan "
+                + "tu messages, va \"language\" o cap goc. Hoi thoai tao truoc khi bo \"language\" van "
+                + "bi ep ngon ngu da luu cho toi khi mo hoi thoai moi (co y, de hoi thoai dang do "
+                + "khong doi giong giua chung).",
                 BookingDraftNote,
-                "bookingDraft KHONG duoc luu tren server: no chi song trong dung luot request do. "
-                + "Client PHAI tu giu (localStorage) va gui kem MOI luot, neu khong tro ly se hoi lai "
-                + "tu dau sau khi khach F5 — lich su hoi thoai KHONG thay the duoc draft. Draft lon "
-                + "hon 64KB tra 400.",
-                "Noi dung ben trong bookingDraft la du lieu do client kiem soat nen bi coi la KHONG "
-                + "dang tin: BE lam sach tung gia tri va nhet vao prompt kem cau ra lenh bo qua moi "
-                + "chi dan an trong do. Dung trong cho no de dieu khien tro ly.",
-                "Response: reply (text tra loi), suggestedQuestions[], actions[] (nut dieu huong), "
-                + "bookingDraft (DRAFT DAY DU da merge san — copy nguyen khoi vao request luot sau), "
-                + "draftPatch (rieng phan tro ly vua doi, thuong null), conversationId, "
-                + "status (Open|Closed).",
-                "409 = hoi thoai da dong, phai bat dau hoi thoai moi (conversationId = null). "
-                + "404 = khong tim thay hoi thoai hoac khong phai cua minh.",
-                "Rate limit 8 luot/60s theo user (hoac X-Device-Id, hoac IP neu khong co ca hai); "
-                + "vuot thi 429.",
+                "bookingDraft KHONG duoc luu tren server, no chi song trong dung request do. Client "
+                + "PHAI tu giu (localStorage/sessionStorage) va gui kem MOI luot — lich su hoi thoai "
+                + "KHONG thay the duoc draft, khach F5 ma mat draft la tro ly hoi lai tu dau.",
+                "Noi dung trong bookingDraft do client kiem soat nen BE coi la KHONG dang tin: tung "
+                + "gia tri deu duoc lam sach roi moi nhet vao prompt, kem cau ra lenh bo qua moi chi "
+                + "dan an ben trong. Dung trong cho no de dieu khien tro ly.",
+                "RESPONSE: reply (text tra loi) | bookingDraft (draft day du da merge san — copy "
+                + "nguyen khoi cho luot sau) | draftPatch (rieng phan vua doi, thuong null) | "
+                + "actions[] (nut dieu huong, xem muc open-booking) | suggestedQuestions[] | "
+                + "conversationId | status (Open|Closed).",
+                "MA LOI: 400 = messages rong hoac bookingDraft qua 64KB. 404 = khong tim thay hoi "
+                + "thoai, hoac sai clientSessionId. 409 = hoi thoai da dong, phai mo hoi thoai moi "
+                + "(conversationId = null). 429 = qua 8 luot/60s (dem theo user, hoac X-Device-Id, "
+                + "hoac IP).",
                 "Hoi thoai tu dong dong sau 30 phut khong hoat dong."))
             .Produces<object>();
 

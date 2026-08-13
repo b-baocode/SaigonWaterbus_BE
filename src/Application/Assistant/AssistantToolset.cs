@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Text.Json;
+using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
@@ -42,18 +43,32 @@ public sealed class AssistantToolset
     /// <summary>Xa hơn mức này thì không còn là "cái khách đang nhìn thấy" nữa.</summary>
     private const double MaxNearbyRadiusMeters = 3000;
 
-    /// <summary>Hai loại dịch vụ đặt được ngay trong khung chat. Trùng với BookingServiceTypes.</summary>
-    private const string WaterbusService = "Waterbus";
-    private const string SightseeingService = "Sightseeing";
+    /// <summary>Hai loại dịch vụ đặt được ngay trong khung chat.</summary>
+    private const string WaterbusService = BookingServiceTypes.Waterbus;
+    private const string SightseeingService = BookingServiceTypes.Sightseeing;
 
-    /// <summary>Trần khách mỗi booking, khớp với ràng buộc của form đặt vé bên FE.</summary>
-    private const int MaxPassengersPerBooking = 10;
+    /// <summary>Trần ghế mỗi lần chọn hộ, khớp ràng buộc số khách một booking của trang đặt vé.</summary>
+    private const int MaxSeatsPerRequest = 10;
+
+    /// <summary>Hai chiều của một chuyến khứ hồi: false = chiều đi, true = chiều về.</summary>
+    private static readonly bool[] Legs = [false, true];
+
+    private static string LegLabel(bool isReturnLeg) => isReturnLeg ? "ve" : "di";
 
     private const int VietnamUtcOffsetHours = 7;
 
     private readonly ISender _sender;
     private readonly IApplicationDbContext _context;
     private readonly TimeProvider _timeProvider;
+
+    /// <summary>
+    /// Danh sách bến, nạp một lần cho cả lượt chat. Toolset đăng ký Scoped nên vòng đời của nó
+    /// đúng bằng một request, mà một lượt chat có thể chạy nhiều tool và mỗi tool lại cần tra bến
+    /// (đổi tên bến → mã, tìm chuyến, chọn ghế cho hai chiều) — trước đây là 4-5 lần cùng một
+    /// query, mà query này còn Include tới Role của nhân viên từng bến nên không hề rẻ.
+    /// Bến không đổi giữa chừng một lượt chat nên nhớ lại là an toàn.
+    /// </summary>
+    private IReadOnlyList<StationDto>? _stations;
 
     public AssistantToolset(ISender sender, IApplicationDbContext context, TimeProvider timeProvider)
     {
@@ -64,6 +79,9 @@ public sealed class AssistantToolset
         // Cần cho việc chặn ngày trong quá khứ khi điền form: "hôm nay" phải theo giờ Việt Nam.
         _timeProvider = timeProvider;
     }
+
+    private async Task<IReadOnlyList<StationDto>> GetStationsAsync(CancellationToken cancellationToken) =>
+        _stations ??= await _sender.Send(new GetStationListQuery(), cancellationToken);
 
     public IReadOnlyList<ChatToolDefinition> Definitions { get; } = BuildDefinitions();
 
@@ -146,7 +164,7 @@ public sealed class AssistantToolset
     /// </summary>
     private async Task<string> ListStationsAsync(JsonElement arguments, CancellationToken cancellationToken)
     {
-        var stations = await _sender.Send(new GetStationListQuery(), cancellationToken);
+        var stations = await GetStationsAsync(cancellationToken);
 
         var wanted = GetString(arguments, "station_name");
         if (string.IsNullOrWhiteSpace(wanted))
@@ -194,7 +212,7 @@ public sealed class AssistantToolset
             return Error($"Ngày '{dateStr}' không hợp lệ. Dùng định dạng yyyy-MM-dd (ví dụ 2026-07-25).");
         }
 
-        var stations = await _sender.Send(new GetStationListQuery(), cancellationToken);
+        var stations = await GetStationsAsync(cancellationToken);
 
         var from = ResolveStation(stations, fromName);
         if (from is null)
@@ -333,7 +351,7 @@ public sealed class AssistantToolset
         }
 
         // Ghế bán theo chặng: trạng thái ghế phụ thuộc chặng khách đi, nên truyền mã ga nếu có.
-        var stations = await _sender.Send(new GetStationListQuery(), cancellationToken);
+        var stations = await GetStationsAsync(cancellationToken);
         var fromCode = ResolveStation(stations, GetString(arguments, "from_station"))?.StationCode;
         var toCode = ResolveStation(stations, GetString(arguments, "to_station"))?.StationCode;
 
@@ -397,7 +415,7 @@ public sealed class AssistantToolset
     {
         if (runContext is null)
         {
-            return Error("Luong nay khong co form dat ve nen khong dien duoc. Tra loi khach bang loi.");
+            return Error("Luong nay khong ghi duoc thong tin dat ve. Tra loi khach bang loi.");
         }
 
         var patch = new AssistantDraftPatch();
@@ -474,7 +492,7 @@ public sealed class AssistantToolset
 
         if (wantsStations)
         {
-            var stationList = await _sender.Send(new GetStationListQuery(), cancellationToken);
+            var stationList = await GetStationsAsync(cancellationToken);
 
             if (!string.IsNullOrWhiteSpace(fromStationName))
             {
@@ -484,7 +502,15 @@ public sealed class AssistantToolset
                     return Error($"Khong tim thay ben di '{fromStationName}'. Cac ben hien co: {StationNames(stationList)}");
                 }
 
-                patch = patch with { FromStationCode = from.StationCode, FromStationName = from.StationName };
+                // Trả kèm StationId: trang đặt vé chọn bến bằng ID (ô chọn bến và API tìm chuyến
+                // đều không nhận tên hay mã), mà ở đây đã tra ra bến thật rồi nên gửi luôn cho
+                // client khỏi phải tra lại lần nữa.
+                patch = patch with
+                {
+                    FromStationId = from.StationId,
+                    FromStationCode = from.StationCode,
+                    FromStationName = from.StationName,
+                };
                 written.Add($"ben di = {from.StationName}");
             }
 
@@ -496,7 +522,12 @@ public sealed class AssistantToolset
                     return Error($"Khong tim thay ben den '{toStationName}'. Cac ben hien co: {StationNames(stationList)}");
                 }
 
-                patch = patch with { ToStationCode = to.StationCode, ToStationName = to.StationName };
+                patch = patch with
+                {
+                    ToStationId = to.StationId,
+                    ToStationCode = to.StationCode,
+                    ToStationName = to.StationName,
+                };
                 written.Add($"ben den = {to.StationName}");
             }
 
@@ -506,40 +537,56 @@ public sealed class AssistantToolset
             }
         }
 
-        if (!TryReadPassengerCounts(arguments, runContext.BookingDraft, ref patch, written, out var countError))
+        // Hai chiều đi chung một đường xử lý, chỉ khác tên tham số và chỗ ghi vào patch — tách
+        // thành hai khối riêng thì mọi sửa đổi sau này phải nhớ làm hai lần.
+        foreach (var isReturnLeg in Legs)
         {
-            return Error(countError!);
-        }
+            var code = GetString(arguments, isReturnLeg ? "return_trip_code" : "trip_code");
+            if (string.IsNullOrWhiteSpace(code))
+            {
+                continue;
+            }
 
-        var tripCode = GetString(arguments, "trip_code");
-        if (!string.IsNullOrWhiteSpace(tripCode))
-        {
-            var (tripError, trip) = await ResolveTripAsync(tripCode, runContext.BookingDraft, patch, cancellationToken);
+            var (tripError, trip) = await ResolveTripAsync(
+                code, runContext.BookingDraft, patch, isReturnLeg, cancellationToken);
             if (tripError is not null)
             {
                 return Error(tripError);
             }
 
-            patch = patch with { Trip = trip };
-            written.Add($"chuyen = {trip!.TripCode}");
+            // Chọn được chuyến về nghĩa là khách đi khứ hồi — bật cờ luôn để trang đặt vé mở đúng
+            // hai chặng, khỏi phụ thuộc việc model có nhớ truyền is_round_trip hay không.
+            patch = isReturnLeg
+                ? patch with { ReturnTrip = trip, IsRoundTrip = true }
+                : patch with { Trip = trip };
+            written.Add($"chuyen {LegLabel(isReturnLeg)} = {trip!.TripCode}");
         }
 
-        var pickSeats = GetBool(arguments, "pick_seats") == true;
-        object? seatResult = null;
-        if (pickSeats)
+        // Chọn ghế sau cùng, để chuyến vừa chọn ở CHÍNH lượt này cũng dùng được ngay
+        // (khách hay nói gộp "chuyến 8h, chọn giùm 2 ghế luôn").
+        var seatResults = new List<object>();
+        foreach (var isReturnLeg in Legs)
         {
-            var (seatError, seats, seatTripCode, adjacent) =
-                await PickSeatsAsync(arguments, runContext, patch, cancellationToken);
+            if (GetBool(arguments, isReturnLeg ? "pick_return_seats" : "pick_seats") != true)
+            {
+                continue;
+            }
+
+            var (seatError, seats, adjacent) =
+                await PickSeatsAsync(arguments, runContext.BookingDraft, patch, isReturnLeg, cancellationToken);
             if (seatError is not null)
             {
                 return Error(seatError);
             }
 
-            patch = patch with { TripCode = seatTripCode, Seats = seats };
-            written.Add($"ghe = {string.Join(", ", seats!.Select(s => s.SeatNumber))}");
-            seatResult = new
+            patch = isReturnLeg
+                ? patch with { ReturnSeats = seats }
+                : patch with { Seats = seats };
+
+            written.Add($"ghe chieu {LegLabel(isReturnLeg)} = {string.Join(", ", seats!.Select(s => s.SeatNumber))}");
+            seatResults.Add(new
             {
-                trip_code = seatTripCode,
+                chieu = LegLabel(isReturnLeg),
                 ghe_da_chon = seats!.Select(s => new
                 {
                     ma_ghe = s.SeatNumber,
@@ -548,12 +595,12 @@ public sealed class AssistantToolset
                     gia_ve_nguoi_lon = s.Price,
                 }).ToArray(),
                 ngoi_canh_nhau = adjacent,
-            };
+            });
         }
 
         if (patch.IsEmpty)
         {
-            return Error("Khong co thong tin nao de dien. Truyen it nhat mot tham so, hoac hoi khach "
+            return Error("Khong co thong tin nao de ghi. Truyen it nhat mot tham so, hoac hoi khach "
                        + "them thong tin truoc khi goi tool nay.");
         }
 
@@ -561,41 +608,59 @@ public sealed class AssistantToolset
 
         return JsonSerializer.Serialize(new
         {
-            da_dien_vao_form = written,
-            ghe = seatResult,
-            luu_y = "Nhung gia tri tren DA duoc dien san vao form trong chat, khach nhin thay ngay. "
-                  + "Xac nhan ngan gon voi khach roi nhac buoc tiep theo con thieu. "
-                  + (seatResult is null
-                      ? "Neu con thieu thong tin thi hoi TUNG THU MOT."
-                      : "Rieng ghe: TUYET DOI khong noi la da giu cho — chua giu, ghe van co the bi "
-                      + "nguoi khac lay; nhac khach bam nut giu ghe tren form."),
+            da_ghi_nhan = written,
+            ghe = seatResults.Count == 0 ? null : seatResults,
+            luu_y = "Nhung gia tri tren DA duoc ghi nhan cho khach. Xac nhan ngan gon roi nhac buoc "
+                  + "tiep theo con thieu; con thieu nhieu thu thi hoi TUNG THU MOT. "
+                  + "KHONG nhac toi form, so do ghe hay nut bam nao trong chat — chat khong co nhung thu do. "
+                  + (seatResults.Count == 0
+                      ? "Thanh toan la viec khach lam o trang dat ve."
+                      : "Rieng ghe: chi neu dung ma ghe tool tra ve, va TUYET DOI khong noi la da giu cho "
+                      + "— moi chi chon tam, ghe van co the bi nguoi khac lay; moi khach sang trang dat "
+                      + "ve de giu cho va thanh toan."),
         });
     }
 
     /// <summary>
-    /// Đổi mã chuyến model đưa ra thành chuyến THẬT để điền vào form.
+    /// Đổi mã chuyến model đưa ra thành chuyến THẬT để ghi nhận cho khách.
     ///
     /// KHÔNG tra thẳng bảng trips theo mã: phải tìm lại đúng bằng query mà khách sẽ dùng (cùng
     /// chặng, cùng ngày, cùng loại dịch vụ) rồi kiểm mã có nằm trong kết quả không. Nhờ vậy trợ lý
     /// không thể điền một chuyến có thật nhưng chạy ngày khác, tuyến khác, hoặc đã đóng bán vé.
     /// </summary>
+    /// <param name="isReturnLeg">
+    /// Chiều về: tìm theo NGÀY VỀ và chặng ĐẢO NGƯỢC (bến đến → bến đi). Tách bằng cờ thay vì để
+    /// model tự truyền ngày/chặng, để nó không thể ghi một chuyến chiều về chạy sai tuyến.
+    /// </param>
     private async Task<(string? Error, AssistantPickedTrip? Trip)> ResolveTripAsync(
         string tripCode,
         AssistantBookingDraft? draft,
         AssistantDraftPatch pending,
+        bool isReturnLeg,
         CancellationToken cancellationToken)
     {
-        var dateText = pending.DepartureDate ?? draft?.DepartureDate;
-        if (dateText is null
-            || !DateOnly.TryParseExact(dateText, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
-        {
-            return ("Chua biet ngay di nen khong chon chuyen duoc. Hoi khach di ngay nao truoc, "
-                  + "hoac goi lai tool nay kem departure_date.", null);
-        }
-
         var isSightseeing = pending.ServiceType is not null
             ? string.Equals(pending.ServiceType, SightseeingService, StringComparison.OrdinalIgnoreCase)
             : draft?.IsSightseeing == true;
+
+        if (isReturnLeg && isSightseeing)
+        {
+            return ("Tour ngam canh chay vong roi ve lai ben ban dau nen KHONG co chuyen chieu ve. "
+                  + "Goi lai tool ma khong truyen return_trip_code.", null);
+        }
+
+        var dateText = isReturnLeg
+            ? pending.ReturnDate ?? draft?.ReturnDate
+            : pending.DepartureDate ?? draft?.DepartureDate;
+        if (dateText is null
+            || !DateOnly.TryParseExact(dateText, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+        {
+            return (isReturnLeg
+                ? "Chua biet ngay ve nen khong chon chuyen ve duoc. Hoi khach ve ngay nao truoc, "
+                + "hoac goi lai tool nay kem return_date."
+                : "Chua biet ngay di nen khong chon chuyen duoc. Hoi khach di ngay nao truoc, "
+                + "hoac goi lai tool nay kem departure_date.", null);
+        }
 
         IReadOnlyList<TripSummaryDto> trips;
         if (isSightseeing)
@@ -604,7 +669,7 @@ public sealed class AssistantToolset
         }
         else
         {
-            var stations = await _sender.Send(new GetStationListQuery(), cancellationToken);
+            var stations = await GetStationsAsync(cancellationToken);
             var from = ResolveStationByCodeOrName(stations, pending.FromStationCode ?? draft?.FromStationCode, draft?.FromStationName);
             var to = ResolveStationByCodeOrName(stations, pending.ToStationCode ?? draft?.ToStationCode, draft?.ToStationName);
             if (from is null || to is null)
@@ -613,7 +678,9 @@ public sealed class AssistantToolset
                       + "di tu dau den dau truoc.", null);
             }
 
-            trips = await _sender.Send(new SearchTripsQuery(from.StationId, to.StationId, date), cancellationToken);
+            // Chiều về đi ngược lại đúng chặng đó.
+            var (origin, destination) = isReturnLeg ? (to, from) : (from, to);
+            trips = await _sender.Send(new SearchTripsQuery(origin.StationId, destination.StationId, date), cancellationToken);
         }
 
         var trip = trips.FirstOrDefault(t => string.Equals(t.TripCode, tripCode.Trim(), StringComparison.OrdinalIgnoreCase));
@@ -622,7 +689,7 @@ public sealed class AssistantToolset
             var available = trips.Count == 0
                 ? "khong con chuyen nao"
                 : string.Join(", ", trips.Select(t => t.TripCode));
-            return ($"Ma chuyen '{tripCode}' khong co trong ket qua tim chuyen cua ngay va chang nay. "
+            return ($"Ma chuyen '{tripCode}' khong co trong ket qua tim chuyen chieu {LegLabel(isReturnLeg)} cua ngay va chang nay. "
                   + $"Cac ma hop le: {available}. Goi search_trips de lay ma dung, TUYET DOI khong tu bia ma.", null);
         }
 
@@ -636,10 +703,13 @@ public sealed class AssistantToolset
         return (null, new AssistantPickedTrip(
             trip.TripId,
             trip.TripCode,
+            trip.RouteName,
             trip.FromStopScheduledDeparture ?? trip.DepartureTime,
             trip.ToStopScheduledArrival ?? trip.ArrivalTime,
             trip.MinPrice,
-            trip.AvailableSeats));
+            trip.AvailableSeats,
+            trip.TotalSeats,
+            trip.BoatId));
     }
 
     /// <summary>Tra bến theo mã trước (chắc chắn hơn), không có mã thì mới dò theo tên.</summary>
@@ -661,53 +731,66 @@ public sealed class AssistantToolset
     }
 
     /// <summary>
-    /// Chọn ghế trống cho chuyến đang mở trong form. Trả về lỗi (dạng câu cho model đọc) hoặc
-    /// danh sách ghế đã chọn.
+    /// Chọn ghế trống cho MỘT chiều. Trả về lỗi (dạng câu cho model đọc) hoặc danh sách ghế.
     ///
-    /// Ghế đã kiểm tra còn trống ngay lúc gọi nhưng KHÔNG được giữ chỗ — khách vẫn phải bấm
-    /// "Giữ ghế và tiếp tục" trên form, lúc đó hệ thống mới kiểm lần cuối.
+    /// Ghế đã kiểm còn trống ngay lúc gọi nhưng KHÔNG được giữ chỗ — khách vẫn phải bấm giữ ghế ở
+    /// trang đặt vé, lúc đó hệ thống mới kiểm lần cuối.
+    ///
+    /// SỐ GHẾ LẤY TỪ THAM SỐ, KHÔNG TỪ SỐ KHÁCH: trợ lý không thu thập số người lớn/trẻ em nữa,
+    /// nên model truyền thẳng số ghế khách yêu cầu ("cho mình 2 ghế").
     /// </summary>
-    private async Task<(string? Error, IReadOnlyList<AssistantPickedSeat>? Seats, string? TripCode, bool Adjacent)>
+    /// <param name="isReturnLeg">
+    /// Chiều về: lấy sơ đồ ghế của chuyến về và ĐẢO mã ga (ghế bán theo chặng nên chặng ngược
+    /// cho ra tình trạng ghế khác).
+    /// </param>
+    private async Task<(string? Error, IReadOnlyList<AssistantPickedSeat>? Seats, bool Adjacent)>
         PickSeatsAsync(
             JsonElement arguments,
-            AssistantRunContext runContext,
+            AssistantBookingDraft? draft,
             AssistantDraftPatch pending,
+            bool isReturnLeg,
             CancellationToken cancellationToken)
     {
-        var draft = runContext.BookingDraft;
-
-        // Ưu tiên chuyến vừa chọn trong CHÍNH lượt này (khách vừa nói "chuyến 8h, chọn ghế luôn"),
-        // sau đó mới tới chuyến đang có sẵn trên form.
-        var tripId = pending.Trip?.TripId ?? draft?.TripId;
+        // Ưu tiên chuyến vừa chọn trong CHÍNH lượt này, sau đó mới tới chuyến khách đã chọn trước đó.
+        var tripId = isReturnLeg
+            ? pending.ReturnTrip?.TripId ?? draft?.ReturnTripId
+            : pending.Trip?.TripId ?? draft?.TripId;
         if (tripId is null)
         {
-            return ("Chua biet khach di chuyen nao. Goi search_trips de lay ma chuyen roi goi lai tool "
-                  + "nay kem trip_code, hoac moi khach tu chon chuyen tren form.", null, null, false);
+            return ($"Chua biet khach di chuyen {LegLabel(isReturnLeg)} nao. Goi search_trips de lay ma chuyen roi "
+                  + $"goi lai tool nay kem {(isReturnLeg ? "return_trip_code" : "trip_code")}.", null, false);
         }
 
-        // Số ghế lấy theo số khách mới nhất: nếu chính lượt này vừa điền số khách thì dùng số đó,
-        // không thì dùng số đang có trên form.
-        var seatCount = (pending.AdultCount ?? draft?.AdultCount ?? 0)
-                      + (pending.ChildCount ?? draft?.ChildCount ?? 0);
+        var seatCount = ReadCount(arguments, "seat_count") ?? 0;
         if (seatCount <= 0)
         {
-            return ("Form chua co so khach nen chua biet can may ghe. Hoi khach di may nguoi truoc.",
-                null, null, false);
+            return ("Chua biet can chon may ghe. Hoi khach can may ghe roi goi lai tool nay kem "
+                  + "seat_count.", null, false);
+        }
+
+        if (seatCount > MaxSeatsPerRequest)
+        {
+            return ($"Toi da {MaxSeatsPerRequest} ghe moi lan dat. Bao khach tach thanh nhieu don.",
+                null, false);
         }
 
         // Ghế bán theo chặng nên trạng thái ghế phụ thuộc chặng; thiếu mã ga thì thử tra từ tên ga
         // khách đã chọn, không có nữa thì để null = xét cả tuyến (an toàn hơn: ghế bận sẽ bị loại).
-        var stations = await _sender.Send(new GetStationListQuery(), cancellationToken);
+        var stations = await GetStationsAsync(cancellationToken);
         var fromCode = pending.FromStationCode ?? draft?.FromStationCode
             ?? ResolveStation(stations, draft?.FromStationName ?? string.Empty)?.StationCode;
         var toCode = pending.ToStationCode ?? draft?.ToStationCode
             ?? ResolveStation(stations, draft?.ToStationName ?? string.Empty)?.StationCode;
+        if (isReturnLeg)
+        {
+            (fromCode, toCode) = (toCode, fromCode);
+        }
 
         var map = await _sender.Send(new GetTripSeatMapQuery(tripId.Value, fromCode, toCode), cancellationToken);
         if (map.IsBookingClosed)
         {
-            return ("Chuyen nay da dong ban ve nen khong chon ghe duoc nua. Noi that voi khach va moi "
-                  + "khach chon chuyen khac.", null, null, false);
+            return ($"Chuyen {LegLabel(isReturnLeg)} da dong ban ve nen khong chon ghe duoc nua. Noi that voi khach "
+                  + "va moi khach chon chuyen khac.", null, false);
         }
 
         var available = map.Seats
@@ -732,127 +815,18 @@ public sealed class AssistantToolset
 
         if (available.Count < seatCount)
         {
-            return ($"Chi con {available.Count} ghe trong khop yeu cau, khong du {seatCount} ghe. Noi that "
-                  + "con lai bao nhieu va hoi khach co muon doi tang/loai ghe hay doi chuyen khong.",
-                null, null, false);
+            return ($"Chieu {LegLabel(isReturnLeg)} chi con {available.Count} ghe trong khop yeu cau, khong du "
+                  + $"{seatCount} ghe. Noi that con lai bao nhieu va hoi khach co muon doi tang/loai "
+                  + "ghe hay doi chuyen khong.", null, false);
         }
 
         var picked = PickBestSeats(available, seatCount, GetBool(arguments, "cheapest") == true);
         var seats = picked
-            .Select(s => new AssistantPickedSeat(s.SeatNumber, s.Deck, s.BasePrice, s.SeatTypeName))
+            .Select(s => new AssistantPickedSeat(s.SeatNumber, s.Deck, s.Row, s.Column, s.BasePrice, s.SeatTypeName))
             .ToArray();
 
-        return (null, seats, map.TripCode, IsAdjacentBlock(picked));
+        return (null, seats, IsAdjacentBlock(picked));
     }
-
-    /// <summary>
-    /// Đọc số khách từ tham số tool. Kiểm cả trần mỗi loại lẫn tổng số khách của một booking —
-    /// form bên FE chặn ở 10, để model điền quá thì khách bấm tìm chuyến mới báo lỗi, quá muộn.
-    /// </summary>
-    private static bool TryReadPassengerCounts(
-        JsonElement arguments,
-        AssistantBookingDraft? draft,
-        ref AssistantDraftPatch patch,
-        List<string> written,
-        out string? error)
-    {
-        error = null;
-
-        var adults = ReadCount(arguments, "adults");
-        var children = ReadCount(arguments, "children");
-        var infants = ReadCount(arguments, "infants");
-
-        if (adults is null && children is null && infants is null)
-        {
-            return true;
-        }
-
-        foreach (var (name, value) in new[] { ("adults", adults), ("children", children), ("infants", infants) })
-        {
-            if (value is int count && (count < 0 || count > MaxPassengersPerBooking))
-            {
-                error = $"So khach '{name}' = {count} khong hop le. Moi booking toi da "
-                      + $"{MaxPassengersPerBooking} khach.";
-                return false;
-            }
-        }
-
-        var totalAdults = adults ?? draft?.AdultCount ?? 0;
-        var totalChildren = children ?? draft?.ChildCount ?? 0;
-        var totalInfants = infants ?? draft?.InfantCount ?? 0;
-
-        if (totalAdults < 1)
-        {
-            error = "Moi booking phai co it nhat 1 nguoi lon. Hoi lai khach so nguoi lon.";
-            return false;
-        }
-
-        if (totalAdults + totalChildren + totalInfants > MaxPassengersPerBooking)
-        {
-            error = $"Tong {totalAdults + totalChildren + totalInfants} khach vuot muc toi da "
-                  + $"{MaxPassengersPerBooking} moi booking. Bao khach tach thanh nhieu don.";
-            return false;
-        }
-
-        if (adults is not null)
-        {
-            patch = patch with { AdultCount = adults };
-            written.Add($"nguoi lon = {adults}");
-        }
-
-        if (children is not null)
-        {
-            patch = patch with { ChildCount = children };
-            written.Add($"tre em = {children}");
-        }
-
-        if (infants is not null)
-        {
-            patch = patch with { InfantCount = infants };
-            written.Add($"em be = {infants}");
-        }
-
-        return true;
-    }
-
-    /// <summary>
-    /// Ngày từ tham số tool: phải đúng yyyy-MM-dd và không nằm trong quá khứ. Không truyền thì
-    /// trả true kèm null = "khách chưa nói, bỏ qua".
-    /// </summary>
-    private static bool TryReadDate(
-        JsonElement arguments,
-        string property,
-        DateOnly today,
-        out string? value,
-        out string? error)
-    {
-        value = null;
-        error = null;
-
-        var raw = GetString(arguments, property);
-        if (string.IsNullOrWhiteSpace(raw))
-        {
-            return true;
-        }
-
-        if (!DateOnly.TryParseExact(raw, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
-        {
-            error = $"Ngay '{raw}' o tham so {property} khong hop le. Dung dinh dang yyyy-MM-dd.";
-            return false;
-        }
-
-        if (parsed < today)
-        {
-            error = $"Ngay {raw} da qua (hom nay la {today:yyyy-MM-dd}). Hoi lai khach ngay di.";
-            return false;
-        }
-
-        value = raw;
-        return true;
-    }
-
-    private static int? ReadCount(JsonElement arguments, string property) =>
-        GetDouble(arguments, property) is { } value ? (int)value : null;
 
     /// <summary>
     /// Chọn <paramref name="count"/> ghế trong danh sách ghế trống.
@@ -919,6 +893,45 @@ public sealed class AssistantToolset
                    seats.Select(s => s.Column).OrderBy(x => x).Skip(1),
                    (previous, next) => next - previous)
                .All(gap => gap == 1));
+
+    private static int? ReadCount(JsonElement arguments, string property) =>
+        GetDouble(arguments, property) is { } value ? (int)value : null;
+
+    /// <summary>
+    /// Ngày từ tham số tool: phải đúng yyyy-MM-dd và không nằm trong quá khứ. Không truyền thì
+    /// trả true kèm null = "khách chưa nói, bỏ qua".
+    /// </summary>
+    private static bool TryReadDate(
+        JsonElement arguments,
+        string property,
+        DateOnly today,
+        out string? value,
+        out string? error)
+    {
+        value = null;
+        error = null;
+
+        var raw = GetString(arguments, property);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return true;
+        }
+
+        if (!DateOnly.TryParseExact(raw, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
+        {
+            error = $"Ngay '{raw}' o tham so {property} khong hop le. Dung dinh dang yyyy-MM-dd.";
+            return false;
+        }
+
+        if (parsed < today)
+        {
+            error = $"Ngay {raw} da qua (hom nay la {today:yyyy-MM-dd}). Hoi lai khach ngay di.";
+            return false;
+        }
+
+        value = raw;
+        return true;
+    }
 
     /// <summary>
     /// Tour ngắm cảnh + địa danh dọc tuyến. Không có date thì chỉ trả địa danh và nhắc model
@@ -1376,31 +1389,32 @@ public sealed class AssistantToolset
 
         new ChatToolDefinition(
             "update_booking_form",
-            "ĐIỀN form đặt vé đang mở trong khung chat: thông tin khách vừa nói (ngày đi, bến đi, bến "
-            + "đến, số khách, khứ hồi, loại dịch vụ) và/hoặc chọn hộ ghế. Khách nhìn thấy form đổi "
-            + "ngay. Gọi NGAY khi khách cung cấp bất kỳ thông tin nào — đừng đợi đủ hết mới gọi, và "
+            "GHI NHẬN thông tin đặt vé khách vừa nói: ngày đi, bến đi, bến đến, khứ hồi, loại dịch "
+            + "vụ, CHỌN HỘ CHUYẾN và CHỌN HỘ GHẾ (mỗi thứ đều làm được cho chiều đi và/hoặc chiều về). "
+            + "Gọi NGAY khi khách cung cấp bất kỳ thông tin nào — đừng đợi đủ hết mới gọi, và "
             + "đừng chỉ nhắc lại bằng lời mà không gọi tool. Chỉ truyền tham số cho thứ khách vừa "
             + "nói; thứ khách chưa nói thì BỎ TRỐNG, tuyệt đối không tự đoán. "
-            + "Server sẽ kiểm lại: tên bến phải có thật, ngày không được ở quá khứ, tổng khách tối đa "
-            + "10. Sai thì tool trả lỗi để bạn hỏi lại khách, và form KHÔNG bị điền bậy.",
+            + "Server sẽ kiểm lại: tên bến phải có thật, ngày không được ở quá khứ, mã chuyến phải "
+            + "nằm trong kết quả tìm chuyến của đúng ngày và chặng đó. Sai thì tool trả lỗi để bạn "
+            + "hỏi lại khách, và KHÔNG có gì bị ghi bậy.",
             ParseSchema("""
             {
               "type": "object",
               "properties": {
-                "service_type":   { "type": "string",  "description": "'Waterbus' (đi giữa 2 bến) hoặc 'Sightseeing' (tour ngắm cảnh). Chỉ truyền khi đã rõ khách muốn dịch vụ nào." },
-                "departure_date": { "type": "string",  "description": "Ngày đi, định dạng yyyy-MM-dd. Tự quy đổi 'mai', 'thứ 7 tuần sau' trước khi truyền." },
-                "return_date":    { "type": "string",  "description": "Ngày về (yyyy-MM-dd), chỉ khi khách đi khứ hồi." },
-                "is_round_trip":  { "type": "boolean", "description": "true khi khách nói đi khứ hồi, false khi khách nói chỉ đi một chiều." },
-                "from_station":   { "type": "string",  "description": "Tên bến đi, ví dụ 'Bạch Đằng'. TUYỆT ĐỐI không truyền cho tour ngắm cảnh (tour đi vòng, không có chặng)." },
-                "to_station":     { "type": "string",  "description": "Tên bến đến. Cũng không truyền cho tour ngắm cảnh." },
-                "adults":         { "type": "number",  "description": "Số người lớn." },
-                "children":       { "type": "number",  "description": "Số trẻ em." },
-                "infants":        { "type": "number",  "description": "Số em bé (ngồi cùng người lớn, không chiếm ghế)." },
-                "trip_code":      { "type": "string",  "description": "Chọn hộ khách CHUYẾN này. Mã PHẢI lấy từ kết quả search_trips (hoặc get_sightseeing_info) của đúng ngày và chặng đó — TUYỆT ĐỐI không tự bịa mã. Dùng khi khách nói rõ giờ hoặc nhờ chọn hộ: 'chuyến 8h', 'chuyến sớm nhất', 'chuyến nào cũng được'." },
-                "pick_seats":     { "type": "boolean", "description": "true khi khách nhờ CHỌN GHẾ HỘ ('chọn giùm mình 2 ghế', 'ghế nào cũng được', 'cho mình 2 ghế cạnh nhau'). Chỉ dùng được khi form đã chọn xong chuyến đi." },
-                "seat_deck":      { "type": "number",  "description": "Chỉ chọn ghế ở tầng này (1, 2...). Bỏ trống = tầng nào cũng được." },
-                "seat_type":      { "type": "string",  "description": "Lọc theo loại ghế khách muốn, ví dụ 'VIP'." },
-                "cheapest":       { "type": "boolean", "description": "true khi khách muốn ghế rẻ nhất. Bỏ trống = ưu tiên ngồi cạnh nhau và ghế đẹp (tầng cao, hạng cao)." }
+                "service_type":     { "type": "string",  "description": "'Waterbus' (đi giữa 2 bến) hoặc 'Sightseeing' (tour ngắm cảnh). Chỉ truyền khi đã rõ khách muốn dịch vụ nào." },
+                "departure_date":   { "type": "string",  "description": "Ngày đi, định dạng yyyy-MM-dd. Tự quy đổi 'mai', 'thứ 7 tuần sau' trước khi truyền." },
+                "return_date":      { "type": "string",  "description": "Ngày về (yyyy-MM-dd), chỉ khi khách đi khứ hồi." },
+                "is_round_trip":    { "type": "boolean", "description": "true khi khách nói đi khứ hồi, false khi khách nói chỉ đi một chiều." },
+                "from_station":     { "type": "string",  "description": "Tên bến đi, ví dụ 'Bạch Đằng'. TUYỆT ĐỐI không truyền cho tour ngắm cảnh (tour đi vòng, không có chặng)." },
+                "to_station":       { "type": "string",  "description": "Tên bến đến. Cũng không truyền cho tour ngắm cảnh." },
+                "trip_code":        { "type": "string",  "description": "Chọn hộ khách CHUYẾN ĐI này. Mã PHẢI lấy từ kết quả search_trips (hoặc get_sightseeing_info) của đúng ngày và chặng đó — TUYỆT ĐỐI không tự bịa mã. Dùng khi khách nói rõ giờ hoặc nhờ chọn hộ: 'chuyến 8h', 'chuyến sớm nhất', 'chuyến nào cũng được'." },
+                "return_trip_code": { "type": "string",  "description": "Chọn hộ khách CHUYẾN VỀ (chỉ khi đi khứ hồi). Mã lấy từ search_trips chạy NGƯỢC chặng (bến đến → bến đi) vào NGÀY VỀ. Không dùng cho tour ngắm cảnh." },
+                "pick_seats":       { "type": "boolean", "description": "true khi khách nhờ CHỌN GHẾ HỘ cho chiều đi ('chọn giùm mình 2 ghế', 'ghế nào cũng được', 'cho mình 2 ghế cạnh nhau'). Phải kèm seat_count, và chỉ dùng được khi đã có chuyến đi." },
+                "pick_return_seats":{ "type": "boolean", "description": "true khi khách nhờ chọn ghế hộ cho CHIỀU VỀ. Cần có chuyến về trước. Khách nói 'chọn ghế cả hai chiều' thì bật cả pick_seats lẫn cờ này trong CÙNG một lần gọi." },
+                "seat_count":       { "type": "number",  "description": "Số ghế cần chọn, lấy từ câu khách nói ('cho mình 2 ghế', 'đoàn 4 người'). Bắt buộc khi chọn ghế hộ; dùng chung cho cả hai chiều. Tối đa 10." },
+                "seat_deck":        { "type": "number",  "description": "Chỉ chọn ghế ở tầng này (1, 2...). Bỏ trống = tầng nào cũng được." },
+                "seat_type":        { "type": "string",  "description": "Lọc theo loại ghế khách muốn, ví dụ 'VIP'." },
+                "cheapest":         { "type": "boolean", "description": "true khi khách muốn ghế rẻ nhất. Bỏ trống = ưu tiên ngồi cạnh nhau và ghế đẹp (tầng cao, hạng cao)." }
               }
             }
             """)),
