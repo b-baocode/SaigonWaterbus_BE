@@ -54,6 +54,17 @@ public sealed class Reports : IEndpointGroup
                 "Dùng cho FE autocomplete/select booking.",
                 "Staff chỉ thấy booking bán tại quầy của chính mình.",
                 "Query: keyword, bookingStatus, paymentStatus, serviceType, limit."));
+
+        group.MapGet(ExportBookingReportExcel, "bookings/export")
+            .RequireAuthorization()
+            .WithSummary("Xuat file Excel danh sach booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Manager hoặc Staff",
+                null,
+                "Xuất Excel tổng hợp booking theo bộ lọc tương tự /reports/bookings.",
+                "Staff chỉ thấy booking bán tại quầy của chính mình.",
+                "Query: keyword, bookingStatus, paymentStatus, serviceType, paymentMethod, soldByStaffId, createdFrom, createdTo, departureFrom, departureTo.",
+                "Response: file Excel (.xlsx)."));
     }
 
     private static async Task<IResult> GetRevenue(
@@ -166,6 +177,58 @@ public sealed class Reports : IEndpointGroup
                 serviceType,
                 limit <= 0 ? 20 : limit),
             cancellationToken));
+
+    private static async Task<IResult> ExportBookingReportExcel(
+        ISender sender,
+        [FromQuery] string? keyword,
+        [FromQuery] string? bookingStatus,
+        [FromQuery] string? paymentStatus,
+        [FromQuery] string? serviceType,
+        [FromQuery] string? paymentMethod,
+        [FromQuery] Guid? soldByStaffId,
+        [FromQuery] string? createdFrom,
+        [FromQuery] string? createdTo,
+        [FromQuery] string? departureFrom,
+        [FromQuery] string? departureTo,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseOptionalDateOnly(createdFrom, out var createdFromDate))
+        {
+            return Results.BadRequest(new { message = "createdFrom phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        if (!TryParseOptionalDateOnly(createdTo, out var createdToDate))
+        {
+            return Results.BadRequest(new { message = "createdTo phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        if (!TryParseOptionalDateOnly(departureFrom, out var departureFromDate))
+        {
+            return Results.BadRequest(new { message = "departureFrom phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        if (!TryParseOptionalDateOnly(departureTo, out var departureToDate))
+        {
+            return Results.BadRequest(new { message = "departureTo phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        var excelBytes = await sender.Send(
+            new ExportBookingReportExcelQuery(
+                keyword,
+                bookingStatus,
+                paymentStatus,
+                serviceType,
+                paymentMethod,
+                soldByStaffId,
+                createdFromDate.HasValue ? ToVietnamStartOfDay(createdFromDate.Value) : null,
+                createdToDate.HasValue ? ToVietnamStartOfDay(createdToDate.Value.AddDays(1)) : null,
+                departureFromDate.HasValue ? ToVietnamStartOfDay(departureFromDate.Value) : null,
+                departureToDate.HasValue ? ToVietnamStartOfDay(departureToDate.Value.AddDays(1)) : null),
+            cancellationToken);
+
+        var fileName = $"booking_report_{DateTime.UtcNow:yyyyMMdd_HHmmss}.xlsx";
+        return Results.File(excelBytes, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileName);
+    }
 
     private static bool TryParseOptionalDateOnly(string? value, out DateOnly? date)
     {

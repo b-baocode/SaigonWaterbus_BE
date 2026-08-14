@@ -9,7 +9,7 @@ namespace SaigonWaterbus.Application.CharterBookings;
 internal static class CharterBookingTripSupport
 {
     private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
-    public static readonly TimeOnly OperatingDayStartTime = new(7, 40);
+    public static readonly TimeOnly OperatingDayStartTime = new(7, 0);
     public static readonly TimeOnly OperatingDayEndTime = new(23, 0);
 
     public static bool IsWithinOperatingStartWindow(TimeOnly startTime) =>

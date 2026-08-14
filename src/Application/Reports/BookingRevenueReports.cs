@@ -212,12 +212,24 @@ public sealed class GetRevenueReportQueryHandler
         var serviceType = BookingReportQuerySupport.NormalizeServiceType(request.ServiceType, nameof(request.ServiceType));
         var paymentMethod = BookingReportQuerySupport.NormalizePaymentMethod(request.PaymentMethod);
 
+        var fromUtc = request.From.ToUniversalTime();
+        var toUtc = request.To.ToUniversalTime();
+
         var query = _context.Set<Payment>()
             .AsNoTracking()
+            .Include(p => p.Booking)
+                .ThenInclude(b => b.FromStation)
+            .Include(p => p.Booking)
+                .ThenInclude(b => b.ToStation)
+            .Include(p => p.Booking)
+                .ThenInclude(b => b.Trip)
+                    .ThenInclude(t => t!.Route)
+            .Include(p => p.Booking)
+                .ThenInclude(b => b.Tickets)
             .Where(p =>
                 p.PaidAt.HasValue
-                && p.PaidAt.Value >= request.From
-                && p.PaidAt.Value < request.To
+                && p.PaidAt.Value >= fromUtc
+                && p.PaidAt.Value < toUtc
                 && p.PaymentStatus == PaymentSupport.PaidStatus
                 && (p.Provider == PaymentSupport.PayOsProvider
                     || p.Provider == PaymentSupport.CounterProvider
@@ -245,25 +257,44 @@ public sealed class GetRevenueReportQueryHandler
 
         query = BookingReportQuerySupport.ApplyServiceTypeFilter(query, serviceType);
 
-        var rows = await query
-            .Select(p => new RevenuePaymentRow(
+        var paymentData = await query
+            .Select(p => new
+            {
                 p.Id,
                 p.BookingId,
-                p.PaidAt!.Value,
+                p.PaidAt,
                 p.Amount,
                 p.RefundAmount,
                 p.PaymentMethod,
                 p.Booking.BookingType,
-                p.Booking.Trip != null ? p.Booking.Trip.Route.RouteType : null,
                 p.Booking.SoldByStaffId,
-                p.Booking.Tickets.Count(t => t.TicketStatus != TicketStatus.Cancelled),
                 p.Booking.FromStationId,
-                p.Booking.FromStation != null ? p.Booking.FromStation.StationName : null,
-                p.Booking.FromStation != null ? p.Booking.FromStation.StationCode : null,
+                p.Booking.FromStation,
                 p.Booking.ToStationId,
-                p.Booking.ToStation != null ? p.Booking.ToStation.StationName : null,
-                p.Booking.ToStation != null ? p.Booking.ToStation.StationCode : null))
+                p.Booking.ToStation,
+                p.Booking.Trip,
+                TicketCount = p.Booking.Tickets.Count(t => t.TicketStatus != TicketStatus.Cancelled)
+            })
             .ToListAsync(cancellationToken);
+
+        var rows = paymentData.Select(p => new RevenuePaymentRow(
+            p.Id,
+            p.BookingId,
+            p.PaidAt!.Value,
+            p.Amount,
+            p.RefundAmount,
+            p.PaymentMethod ?? string.Empty,
+            p.BookingType ?? string.Empty,
+            p.Trip?.Route?.RouteType ?? string.Empty,
+            p.SoldByStaffId,
+            p.TicketCount,
+            p.FromStationId,
+            p.FromStation?.StationName ?? string.Empty,
+            p.FromStation?.StationCode ?? string.Empty,
+            p.ToStationId,
+            p.ToStation?.StationName ?? string.Empty,
+            p.ToStation?.StationCode ?? string.Empty))
+            .ToList();
 
         var grossRevenue = rows.Sum(x => x.Amount);
         var refundAmount = rows.Sum(x => x.RefundAmount);
@@ -505,15 +536,15 @@ internal sealed record RevenuePaymentRow(
     decimal RefundAmount,
     string PaymentMethod,
     string BookingType,
-    string? RouteType,
+    string RouteType,
     Guid? SoldByStaffId,
     int TicketCount,
     Guid? FromStationId,
-    string? FromStationName,
-    string? FromStationCode,
+    string FromStationName,
+    string FromStationCode,
     Guid? ToStationId,
-    string? ToStationName,
-    string? ToStationCode);
+    string ToStationName,
+    string ToStationCode);
 
 internal sealed record BookingManagementRow(
     Guid BookingId,
@@ -854,5 +885,129 @@ internal static class BookingReportQuerySupport
 
         var startTime = row.CharterStartTime ?? TimeOnly.MinValue;
         return new DateTimeOffset(row.CharterDepartureDate.Value.ToDateTime(startTime), TimeSpan.Zero);
+    }
+}
+
+public sealed record ExportBookingReportExcelQuery(
+    string? Keyword = null,
+    string? BookingStatus = null,
+    string? PaymentStatus = null,
+    string? ServiceType = null,
+    string? PaymentMethod = null,
+    Guid? SoldByStaffId = null,
+    DateTimeOffset? CreatedFrom = null,
+    DateTimeOffset? CreatedTo = null,
+    DateTimeOffset? DepartureFrom = null,
+    DateTimeOffset? DepartureTo = null) : IRequest<byte[]>;
+
+public sealed class ExportBookingReportExcelQueryHandler
+    : IRequestHandler<ExportBookingReportExcelQuery, byte[]>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(7);
+
+    public ExportBookingReportExcelQueryHandler(IApplicationDbContext context, IUserContext userContext)
+    {
+        _context = context;
+        _userContext = userContext;
+    }
+
+    public async Task<byte[]> Handle(ExportBookingReportExcelQuery request, CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        var query = BookingReportQuerySupport.BuildFilteredBookingQuery(
+            _context,
+            new GetBookingManagementListQuery(
+                request.Keyword,
+                request.BookingStatus,
+                request.PaymentStatus,
+                request.ServiceType,
+                request.PaymentMethod,
+                request.SoldByStaffId,
+                request.CreatedFrom,
+                request.CreatedTo,
+                request.DepartureFrom,
+                request.DepartureTo,
+                1,
+                int.MaxValue),
+            actor);
+
+        var rows = await BookingReportQuerySupport.ApplyDefaultOrdering(query)
+            .Select(BookingReportQuerySupport.ManagementProjection)
+            .ToListAsync(cancellationToken);
+
+        var items = rows.Select(BookingReportQuerySupport.ToManagementItemDto).ToList();
+
+        using var workbook = new ClosedXML.Excel.XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Bookings");
+
+        var headers = new[]
+        {
+            "Mã Booking",
+            "Ngày đặt",
+            "Loại dịch vụ",
+            "Tuyến",
+            "Trạng thái Booking",
+            "Trạng thái thanh toán",
+            "Khách hàng",
+            "Điện thoại",
+            "Email",
+            "Số hành khách",
+            "Số vé",
+            "Tổng tiền",
+            "Giảm giá",
+            "Thanh toán",
+            "Còn lại",
+            "Nhân viên bán",
+            "Phương thức TT",
+            "Ngày thanh toán",
+            "Mã chuyến đi",
+            "Mã chuyến về",
+            "Giờ khởi hành",
+            "Giờ đến"
+        };
+
+        for (var i = 0; i < headers.Length; i++)
+        {
+            worksheet.Cell(1, i + 1).Value = headers[i];
+            worksheet.Cell(1, i + 1).Style.Font.Bold = true;
+            worksheet.Cell(1, i + 1).Style.Fill.BackgroundColor = ClosedXML.Excel.XLColor.LightGray;
+        }
+
+        for (var rowIndex = 0; rowIndex < items.Count; rowIndex++)
+        {
+            var item = items[rowIndex];
+            var row = rowIndex + 2;
+
+            worksheet.Cell(row, 1).Value = item.BookingCode;
+            worksheet.Cell(row, 2).Value = item.BookedAt.ToOffset(VietnamOffset).DateTime.ToString("dd/MM/yyyy HH:mm");
+            worksheet.Cell(row, 3).Value = item.ServiceType;
+            worksheet.Cell(row, 4).Value = item.RouteName ?? "";
+            worksheet.Cell(row, 5).Value = item.BookingStatus;
+            worksheet.Cell(row, 6).Value = item.PaymentStatus;
+            worksheet.Cell(row, 7).Value = item.CustomerName ?? item.ContactName;
+            worksheet.Cell(row, 8).Value = item.ContactPhone ?? "";
+            worksheet.Cell(row, 9).Value = item.ContactEmail ?? "";
+            worksheet.Cell(row, 10).Value = item.PassengerCount;
+            worksheet.Cell(row, 11).Value = item.TicketCount;
+            worksheet.Cell(row, 12).Value = item.TotalAmount;
+            worksheet.Cell(row, 13).Value = item.DiscountAmount;
+            worksheet.Cell(row, 14).Value = item.PaidAmount;
+            worksheet.Cell(row, 15).Value = item.RemainingAmount;
+            worksheet.Cell(row, 16).Value = item.SoldByStaffName ?? "";
+            worksheet.Cell(row, 17).Value = item.LatestPaymentMethod ?? "";
+            worksheet.Cell(row, 18).Value = item.LatestPaidAt?.ToOffset(VietnamOffset).DateTime.ToString("dd/MM/yyyy HH:mm") ?? "";
+            worksheet.Cell(row, 19).Value = item.TripCode ?? "";
+            worksheet.Cell(row, 20).Value = item.ReturnTripCode ?? "";
+            worksheet.Cell(row, 21).Value = item.DepartureAt?.ToOffset(VietnamOffset).DateTime.ToString("dd/MM/yyyy HH:mm") ?? "";
+            worksheet.Cell(row, 22).Value = item.ArrivalAt?.ToOffset(VietnamOffset).DateTime.ToString("dd/MM/yyyy HH:mm") ?? "";
+        }
+
+        worksheet.Columns().AdjustToContents();
+
+        using var stream = new MemoryStream();
+        workbook.SaveAs(stream);
+        return stream.ToArray();
     }
 }
