@@ -102,7 +102,6 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
             booking,
             requestedPassengers.Count,
             nameof(request.Passengers));
-
         var today = DateOnly.FromDateTime(now.UtcDateTime);
 
         var passengers = requestedPassengers
@@ -210,21 +209,7 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
         Booking booking,
         IReadOnlyList<CharterBookingPassengerRequest>? passengers)
     {
-        if (passengers is { Count: > 0 })
-        {
-            return passengers
-                .Select(x => string.IsNullOrWhiteSpace(x.FullName)
-                    && booking.PassengerCount.GetValueOrDefault() == 1
-                    && !string.IsNullOrWhiteSpace(booking.ContactName)
-                        ? x with { FullName = booking.ContactName }
-                        : x)
-                .ToList();
-        }
-
-        return booking.PassengerCount.GetValueOrDefault() == 1
-            && !string.IsNullOrWhiteSpace(booking.ContactName)
-                ? [new CharterBookingPassengerRequest(booking.ContactName, null)]
-                : [];
+        return passengers?.ToList() ?? [];
     }
 
     private static string? ResolveInferredPassengerType(

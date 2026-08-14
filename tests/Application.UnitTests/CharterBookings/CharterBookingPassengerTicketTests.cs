@@ -573,7 +573,7 @@ public class CharterBookingPassengerTicketTests
     }
 
     [Test]
-    public async Task UpdatingSinglePassengerBookingCanUseContactNameWhenPassengerListIsEmpty()
+    public async Task UpdatingSinglePassengerBookingWithEmptyPassengerListProducesZeroPassengers()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
@@ -588,10 +588,9 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(booking.Id, []),
             CancellationToken.None);
 
-        result.RegisteredPassengerCount.ShouldBe(1);
-        result.TicketCount.ShouldBe(1);
-        result.Passengers.Single().FullName.ShouldBe("TRUMP");
-        result.Passengers.Single().PassengerType.ShouldBe(CharterBookingPassengerType.Adult.ToString());
+        result.RegisteredPassengerCount.ShouldBe(0);
+        result.TicketCount.ShouldBe(0);
+        result.Passengers.ShouldBeEmpty();
     }
 
     [Test]
