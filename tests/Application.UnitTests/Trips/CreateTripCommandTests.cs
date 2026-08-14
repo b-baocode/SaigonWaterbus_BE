@@ -14,9 +14,9 @@ namespace SaigonWaterbus.Application.UnitTests.Trips;
 public class CreateTripCommandTests
 {
     [Test]
-    public void TripCreationLeadTimeIsTwentyMinutes()
+    public void TripCreationLeadTimeIsFiveMinutes()
     {
-        TripScheduleSupport.MinimumCreationLeadTime.ShouldBe(TimeSpan.FromMinutes(20));
+        TripScheduleSupport.MinimumCreationLeadTime.ShouldBe(TimeSpan.FromMinutes(5));
     }
 
     [Test]

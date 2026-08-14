@@ -1325,8 +1325,8 @@ internal static class PaymentSupport
     {
         if (Booking.IsCharterBookingType(booking.BookingType))
         {
-            var startTime = booking.StartTime ?? new TimeOnly(0, 0);
-            return new DateTimeOffset(booking.DepartureDate.GetValueOrDefault().ToDateTime(startTime), TimeSpan.Zero);
+            var startTime = booking.StartTime ?? new TimeOnly(7, 0);
+            return new DateTimeOffset(booking.DepartureDate.GetValueOrDefault().ToDateTime(startTime), TimeSpan.FromHours(7));
         }
 
         // Booking khứ hồi: chính sách hoàn tiền/hạn thanh toán tính theo chiều khởi hành sớm nhất.

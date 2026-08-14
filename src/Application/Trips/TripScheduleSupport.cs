@@ -38,9 +38,9 @@ internal static class TripScheduleSupport
     public static readonly TimeSpan StationDepartureBuffer = TimeSpan.FromMinutes(10);
 
     /// <summary>
-    /// Chuyến phải được tạo trước giờ khởi hành ít nhất 20 phút để có thể mở bán/kiểm tra lịch.
+    /// Cho phép tạo trip trước giờ khởi hành 5 phút.
     /// </summary>
-    public static readonly TimeSpan MinimumCreationLeadTime = TimeSpan.FromMinutes(20);
+    public static readonly TimeSpan MinimumCreationLeadTime = TimeSpan.FromMinutes(5);
 
     /// <summary>Gio khoi hanh qua sat (hoac da troi qua) so voi thoi diem tao chuyen.</summary>
     public static bool IsTooSoonToCreate(DateTimeOffset departureTime, DateTimeOffset now) =>
