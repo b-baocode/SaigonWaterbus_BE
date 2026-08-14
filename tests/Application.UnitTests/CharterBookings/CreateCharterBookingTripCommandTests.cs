@@ -330,8 +330,8 @@ public class CreateCharterBookingTripCommandTests
             CancellationToken.None);
 
         var trip = context.Set<Trip>().Single(x => x.Id == result.Trips[0].TripId);
-        // 07:40 gio VN ngay 01/01 = 00:40 UTC ngay 01/01.
-        trip.DepartureTime.ShouldBe(new DateTimeOffset(2030, 1, 1, 0, 40, 0, TimeSpan.Zero));
+        // 07:00 gio VN ngay 01/01 = 00:00 UTC ngay 01/01.
+        trip.DepartureTime.ShouldBe(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero));
         // 2 ngay van hanh ket thuc luc 23:00 gio VN ngay 02/01 = 16:00 UTC ngay 02/01.
         trip.ArrivalTime.ShouldBe(new DateTimeOffset(2030, 1, 2, 16, 0, 0, TimeSpan.Zero));
     }

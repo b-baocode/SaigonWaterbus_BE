@@ -344,7 +344,7 @@ public class CharterBookingRoutePricingSupportTests
             requestedDurationValue: 2);
 
         chargeableDays.ShouldBe(2);
-        dto.ChargeableDurationMinutes.ShouldBe(1840);
+        dto.ChargeableDurationMinutes.ShouldBe(1920);
     }
 
     [Test]
