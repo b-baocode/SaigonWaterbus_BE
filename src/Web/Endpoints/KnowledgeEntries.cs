@@ -4,7 +4,9 @@ using SaigonWaterbus.Domain.Constants;
 namespace SaigonWaterbus.Web.Endpoints;
 
 /// <summary>
-/// Kho kien thuc: public route chi doc Published; cac route quan ly chi danh cho Admin.
+/// Kho kien thuc, mot bang phuc vu HAI muc dich, phan biet bang status:
+/// Published = chinh sach hien tren web VA tro ly doc duoc | Private = kien thuc noi bo, CHI
+/// tro ly doc | Draft = dang soan, khong ai dung. Public route chi tra Published; quan ly chi Admin.
 /// </summary>
 public sealed class KnowledgeEntries : IEndpointGroup
 {
@@ -41,8 +43,9 @@ public sealed class KnowledgeEntries : IEndpointGroup
             .AllowAnonymous()
             .WithSummary("Kien thuc cong khai (khach)")
             .WithDescription(OpenApiDescriptionBuilder.Build("Anonymous", null,
-                "Tra ve cac muc kien thuc dang Published de hien thi cho khach.",
-                "Entry dang Draft KHONG bao gio xuat hien o day.",
+                "Tra ve cac muc dang Published de hien thi cho khach (chinh sach, quy dinh).",
+                "Entry Draft va Private KHONG bao gio xuat hien o day — Private la kien thuc noi "
+                + "bo chi danh cho tro ly.",
                 "Query: category - bo trong la lay tat ca. "
                 + $"Hop le: {string.Join(" | ", KnowledgeCategories.All)}.",
                 "Sap xep: category, displayOrder, ngay tao.",
@@ -52,8 +55,8 @@ public sealed class KnowledgeEntries : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Danh sach kien thuc (admin)")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", null,
-                "Tra ve entry ke ca Draft, kem noi dung day du, co phan trang.",
-                "Query: status (Draft | Published), category, keyword, page, pageSize.",
+                "Tra ve entry o MOI trang thai, kem noi dung day du, co phan trang.",
+                "Query: status (Draft | Private | Published), category, keyword, page, pageSize.",
                 $"Category hop le: {string.Join(" | ", KnowledgeCategories.All)}."));
 
         group.MapGet(GetMetadata, "metadata")
@@ -66,8 +69,8 @@ public sealed class KnowledgeEntries : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Test search knowledge cho chatbot")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", TestSearchExample,
-                "Nhap cau hoi thu de xem chatbot se match entry Published nao.",
-                "Chi dung entry Published, vi day la phan user that se duoc chatbot tra cuu.",
+                "Nhap cau hoi thu de xem chatbot se match entry nao.",
+                "Dung dung bo loc cua chatbot that: ca Published lan Private, bo qua Draft.",
                 "Tra ve token, score, matchedTokens va content da cat theo ngan sach context."));
 
         group.MapPost(CreateEntry, string.Empty)
@@ -76,7 +79,8 @@ public sealed class KnowledgeEntries : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", CreateExample,
                 "title = cau hoi hoac tieu de chu de; content = cau tra loi tro ly se doc.",
                 "keywords RAT QUAN TRONG: tro ly tim bang KHOP TU, khong hieu tu dong nghia.",
-                "status bo trong = Draft; chi entry Published moi duoc tro ly dung.",
+                "status bo trong = Draft (khong ai dung). Muon tro ly dung thi dat Private (noi "
+                + "bo, khong hien tren web) hoac Published (hien luon tren web).",
                 "Tac gia lay tu token, khong nhan tu payload."));
 
         group.MapPut(UpdateEntry, "{id:guid}")
@@ -90,7 +94,8 @@ public sealed class KnowledgeEntries : IEndpointGroup
             .RequireAuthorization()
             .WithSummary("Bat/tat hien thi cho tro ly")
             .WithDescription(OpenApiDescriptionBuilder.Build("Admin", StatusExample,
-                "Chuyen ve Draft la cach rut ngay mot muc kien thuc sai ra khoi chatbot, khong can xoa."));
+                "Chuyen ve Draft la cach rut ngay mot muc sai ra khoi CA web lan chatbot, khong can xoa. "
+                + "Chuyen Published -> Private thi an khoi web nhung tro ly van dung."));
 
         group.MapDelete(DeleteEntry, "{id:guid}")
             .RequireAuthorization()

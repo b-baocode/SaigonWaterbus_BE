@@ -14,7 +14,7 @@ public sealed class GetKnowledgeEntryMetadataQueryHandler
         CancellationToken cancellationToken) =>
         Task.FromResult(new KnowledgeEntryMetadataDto(
             KnowledgeCategories.All,
-            [KnowledgeEntry.DraftStatus, KnowledgeEntry.PublishedStatus],
+            KnowledgeEntry.AllStatuses,
             KnowledgeEntrySupport.MaxKeywords,
             KnowledgeEntrySupport.MaxKeywordLength,
             KnowledgeSearchSupport.MaxContentChars,

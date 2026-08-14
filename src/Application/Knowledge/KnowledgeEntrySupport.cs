@@ -25,12 +25,14 @@ public static class KnowledgeEntrySupport
         .ToArray();
 
     /// <summary>Không truyền status thì mặc định Draft — nội dung phải được duyệt mới ra tới khách.</summary>
+    /// <summary>
+    /// Chuẩn hoá trạng thái client gửi lên. Không nhận ra thì về <c>Draft</c> — mặc định an toàn
+    /// nhất, vì Draft là trạng thái KHÔNG ai đọc được.
+    /// </summary>
     public static string ResolveStatus(string? status) =>
-        string.IsNullOrWhiteSpace(status)
-            ? KnowledgeEntry.DraftStatus
-            : (string.Equals(status, KnowledgeEntry.PublishedStatus, StringComparison.OrdinalIgnoreCase)
-                ? KnowledgeEntry.PublishedStatus
-                : KnowledgeEntry.DraftStatus);
+        KnowledgeEntry.AllStatuses.FirstOrDefault(
+            x => string.Equals(x, status, StringComparison.OrdinalIgnoreCase))
+        ?? KnowledgeEntry.DraftStatus;
 
     public static string ResolveCategory(string? category) =>
         KnowledgeCategories.Canonicalize(category) ?? KnowledgeCategories.Other;

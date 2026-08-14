@@ -8,8 +8,10 @@ namespace SaigonWaterbus.Application.Knowledge;
 /// Danh sách kiến thức CÔNG KHAI cho khách xem (chính sách, quy định, hướng dẫn).
 /// KHÔNG có [Authorize] — đây là nội dung để hiển thị trên web.
 ///
-/// Chỉ trả entry Published: bản nháp của admin không bao giờ lọt ra ngoài, giống hệt
-/// nguyên tắc của <see cref="SearchKnowledgeQuery"/>.
+/// CHỈ trả entry <c>Public</c>. Đây là chỗ duy nhất phân biệt với <see cref="SearchKnowledgeQuery"/>:
+/// trợ lý đọc thêm cả <c>Private</c> (kiến thức nội bộ), còn trang web thì không — nội dung nội bộ
+/// lọt ra đây là rò rỉ, nên điều kiện lọc ở đây phải là so sánh BẰNG Public chứ không phải
+/// "khác Draft".
 /// </summary>
 public sealed record GetPublishedKnowledgeEntriesQuery(string? Category = null)
     : IRequest<IReadOnlyList<PublicKnowledgeEntryDto>>;

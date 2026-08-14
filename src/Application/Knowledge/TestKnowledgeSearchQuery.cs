@@ -37,7 +37,9 @@ public sealed class TestKnowledgeSearchQueryHandler
 
         var entries = await _context.Set<KnowledgeEntry>()
             .AsNoTracking()
-            .Where(x => x.Status == KnowledgeEntry.PublishedStatus)
+            // Phải khớp ĐÚNG bộ lọc của SearchKnowledgeQuery, không thì màn thử nghiệm của admin
+            // cho kết quả khác cái trợ lý thật nhìn thấy.
+            .Where(x => x.Status != KnowledgeEntry.DraftStatus)
             .OrderBy(x => x.DisplayOrder)
             .Take(MaxCorpusSize)
             .ToListAsync(cancellationToken);

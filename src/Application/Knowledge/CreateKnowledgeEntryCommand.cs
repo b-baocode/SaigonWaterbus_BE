@@ -27,7 +27,7 @@ public sealed class CreateKnowledgeEntryCommandValidator : AbstractValidator<Cre
             .WithMessage($"Category hop le: {string.Join(" | ", KnowledgeCategories.All)}.");
         RuleFor(x => x.Status)
             .Must(x => string.IsNullOrWhiteSpace(x) || KnowledgeEntry.IsValidStatus(x))
-            .WithMessage("Status hop le: Draft | Published.");
+            .WithMessage($"Status hop le: {string.Join(" | ", KnowledgeEntry.AllStatuses)}.");
         RuleFor(x => x.Keywords)
             .Must(KnowledgeEntrySupport.IsKeywordCountValid)
             .WithMessage($"Toi da {KnowledgeEntrySupport.MaxKeywords} tu khoa.")

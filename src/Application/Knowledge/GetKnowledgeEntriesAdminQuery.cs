@@ -20,7 +20,7 @@ public sealed class GetKnowledgeEntriesAdminQueryValidator : AbstractValidator<G
     {
         RuleFor(x => x.Status)
             .Must(x => string.IsNullOrWhiteSpace(x) || KnowledgeEntry.IsValidStatus(x))
-            .WithMessage("Status hop le: Draft | Published.");
+            .WithMessage($"Status hop le: {string.Join(" | ", KnowledgeEntry.AllStatuses)}.");
         RuleFor(x => x.Category)
             .Must(x => string.IsNullOrWhiteSpace(x) || KnowledgeCategories.IsValid(x))
             .WithMessage($"Category hop le: {string.Join(" | ", KnowledgeCategories.All)}.");

@@ -4,8 +4,12 @@ using SaigonWaterbus.Domain.Entities;
 namespace SaigonWaterbus.Application.Knowledge;
 
 /// <summary>
-/// Tra knowledge base cho trợ lý ảo. KHÔNG có [Authorize] — trợ lý chạy ẩn danh; bù lại chỉ
-/// đọc entry Published nên bản nháp của admin không bao giờ lọt ra cho khách.
+/// Tra knowledge base cho trợ lý ảo. KHÔNG có [Authorize] — trợ lý chạy ẩn danh.
+///
+/// Đọc CẢ HAI: <c>Public</c> (chính sách đang hiển thị trên web) lẫn <c>Private</c> (kiến thức
+/// nội bộ chỉ trợ lý dùng) — nhờ vậy chính sách không phải chép ra làm hai bản rồi lệch nhau.
+/// Riêng <c>Draft</c> thì KHÔNG: đó là bản đang soạn, chưa ai duyệt, trợ lý nói ra là nói thay
+/// công ty một điều chưa được chốt.
 /// </summary>
 public sealed record SearchKnowledgeQuery(string Query, int Take = KnowledgeSearchSupport.DefaultTake)
     : IRequest<IReadOnlyList<KnowledgeSearchHitDto>>;
@@ -36,7 +40,7 @@ public sealed class SearchKnowledgeQueryHandler
 
         var corpus = await _context.Set<KnowledgeEntry>()
             .AsNoTracking()
-            .Where(x => x.Status == KnowledgeEntry.PublishedStatus)
+            .Where(x => x.Status != KnowledgeEntry.DraftStatus)
             .OrderBy(x => x.DisplayOrder)
             .Take(MaxCorpusSize)
             .Select(x => new KnowledgeSearchCandidate(x.Title, x.Content, x.Category, x.Keywords, x.DisplayOrder))

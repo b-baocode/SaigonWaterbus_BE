@@ -21,7 +21,7 @@ public sealed class UpdateKnowledgeEntryStatusCommandValidator
         RuleFor(x => x.Status)
             .NotEmpty()
             .Must(KnowledgeEntry.IsValidStatus)
-            .WithMessage("Status hop le: Draft | Published.");
+            .WithMessage($"Status hop le: {string.Join(" | ", KnowledgeEntry.AllStatuses)}.");
     }
 }
 

@@ -63,10 +63,51 @@ public class KnowledgeAdminQueryTests
             .Handle(new GetKnowledgeEntryMetadataQuery(), CancellationToken.None);
 
         result.Categories.ShouldContain(KnowledgeCategories.Refund);
-        result.Statuses.ShouldBe([KnowledgeEntry.DraftStatus, KnowledgeEntry.PublishedStatus]);
+        result.Statuses.ShouldBe([KnowledgeEntry.DraftStatus, KnowledgeEntry.PrivateStatus, KnowledgeEntry.PublishedStatus]);
         result.MaxKeywords.ShouldBe(KnowledgeEntrySupport.MaxKeywords);
         result.MaxSearchTake.ShouldBe(KnowledgeSearchSupport.MaxTake);
     }
+
+    // Ba test duoi day giu ranh gioi giua "hien cho khach" va "tro ly doc duoc". Mat ranh gioi nay
+    // thi kien thuc noi bo lot ra trang cong khai, hoac ban nhap chua duyet bi tro ly noi voi khach.
+    [Test]
+    public async Task TrangCongKhai_ChiTraPublished_KhongTraPrivateVaDraft()
+    {
+        await using var context = CreateContext();
+        context.KnowledgeEntries.AddRange(
+            Entry("Chinh sach hoan ve", "Noi dung cong khai", KnowledgeCategories.Refund, KnowledgeEntry.PublishedStatus, ["hoan ve"], 1),
+            Entry("Ghi chu noi bo", "Chi tro ly doc", KnowledgeCategories.Refund, KnowledgeEntry.PrivateStatus, ["hoan ve"], 2),
+            Entry("Ban nhap", "Chua duyet", KnowledgeCategories.Refund, KnowledgeEntry.DraftStatus, ["hoan ve"], 3));
+        await context.SaveChangesAsync();
+
+        var result = await new GetPublishedKnowledgeEntriesQueryHandler(context)
+            .Handle(new GetPublishedKnowledgeEntriesQuery(), CancellationToken.None);
+
+        result.Select(x => x.Title).ShouldBe(["Chinh sach hoan ve"]);
+    }
+
+    [Test]
+    public async Task TroLy_DocCaPublishedLanPrivate_NhungBoQuaDraft()
+    {
+        await using var context = CreateContext();
+        context.KnowledgeEntries.AddRange(
+            Entry("Chinh sach hoan ve", "Noi dung cong khai", KnowledgeCategories.Refund, KnowledgeEntry.PublishedStatus, ["hoan ve"], 1),
+            Entry("Ghi chu noi bo", "Chi tro ly doc", KnowledgeCategories.Refund, KnowledgeEntry.PrivateStatus, ["hoan ve"], 2),
+            Entry("Ban nhap", "Chua duyet", KnowledgeCategories.Refund, KnowledgeEntry.DraftStatus, ["hoan ve"], 3));
+        await context.SaveChangesAsync();
+
+        var result = await new SearchKnowledgeQueryHandler(context)
+            .Handle(new SearchKnowledgeQuery("hoan ve"), CancellationToken.None);
+
+        result.Select(x => x.Title).ShouldBe(["Chinh sach hoan ve", "Ghi chu noi bo"], ignoreOrder: true);
+    }
+
+    [TestCase("Private", "Private")]
+    [TestCase("published", "Published")]
+    [TestCase("Public", "Draft")]      // ten khong ton tai -> ve mac dinh an toan nhat
+    [TestCase(null, "Draft")]
+    public void TrangThaiLa_ThiVeDraft(string? input, string expected) =>
+        KnowledgeEntrySupport.ResolveStatus(input).ShouldBe(expected);
 
     private static ApplicationDbContext CreateContext()
     {

@@ -8,11 +8,17 @@ namespace SaigonWaterbus.Domain.Entities;
 /// vận hành (ga, chuyến, giá) nên trước đây trợ lý buộc phải trả lời "chưa có thông tin".
 ///
 /// Mỗi dòng là MỘT chủ đề: <see cref="Title"/> là câu hỏi hoặc tiêu đề, <see cref="Content"/>
-/// là câu trả lời. Chỉ entry <see cref="Status"/> = Published mới được trợ lý dùng.
+/// là câu trả lời. Ai được đọc thì xem <see cref="Status"/>.
 /// </summary>
 public class KnowledgeEntry : BaseGuidAuditableEntity
 {
+    /// <summary>Đang soạn: KHÔNG ai dùng — không hiện cho khách, trợ lý cũng không đọc.</summary>
     public const string DraftStatus = "Draft";
+
+    /// <summary>Kiến thức nội bộ: CHỈ trợ lý đọc, không hiện trên web.</summary>
+    public const string PrivateStatus = "Private";
+
+    /// <summary>Chính sách/quy định công khai: hiện trên web VÀ trợ lý đọc được.</summary>
     public const string PublishedStatus = "Published";
 
     public string Title { get; set; } = null!;
@@ -45,7 +51,15 @@ public class KnowledgeEntry : BaseGuidAuditableEntity
 
     public User Author { get; set; } = null!;
 
+    /// <summary>
+    /// Ba trạng thái hợp lệ, xếp theo mức "mở dần" để hiện lên UI quản trị.
+    ///
+    /// CỐ Ý GIỮ TÊN "Published" thay vì đổi thành "Public" cho đối xứng với "Private": đổi tên là
+    /// phải sửa dữ liệu đang có bằng migration, mà việc thêm Private thì tự nó không cần đụng DB —
+    /// cột status chỉ là varchar, không có check constraint.
+    /// </summary>
+    public static readonly string[] AllStatuses = [DraftStatus, PrivateStatus, PublishedStatus];
+
     public static bool IsValidStatus(string? value) =>
-        string.Equals(value, DraftStatus, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(value, PublishedStatus, StringComparison.OrdinalIgnoreCase);
+        AllStatuses.Contains(value, StringComparer.OrdinalIgnoreCase);
 }
