@@ -92,11 +92,8 @@ public sealed record TicketTripSegment(
     TicketStatus TicketStatus,
     DateTimeOffset? CheckedOutAt)
 {
-    public bool IsOnboard => CheckedOutAt.HasValue
-        && TicketStatus != TicketStatus.Cancelled
-        && TicketStatus != TicketStatus.Expired;
+    public bool IsOnboard => TicketStatus == TicketStatus.CheckedIn
+        || TicketStatus == TicketStatus.CheckedOut;
 
-    public bool CanBoardLater => !CheckedOutAt.HasValue
-        && TicketStatus != TicketStatus.Cancelled
-        && TicketStatus != TicketStatus.Expired;
+    public bool CanBoardLater => TicketStatus == TicketStatus.Active;
 }
