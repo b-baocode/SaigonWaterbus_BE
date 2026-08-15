@@ -34,6 +34,7 @@ public class Booking : BaseGuidAuditableEntity
         get => _paymentStatus;
         set => _paymentStatus = value ?? BookingPaymentStatusExtensions.UnpaidValue;
     }
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public BookingPaymentStatus PaymentStatusEnum
     {
         get => _paymentStatus.ToBookingPaymentStatus();
