@@ -21,7 +21,7 @@ internal sealed record PricedQuoteBoat(
 internal static class CharterBookingQuoteSupport
 {
     private const string PendingPaymentStatus = "Pending";
-    private const string PaidPaymentStatus = "Paid";
+    private const string PaidPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     public static IReadOnlyList<QuoteCharterBookingBoatRequest> ResolveQuoteBoatRequests(
         Guid? boatId,

@@ -91,29 +91,18 @@ internal static class IncidentSupport
             incident.RescueDispatchedByUser?.FullName,
             incident.ReplacementBoatId,
             incident.ReplacementBoat?.Name,
-            incident.ReplacementBoat?.Code,
             incident.ReplacementAssignedAt,
             incident.ReplacementAssignedByUserId,
             incident.ReplacementAssignedByUser?.FullName,
             incident.ReplacementMissionType,
             incident.ReplacementTargetStationId,
-            incident.ReplacementTargetStation?.StationCode,
             incident.ReplacementTargetStation?.StationName,
             incident.ReplacementTargetStopOrder,
             incident.ReplacementDelayMinutes,
             incident.ReplacementEstimatedResumeAt,
+            activeTicketCount > 0 ? activeTicketCount : incident.ActiveTicketCountSnapshot,
             incident.OnboardPassengerCountSnapshot,
             incident.FuturePassengerCountSnapshot,
-            incident.ReplacementNote,
-            activeTicketCount > 0 ? activeTicketCount : incident.ActiveTicketCountSnapshot,
-            OperatingStatusSupport.ToPublicMissionStatus(incident),
-            OperatingStatusSupport.ForIncident(incident),
-            incident.RescueArrivedAt,
-            incident.ReplacementArrivedAt,
-            incident.PassengerTransferCompletedAt,
-            incident.TowingStartedAt,
-            incident.TowingCompletedAt,
-            incident.EstimatedTowingMinutes,
             incident.ResolutionNote,
             incident.ResolvedAt,
             incident.ResolvedByUserId,
@@ -540,13 +529,14 @@ internal static class IncidentSupport
         IApplicationDbContext context,
         Guid tripId,
         CancellationToken cancellationToken) =>
-        context.Tickets.CountAsync(
-            x => (x.BookingPassenger != null && x.BookingPassenger.TripId != null
+        context.Tickets
+            .AsNoTracking()
+            .CountAsync(x => (x.BookingPassenger != null && x.BookingPassenger.TripId != null
                     ? x.BookingPassenger.TripId == tripId
                     : x.Booking.TripId == tripId)
-              && x.TicketStatus != TicketStatus.Cancelled
-              && x.TicketStatus != TicketStatus.Expired,
-            cancellationToken);
+                && x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired,
+                cancellationToken);
 
     public static async Task<IReadOnlyDictionary<Guid, int>> CountActiveTicketsByTripAsync(
         IApplicationDbContext context,
@@ -558,80 +548,19 @@ internal static class IncidentSupport
             return new Dictionary<Guid, int>();
         }
 
-        var passengerTicketCounts = await context.Tickets
+        var result = await context.Tickets
             .AsNoTracking()
-            .Where(x => x.BookingPassenger != null
-                && x.BookingPassenger.TripId != null
-                && tripIds.Contains(x.BookingPassenger.TripId.Value)
+            .Where(x => tripIds.Contains(x.BookingPassenger != null && x.BookingPassenger.TripId != null
+                    ? x.BookingPassenger.TripId.Value
+                    : x.Booking.TripId!.Value)
                 && x.TicketStatus != TicketStatus.Cancelled
                 && x.TicketStatus != TicketStatus.Expired)
-            .GroupBy(x => x.BookingPassenger!.TripId!.Value)
-            .Select(x => new { TripId = x.Key, Count = x.Count() })
+            .GroupBy(x => x.BookingPassenger != null && x.BookingPassenger.TripId != null
+                ? x.BookingPassenger.TripId!.Value
+                : x.Booking.TripId!.Value)
+            .Select(g => new { TripId = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
 
-        var legacyTicketCounts = await context.Tickets
-            .AsNoTracking()
-            .Where(x => (x.BookingPassenger == null || x.BookingPassenger.TripId == null)
-                && x.Booking.TripId != null
-                && tripIds.Contains(x.Booking.TripId.Value)
-                && x.TicketStatus != TicketStatus.Cancelled
-                && x.TicketStatus != TicketStatus.Expired)
-            .GroupBy(x => x.Booking.TripId!.Value)
-            .Select(x => new { TripId = x.Key, Count = x.Count() })
-            .ToListAsync(cancellationToken);
-
-        return passengerTicketCounts
-            .Concat(legacyTicketCounts)
-            .GroupBy(x => x.TripId)
-            .ToDictionary(x => x.Key, x => x.Sum(item => item.Count));
-    }
-
-    public sealed record IncidentPassengerImpactPlan(
-        int ActiveTicketCount,
-        int OnboardPassengerCount,
-        int FuturePassengerCount,
-        string ReplacementMissionType,
-        Guid? TargetStationId,
-        string? TargetStationCode,
-        string? TargetStationName,
-        int? TargetStopOrder,
-        DateTimeOffset? TargetPlannedArrivalAt,
-        DateTimeOffset? TargetPlannedDepartureAt)
-    {
-        public static IncidentPassengerImpactPlan Empty { get; } = new(
-            ActiveTicketCount: 0,
-            OnboardPassengerCount: 0,
-            FuturePassengerCount: 0,
-            IncidentReplacementMissionTypes.None,
-            TargetStationId: null,
-            TargetStationCode: null,
-            TargetStationName: null,
-            TargetStopOrder: null,
-            TargetPlannedArrivalAt: null,
-            TargetPlannedDepartureAt: null);
-
-        public int AffectedPassengerCount => OnboardPassengerCount + FuturePassengerCount;
-    }
-
-    private sealed record IncidentStopPlanItem(
-        Guid StationId,
-        string StationCode,
-        string StationName,
-        int StopOrder,
-        DateTimeOffset? PlannedArrivalTime,
-        DateTimeOffset? PlannedDepartureTime,
-        string? StopStatus,
-        DateTimeOffset? ActualArrivalTime,
-        DateTimeOffset? ActualDepartureTime);
-
-    private sealed record TicketTripSegment(
-        int? FromStopOrder,
-        int? ToStopOrder,
-        TicketStatus Status,
-        DateTimeOffset? CheckedOutAt)
-    {
-        public bool IsOnboard => Status == TicketStatus.CheckedIn && !CheckedOutAt.HasValue;
-
-        public bool CanBoardLater => Status == TicketStatus.Active;
+        return result.ToDictionary(x => x.TripId, x => x.Count);
     }
 }

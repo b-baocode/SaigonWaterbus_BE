@@ -39,7 +39,7 @@ public sealed class Reports : IEndpointGroup
                 "Staff chỉ thấy booking bán tại quầy của chính mình; Admin/Manager thấy toàn bộ.",
                 "keyword tìm theo bookingCode/contactName/contactPhone/contactEmail.",
                 "bookingStatus optional: PendingPayment | Confirmed | Cancelled | Expired | Refunded | Completed | ...",
-                "paymentStatus optional: Unpaid | DepositPaid | Paid | Refunded | PartiallyRefunded.",
+                "paymentStatus optional: Unpaid | DepositPaid | Paid | Refunded | Failed.",
                 "serviceType optional: Waterbus | Sightseeing | Charter.",
                 "paymentMethod optional: Cash | PayOs | Free.",
                 "createdFrom/createdTo và departureFrom/departureTo dạng ngày; *To là ngày cuối được tính.",

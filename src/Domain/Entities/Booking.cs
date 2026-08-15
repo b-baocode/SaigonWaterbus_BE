@@ -28,7 +28,17 @@ public class Booking : BaseGuidAuditableEntity
     public decimal SubtotalAmount { get; set; }
     public decimal DiscountAmount { get; set; }
     public decimal TotalAmount { get; set; }
-    public string PaymentStatus { get; set; } = "Unpaid";
+    private string _paymentStatus = BookingPaymentStatusExtensions.UnpaidValue;
+    public string PaymentStatus
+    {
+        get => _paymentStatus;
+        set => _paymentStatus = value ?? BookingPaymentStatusExtensions.UnpaidValue;
+    }
+    public BookingPaymentStatus PaymentStatusEnum
+    {
+        get => _paymentStatus.ToBookingPaymentStatus();
+        set => _paymentStatus = value.ToDbValue();
+    }
     public decimal DepositAmount { get; set; }
     public decimal RemainingAmount { get; set; }
     public string Currency { get; set; } = "VND";

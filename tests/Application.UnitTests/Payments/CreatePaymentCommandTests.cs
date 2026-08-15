@@ -1438,12 +1438,12 @@ public class CreatePaymentCommandTests
         result.RefundMethod.ShouldBe("Manual");
         result.RefundReason.ShouldBe("Admin bank transfer");
         result.RefundReferenceId.ShouldBe("BANK-TX-001");
-        result.RefundStatus.ShouldBe("ManualRefunded");
+        result.RefundStatus.ShouldBe("Refunded");
         result.RefundFailureReason.ShouldBeNull();
         result.RefundProcessedByUserId.ShouldBe(admin.Id);
         result.RefundedAt.ShouldBe(now.AddMinutes(-10));
-        booking.PaymentStatus.ShouldBe("PartiallyRefunded");
-        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
+        booking.PaymentStatus.ShouldBe("Paid"); // partial refund không còn track ở booking-level
+        booking.BookingStatus.ShouldBe(BookingStatus.Cancelled); // partial refund → Cancelled theo yêu cầu "đã hủy"
     }
 
     [Test]

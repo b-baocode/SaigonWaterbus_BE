@@ -1180,7 +1180,7 @@ public sealed class ManualRefundPaymentCommandHandler : IRequestHandler<ManualRe
         payment.RefundReason = request.Reason.Trim();
         payment.RefundReferenceId = referenceId;
         payment.RefundPayoutId = string.IsNullOrWhiteSpace(request.PayoutId) ? null : request.PayoutId.Trim();
-        payment.RefundStatus = PaymentSupport.ManualRefundedStatus;
+        payment.RefundStatus = PaymentSupport.RefundedStatus;
         payment.RefundFailureReason = null;
         payment.RefundProcessedByUserId = _userContext.UserId;
         payment.RefundedAt = request.RefundedAt ?? now;
@@ -1211,7 +1211,6 @@ internal static class PaymentSupport
     public const string ExpiredStatus = "Expired";
     public const string RefundedStatus = "Refunded";
     public const string ManualRefundMethod = "Manual";
-    public const string ManualRefundedStatus = "ManualRefunded";
 
     public static decimal ResolveRefundPercent(TimeSpan timeUntilDeparture) =>
         timeUntilDeparture >= TimeSpan.FromDays(3) ? 1.0m
@@ -1345,12 +1344,11 @@ internal static class PaymentSupport
         return null;
     }
 
-    public const string PartiallyRefundedStatus = "PartiallyRefunded";
-    public const string UnpaidBookingPaymentStatus = "Unpaid";
-    public const string DepositPaidBookingPaymentStatus = "DepositPaid";
-    public const string PaidBookingPaymentStatus = "Paid";
-    public const string RefundedBookingPaymentStatus = "Refunded";
-    public const string FailedBookingPaymentStatus = "Failed";
+    public const string UnpaidBookingPaymentStatus = BookingPaymentStatusExtensions.UnpaidValue;
+    public const string DepositPaidBookingPaymentStatus = BookingPaymentStatusExtensions.DepositPaidValue;
+    public const string PaidBookingPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
+    public const string RefundedBookingPaymentStatus = BookingPaymentStatusExtensions.RefundedValue;
+    public const string FailedBookingPaymentStatus = BookingPaymentStatusExtensions.FailedValue;
     public const string DepositPurpose = "Deposit";
     public const string FullPurpose = "Full";
     public const string RemainingPurpose = "Remaining";
@@ -2043,17 +2041,24 @@ internal static class PaymentSupport
             return;
         }
 
-        booking.PaymentStatus = PartiallyRefundedStatus;
+        // Partial refund (refundedAmount < paidAmount): booking đã hủy và có refund 1 phần.
+        // Không dùng "PartiallyRefunded" ở booking-level — payment.RefundAmount là nguồn truth.
+        // booking.PaymentStatus giữ nguyên giá trị paid-level (Paid/DepositPaid) + set BookingStatus = Cancelled.
+        booking.BookingStatus = BookingStatus.Cancelled;
     }
 
-    /// <summary>Charter booking hoan tien du -> huy cac trip da sinh tu booking do.</summary>
+    /// <summary>
+    /// Charter booking đã hoàn tiền đủ → hủy các trip đã sinh từ booking đó.
+    /// Logic: chỉ cancel trips khi <c>booking.PaymentStatus</c> đã chuyển sang <c>Refunded</c>
+    /// (không phải cancel booking kiểu admin/user thường — handler admin đã tự cancel trips ở <c>AdminCharterBookingCommands</c>).
+    /// </summary>
     public static async Task CancelCharterTripsIfRefundedAsync(
         IApplicationDbContext context,
         Booking booking,
         CancellationToken cancellationToken)
     {
         if (!Booking.IsCharterBookingType(booking.BookingType)
-            || booking.BookingStatus != BookingStatus.Cancelled)
+            || !booking.PaymentStatusEnum.IsRefunded())
         {
             return;
         }
@@ -2061,7 +2066,7 @@ internal static class PaymentSupport
         await CharterBookingTripSupport.CancelLinkedTripsAsync(
             context,
             booking.Id,
-            $"Charter booking {booking.BookingCode} đã hoàn tiền.",
+            $"Charter booking {booking.BookingCode} đã hoàn tiền đủ — tự động hủy trip liên quan.",
             cancellationToken);
     }
 

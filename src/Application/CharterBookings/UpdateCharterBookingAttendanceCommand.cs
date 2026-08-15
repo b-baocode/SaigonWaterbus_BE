@@ -38,7 +38,7 @@ public sealed class UpdateCharterBookingAttendanceCommandValidator
 public sealed class UpdateCharterBookingAttendanceCommandHandler
     : IRequestHandler<UpdateCharterBookingAttendanceCommand, CharterBookingAttendanceResult>
 {
-    private const string PaidBookingPaymentStatus = "Paid";
+    private const string PaidBookingPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;

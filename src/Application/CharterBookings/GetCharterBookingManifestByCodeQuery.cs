@@ -128,7 +128,7 @@ public sealed class GetCharterBookingManifestByQrTokenQueryHandler
 
 internal static class CharterBookingManifestSupport
 {
-    private const string PaidBookingPaymentStatus = "Paid";
+    private const string PaidBookingPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     public static IQueryable<Booking> BuildQuery(IApplicationDbContext context) =>
         CharterBookingQuerySupport.BuildBaseQuery(context)

@@ -1646,7 +1646,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("reported_by_user_id");
 
-                    b.Property<DateTimeOffset?>("RescueArrivedAt")
+b.Property<DateTimeOffset?>("RescueArrivedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("rescue_arrived_at");
 

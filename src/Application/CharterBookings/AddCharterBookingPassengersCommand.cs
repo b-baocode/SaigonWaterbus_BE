@@ -30,7 +30,7 @@ public sealed class AddCharterBookingPassengersCommandValidator
 public sealed class AddCharterBookingPassengersCommandHandler
     : IRequestHandler<AddCharterBookingPassengersCommand, UpdateCharterBookingPassengersResult>
 {
-    private const string PaidBookingPaymentStatus = "Paid";
+    private const string PaidBookingPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
