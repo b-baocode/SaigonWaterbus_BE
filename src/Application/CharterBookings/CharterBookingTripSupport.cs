@@ -214,4 +214,92 @@ internal static class CharterBookingTripSupport
 
         return trips.Count;
     }
+
+    /// <summary>
+    /// Tu dong chuyen booking sang <see cref="BookingStatus.Completed"/> khi trip lien ket da hoan tat.
+    /// - Sightseeing / Regular: trip Completed → booking Completed luon (diem den da den).
+    /// - Charter 1 chieu: trip Completed → booking Completed.
+    /// - Charter khu hoi: doi ca trip chinh lan trip ve cung Completed moi chuyen booking.
+    /// - Khong co SourceBookingId: bo qua.
+    /// - Booking khong o trang thai <see cref="BookingStatus.Confirmed"/>: bo qua
+    ///   (giu nguyen trang thai, khong tu y Completed tu PendingPayment/Cancelled/...).
+    /// </summary>
+    /// <returns>True neu booking duoc cap nhat trong lan goi nay.</returns>
+    public static async Task<bool> CompleteLinkedBookingAsync(
+        IApplicationDbContext context,
+        Trip trip,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!trip.SourceBookingId.HasValue)
+        {
+            return false;
+        }
+
+        var booking = await context.Set<Booking>()
+            .Include(x => x.ReturnTrip)
+            .SingleOrDefaultAsync(x => x.Id == trip.SourceBookingId.Value, cancellationToken);
+        if (booking is null)
+        {
+            return false;
+        }
+
+        // Booking phai da Confirmed (da check-in hoac da approve) moi tu dong Completed.
+        if (booking.BookingStatus != BookingStatus.Confirmed)
+        {
+            return false;
+        }
+
+        // Khu hoi: phai doi trip ve cung Completed.
+        var hasReturnTrip = booking.ReturnTripId.HasValue && booking.ReturnTrip is not null;
+        if (hasReturnTrip && booking.ReturnTrip!.TripStatus != TripStatus.Completed)
+        {
+            return false;
+        }
+
+        booking.BookingStatus = BookingStatus.Completed;
+        booking.CompletionSource = $"TripCompleted:{trip.TripCode}";
+        booking.CompletedAt = now;
+        return true;
+    }
+
+    /// <summary>
+    /// Khi trip chuyển sang <see cref="TripStatus.Cancelled"/>:
+    /// - Charter booking đang <see cref="BookingStatus.Confirmed"/> → auto chuyển sang Cancelled
+    ///   (để booking phản ánh đúng trạng thái trip, không kẹt ở Confirmed khi trip đã hủy).
+    /// - Booking đã Cancelled/PendingPayment/Refunded/Completed → giữ nguyên (không ghi đè trạng thái đã kết thúc).
+    /// - Khứ hồi: cancel 1 chiều là cancel luôn booking vì trip kia cũng vô hiệu theo business rule
+    ///   (charter khứ hồi = 1 booking thuê nguyên tàu, trip nào hủy là booking hủy).
+    /// - Không có SourceBookingId: bỏ qua (chỉ áp dụng cho charter, không phải ghép vé).
+    /// </summary>
+    /// <returns>True nếu booking được cập nhật trong lần gọi này.</returns>
+    public static async Task<bool> CancelLinkedBookingAsync(
+        IApplicationDbContext context,
+        Trip trip,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (!trip.SourceBookingId.HasValue)
+        {
+            return false;
+        }
+
+        var booking = await context.Set<Booking>()
+            .SingleOrDefaultAsync(x => x.Id == trip.SourceBookingId.Value, cancellationToken);
+        if (booking is null)
+        {
+            return false;
+        }
+
+        // Chỉ cancel booking đang còn "sống" (Confirmed). Nếu đã kết thúc thì giữ nguyên.
+        if (booking.BookingStatus != BookingStatus.Confirmed)
+        {
+            return false;
+        }
+
+        booking.BookingStatus = BookingStatus.Cancelled;
+        booking.CompletionSource = $"TripCancelled:{trip.TripCode}";
+        booking.CompletedAt = now;
+        return true;
+    }
 }

@@ -54,6 +54,12 @@ public class Booking : BaseGuidAuditableEntity
     public BookingInsuranceSnapshot? InsuranceSnapshot { get; set; }
     public DateTimeOffset? HoldExpiresAt { get; set; }
 
+    /// <summary>Audit: nguon nao da dua booking sang trang thai Completed (vi du "TripCompleted:7KMKQ").</summary>
+    public string? CompletionSource { get; set; }
+
+    /// <summary>Audit: thoi diem booking duoc danh dau hoan tat.</summary>
+    public DateTimeOffset? CompletedAt { get; set; }
+
     public User? User { get; set; }
     public Promotion? Promotion { get; set; }
     public Trip? Trip { get; set; }

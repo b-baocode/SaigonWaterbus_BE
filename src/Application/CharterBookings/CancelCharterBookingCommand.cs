@@ -8,7 +8,7 @@ using ValidationException = SaigonWaterbus.Application.Common.Exceptions.Validat
 
 namespace SaigonWaterbus.Application.CharterBookings;
 
-public sealed record CancelCharterBookingCommand(Guid BookingId) : IRequest;
+public sealed record CancelCharterBookingCommand(Guid BookingId) : IRequest<CancelCharterBookingResult>;
 
 public sealed class CancelCharterBookingCommandValidator : AbstractValidator<CancelCharterBookingCommand>
 {
@@ -18,7 +18,26 @@ public sealed class CancelCharterBookingCommandValidator : AbstractValidator<Can
     }
 }
 
-public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelCharterBookingCommand>
+/// <summary>
+/// Kết quả khi customer tự hủy charter booking.
+/// - <c>Cancelled</c> = true nếu booking đã chuyển sang Cancelled thành công.
+/// - <c>RefundableAmount</c> = tổng tiền còn có thể hoàn theo chính sách (100% / 70% / 0%).
+/// - <c>RefundPolicyPercent</c> = % policy đang áp dụng.
+/// - <c>RefundPolicyMessage</c> = message tiếng Việt giải thích policy.
+/// - <c>RefundablePayments</c> = danh sách payment đã Paid và có thể hoàn (kèm số tiền preview).
+/// FE dùng 2 field cuối để hiển thị modal "Yêu cầu hoàn tiền" với OTP + bank info.
+/// Lưu ý: API này KHÔNG tự động gọi refund PayOS — hoàn tiền đi qua endpoint /api/payments/{id}/refund
+/// vì cần OTP xác thực chủ tài khoản.
+/// </summary>
+public sealed record CancelCharterBookingResult(
+    bool Cancelled,
+    decimal RefundableAmount,
+    decimal RefundPolicyPercent,
+    string RefundPolicyMessage,
+    bool CanRequestRefund,
+    IReadOnlyList<CharterBookingRefundablePaymentDto> RefundablePayments);
+
+public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelCharterBookingCommand, CancelCharterBookingResult>
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
@@ -40,7 +59,7 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
     }
 
-    public async Task Handle(CancelCharterBookingCommand request, CancellationToken cancellationToken)
+    public async Task<CancelCharterBookingResult> Handle(CancelCharterBookingCommand request, CancellationToken cancellationToken)
     {
         var userId = _userContext.UserId
             ?? throw new ValidationException([]);
@@ -49,6 +68,7 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
             .Include(x => x.CharterBoats)
             .Include(x => x.Tickets)
             .Include(x => x.Promotion)
+            .Include(x => x.Payments)
             .SingleOrDefaultAsync(b => b.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
@@ -105,5 +125,26 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
                 booking.DurationValue.GetValueOrDefault(),
                 cancellationToken);
         }
+
+        var now = _timeProvider.GetUtcNow();
+        var summary = CharterBookingRefundSupport.BuildSummary(booking, now);
+        var refundablePayments = CharterBookingRefundSupport
+            .GetRefundablePayments(booking, summary)
+            .Select(x => new CharterBookingRefundablePaymentDto(
+                x.PaymentId,
+                x.PaymentCode,
+                x.PaidAmount,
+                x.AlreadyRefundedAmount,
+                x.AvailableRefundAmount,
+                x.PaymentStatus))
+            .ToList();
+
+        return new CancelCharterBookingResult(
+            Cancelled: true,
+            RefundableAmount: summary.OutstandingRefundAmount,
+            RefundPolicyPercent: summary.PolicyPercent,
+            RefundPolicyMessage: summary.PolicyMessage,
+            CanRequestRefund: summary.CanRequestRefund,
+            RefundablePayments: refundablePayments);
     }
 }

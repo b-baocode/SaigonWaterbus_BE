@@ -45,6 +45,8 @@ public static class NotificationTypes
     public const string CharterPaymentReceived = "charter_payment_received";
     public const string CharterPassengerAddRequested = "charter_passenger_add_requested";
     public const string CharterCancelled = "charter_cancelled";
+    public const string CharterCompleted = "charter_completed";
+    public const string BookingCompleted = "booking_completed";
 }
 
 public static class NotificationRelatedEntityTypes
@@ -359,6 +361,70 @@ public static class NotificationSupport
                 Title = "Charter booking đã bị hủy",
                 Body = isCustomer ? customerBody : adminBody,
                 Type = NotificationTypes.CharterCancelled,
+                RelatedEntityType = NotificationRelatedEntityTypes.Booking,
+                RelatedEntityId = booking.Id,
+                CreatedAt = now
+            };
+            context.Set<Notification>().Add(notification);
+            created.Add(notification);
+        }
+
+        return created;
+    }
+
+    /// <summary>
+    /// Booking (seat/charter) tự động sang Hoàn tất khi trip tương ứng đã Completed.
+    /// Báo cho customer (nếu có tài khoản) + admin/manager + staff phụ trách.
+    /// </summary>
+    public static async Task<IReadOnlyList<Notification>> AddBookingCompletedNotificationsAsync(
+        IApplicationDbContext context,
+        Booking booking,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var recipientIds = new HashSet<Guid>();
+        var adminIds = await LoadAdminManagerRecipientIdsAsync(context, cancellationToken);
+        foreach (var id in adminIds)
+        {
+            recipientIds.Add(id);
+        }
+
+        if (booking.UserId.HasValue)
+        {
+            recipientIds.Add(booking.UserId.Value);
+        }
+
+        if (booking.AssignedManagerId.HasValue)
+        {
+            recipientIds.Add(booking.AssignedManagerId.Value);
+        }
+
+        if (recipientIds.Count == 0)
+        {
+            return [];
+        }
+
+        var isCharter = Booking.IsCharterBookingType(booking.BookingType);
+        var customerBody = isCharter
+            ? $"Charter booking {booking.BookingCode} đã hoàn tất. Cảm ơn quý khách đã sử dụng dịch vụ."
+            : $"Booking {booking.BookingCode} đã hoàn tất. Cảm ơn quý khách đã sử dụng dịch vụ.";
+        var adminBody = isCharter
+            ? $"Charter booking {booking.BookingCode} đã hoàn tất (auto từ trip Completed)."
+            : $"Booking {booking.BookingCode} đã hoàn tất (auto từ trip Completed).";
+
+        var type = isCharter ? NotificationTypes.CharterCompleted : NotificationTypes.BookingCompleted;
+        var title = isCharter ? "Charter booking hoàn tất" : "Booking hoàn tất";
+
+        var created = new List<Notification>();
+        foreach (var recipientId in recipientIds)
+        {
+            var isCustomer = booking.UserId.HasValue && recipientId == booking.UserId.Value;
+            var notification = new Notification
+            {
+                UserId = recipientId,
+                Title = title,
+                Body = isCustomer ? customerBody : adminBody,
+                Type = type,
                 RelatedEntityType = NotificationRelatedEntityTypes.Booking,
                 RelatedEntityId = booking.Id,
                 CreatedAt = now

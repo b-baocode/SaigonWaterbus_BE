@@ -300,7 +300,10 @@ public sealed record CharterBookingDetailDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     decimal SuggestedDepositAmount = 0,
     /// <summary>true nếu booking đã có phần cọc thanh toán thành công (DepositAmount &gt; 0).</summary>
-    bool HasDepositPaid = false);
+    bool HasDepositPaid = false,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CharterBookingRefundSummaryDto? RefundSummary = null,
+    IReadOnlyList<CharterBookingRefundablePaymentDto>? RefundablePayments = null);
 
 public sealed record CharterBookingUserAssignmentDto(
     Guid UserId,
@@ -723,3 +726,24 @@ public sealed record CreateCharterBookingTripResult(
     string RouteName,
     IReadOnlyList<CharterBookingTripDto> Trips,
     IReadOnlyList<CharterBookingTripStopDto> Stops);
+
+/// <summary>Tóm tắt refund của charter booking để FE hiển thị ở trang chi tiết.</summary>
+public sealed record CharterBookingRefundSummaryDto(
+    decimal TotalPaidAmount,
+    decimal TotalRefundedAmount,
+    decimal OutstandingRefundAmount,
+    /// <summary>Phần trăm hoàn theo chính sách: 1.0 = 100%, 0.7 = 70%, 0 = không hoàn.</summary>
+    decimal PolicyPercent,
+    /// <summary>Số giờ còn lại đến giờ khởi hành (giờ VN). Null nếu chưa xác định được DepartureDate/StartTime.</summary>
+    double? HoursUntilDeparture,
+    bool CanRequestRefund,
+    string PolicyMessage);
+
+/// <summary>Một payment có thể yêu cầu hoàn. FE list ra để user chọn payment muốn refund.</summary>
+public sealed record CharterBookingRefundablePaymentDto(
+    Guid PaymentId,
+    string PaymentCode,
+    decimal PaidAmount,
+    decimal AlreadyRefundedAmount,
+    decimal AvailableRefundAmount,
+    string PaymentStatus);
