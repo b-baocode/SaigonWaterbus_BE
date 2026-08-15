@@ -242,6 +242,9 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             cancellationToken);
 
         incident = await LoadIncidentQuery().SingleAsync(x => x.Id == request.IncidentId, cancellationToken);
+        var activeTicketCount = incident.TripId.HasValue
+            ? await IncidentSupport.CountActiveTicketsAsync(_context, incident.TripId.Value, cancellationToken)
+            : 0;
         await IncidentSupport.PublishGpsHookAsync(
             _context,
             _gpsHookNotifier,
@@ -280,7 +283,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         string.IsNullOrWhiteSpace(note) ? null : note.Trim();
 
     private static string BuildReplacementRequiredMessage(
-        IncidentSupport.IncidentPassengerImpactPlan passengerImpact)
+        IncidentPassengerImpactPlan passengerImpact)
     {
         if (passengerImpact.OnboardPassengerCount > 0)
         {
@@ -296,7 +299,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     }
 
     private static string? BuildDefaultReplacementNote(
-        IncidentSupport.IncidentPassengerImpactPlan passengerImpact,
+        IncidentPassengerImpactPlan passengerImpact,
         Boat? replacementBoat)
     {
         if (replacementBoat is null)
@@ -323,7 +326,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     }
 
     private static DateTimeOffset? ResolveEstimatedResumeAt(
-        IncidentSupport.IncidentPassengerImpactPlan passengerImpact,
+        IncidentPassengerImpactPlan passengerImpact,
         DateTimeOffset assignedAt,
         int delayMinutes)
     {
@@ -359,7 +362,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
     private static async Task ApplyTripStopDelayAsync(
         IApplicationDbContext context,
         Trip trip,
-        IncidentSupport.IncidentPassengerImpactPlan passengerImpact,
+        IncidentPassengerImpactPlan passengerImpact,
         int delayMinutes,
         CancellationToken cancellationToken)
     {
@@ -391,7 +394,7 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
 
     private static int ResolveDelayStartStopOrder(
         IReadOnlyList<TripStop> tripStops,
-        IncidentSupport.IncidentPassengerImpactPlan passengerImpact)
+        IncidentPassengerImpactPlan passengerImpact)
     {
         if (passengerImpact.TargetStopOrder.HasValue)
         {

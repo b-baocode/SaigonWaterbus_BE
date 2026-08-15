@@ -161,7 +161,7 @@ public sealed class RespondCharterBookingQuoteCommandHandler
     private static void AcceptQuote(Booking booking, DateTimeOffset now)
     {
         booking.BookingStatus = BookingStatus.PendingPayment;
-        booking.PaymentStatus = "Unpaid";
+        booking.PaymentStatusEnum = BookingPaymentStatus.Unpaid;
         booking.DepositAmount = 0;
         booking.RemainingAmount = booking.TotalAmount;
         booking.HoldExpiresAt = now + BookingExpirationPolicy.CharterPaymentCompletionTtl;
@@ -194,7 +194,7 @@ public sealed class RespondCharterBookingQuoteCommandHandler
         booking.TotalAmount = 0;
         booking.DepositAmount = 0;
         booking.RemainingAmount = 0;
-        booking.PaymentStatus = "Unpaid";
+        booking.PaymentStatusEnum = BookingPaymentStatus.Unpaid;
         booking.BookingStatus = BookingStatus.PendingQuote;
         booking.HoldExpiresAt = null;
         booking.SpecialRequests = AppendChangeRequestNote(booking.SpecialRequests, note, now);

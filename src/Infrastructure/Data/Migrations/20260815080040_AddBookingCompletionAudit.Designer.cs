@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260815080040_AddBookingCompletionAudit")]
+    partial class AddBookingCompletionAudit
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1646,7 +1649,7 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("uuid")
                         .HasColumnName("reported_by_user_id");
 
-b.Property<DateTimeOffset?>("RescueArrivedAt")
+                    b.Property<DateTimeOffset?>("RescueArrivedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("rescue_arrived_at");
 

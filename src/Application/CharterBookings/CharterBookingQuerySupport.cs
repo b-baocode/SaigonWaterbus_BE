@@ -157,6 +157,38 @@ internal static class CharterBookingQuerySupport
                     booking.CharterRoute.RouteType,
                     RoutePresentationSupport.ResolveLabel(booking.CharterRoute.RouteType),
                     RoutePresentationSupport.IsGeneratedForBooking(booking.CharterRoute)),
-            BoatId: booking.BoatId);
+            BoatId: booking.BoatId,
+            RefundSummary: ToRefundSummaryDto(booking, DateTimeOffset.UtcNow),
+            RefundablePayments: ToRefundablePaymentDtos(booking, DateTimeOffset.UtcNow));
+    }
+
+    private static CharterBookingRefundSummaryDto? ToRefundSummaryDto(Booking booking, DateTimeOffset now)
+    {
+        var summary = CharterBookingRefundSupport.BuildSummary(booking, now);
+        return new CharterBookingRefundSummaryDto(
+            summary.TotalPaidAmount,
+            summary.TotalRefundedAmount,
+            summary.OutstandingRefundAmount,
+            summary.PolicyPercent,
+            summary.TimeUntilDeparture?.TotalHours,
+            summary.CanRequestRefund,
+            summary.PolicyMessage);
+    }
+
+    private static IReadOnlyList<CharterBookingRefundablePaymentDto> ToRefundablePaymentDtos(
+        Booking booking,
+        DateTimeOffset now)
+    {
+        var summary = CharterBookingRefundSupport.BuildSummary(booking, now);
+        return CharterBookingRefundSupport
+            .GetRefundablePayments(booking, summary)
+            .Select(x => new CharterBookingRefundablePaymentDto(
+                x.PaymentId,
+                x.PaymentCode,
+                x.PaidAmount,
+                x.AlreadyRefundedAmount,
+                x.AvailableRefundAmount,
+                x.PaymentStatus))
+            .ToList();
     }
 }

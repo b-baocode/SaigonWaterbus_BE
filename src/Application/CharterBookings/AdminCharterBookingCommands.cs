@@ -120,7 +120,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
     : IRequestHandler<UpdateCharterBookingStatusCommand, CharterBookingDetailDto>
 {
     private const string PendingPaymentStatus = "Pending";
-    private const string PaidPaymentStatus = "Paid";
+    private const string PaidPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
@@ -602,7 +602,7 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
 public sealed class QuoteCharterBookingCommandHandler
     : IRequestHandler<QuoteCharterBookingCommand, QuoteCharterBookingResult>
 {
-    private const string UnpaidBookingPaymentStatus = "Unpaid";
+    private const string UnpaidBookingPaymentStatus = BookingPaymentStatusExtensions.UnpaidValue;
 
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;

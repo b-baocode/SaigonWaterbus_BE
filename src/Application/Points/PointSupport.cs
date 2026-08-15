@@ -32,7 +32,7 @@ public static class PointSupport
     /// <summary>Tỷ lệ tích điểm: 1% số tiền thực trả của booking.</summary>
     public const decimal EarnRate = 0.01m;
 
-    private const string PaidPaymentStatus = "Paid";
+    private const string PaidPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     /// <summary>Point chỉ được trả tối đa 50% bill — phần còn lại luôn qua PayOS (PayOS không nhận đơn 0 đồng).</summary>
     public const decimal MaxRedeemShareOfBill = 0.5m;

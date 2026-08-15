@@ -28,7 +28,17 @@ public class Booking : BaseGuidAuditableEntity
     public decimal SubtotalAmount { get; set; }
     public decimal DiscountAmount { get; set; }
     public decimal TotalAmount { get; set; }
-    public string PaymentStatus { get; set; } = "Unpaid";
+    private string _paymentStatus = BookingPaymentStatusExtensions.UnpaidValue;
+    public string PaymentStatus
+    {
+        get => _paymentStatus;
+        set => _paymentStatus = value ?? BookingPaymentStatusExtensions.UnpaidValue;
+    }
+    public BookingPaymentStatus PaymentStatusEnum
+    {
+        get => _paymentStatus.ToBookingPaymentStatus();
+        set => _paymentStatus = value.ToDbValue();
+    }
     public decimal DepositAmount { get; set; }
     public decimal RemainingAmount { get; set; }
     public string Currency { get; set; } = "VND";
@@ -53,6 +63,12 @@ public class Booking : BaseGuidAuditableEntity
     public string? SpecialRequests { get; set; }
     public BookingInsuranceSnapshot? InsuranceSnapshot { get; set; }
     public DateTimeOffset? HoldExpiresAt { get; set; }
+
+    /// <summary>Audit: nguon nao da dua booking sang trang thai Completed (vi du "TripCompleted:7KMKQ").</summary>
+    public string? CompletionSource { get; set; }
+
+    /// <summary>Audit: thoi diem booking duoc danh dau hoan tat.</summary>
+    public DateTimeOffset? CompletedAt { get; set; }
 
     public User? User { get; set; }
     public Promotion? Promotion { get; set; }

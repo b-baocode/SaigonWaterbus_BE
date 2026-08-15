@@ -1,3 +1,5 @@
+using SaigonWaterbus.Domain.Enums;
+
 namespace SaigonWaterbus.Application.Incidents;
 
 public sealed record IncidentDto(
@@ -27,30 +29,71 @@ public sealed record IncidentDto(
     string? RescueDispatchedByName,
     Guid? ReplacementBoatId,
     string? ReplacementBoatName,
-    string? ReplacementBoatCode,
     DateTimeOffset? ReplacementAssignedAt,
     Guid? ReplacementAssignedByUserId,
     string? ReplacementAssignedByName,
-    string ReplacementMissionType,
+    string? ReplacementMissionType,
     Guid? ReplacementTargetStationId,
-    string? ReplacementTargetStationCode,
     string? ReplacementTargetStationName,
     int? ReplacementTargetStopOrder,
-    int ReplacementDelayMinutes,
+    int? ReplacementDelayMinutes,
     DateTimeOffset? ReplacementEstimatedResumeAt,
+    int ActiveTicketCount,
     int OnboardPassengerCount,
     int FuturePassengerCount,
-    string? ReplacementNote,
-    int ActiveTicketCount,
-    string? MissionStatus,
-    string OperatingStatus,
-    DateTimeOffset? RescueArrivedAt,
-    DateTimeOffset? ReplacementArrivedAt,
-    DateTimeOffset? PassengerTransferCompletedAt,
-    DateTimeOffset? TowingStartedAt,
-    DateTimeOffset? TowingCompletedAt,
-    int? EstimatedTowingMinutes,
     string? ResolutionNote,
     DateTimeOffset? ResolvedAt,
     Guid? ResolvedByUserId,
     string? ResolvedByName);
+
+public sealed record IncidentPassengerImpactPlan(
+    int ActiveTicketCount,
+    int OnboardPassengerCount,
+    int FuturePassengerCount,
+    string MissionType,
+    Guid? TargetStationId,
+    string? TargetStationCode,
+    string? TargetStationName,
+    int? TargetStopOrder,
+    DateTimeOffset? TargetPlannedArrivalAt,
+    DateTimeOffset? TargetPlannedDepartureAt)
+{
+    public int AffectedPassengerCount => OnboardPassengerCount + FuturePassengerCount;
+
+    public string ReplacementMissionType { get; init; } = MissionType;
+
+    public static IncidentPassengerImpactPlan Empty { get; } = new(
+        ActiveTicketCount: 0,
+        OnboardPassengerCount: 0,
+        FuturePassengerCount: 0,
+        MissionType: "None",
+        TargetStationId: null,
+        TargetStationCode: null,
+        TargetStationName: null,
+        TargetStopOrder: null,
+        TargetPlannedArrivalAt: null,
+        TargetPlannedDepartureAt: null);
+}
+
+public sealed record IncidentStopPlanItem(
+    Guid StationId,
+    string StationCode,
+    string StationName,
+    int StopOrder,
+    DateTimeOffset? PlannedArrivalTime,
+    DateTimeOffset? PlannedDepartureTime,
+    string? StopStatus,
+    DateTimeOffset? ActualArrivalTime,
+    DateTimeOffset? ActualDepartureTime);
+
+public sealed record TicketTripSegment(
+    int? FromStopOrder,
+    int? ToStopOrder,
+    TicketStatus TicketStatus,
+    DateTimeOffset? CheckedOutAt)
+{
+    public bool IsOnboard => TicketStatus == TicketStatus.CheckedIn
+        || TicketStatus == TicketStatus.CheckedOut;
+
+    public bool CanBoardLater => TicketStatus == TicketStatus.Active;
+}

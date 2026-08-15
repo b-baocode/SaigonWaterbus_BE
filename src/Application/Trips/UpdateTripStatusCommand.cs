@@ -97,6 +97,37 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             now,
             cancellationToken);
 
+        // Trip Completed → booking gốc tự động sang Hoàn tất (xử lý cả 1 chiều/khứ hồi).
+        if (request.TripStatus == TripStatus.Completed && oldStatus != TripStatus.Completed)
+        {
+            var completionChanged = await CharterBookingTripSupport.CompleteLinkedBookingAsync(
+                _context,
+                trip,
+                now,
+                cancellationToken);
+            if (completionChanged && sourceBooking is not null)
+            {
+                createdNotifications.AddRange(await NotificationSupport.AddBookingCompletedNotificationsAsync(
+                    _context,
+                    sourceBooking,
+                    now,
+                    cancellationToken));
+            }
+        }
+
+        // Trip Cancelled → booking gốc tự động sang Hủy (đã hủy thì cũng phải hủy).
+        // Lưu ý: notification cho khách đã được AddTripStatusChangedNotificationsAsync xử lý ở trên
+        // (Type=trip_cancelled, RelatedEntityId=booking). Không gọi thêm notification charter_cancelled
+        // ở đây để tránh duplicate cùng (user, booking).
+        else if (request.TripStatus == TripStatus.Cancelled && oldStatus != TripStatus.Cancelled)
+        {
+            await CharterBookingTripSupport.CancelLinkedBookingAsync(
+                _context,
+                trip,
+                now,
+                cancellationToken);
+        }
+
         if (ShouldDeactivateCharterRoute(trip, oldStatus, sourceBooking))
         {
             await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
@@ -220,9 +251,22 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             return;
         }
 
-        // Load tickets via Booking -> TripId
+        // Load tickets theo 2 chiều liên kết:
+        // 1. Booking.TripId = trip.Id (ticket thường - khách mua vé ghép từng segment)
+        // 2. Booking.Id = trip.SourceBookingId (charter booking - 1 booking tạo cả trip)
+        var relatedBookingIds = await context.Set<Booking>()
+            .Where(b => b.TripId == trip.Id
+                || (trip.SourceBookingId.HasValue && b.Id == trip.SourceBookingId.Value))
+            .Select(b => b.Id)
+            .ToListAsync(cancellationToken);
+
+        if (relatedBookingIds.Count == 0)
+        {
+            return;
+        }
+
         var tickets = await context.Set<Booking>()
-            .Where(b => b.TripId == trip.Id)
+            .Where(b => relatedBookingIds.Contains(b.Id))
             .SelectMany(b => b.Tickets)
             .ToListAsync(cancellationToken);
 

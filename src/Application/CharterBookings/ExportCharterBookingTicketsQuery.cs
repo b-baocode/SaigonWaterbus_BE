@@ -2,6 +2,7 @@ using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
@@ -122,7 +123,7 @@ public sealed class ExportCharterBookingTicketsByQrTokenQueryHandler
 
 internal static class CharterBookingTicketExportSupport
 {
-    private const string PaidBookingPaymentStatus = "Paid";
+    private const string PaidBookingPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     public static CharterBookingTicketExportDto ToDto(
         Booking booking,

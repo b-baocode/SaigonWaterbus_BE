@@ -537,9 +537,9 @@ internal static class CharterBookingPaymentSupport
     public const string CancelledStatus = "Cancelled";
     public const string FailedStatus = "Failed";
     public const string ExpiredStatus = "Expired";
-    public const string UnpaidBookingPaymentStatus = "Unpaid";
-    public const string DepositPaidBookingPaymentStatus = "DepositPaid";
-    public const string PaidBookingPaymentStatus = "Paid";
+    public const string UnpaidBookingPaymentStatus = BookingPaymentStatusExtensions.UnpaidValue;
+    public const string DepositPaidBookingPaymentStatus = BookingPaymentStatusExtensions.DepositPaidValue;
+    public const string PaidBookingPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
     public const string DepositPurpose = "Deposit";
     public const string FullPurpose = "Full";
     public const string RemainingPurpose = "Remaining";

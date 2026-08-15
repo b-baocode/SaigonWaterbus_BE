@@ -8,6 +8,5 @@ public enum BookingStatus
     Expired = 3,
     Quoted = 4,
     Completed = 5,
-    PendingQuote = 6,
-    Refunded = 7
+    PendingQuote = 6
 }

@@ -432,6 +432,23 @@ public sealed class CharterBookings : IEndpointGroup
                 "Tra ve day du thong tin mot yeu cau thue tau.",
                 "Tra ve 404 neu khong thuoc ve user dang dang nhap."));
 
+        group.MapGet(GetCharterBookingRefundPreview, "{id:guid}/refund-preview")
+            .RequireAuthorization()
+            .WithSummary("Xem truoc hoan tien theo chinh sach cho charter booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "BE tinh policyPercent theo thoi gian con lai truoc gio khoi hanh va tong tien da thanh toan.",
+                "TotalPaidAmount: tong cac payment Settlement da Paid (khong tinh phi/points/insurance rieng).",
+                "TotalRefundedAmount: tong RefundAmount da ghi nhan tu PayOS hoac manual refund.",
+                "OutstandingRefundAmount = TotalPaidAmount - TotalRefundedAmount.",
+                "PolicyPercent: 1.0 neu con >= 3 ngay, 0.7 neu con >= 24 gio va < 3 ngay, 0 neu < 24 gio hoac da Completed/Expired.",
+                "CanRequestRefund = true khi outstanding > 0 va policyPercent > 0 va booking chua Completed/Expired.",
+                "RefundablePayments: danh sach payment Settlement da Paid con co the hoan, kem AvailableRefundAmount phan bo theo policy (uu tien payment cu truoc).",
+                "Booking da Refunded (outstanding=0) tra policyPercent=0 va CanRequestRefund=false; FE khong show nut Hoan.",
+                "Tra ve 404 neu khong thuoc ve user dang dang nhap (hoac staff ban ve).",
+                "Khong goi PayOS; chi tinh preview nen co the goi nhieu lan, khong side-effect."));
+
         group.MapPost(CancelCharterBooking, "{id:guid}/cancel")
             .RequireAuthorization()
             .WithSummary("Huy yeu cau thue tau")
@@ -819,6 +836,10 @@ public sealed class CharterBookings : IEndpointGroup
 
     private static async Task<IResult> GetCharterBookingDetail(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetCharterBookingDetailQuery(id), ct));
+
+    private static async Task<IResult> GetCharterBookingRefundPreview(
+        ISender sender, Guid id, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetCharterBookingRefundPreviewQuery(id), ct));
 
     private static async Task<IResult> CancelCharterBooking(ISender sender, Guid id, CancellationToken ct)
     {

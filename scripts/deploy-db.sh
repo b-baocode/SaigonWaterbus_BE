@@ -69,6 +69,23 @@ cd "$ROOT_DIR"
 
 NORMALIZED_CONNECTION_STRING="$(normalize_connection_string "$DATABASE_URL_VALUE")"
 
+# Pre-deploy safety check: ensure no orphan BookingStatus rows.
+# Skip with SKIP_ORPHAN_CHECK=1 if you intentionally want to bypass.
+if [[ "${SKIP_ORPHAN_CHECK:-0}" != "1" ]]; then
+  if [[ -x "$ROOT_DIR/scripts/check-orphan-booking-status.sh" ]]; then
+    echo "==> Running pre-deploy orphan BookingStatus check..."
+    if ! "$ROOT_DIR/scripts/check-orphan-booking-status.sh" "$DATABASE_URL_VALUE"; then
+      echo "[ERROR] Pre-deploy safety check failed."
+      echo "        Run scripts/check-orphan-booking-status.sh manually to see details."
+      echo "        To skip: SKIP_ORPHAN_CHECK=1 ./scripts/deploy-db.sh '...'"
+      exit 1
+    fi
+    echo ""
+  else
+    echo "[WARN] check-orphan-booking-status.sh not executable; skipping safety check."
+  fi
+fi
+
 SAIGONWATERBUS_DB_CONNECTION_STRING="$NORMALIZED_CONNECTION_STRING" \
 ConnectionStrings__SaigonWaterbusDb="$NORMALIZED_CONNECTION_STRING" \
 ASPNETCORE_ENVIRONMENT=Production \

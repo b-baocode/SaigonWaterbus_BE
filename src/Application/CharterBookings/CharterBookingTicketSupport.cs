@@ -9,7 +9,7 @@ namespace SaigonWaterbus.Application.CharterBookings;
 
 internal static class CharterBookingTicketSupport
 {
-    private const string PaidBookingPaymentStatus = "Paid";
+    private const string PaidBookingPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
     public static async Task<PassengerTicketEnsureResult?> EnsurePassengerTicketsAsync(
         IApplicationDbContext context,
