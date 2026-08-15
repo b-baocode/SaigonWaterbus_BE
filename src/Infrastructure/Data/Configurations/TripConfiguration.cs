@@ -51,6 +51,7 @@ public sealed class TripConfiguration : IEntityTypeConfiguration<Trip>
             .HasMaxLength(30)
             .IsRequired();
         builder.Property(x => x.StatusNote).HasColumnName("status_note").HasMaxLength(500);
+        builder.Property(x => x.LastStatusChangedAt).HasColumnName("last_status_changed_at");
 
         builder.HasIndex(x => new { x.RouteId, x.OperatingDate });
         builder.HasIndex(x => new { x.BoatId, x.OperatingDate, x.TripStatus })

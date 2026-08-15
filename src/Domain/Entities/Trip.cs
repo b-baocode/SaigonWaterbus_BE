@@ -26,6 +26,7 @@ public class Trip : BaseGuidAuditableEntity
     public int CapacitySnapshot { get; set; }
     public TripStatus TripStatus { get; set; } = TripStatus.Scheduled;
     public string? StatusNote { get; set; }
+    public DateTimeOffset? LastStatusChangedAt { get; set; }
 
     public Route Route { get; set; } = null!;
     public Boat? Boat { get; set; }

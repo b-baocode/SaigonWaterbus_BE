@@ -180,6 +180,7 @@ public static class DependencyInjection
         builder.Services.Configure<PayOsOptions>(builder.Configuration.GetSection(PayOsOptions.SectionName));
         builder.Services.Configure<RedisOptions>(builder.Configuration.GetSection(RedisOptions.SectionName));
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
+        builder.Services.Configure<TripStatusAutoSyncOptions>(builder.Configuration.GetSection(TripStatusAutoSyncOptions.SectionName));
         builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
         builder.Services.Configure<IncidentGpsHookOptions>(options =>
         {
@@ -205,6 +206,7 @@ public static class DependencyInjection
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHostedService<CharterBookingExpirationHostedService>();
         builder.Services.AddHostedService<TicketExpirationHostedService>();
+        builder.Services.AddHostedService<TripStatusAutoSyncService>();
     }
 
     /// <summary>
