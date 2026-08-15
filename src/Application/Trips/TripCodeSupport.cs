@@ -21,9 +21,13 @@ public static class TripCodeSupport
     public static string BuildCharterBookingTripCode(
         Booking booking,
         int boatOrder) =>
-        // tripCode không gắn prefix ngày để tránh drift khi admin đổi ngày khởi hành
-        // của charter booking sau khi trip đã tạo; ngày chạy thật nằm ở Trip.OperatingDate.
-        $"{BookingCharterPrefix}-{booking.BookingCode}-{boatOrder}";
+        // Format: BR-yyyyMMdd-{BookingCode}-{order}
+        // Ngày chạy thật nằm ở Trip.OperatingDate; tripCode gắn date prefix để
+        // truy vết nhanh, nhưng hàm tái tạo tripCode (vd. khi tái dựng manifest)
+        // vẫn lấy OperatingDate hiện tại của trip để tránh lệch.
+        booking.DepartureDate.HasValue
+            ? $"{BookingCharterPrefix}-{booking.DepartureDate.Value:yyyyMMdd}-{booking.BookingCode}-{boatOrder}"
+            : $"{BookingCharterPrefix}-{booking.BookingCode}-{boatOrder}";
 
     private static string ResolvePrefix(string routeType) =>
         string.Equals(routeType, RouteTypes.SightseeingLoop, StringComparison.OrdinalIgnoreCase)
