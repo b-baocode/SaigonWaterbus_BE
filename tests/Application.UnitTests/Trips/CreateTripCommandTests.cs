@@ -14,9 +14,9 @@ namespace SaigonWaterbus.Application.UnitTests.Trips;
 public class CreateTripCommandTests
 {
     [Test]
-    public void TripCreationLeadTimeIsFiveMinutes()
+    public void TripCreationLeadTimeIsTwentyMinutes()
     {
-        TripScheduleSupport.MinimumCreationLeadTime.ShouldBe(TimeSpan.FromMinutes(5));
+        TripScheduleSupport.MinimumCreationLeadTime.ShouldBe(TimeSpan.FromMinutes(20));
     }
 
     [Test]
@@ -272,8 +272,8 @@ public class CreateTripCommandTests
         context.AddRange(route, boat, existingTrip);
         await context.SaveChangesAsync();
 
-        // Chuyen truoc ket thuc 09:00; chuyen moi khoi hanh 09:10 -> chi cach 10 phut < 15 phut quay dau.
-        var tooSoon = existingDeparture.AddHours(1).AddMinutes(10);
+        // Chuyen truoc ket thuc 09:00; chuyen moi khoi hanh 09:03 -> chi cach 3 phut < 5 phut quay dau.
+        var tooSoon = existingDeparture.AddHours(1).AddMinutes(3);
 
         await Should.ThrowAsync<ValidationException>(() =>
             new CreateTripCommandHandler(context)
@@ -308,7 +308,7 @@ public class CreateTripCommandTests
         context.AddRange(outbound, inbound, boat, existingTrip);
         await context.SaveChangesAsync();
 
-        // Chuyen truoc den Ben B luc 09:00; chuyen nguoc xuat phat tu Ben B luc 09:20 -> du 15 phut quay dau.
+        // Chuyen truoc den Ben B luc 09:00; chuyen nguoc xuat phat tu Ben B luc 09:20 -> du 5 phut quay dau.
         var farEnough = existingDeparture.AddHours(1).AddMinutes(20);
         await AddRequiredOnBoardStaffAsync(context, boat, farEnough);
 
@@ -319,7 +319,7 @@ public class CreateTripCommandTests
     }
 
     [Test]
-    public async Task CreateTripRejectsDepartureFromSameStationWithinTenMinutes()
+    public async Task CreateTripRejectsDepartureFromSameStationWithinFiveMinutes()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var stationA = Station("A", "Ben A");
@@ -354,11 +354,11 @@ public class CreateTripCommandTests
                         "R2",
                         "BOAT-2",
                         DateOnly.FromDateTime(existingDeparture.Date),
-                        existingDeparture.AddMinutes(5)),
+                        existingDeparture.AddMinutes(3)),
                     CancellationToken.None));
 
         exception.Errors.Values.SelectMany(x => x).Single()
-            .ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 10 phút");
+            .ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 5 phút");
     }
 
     [Test]
@@ -651,14 +651,14 @@ public class CreateTripCommandTests
         result.Items.Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
             .ShouldBe([
                 new TimeSpan(8, 0, 0),
-                new TimeSpan(9, 43, 0),
-                new TimeSpan(11, 26, 0)
+                new TimeSpan(9, 33, 0),
+                new TimeSpan(11, 6, 0)
             ]);
         result.Items.Select(x => x.ArrivalTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
             .ShouldBe([
                 new TimeSpan(9, 28, 0),
-                new TimeSpan(11, 11, 0),
-                new TimeSpan(12, 54, 0)
+                new TimeSpan(11, 1, 0),
+                new TimeSpan(12, 34, 0)
             ]);
         result.Items.ShouldAllBe(x => x.CanCreate);
     }
@@ -753,8 +753,8 @@ public class CreateTripCommandTests
             })
             .ShouldBe([
                 new { RouteCode = "OUT", Departure = new TimeSpan(8, 0, 0) },
-                new { RouteCode = "IN", Departure = new TimeSpan(9, 43, 0) },
-                new { RouteCode = "OUT", Departure = new TimeSpan(11, 26, 0) }
+                new { RouteCode = "IN", Departure = new TimeSpan(9, 33, 0) },
+                new { RouteCode = "OUT", Departure = new TimeSpan(11, 6, 0) }
             ]);
     }
 
@@ -794,14 +794,14 @@ public class CreateTripCommandTests
         preview.Items.Select(x => x.DepartureTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
             .ShouldBe([
                 new TimeSpan(8, 0, 0),
-                new TimeSpan(9, 44, 0),
-                new TimeSpan(11, 28, 0)
+                new TimeSpan(9, 34, 0),
+                new TimeSpan(11, 8, 0)
             ]);
         preview.Items.Select(x => x.ArrivalTime.ToOffset(TimeSpan.FromHours(7)).TimeOfDay)
             .ShouldBe([
                 new TimeSpan(9, 29, 0),
-                new TimeSpan(11, 13, 0),
-                new TimeSpan(12, 57, 0)
+                new TimeSpan(11, 3, 0),
+                new TimeSpan(12, 37, 0)
             ]);
 
         var generateHandler = new GenerateTripsCommandHandler(context);
@@ -969,7 +969,7 @@ public class CreateTripCommandTests
                 new GenerateTripsCommand(
                     RouteCode: "R2",
                     BoatCode: "BOAT-2",
-                    DepartureTimes: [new TimeOnly(8, 5)],
+                    DepartureTimes: [new TimeOnly(8, 3)],
                     FromDate: DateOnly.FromDateTime(existingDeparture.Date),
                     ToDate: DateOnly.FromDateTime(existingDeparture.Date)),
                 CancellationToken.None);
@@ -980,8 +980,8 @@ public class CreateTripCommandTests
         var skippedItem = result.SkippedItems.Single();
         skippedItem.ConflictTripCode.ShouldBe("TR-STATION");
         skippedItem.EarliestAllowedDepartureTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
-            .ShouldBe(new TimeSpan(8, 10, 0));
-        skippedItem.Reason.ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 10 phút");
+            .ShouldBe(new TimeSpan(8, 5, 0));
+        skippedItem.Reason.ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 5 phút");
     }
 
     [Test]

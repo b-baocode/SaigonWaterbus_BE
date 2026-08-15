@@ -32,15 +32,15 @@ internal static class TripScheduleSupport
         DateTimeOffset EarliestAllowedDeparture);
 
     /// <summary>Thoi gian quay dau toi thieu giua 2 chuyen cua cung mot tau.</summary>
-    public static readonly TimeSpan BoatTurnaroundBuffer = TimeSpan.FromMinutes(15);
+    public static readonly TimeSpan BoatTurnaroundBuffer = TimeSpan.FromMinutes(5);
 
     /// <summary>Cac chuyen xuat phat cung mot ben phai gian cach de staff check ve/len tau.</summary>
-    public static readonly TimeSpan StationDepartureBuffer = TimeSpan.FromMinutes(10);
+    public static readonly TimeSpan StationDepartureBuffer = TimeSpan.FromMinutes(5);
 
     /// <summary>
-    /// Cho phép tạo trip trước giờ khởi hành 5 phút.
+    /// Cho phép tạo trip trước giờ khởi hành 20 phút.
     /// </summary>
-    public static readonly TimeSpan MinimumCreationLeadTime = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan MinimumCreationLeadTime = TimeSpan.FromMinutes(20);
 
     /// <summary>Gio khoi hanh qua sat (hoac da troi qua) so voi thoi diem tao chuyen.</summary>
     public static bool IsTooSoonToCreate(DateTimeOffset departureTime, DateTimeOffset now) =>

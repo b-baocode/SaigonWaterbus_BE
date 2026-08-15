@@ -37,8 +37,8 @@ public sealed class GenerateTripsSchedulePlannerTests
 
         var warning = result.SkippedItems.Single();
         LocalTime(warning.RequestedDepartureTime).ShouldBe(new TimeOnly(9, 20));
-        LocalTime(warning.EarliestAllowedDepartureTime!.Value).ShouldBe(new TimeOnly(9, 55));
-        warning.Reason.ShouldContain("Chuyến mới chỉ được khởi hành sớm nhất lúc 09:55");
+        LocalTime(warning.EarliestAllowedDepartureTime!.Value).ShouldBe(new TimeOnly(9, 45));
+        warning.Reason.ShouldContain("Chuyến mới chỉ được khởi hành sớm nhất lúc 09:45");
     }
 
     [Test]
