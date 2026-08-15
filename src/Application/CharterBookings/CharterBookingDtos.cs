@@ -256,7 +256,7 @@ public sealed record CharterBookingDetailDto(
     IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats,
     IReadOnlyList<CharterBookingSelectedBoatDto> SelectedBoats,
     string? PreferredSeatSetupType,
-    DateOnly DepartureDate,
+    DateOnly? DepartureDate,
     TimeOnly? StartTime,
     string? RentalUnit,
     int? DurationValue,

@@ -37,8 +37,14 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
         var sourceBooking = trip.SourceBookingId.HasValue
             ? await _context.Set<Booking>()
                 .Include(x => x.ItineraryStops)
+                .Include(x => x.Passengers)
+                    .ThenInclude(p => p.Tickets)
                 .SingleOrDefaultAsync(x => x.Id == trip.SourceBookingId.Value, cancellationToken)
             : null;
+
+        var charterPassengers = sourceBooking is null
+            ? null
+            : CharterTripPassengerMapper.FromBooking(sourceBooking);
 
         var now = _timeProvider.GetUtcNow();
         var assignments = await LoadTripAssignmentsAsync(trip, cancellationToken);
@@ -83,7 +89,8 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             onBoardStaff,
             passengerCounts.TotalPassengerCount,
             onboardPassengerCount,
-            incidentInfo);
+            incidentInfo,
+            charterPassengers);
     }
 
     private async Task<TripIncidentInfoDto?> LoadIncidentInfoAsync(
@@ -97,14 +104,22 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementTargetStation)
             .Where(x => x.TripId == trip.Id)
-            .OrderByDescending(x => x.ResolutionStatus == IncidentSupport.OpenStatus)
-            .ThenByDescending(x => x.OccurredAt)
+            .OrderByDescending(x => x.OccurredAt)
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(cancellationToken);
         if (incident is null)
         {
             return null;
         }
+
+        // Null-guard: Boat có thể null nếu navigation bị filter hoặc Boat đã bị soft-delete.
+        // DTO dùng string non-nullable cho OriginalBoatName/Code → fallback "".
+        var boatName = incident.Boat?.Name ?? string.Empty;
+        var boatCode = incident.Boat?.Code ?? string.Empty;
+        var rescueBoatName = incident.RescueBoat?.Name;
+        var rescueBoatCode = incident.RescueBoat?.Code;
+        var replacementBoatName = incident.ReplacementBoat?.Name;
+        var replacementBoatCode = incident.ReplacementBoat?.Code;
 
         return new TripIncidentInfoDto(
             incident.Id,
@@ -113,14 +128,14 @@ public sealed class GetTripDetailQueryHandler : IRequestHandler<GetTripDetailQue
             incident.ResolutionStatus,
             incident.OccurredAt,
             incident.BoatId,
-            incident.Boat.Name,
-            incident.Boat.Code,
+            boatName,
+            boatCode,
             incident.RescueBoatId,
-            incident.RescueBoat?.Name,
-            incident.RescueBoat?.Code,
+            rescueBoatName,
+            rescueBoatCode,
             incident.ReplacementBoatId,
-            incident.ReplacementBoat?.Name,
-            incident.ReplacementBoat?.Code,
+            replacementBoatName,
+            replacementBoatCode,
             incident.ReplacementBoatId.HasValue && trip.BoatId == incident.ReplacementBoatId,
             incident.ReplacementMissionType,
             incident.ReplacementTargetStationId,

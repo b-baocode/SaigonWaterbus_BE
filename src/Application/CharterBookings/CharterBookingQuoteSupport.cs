@@ -251,6 +251,18 @@ internal static class CharterBookingQuoteSupport
                 "Không thể chốt giá cho booking đã hủy, đã xác nhận hoặc đã hoàn tất.")]);
         }
 
+        if (!booking.DepartureDate.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(booking.DepartureDate),
+                "Charter booking chưa có ngày khởi hành. Yêu cầu khách cập nhật ngày trước khi admin chốt giá.")]);
+        }
+
+        if (!booking.StartTime.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(booking.StartTime),
+                "Charter booking chưa có giờ khởi hành. Yêu cầu khách cập nhật giờ trước khi admin chốt giá.")]);
+        }
+
         if (booking.Payments.Any(x =>
                 string.Equals(x.PaymentStatus, PendingPaymentStatus, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(x.PaymentStatus, PaidPaymentStatus, StringComparison.OrdinalIgnoreCase)))

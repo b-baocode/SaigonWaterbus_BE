@@ -33,11 +33,30 @@ public sealed class TicketExpirationHostedService : BackgroundService
     {
         using var timer = new PeriodicTimer(ScanInterval);
 
-        await ExpireOverdueTicketsAsync(stoppingToken);
+        await SafeExpireAsync(stoppingToken);
 
         while (await timer.WaitForNextTickAsync(stoppingToken))
         {
+            await SafeExpireAsync(stoppingToken);
+        }
+    }
+
+    private async Task SafeExpireAsync(CancellationToken stoppingToken)
+    {
+        try
+        {
             await ExpireOverdueTicketsAsync(stoppingToken);
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            // Host đang shutdown — bình thường.
+            throw;
+        }
+        catch (Exception ex)
+        {
+            // Log và tiếp tục — KHÔNG để exception bubble lên Host (mặc định StopHost
+            // sẽ tắt cả app). Job retry sau ScanInterval tiếp theo.
+            _logger.LogError(ex, "Ticket expiration scan failed; will retry on next interval.");
         }
     }
 

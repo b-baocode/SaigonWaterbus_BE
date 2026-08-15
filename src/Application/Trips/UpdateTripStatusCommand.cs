@@ -109,7 +109,11 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         await NotificationSupport.PublishCreatedAsync(
             _notificationRealtimeNotifier, createdNotifications, cancellationToken);
 
-        return ToDetailDto(trip, sourceBooking);
+        var charterPassengers = sourceBooking is null
+            ? null
+            : CharterTripPassengerMapper.FromBooking(sourceBooking);
+
+        return ToDetailDto(trip, sourceBooking, charterPassengers: charterPassengers);
     }
 
     internal static TripDetailDto ToDetailDto(
@@ -119,7 +123,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         IReadOnlyList<TripStaffAssignmentDto>? onBoardStaff = null,
         int totalPassengerCount = 0,
         int onboardPassengerCount = 0,
-        TripIncidentInfoDto? incidentInfo = null) => new(
+        TripIncidentInfoDto? incidentInfo = null,
+        IReadOnlyList<CharterTripPassengerInfoDto>? charterPassengers = null) => new(
         trip.Id, trip.TripCode,
         trip.Route.Id, trip.Route.RouteName,
         trip.Route.RouteType,
@@ -144,7 +149,31 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         trip.AdjustedDepartureTime,
         trip.AdjustedArrivalTime,
         incidentInfo,
-        OperatingStatus: ResolveOperatingStatus(trip, incidentInfo));
+        OperatingStatus: ResolveOperatingStatus(trip, incidentInfo),
+        CharterInfo: sourceBooking is null ? null : ToCharterInfoDto(sourceBooking, charterPassengers));
+
+    private static CharterTripInfoDto ToCharterInfoDto(
+        Booking booking,
+        IReadOnlyList<CharterTripPassengerInfoDto>? passengers = null) => new(
+        booking.Id,
+        booking.BookingCode,
+        booking.BookingStatus.ToString(),
+        booking.ContactName,
+        booking.ContactPhone,
+        booking.ContactEmail,
+        booking.PassengerCount,
+        booking.AdultCount,
+        booking.ChildCount,
+        booking.SpecialRequests,
+        booking.BoatRequirements,
+        booking.PreferredSeatSetupType?.ToString(),
+        booking.RequestedBoatCount,
+        booking.RentalUnit?.ToString(),
+        booking.DurationValue,
+        booking.CharterBookingQrToken,
+        booking.CharterRouteId,
+        booking.ReturnTripId,
+        passengers);
 
     private static string ResolveOperatingStatus(Trip trip, TripIncidentInfoDto? incidentInfo) =>
         incidentInfo is not null
@@ -162,6 +191,8 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         return await _context.Set<Booking>()
             .Include(x => x.ItineraryStops)
             .Include(x => x.CharterRoute)
+            .Include(x => x.Passengers)
+                .ThenInclude(p => p.Tickets)
             .SingleOrDefaultAsync(x => x.Id == trip.SourceBookingId.Value, cancellationToken);
     }
 

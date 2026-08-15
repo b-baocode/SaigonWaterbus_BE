@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Http.Features;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Hosting;
 using Npgsql;
 using SaigonWaterbus.Infrastructure.Data;
 
@@ -19,6 +20,11 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.MaxRequestBodySize = 60 * 1024 * 1024);
 builder.Services.Configure<FormOptions>(options =>
     options.MultipartBodyLengthLimit = 60 * 1024 * 1024);
+
+// Tránh tắt cả app khi 1 BackgroundService ném exception (mặc định StopHost).
+// Job sẽ tự retry ở interval kế tiếp; chỉ shutdown khi host thật sự nhận signal.
+builder.Services.Configure<HostOptions>(options =>
+    options.BackgroundServiceExceptionBehavior = BackgroundServiceExceptionBehavior.Ignore);
 
 var app = builder.Build();
 

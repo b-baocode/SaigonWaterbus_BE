@@ -18,7 +18,9 @@ public sealed class CharterBookingBoatConfiguration : IEntityTypeConfiguration<C
         builder.Property(x => x.BoatOrder).HasColumnName("boat_order").IsRequired();
         builder.Property(x => x.SeatSetupType)
             .HasColumnName("seat_setup_type")
-            .HasConversion<string>()
+            .HasConversion(
+                v => v.ToString(),
+                v => BoatConfigurationFallbacks.ParseSeatSetupType(v))
             .HasMaxLength(30)
             .IsRequired();
         builder.Property(x => x.UnitPrice)

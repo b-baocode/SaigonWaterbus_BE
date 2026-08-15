@@ -80,7 +80,9 @@ public sealed class BoatConfiguration : IEntityTypeConfiguration<Boat>
 
         builder.Property(x => x.SeatSetupType)
             .HasColumnName("seat_setup_type")
-            .HasConversion<string>()
+            .HasConversion(
+                v => v.ToString(),
+                v => BoatConfigurationFallbacks.ParseSeatSetupType(v))
             .HasMaxLength(30)
             .IsRequired();
 

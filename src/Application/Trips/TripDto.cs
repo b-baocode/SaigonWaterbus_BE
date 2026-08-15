@@ -75,7 +75,61 @@ public sealed record TripDetailDto(
     DateTimeOffset? AdjustedDepartureTime = null,
     DateTimeOffset? AdjustedArrivalTime = null,
     TripIncidentInfoDto? IncidentInfo = null,
-    string? OperatingStatus = null);
+    string? OperatingStatus = null,
+    CharterTripInfoDto? CharterInfo = null);
+
+public sealed record CharterTripInfoDto(
+    Guid BookingId,
+    string BookingCode,
+    string BookingStatus,
+    string CustomerName,
+    string CustomerPhone,
+    string? CustomerEmail,
+    int? PassengerCount,
+    int? AdultCount,
+    int? ChildCount,
+    string? SpecialRequests,
+    string? BoatRequirements,
+    string? PreferredSeatSetupType,
+    int? RequestedBoatCount,
+    string? RentalUnit,
+    int? DurationValue,
+    string? CharterBookingQrToken,
+    Guid? CharterRouteId,
+    Guid? ReturnTripId,
+    IReadOnlyList<CharterTripPassengerInfoDto>? Passengers = null);
+
+/// <summary>
+/// Thông tin hành khách đi cùng chuyến charter, gọn nhẹ cho TripDetail/CharterInfo.
+/// Lấy từ BookingPassenger của charter booking liên kết (qua SourceBookingId).
+/// </summary>
+public sealed record CharterTripPassengerInfoDto(
+    Guid PassengerId,
+    string FullName,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PhoneNumber,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Email,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateOnly? DateOfBirth,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    int? BirthYear,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Gender,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? PassengerType,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? Nationality,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TicketId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TicketCode,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? TicketStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? CheckedInAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? CheckedOutAt);
 
 public sealed record TripIncidentInfoDto(
     Guid IncidentId,

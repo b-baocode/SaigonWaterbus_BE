@@ -77,7 +77,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(x => x.RequestedBoatTypes).HasColumnName("requested_boat_types").HasMaxLength(1000);
         builder.Property(x => x.PreferredSeatSetupType)
             .HasColumnName("preferred_seat_setup_type")
-            .HasConversion<string>()
+            .HasConversion(PreferredSeatSetupTypeConverter)
             .HasMaxLength(30);
         builder.Property(x => x.BoatRequirements).HasColumnName("boat_requirements").HasMaxLength(1000);
         builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
@@ -156,4 +156,31 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         var json = SerializeInsuranceSnapshot(snapshot);
         return json is null ? 0 : json.GetHashCode();
     }
+
+    /// <summary>
+    /// DB cũ có giá trị "Banquet" (enum cũ / seed cũ) không còn trong enum SeatSetupType.
+    /// Default StringEnumConverter sẽ ném InvalidOperationException, làm crash mọi query load
+    /// Booking có PreferredSeatSetupType set. Converter này fallback về null cho giá trị lạ.
+    /// </summary>
+    private static SeatSetupType? ParsePreferredSeatSetupType(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        foreach (var name in Enum.GetNames<SeatSetupType>())
+        {
+            if (string.Equals(name, value, StringComparison.OrdinalIgnoreCase))
+            {
+                return Enum.Parse<SeatSetupType>(name, ignoreCase: true);
+            }
+        }
+
+        return null;
+    }
+
+    private static readonly Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<SeatSetupType?, string?> PreferredSeatSetupTypeConverter = new(
+        v => v.HasValue ? v.Value.ToString() : null,
+        v => ParsePreferredSeatSetupType(v));
 }

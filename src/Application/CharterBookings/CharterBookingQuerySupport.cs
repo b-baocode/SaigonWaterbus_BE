@@ -73,7 +73,7 @@ internal static class CharterBookingQuerySupport
             requestedBoatDtos,
             selectedBoatDtos,
             booking.PreferredSeatSetupType?.ToString(),
-            booking.DepartureDate.GetValueOrDefault(),
+            booking.DepartureDate,
             booking.StartTime,
             booking.RentalUnit?.ToString(),
             booking.DurationValue,
