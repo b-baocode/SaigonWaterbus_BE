@@ -116,21 +116,16 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         }
 
         // Trip Cancelled → booking gốc tự động sang Hủy (đã hủy thì cũng phải hủy).
+        // Lưu ý: notification cho khách đã được AddTripStatusChangedNotificationsAsync xử lý ở trên
+        // (Type=trip_cancelled, RelatedEntityId=booking). Không gọi thêm notification charter_cancelled
+        // ở đây để tránh duplicate cùng (user, booking).
         else if (request.TripStatus == TripStatus.Cancelled && oldStatus != TripStatus.Cancelled)
         {
-            var cancellationChanged = await CharterBookingTripSupport.CancelLinkedBookingAsync(
+            await CharterBookingTripSupport.CancelLinkedBookingAsync(
                 _context,
                 trip,
                 now,
                 cancellationToken);
-            if (cancellationChanged && sourceBooking is not null)
-            {
-                createdNotifications.AddRange(await NotificationSupport.AddCharterBookingCancelledNotificationsAsync(
-                    _context,
-                    sourceBooking,
-                    now,
-                    cancellationToken));
-            }
         }
 
         if (ShouldDeactivateCharterRoute(trip, oldStatus, sourceBooking))
