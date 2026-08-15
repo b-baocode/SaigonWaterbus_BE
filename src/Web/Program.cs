@@ -182,7 +182,6 @@ app.UseAuthorization();
 
 app.UseFileServer();
 
-// Override Content-Type cho Apple App Site Association (iOS yêu cầu application/json).
 app.MapGet("/.well-known/apple-app-site-association", async (HttpContext ctx, IWebHostEnvironment env) =>
 {
     var path = Path.Combine(env.WebRootPath, ".well-known", "apple-app-site-association");
