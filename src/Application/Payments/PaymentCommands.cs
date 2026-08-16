@@ -701,6 +701,66 @@ public sealed class GetRefundOtpOptionsQueryHandler
     }
 }
 
+public sealed record GetPaidPaymentByBookingIdQuery(
+    Guid BookingId,
+    bool? IsCharterBooking = null)
+    : IRequest<Guid>;
+
+public sealed class GetPaidPaymentByBookingIdQueryHandler
+    : IRequestHandler<GetPaidPaymentByBookingIdQuery, Guid>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+
+    public GetPaidPaymentByBookingIdQueryHandler(
+        IApplicationDbContext context,
+        IUserContext userContext)
+    {
+        _context = context;
+        _userContext = userContext;
+    }
+
+    public async Task<Guid> Handle(GetPaidPaymentByBookingIdQuery request, CancellationToken cancellationToken)
+    {
+        var userId = _userContext.UserId
+            ?? throw new UnauthorizedAccessException();
+
+        var booking = await _context.Set<Booking>()
+            .Include(x => x.Payments)
+            .FirstOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
+            ?? throw new NotFoundException("Booking not found.");
+
+        // Customer chỉ refund được booking của mình; staff/admin refund được mọi booking.
+        var currentUser = await AuthSupport.TryGetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        var isCustomer = currentUser is not null && AuthSupport.IsCustomer(currentUser);
+        if (isCustomer && booking.UserId != userId)
+        {
+            throw new NotFoundException("Booking not found.");
+        }
+
+        // Validate loại booking nếu FE truyền isCharterBooking (optional).
+        if (request.IsCharterBooking.HasValue)
+        {
+            var isCharter = Booking.CharterBookingType.Equals(booking.BookingType, StringComparison.OrdinalIgnoreCase);
+            if (request.IsCharterBooking.Value != isCharter)
+            {
+                throw new ValidationException([new ValidationFailure("isCharterBooking",
+                    $"Booking này không phải loại {(request.IsCharterBooking.Value ? "Charter" : "Route")} - không thể refund với isCharterBooking={request.IsCharterBooking.Value}.")]);
+            }
+        }
+
+        // Tìm payment settlement (PayOS/Counter/Free) đã thanh toán gần nhất của booking.
+        var paidPayment = booking.Payments
+            .Where(x => PaymentSupport.IsSettlementPayment(x) && PaymentSupport.IsPaid(x.PaymentStatus))
+            .OrderByDescending(x => x.Created)
+            .FirstOrDefault()
+            ?? throw new ValidationException([new ValidationFailure("bookingId",
+                "Booking chưa có payment đã thanh toán. Không thể hoàn tiền.")]);
+
+        return paidPayment.Id;
+    }
+}
+
 public sealed class RequestRefundOtpCommandValidator : AbstractValidator<RequestRefundOtpCommand>
 {
     public RequestRefundOtpCommandValidator()

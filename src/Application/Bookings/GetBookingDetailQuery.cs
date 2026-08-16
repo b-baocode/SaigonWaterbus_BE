@@ -65,7 +65,9 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             var legTrip = i.TripId.HasValue && i.TripId == booking.ReturnTripId
                 ? booking.ReturnTrip
                 : booking.Trip;
-            var stops = legTrip?.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray() ?? [];
+            var stops = (legTrip?.Route?.RouteStops ?? Enumerable.Empty<RouteStop>())
+                .OrderBy(x => x.StopOrder)
+                .ToArray();
             var fromStop = stops.FirstOrDefault();
             var toStop = stops.LastOrDefault();
             var fromStationId = i.FromStationId ?? fromStop?.StationId;
@@ -97,8 +99,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 i.TripSeat?.Seat?.Code,
                 // Chặng riêng của hành khách (ghế bán theo chặng); dữ liệu cũ chưa lưu trạm
                 // thì rơi về trạm đầu/cuối tuyến như trước.
-                i.FromStation?.StationName ?? fromStop?.Station.StationName ?? string.Empty,
-                i.ToStation?.StationName ?? toStop?.Station.StationName ?? string.Empty,
+                i.FromStation?.StationName ?? fromStop?.Station?.StationName ?? string.Empty,
+                i.ToStation?.StationName ?? toStop?.Station?.StationName ?? string.Empty,
                 segmentTimes?.Departure,
                 segmentTimes?.Arrival,
                 i.UnitPrice ?? 0,
@@ -158,8 +160,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                     x.RefundProcessedByUserId,
                     x.RefundedAt))
                 .ToList(),
-            BookingServiceTypes.Resolve(booking.Trip?.Route.RouteType),
-            booking.Trip?.Route.RouteType,
+            BookingServiceTypes.Resolve(booking.Trip?.Route?.RouteType),
+            booking.Trip?.Route?.RouteType,
             booking.ReturnTrip?.TripCode,
             booking.ReturnTrip?.DepartureTime,
             BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),

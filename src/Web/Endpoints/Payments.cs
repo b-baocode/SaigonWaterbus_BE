@@ -124,6 +124,17 @@ public sealed class Payments : IEndpointGroup
                 "accountName bat buoc do khach/FE nhap thu cong; BE khong tu tra cuu ten chu tai khoan.",
                 "Khong nhan amount tu client; backend tu tinh so tien hoan tu payment.Amount, payment.RefundAmount va chinh sach hoan tien."));
 
+        group.MapPost(RefundPaymentByBooking, "booking/refund/{bookingId:guid}")
+            .RequireAuthorization()
+            .WithSummary("Hoan tien theo bookingId (FE khong can biet paymentId)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                RefundPaymentExample,
+                "Endpoint tien ich: FE chi can truyen bookingId, BE tu tim payment Paid gan nhat cua booking va forward sang RefundPaymentCommand.",
+                "Dung cho ca charter booking va route booking - BE tu loc payment settlement (PayOS/Counter/Free) da thanh toan.",
+                "Query isCharterBooking (optional, default=false) chi dung de validate dung loai booking; khong anh huong logic refund.",
+                "Response cho refund = 0 dong (huy duoi 24h truoc gio khoi hanh): tra ve PaymentDto voi refundAmount=0, refundStatus=Refunded."));
+
         group.MapPost(ManualRefundPayment, "{paymentId:guid}/manual-refund")
             .RequireAuthorization()
             .WithSummary("Admin ghi nhan hoan tien thu cong")
@@ -202,6 +213,26 @@ public sealed class Payments : IEndpointGroup
             request.AccountName,
             request.OtpChallengeId,
             request.OtpCode), ct));
+
+    private static async Task<IResult> RefundPaymentByBooking(
+        ISender sender,
+        Guid bookingId,
+        bool? isCharterBooking,
+        RefundPaymentRequest request,
+        CancellationToken ct)
+    {
+        var paymentId = await sender.Send(
+            new GetPaidPaymentByBookingIdQuery(bookingId, isCharterBooking), ct);
+
+        return Results.Ok(await sender.Send(new RefundPaymentCommand(
+            paymentId,
+            request.Reason,
+            request.BankBin,
+            request.AccountNumber,
+            request.AccountName,
+            request.OtpChallengeId,
+            request.OtpCode), ct));
+    }
 
     private static async Task<IResult> ManualRefundPayment(
         ISender sender,
