@@ -990,7 +990,7 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
-    public async Task RefundCharterBookingIsRejectedUnder24Hours()
+    public async Task RefundCharterBookingZeroRefundsUnder24Hours()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
@@ -1005,12 +1005,19 @@ public class CreatePaymentCommandTests
             payment,
             now);
 
-        var exception = await Should.ThrowAsync<ValidationException>(() =>
-            handler.Handle(
-                CreateRefundCommand(payment, otpChallenge),
-                CancellationToken.None));
+        // Huỷ dưới 24 giờ trước giờ khởi hành: refund = 0đ, BE đóng sổ booking trực tiếp,
+        // KHÔNG yêu cầu OTP và KHÔNG gọi PayOS.
+        var result = await handler.Handle(
+            CreateRefundCommand(payment, otpChallenge),
+            CancellationToken.None);
 
-        exception.Errors["refund"].Single().ShouldContain("dưới 24 giờ");
+        payment.RefundStatus.ShouldBe("Refunded");
+        payment.RefundAmount.ShouldBe(0m);
+        payment.RefundRequestedAmount.ShouldBe(0m);
+        payment.RefundMethod.ShouldBe("Manual");
+        booking.BookingStatus.ShouldBe(BookingStatus.Cancelled);
+        booking.PaymentStatus.ShouldBe("Refunded");
+        result.ShouldNotBeNull();
     }
 
     [Test]

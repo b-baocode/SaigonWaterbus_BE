@@ -993,6 +993,15 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
             payment,
             now,
             cancellationToken);
+
+        // Khi chính sách cho refund 0đ (huỷ dưới 24 giờ trước giờ khởi hành): bỏ qua OTP + PayOS,
+        // đóng sổ trực tiếp để booking chuyển sang trạng thái Refunded.
+        if (refundAmount <= 0)
+        {
+            await CloseBookingWithZeroRefundAsync(payment, request, now, cancellationToken);
+            return PaymentSupport.ToDto(payment.Booking, payment);
+        }
+
         await VerifyRefundOtpAsync(payment, request.OtpChallengeId, request.OtpCode, now, cancellationToken);
 
         var referenceId = PaymentSupport.CreateRefundReference(payment, now);
@@ -1040,6 +1049,32 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         await _context.SaveChangesAsync(cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
+    }
+
+    private async Task CloseBookingWithZeroRefundAsync(
+        Payment payment,
+        RefundPaymentCommand request,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var referenceId = PaymentSupport.CreateRefundReference(payment, now);
+        payment.RefundStatus = PaymentSupport.RefundedStatus;
+        payment.RefundRequestedAmount = 0m;
+        payment.RefundAmount = 0m;
+        payment.RefundMethod = PaymentSupport.ManualRefundMethod;
+        payment.RefundReason = string.IsNullOrWhiteSpace(request.Reason)
+            ? "Đóng sổ booking theo chính sách (refund 0đ - hủy dưới 24 giờ trước giờ khởi hành)."
+            : request.Reason.Trim();
+        payment.RefundReferenceId = referenceId;
+        payment.RefundPayoutId = null;
+        payment.RefundFailureReason = null;
+        payment.RefundProcessedByUserId = _userContext.UserId;
+        payment.RefundedAt = now;
+
+        PaymentSupport.ApplyRefundStatus(payment.Booking);
+        await PointSupport.ApplyRefundPointAdjustmentsAsync(_context, payment.Booking, now, cancellationToken);
+        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
+        await _context.SaveChangesAsync(cancellationToken);
     }
 
     private async Task VerifyRefundOtpAsync(
@@ -1228,11 +1263,6 @@ internal static class PaymentSupport
         var departure = await ResolveDepartureAsync(context, payment.Booking, cancellationToken);
         var timeUntilDeparture = departure.HasValue ? departure.Value - now : TimeSpan.MaxValue;
         var refundPercent = ResolveRefundPercent(timeUntilDeparture);
-        if (refundPercent <= 0)
-        {
-            throw new ValidationException([new ValidationFailure("refund",
-                "Theo chính sách hoàn tiền, hủy dưới 24 giờ trước giờ khởi hành sẽ không được hoàn.")]);
-        }
 
         // Tính tổng tất cả payment đã thanh toán của booking (bao gồm payment gốc và thêm người)
         var bookingPayments = payment.Booking.Payments;
@@ -1247,16 +1277,12 @@ internal static class PaymentSupport
         // Số tiền có thể hoàn = Tổng đã thanh toán - Tổng đã hoàn
         var refundableAmount = totalPaidAmount - totalRefundedAmount;
 
-        // Tính refund = min(số tiền có thể hoàn, tổng thanh toán * %)
+        // Tính refund = min(số tiền có thể hoàn, tổng thanh toán * %).
+        // Khi policyPercent = 0% (huỷ dưới 24 giờ trước giờ khởi hành), BE vẫn cho phép
+        // refund 0đ để đóng sổ booking → trạng thái Refunded.
         var refundAmount = Math.Min(Math.Floor(totalPaidAmount * refundPercent), refundableAmount);
 
-        if (refundAmount <= 0)
-        {
-            throw new ValidationException([new ValidationFailure("refund",
-                "Không còn số tiền hợp lệ để hoàn theo chính sách.")]);
-        }
-
-        return refundAmount;
+        return Math.Max(refundAmount, 0m);
     }
 
     public static async Task<decimal> ResolveManualRefundAmountAsync(
@@ -2022,7 +2048,14 @@ internal static class PaymentSupport
             .Where(IsSettlementPayment)
             .Sum(x => x.RefundAmount);
 
-        if (refundedAmount <= 0)
+        // Trường hợp đặc biệt: refund 0đ (huỷ dưới 24 giờ trước giờ khởi hành theo chính sách)
+        // → vẫn đóng sổ booking: set PaymentStatus = Refunded, BookingStatus = Cancelled.
+        // Điều kiện: payment đã được đánh dấu Refunded (qua refund 0đ) nhưng chưa có tiền hoàn thật.
+        var zeroRefundClosed = refundedAmount <= 0
+            && booking.Payments.Any(x => IsSettlementPayment(x)
+                && string.Equals(x.RefundStatus, RefundedStatus, StringComparison.OrdinalIgnoreCase)
+                && x.RefundAmount <= 0);
+        if (refundedAmount <= 0 && !zeroRefundClosed)
         {
             return;
         }
@@ -2038,6 +2071,14 @@ internal static class PaymentSupport
                     payment.PaymentStatus = RefundedStatus;
                 }
             }
+            return;
+        }
+
+        if (zeroRefundClosed)
+        {
+            // Refund 0đ đóng sổ → booking chuyển sang Refunded (không phải partial refund).
+            booking.PaymentStatus = RefundedBookingPaymentStatus;
+            booking.BookingStatus = BookingStatus.Cancelled;
             return;
         }
 

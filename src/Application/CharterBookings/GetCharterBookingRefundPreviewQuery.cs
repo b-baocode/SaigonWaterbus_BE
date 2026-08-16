@@ -71,16 +71,20 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
         var totalPaid = payments
             .Where(p => p.PaymentStatus == BookingPaymentStatusExtensions.PaidValue)
             .Sum(p => p.Amount);
-        var totalRefunded = payments
-            .Where(p => p.PaymentStatus == BookingPaymentStatusExtensions.RefundedValue)
-            .Sum(p => p.RefundAmount);
+        // Tổng đã hoàn lấy từ payment.RefundAmount thực tế (không lọc theo PaymentStatus),
+        // vì partial refund giữ payment.PaymentStatus = "Paid" nhưng đã có RefundAmount > 0.
+        var totalRefunded = payments.Sum(p => p.RefundAmount);
 
         var outstanding = Math.Max(0m, totalPaid - totalRefunded);
 
+        // Chính sách không hoàn tiền (huỷ dưới 24 giờ trước giờ khởi hành) vẫn cho phép "đóng sổ" booking
+        // thông qua POST /payments/{id}/refund với refundAmount = 0 → BE đánh dấu Refunded.
         var canRequestRefund = outstanding > 0m
-            && policyPercent > 0m
             && booking.BookingStatus != BookingStatus.Completed
             && booking.BookingStatus != BookingStatus.Expired;
+
+        var isPartiallyRefunded = outstanding > 0m && totalRefunded > 0m && totalPaid > 0m;
+        var isFullyRefunded = outstanding == 0m && totalPaid > 0m;
 
         var items = new List<RefundablePaymentDto>();
         var remaining = outstanding;
@@ -88,8 +92,10 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             .Where(p => p.PaymentStatus == BookingPaymentStatusExtensions.PaidValue)
             .OrderBy(p => p.Created))
         {
-            var available = Math.Min(p.Amount, Math.Max(0m, remaining));
-            items.Add(new RefundablePaymentDto(p.Id, p.Amount, available));
+            var paymentOutstanding = Math.Max(0m, p.Amount - p.RefundAmount);
+            // Số tiền có thể hoàn cho payment này = min(còn lại của payment, còn lại của tổng outstanding, cap còn lại).
+            var available = Math.Min(paymentOutstanding, Math.Max(0m, remaining));
+            items.Add(new RefundablePaymentDto(p.Id, p.Amount, p.RefundAmount, available));
             remaining = Math.Max(0m, remaining - available);
             if (remaining <= 0m) break;
         }
@@ -101,7 +107,9 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             outstanding,
             policyPercent,
             canRequestRefund,
-            items);
+            items,
+            isPartiallyRefunded,
+            isFullyRefunded);
     }
 
     private static DateTimeOffset? CombineDeparture(DateOnly? date, TimeOnly? time)
@@ -131,9 +139,14 @@ public sealed record CharterBookingRefundPreviewDto(
     decimal OutstandingRefundAmount,
     decimal PolicyPercent,
     bool CanRequestRefund,
-    IReadOnlyList<RefundablePaymentDto> RefundablePayments);
+    IReadOnlyList<RefundablePaymentDto> RefundablePayments,
+    /// <summary>True khi booking đã được hoàn một phần (TotalRefundedAmount > 0 và OutstandingRefundAmount > 0).</summary>
+    bool IsPartiallyRefunded = false,
+    /// <summary>True khi booking đã hoàn đủ toàn bộ (OutstandingRefundAmount = 0 và TotalPaidAmount > 0).</summary>
+    bool IsFullyRefunded = false);
 
 public sealed record RefundablePaymentDto(
     Guid PaymentId,
     decimal PaidAmount,
+    decimal AlreadyRefundedAmount,
     decimal AvailableRefundAmount);

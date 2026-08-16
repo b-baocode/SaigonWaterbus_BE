@@ -30,13 +30,14 @@ internal static class CharterBookingRefundSupport
             : 0m;
 
         var outstandingRefundAmount = Math.Max(paidAmount - refundedAmount, 0m);
-        outstandingRefundAmount = Math.Floor(outstandingRefundAmount * policyPercent);
 
         var policyMessage = BuildPolicyMessage(policyPercent, timeUntilDeparture, paidAmount);
         var canRequestRefund = paidAmount > refundedAmount
-            && policyPercent > 0
             && booking.BookingStatus != Domain.Enums.BookingStatus.Completed
             && booking.BookingStatus != Domain.Enums.BookingStatus.Expired;
+
+        // Khi policyPercent = 0% (huỷ dưới 24 giờ trước giờ khởi hành), chính sách không hoàn tiền
+        // nhưng vẫn cho phép refund 0đ để đóng sổ booking → trạng thái Refunded.
 
         return new CharterBookingRefundSummary(
             paidAmount,
@@ -65,7 +66,7 @@ internal static class CharterBookingRefundSupport
         {
             >= 1.0m => "Hủy trước giờ khởi hành ≥ 3 ngày: được hoàn 100% số tiền đã thanh toán.",
             >= 0.7m => "Hủy trước giờ khởi hành từ 24 giờ đến dưới 3 ngày: được hoàn 70% số tiền đã thanh toán.",
-            _ => "Hủy dưới 24 giờ trước giờ khởi hành: không được hoàn tiền theo chính sách."
+            _ => "Hủy dưới 24 giờ trước giờ khởi hành: không được hoàn tiền theo chính sách, nhưng vẫn có thể đóng sổ booking (refund 0đ)."
         };
     }
 
