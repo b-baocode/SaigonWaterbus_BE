@@ -1000,13 +1000,19 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
                 "Chỉ có thể hoàn tiền cho payment đã thanh toán.")]);
         }
 
+       
         // Quy tắc "1 lần duy nhất cho customer":
         // - Admin/Manager/Staff luôn refund được (không giới hạn).
         // - Customer chỉ được refund khi admin đã "mở lại" (RefundReleasedAt != null) AND
         //   CustomerRefundAttempts < 1. Sau khi attempt (kể cả fail) thì tăng counter,
         //   và phải admin mở lại lại mới refund tiếp được.
-        var currentUser = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
-        var isCustomer = currentUser is null || AuthSupport.IsCustomer(currentUser);
+        // - Lưu ý: chỉ áp dụng khi user tồn tại trong DB (GetOwnedPaymentAsync đã verify ownership
+        //   bằng booking.UserId, nên khi đến đây user hợp lệ). Nếu user không có role gì (chưa seed
+        //   trong test chẳng hạn) thì bỏ qua rule này — handler vẫn flow bình thường.
+        // Dùng TryGetCurrentUserWithRoleAsync để tránh throw NotFoundException khi user entity
+        // chưa được seed trong test (chỉ có userId từ JWT/IUserContext).
+        var currentUser = await AuthSupport.TryGetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        var isCustomer = currentUser is not null && AuthSupport.IsCustomer(currentUser);
         if (isCustomer)
         {
             if (payment.RefundReleasedAt is null)

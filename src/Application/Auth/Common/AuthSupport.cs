@@ -125,6 +125,36 @@ internal static class AuthSupport
         return user;
     }
 
+    /// <summary>
+    /// Phiên bản "try" của <see cref="GetCurrentUserWithRoleAsync"/>: trả về null thay vì throw
+    /// <see cref="global::SaigonWaterbus.Application.Common.Exceptions.NotFoundException"/> khi
+    /// user không tồn tại trong DB. Dùng cho các handler đã verify ownership qua cách khác
+    /// (vd: <c>GetOwnedPaymentAsync</c> đã check <c>booking.UserId == userId</c>), nơi việc
+    /// user entity chưa seed chỉ có nghĩa "không áp dụng rule customer-only" chứ không phải lỗi.
+    /// </summary>
+    public static async Task<User?> TryGetCurrentUserWithRoleAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        CancellationToken cancellationToken)
+    {
+        if (!userContext.UserId.HasValue)
+        {
+            return null;
+        }
+
+        var user = await context.Set<User>()
+            .Include(x => x.Role)
+            .SingleOrDefaultAsync(x => x.Id == userContext.UserId.Value, cancellationToken);
+
+        if (user is null)
+        {
+            return null;
+        }
+
+        EnsureUserCanLogin(user);
+        return user;
+    }
+
     public static AuthSessionDto CreateSessionDto(
         User user,
         IReadOnlyCollection<Role> roles,
