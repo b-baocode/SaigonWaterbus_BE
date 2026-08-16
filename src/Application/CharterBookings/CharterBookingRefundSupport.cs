@@ -20,7 +20,6 @@ internal static class CharterBookingRefundSupport
         var refundedAmount = booking.Payments
             .Where(PaymentSupport.IsSettlementPayment)
             .Sum(x => x.RefundAmount);
-        var outstandingRefundAmount = Math.Max(paidAmount - refundedAmount, 0m);
 
         var departure = ResolveCharterDepartureTime(booking);
         var timeUntilDeparture = departure.HasValue
@@ -29,6 +28,10 @@ internal static class CharterBookingRefundSupport
         var policyPercent = timeUntilDeparture.HasValue
             ? PaymentSupport.ResolveRefundPercent(timeUntilDeparture.Value)
             : 0m;
+
+        var outstandingRefundAmount = Math.Max(paidAmount - refundedAmount, 0m);
+        outstandingRefundAmount = Math.Floor(outstandingRefundAmount * policyPercent);
+
         var policyMessage = BuildPolicyMessage(policyPercent, timeUntilDeparture, paidAmount);
         var canRequestRefund = paidAmount > refundedAmount
             && policyPercent > 0

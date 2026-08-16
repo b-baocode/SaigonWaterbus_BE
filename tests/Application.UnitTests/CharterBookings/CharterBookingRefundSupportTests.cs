@@ -54,6 +54,7 @@ public class CharterBookingRefundSupportTests
 
         summary.PolicyPercent.ShouldBe(0.7m);
         summary.CanRequestRefund.ShouldBeTrue();
+        summary.OutstandingRefundAmount.ShouldBe(700_000m);
         summary.PolicyMessage.ShouldContain("70%");
     }
 
@@ -70,6 +71,7 @@ public class CharterBookingRefundSupportTests
 
         summary.PolicyPercent.ShouldBe(0m);
         summary.CanRequestRefund.ShouldBeFalse();
+        summary.OutstandingRefundAmount.ShouldBe(0m);
         summary.PolicyMessage.ShouldContain("không được hoàn");
     }
 
