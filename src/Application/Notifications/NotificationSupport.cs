@@ -46,6 +46,7 @@ public static class NotificationTypes
     public const string CharterPassengerAddRequested = "charter_passenger_add_requested";
     public const string CharterCancelled = "charter_cancelled";
     public const string CharterCompleted = "charter_completed";
+    public const string CharterBoatMaintenanceAffectsBooking = "charter_boat_maintenance_affects_booking";
     public const string BookingCompleted = "booking_completed";
 }
 
@@ -56,6 +57,7 @@ public static class NotificationRelatedEntityTypes
     public const string Trip = "trip";
     public const string Promotion = "promotion";
     public const string StaffAssignment = "staff_assignment";
+    public const string Boat = "boat";
 }
 
 public static class NotificationSupport
@@ -926,6 +928,121 @@ public static class NotificationSupport
 
     private static string? NormalizeOptional(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    /// <summary>
+    /// Tàu phục vụ charter booking vừa chuyển sang UnderMaintenance (hoặc admin xếp tàu bảo trì,
+    /// incident rescue, ...) → báo cho admin/manager biết để đổi tàu cho các booking đã xác nhận.
+    /// Đồng thời báo cho customer của từng booking để khách hàng yên tâm hệ thống đang xử lý.
+    /// Caller chịu trách nhiệm SaveChanges rồi gọi <see cref="PublishCreatedAsync"/>.
+    /// </summary>
+    public static async Task<IReadOnlyList<Notification>> AddCharterBoatMaintenanceAffectsBookingNotificationsAsync(
+        IApplicationDbContext context,
+        Boat boat,
+        DateTimeOffset? estimatedMaintenanceEndAt,
+        string? maintenanceNote,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        // Booking Quoted/Confirmed dùng tàu này (qua BoatId hoặc CharterBoats) còn departureDate ở tương lai.
+        var futureBookings = await context.Set<Booking>()
+            .Where(b => Booking.IsCharterBookingType(b.BookingType)
+                && b.DepartureDate.HasValue
+                && b.DepartureDate.Value >= DateOnly.FromDateTime(now.UtcDateTime)
+                && (b.BookingStatus == BookingStatus.Confirmed
+                    || b.BookingStatus == BookingStatus.Quoted)
+                && (b.BoatId == boat.Id
+                    || context.Set<CharterBookingBoat>().Any(cb => cb.BookingId == b.Id && cb.BoatId == boat.Id)))
+            .Select(b => new
+            {
+                b.Id,
+                b.BookingCode,
+                b.ContactName,
+                b.DepartureDate,
+                b.UserId,
+                b.AssignedManagerId
+            })
+            .ToListAsync(cancellationToken);
+
+        if (futureBookings.Count == 0)
+        {
+            return [];
+        }
+
+        var created = new List<Notification>();
+        var adminIds = await LoadAdminManagerRecipientIdsAsync(context, cancellationToken);
+        var boatLabel = $"tàu {boat.Name}";
+        var maintenanceHint = estimatedMaintenanceEndAt.HasValue
+            ? $" Dự kiến hoàn tất bảo trì lúc {estimatedMaintenanceEndAt:dd/MM/yyyy HH:mm}."
+            : (!string.IsNullOrWhiteSpace(maintenanceNote) ? $" Ghi chú: {maintenanceNote.Trim()}." : string.Empty);
+
+        // 1. Notification cho admin/manager (gom chung vào 1 group action items).
+        if (adminIds.Count > 0)
+        {
+            var bookingCodes = string.Join(", ", futureBookings.Take(5).Select(x => x.BookingCode));
+            var moreText = futureBookings.Count > 5 ? $" và {futureBookings.Count - 5} booking khác" : string.Empty;
+            var adminBody = $"{boatLabel} vừa chuyển sang bảo trì.{maintenanceHint} "
+                + $"Cần đổi tàu cho {futureBookings.Count} charter booking sắp tới: {bookingCodes}{moreText}.";
+            created.AddRange(AddNotifications(
+                context,
+                adminIds,
+                "Tàu charter vào bảo trì — cần đổi tàu",
+                adminBody,
+                NotificationTypes.CharterBoatMaintenanceAffectsBooking,
+                NotificationRelatedEntityTypes.Boat,
+                boat.Id,
+                now));
+        }
+
+        // 2. Notification riêng cho từng manager được giao booking (nếu chưa nằm trong adminIds).
+        var assignedManagerIds = futureBookings
+            .Where(b => b.AssignedManagerId.HasValue)
+            .Select(b => b.AssignedManagerId!.Value)
+            .Where(id => !adminIds.Contains(id))
+            .Distinct()
+            .ToList();
+        if (assignedManagerIds.Count > 0)
+        {
+            var managerBody = $"{boatLabel} bạn đang dùng cho các charter booking vừa vào bảo trì.{maintenanceHint} "
+                + $"Vui lòng phối hợp admin đổi tàu cho {futureBookings.Count} booking.";
+            created.AddRange(AddNotifications(
+                context,
+                assignedManagerIds,
+                "Tàu charter bạn phụ trách vào bảo trì",
+                managerBody,
+                NotificationTypes.CharterBoatMaintenanceAffectsBooking,
+                NotificationRelatedEntityTypes.Boat,
+                boat.Id,
+                now));
+        }
+
+        // 3. Notification cho customer của từng booking (chỉ booking có UserId, có booking account).
+        var customerNotifications = new List<(Guid userId, string body, Guid bookingId)>();
+        foreach (var booking in futureBookings.Where(b => b.UserId.HasValue))
+        {
+            var departureText = booking.DepartureDate.HasValue
+                ? $" ngày {booking.DepartureDate.Value:dd/MM/yyyy}"
+                : string.Empty;
+            var customerBody = $"Charter booking {booking.BookingCode} của bạn{departureText} đang được hệ thống điều phối lại tàu "
+                + $"do {boatLabel} vào bảo trì.{maintenanceHint} "
+                + "Đội ngũ sẽ liên hệ bạn trong thời gian sớm nhất để xác nhận phương án.";
+            customerNotifications.Add((booking.UserId!.Value, customerBody, booking.Id));
+        }
+
+        foreach (var item in customerNotifications)
+        {
+            created.AddRange(AddNotifications(
+                context,
+                [item.userId],
+                "Charter booking đang được điều phối lại",
+                item.body,
+                NotificationTypes.CharterBoatMaintenanceAffectsBooking,
+                NotificationRelatedEntityTypes.Booking,
+                item.bookingId,
+                now));
+        }
+
+        return created;
+    }
 
     private static string FormatAmount(decimal amount, string currency) =>
         string.Create(CultureInfo.GetCultureInfo("vi-VN"), $"{amount:N0} {currency}");

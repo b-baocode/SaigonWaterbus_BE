@@ -41,8 +41,16 @@ public static class DependencyInjection
         builder.Services.AddDbContext<ApplicationDbContext>((sp, options) =>
         {
             options.AddInterceptors(sp.GetServices<ISaveChangesInterceptor>());
-            options.UseNpgsql(connectionString, o => o.UseNetTopologySuite());
-            options.ConfigureWarnings(warnings => warnings.Ignore(RelationalEventId.PendingModelChangesWarning));
+            options.UseNpgsql(connectionString, npgsql =>
+            {
+                npgsql.UseNetTopologySuite();
+                npgsql.UseQuerySplittingBehavior(QuerySplittingBehavior.SplitQuery);
+            });
+            options.ConfigureWarnings(warnings =>
+            {
+                warnings.Ignore(RelationalEventId.PendingModelChangesWarning);
+                warnings.Ignore(RelationalEventId.MultipleCollectionIncludeWarning);
+            });
         });
 
         builder.EnrichNpgsqlDbContext<ApplicationDbContext>();
