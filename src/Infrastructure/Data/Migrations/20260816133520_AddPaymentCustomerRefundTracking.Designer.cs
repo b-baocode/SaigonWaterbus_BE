@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260816133520_AddPaymentCustomerRefundTracking")]
+    partial class AddPaymentCustomerRefundTracking
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -2234,10 +2237,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(3)")
                         .HasColumnName("currency");
 
-                    b.Property<int>("CustomerRefundAttempts")
-                        .HasColumnType("integer")
-                        .HasColumnName("customer_refund_attempts");
-
                     b.Property<DateTimeOffset?>("ExpiresAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("expires_at");
@@ -2318,18 +2317,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("character varying(100)")
                         .HasColumnName("refund_reference_id");
 
-                    b.Property<DateTimeOffset?>("RefundReleasedAt")
-                        .HasColumnType("timestamp with time zone")
-                        .HasColumnName("refund_released_at");
-
-                    b.Property<Guid?>("RefundReleasedByUserId")
-                        .HasColumnType("uuid")
-                        .HasColumnName("refund_released_by_user_id");
-
-                    b.Property<string>("RefundReleasedReason")
-                        .HasColumnType("text")
-                        .HasColumnName("refund_released_reason");
-
                     b.Property<decimal?>("RefundRequestedAmount")
                         .HasColumnType("numeric(12,2)")
                         .HasColumnName("refund_requested_amount");
@@ -2343,6 +2330,22 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("refunded_at");
 
+                    b.Property<int>("CustomerRefundAttempts")
+                        .HasColumnType("integer")
+                        .HasColumnName("customer_refund_attempts");
+
+                    b.Property<DateTimeOffset?>("RefundReleasedAt")
+                        .HasColumnType("timestamp with time zone")
+                        .HasColumnName("refund_released_at");
+
+                    b.Property<Guid?>("RefundReleasedByUserId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("refund_released_by_user_id");
+
+                    b.Property<string>("RefundReleasedReason")
+                        .HasColumnType("text")
+                        .HasColumnName("refund_released_reason");
+
                     b.Property<DateTimeOffset?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone")
                         .HasColumnName("updated_at");
@@ -2354,9 +2357,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasIndex("PaymentCode")
                         .IsUnique();
 
-                    b.HasIndex("RefundReleasedAt");
-
                     b.HasIndex("PaymentStatus", "ExpiresAt");
+
+                    b.HasIndex("RefundReleasedAt");
 
                     b.ToTable("payments", (string)null);
                 });

@@ -12,57 +12,57 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<int>(
-                name: "CustomerRefundAttempts",
+                name: "customer_refund_attempts",
                 table: "payments",
                 type: "integer",
                 nullable: false,
                 defaultValue: 0);
 
             migrationBuilder.AddColumn<DateTimeOffset>(
-                name: "RefundReleasedAt",
+                name: "refund_released_at",
                 table: "payments",
                 type: "timestamp with time zone",
                 nullable: true);
 
             migrationBuilder.AddColumn<Guid>(
-                name: "RefundReleasedByUserId",
+                name: "refund_released_by_user_id",
                 table: "payments",
                 type: "uuid",
                 nullable: true);
 
             migrationBuilder.AddColumn<string>(
-                name: "RefundReleasedReason",
+                name: "refund_released_reason",
                 table: "payments",
                 type: "text",
                 nullable: true);
 
             migrationBuilder.CreateIndex(
-                name: "IX_payments_RefundReleasedAt",
+                name: "IX_payments_refund_released_at",
                 table: "payments",
-                column: "RefundReleasedAt");
+                column: "refund_released_at");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(
-                name: "IX_payments_RefundReleasedAt",
+                name: "IX_payments_refund_released_at",
                 table: "payments");
 
             migrationBuilder.DropColumn(
-                name: "RefundReleasedReason",
+                name: "refund_released_reason",
                 table: "payments");
 
             migrationBuilder.DropColumn(
-                name: "RefundReleasedByUserId",
+                name: "refund_released_by_user_id",
                 table: "payments");
 
             migrationBuilder.DropColumn(
-                name: "RefundReleasedAt",
+                name: "refund_released_at",
                 table: "payments");
 
             migrationBuilder.DropColumn(
-                name: "CustomerRefundAttempts",
+                name: "customer_refund_attempts",
                 table: "payments");
         }
     }

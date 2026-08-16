@@ -36,6 +36,14 @@ public sealed class PaymentConfiguration : IEntityTypeConfiguration<Payment>
         builder.Property(x => x.RefundFailureReason).HasColumnName("refund_failure_reason").HasMaxLength(500);
         builder.Property(x => x.RefundProcessedByUserId).HasColumnName("refund_processed_by_user_id");
         builder.Property(x => x.RefundedAt).HasColumnName("refunded_at");
+
+        // Admin "mở lại" refund cho customer tự nhập STK — tracking "1 lần duy nhất".
+        builder.Property(x => x.CustomerRefundAttempts).HasColumnName("customer_refund_attempts").IsRequired();
+        builder.Property(x => x.RefundReleasedAt).HasColumnName("refund_released_at");
+        builder.Property(x => x.RefundReleasedByUserId).HasColumnName("refund_released_by_user_id");
+        builder.Property(x => x.RefundReleasedReason).HasColumnName("refund_released_reason");
+        builder.HasIndex(x => x.RefundReleasedAt);
+
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
         builder.Ignore(x => x.CreatedBy);
