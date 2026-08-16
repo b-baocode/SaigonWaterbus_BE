@@ -691,6 +691,10 @@ public class CounterBookingTests
         public Task SendETicketsAsync(
             ETicketNotification notification,
             CancellationToken cancellationToken) => Task.CompletedTask;
+
+        public Task SendRefundReleasedAsync(
+            RefundReleasedNotification notification,
+            CancellationToken cancellationToken) => Task.CompletedTask;
     }
 
     private sealed class RecordingPaymentNotificationSender : IPaymentNotificationSender
@@ -720,6 +724,13 @@ public class CounterBookingTests
             CancellationToken cancellationToken)
         {
             ETickets.Add(notification);
+            return Task.CompletedTask;
+        }
+
+        public Task SendRefundReleasedAsync(
+            RefundReleasedNotification notification,
+            CancellationToken cancellationToken)
+        {
             return Task.CompletedTask;
         }
     }

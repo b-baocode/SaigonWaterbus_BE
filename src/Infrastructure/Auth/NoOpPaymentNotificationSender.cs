@@ -51,4 +51,17 @@ public sealed class NoOpPaymentNotificationSender : IPaymentNotificationSender
 
         return Task.CompletedTask;
     }
+
+    public Task SendRefundReleasedAsync(
+        RefundReleasedNotification notification,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Refund-released notification skipped. BookingCode: {BookingCode}, PaymentCode: {PaymentCode}, Email: {Email}",
+            notification.BookingCode,
+            notification.PaymentCode,
+            notification.Email);
+
+        return Task.CompletedTask;
+    }
 }

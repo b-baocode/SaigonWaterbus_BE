@@ -936,14 +936,27 @@ public sealed class RefundPaymentCommandValidator : AbstractValidator<RefundPaym
     {
         RuleFor(x => x.PaymentId).NotEmpty();
         RuleFor(x => x.Reason).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.BankBin).NotEmpty().Length(6).Matches("^[0-9]{6}$");
-        RuleFor(x => x.AccountNumber).NotEmpty().MaximumLength(50).Matches("^[0-9]+$");
-        RuleFor(x => x.AccountName).NotEmpty().MaximumLength(100);
-        RuleFor(x => x.OtpChallengeId).NotEmpty();
-        RuleFor(x => x.OtpCode)
-            .NotEmpty()
-            .Length(4, 10)
-            .WithMessage("Mã OTP không hợp lệ.");
+
+        // Thông tin ngân hàng + OTP chỉ bắt buộc khi refundAmount > 0.
+        // Khi policy cho refund 0đ (hủy dưới 24 giờ trước giờ khởi hành), handler sẽ đóng sổ booking
+        // mà không cần OTP + gọi PayOS → bỏ qua validation cho các field này.
+        // Lưu ý: vẫn validate format nếu user nhập (tránh nhập sai format).
+        When(x => !string.IsNullOrWhiteSpace(x.BankBin), () =>
+        {
+            RuleFor(x => x.BankBin).Length(6).Matches("^[0-9]{6}$");
+        });
+        When(x => !string.IsNullOrWhiteSpace(x.AccountNumber), () =>
+        {
+            RuleFor(x => x.AccountNumber).MaximumLength(50).Matches("^[0-9]+$");
+        });
+        When(x => !string.IsNullOrWhiteSpace(x.AccountName), () =>
+        {
+            RuleFor(x => x.AccountName).MaximumLength(100);
+        });
+        When(x => !string.IsNullOrWhiteSpace(x.OtpCode), () =>
+        {
+            RuleFor(x => x.OtpCode).Length(4, 10);
+        });
     }
 }
 
@@ -987,6 +1000,28 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
                 "Chỉ có thể hoàn tiền cho payment đã thanh toán.")]);
         }
 
+        // Quy tắc "1 lần duy nhất cho customer":
+        // - Admin/Manager/Staff luôn refund được (không giới hạn).
+        // - Customer chỉ được refund khi admin đã "mở lại" (RefundReleasedAt != null) AND
+        //   CustomerRefundAttempts < 1. Sau khi attempt (kể cả fail) thì tăng counter,
+        //   và phải admin mở lại lại mới refund tiếp được.
+        var currentUser = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        var isCustomer = currentUser is null || AuthSupport.IsCustomer(currentUser);
+        if (isCustomer)
+        {
+            if (payment.RefundReleasedAt is null)
+            {
+                throw new ValidationException([new ValidationFailure("refund",
+                    "Bạn không có yêu cầu hoàn tiền đang mở. Vui lòng liên hệ admin.")]);
+            }
+
+            if (payment.CustomerRefundAttempts >= 1)
+            {
+                throw new ValidationException([new ValidationFailure("refund",
+                    "Bạn đã sử dụng 1 lần hoàn tiền. Vui lòng liên hệ admin để được hỗ trợ thêm.")]);
+            }
+        }
+
         var now = _timeProvider.GetUtcNow();
         var refundAmount = await PaymentSupport.ResolvePolicyRefundAmountAsync(
             _context,
@@ -1012,6 +1047,14 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         payment.RefundReferenceId = referenceId;
         payment.RefundFailureReason = null;
         payment.RefundProcessedByUserId = _userContext.UserId;
+
+        // Đánh dấu customer đã dùng lượt refund (kể cả khi fail — chính sách "1 lần duy nhất").
+        // Admin/Manager/Staff: cũng tăng counter (nếu đã release) nhưng không bị chặn vì isCustomer=false.
+        if (isCustomer)
+        {
+            payment.CustomerRefundAttempts += 1;
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
 
         CharterBookingRefundPayoutResult refundResult;
@@ -1251,6 +1294,39 @@ internal static class PaymentSupport
         timeUntilDeparture >= TimeSpan.FromDays(3) ? 1.0m
         : timeUntilDeparture >= TimeSpan.FromHours(24) ? 0.7m
         : 0m;
+
+    /// <summary>
+    /// Thời điểm khởi hành của charter booking (giờ VN, UTC+7).
+    /// Trả về null nếu booking không có DepartureDate.
+    /// </summary>
+    public static DateTimeOffset? ResolveCharterDepartureTime(Booking booking)
+    {
+        if (!booking.DepartureDate.HasValue)
+        {
+            return null;
+        }
+
+        var startTime = booking.StartTime ?? new TimeOnly(7, 0);
+        return new DateTimeOffset(
+            booking.DepartureDate.Value.ToDateTime(startTime),
+            TimeSpan.FromHours(7));
+    }
+
+    /// <summary>
+    /// Chính sách hoàn tiền theo thời điểm khởi hành (charter).
+    /// Trả về 0 nếu không xác định được thời gian departure.
+    /// </summary>
+    public static decimal ResolveCharterRefundPercent(Booking booking, DateTimeOffset now)
+    {
+        var departure = ResolveCharterDepartureTime(booking);
+        if (!departure.HasValue)
+        {
+            return 0m;
+        }
+
+        var timeUntilDeparture = departure.Value - now;
+        return timeUntilDeparture < TimeSpan.Zero ? 0m : ResolveRefundPercent(timeUntilDeparture);
+    }
 
     public static async Task<decimal> ResolvePolicyRefundAmountAsync(
         IApplicationDbContext context,
@@ -1531,6 +1607,31 @@ internal static class PaymentSupport
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.HoldExpiresAt),
                 "Thời hạn phản hồi hoặc thanh toán charter booking đã hết. Vui lòng tạo yêu cầu thuê tàu mới.")]);
+        }
+
+        // Charter booking: chặn tạo payment khi sắp khởi hành dưới 24 giờ (trùng với policy 0% refund).
+        // Tránh tình trạng khách vẫn thanh toán nhưng không thể hoàn nếu hủy.
+        if (Booking.IsCharterBookingType(booking.BookingType)
+            && booking.BookingStatus == BookingStatus.PendingPayment)
+        {
+            var departure = ResolveCharterDepartureTime(booking);
+            if (departure.HasValue)
+            {
+                var timeUntilDeparture = departure.Value - now;
+                if (timeUntilDeparture < TimeSpan.Zero)
+                {
+                    throw new ValidationException([new ValidationFailure(nameof(booking.StartTime),
+                        "Chuyến đã khởi hành. Không thể tạo thanh toán cho charter booking quá giờ khởi hành.")]);
+                }
+
+                if (timeUntilDeparture < TimeSpan.FromHours(24))
+                {
+                    throw new ValidationException([new ValidationFailure(nameof(booking.StartTime),
+                        $"Đã quá thời gian tối thiểu để thanh toán charter booking (24 giờ trước giờ khởi hành). " +
+                        $"Chuyến đi {booking.DepartureDate:dd/MM/yyyy} {booking.StartTime:HH\\:mm} còn {(int)Math.Floor(timeUntilDeparture.TotalHours)} giờ. " +
+                        $"Theo chính sách, hủy trong vòng 24 giờ trước giờ khởi hành sẽ không được hoàn tiền — vui lòng liên hệ CSKH để được hỗ trợ.")]);
+                }
+            }
         }
 
         if (booking.BookingStatus is BookingStatus.Completed or BookingStatus.Cancelled or BookingStatus.Expired)
@@ -2355,7 +2456,11 @@ internal static class PaymentSupport
             payment.RefundStatus,
             payment.RefundFailureReason,
             payment.RefundProcessedByUserId,
-            payment.RefundedAt);
+            payment.RefundedAt,
+            payment.CustomerRefundAttempts,
+            payment.RefundReleasedAt,
+            payment.RefundReleasedByUserId,
+            payment.RefundReleasedReason);
 
     public sealed record PaymentPlan(
         string Purpose,

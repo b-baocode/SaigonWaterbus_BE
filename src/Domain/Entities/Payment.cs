@@ -28,5 +28,11 @@ public class Payment : BaseGuidAuditableEntity
     public Guid? RefundProcessedByUserId { get; set; }
     public DateTimeOffset? RefundedAt { get; set; }
 
+    // Admin mở lại refund cho customer tự nhập STK — tracking "1 lần duy nhất".
+    public int CustomerRefundAttempts { get; set; }
+    public DateTimeOffset? RefundReleasedAt { get; set; }
+    public Guid? RefundReleasedByUserId { get; set; }
+    public string? RefundReleasedReason { get; set; }
+
     public Booking Booking { get; set; } = null!;
 }

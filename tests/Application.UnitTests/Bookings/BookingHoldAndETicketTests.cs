@@ -628,6 +628,13 @@ public class BookingHoldAndETicketTests
             ETickets.Add(notification);
             return Task.CompletedTask;
         }
+
+        public Task SendRefundReleasedAsync(
+            RefundReleasedNotification notification,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class PaidPaymentGateway : ICharterBookingPaymentGateway

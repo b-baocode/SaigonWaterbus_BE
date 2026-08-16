@@ -480,5 +480,12 @@ public class CreateRoundTripBookingTests
             ETickets.Add(notification);
             return Task.CompletedTask;
         }
+
+        public Task SendRefundReleasedAsync(
+            RefundReleasedNotification notification,
+            CancellationToken cancellationToken)
+        {
+            return Task.CompletedTask;
+        }
     }
 }

@@ -99,6 +99,7 @@ public static class DependencyInjection
         AddRedis(builder);
         AddRedisBackedServices(builder);
         builder.Services.AddHostedService<BookingHoldExpiryService>();
+        builder.Services.AddHostedService<RefundReleaseExpiryService>();
         builder.Services.AddHostedService<TripReminderService>();
         builder.Services.AddHostedService<StaffOperationalNotificationService>();
         builder.Services.AddHostedService<SightseeingTripAutoCancellationService>();

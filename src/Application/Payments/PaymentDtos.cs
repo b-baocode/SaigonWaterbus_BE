@@ -61,7 +61,14 @@ public sealed record PaymentDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     Guid? RefundProcessedByUserId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateTimeOffset? RefundedAt);
+    DateTimeOffset? RefundedAt,
+    int CustomerRefundAttempts,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    DateTimeOffset? RefundReleasedAt,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? RefundReleasedByUserId,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? RefundReleasedReason);
 
 public sealed record RequestRefundOtpRequest(string? OtpChannel = null);
 

@@ -21,7 +21,7 @@ internal static class CharterBookingRefundSupport
             .Where(PaymentSupport.IsSettlementPayment)
             .Sum(x => x.RefundAmount);
 
-        var departure = ResolveCharterDepartureTime(booking);
+        var departure = PaymentSupport.ResolveCharterDepartureTime(booking);
         var timeUntilDeparture = departure.HasValue
             ? departure.Value - now
             : (TimeSpan?)null;
@@ -70,19 +70,7 @@ internal static class CharterBookingRefundSupport
         };
     }
 
-    /// <summary>Thời điểm khởi hành của charter booking (giờ VN), null nếu không xác định được.</summary>
-    private static DateTimeOffset? ResolveCharterDepartureTime(Booking booking)
-    {
-        if (!booking.DepartureDate.HasValue)
-        {
-            return null;
-        }
-
-        var startTime = booking.StartTime ?? new TimeOnly(7, 0);
-        return new DateTimeOffset(
-            booking.DepartureDate.Value.ToDateTime(startTime),
-            TimeSpan.FromHours(7));
-    }
+    /// <summary>Thời điểm khởi hành của charter booking (giờ VN) — sử dụng helper chung từ PaymentSupport.</summary>
 
     /// <summary>
     /// Danh sách payment có thể hoàn (đã thanh toán, còn dư để hoàn).

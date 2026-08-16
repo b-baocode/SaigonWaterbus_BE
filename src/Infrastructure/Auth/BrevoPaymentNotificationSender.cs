@@ -225,6 +225,112 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         }
     }
 
+    public async Task SendRefundReleasedAsync(
+        RefundReleasedNotification notification,
+        CancellationToken cancellationToken)
+    {
+        var options = _optionsMonitor.CurrentValue;
+        if (!options.Enabled)
+        {
+            return;
+        }
+
+        if (options.RefundReleasedTemplateId <= 0)
+        {
+            _logger.LogInformation(
+                "Brevo refund-released notification skipped (template not configured). BookingCode: {BookingCode}, Email: {Email}",
+                notification.BookingCode,
+                notification.Email);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.ApiKey)
+            || string.IsNullOrWhiteSpace(options.SenderEmail)
+            || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
+        {
+            _logger.LogWarning("Brevo refund-released notification is enabled but required configuration is missing.");
+            return;
+        }
+
+        var parameters = new Dictionary<string, object?>
+        {
+            ["contactName"] = ResolveText(notification.ContactName),
+            ["bookingCode"] = notification.BookingCode,
+            ["paymentCode"] = notification.PaymentCode,
+            ["refundAmount"] = notification.RefundAmount.ToString("N0", CultureInfo.InvariantCulture),
+            ["adminNote"] = notification.AdminNote,
+            ["releasedAt"] = notification.ReleasedAt.HasValue
+                ? FormatDateTimeOffset(notification.ReleasedAt.Value, "dd/MM/yyyy HH:mm")
+                : null,
+            ["retryDeadline"] = notification.RetryDeadline.HasValue
+                ? FormatDateTimeOffset(notification.RetryDeadline.Value, "dd/MM/yyyy HH:mm")
+                : null,
+        };
+
+        var recipient = !string.IsNullOrWhiteSpace(options.TestRecipientEmail)
+            ? options.TestRecipientEmail
+            : notification.Email;
+
+        var payload = new Dictionary<string, object?>
+        {
+            ["sender"] = new Dictionary<string, object?>
+            {
+                ["email"] = options.SenderEmail,
+                ["name"] = options.SenderName,
+            },
+            ["to"] = new[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["email"] = recipient,
+                    ["name"] = ResolveText(notification.ContactName),
+                },
+            },
+            ["templateId"] = options.RefundReleasedTemplateId,
+            ["params"] = parameters,
+            ["subject"] = $"Waterbus - Mo lai yeu cau hoan tien cho booking {notification.BookingCode}",
+        };
+
+        var client = _httpClientFactory.CreateClient(HttpClientName);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
+        request.Headers.TryAddWithoutValidation("api-key", options.ApiKey);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Content = JsonContent.Create(payload);
+
+        try
+        {
+            using var response = await client.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "Brevo refund-released notification sent. BookingCode: {BookingCode}, Email: {Email}",
+                    notification.BookingCode,
+                    notification.Email);
+                return;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning(
+                "Brevo refund-released notification failed. Status: {StatusCode}, Body: {Body}, BookingCode: {BookingCode}, Email: {Email}",
+                response.StatusCode,
+                Truncate(body, 400),
+                notification.BookingCode,
+                notification.Email);
+        }
+        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Brevo refund-released notification failed. BookingCode: {BookingCode}, Email: {Email}",
+                notification.BookingCode,
+                notification.Email);
+        }
+    }
+
     private static Dictionary<string, object?> BuildPayload(
         BrevoOptions options,
         PaymentSucceededNotification notification)

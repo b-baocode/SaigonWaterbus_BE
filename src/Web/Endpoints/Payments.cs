@@ -47,6 +47,13 @@ public sealed class Payments : IEndpointGroup
         }
         """;
 
+    private const string ReleaseRefundForCustomerExample =
+        """
+        {
+          "note": "Customer da nhap sai STK, admin yeu cau khach nhap lai 1 lan"
+        }
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapPost(CreatePayment, string.Empty)
@@ -129,6 +136,18 @@ public sealed class Payments : IEndpointGroup
                 "Backend dung lai refundRequestedAmount da tinh luc PayOS refund loi.",
                 "Response tra ve PaymentDto voi refundRequestedAmount/refundAmount/refundMethod/refundReason/refundStatus."));
 
+        group.MapPost(ReleaseRefundForCustomer, "{paymentId:guid}/refund/release-for-customer")
+            .RequireAuthorization()
+            .WithSummary("Admin mo lai hoan tien de khach tu nhap STK")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                ReleaseRefundForCustomerExample,
+                "Dung khi admin (hoac staff) nhap hoan tien qua PayOS that bai (vi du: sai ten chu tai khoan) va muon nhuong cho khach tu nhap lai 1 lan duy nhat.",
+                "Chi cho phep khi payment dang co refundStatus=Failed (lan refund truoc do da khong thanh cong).",
+                "Endpoint reset refundState (refundStatus, refundFailureReason, refundReferenceId, ...) de khach co the goi POST /refund/otp + POST /refund nhu binh thuong.",
+                "He thong luu audit (RefundReleasedAt, RefundReleasedByUserId, RefundReleasedReason) va gui notification cho khach.",
+                "Khach chi duoc phep refund them 1 lan (CustomerRefundAttempts=0 -> 1). Neu that bai lan nua, phai admin mo lai tiep."));
+
         group.MapPost(HandlePaymentWebhook, "webhook/payos")
             .WithSummary("Webhook PayOS")
             .WithDescription(OpenApiDescriptionBuilder.Build(
@@ -195,6 +214,15 @@ public sealed class Payments : IEndpointGroup
             request.ReferenceId,
             request.PayoutId,
             request.RefundedAt), ct));
+
+    private static async Task<IResult> ReleaseRefundForCustomer(
+        ISender sender,
+        Guid paymentId,
+        ReleaseRefundForCustomerRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ReleaseRefundForCustomerCommand(
+            paymentId,
+            request.Note), ct));
 
     private static async Task<IResult> HandlePaymentWebhook(
         ISender sender,

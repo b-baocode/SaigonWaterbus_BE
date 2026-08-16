@@ -1043,6 +1043,11 @@ public class CharterBookingPassengerTicketTests
             ETicketNotification notification,
             CancellationToken cancellationToken) =>
             Task.CompletedTask;
+
+        public Task SendRefundReleasedAsync(
+            RefundReleasedNotification notification,
+            CancellationToken cancellationToken) =>
+            Task.CompletedTask;
     }
 
     private sealed class TestCharterBookingTicketPdfRenderer : ICharterBookingTicketPdfRenderer

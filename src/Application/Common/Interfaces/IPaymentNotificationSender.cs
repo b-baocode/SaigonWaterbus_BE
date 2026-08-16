@@ -11,6 +11,11 @@ public interface IPaymentNotificationSender
     /// QR chung của booking + QR riêng của từng hành khách.
     /// </summary>
     Task SendETicketsAsync(ETicketNotification notification, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gửi thông báo cho khách khi admin mở lại yêu cầu hoàn tiền để khách tự nhập STK (1 lần duy nhất).
+    /// </summary>
+    Task SendRefundReleasedAsync(RefundReleasedNotification notification, CancellationToken cancellationToken);
 }
 
 public sealed record PaymentSucceededNotification(
@@ -119,3 +124,14 @@ public sealed record ETicketPassenger(
     Guid? CompanionPassengerId = null,
     string? CompanionPassengerName = null,
     bool UsesCompanionTicket = false);
+
+// Gửi cho khách khi admin mở lại yêu cầu hoàn tiền để khách tự nhập STK (1 lần duy nhất).
+public sealed record RefundReleasedNotification(
+    string Email,
+    string ContactName,
+    string BookingCode,
+    string PaymentCode,
+    decimal RefundAmount,
+    string? AdminNote,
+    DateTimeOffset? ReleasedAt,
+    DateTimeOffset? RetryDeadline);
