@@ -165,6 +165,10 @@ internal static class CharterBookingQuerySupport
     private static CharterBookingRefundSummaryDto? ToRefundSummaryDto(Booking booking, DateTimeOffset now)
     {
         var summary = CharterBookingRefundSupport.BuildSummary(booking, now);
+        var isPartiallyRefunded = summary.OutstandingRefundAmount > 0m
+            && summary.TotalRefundedAmount > 0m
+            && summary.TotalPaidAmount > 0m;
+        var isFullyRefunded = summary.OutstandingRefundAmount == 0m && summary.TotalPaidAmount > 0m;
         return new CharterBookingRefundSummaryDto(
             summary.TotalPaidAmount,
             summary.TotalRefundedAmount,
@@ -172,7 +176,9 @@ internal static class CharterBookingQuerySupport
             summary.PolicyPercent,
             summary.TimeUntilDeparture?.TotalHours,
             summary.CanRequestRefund,
-            summary.PolicyMessage);
+            summary.PolicyMessage,
+            isPartiallyRefunded,
+            isFullyRefunded);
     }
 
     private static IReadOnlyList<CharterBookingRefundablePaymentDto> ToRefundablePaymentDtos(

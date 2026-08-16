@@ -53,8 +53,11 @@ public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<Upd
             .When(x => x.ChildCount.HasValue)
             .WithMessage("Số trẻ em phải từ 0 đến 1000.");
         RuleFor(x => x)
-            .Must(x => !x.AdultCount.HasValue || !x.ChildCount.HasValue || x.AdultCount + x.ChildCount > 0)
-            .WithMessage("Tổng số khách phải lớn hơn 0.");
+            .Must(x => !x.AdultCount.HasValue || !x.ChildCount.HasValue || x.AdultCount + x.ChildCount >= 1)
+            .WithMessage("Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em).");
+        RuleFor(x => x)
+            .Must(x => !x.ChildCount.HasValue || !x.AdultCount.HasValue || !(x.ChildCount > 0 && x.AdultCount == 0))
+            .WithMessage("Khi có trẻ em đi cùng phải có ít nhất 1 người lớn.");
         RuleFor(x => x)
             .Must(x => !x.AdultCount.HasValue || !x.ChildCount.HasValue || x.AdultCount + x.ChildCount <= 1000)
             .WithMessage("Tổng số khách không được vượt quá 1000.");
@@ -237,14 +240,22 @@ public sealed class UpdateCharterBookingCommandHandler
             contactPhone,
             contactEmail,
             cancellationToken);
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
-            _context,
-            request.InsuranceSelected,
-            request.InsurancePackageId,
-            booking.InsuranceSnapshot,
-            insuredPassengerQuantity: adultCount + childCount,
-            _timeProvider.GetUtcNow(),
-            cancellationToken);
+        BookingInsuranceSnapshot? insuranceSnapshot;
+        if (adultCount + childCount < 1)
+        {
+            insuranceSnapshot = null;
+        }
+        else
+        {
+            insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
+                _context,
+                request.InsuranceSelected,
+                request.InsurancePackageId,
+                booking.InsuranceSnapshot,
+                insuredPassengerQuantity: adultCount + childCount,
+                _timeProvider.GetUtcNow(),
+                cancellationToken);
+        }
 
         booking.FromStationId = fromStationId;
         booking.ToStationId = toStationId;
@@ -355,16 +366,22 @@ public sealed class UpdateCharterBookingCommandHandler
         }
 
         var passengerCount = adultCount + childCount;
-        if (passengerCount <= 0)
+        if (passengerCount < 1)
         {
             throw new ValidationException([new ValidationFailure(nameof(UpdateCharterBookingCommand.AdultCount),
-                "Tổng số khách phải lớn hơn 0.")]);
+                "Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em).")]);
         }
 
         if (passengerCount > 1000)
         {
             throw new ValidationException([new ValidationFailure(nameof(UpdateCharterBookingCommand.AdultCount),
                 "Tổng số khách không được vượt quá 1000.")]);
+        }
+
+        if (childCount > 0 && adultCount == 0)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(UpdateCharterBookingCommand.AdultCount),
+                "Khi có trẻ em đi cùng phải có ít nhất 1 người lớn.")]);
         }
 
         if (fromStationId.HasValue

@@ -54,7 +54,9 @@ public class CharterBookingRefundSupportTests
 
         summary.PolicyPercent.ShouldBe(0.7m);
         summary.CanRequestRefund.ShouldBeTrue();
-        summary.OutstandingRefundAmount.ShouldBe(700_000m);
+        // outstanding là khoản còn có thể hoàn (paid - refunded), policyPercent chỉ để FE biết
+        // phần trăm sẽ hoàn. BE tính refund thật theo policy lúc gọi /api/payments/{id}/refund.
+        summary.OutstandingRefundAmount.ShouldBe(1_000_000m);
         summary.PolicyMessage.ShouldContain("70%");
     }
 
@@ -70,9 +72,11 @@ public class CharterBookingRefundSupportTests
         var summary = CharterBookingRefundSupport.BuildSummary(booking, Now);
 
         summary.PolicyPercent.ShouldBe(0m);
-        summary.CanRequestRefund.ShouldBeFalse();
-        summary.OutstandingRefundAmount.ShouldBe(0m);
-        summary.PolicyMessage.ShouldContain("không được hoàn");
+        // Vẫn cho phép refund 0đ để đóng sổ booking (chính sách không hoàn tiền nhưng cần
+        // chuyển sang trạng thái Refunded). FE sẽ gọi /api/payments/{id}/refund với refundAmount = 0.
+        summary.CanRequestRefund.ShouldBeTrue();
+        summary.OutstandingRefundAmount.ShouldBe(1_000_000m);
+        summary.PolicyMessage.ShouldContain("đóng sổ");
     }
 
     [Test]

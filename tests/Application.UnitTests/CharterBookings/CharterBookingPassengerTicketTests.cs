@@ -573,7 +573,7 @@ public class CharterBookingPassengerTicketTests
     }
 
     [Test]
-    public async Task UpdatingSinglePassengerBookingWithEmptyPassengerListProducesZeroPassengers()
+    public async Task UpdatingSinglePassengerBookingWithEmptyPassengerListThrowsValidation()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
@@ -584,13 +584,13 @@ public class CharterBookingPassengerTicketTests
 
         var handler = CreateUpdateHandler(context, userId);
 
-        var result = await handler.Handle(
-            new UpdateCharterBookingPassengersCommand(booking.Id, []),
-            CancellationToken.None);
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new UpdateCharterBookingPassengersCommand(booking.Id, []),
+                CancellationToken.None));
 
-        result.RegisteredPassengerCount.ShouldBe(0);
-        result.TicketCount.ShouldBe(0);
-        result.Passengers.ShouldBeEmpty();
+        exception.Errors.Values.ShouldContain(messages => messages.Contains(
+            "Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em)."));
     }
 
     [Test]

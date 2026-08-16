@@ -120,6 +120,8 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
         booking.AdultCount = CharterBookingPassengerSupport.CountAdults(passengers);
         booking.ChildCount = CharterBookingPassengerSupport.CountChildren(passengers);
 
+        EnsurePassengerCountsValid(booking.AdultCount.GetValueOrDefault(), booking.ChildCount.GetValueOrDefault());
+
         var ticketResult = await CharterBookingTicketSupport.EnsurePassengerTicketsAsync(
             _context,
             booking,
@@ -210,6 +212,21 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
         IReadOnlyList<CharterBookingPassengerRequest>? passengers)
     {
         return passengers?.ToList() ?? [];
+    }
+
+    private static void EnsurePassengerCountsValid(int adultCount, int childCount)
+    {
+        if (adultCount + childCount < 1)
+        {
+            throw new ValidationException([new ValidationFailure("passengers",
+                "Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em).")]);
+        }
+
+        if (childCount > 0 && adultCount == 0)
+        {
+            throw new ValidationException([new ValidationFailure("passengers",
+                "Khi có trẻ em đi cùng phải có ít nhất 1 người lớn.")]);
+        }
     }
 
     private static string? ResolveInferredPassengerType(

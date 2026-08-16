@@ -48,8 +48,11 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.ChildCount).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
             .WithMessage("Số trẻ em phải từ 0 đến 1000.");
         RuleFor(x => x)
-            .Must(x => x.AdultCount + x.ChildCount > 0)
-            .WithMessage("Tổng số khách phải lớn hơn 0.");
+            .Must(x => x.AdultCount + x.ChildCount >= 1)
+            .WithMessage("Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em).");
+        RuleFor(x => x)
+            .Must(x => !(x.ChildCount > 0 && x.AdultCount == 0))
+            .WithMessage("Khi có trẻ em đi cùng phải có ít nhất 1 người lớn.");
         RuleFor(x => x)
             .Must(x => x.AdultCount + x.ChildCount <= 1000)
             .WithMessage("Tổng số khách không được vượt quá 1000.");
@@ -217,14 +220,22 @@ public sealed class CreateCharterBookingCommandHandler
             contactPhone,
             contactEmail,
             cancellationToken);
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
-            _context,
-            request.InsuranceSelected,
-            request.InsurancePackageId,
-            currentSnapshot: null,
-            insuredPassengerQuantity: passengerCount,
-            now,
-            cancellationToken);
+        BookingInsuranceSnapshot? insuranceSnapshot;
+        if (passengerCount < 1)
+        {
+            insuranceSnapshot = null;
+        }
+        else
+        {
+            insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
+                _context,
+                request.InsuranceSelected,
+                request.InsurancePackageId,
+                currentSnapshot: null,
+                insuredPassengerQuantity: passengerCount,
+                now,
+                cancellationToken);
+        }
 
         var booking = new Booking
         {

@@ -103,6 +103,17 @@ public sealed class Incidents : IEndpointGroup
                 "Tra IncidentDto day du cho mot su co.",
                 "Manager chi xem duoc su co duoc gan assignedManagerId la chinh minh."));
 
+        group.MapGet(GetAvailableReplacementBoats, "{incidentId:guid}/available-replacement-boats")
+            .RequireAuthorization()
+            .WithSummary("Danh sach tau thay the kha dung")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Staff hoặc Manager được gán",
+                null,
+                "Tra ve danh sach BoatDto thoa man: serviceType=Passenger, status=Active, IsReadyForOperation=true.",
+                "Tu dong loai tru tau gap su co va tau cuu ho da dieu.",
+                "Sap xep uu tien tau it trip dang chay nhat truoc de admin de chon.",
+                "Dung cho GET truoc khi goi assign-replacement-boat de chon tau thay the phu hop."));
+
         group.MapPost(CreateIncident, string.Empty)
             .RequireAuthorization()
             .WithSummary("Bao su co tau")
@@ -190,6 +201,14 @@ public sealed class Incidents : IEndpointGroup
         CancellationToken cancellationToken) =>
         Results.Ok(await sender.Send(
             new GetIncidentDetailQuery(incidentId),
+            cancellationToken));
+
+    private static async Task<IResult> GetAvailableReplacementBoats(
+        ISender sender,
+        Guid incidentId,
+        CancellationToken cancellationToken) =>
+        Results.Ok(await sender.Send(
+            new GetAvailableReplacementBoatsQuery(incidentId),
             cancellationToken));
 
     private static async Task<IResult> CreateIncident(

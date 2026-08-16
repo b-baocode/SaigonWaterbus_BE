@@ -159,9 +159,14 @@ internal static class CharterBookingInsuranceSupport
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken)
     {
-        if (insuredPassengerQuantity <= 0)
+        if (insuredPassengerQuantity < 0)
         {
-            throw CreateInsuranceValidation("Không xác định được số hành khách để tính bảo hiểm thuê tàu.");
+            throw CreateInsuranceValidation(CreateInvalidQuantityMessage(Booking.CharterBookingType));
+        }
+
+        if (insuredPassengerQuantity == 0)
+        {
+            return null;
         }
 
         var package = await ResolveQuoteInsurancePackageAsync(

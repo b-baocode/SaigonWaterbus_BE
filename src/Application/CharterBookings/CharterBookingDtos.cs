@@ -737,7 +737,11 @@ public sealed record CharterBookingRefundSummaryDto(
     /// <summary>Số giờ còn lại đến giờ khởi hành (giờ VN). Null nếu chưa xác định được DepartureDate/StartTime.</summary>
     double? HoursUntilDeparture,
     bool CanRequestRefund,
-    string PolicyMessage);
+    string PolicyMessage,
+    /// <summary>True khi booking đã được hoàn một phần (TotalRefundedAmount > 0 và OutstandingRefundAmount > 0).</summary>
+    bool IsPartiallyRefunded = false,
+    /// <summary>True khi booking đã hoàn đủ toàn bộ (OutstandingRefundAmount = 0 và TotalPaidAmount > 0).</summary>
+    bool IsFullyRefunded = false);
 
 /// <summary>Một payment có thể yêu cầu hoàn. FE list ra để user chọn payment muốn refund.</summary>
 public sealed record CharterBookingRefundablePaymentDto(
