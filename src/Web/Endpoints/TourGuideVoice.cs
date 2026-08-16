@@ -11,8 +11,9 @@ namespace SaigonWaterbus.Web.Endpoints;
 /// Hướng dẫn viên AI bằng giọng nói ("phần B"). Tách hẳn khỏi <see cref="Assistant"/> để
 /// không làm vỡ chatbox text đang chạy production.
 ///
-/// HAI ENDPOINT CHỨ KHÔNG MỘT: FE hiện phụ đề ngay khi `ask` trả text rồi mới gọi `speak`,
+/// HỎI VÀ ĐỌC TÁCH LÀM HAI: FE hiện phụ đề ngay khi `ask` trả text rồi mới gọi `speak`,
 /// nhờ vậy giấu được độ trễ TTS; và nếu TTS hỏng thì khách vẫn đọc được câu trả lời.
+///
 /// </summary>
 public sealed class TourGuideVoice : IEndpointGroup
 {
@@ -74,6 +75,20 @@ public sealed class TourGuideVoice : IEndpointGroup
         Ma sai se tra 400 kem ly do tu Google (vi du: Voice 'abc' does not exist).
         """;
 
+    private const string AskTextExample =
+        """
+        {
+          "text": "Toa nha ben trai la gi vay?",
+          "tripId": "3f2a0000-0000-0000-0000-000000000000",
+          "latitude": 10.775,
+          "longitude": 106.705,
+          "heading": 45,
+          "currentLandmarkId": null,
+          "history": [{"role":"user","text":"Chao ban"},{"role":"assistant","text":"Chao ban..."}],
+          "language": "VN"
+        }
+        """;
+
     private const string SpeakExample =
         """
         {
@@ -114,6 +129,27 @@ public sealed class TourGuideVoice : IEndpointGroup
                 + "va DUNG ghi luot nay vao lich su hoi thoai.",
                 "Khong sinh audio o day — goi tiep /api/tour-guide/speak voi replyText."))
             .Produces<AskResponse>();
+
+        group.MapPost(AskText, "ask-text")
+            .RequireAuthorization()
+            .RequireRateLimiting(Assistant.RateLimitPolicy)
+            .WithSummary("Hoi huong dan vien bang CHU (thu nhanh, khong phai thu am)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token (khach da dang nhap)",
+                AskTextExample,
+                "Y HET /ask nhung bo qua buoc chep loi: cung system prompt, cung 4 tool, cung luat "
+                + "tra loi, cung ngu canh chuyen. Chi khac duong vao la ban phim thay vi micro.",
+                "Dung de tinh chinh prompt bang Swagger/Postman ma khong phai thu am WAV 16kHz moi "
+                + "lan thu; va dung duoc luon neu FE muon them o 'go cau hoi' ben canh nut mic "
+                + "(tren tau on, mic hong, khach ngai noi giua dam dong).",
+                "tripId / latitude / longitude / heading / currentLandmarkId y nghia y het /ask — "
+                + "xem mo ta o endpoint do.",
+                "text toi da 1000 ky tu.",
+                "Rate limit dung chung policy voi chatbox text (8 luot/phut) chu KHONG phai policy "
+                + "cua /ask (5/phut): o day khong ton STT lan TTS, chi ton 1 luot LLM.",
+                "Tra ve replyText — khong co transcript (khong co gi de chep) va khong sinh audio. "
+                + "Muon nghe thu thi lay replyText goi tiep /api/tour-guide/speak."))
+            .Produces<AskTextResponse>();
 
         group.MapGet(Ping, "ping")
             .AllowAnonymous()
@@ -297,6 +333,39 @@ public sealed class TourGuideVoice : IEndpointGroup
             : bare;
     }
 
+    /// <summary>
+    /// Bản gõ chữ. Nhận JSON nên KHÔNG dính mấy trò parse chuỗi như <see cref="Ask"/>: form-data
+    /// mới có chuyện trường rỗng làm binder ném 400 body rỗng, JSON thì null là null.
+    ///
+    /// Cũng không cần bắt lỗi STT/TTS ở đây vì luồng này không gọi hai thứ đó; lỗi LLM đã được
+    /// vòng lặp assistant nuốt và đổi thành câu xin lỗi tử tế.
+    /// </summary>
+    private static async Task<IResult> AskText(
+        ISender sender,
+        AskTextRequest request,
+        CancellationToken ct)
+    {
+        var turns = (request.History ?? [])
+            .Where(t => !string.IsNullOrWhiteSpace(t.Text))
+            .Select(t => new TourGuideTurn(t.Role ?? "user", t.Text!))
+            .ToArray();
+
+        var reply = await sender.Send(
+            new AskTourGuideTextCommand(
+                request.Text ?? string.Empty,
+                request.Latitude,
+                request.Longitude,
+                request.Heading,
+                request.CurrentLandmark,
+                turns,
+                request.Language,
+                request.TripId,
+                request.CurrentLandmarkId),
+            ct);
+
+        return Results.Ok(new AskTextResponse(reply));
+    }
+
     private static async Task<IResult> Speak(
         ITextToSpeechService textToSpeech,
         ILogger<TourGuideVoice> logger,
@@ -387,6 +456,23 @@ public sealed class TourGuideVoice : IEndpointGroup
     public sealed record AskResponse(string Transcript, string ReplyText, bool HeardSpeech);
 
     public sealed record HistoryTurnRequest(string? Role, string? Text);
+
+    /// <param name="CurrentLandmark">
+    /// Tên địa danh đang thuyết minh. Chỉ dùng khi không có <paramref name="CurrentLandmarkId"/> —
+    /// có id thì hệ thống lấy đúng lời đã duyệt thay vì để model tự nhớ theo tên.
+    /// </param>
+    public sealed record AskTextRequest(
+        string? Text,
+        double? Latitude = null,
+        double? Longitude = null,
+        double? Heading = null,
+        string? CurrentLandmark = null,
+        HistoryTurnRequest[]? History = null,
+        string? Language = null,
+        Guid? TripId = null,
+        Guid? CurrentLandmarkId = null);
+
+    public sealed record AskTextResponse(string ReplyText);
 
     public sealed record SpeakRequest(string Text, string? Voice = null, string? Language = null);
 }
