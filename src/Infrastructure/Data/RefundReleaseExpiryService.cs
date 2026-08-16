@@ -73,7 +73,7 @@ public sealed class RefundReleaseExpiryService : BackgroundService
                     && p.RefundReleasedAt != null
                     && p.RefundReleasedAt.Value.AddDays(7) < now
                     && (p.RefundStatus == null
-                        || string.Equals(p.RefundStatus, "Failed", StringComparison.OrdinalIgnoreCase)))
+                        || EF.Functions.ILike(p.RefundStatus, "Failed")))
                 .ToListAsync(cancellationToken);
 
             if (expiredPayments.Count == 0)

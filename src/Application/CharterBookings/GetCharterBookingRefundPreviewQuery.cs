@@ -77,9 +77,11 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
 
         var outstanding = Math.Max(0m, totalPaid - totalRefunded);
 
-        // Chính sách không hoàn tiền (huỷ dưới 24 giờ trước giờ khởi hành) vẫn cho phép "đóng sổ" booking
+        // Chính sách không hoàn tiền (huỷ dưới 24 giờ trước giờ kh�i hành) vẫn cho phép "đóng sổ" booking
         // thông qua POST /payments/{id}/refund với refundAmount = 0 → BE đánh dấu Refunded.
+        // Booking đã Cancelled/Completed/Expired không còn cho refund (cancel & refund là 2 flow tách biệt).
         var canRequestRefund = outstanding > 0m
+            && booking.BookingStatus != BookingStatus.Cancelled
             && booking.BookingStatus != BookingStatus.Completed
             && booking.BookingStatus != BookingStatus.Expired;
 
@@ -88,6 +90,14 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
 
         var items = new List<RefundablePaymentDto>();
         var remaining = outstanding;
+        // Cap tổng theo policy (giống CharterBookingRefundSupport.GetRefundablePayments):
+        // - policyPercent = 0% → cap = 0 (chỉ đóng sổ booking, không refund tiền)
+        // - policyPercent > 0% → cap = floor(totalPaid * policyPercent)
+        var policyCap = Math.Floor(totalPaid * policyPercent);
+        // "Outstanding theo policy" = số tiền refund tối đa mà khách có thể nhận, dùng để hiển thị UI
+        // để khớp với tổng availableRefundAmount các payment (tránh mâu thuẫn).
+        var outstandingByPolicy = Math.Min(outstanding, policyCap);
+        var distributed = 0m;
         foreach (var p in payments
             .Where(p => p.PaymentStatus == BookingPaymentStatusExtensions.PaidValue)
             .OrderBy(p => p.Created))
@@ -95,6 +105,9 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             var paymentOutstanding = Math.Max(0m, p.Amount - p.RefundAmount);
             // Số tiền có thể hoàn cho payment này = min(còn lại của payment, còn lại của tổng outstanding, cap còn lại).
             var available = Math.Min(paymentOutstanding, Math.Max(0m, remaining));
+            available = Math.Min(available, policyCap - distributed);
+            if (available < 0m) available = 0m;
+            distributed += available;
             items.Add(new RefundablePaymentDto(p.Id, p.Amount, p.RefundAmount, available));
             remaining = Math.Max(0m, remaining - available);
             if (remaining <= 0m) break;
@@ -104,7 +117,7 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             booking.Id,
             totalPaid,
             totalRefunded,
-            outstanding,
+            outstandingByPolicy,
             policyPercent,
             canRequestRefund,
             items,

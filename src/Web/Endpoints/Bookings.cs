@@ -168,7 +168,7 @@ public sealed class Bookings : IEndpointGroup
                 "Check-out mot luot toan bo ve CheckedIn cua booking thuong.",
                 "Booking khu hoi: truyen query ?tripCode=<chuyen dang tra khach> de chi check-out ve chieu do; bo trong se check-out tat ca ve dang CheckedIn.",
                 "Neu nguoi goi la Staff thi phai la nhan vien OnBoard co ca assignmentType=Boat dang active tren dung tau cua tung chieu check-out.",
-                "Check-out duoc thuc hien sau check-in, nhung khong qua 10 phut sau gio tau den ben khach xuong cua tung ve.",
+                "Check-out duoc phep mo som 5 phut truoc gio tau den ben khach xuong va dong lai 5 phut sau khi tau roi ben (thoi gian dwell lay theo trip stop).",
                 "Khi tat ca ve hop le da CheckedOut, booking chuyen Completed va tich diem neu co.",
                 "Tra ve manifest moi sau khi check-out."));
 
