@@ -81,15 +81,15 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
         // thông qua POST /payments/{id}/refund với refundAmount = 0 → BE đánh dấu Refunded.
         // Booking đã Cancelled/Completed/Expired không còn cho refund (cancel & refund là 2 flow tách biệt).
         var policyCap = Math.Floor(totalPaid * policyPercent);
-        var outstandingRefundAmount = Math.Min(outstanding, policyCap);
+        var outstandingRefundAmount = outstanding;
 
-        var canRequestRefund = outstandingRefundAmount > 0m
-            || (policyPercent == 0m && booking.BookingStatus == BookingStatus.Cancelled)
+        var canRequestRefund = outstanding > 0m
+            && (policyPercent > 0m || booking.BookingStatus == BookingStatus.Cancelled)
             && booking.BookingStatus != BookingStatus.Completed
             && booking.BookingStatus != BookingStatus.Expired;
 
-        var isPartiallyRefunded = outstandingRefundAmount > 0m && totalRefunded > 0m && totalPaid > 0m;
-        var isFullyRefunded = outstandingRefundAmount == 0m && outstanding > 0m && totalPaid > 0m;
+        var isPartiallyRefunded = outstanding > 0m && totalRefunded > 0m && totalPaid > 0m;
+        var isFullyRefunded = outstanding == 0m && totalPaid > 0m;
 
         var items = new List<RefundablePaymentDto>();
         var remaining = outstandingRefundAmount;
@@ -109,7 +109,6 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             distributed += available;
             items.Add(new RefundablePaymentDto(p.Id, p.Amount, p.RefundAmount, available));
             remaining = Math.Max(0m, remaining - available);
-            if (remaining <= 0m) break;
         }
 
         return new CharterBookingRefundPreviewDto(
