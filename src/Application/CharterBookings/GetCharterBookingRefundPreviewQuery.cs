@@ -81,7 +81,7 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
         // thông qua POST /payments/{id}/refund với refundAmount = 0 → BE đánh dấu Refunded.
         // Booking đã Cancelled/Completed/Expired không còn cho refund (cancel & refund là 2 flow tách biệt).
         var canRequestRefund = outstanding > 0m
-            && booking.BookingStatus != BookingStatus.Cancelled
+            && (policyPercent > 0m || booking.BookingStatus == BookingStatus.Cancelled)
             && booking.BookingStatus != BookingStatus.Completed
             && booking.BookingStatus != BookingStatus.Expired;
 
@@ -94,9 +94,6 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
         // - policyPercent = 0% → cap = 0 (chỉ đóng sổ booking, không refund tiền)
         // - policyPercent > 0% → cap = floor(totalPaid * policyPercent)
         var policyCap = Math.Floor(totalPaid * policyPercent);
-        // "Outstanding theo policy" = số tiền refund tối đa mà khách có thể nhận, dùng để hiển thị UI
-        // để khớp với tổng availableRefundAmount các payment (tránh mâu thuẫn).
-        var outstandingByPolicy = Math.Min(outstanding, policyCap);
         var distributed = 0m;
         foreach (var p in payments
             .Where(p => p.PaymentStatus == BookingPaymentStatusExtensions.PaidValue)
@@ -117,7 +114,7 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             booking.Id,
             totalPaid,
             totalRefunded,
-            outstandingByPolicy,
+            outstanding,
             policyPercent,
             canRequestRefund,
             items,
@@ -130,10 +127,11 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
         if (date is null || time is null) return null;
         var d = date.Value;
         var t = time.Value;
+        // Giờ khởi hành lưu theo giờ Việt Nam (UTC+7), KHÔNG dùng UTC.
         return new DateTimeOffset(
             d.Year, d.Month, d.Day,
             t.Hour, t.Minute, t.Second,
-            TimeSpan.Zero);
+            TimeSpan.FromHours(7));
     }
 
     private static decimal ComputePolicyPercent(decimal hoursToDeparture)
