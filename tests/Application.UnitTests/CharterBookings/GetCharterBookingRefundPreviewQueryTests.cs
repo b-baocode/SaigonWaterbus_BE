@@ -173,8 +173,8 @@ public class GetCharterBookingRefundPreviewQueryTests
         result.CanRequestRefund.ShouldBeTrue(); // Phải = true để cho đóng sổ 0đ
         result.IsPartiallyRefunded.ShouldBeFalse();
         result.IsFullyRefunded.ShouldBeFalse();
-        // available = 0 vì policy = 0 không cho hoàn, nhưng outstanding vẫn giữ paid để đóng sổ.
-        result.RefundablePayments.Count.ShouldBe(1);
+        // available = 0 vì policy = 0 không cho hoàn → không thêm vào RefundablePayments.
+        result.RefundablePayments.Count.ShouldBe(0);
     }
 
     [Test]
