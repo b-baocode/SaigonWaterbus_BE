@@ -107,7 +107,10 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             available = Math.Min(available, policyCap - distributed);
             if (available < 0m) available = 0m;
             distributed += available;
-            items.Add(new RefundablePaymentDto(p.Id, p.Amount, p.RefundAmount, available));
+            if (available > 0m)
+            {
+                items.Add(new RefundablePaymentDto(p.Id, p.Amount, p.RefundAmount, available));
+            }
             remaining = Math.Max(0m, remaining - available);
         }
 
