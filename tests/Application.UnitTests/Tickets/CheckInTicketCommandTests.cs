@@ -20,6 +20,9 @@ public class CheckInTicketCommandTests
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
         var ticket = await SeedRegularBookingTicketAsync(context);
+        ticket.Booking.Trip!.DepartureTime = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        ticket.Booking.Trip!.ArrivalTime = new DateTimeOffset(2030, 1, 1, 9, 5, 0, TimeSpan.Zero);
+        await context.SaveChangesAsync();
         await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(1));
         var handler = new CheckInTicketCommandHandler(
             context,
@@ -63,6 +66,9 @@ public class CheckInTicketCommandTests
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
         var ticket = await SeedRegularBookingTicketAsync(context);
+        ticket.Booking.Trip!.DepartureTime = new DateTimeOffset(2030, 1, 1, 9, 5, 0, TimeSpan.Zero);
+        ticket.Booking.Trip!.ArrivalTime = new DateTimeOffset(2030, 1, 1, 9, 30, 0, TimeSpan.Zero);
+        await context.SaveChangesAsync();
         await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, ticket, now.AddHours(-1), now.AddHours(2));
 
         var firstScan = await new ScanTicketQueryHandler(
@@ -488,12 +494,12 @@ public class CheckInTicketCommandTests
         var handler = new CheckOutTicketCommandHandler(
             context,
             staffContext,
-            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 10, 11, 0, TimeSpan.Zero)));
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero)));
 
         var ex = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(new CheckOutTicketCommand(ticket.TicketCode), CancellationToken.None));
 
-        ex.Errors["ticket"].Single().ShouldContain("quá 10 phút sau giờ tàu đến bến");
+        ex.Errors["ticket"].Single().ShouldContain("Đã quá 5 phút sau giờ tàu rời bến");
     }
 
     [Test]

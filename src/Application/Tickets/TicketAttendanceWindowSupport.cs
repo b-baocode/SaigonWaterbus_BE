@@ -85,7 +85,7 @@ public static class TicketAttendanceWindowSupport
                     "Không xác định được bến khách xuống của vé, chưa thể check-out.")]);
             }
 
-            EnsureStopOpenForScan(
+            EnsureStopOpenForCheckOut(
                 alightingStop,
                 now,
                 "Tàu chưa cập bến khách xuống, chưa thể check-out.",
@@ -99,11 +99,14 @@ public static class TicketAttendanceWindowSupport
             trip,
             passenger?.FromStopOrder,
             passenger?.ToStopOrder);
-        var earliestCheckOut = segmentTimes.Arrival.AddMinutes(-CheckOutOpenOffsetMinutes);
+        var earliestCheckOutSource = trip.TripStops.Count > 0
+            ? segmentTimes.Arrival
+            : segmentTimes.Departure;
+        var earliestCheckOut = earliestCheckOutSource.AddMinutes(-CheckOutOpenOffsetMinutes);
         if (now < earliestCheckOut)
         {
             throw new ValidationException([new ValidationFailure("ticket",
-                "Chưa đến thời điểm mở check-out: phải trong vòng 5 phút trước giờ tàu đến bến khách xuống.")]);
+                $"Chưa đến thời điểm mở check-out: phải trong vòng {CheckOutOpenOffsetMinutes} phút trước giờ tàu đến bến khách xuống.")]);
         }
         var latestCheckOut = ResolveLatestCheckOutAt(trip, passenger, segmentTimes);
         if (now > latestCheckOut)
@@ -178,14 +181,17 @@ public static class TicketAttendanceWindowSupport
             {
                 return false;
             }
-            return IsStopOpenForScan(alightingStop, now.Value, true);
+            return IsStopOpenForCheckOut(alightingStop, now.Value);
         }
 
         var segmentTimes = TripStopScheduleSupport.ResolveSegmentTimes(
             trip,
             passenger?.FromStopOrder,
             passenger?.ToStopOrder);
-        var earliestCheckOut = segmentTimes.Arrival.AddMinutes(-CheckOutOpenOffsetMinutes);
+        var earliestCheckOutSource = trip.TripStops.Count > 0
+            ? segmentTimes.Arrival
+            : segmentTimes.Departure;
+        var earliestCheckOut = earliestCheckOutSource.AddMinutes(-CheckOutOpenOffsetMinutes);
         var latestCheckOut = ResolveLatestCheckOutAt(trip, passenger, segmentTimes);
         return now.Value >= earliestCheckOut && now.Value <= latestCheckOut;
     }
@@ -210,14 +216,17 @@ public static class TicketAttendanceWindowSupport
             {
                 return false;
             }
-            return IsStopOpenForScan(alightingStop, now.Value, true);
+            return IsStopOpenForCheckOut(alightingStop, now.Value);
         }
 
         var segmentTimes = TripStopScheduleSupport.ResolveSegmentTimes(
             trip,
             passenger?.FromStopOrder,
             passenger?.ToStopOrder);
-        var earliestCheckOut = segmentTimes.Arrival.AddMinutes(-CheckOutOpenOffsetMinutes);
+        var earliestCheckOutSource = trip.TripStops.Count > 0
+            ? segmentTimes.Arrival
+            : segmentTimes.Departure;
+        var earliestCheckOut = earliestCheckOutSource.AddMinutes(-CheckOutOpenOffsetMinutes);
         var latestCheckOut = ResolveLatestCheckOutAt(trip, passenger, segmentTimes);
         return now.Value >= earliestCheckOut && now.Value <= latestCheckOut;
     }
@@ -326,15 +335,32 @@ public static class TicketAttendanceWindowSupport
         (DateTimeOffset Departure, DateTimeOffset Arrival) segmentTimes)
     {
         var dwellMinutes = ResolveDwellMinutes(trip, passenger);
-        var effectiveDeparture = dwellMinutes.HasValue
-            ? segmentTimes.Arrival.AddMinutes(dwellMinutes.Value)
-            : segmentTimes.Departure;
+        DateTimeOffset effectiveDeparture;
+        if (dwellMinutes.HasValue)
+        {
+            effectiveDeparture = segmentTimes.Arrival.AddMinutes(dwellMinutes.Value);
+        }
+        else if (trip.TripStops.Count > 0)
+        {
+            effectiveDeparture = segmentTimes.Departure;
+        }
+        else
+        {
+            var implicitDwell = (int)Math.Round((segmentTimes.Arrival - segmentTimes.Departure).TotalMinutes);
+            effectiveDeparture = implicitDwell > 0
+                ? segmentTimes.Arrival.AddMinutes(implicitDwell)
+                : segmentTimes.Departure;
+        }
         return effectiveDeparture.AddMinutes(CheckOutGraceMinutes);
     }
 
     private static int? ResolveDwellMinutes(Trip trip, BookingPassenger? passenger)
     {
-        var fromStopOrder = passenger?.FromStopOrder;
+        if (trip.TripStops.Count == 0)
+        {
+            return null;
+        }
+
         var toStopOrder = passenger?.ToStopOrder;
 
         var alightingStop = trip.TripStops
@@ -352,8 +378,35 @@ public static class TicketAttendanceWindowSupport
         DateTimeOffset now,
         string notArrivedMessage,
         string departedMessage,
+        string dwellExpiredMessage)
+    {
+        if (stop.ActualDepartureTime.HasValue
+            || string.Equals(stop.StopStatus, TripStopStatuses.Departed, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(stop.StopStatus, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ValidationException([new ValidationFailure("ticket", departedMessage)]);
+        }
+
+        if (!string.Equals(stop.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
+            || !stop.ActualArrivalTime.HasValue)
+        {
+            throw new ValidationException([new ValidationFailure("ticket", notArrivedMessage)]);
+        }
+
+        var stopScanEndsAt = ResolveStopScanEndsAt(stop);
+        if (stopScanEndsAt.HasValue && now > stopScanEndsAt.Value)
+        {
+            throw new ValidationException([new ValidationFailure("ticket", dwellExpiredMessage)]);
+        }
+    }
+
+    private static void EnsureStopOpenForCheckOut(
+        TripStop stop,
+        DateTimeOffset now,
+        string notArrivedMessage,
+        string departedMessage,
         string dwellExpiredMessage,
-        int openOffsetMinutes = 0)
+        int openOffsetMinutes)
     {
         if (stop.ActualDepartureTime.HasValue
             || string.Equals(stop.StopStatus, TripStopStatuses.Departed, StringComparison.OrdinalIgnoreCase)
@@ -382,7 +435,20 @@ public static class TicketAttendanceWindowSupport
         }
     }
 
-    private static bool IsStopOpenForScan(TripStop stop, DateTimeOffset now, bool allowPreArrivalOpen = false)
+    private static bool IsStopOpenForScan(TripStop stop, DateTimeOffset now)
+    {
+        if (!string.Equals(stop.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
+            || !stop.ActualArrivalTime.HasValue
+            || stop.ActualDepartureTime.HasValue)
+        {
+            return false;
+        }
+
+        var stopScanEndsAt = ResolveStopScanEndsAt(stop);
+        return !stopScanEndsAt.HasValue || now <= stopScanEndsAt.Value;
+    }
+
+    private static bool IsStopOpenForCheckOut(TripStop stop, DateTimeOffset now)
     {
         if (!string.Equals(stop.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
             || !stop.ActualArrivalTime.HasValue

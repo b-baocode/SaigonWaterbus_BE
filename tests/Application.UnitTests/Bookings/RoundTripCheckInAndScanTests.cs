@@ -22,7 +22,7 @@ public class RoundTripCheckInAndScanTests
         var seeded = await SeedConfirmedRoundTripBookingAsync(context);
         await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, seeded.Booking.Trip!.BoatId!.Value);
         var handler = new CheckInAllBookingTicketsCommandHandler(
-            context, staffContext, new FixedTimeProvider(seeded.Booking.Trip!.DepartureTime.AddMinutes(-5)));
+            context, staffContext, new FixedTimeProvider(seeded.Booking.Trip!.DepartureTime));
 
         var manifest = await handler.Handle(
             new CheckInAllBookingTicketsCommand(seeded.Booking.CharterBookingQrToken!, "TR-OUT"),
@@ -99,7 +99,7 @@ public class RoundTripCheckInAndScanTests
         outboundManifest.Passengers.Single(p => p.TripCode == "TR-OUT")
             .CanCheckOut.ShouldBeFalse();
         outboundManifest.Passengers.Single(p => p.TripCode == "TR-RET")
-            .CanCheckOut.ShouldBeTrue();
+            .CanCheckOut.ShouldBeFalse();
 
         var returnManifest = await new CheckOutAllBookingTicketsCommandHandler(
                 context,
