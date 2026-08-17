@@ -51,4 +51,7 @@ public sealed class BrevoOptions
 
     /// <summary>Template Brevo cho email "admin mở lại yêu cầu hoàn tiền cho khách tự nhập"; 0 = bỏ qua gửi email.</summary>
     public int RefundReleasedTemplateId { get; set; }
+
+    /// <summary>Template Brevo cho email vé điện tử charter booking (gửi lại khi có hành khách mới); 0 = bỏ qua gửi email.</summary>
+    public int CharterETicketTemplateId { get; set; }
 }

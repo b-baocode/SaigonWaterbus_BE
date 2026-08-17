@@ -165,6 +165,8 @@ public sealed record CharterBookingInsuranceDto(
     string? ProviderName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? ProviderLogoUrl,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? ImageUrl,
     decimal UnitPremiumAmount,
     decimal CoverageAmount,
     string Currency,

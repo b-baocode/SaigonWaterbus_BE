@@ -141,6 +141,7 @@ internal static class CharterBookingInsuranceSupport
             IsRequired = package.IsRequired,
             ProviderName = package.ProviderName,
             ProviderLogoUrl = package.ProviderLogoUrl,
+            ImageUrl = package.ImageUrl,
             UnitPremiumAmount = package.UnitPremiumAmount,
             CoverageAmount = package.CoverageAmount,
             Currency = package.Currency,
@@ -216,6 +217,7 @@ internal static class CharterBookingInsuranceSupport
                 snapshot.IsRequired,
                 snapshot.ProviderName,
                 snapshot.ProviderLogoUrl,
+                snapshot.ImageUrl,
                 snapshot.UnitPremiumAmount,
                 snapshot.CoverageAmount,
                 snapshot.Currency,
@@ -223,7 +225,8 @@ internal static class CharterBookingInsuranceSupport
                 snapshot.TotalAmount,
                 snapshot.Conditions,
                 snapshot.TermsUrl,
-                snapshot.QuotedAt);
+                snapshot.QuotedAt,
+                Selected: true);
 
     private static BookingInsuranceSnapshot UpdateQuantity(
         BookingInsuranceSnapshot snapshot,
@@ -290,6 +293,7 @@ internal static class CharterBookingInsuranceSupport
             IsRequired = package.IsRequired,
             ProviderName = package.ProviderName,
             ProviderLogoUrl = package.ProviderLogoUrl,
+            ImageUrl = package.ImageUrl,
             UnitPremiumAmount = package.UnitPremiumAmount,
             CoverageAmount = package.CoverageAmount,
             Currency = package.Currency,

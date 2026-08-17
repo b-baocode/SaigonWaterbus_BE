@@ -9,6 +9,7 @@ public class BookingInsuranceSnapshot
     public bool IsRequired { get; set; }
     public string? ProviderName { get; set; }
     public string? ProviderLogoUrl { get; set; }
+    public string? ImageUrl { get; set; }
     public decimal UnitPremiumAmount { get; set; }
     public decimal CoverageAmount { get; set; }
     public string Currency { get; set; } = "VND";

@@ -116,6 +116,11 @@ internal static class CharterBookingPassengerSupport
             CharterBookingPassengerType.Child.ToString(),
             StringComparison.OrdinalIgnoreCase));
 
+    public static string GetPassengerTypeName(string? passengerType) =>
+        string.Equals(passengerType, CharterBookingPassengerType.Child.ToString(), StringComparison.OrdinalIgnoreCase)
+            ? "Trẻ em"
+            : "Người lớn";
+
     public static void EnsurePassengerCountDoesNotExceedSelectedBoatCapacity(
         Booking booking,
         int passengerCount,

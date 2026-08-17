@@ -10,6 +10,7 @@ public class InsurancePackage : BaseGuidAuditableEntity
     public bool IsRequired { get; set; } = true;
     public string? ProviderName { get; set; }
     public string? ProviderLogoUrl { get; set; }
+    public string? ImageUrl { get; set; }
     public decimal UnitPremiumAmount { get; set; }
     public decimal CoverageAmount { get; set; }
     public string Currency { get; set; } = "VND";
@@ -17,4 +18,5 @@ public class InsurancePackage : BaseGuidAuditableEntity
     public string? TermsUrl { get; set; }
     public bool IsActive { get; set; } = true;
     public int DisplayOrder { get; set; }
+    public int? RewardOption { get; set; }
 }

@@ -1720,5 +1720,13 @@ public class CreatePaymentCommandTests
         {
             return Task.CompletedTask;
         }
+
+        public Task SendCharterETicketsAsync(
+            ETicketNotification notification,
+            CancellationToken cancellationToken)
+        {
+            ETickets.Add(notification);
+            return Task.CompletedTask;
+        }
     }
 }

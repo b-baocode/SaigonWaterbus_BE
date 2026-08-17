@@ -331,6 +331,80 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         }
     }
 
+    public async Task SendCharterETicketsAsync(
+        ETicketNotification notification,
+        CancellationToken cancellationToken)
+    {
+        var options = _optionsMonitor.CurrentValue;
+        if (!options.Enabled)
+        {
+            return;
+        }
+
+        if (options.CharterETicketTemplateId <= 0)
+        {
+            _logger.LogInformation(
+                "Brevo charter e-ticket notification skipped (template not configured). BookingCode: {BookingCode}, Email: {Email}",
+                notification.Booking.BookingCode,
+                notification.Booking.Email);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(options.ApiKey)
+            || string.IsNullOrWhiteSpace(options.SenderEmail)
+            || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
+        {
+            _logger.LogWarning("Brevo charter e-ticket notification is enabled but required configuration is missing.");
+            return;
+        }
+
+        var payload = BuildETicketPayload(options, notification);
+        // Override templateId to use charter-specific template
+        payload["templateId"] = options.CharterETicketTemplateId;
+        // Override subject for charter booking
+        payload["subject"] = $"Waterbus - Ve dien tu charter booking {notification.Booking.BookingCode}";
+
+        var client = _httpClientFactory.CreateClient(HttpClientName);
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{options.ApiBaseUrl.TrimEnd('/')}/smtp/email");
+        request.Headers.TryAddWithoutValidation("api-key", options.ApiKey);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Content = JsonContent.Create(payload);
+
+        try
+        {
+            using var response = await client.SendAsync(request, cancellationToken);
+            if (response.IsSuccessStatusCode)
+            {
+                _logger.LogInformation(
+                    "Brevo charter e-ticket notification sent. BookingCode: {BookingCode}, TicketCount: {TicketCount}, Email: {Email}",
+                    notification.Booking.BookingCode,
+                    notification.Tickets.Count,
+                    notification.Booking.Email);
+                return;
+            }
+
+            var body = await response.Content.ReadAsStringAsync(cancellationToken);
+            _logger.LogWarning(
+                "Brevo charter e-ticket notification failed. Status: {StatusCode}, Body: {Body}, BookingCode: {BookingCode}, Email: {Email}",
+                response.StatusCode,
+                Truncate(body, 400),
+                notification.Booking.BookingCode,
+                notification.Booking.Email);
+        }
+        catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
+        {
+            _logger.LogWarning(
+                ex,
+                "Brevo charter e-ticket notification failed. BookingCode: {BookingCode}, Email: {Email}",
+                notification.Booking.BookingCode,
+                notification.Booking.Email);
+        }
+    }
+
     private static Dictionary<string, object?> BuildPayload(
         BrevoOptions options,
         PaymentSucceededNotification notification)

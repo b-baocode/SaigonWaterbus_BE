@@ -97,6 +97,16 @@ public sealed class InsurancePackages : IEndpointGroup
                 UpdateStatusExample,
                 "status hop le: Active | Inactive.",
                 "Inactive se an goi khoi FE khi activeOnly=true."));
+
+        group.MapPut(UpdateInsurancePackageImage, "{id:guid}/image")
+            .RequireAuthorization()
+            .DisableAntiforgery()
+            .WithSummary("Cap nhat anh goi bao hiem")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                null,
+                "Gui multipart/form-data voi field 'image' chua file anh.",
+                "Ho tro: jpeg, png, gif, webp. Dung luong toi da 5MB."));
     }
 
     private static async Task<IResult> GetInsurancePackages(
@@ -128,10 +138,48 @@ public sealed class InsurancePackages : IEndpointGroup
             request.IsRequired,
             request.ProviderName,
             request.ProviderLogoUrl,
+            request.ImageUrl,
             request.Conditions,
             request.TermsUrl,
             request.Status,
-            request.DisplayOrder), ct));
+            request.DisplayOrder,
+            request.RewardOption), ct));
+
+    private static async Task<IResult> UpdateInsurancePackageImage(
+        ISender sender,
+        Guid id,
+        HttpRequest request,
+        CancellationToken ct)
+    {
+        UpdateInsurancePackageImageCommand? command = null;
+        try
+        {
+            if (request.HasFormContentType)
+            {
+                var form = await request.ReadFormAsync(ct);
+                var file = form.Files.FirstOrDefault(f =>
+                    string.Equals(f.Name, "image", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(f.Name, "file", StringComparison.OrdinalIgnoreCase));
+
+                if (file is not null && file.Length > 0)
+                {
+                    var content = new MemoryStream();
+                    await file.CopyToAsync(content, ct);
+                    content.Position = 0;
+                    command = new UpdateInsurancePackageImageCommand(
+                        id,
+                        new InsurancePackageImageFileRequest(file.FileName, file.ContentType, file.Length, content));
+                    return Results.Ok(await sender.Send(command, ct));
+                }
+            }
+
+            return Results.BadRequest(new { error = "Vui lòng gửi file ảnh (multipart/form-data với field 'image')." });
+        }
+        finally
+        {
+            command?.ImageFile?.Content.Dispose();
+        }
+    }
 
     private static async Task<IResult> UpdateInsurancePackageStatus(
         ISender sender,
@@ -148,10 +196,12 @@ public sealed class InsurancePackages : IEndpointGroup
         bool IsRequired,
         string? ProviderName,
         string? ProviderLogoUrl,
+        string? ImageUrl,
         IReadOnlyList<string>? Conditions,
         string? TermsUrl,
         InsurancePackageStatus Status,
-        int DisplayOrder);
+        int DisplayOrder,
+        int? RewardOption);
 
     public sealed record UpdateInsurancePackageStatusRequest(InsurancePackageStatus Status);
 }

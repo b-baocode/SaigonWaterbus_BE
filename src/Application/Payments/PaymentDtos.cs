@@ -68,7 +68,8 @@ public sealed record PaymentDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     Guid? RefundReleasedByUserId,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? RefundReleasedReason);
+    string? RefundReleasedReason,
+    bool IsRefundable = true);
 
 public sealed record RequestRefundOtpRequest(string? OtpChannel = null);
 

@@ -16,6 +16,11 @@ public interface IPaymentNotificationSender
     /// Gửi thông báo cho khách khi admin mở lại yêu cầu hoàn tiền để khách tự nhập STK (1 lần duy nhất).
     /// </summary>
     Task SendRefundReleasedAsync(RefundReleasedNotification notification, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Gửi email vé điện tử charter booking (gửi lại toàn bộ vé + vé mới khi admin duyệt hành khách mới).
+    /// </summary>
+    Task SendCharterETicketsAsync(ETicketNotification notification, CancellationToken cancellationToken);
 }
 
 public sealed record PaymentSucceededNotification(

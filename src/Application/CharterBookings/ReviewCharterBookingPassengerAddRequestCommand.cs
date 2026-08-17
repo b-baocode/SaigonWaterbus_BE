@@ -132,8 +132,40 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
                 now),
             cancellationToken);
         await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
+        await SendCharterETicketsIfNeededAsync(booking, ticketResult, cancellationToken);
 
         return ToResult(booking, ticketResult?.Tickets, additionalInsuranceAmount);
+    }
+
+    private async Task SendCharterETicketsIfNeededAsync(
+        Booking booking,
+        PassengerTicketEnsureResult? ticketResult,
+        CancellationToken cancellationToken)
+    {
+        if (ticketResult is null
+            || ticketResult.Tickets.Count == 0
+            || string.IsNullOrWhiteSpace(booking.ContactEmail)
+            || !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount > 0)
+        {
+            return;
+        }
+
+        var paidPayment = booking.Payments
+            .Where(x => PaymentSupport.IsPaid(x.PaymentStatus))
+            .OrderByDescending(x => x.PaidAt ?? x.Created)
+            .FirstOrDefault();
+        if (paidPayment?.PaidAt is null)
+        {
+            return;
+        }
+
+        var notification = CharterBookingETicketSupport.BuildETicketNotification(
+            booking,
+            paidPayment,
+            ticketResult.Tickets);
+
+        await _paymentNotificationSender.SendCharterETicketsAsync(notification, cancellationToken);
     }
 
     private async Task<Booking> LoadBookingAsync(Guid bookingId, CancellationToken cancellationToken) =>

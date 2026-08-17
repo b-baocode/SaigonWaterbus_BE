@@ -64,4 +64,17 @@ public sealed class NoOpPaymentNotificationSender : IPaymentNotificationSender
 
         return Task.CompletedTask;
     }
+
+    public Task SendCharterETicketsAsync(
+        ETicketNotification notification,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation(
+            "Charter e-ticket notification skipped. BookingCode: {BookingCode}, TicketCount: {TicketCount}, Email: {Email}",
+            notification.Booking.BookingCode,
+            notification.Tickets.Count,
+            notification.Booking.Email);
+
+        return Task.CompletedTask;
+    }
 }

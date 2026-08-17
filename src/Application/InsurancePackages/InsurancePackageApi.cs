@@ -15,13 +15,15 @@ public sealed record InsurancePackageDto(
     bool IsRequired,
     string? ProviderName,
     string? ProviderLogoUrl,
+    string? ImageUrl,
     decimal UnitPremiumAmount,
     decimal CoverageAmount,
     string Currency,
     IReadOnlyList<string> Conditions,
     string? TermsUrl,
     InsurancePackageStatus Status,
-    int DisplayOrder);
+    int DisplayOrder,
+    int? RewardOption);
 
 public sealed record GetInsurancePackageListQuery(
     string? BookingType = null,
@@ -71,10 +73,12 @@ public sealed record CreateInsurancePackageCommand(
     bool IsRequired = false,
     string? ProviderName = null,
     string? ProviderLogoUrl = null,
+    string? ImageUrl = null,
     IReadOnlyList<string>? Conditions = null,
     string? TermsUrl = null,
     InsurancePackageStatus Status = InsurancePackageStatus.Active,
-    int? DisplayOrder = null) : IRequest<InsurancePackageDto>;
+    int? DisplayOrder = null,
+    int? RewardOption = null) : IRequest<InsurancePackageDto>;
 
 public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<CreateInsurancePackageCommand>
 {
@@ -90,7 +94,7 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
             .Must(InsurancePackageSupport.IsKnownBookingType)
             .WithMessage("bookingType hợp lệ: PassengerInsurance. SeatBooking/CharterBooking chỉ giữ tương thích dữ liệu cũ.");
         RuleFor(x => x.UnitPremiumAmount)
-            .GreaterThanOrEqualTo(0)
+            .GreaterThanOrEqualTo(1)
             .LessThanOrEqualTo(100_000_000)
             .Must(x => decimal.Truncate(x) == x)
             .WithMessage("unitPremiumAmount phải là số nguyên VND từ 0 đến 100.000.000.");
@@ -105,6 +109,11 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
             .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)
             .WithMessage("providerLogoUrl phải là URL hợp lệ.")
             .When(x => !string.IsNullOrWhiteSpace(x.ProviderLogoUrl));
+        RuleFor(x => x.ImageUrl)
+            .MaximumLength(1000)
+            .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)
+            .WithMessage("imageUrl phải là URL hợp lệ.")
+            .When(x => !string.IsNullOrWhiteSpace(x.ImageUrl));
         RuleFor(x => x.TermsUrl)
             .MaximumLength(1000)
             .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)
@@ -114,7 +123,12 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
             .Must(InsurancePackageSupport.HaveValidConditions)
             .WithMessage("conditions tối đa 20 dòng, mỗi dòng tối đa 500 ký tự.");
         RuleFor(x => x.Status).IsInEnum();
-        RuleFor(x => x.DisplayOrder).GreaterThan(0).When(x => x.DisplayOrder.HasValue);
+        RuleFor(x => x.DisplayOrder)
+            .GreaterThanOrEqualTo(1)
+            .When(x => x.DisplayOrder.HasValue);
+        RuleFor(x => x.RewardOption)
+            .Must(x => x == 1 || x == 2 || x == null)
+            .WithMessage("rewardOption: 1=dùng hết điểm thưởng, 2=không dùng, null=không chọn.");
     }
 }
 
@@ -139,10 +153,8 @@ public sealed class CreateInsurancePackageCommandHandler
                 $"Gói bảo hiểm '{code}' cho {bookingType} đã tồn tại.")]);
         }
 
-        var displayOrder = request.DisplayOrder
-            ?? (await _context.Set<InsurancePackage>()
-                .Where(x => x.BookingType == bookingType)
-                .MaxAsync(x => (int?)x.DisplayOrder, cancellationToken) ?? 0) + 1;
+        var displayOrder = InsurancePackageSupport.ResolveDisplayOrder(
+            _context, bookingType, request.DisplayOrder, cancellationToken);
 
         var package = new InsurancePackage
         {
@@ -152,13 +164,15 @@ public sealed class CreateInsurancePackageCommandHandler
             IsRequired = request.IsRequired,
             ProviderName = InsurancePackageSupport.TrimToNull(request.ProviderName),
             ProviderLogoUrl = InsurancePackageSupport.TrimToNull(request.ProviderLogoUrl),
+            ImageUrl = InsurancePackageSupport.TrimToNull(request.ImageUrl),
             UnitPremiumAmount = request.UnitPremiumAmount,
             CoverageAmount = request.CoverageAmount,
             Currency = "VND",
             Conditions = InsurancePackageSupport.NormalizeConditions(request.Conditions),
             TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl),
             IsActive = InsurancePackageSupport.ToIsActive(request.Status),
-            DisplayOrder = displayOrder
+            DisplayOrder = displayOrder,
+            RewardOption = request.RewardOption
         };
 
         _context.Set<InsurancePackage>().Add(package);
@@ -178,10 +192,12 @@ public sealed record UpdateInsurancePackageCommand(
     bool IsRequired,
     string? ProviderName,
     string? ProviderLogoUrl,
+    string? ImageUrl,
     IReadOnlyList<string>? Conditions,
     string? TermsUrl,
     InsurancePackageStatus Status,
-    int DisplayOrder) : IRequest<InsurancePackageDto>;
+    int DisplayOrder,
+    int? RewardOption) : IRequest<InsurancePackageDto>;
 
 public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<UpdateInsurancePackageCommand>
 {
@@ -193,7 +209,7 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
             .Must(InsurancePackageSupport.IsKnownBookingType)
             .WithMessage("bookingType hợp lệ: PassengerInsurance. SeatBooking/CharterBooking chỉ giữ tương thích dữ liệu cũ.");
         RuleFor(x => x.UnitPremiumAmount)
-            .GreaterThanOrEqualTo(0)
+            .GreaterThanOrEqualTo(1)
             .LessThanOrEqualTo(100_000_000)
             .Must(x => decimal.Truncate(x) == x)
             .WithMessage("unitPremiumAmount phải là số nguyên VND từ 0 đến 100.000.000.");
@@ -208,6 +224,11 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
             .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)
             .WithMessage("providerLogoUrl phải là URL hợp lệ.")
             .When(x => !string.IsNullOrWhiteSpace(x.ProviderLogoUrl));
+        RuleFor(x => x.ImageUrl)
+            .MaximumLength(1000)
+            .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)
+            .WithMessage("imageUrl phải là URL hợp lệ.")
+            .When(x => !string.IsNullOrWhiteSpace(x.ImageUrl));
         RuleFor(x => x.TermsUrl)
             .MaximumLength(1000)
             .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)
@@ -217,7 +238,12 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
             .Must(InsurancePackageSupport.HaveValidConditions)
             .WithMessage("conditions tối đa 20 dòng, mỗi dòng tối đa 500 ký tự.");
         RuleFor(x => x.Status).IsInEnum();
-        RuleFor(x => x.DisplayOrder).GreaterThan(0);
+        RuleFor(x => x.DisplayOrder)
+            .Must(x => x == 1 || x == 2)
+            .WithMessage("displayOrder: 1=dùng hết, 2=không dùng.");
+        RuleFor(x => x.RewardOption)
+            .Must(x => x == 1 || x == 2 || x == null)
+            .WithMessage("rewardOption: 1=dùng hết điểm thưởng, 2=không dùng, null=không chọn.");
     }
 }
 
@@ -252,11 +278,16 @@ public sealed class UpdateInsurancePackageCommandHandler
         package.IsRequired = request.IsRequired;
         package.ProviderName = InsurancePackageSupport.TrimToNull(request.ProviderName);
         package.ProviderLogoUrl = InsurancePackageSupport.TrimToNull(request.ProviderLogoUrl);
+        package.ImageUrl = InsurancePackageSupport.TrimToNull(request.ImageUrl);
         package.UnitPremiumAmount = request.UnitPremiumAmount;
         package.CoverageAmount = request.CoverageAmount;
         package.Conditions = InsurancePackageSupport.NormalizeConditions(request.Conditions);
         package.TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl);
         package.IsActive = InsurancePackageSupport.ToIsActive(request.Status);
+        package.RewardOption = request.RewardOption;
+
+        InsurancePackageSupport.ShiftDisplayOrdersOnUpdate(
+            _context, package.BookingType, package.Id, package.DisplayOrder, request.DisplayOrder, cancellationToken);
         package.DisplayOrder = request.DisplayOrder;
 
         await _context.SaveChangesAsync(cancellationToken);
@@ -299,6 +330,88 @@ public sealed class UpdateInsurancePackageStatusCommandHandler
         await _context.SaveChangesAsync(cancellationToken);
 
         return InsurancePackageSupport.ToDto(package);
+    }
+}
+
+[Authorize(Roles = "Admin,Manager")]
+public sealed record UpdateInsurancePackageImageCommand(
+    Guid InsurancePackageId,
+    InsurancePackageImageFileRequest? ImageFile) : IRequest<InsurancePackageDto>;
+
+public sealed record InsurancePackageImageFileRequest(
+    string FileName,
+    string ContentType,
+    long FileSize,
+    Stream Content);
+
+public sealed class UpdateInsurancePackageImageCommandValidator
+    : AbstractValidator<UpdateInsurancePackageImageCommand>
+{
+    private const long MaxFileSizeBytes = 5 * 1024 * 1024; // 5MB
+    private static readonly string[] AllowedContentTypes =
+    [
+        "image/jpeg",
+        "image/png",
+        "image/gif",
+        "image/webp"
+    ];
+
+    public UpdateInsurancePackageImageCommandValidator()
+    {
+        RuleFor(x => x.InsurancePackageId).NotEmpty();
+        RuleFor(x => x.ImageFile)
+            .NotNull()
+            .WithMessage("Vui lòng gửi file ảnh.");
+        RuleFor(x => x.ImageFile!.ContentType)
+            .Must(x => AllowedContentTypes.Contains(x, StringComparer.OrdinalIgnoreCase))
+            .WithMessage($"Định dạng ảnh không hỗ trợ. Chỉ chấp nhận: {string.Join(", ", AllowedContentTypes)}.");
+        RuleFor(x => x.ImageFile!.FileSize)
+            .LessThanOrEqualTo(MaxFileSizeBytes)
+            .WithMessage($"Dung lượng ảnh tối đa 5MB.");
+    }
+}
+
+public sealed class UpdateInsurancePackageImageCommandHandler
+    : IRequestHandler<UpdateInsurancePackageImageCommand, InsurancePackageDto>
+{
+    private readonly IApplicationDbContext _context;
+
+    public UpdateInsurancePackageImageCommandHandler(IApplicationDbContext context) => _context = context;
+
+    public async Task<InsurancePackageDto> Handle(
+        UpdateInsurancePackageImageCommand request,
+        CancellationToken cancellationToken)
+    {
+        var package = await _context.Set<InsurancePackage>()
+            .SingleOrDefaultAsync(x => x.Id == request.InsurancePackageId, cancellationToken)
+            ?? throw new NotFoundException("Insurance package not found.");
+
+        if (request.ImageFile is not null)
+        {
+            package.ImageUrl = await UploadImageAsync(request.ImageFile, cancellationToken);
+        }
+
+        await _context.SaveChangesAsync(cancellationToken);
+        return InsurancePackageSupport.ToDto(package);
+    }
+
+    private async Task<string> UploadImageAsync(
+        InsurancePackageImageFileRequest file,
+        CancellationToken cancellationToken)
+    {
+        // TODO: Implement Azure Blob Storage upload or similar
+        // For now, return a placeholder URL
+        // In production, integrate with Azure Blob Storage / S3 / Cloudflare R2
+        await using var memoryStream = new MemoryStream();
+        await file.Content.CopyToAsync(memoryStream, cancellationToken);
+        var content = memoryStream.ToArray();
+
+        // Placeholder - replace with actual upload logic
+        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
+        var blobUrl = $"https://storage.example.com/insurance-packages/{fileName}";
+
+        // TODO: Upload to blob storage and return the URL
+        return blobUrl;
     }
 }
 
@@ -391,6 +504,93 @@ internal static class InsurancePackageSupport
     public static InsurancePackageStatus ToStatus(bool isActive) =>
         isActive ? InsurancePackageStatus.Active : InsurancePackageStatus.Inactive;
 
+    public static int ResolveDisplayOrder(
+        IApplicationDbContext context,
+        string bookingType,
+        int? requestedOrder,
+        CancellationToken cancellationToken = default)
+    {
+        if (requestedOrder.HasValue && requestedOrder.Value >= 1)
+        {
+            var maxOrder = context.Set<InsurancePackage>()
+                .Where(x => x.BookingType == bookingType)
+                .AsNoTracking()
+                .Select(x => (int?)x.DisplayOrder)
+                .Max();
+
+            if (requestedOrder.Value <= (maxOrder ?? 0))
+            {
+                ShiftDisplayOrdersUp(context, bookingType, requestedOrder.Value, cancellationToken);
+            }
+
+            return requestedOrder.Value;
+        }
+
+        var nextMaxOrder = context.Set<InsurancePackage>()
+            .Where(x => x.BookingType == bookingType)
+            .AsNoTracking()
+            .Select(x => (int?)x.DisplayOrder)
+            .Max();
+
+        return (nextMaxOrder ?? 0) + 1;
+    }
+
+    private static void ShiftDisplayOrdersUp(
+        IApplicationDbContext context,
+        string bookingType,
+        int fromOrder,
+        CancellationToken cancellationToken)
+    {
+        var packages = context.Set<InsurancePackage>()
+            .Where(x => x.BookingType == bookingType && x.DisplayOrder >= fromOrder)
+            .ToList();
+
+        foreach (var pkg in packages)
+        {
+            pkg.DisplayOrder++;
+        }
+    }
+
+    public static void ShiftDisplayOrdersOnUpdate(
+        IApplicationDbContext context,
+        string bookingType,
+        Guid packageId,
+        int oldOrder,
+        int newOrder,
+        CancellationToken cancellationToken)
+    {
+        if (oldOrder == newOrder) return;
+
+        if (newOrder > oldOrder)
+        {
+            var packagesToShiftDown = context.Set<InsurancePackage>()
+                .Where(x => x.BookingType == bookingType
+                    && x.Id != packageId
+                    && x.DisplayOrder > oldOrder
+                    && x.DisplayOrder <= newOrder)
+                .ToList();
+
+            foreach (var pkg in packagesToShiftDown)
+            {
+                pkg.DisplayOrder--;
+            }
+        }
+        else
+        {
+            var packagesToShiftUp = context.Set<InsurancePackage>()
+                .Where(x => x.BookingType == bookingType
+                    && x.Id != packageId
+                    && x.DisplayOrder >= newOrder
+                    && x.DisplayOrder < oldOrder)
+                .ToList();
+
+            foreach (var pkg in packagesToShiftUp)
+            {
+                pkg.DisplayOrder++;
+            }
+        }
+    }
+
     public static InsurancePackageDto ToDto(InsurancePackage package) =>
         new(
             package.Id,
@@ -400,11 +600,13 @@ internal static class InsurancePackageSupport
             package.IsRequired,
             package.ProviderName,
             package.ProviderLogoUrl,
+            package.ImageUrl,
             package.UnitPremiumAmount,
             package.CoverageAmount,
             package.Currency,
             package.Conditions,
             package.TermsUrl,
             ToStatus(package.IsActive),
-            package.DisplayOrder);
+            package.DisplayOrder,
+            package.RewardOption);
 }

@@ -1056,21 +1056,36 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
 
         if (!PaymentSupport.IsPaid(payment.PaymentStatus))
         {
+            if (payment.RefundStatus == PaymentSupport.RefundedStatus)
+            {
+                throw new ValidationException([new ValidationFailure(nameof(payment.PaymentStatus),
+                    "Payment này đã được hoàn tiền trước đó.")]);
+            }
             throw new ValidationException([new ValidationFailure(nameof(payment.PaymentStatus),
                 "Chỉ có thể hoàn tiền cho payment đã thanh toán.")]);
         }
 
-       
+        var now = _timeProvider.GetUtcNow();
+        var refundAmount = await PaymentSupport.ResolvePolicyRefundAmountAsync(
+            _context,
+            payment,
+            now,
+            cancellationToken);
+
+        // Khi chính sách cho refund 0đ (huỷ dưới 24 giờ trước giờ khởi hành): bỏ qua OTP + PayOS + admin-release,
+        // customer được quyền đóng sổ booking trực tiếp.
+        if (refundAmount <= 0)
+        {
+            await CloseBookingWithZeroRefundAsync(payment, request, now, cancellationToken);
+            return PaymentSupport.ToDto(payment.Booking, payment);
+        }
+
         // Quy tắc "1 lần duy nhất cho customer":
         // - Admin/Manager/Staff luôn refund được (không giới hạn).
         // - Customer chỉ được refund khi admin đã "mở lại" (RefundReleasedAt != null) AND
         //   CustomerRefundAttempts < 1. Sau khi attempt (kể cả fail) thì tăng counter,
         //   và phải admin mở lại lại mới refund tiếp được.
-        // - Lưu ý: chỉ áp dụng khi user tồn tại trong DB (GetOwnedPaymentAsync đã verify ownership
-        //   bằng booking.UserId, nên khi đến đây user hợp lệ). Nếu user không có role gì (chưa seed
-        //   trong test chẳng hạn) thì bỏ qua rule này — handler vẫn flow bình thường.
-        // Dùng TryGetCurrentUserWithRoleAsync để tránh throw NotFoundException khi user entity
-        // chưa được seed trong test (chỉ có userId từ JWT/IUserContext).
+        // - Lưu ý: chỉ áp dụng khi refundAmount > 0; refund 0đ (đóng sổ) không cần admin release.
         var currentUser = await AuthSupport.TryGetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
         var isCustomer = currentUser is not null && AuthSupport.IsCustomer(currentUser);
         if (isCustomer)
@@ -1086,21 +1101,6 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
                 throw new ValidationException([new ValidationFailure("refund",
                     "Bạn đã sử dụng 1 lần hoàn tiền. Vui lòng liên hệ admin để được hỗ trợ thêm.")]);
             }
-        }
-
-        var now = _timeProvider.GetUtcNow();
-        var refundAmount = await PaymentSupport.ResolvePolicyRefundAmountAsync(
-            _context,
-            payment,
-            now,
-            cancellationToken);
-
-        // Khi chính sách cho refund 0đ (huỷ dưới 24 giờ trước giờ khởi hành): bỏ qua OTP + PayOS,
-        // đóng sổ trực tiếp để booking chuyển sang trạng thái Refunded.
-        if (refundAmount <= 0)
-        {
-            await CloseBookingWithZeroRefundAsync(payment, request, now, cancellationToken);
-            return PaymentSupport.ToDto(payment.Booking, payment);
         }
 
         await VerifyRefundOtpAsync(payment, request.OtpChallengeId, request.OtpCode, now, cancellationToken);
@@ -2057,6 +2057,10 @@ internal static class PaymentSupport
     public static bool IsPaid(string status) =>
         string.Equals(status, PaidStatus, StringComparison.OrdinalIgnoreCase);
 
+    public static bool IsRefundableForRefund(Payment payment) =>
+        string.Equals(payment.PaymentStatus, PaidStatus, StringComparison.OrdinalIgnoreCase)
+        && !string.Equals(payment.RefundStatus, RefundedStatus, StringComparison.OrdinalIgnoreCase);
+
     public static bool IsExpired(Payment payment, DateTimeOffset now)
     {
         var expiresAt = ResolvePaymentExpiresAt(payment);
@@ -2526,7 +2530,8 @@ internal static class PaymentSupport
             payment.CustomerRefundAttempts,
             payment.RefundReleasedAt,
             payment.RefundReleasedByUserId,
-            payment.RefundReleasedReason);
+            payment.RefundReleasedReason,
+            IsRefundable: IsRefundableForRefund(payment));
 
     public sealed record PaymentPlan(
         string Purpose,
