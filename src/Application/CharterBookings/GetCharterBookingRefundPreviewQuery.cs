@@ -80,20 +80,22 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
         // Chính sách không hoàn tiền (huỷ dưới 24 giờ trước giờ kh�i hành) vẫn cho phép "đóng sổ" booking
         // thông qua POST /payments/{id}/refund với refundAmount = 0 → BE đánh dấu Refunded.
         // Booking đã Cancelled/Completed/Expired không còn cho refund (cancel & refund là 2 flow tách biệt).
-        var canRequestRefund = outstanding > 0m
-            && (policyPercent > 0m || booking.BookingStatus == BookingStatus.Cancelled)
+        var policyCap = Math.Floor(totalPaid * policyPercent);
+        var outstandingRefundAmount = Math.Min(outstanding, policyCap);
+
+        var canRequestRefund = outstandingRefundAmount > 0m
+            || (policyPercent == 0m && booking.BookingStatus == BookingStatus.Cancelled)
             && booking.BookingStatus != BookingStatus.Completed
             && booking.BookingStatus != BookingStatus.Expired;
 
-        var isPartiallyRefunded = outstanding > 0m && totalRefunded > 0m && totalPaid > 0m;
-        var isFullyRefunded = outstanding == 0m && totalPaid > 0m;
+        var isPartiallyRefunded = outstandingRefundAmount > 0m && totalRefunded > 0m && totalPaid > 0m;
+        var isFullyRefunded = outstandingRefundAmount == 0m && outstanding > 0m && totalPaid > 0m;
 
         var items = new List<RefundablePaymentDto>();
-        var remaining = outstanding;
+        var remaining = outstandingRefundAmount;
         // Cap tổng theo policy (giống CharterBookingRefundSupport.GetRefundablePayments):
         // - policyPercent = 0% → cap = 0 (chỉ đóng sổ booking, không refund tiền)
         // - policyPercent > 0% → cap = floor(totalPaid * policyPercent)
-        var policyCap = Math.Floor(totalPaid * policyPercent);
         var distributed = 0m;
         foreach (var p in payments
             .Where(p => p.PaymentStatus == BookingPaymentStatusExtensions.PaidValue)
@@ -114,7 +116,7 @@ public sealed class GetCharterBookingRefundPreviewQueryHandler
             booking.Id,
             totalPaid,
             totalRefunded,
-            outstanding,
+            outstandingRefundAmount,
             policyPercent,
             canRequestRefund,
             items,
