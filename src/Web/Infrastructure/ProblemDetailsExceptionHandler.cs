@@ -23,9 +23,9 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                     ["code"] = ance.Code
                 }
             }),
-            ValidationException ve => (StatusCodes.Status400BadRequest, (ProblemDetails)new ValidationProblemDetails(ve.Errors)
+            ValidationException ve => (StatusCodes.Status200OK, (ProblemDetails)new ValidationProblemDetails(ve.Errors)
             {
-                Status = StatusCodes.Status400BadRequest,
+                Status = StatusCodes.Status200OK,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1"
             }),
             SaigonWaterbus.Application.Common.Exceptions.NotFoundException ne => (StatusCodes.Status404NotFound, new ProblemDetails
@@ -83,16 +83,16 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                 Detail = pise.Message,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.6.4"
             }),
-            BadHttpRequestException bhre => (StatusCodes.Status400BadRequest, new ProblemDetails
+            BadHttpRequestException bhre => (StatusCodes.Status200OK, new ProblemDetails
             {
-                Status = StatusCodes.Status400BadRequest,
+                Status = StatusCodes.Status200OK,
                 Title = "Invalid request body",
                 Detail = bhre.Message,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1"
             }),
-            JsonException je => (StatusCodes.Status400BadRequest, new ProblemDetails
+            JsonException je => (StatusCodes.Status200OK, new ProblemDetails
             {
-                Status = StatusCodes.Status400BadRequest,
+                Status = StatusCodes.Status200OK,
                 Title = "Invalid JSON",
                 Detail = je.Message,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.5.1"

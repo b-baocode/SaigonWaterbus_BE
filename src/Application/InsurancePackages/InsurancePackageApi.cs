@@ -67,9 +67,9 @@ public sealed class GetInsurancePackageListQueryHandler
 public sealed record CreateInsurancePackageCommand(
     string Code,
     string Name,
-    string? BookingType,
-    decimal UnitPremiumAmount,
-    decimal CoverageAmount,
+    string BookingType = "PassengerInsurance",
+    decimal UnitPremiumAmount = 1000,
+    decimal CoverageAmount = 1000,
     bool IsRequired = false,
     string? ProviderName = null,
     string? ProviderLogoUrl = null,
@@ -82,7 +82,7 @@ public sealed record CreateInsurancePackageCommand(
 
 public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<CreateInsurancePackageCommand>
 {
-    public CreateInsurancePackageCommandValidator()
+    public CreateInsurancePackageCommandValidator(IApplicationDbContext context)
     {
         RuleFor(x => x.Code)
             .NotEmpty()
@@ -94,15 +94,15 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
             .Must(InsurancePackageSupport.IsKnownBookingType)
             .WithMessage("bookingType hợp lệ: PassengerInsurance. SeatBooking/CharterBooking chỉ giữ tương thích dữ liệu cũ.");
         RuleFor(x => x.UnitPremiumAmount)
-            .GreaterThanOrEqualTo(1)
+            .GreaterThanOrEqualTo(1000)
             .LessThanOrEqualTo(100_000_000)
             .Must(x => decimal.Truncate(x) == x)
-            .WithMessage("unitPremiumAmount phải là số nguyên VND từ 0 đến 100.000.000.");
+            .WithMessage("unitPremiumAmount phải là số nguyên VND từ 1.000 đến 100.000.000.");
         RuleFor(x => x.CoverageAmount)
-            .GreaterThan(0)
+            .GreaterThanOrEqualTo(1000)
             .LessThanOrEqualTo(10_000_000_000)
             .Must(x => decimal.Truncate(x) == x)
-            .WithMessage("coverageAmount phải là số nguyên VND lớn hơn 0.");
+            .WithMessage("coverageAmount phải là số nguyên VND từ 1.000 đến 10.000.000.000.");
         RuleFor(x => x.ProviderName).MaximumLength(150).When(x => x.ProviderName is not null);
         RuleFor(x => x.ProviderLogoUrl)
             .MaximumLength(1000)
@@ -125,6 +125,16 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
         RuleFor(x => x.Status).IsInEnum();
         RuleFor(x => x.DisplayOrder)
             .GreaterThanOrEqualTo(1)
+            .When(x => x.DisplayOrder.HasValue);
+        RuleFor(x => x.DisplayOrder)
+            .Must((request, order) =>
+            {
+                var normalizedBookingType = InsurancePackageSupport.NormalizeBookingType(request.BookingType);
+                var existingCount = context.Set<InsurancePackage>()
+                    .Count(x => x.BookingType == normalizedBookingType);
+                return order!.Value <= existingCount + 1;
+            })
+            .WithMessage(x => $"Thứ tự hiển thị không được lớn hơn số gói bảo hiểm hiện có + 1.")
             .When(x => x.DisplayOrder.HasValue);
         RuleFor(x => x.RewardOption)
             .Must(x => x == 1 || x == 2 || x == null)
@@ -209,15 +219,15 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
             .Must(InsurancePackageSupport.IsKnownBookingType)
             .WithMessage("bookingType hợp lệ: PassengerInsurance. SeatBooking/CharterBooking chỉ giữ tương thích dữ liệu cũ.");
         RuleFor(x => x.UnitPremiumAmount)
-            .GreaterThanOrEqualTo(1)
+            .GreaterThanOrEqualTo(1000)
             .LessThanOrEqualTo(100_000_000)
             .Must(x => decimal.Truncate(x) == x)
-            .WithMessage("unitPremiumAmount phải là số nguyên VND từ 0 đến 100.000.000.");
+            .WithMessage("unitPremiumAmount phải là số nguyên VND từ 1.000 đến 100.000.000.");
         RuleFor(x => x.CoverageAmount)
-            .GreaterThan(0)
+            .GreaterThanOrEqualTo(1000)
             .LessThanOrEqualTo(10_000_000_000)
             .Must(x => decimal.Truncate(x) == x)
-            .WithMessage("coverageAmount phải là số nguyên VND lớn hơn 0.");
+            .WithMessage("coverageAmount phải là số nguyên VND từ 1.000 đến 10.000.000.000.");
         RuleFor(x => x.ProviderName).MaximumLength(150).When(x => x.ProviderName is not null);
         RuleFor(x => x.ProviderLogoUrl)
             .MaximumLength(1000)
@@ -330,6 +340,34 @@ public sealed class UpdateInsurancePackageStatusCommandHandler
         await _context.SaveChangesAsync(cancellationToken);
 
         return InsurancePackageSupport.ToDto(package);
+    }
+}
+
+[Authorize(Roles = "Admin,Manager")]
+public sealed record DeleteInsurancePackageCommand(Guid InsurancePackageId) : IRequest<bool>;
+
+public sealed class DeleteInsurancePackageCommandValidator
+    : AbstractValidator<DeleteInsurancePackageCommand>
+{
+    public DeleteInsurancePackageCommandValidator() => RuleFor(x => x.InsurancePackageId).NotEmpty();
+}
+
+public sealed class DeleteInsurancePackageCommandHandler
+    : IRequestHandler<DeleteInsurancePackageCommand, bool>
+{
+    private readonly IApplicationDbContext _context;
+
+    public DeleteInsurancePackageCommandHandler(IApplicationDbContext context) => _context = context;
+
+    public async Task<bool> Handle(DeleteInsurancePackageCommand request, CancellationToken cancellationToken)
+    {
+        var package = await _context.Set<InsurancePackage>()
+            .FirstOrDefaultAsync(x => x.Id == request.InsurancePackageId, cancellationToken)
+            ?? throw new NotFoundException("Gói bảo hiểm không tồn tại.");
+
+        package.IsActive = false;
+        await _context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 }
 

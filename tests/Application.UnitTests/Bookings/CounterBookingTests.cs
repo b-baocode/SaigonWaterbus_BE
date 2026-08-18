@@ -194,7 +194,7 @@ public class CounterBookingTests
             {
                 CustomerUserId = customerContext.UserId,
                 CustomerConfirmedForPoints = true,
-                PointsToUse = 5_000
+                UseAllPoints = true
             },
             CancellationToken.None);
 
@@ -258,7 +258,7 @@ public class CounterBookingTests
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
-                CashCommand("TR-CTR-POINT-NO-CUSTOMER", "A1") with { PointsToUse = 1_000 },
+                CashCommand("TR-CTR-POINT-NO-CUSTOMER", "A1") with { UseAllPoints = true },
                 CancellationToken.None));
 
         exception.Errors.SelectMany(x => x.Value)

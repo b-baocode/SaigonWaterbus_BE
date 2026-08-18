@@ -89,9 +89,15 @@ public static class PromotionEligibilitySupport
 
         var discount = PriceRoundingSupport.RoundFare(promotion.CalculateDiscount(subtotal));
 
-        // Lượt dùng và ngân sách suy ra từ bookings (không dùng counter).
-        var usedBookings = PromotionSupport.ActiveUsageQuery(context, promotion.Id)
-            .Where(b => !excludedBookingId.HasValue || b.Id != excludedBookingId.Value);
+        // Lượt dùng suy ra từ bookings (bao gồm cả Cancelled/Expired - không hoàn lại mã sau khi hủy).
+        var usedBookings = userId.HasValue
+            ? context.Set<Booking>()
+                .Where(b => b.PromotionId == promotion.Id
+                    && b.UserId == userId.Value
+                    && (!excludedBookingId.HasValue || b.Id != excludedBookingId.Value))
+            : context.Set<Booking>()
+                .Where(b => b.PromotionId == promotion.Id
+                    && (!excludedBookingId.HasValue || b.Id != excludedBookingId.Value));
 
         if (promotion.UsageLimit.HasValue)
         {
@@ -104,7 +110,10 @@ public static class PromotionEligibilitySupport
 
         if (promotion.BudgetCap.HasValue)
         {
-            var spent = await usedBookings.SumAsync(b => (decimal?)b.DiscountAmount, cancellationToken) ?? 0m;
+            var usedForBudget = context.Set<Booking>()
+                .Where(b => b.PromotionId == promotion.Id
+                    && (!excludedBookingId.HasValue || b.Id != excludedBookingId.Value));
+            var spent = await usedForBudget.SumAsync(b => (decimal?)b.DiscountAmount, cancellationToken) ?? 0m;
             if (spent + discount > promotion.BudgetCap.Value)
             {
                 return Invalid("Khuyến mãi đã hết ngân sách.");
@@ -115,7 +124,7 @@ public static class PromotionEligibilitySupport
         {
             if (promotion.MaxUsesPerAccount.HasValue)
             {
-                var userUsed = await usedBookings.CountAsync(b => b.UserId == userId.Value, cancellationToken);
+                var userUsed = await usedBookings.CountAsync(cancellationToken);
                 if (userUsed >= promotion.MaxUsesPerAccount.Value)
                 {
                     return Invalid(promotion.MaxUsesPerAccount.Value == 1
@@ -128,7 +137,6 @@ public static class PromotionEligibilitySupport
             {
                 var hasPriorBooking = await context.Set<Booking>()
                     .AnyAsync(b => b.UserId == userId.Value
-                                && !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus)
                                 && (!excludedBookingId.HasValue || b.Id != excludedBookingId.Value),
                         cancellationToken);
                 if (hasPriorBooking)

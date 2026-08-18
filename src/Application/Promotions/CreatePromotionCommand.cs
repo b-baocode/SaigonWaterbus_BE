@@ -42,11 +42,16 @@ public sealed class CreatePromotionCommandValidator : AbstractValidator<CreatePr
             .LessThanOrEqualTo(100)
             .When(x => x.PromotionType == PromotionType.Percent)
             .WithMessage("Percent discount không được vượt quá 100.");
-        RuleFor(x => x.MaxDiscountAmount).GreaterThan(0).When(x => x.MaxDiscountAmount.HasValue);
-        RuleFor(x => x.MinOrderValue).GreaterThanOrEqualTo(0).When(x => x.MinOrderValue.HasValue);
-        RuleFor(x => x.BudgetCap).GreaterThan(0).When(x => x.BudgetCap.HasValue);
-        RuleFor(x => x.UsageLimit).GreaterThan(0).When(x => x.UsageLimit.HasValue);
-        RuleFor(x => x.MaxUsesPerAccount).GreaterThan(0).When(x => x.MaxUsesPerAccount.HasValue);
+        RuleFor(x => x.MaxDiscountAmount).GreaterThanOrEqualTo(1000).When(x => x.MaxDiscountAmount.HasValue)
+            .WithMessage("Số tiền phải từ 1.000đ trở lên.");
+        RuleFor(x => x.MinOrderValue).GreaterThanOrEqualTo(1000).When(x => x.MinOrderValue.HasValue)
+            .WithMessage("Số tiền phải từ 1.000đ trở lên.");
+        RuleFor(x => x.BudgetCap).GreaterThanOrEqualTo(1000).When(x => x.BudgetCap.HasValue)
+            .WithMessage("Số tiền phải từ 1.000đ trở lên.");
+        RuleFor(x => x.UsageLimit).GreaterThanOrEqualTo(1).When(x => x.UsageLimit.HasValue)
+            .WithMessage("Lượt dùng phải từ 1 trở lên.");
+        RuleFor(x => x.MaxUsesPerAccount).GreaterThanOrEqualTo(1).When(x => x.MaxUsesPerAccount.HasValue)
+            .WithMessage("Lượt dùng phải từ 1 trở lên.");
         RuleFor(x => x.ValidTo).GreaterThan(x => x.ValidFrom);
     }
 }

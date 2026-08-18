@@ -62,7 +62,7 @@ public sealed record CreateCounterBookingCommand(
     Guid? InsurancePackageId = null,
     Guid? CustomerUserId = null,
     bool CustomerConfirmedForPoints = false,
-    int? PointsToUse = null) : IRequest<CounterBookingResult>;
+    bool UseAllPoints = false) : IRequest<CounterBookingResult>;
 
 public sealed class CreateCounterBookingCommandValidator : AbstractValidator<CreateCounterBookingCommand>
 {
@@ -89,10 +89,6 @@ public sealed class CreateCounterBookingCommandValidator : AbstractValidator<Cre
         RuleFor(x => x.CustomerUserId)
             .NotEmpty()
             .When(x => x.CustomerUserId.HasValue);
-        RuleFor(x => x.PointsToUse)
-            .GreaterThanOrEqualTo(0)
-            .When(x => x.PointsToUse.HasValue)
-            .WithMessage("Số điểm sử dụng không được âm.");
     }
 }
 
@@ -231,10 +227,15 @@ public sealed class CreateCounterBookingCommandHandler
 
                     await _context.SaveChangesAsync(ct);
 
-                    if (request.PointsToUse.HasValue)
+                    if (request.UseAllPoints && loyaltyCustomer != null)
                     {
-                        await PaymentSupport.ApplyPointsForCheckoutAsync(
-                            _context, booking, request.PointsToUse, now, ct);
+                        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(subtotal);
+                        var pointsToUse = Math.Min(loyaltyCustomer.PointBalance, maxRedeemable);
+                        if (pointsToUse > 0)
+                        {
+                            await PaymentSupport.ApplyPointsForCheckoutAsync(
+                                _context, booking, pointsToUse, now, ct);
+                        }
                     }
                 },
                 cancellationToken);
@@ -317,29 +318,22 @@ public sealed class CreateCounterBookingCommandHandler
         User? loyaltyCustomer,
         decimal subtotal)
     {
-        var pointsToUse = request.PointsToUse ?? 0;
-        if (pointsToUse <= 0)
+        if (!request.UseAllPoints)
         {
             return;
         }
 
         if (loyaltyCustomer is null)
         {
-            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.PointsToUse),
+            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.UseAllPoints),
                 "Chỉ dùng điểm khi đã chọn và xác nhận tài khoản khách hàng.")]);
         }
 
         var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(subtotal);
-        if (pointsToUse > maxRedeemable)
+        if (loyaltyCustomer.PointBalance <= 0 && maxRedeemable <= 0)
         {
-            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.PointsToUse),
-                $"Điểm chỉ được trả tối đa 50% giá trị đơn ({maxRedeemable} điểm cho đơn này).")]);
-        }
-
-        if (pointsToUse > loyaltyCustomer.PointBalance)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.PointsToUse),
-                $"Số dư điểm không đủ (hiện có {loyaltyCustomer.PointBalance} điểm khả dụng).")]);
+            throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.UseAllPoints),
+                "Khách hàng không có điểm khả dụng.")]);
         }
     }
 

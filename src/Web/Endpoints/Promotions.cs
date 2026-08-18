@@ -67,6 +67,16 @@ public sealed class Promotions : IEndpointGroup
                 "Chi tra ve ma Active + Public, con trong han va chua het luot/ngan sach.",
                 "Khong lo luot da dung, ngan sach hay ma Private."));
 
+        group.MapGet(GetUserPromotionHistory, "my-history")
+            .RequireAuthorization()
+            .WithSummary("Lich su ma khuyen mai da dung (user)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "User",
+                null,
+                "Tra ve danh sach ma KM da su dung boi user hien tai (da dang nhap).",
+                "Bao gom: ma, ten, anh, so tien giam, ngay dung, trang thai booking, bookingId.",
+                "Sap xep moi nhat truoc."));
+
         group.MapGet(GetPromotions, string.Empty)
             .RequireAuthorization()
             .WithSummary("Danh sach khuyen mai (admin)")
@@ -139,6 +149,9 @@ public sealed class Promotions : IEndpointGroup
 
     private static async Task<IResult> GetPublicPromotions(ISender sender, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetPublicPromotionListQuery(), ct));
+
+    private static async Task<IResult> GetUserPromotionHistory(ISender sender, CancellationToken ct) =>
+        Results.Ok(await sender.Send(new GetUserPromotionHistoryQuery(), ct));
 
     private static async Task<IResult> GetPromotions(ISender sender, PromotionStatus? status, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetPromotionListQuery(status), ct));

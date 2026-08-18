@@ -62,6 +62,17 @@ public sealed record PublicPromotionDto(
     DateTimeOffset ValidTo,
     string? ImageUrl);
 
+/// <summary>DTO lịch sử mã KM đã dùng của user.</summary>
+public sealed record UserPromotionHistoryDto(
+    Guid PromotionId,
+    string PromotionCode,
+    string PromotionName,
+    string? ImageUrl,
+    decimal DiscountAmount,
+    DateTimeOffset UsedAt,
+    string BookingStatus,
+    Guid BookingId);
+
 public sealed record PromotionValidationDto(
     bool IsValid,
     decimal DiscountAmount,

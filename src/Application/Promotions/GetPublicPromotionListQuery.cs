@@ -1,3 +1,4 @@
+using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -41,9 +42,9 @@ public sealed class GetPublicPromotionListQueryHandler
             .Select(p => new
             {
                 Promotion = p,
-                TotalUsed = p.Bookings.Count(b => !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus)),
-                BudgetSpent = p.Bookings.Where(b => !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus))
-                    .Sum(b => (decimal?)b.DiscountAmount) ?? 0m
+                // Đếm tất cả booking (bao gồm cả Cancelled/Expired - không hoàn lại mã sau khi hủy).
+                TotalUsed = p.Bookings.Count(),
+                BudgetSpent = p.Bookings.Sum(b => (decimal?)b.DiscountAmount) ?? 0m
             })
             .ToListAsync(cancellationToken);
 
@@ -52,17 +53,18 @@ public sealed class GetPublicPromotionListQueryHandler
         var hasPriorBooking = false;
         if (userId.HasValue)
         {
-            var activeUserBookings = _context.Set<Booking>()
+            // Đếm tất cả booking của user có promotion (bao gồm cả Cancelled/Expired - không hoàn lại mã sau khi hủy).
+            var userBookings = await _context.Set<Booking>()
                 .AsNoTracking()
-                .Where(b => b.UserId == userId.Value
-                            && !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus));
+                .Where(b => b.UserId == userId.Value)
+                .ToListAsync(cancellationToken);
 
-            hasPriorBooking = await activeUserBookings.AnyAsync(cancellationToken);
-            userUsageByPromotionId = await activeUserBookings
+            hasPriorBooking = userBookings.Any();
+
+            userUsageByPromotionId = userBookings
                 .Where(b => b.PromotionId.HasValue)
                 .GroupBy(b => b.PromotionId!.Value)
-                .Select(g => new { PromotionId = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.PromotionId, x => x.Count, cancellationToken);
+                .ToDictionary(g => g.Key, g => g.Count());
         }
 
         return rows
