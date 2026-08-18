@@ -34,8 +34,8 @@ public static class PointSupport
 
     private const string PaidPaymentStatus = BookingPaymentStatusExtensions.PaidValue;
 
-    /// <summary>Point chỉ được trả tối đa 100% bill — phần dư (nếu có) vẫn nằm trong tài khoản khách.</summary>
-    public const decimal MaxRedeemShareOfBill = 1.0m;
+    /// <summary>Point chỉ được trả tối đa 50% bill — phần dư (nếu có) vẫn nằm trong tài khoản khách.</summary>
+    public const decimal MaxRedeemShareOfBill = 0.5m;
 
     public static int CalculateEarnedPoints(decimal paidAmount) =>
         paidAmount <= 0 ? 0 : (int)Math.Floor(paidAmount * EarnRate);
