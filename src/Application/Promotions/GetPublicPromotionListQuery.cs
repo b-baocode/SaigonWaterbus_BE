@@ -42,9 +42,11 @@ public sealed class GetPublicPromotionListQueryHandler
             .Select(p => new
             {
                 Promotion = p,
-                // Đếm tất cả booking (bao gồm cả Cancelled/Expired - không hoàn lại mã sau khi hủy).
-                TotalUsed = p.Bookings.Count(),
-                BudgetSpent = p.Bookings.Sum(b => (decimal?)b.DiscountAmount) ?? 0m
+                // Chỉ đếm booking chưa bị giải phóng (Cancelled/Expired không chiếm lượt).
+                TotalUsed = p.Bookings.Count(b => !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus)),
+                BudgetSpent = p.Bookings
+                    .Where(b => !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus))
+                    .Sum(b => (decimal?)b.DiscountAmount) ?? 0m
             })
             .ToListAsync(cancellationToken);
 
@@ -53,7 +55,7 @@ public sealed class GetPublicPromotionListQueryHandler
         var hasPriorBooking = false;
         if (userId.HasValue)
         {
-            // Đếm tất cả booking của user có promotion (bao gồm cả Cancelled/Expired - không hoàn lại mã sau khi hủy).
+            // Đếm booking của user đang chiếm lượt (không tính Cancelled/Expired).
             var userBookings = await _context.Set<Booking>()
                 .AsNoTracking()
                 .Where(b => b.UserId == userId.Value)
@@ -62,7 +64,7 @@ public sealed class GetPublicPromotionListQueryHandler
             hasPriorBooking = userBookings.Any();
 
             userUsageByPromotionId = userBookings
-                .Where(b => b.PromotionId.HasValue)
+                .Where(b => b.PromotionId.HasValue && !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus))
                 .GroupBy(b => b.PromotionId!.Value)
                 .ToDictionary(g => g.Key, g => g.Count());
         }

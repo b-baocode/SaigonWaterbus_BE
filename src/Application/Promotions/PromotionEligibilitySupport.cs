@@ -89,14 +89,16 @@ public static class PromotionEligibilitySupport
 
         var discount = PriceRoundingSupport.RoundFare(promotion.CalculateDiscount(subtotal));
 
-        // Lượt dùng suy ra từ bookings (bao gồm cả Cancelled/Expired - không hoàn lại mã sau khi hủy).
+        // Lượt dùng suy ra từ bookings đang chiếm lượt (không tính Cancelled/Expired).
         var usedBookings = userId.HasValue
             ? context.Set<Booking>()
                 .Where(b => b.PromotionId == promotion.Id
                     && b.UserId == userId.Value
+                    && !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus)
                     && (!excludedBookingId.HasValue || b.Id != excludedBookingId.Value))
             : context.Set<Booking>()
                 .Where(b => b.PromotionId == promotion.Id
+                    && !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus)
                     && (!excludedBookingId.HasValue || b.Id != excludedBookingId.Value));
 
         if (promotion.UsageLimit.HasValue)
@@ -112,6 +114,7 @@ public static class PromotionEligibilitySupport
         {
             var usedForBudget = context.Set<Booking>()
                 .Where(b => b.PromotionId == promotion.Id
+                    && !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus)
                     && (!excludedBookingId.HasValue || b.Id != excludedBookingId.Value));
             var spent = await usedForBudget.SumAsync(b => (decimal?)b.DiscountAmount, cancellationToken) ?? 0m;
             if (spent + discount > promotion.BudgetCap.Value)
