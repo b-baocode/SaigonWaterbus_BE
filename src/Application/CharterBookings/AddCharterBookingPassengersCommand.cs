@@ -112,12 +112,8 @@ public sealed class AddCharterBookingPassengersCommandHandler
             countedPassengerCount + request.Passengers.Count,
             nameof(request.Passengers));
 
-        // Cancel existing tickets because passenger count changed, require re-payment
-        CancelExistingTicketsForPassengerChange(booking);
-
-        // Reset booking and payment status since passengers changed
+        // Cập nhật booking status về Quoted để chờ manager duyệt.
         booking.BookingStatus = BookingStatus.Quoted;
-        booking.PaymentStatus = BookingPaymentStatusExtensions.UnpaidValue;
 
         var requestBatchId = Guid.NewGuid();
         var today = DateOnly.FromDateTime(now.UtcDateTime);
@@ -167,21 +163,5 @@ public sealed class AddCharterBookingPassengersCommandHandler
             cancellationToken);
 
         return CharterBookingPassengerResultSupport.ToUpdateResult(booking);
-    }
-
-    private static void CancelExistingTicketsForPassengerChange(Booking booking)
-    {
-        if (booking.Tickets.Any(x => x.TicketStatus is TicketStatus.CheckedIn or TicketStatus.CheckedOut))
-        {
-            throw new ValidationException([new ValidationFailure("tickets",
-                "Không thể thêm hành khách khi đã có vé check-in hoặc check-out.")]);
-        }
-
-        foreach (var ticket in booking.Tickets.Where(x =>
-            x.TicketStatus != TicketStatus.Cancelled
-            && x.TicketStatus != TicketStatus.Expired))
-        {
-            ticket.TicketStatus = TicketStatus.Cancelled;
-        }
     }
 }

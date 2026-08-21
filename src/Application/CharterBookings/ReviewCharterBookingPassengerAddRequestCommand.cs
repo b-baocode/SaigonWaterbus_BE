@@ -203,7 +203,8 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
                 "Không thể duyệt thêm hành khách cho booking đã hủy hoặc đã hoàn tất.")]);
         }
 
-        if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(booking.PaymentStatus, BookingPaymentStatusExtensions.DepositPaidValue, StringComparison.OrdinalIgnoreCase))
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.PaymentStatus),
                 "Chỉ duyệt và phát hành vé bổ sung sau khi charter booking đã thanh toán đủ.")]);

@@ -13,7 +13,7 @@ internal static class CharterBookingPassengerSupport
     public const string ApprovalStatusPending = "Pending";
     public const string ApprovalStatusRejected = "Rejected";
     public const int MaxPassengerAddRequestCount = 1;
-    public static readonly TimeSpan ManifestUpdateCutoff = TimeSpan.FromHours(48);
+    public static readonly TimeSpan ManifestUpdateCutoff = TimeSpan.FromHours(24);
     private const int MinimumBirthYear = 1900;
     private static readonly string[] DateFormats =
     [
@@ -170,7 +170,7 @@ internal static class CharterBookingPassengerSupport
         }
 
         throw new ValidationException([new ValidationFailure(propertyName,
-            "Không thể cập nhật danh sách hành khách trong vòng 48 giờ trước giờ khởi hành.")]);
+            "Không thể cập nhật danh sách hành khách trong vòng 24 giờ trước giờ khởi hành.")]);
     }
 
     public static bool IsApproved(BookingPassenger passenger) =>

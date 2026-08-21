@@ -17,7 +17,8 @@ internal static class CharterBookingTicketSupport
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
-        if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase))
+        if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(booking.PaymentStatus, BookingPaymentStatusExtensions.DepositPaidValue, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }
