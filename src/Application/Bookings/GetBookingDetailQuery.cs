@@ -49,12 +49,25 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
         booking.Tickets = await LoadTicketsAsync(booking.Id, cancellationToken);
         booking.Payments = await LoadPaymentsAsync(booking.Id, cancellationToken);
 
+        // Vé Cancelled bị loại vì LUÔN có tấm khác thay thế (cấp lại vé, đổi loại vé) — giữ nó
+        // lại thì hành khách hiện nhầm tấm cũ.
+        //
+        // Vé Expired thì NGƯỢC LẠI: không có tấm nào thay thế cả. Trước đây nó cũng bị loại, nên
+        // hành khách trắng vé, ticketStatus về null, và màn hình rơi về itemStatus của booking —
+        // khách thấy "ĐÃ XÁC NHẬN" kèm câu "vé sẽ hiện sau khi thanh toán" trong khi vé đã chết.
+        // Giữ lại để trả đúng trạng thái; FE tự ẩn QR vì Expired không nằm trong nhóm còn hiệu lực.
         var ticketsByPassengerId = booking.Tickets
             .Where(t => t.BookingPassengerId.HasValue
-                     && t.TicketStatus != Domain.Enums.TicketStatus.Cancelled
-                     && t.TicketStatus != Domain.Enums.TicketStatus.Expired)
+                     && t.TicketStatus != Domain.Enums.TicketStatus.Cancelled)
             .GroupBy(t => t.BookingPassengerId!.Value)
-            .ToDictionary(g => g.Key, g => g.OrderByDescending(t => t.IssuedAt).First());
+            .ToDictionary(
+                g => g.Key,
+                g => g
+                    // Vé còn dùng được luôn được ưu tiên; chỉ khi không còn tấm nào mới lấy vé
+                    // đã hết hạn để báo trạng thái thật.
+                    .OrderByDescending(t => t.TicketStatus != Domain.Enums.TicketStatus.Expired)
+                    .ThenByDescending(t => t.IssuedAt)
+                    .First());
         var passengerById = booking.Passengers.ToDictionary(x => x.Id);
         var companionByPassengerId = LapInfantTicketSupport.AssignCompanionTicketPassengersToAdults(booking.Passengers);
         var now = _timeProvider.GetUtcNow();

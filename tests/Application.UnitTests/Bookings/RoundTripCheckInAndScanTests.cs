@@ -197,6 +197,36 @@ public class RoundTripCheckInAndScanTests
             .TicketStatus.ShouldBe(TicketStatus.Active, "chuyến chiều đi chưa kết thúc");
     }
 
+    /// <summary>
+    /// Vé hết hạn phải hiện đúng là "Expired". Trước đây nó bị lọc khỏi danh sách vé, TicketStatus
+    /// về null, và màn hình khách rơi về trạng thái booking — hiện "ĐÃ XÁC NHẬN" cho một tấm vé
+    /// đã chết, kèm câu "vé sẽ hiện sau khi thanh toán".
+    /// </summary>
+    [Test]
+    public async Task ExpiredTicketIsReportedInsteadOfBeingHidden()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+        var ownerId = Guid.NewGuid();
+        seeded.Booking.UserId = ownerId;
+        seeded.Booking.PaymentStatus = "Paid";
+        seeded.ReturnTicket.TicketStatus = TicketStatus.Expired;
+        await context.SaveChangesAsync();
+
+        // Ghim đồng hồ trước giờ chạy: vé Active của chuyến đã qua sẽ hiển thị thành "Used",
+        // che mất điều test này muốn kiểm.
+        var detail = await new GetBookingDetailQueryHandler(
+                context, new TestUserContext(ownerId), new FixedTimeProvider(Now))
+            .Handle(new GetBookingDetailQuery(seeded.Booking.Id), CancellationToken.None);
+
+        var returnItem = detail.Items.Single(x => x.TripCode == "TR-RET");
+        returnItem.TicketStatus.ShouldBe(nameof(TicketStatus.Expired));
+        returnItem.TicketCode.ShouldBe(seeded.ReturnTicket.TicketCode);
+
+        detail.Items.Single(x => x.TripCode == "TR-OUT")
+            .TicketStatus.ShouldBe(nameof(TicketStatus.Active), "vé chiều đi không bị ảnh hưởng");
+    }
+
     private static async Task<SeededRoundTrip> SeedConfirmedRoundTripBookingAsync(ApplicationDbContext context)
     {
         var boat = new Boat
