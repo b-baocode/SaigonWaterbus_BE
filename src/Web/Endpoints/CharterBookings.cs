@@ -21,11 +21,9 @@ public sealed class CharterBookings : IEndpointGroup
         """
         {
           "departureDate": "2026-08-01",
-          "adultCount": 15,
-          "childCount": 5,
           "startTime": "08:00:00",
           "fromStationId": "00000000-0000-0000-0000-000000000001",
-          "toStationId": null,
+          "toStationId": "00000000-0000-0000-0000-000000000002",
           "itineraryStops": null,
           "requestedBoats": [
             { "numberOfDecks": 1 },
@@ -34,6 +32,27 @@ public sealed class CharterBookings : IEndpointGroup
           "insuranceSelected": true,
           "insurancePackageId": "00000000-0000-0000-0000-000000000099",
           "specialRequests": "Can trang tri sinh nhat",
+          "contactName": "Nguyen Van A",
+          "contactPhone": "0900000000",
+          "contactEmail": "customer@example.com",
+          "passengers": [
+            { "fullName": "Nguyen Van A", "birthYear": 1995 },
+            { "fullName": "Tran Thi B", "birthYear": 2016 },
+            { "fullName": "Le Van C", "birthYear": 2010 }
+          ]
+        }
+
+        --- HOẶC dùng AdultCount/ChildCount ---
+        {
+          "departureDate": "2026-08-01",
+          "adultCount": 15,
+          "childCount": 5,
+          "startTime": "08:00:00",
+          "fromStationId": "00000000-0000-0000-0000-000000000001",
+          "toStationId": null,
+          "itineraryStops": null,
+          "requestedBoats": null,
+          "insuranceSelected": false,
           "contactName": "Nguyen Van A",
           "contactPhone": "0900000000",
           "contactEmail": "customer@example.com"
@@ -654,7 +673,8 @@ public sealed class CharterBookings : IEndpointGroup
                 "Customer khong chon tau. Admin se nhap tau va chot gia bang API quote.",
                 "departureDate: phai cach ngay tao booking it nhat 7 ngay.",
                 "Customer khong gui rentalUnit/durationValue trong logic moi; backend se tu tinh thoi luong khi admin preview/quote theo route.",
-                "adultCount / childCount: so nguoi lon va tre em khach du kien di; passengerCount backend tu tinh.",
+                "passengers: danh sach hanh khach chi tiet (fullName + birthYear). Backend tu dong tinh adultCount/childCount theo nam sinh (Adult >= 12 tuoi). Khong gui passengers thi dung adultCount/childCount.",
+                "adultCount / childCount: so nguoi lon va tre em khach du kien di; chi dung khi khong gui passengers.",
                 "requestedBoats: danh sach tau customer muon thue; moi item co numberOfDecks.",
                 "numberOfDecks: so tang cua tau khach mong muon, phai lon hon 0.",
                 "insuranceSelected/insurancePackageId: neu khach chon bao hiem thi gui true va id goi PassengerInsurance active.",
@@ -1003,6 +1023,7 @@ public sealed class CharterBookings : IEndpointGroup
             request.DurationValue,
             request.AdultCount,
             request.ChildCount,
+            request.Passengers,
             request.StartTime,
             request.FromStationId,
             request.ToStationId,

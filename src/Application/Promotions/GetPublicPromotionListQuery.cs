@@ -55,7 +55,6 @@ public sealed class GetPublicPromotionListQueryHandler
         var hasPriorBooking = false;
         if (userId.HasValue)
         {
-            // Đếm booking của user đang chiếm lượt (không tính Cancelled/Expired).
             var userBookings = await _context.Set<Booking>()
                 .AsNoTracking()
                 .Where(b => b.UserId == userId.Value)

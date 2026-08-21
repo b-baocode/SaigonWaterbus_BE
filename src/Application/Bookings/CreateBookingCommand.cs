@@ -32,13 +32,14 @@ public sealed record BookingItemRequest(
     string? Nationality,
     string? Note,
     string? PassengerEmail = null,
-    /// <summary>INFANT không ghế: tên ADULT đi kèm trên form (FE). BE lưu & ưu tiên khi gán QR.</summary>
     string? CompanionPassengerName = null);
 
 public sealed record CreateBookingResult(
     Guid BookingId,
     string BookingCode,
     decimal SubtotalAmount,
+    decimal TicketSubtotalAmount,
+    decimal InsuranceAmount,
     decimal DiscountAmount,
     decimal TotalAmount,
     string BookingStatus,
@@ -48,8 +49,7 @@ public sealed record CreateBookingResult(
     string? ReturnTripCode = null,
     BookingInsuranceDto? Insurance = null);
 
-// Vé khứ hồi: truyền thêm ReturnTripCode + ReturnItems — hai chiều độc lập (trip, ghế, hành khách riêng),
-// tổng tiền = cộng hai chiều, promotion áp trên cả booking.
+
 public sealed record CreateBookingCommand(
     string TripCode,
     IReadOnlyList<BookingItemRequest> Items,
@@ -58,6 +58,7 @@ public sealed record CreateBookingCommand(
     IReadOnlyList<BookingItemRequest>? ReturnItems = null,
     bool? InsuranceSelected = null,
     Guid? InsurancePackageId = null,
+    bool? WaterbusInsuranceEnabled = null,
     string? ContactName = null,
     string? ContactPhone = null,
     string? ContactEmail = null) : IRequest<CreateBookingResult>;
@@ -74,15 +75,13 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
             .Must(items => items.Count <= 10).WithMessage("Maximum 10 items per booking.");
 
         RuleForEach(x => x.Items).ChildRules(ApplyItemRules);
-
-        // CHILD có ghế riêng/QR riêng nhưng booking vẫn phải có người lớn đi cùng.
-        // INFANT không ghế dùng QR người lớn; mỗi ADULT có ghế kèm tối đa một INFANT không ghế.
+    
+    
         RuleFor(x => x.Items)
             .Must(HasRequiredSeatedAdultCompanions)
             .WithMessage(ChildAdultMessage)
             .When(x => x.Items is not null);
 
-        // Vé khứ hồi: ReturnTripCode và ReturnItems phải đi cùng nhau.
         RuleFor(x => x.ReturnTripCode).MaximumLength(50);
         RuleFor(x => x.ReturnTripCode).NotEmpty()
             .When(x => x.ReturnItems is { Count: > 0 })
@@ -124,8 +123,7 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
         item.RuleFor(x => x.BirthYear).NotNull()
             .When(x => RequiresBirthYear(x.TicketTypeCode))
             .WithMessage("birthYear là bắt buộc với vé INFANT/CHILD/SENIOR/DISABLED để khai báo và lưu hành khách.");
-        // Bắt buộc / phải khác nhau chỉ áp dụng cho chuyến bán theo chặng — validator không biết
-        // trip nào nên rule đó enforce ở handler (xem ResolveLegAsync).
+       
         item.RuleFor(x => x.FromStationCode).MaximumLength(50);
         item.RuleFor(x => x.ToStationCode).MaximumLength(50);
         item.RuleFor(x => x.PassengerName).NotEmpty().MaximumLength(150);
@@ -133,7 +131,6 @@ public sealed class CreateBookingCommandValidator : AbstractValidator<CreateBook
         item.RuleFor(x => x.PassengerEmail).EmailAddress().MaximumLength(255)
             .When(x => !string.IsNullOrWhiteSpace(x.PassengerEmail));
         item.RuleFor(x => x.CompanionPassengerName).MaximumLength(150);
-        // INFANT không ghế: FE phải gửi tên ADULT đi kèm (cùng chiều) — BE lưu COMPANION:{name}.
         item.RuleFor(x => x.CompanionPassengerName).NotEmpty()
             .When(x => IsInfant(x.TicketTypeCode) && string.IsNullOrWhiteSpace(x.SeatNumber))
             .WithMessage("INFANT không ghế bắt buộc companionPassengerName (tên ADULT đi kèm trên form).");
@@ -281,8 +278,6 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             request.TripCode, request.Items, userId, now, nameof(request.TripCode),
             allowDepartedTrip: false, cancellationToken);
 
-        // Vé khứ hồi: resolve chiều về y hệt chiều đi. Các ràng buộc cặp ReturnTripCode/ReturnItems cũng
-        // khai báo ở validator, nhưng validator không chạy trong pipeline MediatR nên enforce tại đây.
         ResolvedLeg? returnLeg = null;
         if (!string.IsNullOrWhiteSpace(request.ReturnTripCode))
         {
@@ -320,7 +315,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             request.InsurancePackageId,
             legs.Sum(x => x.ItemPrices.Count),
             now,
-            cancellationToken);
+            cancellationToken,
+            request.WaterbusInsuranceEnabled);
         var subtotal = PriceRoundingSupport.RoundFare(
             ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m));
 
@@ -356,12 +352,9 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             await _context.ExecuteInTransactionAsync(
                 async ct =>
                 {
-                    // Chốt ghế: khoá trip_seats rồi kiểm tra lại trước khi insert — chặn hai request
-                    // song song cùng đọc thấy ghế trống ở bước resolve rồi cùng đặt.
                     await BookingLegResolver.EnsureSeatsStillAvailableAsync(
                         _context, _legResolver, legs, userId, now, ct);
 
-                    // Khoá + kiểm tra + tính giảm giá dưới cùng transaction để không vượt hạn mức khi nhiều đơn cùng dùng một mã.
                     if (!string.IsNullOrWhiteSpace(request.PromotionCode))
                     {
                         var code = PromotionSupport.NormalizeCode(request.PromotionCode);
@@ -404,7 +397,10 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         return new CreateBookingResult(
             booking.Id, booking.BookingCode,
-            booking.SubtotalAmount, booking.DiscountAmount, booking.TotalAmount,
+            booking.SubtotalAmount,
+            ticketSubtotal,
+            insuranceSnapshot?.TotalAmount ?? 0m,
+            booking.DiscountAmount, booking.TotalAmount,
             booking.BookingStatus.ToString(), booking.Passengers.Count,
             booking.HoldExpiresAt,
             booking.ReturnTripId,

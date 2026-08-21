@@ -4,8 +4,11 @@ using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
+using System.Linq;
+using System.Text.RegularExpressions;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
+using static SaigonWaterbus.Application.CharterBookings.CharterBookingPassengerSupport;
 
 namespace SaigonWaterbus.Application.CharterBookings;
 
@@ -13,8 +16,9 @@ public sealed record CreateCharterBookingCommand(
     DateOnly DepartureDate,
     BoatRentalUnit? RentalUnit,
     int? DurationValue,
-    int AdultCount,
-    int ChildCount,
+    int? AdultCount = null,
+    int? ChildCount = null,
+    IReadOnlyList<CharterBookingPassengerRequest>? Passengers = null,
     TimeOnly? StartTime = null,
     Guid? FromStationId = null,
     Guid? ToStationId = null,
@@ -29,6 +33,8 @@ public sealed record CreateCharterBookingCommand(
 
 public sealed class CreateCharterBookingCommandValidator : AbstractValidator<CreateCharterBookingCommand>
 {
+    private const int AdultAgeThreshold = 12;
+
     public CreateCharterBookingCommandValidator()
     {
         RuleFor(x => x.DepartureDate).NotEqual(default(DateOnly)).WithMessage("Ngày khởi hành là bắt buộc.");
@@ -40,22 +46,77 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .When(x => x.DurationValue.HasValue)
             .WithMessage("Thời lượng thuê phải từ 1 đến 60.");
         RuleFor(x => x.StartTime!.Value)
-            .Must(CharterBookingTripSupport.IsWithinOperatingStartWindow)
+            .Must(BeWithinCharterStartTimeWindow)
             .When(x => x.StartTime.HasValue)
-            .WithMessage("Giờ bắt đầu charter phải nằm trong khung 07:40 đến trước 23:00.");
-        RuleFor(x => x.AdultCount).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
+            .WithMessage("Giờ bắt đầu charter phải nằm trong khung 07:00 đến trước 22:00.");
+        RuleFor(x => x.DepartureDate)
+            .GreaterThanOrEqualTo(DateOnly.FromDateTime(DateTime.UtcNow))
+            .WithMessage("Ngày khởi hành không được ở quá khứ.");
+
+        // Validate: phải có Passengers HOẶC (AdultCount + ChildCount)
+        RuleFor(x => x)
+            .Must(x => HasPassengers(x))
+            .WithMessage("Phải cung cấp danh sách hành khách (passengers) hoặc số người lớn/trẻ em.");
+
+        // Validate hành khách
+        RuleFor(x => x)
+            .Must(x => !HasPassengers(x) || ValidatePassengerCount(x) == null)
+            .WithMessage(x => ValidatePassengerCount(x) ?? string.Empty)
+            .When(x => HasPassengers(x));
+
+        RuleForEach(x => x.Passengers!).ChildRules(passenger =>
+        {
+            passenger.RuleFor(x => x.FullName)
+                .NotEmpty()
+                .WithMessage("Họ tên hành khách là bắt buộc.")
+                .MaximumLength(150);
+            passenger.RuleFor(x => x.BirthYear)
+                .NotNull()
+                .WithMessage("Năm sinh là bắt buộc cho tất cả hành khách charter.");
+            passenger.RuleFor(x => x.BirthYear)
+                .InclusiveBetween(1900, DateTime.UtcNow.Year)
+                .WithMessage("Năm sinh không hợp lệ.")
+                .When(x => x.BirthYear.HasValue);
+        });
+
+        // Validate tuổi hành khách (phải >= 12 tuổi mới là người lớn)
+        RuleFor(x => x)
+            .Must(x => ValidatePassengerAges(x) == null)
+            .WithMessage(x => ValidatePassengerAges(x) ?? string.Empty)
+            .When(x => HasPassengers(x));
+
+        // Validate: nếu có AdultCount/ChildCount thì số lượng hành khách theo tuổi phải khớp
+        RuleFor(x => x)
+            .Must(x => ValidatePassengerCountMatchesAgeGroups(x) == null)
+            .WithMessage(x => ValidatePassengerCountMatchesAgeGroups(x) ?? string.Empty)
+            .When(x => HasPassengers(x) && (x.AdultCount.HasValue || x.ChildCount.HasValue));
+
+        // Validate: nếu có trẻ em thì phải có ít nhất 1 người lớn
+        RuleFor(x => x)
+            .Must(x => ValidateAdultRequiredWhenChildExists(x) == null)
+            .WithMessage(x => ValidateAdultRequiredWhenChildExists(x) ?? string.Empty)
+            .When(x => HasPassengers(x));
+
+        // Validate AdultCount/ChildCount khi không có Passengers
+        RuleFor(x => x.AdultCount!.Value).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
+            .When(x => !HasPassengers(x) && x.AdultCount.HasValue)
             .WithMessage("Số người lớn phải từ 0 đến 1000.");
-        RuleFor(x => x.ChildCount).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
+        RuleFor(x => x.ChildCount!.Value).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
+            .When(x => !HasPassengers(x) && x.ChildCount.HasValue)
             .WithMessage("Số trẻ em phải từ 0 đến 1000.");
         RuleFor(x => x)
-            .Must(x => x.AdultCount + x.ChildCount >= 1)
+            .Must(x => x.AdultCount!.Value + x.ChildCount!.Value >= 1)
+            .When(x => !HasPassengers(x))
             .WithMessage("Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em).");
         RuleFor(x => x)
-            .Must(x => !(x.ChildCount > 0 && x.AdultCount == 0))
+            .Must(x => !(x.ChildCount!.Value > 0 && x.AdultCount!.Value == 0))
+            .When(x => !HasPassengers(x))
             .WithMessage("Khi có trẻ em đi cùng phải có ít nhất 1 người lớn.");
         RuleFor(x => x)
-            .Must(x => x.AdultCount + x.ChildCount <= 1000)
+            .Must(x => x.AdultCount!.Value + x.ChildCount!.Value <= 1000)
+            .When(x => !HasPassengers(x))
             .WithMessage("Tổng số khách không được vượt quá 1000.");
+
         RuleFor(x => x.RequestedBoats)
             .Must(x => x is null || x.Count > 0)
             .WithMessage("Danh sách tàu yêu cầu không được rỗng nếu được gửi.");
@@ -70,16 +131,28 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
         });
         RuleFor(x => x.SpecialRequests).MaximumLength(1000).When(x => x.SpecialRequests is not null);
         RuleFor(x => x.ContactName)
+            .NotEmpty()
+            .WithMessage("Họ tên người đặt là bắt buộc.")
             .MaximumLength(150)
-            .When(x => !string.IsNullOrWhiteSpace(x.ContactName));
+            .Must(BeValidContactName)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactName))
+            .WithMessage("Họ tên chỉ được chứa chữ cái và khoảng trắng, không chứa số hoặc ký tự đặc biệt.");
         RuleFor(x => x.ContactPhone)
             .MaximumLength(30)
             .When(x => !string.IsNullOrWhiteSpace(x.ContactPhone));
+        RuleFor(x => x.ContactPhone)
+            .Must(BeValidVietnamMobilePhone)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactPhone))
+            .WithMessage("Số điện thoại phải gồm đúng 10 chữ số và bắt đầu bằng 0[3|5|7|8|9].");
         RuleFor(x => x.ContactEmail)
             .MaximumLength(255)
             .EmailAddress()
             .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail))
             .WithMessage("Email nhận thông tin charter booking không hợp lệ.");
+        RuleFor(x => x.ContactEmail)
+            .Must(BeAllowedCharterEmailDomain)
+            .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail))
+            .WithMessage("Email chỉ chấp nhận đuôi @gmail.com hoặc @fpt.edu.vn.");
         RuleFor(x => x.InsurancePackageId)
             .NotEmpty()
             .When(x => x.InsurancePackageId.HasValue)
@@ -114,11 +187,128 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
         });
     }
 
+    private static bool HasPassengers(CreateCharterBookingCommand x) =>
+        x.Passengers is { Count: > 0 };
+
+    private static string? ValidatePassengerCount(CreateCharterBookingCommand x)
+    {
+        if (!HasPassengers(x)) return null;
+        var count = x.Passengers!.Count;
+        if (count > 1000) return "Tổng số hành khách không được vượt quá 1000.";
+        return null;
+    }
+
+    private static string? ValidatePassengerAges(CreateCharterBookingCommand x)
+    {
+        if (!HasPassengers(x) || x.Passengers is not { Count: > 0 }) return null;
+        var currentYear = DateTime.UtcNow.Year;
+        foreach (var p in x.Passengers!)
+        {
+            if (!p.BirthYear.HasValue) continue;
+            var age = currentYear - p.BirthYear.Value;
+            if (age < 0) return $"Năm sinh {p.BirthYear} không hợp lệ (lớn hơn năm hiện tại).";
+        }
+        return null;
+    }
+
+    private static string? ValidatePassengerCountMatchesAgeGroups(CreateCharterBookingCommand x)
+    {
+        if (!HasPassengers(x) || x.Passengers is not { Count: > 0 }) return null;
+
+        var currentYear = DateTime.UtcNow.Year;
+        var actualAdultCount = 0;
+        var actualChildCount = 0;
+
+        foreach (var p in x.Passengers!)
+        {
+            if (!p.BirthYear.HasValue) continue;
+            var age = currentYear - p.BirthYear.Value;
+            if (age >= AdultMinimumAge)
+                actualAdultCount++;
+            else
+                actualChildCount++;
+        }
+
+        if (x.AdultCount.HasValue && actualAdultCount != x.AdultCount.Value)
+            return $"Số người lớn không khớp: khai báo {x.AdultCount.Value} nhưng theo năm sinh có {actualAdultCount} người lớn.";
+
+        if (x.ChildCount.HasValue && actualChildCount != x.ChildCount.Value)
+            return $"Số trẻ em không khớp: khai báo {x.ChildCount.Value} nhưng theo năm sinh có {actualChildCount} trẻ em.";
+
+        return null;
+    }
+
+    private static string? ValidateAdultRequiredWhenChildExists(CreateCharterBookingCommand x)
+    {
+        if (!HasPassengers(x) || x.Passengers is not { Count: > 0 }) return null;
+
+        var currentYear = DateTime.UtcNow.Year;
+        var hasAdult = false;
+        var hasChild = false;
+
+        foreach (var p in x.Passengers!)
+        {
+            if (!p.BirthYear.HasValue) continue;
+            var age = currentYear - p.BirthYear.Value;
+            if (age >= AdultMinimumAge)
+                hasAdult = true;
+            else
+                hasChild = true;
+        }
+
+        if (hasChild && !hasAdult)
+            return "Danh sách hành khách phải có ít nhất 1 người lớn khi có trẻ em đi cùng.";
+
+        return null;
+    }
+
     private static bool HaveUniqueStopOrders(IReadOnlyList<CreateCharterBookingItineraryStopRequest>? stops) =>
         stops is null || stops.Select(x => x.StopOrder).Distinct().Count() == stops.Count;
 
     private static bool HasItineraryStops(IReadOnlyList<CreateCharterBookingItineraryStopRequest>? stops) =>
         stops is { Count: > 0 };
+
+    private static readonly TimeOnly CharterStartWindowBegin = new(7, 0);
+    private static readonly TimeOnly CharterStartWindowEnd = new(22, 0);
+
+    private static bool BeWithinCharterStartTimeWindow(TimeOnly startTime) =>
+        startTime >= CharterStartWindowBegin && startTime <= CharterStartWindowEnd;
+
+    // Họ tên: chỉ chữ cái Unicode (bao gồm tiếng Việt có dấu) + khoảng trắng, không số / ký tự đặc biệt.
+    // Trim trước khi check, chỉ chặn khoảng trắng ở giữa nhiều lần liên tiếp để tránh "  ".
+    private static readonly Regex ContactNameRegex =
+        new(@"^[\p{L}][\p{L}\s]*$", RegexOptions.Compiled);
+
+    private static bool BeValidContactName(string? name) =>
+        !string.IsNullOrWhiteSpace(name)
+        && ContactNameRegex.IsMatch(name.Trim())
+        && !name.Trim().Contains("  ", StringComparison.Ordinal);
+
+    // Số di động VN: bắt đầu bằng 0, tiếp theo là 3/5/7/8/9, còn lại là 8 chữ số (tổng 10 số).
+    private static readonly Regex VietnamMobilePhoneRegex =
+        new(@"^0[35789]\d{8}$", RegexOptions.Compiled);
+
+    private static bool BeValidVietnamMobilePhone(string? phone) =>
+        !string.IsNullOrWhiteSpace(phone) && VietnamMobilePhoneRegex.IsMatch(phone.Trim());
+
+    private static readonly string[] AllowedCharterEmailDomains = ["gmail.com", "fpt.edu.vn"];
+
+    private static bool BeAllowedCharterEmailDomain(string? email)
+    {
+        if (string.IsNullOrWhiteSpace(email))
+        {
+            return false;
+        }
+
+        var atIndex = email.LastIndexOf('@');
+        if (atIndex < 0 || atIndex == email.Length - 1)
+        {
+            return false;
+        }
+
+        var domain = email[(atIndex + 1)..].Trim().ToLowerInvariant();
+        return AllowedCharterEmailDomains.Contains(domain);
+    }
 }
 
 public sealed class CreateCharterBookingCommandHandler
@@ -160,7 +350,9 @@ public sealed class CreateCharterBookingCommandHandler
             throw new ValidationException([new ValidationFailure(nameof(request.DepartureDate),
                 $"Charter booking phải được đặt trước ít nhất 7 ngày. Ngày khởi hành sớm nhất là {minimumDepartureDate:dd/MM/yyyy}.")]);
 
-        var passengerCount = request.AdultCount + request.ChildCount;
+        // Tính số lượng hành khách và phân loại Adult/Child
+        var (adultCount, childCount, passengerCount, passengersToCreate) = ResolvePassengerCounts(request, now);
+
         const decimal subtotal = 0;
         var requestedBoatDecks = CharterBookingBoatSelectionSupport.NormalizeRequestedBoatDecks(
             request.RequestedBoats);
@@ -213,8 +405,8 @@ public sealed class CreateCharterBookingCommandHandler
             request.DurationValue,
             request.FromStationId,
             request.ToStationId,
-            request.AdultCount,
-            request.ChildCount,
+            adultCount,
+            childCount,
             requestedBoatDeckStorage,
             CharterBookingDuplicateSupport.ToItineraryStops(request.ItineraryStops),
             contactPhone,
@@ -248,8 +440,8 @@ public sealed class CreateCharterBookingCommandHandler
             RentalUnit = request.RentalUnit,
             DurationValue = request.DurationValue,
             PassengerCount = passengerCount,
-            AdultCount = request.AdultCount,
-            ChildCount = request.ChildCount,
+            AdultCount = adultCount,
+            ChildCount = childCount,
             RequestedBoatCount = requestedBoatCount == 0 ? null : requestedBoatCount,
             RequestedBoatDecks = requestedBoatDeckStorage,
             RequestedBoatTypes = null,
@@ -274,7 +466,8 @@ public sealed class CreateCharterBookingCommandHandler
                     StayDurationMinutes = x.StayDurationMinutes,
                     Note = x.Note?.Trim()
                 })
-                .ToList() ?? []
+                .ToList() ?? [],
+            Passengers = passengersToCreate
         };
 
         _context.Set<Booking>().Add(booking);
@@ -407,6 +600,62 @@ public sealed class CreateCharterBookingCommandHandler
 
     private static string? NormalizeContactValue(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private (int adultCount, int childCount, int totalCount, List<BookingPassenger> passengers) ResolvePassengerCounts(
+        CreateCharterBookingCommand request, DateTimeOffset now)
+    {
+        // Nếu có danh sách hành khách
+        if (request.Passengers is { Count: > 0 })
+        {
+            var passengers = new List<BookingPassenger>();
+            var adultCount = 0;
+            var childCount = 0;
+            var today = DateOnly.FromDateTime(now.UtcDateTime);
+
+            foreach (var p in request.Passengers)
+            {
+                // Ưu tiên BirthYear từ request, nếu không có thì parse từ DateOfBirth
+                int? birthYear = p.BirthYear;
+                if (!birthYear.HasValue && !string.IsNullOrWhiteSpace(p.DateOfBirth))
+                {
+                    if (CharterBookingPassengerSupport.TryParseDateOfBirth(p.DateOfBirth, out var dob))
+                    {
+                        birthYear = dob.Year;
+                    }
+                    else if (CharterBookingPassengerSupport.TryParseBirthYear(p.DateOfBirth, out var parsedYear))
+                    {
+                        birthYear = parsedYear;
+                    }
+                }
+
+                var passengerType = birthYear.HasValue
+                    ? CharterBookingPassengerSupport.ResolvePassengerType(birthYear.Value, today)
+                    : CharterBookingPassengerType.Adult.ToString();
+
+                if (string.Equals(passengerType, CharterBookingPassengerType.Adult.ToString(), StringComparison.OrdinalIgnoreCase))
+                    adultCount++;
+                else
+                    childCount++;
+
+                passengers.Add(new BookingPassenger
+                {
+                    FullName = p.FullName.Trim(),
+                    BirthYear = birthYear,
+                    PassengerType = passengerType,
+                    ApprovalStatus = CharterBookingPassengerSupport.ApprovalStatusApproved,
+                    RequestedAt = now,
+                    RequestedByUserId = _userContext.UserId
+                });
+            }
+
+            return (adultCount, childCount, passengers.Count, passengers);
+        }
+
+        // Nếu không có danh sách, dùng AdultCount/ChildCount
+        var totalAdult = request.AdultCount ?? 0;
+        var totalChild = request.ChildCount ?? 0;
+        return (totalAdult, totalChild, totalAdult + totalChild, new List<BookingPassenger>());
+    }
 }
 
 public sealed class CharterBookingPassengerRequestValidator : AbstractValidator<CharterBookingPassengerRequest>

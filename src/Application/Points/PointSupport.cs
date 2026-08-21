@@ -7,19 +7,10 @@ namespace SaigonWaterbus.Application.Points;
 
 public static class PointTransactionTypes
 {
-    /// <summary>Tích điểm 1% sau khi khách đã sử dụng xong dịch vụ (chuyến hoàn tất).</summary>
     public const string Earn = "Earn";
-
-    /// <summary>Trừ điểm khi khách dùng point thanh toán lúc checkout.</summary>
     public const string Redeem = "Redeem";
-
-    /// <summary>Hoàn lại điểm Redeem do khách đổi số point ngay tại màn checkout.</summary>
     public const string RedeemCancelled = "RedeemCancelled";
-
-    /// <summary>Hoàn lại điểm Redeem do booking hết hạn/hủy/hoàn tiền.</summary>
     public const string RedeemReturned = "RedeemReturned";
-
-    /// <summary>Thu hồi điểm Earn do booking được hoàn tiền.</summary>
     public const string EarnRevoked = "EarnRevoked";
 }
 

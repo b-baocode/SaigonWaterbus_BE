@@ -32,6 +32,7 @@ public sealed class Bookings : IEndpointGroup
           "promotionCode": null,
           "insuranceSelected": true,
           "insurancePackageId": "00000000-0000-0000-0000-000000000000",
+          "waterbusInsuranceEnabled": null,
           "returnTripCode": "BB-20260610-R01-LD-BD-5678",
           "returnItems": [
             {

@@ -23,7 +23,8 @@ public sealed record InsurancePackageDto(
     string? TermsUrl,
     InsurancePackageStatus Status,
     int DisplayOrder,
-    int? RewardOption);
+    int? RewardOption,
+    bool IsWaterbusDefault = false);
 
 public sealed record GetInsurancePackageListQuery(
     string? BookingType = null,
@@ -78,7 +79,8 @@ public sealed record CreateInsurancePackageCommand(
     string? TermsUrl = null,
     InsurancePackageStatus Status = InsurancePackageStatus.Active,
     int? DisplayOrder = null,
-    int? RewardOption = null) : IRequest<InsurancePackageDto>;
+    int? RewardOption = null,
+    bool IsWaterbusDefault = false) : IRequest<InsurancePackageDto>;
 
 public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<CreateInsurancePackageCommand>
 {
@@ -182,7 +184,8 @@ public sealed class CreateInsurancePackageCommandHandler
             TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl),
             IsActive = InsurancePackageSupport.ToIsActive(request.Status),
             DisplayOrder = displayOrder,
-            RewardOption = request.RewardOption
+            RewardOption = request.RewardOption,
+            IsWaterbusDefault = request.IsWaterbusDefault
         };
 
         _context.Set<InsurancePackage>().Add(package);
@@ -646,5 +649,6 @@ internal static class InsurancePackageSupport
             package.TermsUrl,
             ToStatus(package.IsActive),
             package.DisplayOrder,
-            package.RewardOption);
+            package.RewardOption,
+            package.IsWaterbusDefault);
 }

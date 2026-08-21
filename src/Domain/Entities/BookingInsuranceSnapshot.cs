@@ -18,4 +18,5 @@ public class BookingInsuranceSnapshot
     public int Quantity { get; set; }
     public decimal TotalAmount { get; set; }
     public DateTimeOffset QuotedAt { get; set; }
+    public bool IsWaterbusDefault { get; set; }
 }

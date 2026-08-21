@@ -19,4 +19,5 @@ public class InsurancePackage : BaseGuidAuditableEntity
     public bool IsActive { get; set; } = true;
     public int DisplayOrder { get; set; }
     public int? RewardOption { get; set; }
+    public bool IsWaterbusDefault { get; set; } = false;
 }

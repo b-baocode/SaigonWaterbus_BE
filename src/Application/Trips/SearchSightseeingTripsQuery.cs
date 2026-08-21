@@ -85,13 +85,9 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                         .Min()
                 });
 
-        // Giá "từ" = loại vé trả tiền rẻ nhất (bỏ qua các loại miễn phí).
-        var configuredTicketFareRules = await TicketFareRuleSupport.LoadConfiguredRulesAsync(
-            _context,
-            cancellationToken);
-        var minModifier = TicketFareRuleSupport.GetMinimumPositivePriceModifier(
-            configuredTicketFareRules,
-            RouteTypes.SightseeingLoop);
+        // Giá "từ" = giá ADULT (hệ số 1.0). Giá giảm cho CHILD/SENIOR/DISABLED
+        // sẽ được tính riêng tại thời điểm booking.
+        const decimal adultModifier = 1.0m;
         var fareAdjustments = await FareAdjustmentSupport.GetEffectiveAdjustmentsAsync(
             _context,
             trips.Select(x => x.OperatingDate).ToArray(),
@@ -109,7 +105,7 @@ public sealed class SearchSightseeingTripsQueryHandler : IRequestHandler<SearchS
                 ? FareAdjustmentSupport.ApplySurcharge(stats.MinSeatPrice.Value, fareAdjustment)
                 : (decimal?)null;
             var minPrice = minBasePrice is > 0
-                ? (decimal?)PriceRoundingSupport.RoundFare(minBasePrice.Value * minModifier)
+                ? (decimal?)PriceRoundingSupport.RoundFare(minBasePrice.Value * adultModifier)
                 : null;
 
             // Tuyến vòng lặp đi nguyên chuyến: giờ lên = giờ khởi hành, giờ về = giờ kết thúc.

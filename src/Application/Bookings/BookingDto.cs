@@ -25,6 +25,8 @@ public sealed record BookingDetailDto(
     DateTimeOffset BookedAt,
     string BookingStatus,
     decimal SubtotalAmount,
+    decimal TicketSubtotalAmount,
+    decimal InsuranceAmount,
     decimal DiscountAmount,
     decimal TotalAmount,
     int PointsUsed,
@@ -69,7 +71,8 @@ public sealed record BookingInsuranceDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? TermsUrl,
     DateTimeOffset QuotedAt,
-    bool Selected = true);
+    bool Selected = true,
+    bool IsWaterbusDefault = false);
 
 internal static class BookingInsuranceDtoMapper
 {
@@ -91,7 +94,8 @@ internal static class BookingInsuranceDtoMapper
                 snapshot.TotalAmount,
                 snapshot.Conditions,
                 snapshot.TermsUrl,
-                snapshot.QuotedAt);
+                snapshot.QuotedAt,
+                IsWaterbusDefault: snapshot.IsWaterbusDefault);
 }
 
 public sealed record BookingPaymentDto(

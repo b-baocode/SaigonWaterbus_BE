@@ -62,23 +62,27 @@ internal static class CharterBookingInsuranceSupport
         Guid? insurancePackageId,
         int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool? waterbusInsuranceEnabled = null)
     {
+        // Nếu khách chủ động tắt bảo hiểm Waterbus mặc định
         if (insuranceSelected == false)
         {
             return null;
         }
 
-        if (insurancePackageId.HasValue || insuranceSelected == true)
+        // Nếu khách chủ động bật bảo hiểm (chọn gói bên thứ 3 hoặc bật Waterbus default)
+        if (insuranceSelected == true)
         {
-            if (insuranceSelected == true && !insurancePackageId.HasValue)
+            if (!insurancePackageId.HasValue)
             {
                 return await ResolveDefaultInsuranceSnapshotAsync(
                     context,
                     Booking.SeatBookingType,
                     insuredPassengerQuantity,
                     quotedAt,
-                    cancellationToken);
+                    cancellationToken,
+                    requireWaterbusDefault: true);
             }
 
             return await CreateSelectedInsuranceSnapshotAsync(
@@ -90,12 +94,21 @@ internal static class CharterBookingInsuranceSupport
                 Booking.SeatBookingType);
         }
 
+        // insuranceSelected == null: dùng logic mặc định
+        // Nếu waterbusInsuranceEnabled == false -> không áp bảo hiểm Waterbus mặc định
+        if (waterbusInsuranceEnabled == false)
+        {
+            return null;
+        }
+
+        // Ngược lại: áp bảo hiểm Waterbus mặc định
         return await ResolveDefaultInsuranceSnapshotAsync(
             context,
             Booking.SeatBookingType,
             insuredPassengerQuantity,
             quotedAt,
-            cancellationToken);
+            cancellationToken,
+            requireWaterbusDefault: true);
     }
 
     public static async Task<BookingInsuranceSnapshot?> CreateSelectedInsuranceSnapshotAsync(
@@ -301,7 +314,8 @@ internal static class CharterBookingInsuranceSupport
             TermsUrl = package.TermsUrl,
             Quantity = insuredPassengerQuantity,
             TotalAmount = package.UnitPremiumAmount * insuredPassengerQuantity,
-            QuotedAt = quotedAt
+            QuotedAt = quotedAt,
+            IsWaterbusDefault = package.IsWaterbusDefault
         };
 
     private static async Task<BookingInsuranceSnapshot?> ResolveDefaultInsuranceSnapshotAsync(
@@ -309,23 +323,55 @@ internal static class CharterBookingInsuranceSupport
         string bookingType,
         int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool requireWaterbusDefault = false)
     {
         if (insuredPassengerQuantity < 0)
         {
             throw CreateInsuranceValidation(CreateInvalidQuantityMessage(bookingType));
         }
 
-        var package = await context.Set<InsurancePackage>()
+        if (insuredPassengerQuantity == 0)
+        {
+            return null;
+        }
+
+        var query = context.Set<InsurancePackage>()
             .AsNoTracking()
             .Where(x => x.IsActive
                 && (x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType
-                    || x.BookingType == bookingType))
-            .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
-            .ThenByDescending(x => x.IsRequired)
-            .ThenBy(x => x.DisplayOrder)
-            .ThenBy(x => x.Code)
-            .FirstOrDefaultAsync(cancellationToken);
+                    || x.BookingType == bookingType));
+
+        // Nếu cần Waterbus default, ưu tiên gói IsWaterbusDefault = true
+        InsurancePackage? package;
+        if (requireWaterbusDefault)
+        {
+            package = await query
+                .Where(x => x.IsWaterbusDefault)
+                .OrderBy(x => x.DisplayOrder)
+                .ThenBy(x => x.Code)
+                .FirstOrDefaultAsync(cancellationToken);
+
+            // Fallback: nếu không có gói Waterbus default nào, lấy gói required
+            if (package is null)
+            {
+                package = await query
+                    .Where(x => x.IsRequired)
+                    .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
+                    .ThenBy(x => x.DisplayOrder)
+                    .ThenBy(x => x.Code)
+                    .FirstOrDefaultAsync(cancellationToken);
+            }
+        }
+        else
+        {
+            package = await query
+                .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
+                .ThenByDescending(x => x.IsRequired)
+                .ThenBy(x => x.DisplayOrder)
+                .ThenBy(x => x.Code)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
 
         return package is null
             ? null

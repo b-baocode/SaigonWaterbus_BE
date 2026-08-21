@@ -136,10 +136,14 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 i.TripSeat?.Seat?.SeatType?.Name);
         }).ToList();
 
+        var insuranceAmount = booking.InsuranceSnapshot?.TotalAmount ?? 0m;
+        var ticketSubtotalAmount = booking.SubtotalAmount - insuranceAmount;
+
         return new BookingDetailDto(
             booking.Id, booking.BookingCode,
             booking.Created, booking.BookingStatus.ToString(),
-            booking.SubtotalAmount, booking.DiscountAmount, booking.TotalAmount,
+            booking.SubtotalAmount, ticketSubtotalAmount, insuranceAmount,
+            booking.DiscountAmount, booking.TotalAmount,
             booking.PointsUsed, booking.PointsEarned,
             booking.Promotion?.PromotionCode,
             items,
