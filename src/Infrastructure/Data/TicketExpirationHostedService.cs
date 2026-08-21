@@ -95,6 +95,31 @@ public sealed class TicketExpirationHostedService : BackgroundService
     }
 
     /// <summary>
+    /// Nạp vé kèm ĐỦ dữ liệu để phán xét từng chặng.
+    ///
+    /// Bắt buộc phải có <c>BookingPassenger.Trip.TripStops</c>: chặng của vé nằm ở hành khách
+    /// (booking khứ hồi có hai chặng, hai khung giờ khác nhau), còn giờ đến/đi THẬT nằm ở
+    /// trip_stops. Thiếu TripStops thì rơi về giờ dự kiến, và vé của chuyến đang trễ sẽ bị huỷ
+    /// oan trong khi quầy vẫn check-in được cho khách.
+    /// </summary>
+    private static Task<List<Ticket>> LoadTicketsForExpiryAsync(
+        IApplicationDbContext context,
+        TicketStatus status,
+        CancellationToken cancellationToken)
+    {
+        return context.Set<Ticket>()
+            .Include(t => t.BookingPassenger)
+                .ThenInclude(p => p!.Trip!)
+                    .ThenInclude(tr => tr.TripStops)
+            .Include(t => t.Booking)
+                .ThenInclude(b => b.Trip!)
+                    .ThenInclude(tr => tr.TripStops)
+            .Where(t => t.TicketStatus == status
+                     && t.Booking!.BookingStatus == BookingStatus.Confirmed)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
     /// Vé Active đã quá cửa sổ check-in → tự động expire.
     /// Check-in window: [giờ tàu rời bến lên - 10 phút, giờ tàu rời bến lên].
     /// </summary>
@@ -104,23 +129,15 @@ public sealed class TicketExpirationHostedService : BackgroundService
         CancellationToken cancellationToken)
     {
         // Load tất cả vé Active có booking đã Confirmed
-        var activeTickets = await context.Set<Ticket>()
-            .Include(t => t.Booking)
-                .ThenInclude(b => b.Trip!)
-                    .ThenInclude(t => t.TripStops)
-            .Include(t => t.Booking)
-                .ThenInclude(b => b.Passengers)
-                    .ThenInclude(p => p.Trip!)
-            .Where(t => t.TicketStatus == TicketStatus.Active
-                     && t.Booking!.BookingStatus == BookingStatus.Confirmed)
-            .ToListAsync(cancellationToken);
+        var activeTickets = await LoadTicketsForExpiryAsync(
+            context, TicketStatus.Active, cancellationToken);
 
         var expiredTickets = new List<Ticket>();
 
         foreach (var ticket in activeTickets)
         {
             if (ticket.Booking is not null
-                && !TicketAttendanceWindowSupport.IsWithinCheckInWindow(ticket.Booking, null, now))
+                && TicketAttendanceWindowSupport.IsPastCheckInWindow(ticket, ticket.Booking, now))
             {
                 expiredTickets.Add(ticket);
             }
@@ -150,23 +167,15 @@ public sealed class TicketExpirationHostedService : BackgroundService
         CancellationToken cancellationToken)
     {
         // Load tất cả vé CheckedIn có booking đã Confirmed
-        var checkedInTickets = await context.Set<Ticket>()
-            .Include(t => t.Booking)
-                .ThenInclude(b => b.Trip!)
-                    .ThenInclude(t => t.TripStops)
-            .Include(t => t.Booking)
-                .ThenInclude(b => b.Passengers)
-                    .ThenInclude(p => p.Trip!)
-            .Where(t => t.TicketStatus == TicketStatus.CheckedIn
-                     && t.Booking!.BookingStatus == BookingStatus.Confirmed)
-            .ToListAsync(cancellationToken);
+        var checkedInTickets = await LoadTicketsForExpiryAsync(
+            context, TicketStatus.CheckedIn, cancellationToken);
 
         var expiredTickets = new List<Ticket>();
 
         foreach (var ticket in checkedInTickets)
         {
             if (ticket.Booking is not null
-                && !TicketAttendanceWindowSupport.IsWithinCheckOutWindow(ticket.Booking, null, now))
+                && TicketAttendanceWindowSupport.IsPastCheckOutWindow(ticket, ticket.Booking, now))
             {
                 expiredTickets.Add(ticket);
             }

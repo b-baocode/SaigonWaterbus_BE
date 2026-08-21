@@ -254,8 +254,10 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
         // Load tickets theo 2 chiều liên kết:
         // 1. Booking.TripId = trip.Id (ticket thường - khách mua vé ghép từng segment)
         // 2. Booking.Id = trip.SourceBookingId (charter booking - 1 booking tạo cả trip)
+        // Booking khứ hồi nằm ở CẢ HAI chiều: TripId là chiều đi, ReturnTripId là chiều về.
         var relatedBookingIds = await context.Set<Booking>()
             .Where(b => b.TripId == trip.Id
+                || b.ReturnTripId == trip.Id
                 || (trip.SourceBookingId.HasValue && b.Id == trip.SourceBookingId.Value))
             .Select(b => b.Id)
             .ToListAsync(cancellationToken);
@@ -265,13 +267,21 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
             return;
         }
 
-        var tickets = await context.Set<Booking>()
-            .Where(b => relatedBookingIds.Contains(b.Id))
-            .SelectMany(b => b.Tickets)
+        var tickets = await context.Set<Ticket>()
+            .Include(t => t.BookingPassenger)
+            .Include(t => t.Booking)
+            .Where(t => relatedBookingIds.Contains(t.BookingId))
             .ToListAsync(cancellationToken);
 
         foreach (var ticket in tickets)
         {
+            // CHỈ đóng sổ vé của ĐÚNG chuyến vừa kết thúc. Trước đây lấy toàn bộ vé của booking,
+            // nên chuyến chiều đi xong là vé chiều về (chuyến ngày mai) cũng bị đánh hết hạn.
+            if (!TicketBelongsToTrip(ticket, trip.Id))
+            {
+                continue;
+            }
+
             switch (ticket.TicketStatus)
             {
                 case TicketStatus.Active:
@@ -290,6 +300,20 @@ public sealed class UpdateTripStatusCommandHandler : IRequestHandler<UpdateTripS
                     break;
             }
         }
+    }
+
+    /// <summary>
+    /// Vé thuộc chuyến nào: chặng nằm ở booking_passengers.trip_id (khứ hồi có hai chặng). Vé cũ
+    /// hoặc vé charter không gắn chặng thì cả booking chỉ có một chuyến nên soi Booking.TripId.
+    /// </summary>
+    private static bool TicketBelongsToTrip(Ticket ticket, Guid tripId)
+    {
+        if (ticket.BookingPassenger?.TripId is Guid passengerTripId)
+        {
+            return passengerTripId == tripId;
+        }
+
+        return ticket.Booking?.TripId is null || ticket.Booking.TripId == tripId;
     }
 
 }

@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Tickets;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -156,6 +157,46 @@ public class RoundTripCheckInAndScanTests
     private sealed record SeededRoundTrip(Booking Booking, Ticket OutboundTicket, Ticket ReturnTicket);
 
     /// <summary>Booking khứ hồi Confirmed + Paid với 1 hành khách/chiều, mỗi người 1 vé Active + QR chung.</summary>
+    /// <summary>
+    /// Chuyến chiều đi kết thúc thì chỉ vé chiều đi được đóng sổ. Vé chiều về thuộc chuyến khác,
+    /// giờ khác — trước đây bị đánh hết hạn theo vì code lấy TOÀN BỘ vé của booking.
+    /// </summary>
+    [Test]
+    public async Task CompletingOutboundTripLeavesReturnLegTicketUntouched()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+        seeded.OutboundTicket.TicketStatus = TicketStatus.CheckedIn;
+        seeded.OutboundTicket.CheckedInAt = seeded.Booking.Trip!.DepartureTime.AddMinutes(-5);
+        await context.SaveChangesAsync();
+
+        await new UpdateTripStatusCommandHandler(context).Handle(
+            new UpdateTripStatusCommand(seeded.Booking.TripId!.Value, TripStatus.Completed, null),
+            CancellationToken.None);
+
+        context.Tickets.Single(x => x.Id == seeded.OutboundTicket.Id)
+            .TicketStatus.ShouldBe(TicketStatus.Expired, "khách lên tàu nhưng quên quét ra");
+        context.Tickets.Single(x => x.Id == seeded.ReturnTicket.Id)
+            .TicketStatus.ShouldBe(TicketStatus.Active, "chuyến chiều về còn chưa chạy");
+    }
+
+    /// <summary>Chuyến chiều về kết thúc thì mới đến lượt vé chiều về được đóng sổ.</summary>
+    [Test]
+    public async Task CompletingReturnTripClosesOnlyReturnLegTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+
+        await new UpdateTripStatusCommandHandler(context).Handle(
+            new UpdateTripStatusCommand(seeded.Booking.ReturnTripId!.Value, TripStatus.Completed, null),
+            CancellationToken.None);
+
+        context.Tickets.Single(x => x.Id == seeded.ReturnTicket.Id)
+            .TicketStatus.ShouldBe(TicketStatus.Expired);
+        context.Tickets.Single(x => x.Id == seeded.OutboundTicket.Id)
+            .TicketStatus.ShouldBe(TicketStatus.Active, "chuyến chiều đi chưa kết thúc");
+    }
+
     private static async Task<SeededRoundTrip> SeedConfirmedRoundTripBookingAsync(ApplicationDbContext context)
     {
         var boat = new Boat

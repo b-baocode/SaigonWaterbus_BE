@@ -231,6 +231,109 @@ public static class TicketAttendanceWindowSupport
         return now.Value >= earliestCheckOut && now.Value <= latestCheckOut;
     }
 
+    /// <summary>
+    /// Vé này đã QUA hạn check-in chưa — xét theo đúng chặng của chính nó.
+    ///
+    /// CỐ Ý TÁCH KHỎI <see cref="IsWithinCheckInWindow(Ticket, Booking, DateTimeOffset?)"/>: hàm
+    /// kia trả false cho CẢ "chưa tới lượt" lẫn "đã qua rồi", nên <c>!IsWithinCheckInWindow(...)</c>
+    /// KHÔNG có nghĩa là hết hạn. Job dọn vé từng hiểu nhầm đúng chỗ này và giết sạch vé khứ hồi
+    /// ngay sau khi khách thanh toán.
+    ///
+    /// Không xác định được chuyến hoặc bến thì trả false: thà để vé sống thừa còn hơn huỷ nhầm vé
+    /// khách đã trả tiền.
+    /// </summary>
+    public static bool IsPastCheckInWindow(Ticket ticket, Booking booking, DateTimeOffset now)
+    {
+        var passenger = ResolveTicketPassenger(ticket, booking);
+        var trip = ResolveTicketOwnTrip(booking, passenger);
+        if (trip is null)
+        {
+            return false;
+        }
+
+        if (trip.TripStops.Count > 0)
+        {
+            var boardingStop = ResolveBoardingStop(trip, passenger);
+            return boardingStop is not null && IsStopPastScanWindow(boardingStop, now);
+        }
+
+        var segmentTimes = TripStopScheduleSupport.ResolveSegmentTimes(
+            trip,
+            passenger?.FromStopOrder,
+            passenger?.ToStopOrder);
+        return now > segmentTimes.Departure;
+    }
+
+    /// <summary>
+    /// Vé này đã QUA hạn check-out chưa. Xem ghi chú ở <see cref="IsPastCheckInWindow"/> về lý do
+    /// không dùng phủ định của <see cref="IsWithinCheckOutWindow(Ticket, Booking, DateTimeOffset?)"/>.
+    /// </summary>
+    public static bool IsPastCheckOutWindow(Ticket ticket, Booking booking, DateTimeOffset now)
+    {
+        var passenger = ResolveTicketPassenger(ticket, booking);
+        var trip = ResolveTicketOwnTrip(booking, passenger);
+        if (trip is null)
+        {
+            return false;
+        }
+
+        if (trip.TripStops.Count > 0)
+        {
+            var alightingStop = ResolveAlightingStop(trip, passenger);
+            return alightingStop is not null && IsStopPastScanWindow(alightingStop, now);
+        }
+
+        var segmentTimes = TripStopScheduleSupport.ResolveSegmentTimes(
+            trip,
+            passenger?.FromStopOrder,
+            passenger?.ToStopOrder);
+        return now > ResolveLatestCheckOutAt(trip, passenger, segmentTimes);
+    }
+
+    /// <summary>
+    /// Chuyến của CHÍNH tấm vé này. Khác <see cref="ResolveTicketTrip"/> ở chỗ không đoán bừa:
+    /// hành khách ghi rõ một chặng lạ thì trả null thay vì rơi về chuyến chiều đi, và hành khách
+    /// rỗng không lọt vào bẫy `null == null` của hàm kia.
+    /// </summary>
+    private static Trip? ResolveTicketOwnTrip(Booking booking, BookingPassenger? passenger)
+    {
+        if (passenger?.Trip is not null)
+        {
+            return passenger.Trip;
+        }
+
+        if (passenger?.TripId is Guid tripId)
+        {
+            if (tripId == booking.ReturnTripId)
+            {
+                return booking.ReturnTrip;
+            }
+
+            return tripId == booking.TripId ? booking.Trip : null;
+        }
+
+        // Vé không gắn hành khách (vé charter chưa điền tên): cả booking chỉ có một chuyến.
+        return booking.Trip;
+    }
+
+    /// <summary>
+    /// Bến này đã ĐÓNG cửa quét chưa: tàu đã rời bến, bến bị bỏ qua, hoặc đã hết thời gian dừng.
+    /// Chú ý: bến CHƯA cập trả false ở đây, và cũng trả false ở <see cref="IsStopOpenForScan"/> —
+    /// hai hàm không phải phủ định của nhau.
+    /// </summary>
+    private static bool IsStopPastScanWindow(TripStop stop, DateTimeOffset now)
+    {
+        if (stop.ActualDepartureTime.HasValue
+            || string.Equals(stop.StopStatus, TripStopStatuses.Departed, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(stop.StopStatus, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var effectiveEnd = ResolveStopScanEndsAt(stop)?.AddMinutes(CheckOutGraceMinutes);
+        return effectiveEnd.HasValue && now > effectiveEnd.Value;
+    }
+
     private static bool TryResolveSegmentTimes(
         Ticket ticket,
         Booking booking,
