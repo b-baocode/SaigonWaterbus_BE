@@ -39,7 +39,7 @@ public sealed class AskTourGuideTextCommandValidator : AbstractValidator<AskTour
     /// </summary>
     private const int MaxTextLength = 1000;
 
-    public AskTourGuideTextCommandValidator()
+    public AskTourGuideTextCommandValidator(TourGuideAccessOptions accessOptions)
     {
         RuleFor(x => x.Text)
             .NotEmpty().WithMessage("Chưa nhập câu hỏi.")
@@ -48,7 +48,8 @@ public sealed class AskTourGuideTextCommandValidator : AbstractValidator<AskTour
 
         // Xem ghi chú ở AskTourGuideCommandValidator: bỏ trống tripId là đi vòng qua cửa.
         RuleFor(x => x.TripId)
-            .NotEmpty().WithMessage("Thiếu tripId — chưa biết bạn đang đi chuyến nào.");
+            .NotEmpty().WithMessage("Thiếu tripId — chưa biết bạn đang đi chuyến nào.")
+            .When(_ => accessOptions.Enabled);
 
         RuleFor(x => x.Latitude)
             .InclusiveBetween(-90, 90).When(x => x.Latitude.HasValue)

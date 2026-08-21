@@ -208,7 +208,7 @@ public class TourGuideAccessSupportTests
         var trip = await SeedTripWithTicketAsync(context, customer.UserId!.Value, TicketStatus.CheckedOut);
         var handler = new AskTourGuideTextCommandHandler(
             responder: null!,
-            new TourGuideAccessSupport(context, customer));
+            new TourGuideAccessSupport(context, customer, Enabled));
 
         var exception = await Should.ThrowAsync<TourGuideAccessDeniedException>(() =>
             handler.Handle(
@@ -218,11 +218,31 @@ public class TourGuideAccessSupportTests
         exception.ReasonCode.ShouldBe(TourGuideAccessReasons.CheckedOut);
     }
 
+    /// <summary>
+    /// Cửa TẮT (mặc định) phải cư xử y như trước khi có tính năng: không vé, không check-in,
+    /// thậm chí không đăng nhập cũng qua. Đây là cách backend lên trước mà không giết client cũ.
+    /// </summary>
+    [Test]
+    public async Task DisabledGateLetsEveryoneThroughLikeBefore()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customer = await SeatFlowTestData.SeedCustomerAsync(context);
+        var trip = await SeedTripAsync(context);
+
+        var access = await new TourGuideAccessSupport(context, customer, new TourGuideAccessOptions())
+            .EvaluateAsync(trip.Id, CancellationToken.None);
+
+        access.Allowed.ShouldBeTrue();
+    }
+
     private static Task<TourGuideAccess> Evaluate(
         ApplicationDbContext context,
         TestUserContext user,
         Guid tripId) =>
-        new TourGuideAccessSupport(context, user).EvaluateAsync(tripId, CancellationToken.None);
+        new TourGuideAccessSupport(context, user, Enabled).EvaluateAsync(tripId, CancellationToken.None);
+
+    /// <summary>Cửa BẬT — mặc định của hệ thống là tắt, nên test phải nói rõ.</summary>
+    private static readonly TourGuideAccessOptions Enabled = new() { Enabled = true };
 
     private static async Task<Trip> SeedTripWithTicketAsync(
         ApplicationDbContext context,

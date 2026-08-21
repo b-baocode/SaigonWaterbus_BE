@@ -39,6 +39,12 @@ public static class DependencyInjection
         builder.Services.AddScoped<SaigonWaterbus.Application.Assistant.Prompts.AssistantPromptProvider>();
         builder.Services.AddScoped<SaigonWaterbus.Application.TourGuide.TourGuideContextReader>();
         builder.Services.AddScoped<SaigonWaterbus.Application.TourGuide.TourGuideResponder>();
+        builder.Services.AddSingleton(new SaigonWaterbus.Application.Common.TourGuideAccessOptions
+        {
+            Enabled = bool.TryParse(
+                builder.Configuration[SaigonWaterbus.Application.Common.TourGuideAccessOptions.EnabledKey],
+                out var tourGuideAccessCheckEnabled) && tourGuideAccessCheckEnabled,
+        });
         builder.Services.AddScoped<SaigonWaterbus.Application.Common.TourGuideAccessSupport>();
         builder.Services.AddScoped<IOperationScheduleSynchronizer, OperationScheduleSynchronizer>();
         builder.Services.AddScoped<ICharterBookingExpirationProcessor, CharterBookingExpirationProcessor>();

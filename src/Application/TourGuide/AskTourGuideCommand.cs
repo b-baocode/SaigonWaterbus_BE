@@ -64,7 +64,7 @@ public sealed record AskTourGuideCommand(
 
 public sealed class AskTourGuideCommandValidator : AbstractValidator<AskTourGuideCommand>
 {
-    public AskTourGuideCommandValidator()
+    public AskTourGuideCommandValidator(TourGuideAccessOptions accessOptions)
     {
         RuleFor(x => x.Audio)
             .NotEmpty().WithMessage("Chưa có dữ liệu âm thanh.");
@@ -72,7 +72,8 @@ public sealed class AskTourGuideCommandValidator : AbstractValidator<AskTourGuid
         // BẮT BUỘC từ khi có chặn cửa theo vé: bỏ trống tripId là bỏ trống luôn câu hỏi "khách
         // này đang đi chuyến nào", tức là đi vòng qua cửa.
         RuleFor(x => x.TripId)
-            .NotEmpty().WithMessage("Thiếu tripId — chưa biết bạn đang đi chuyến nào.");
+            .NotEmpty().WithMessage("Thiếu tripId — chưa biết bạn đang đi chuyến nào.")
+            .When(_ => accessOptions.Enabled);
 
         RuleFor(x => x.ContentType)
             .NotEmpty().WithMessage("Thiếu định dạng âm thanh (contentType).");

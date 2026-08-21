@@ -26,6 +26,23 @@ public static class TourGuideAccessReasons
 }
 
 /// <summary>
+/// Công tắc cửa. TẮT MẶC ĐỊNH, và đó là chủ ý.
+///
+/// Bật cửa là một thay đổi PHÁ VỠ với client cũ: bản mobile chưa gửi <c>tripId</c> sẽ ăn 400
+/// ngay giây phút backend lên. Có công tắc thì backend deploy lúc nào cũng được, còn cửa chỉ
+/// bật khi client đã sẵn sàng — đổi một dòng App Settings trên Azure, không cần deploy lại.
+/// Bật nhầm thì tắt lại trong 30 giây.
+///
+/// Đọc từ cấu hình <c>TourGuide:AccessCheckEnabled</c>.
+/// </summary>
+public sealed class TourGuideAccessOptions
+{
+    public const string EnabledKey = "TourGuide:AccessCheckEnabled";
+
+    public bool Enabled { get; init; }
+}
+
+/// <summary>
 /// Quyền dùng hướng dẫn viên AI trên MỘT chuyến.
 /// <paramref name="ExpiresAt"/> chỉ để client đếm ngược — KHÔNG phải thứ cưỡng chế; xem ghi chú
 /// ở <see cref="TourGuideAccessSupport"/>.
@@ -53,11 +70,16 @@ public sealed class TourGuideAccessSupport
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TourGuideAccessOptions _options;
 
-    public TourGuideAccessSupport(IApplicationDbContext context, IUserContext userContext)
+    public TourGuideAccessSupport(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        TourGuideAccessOptions options)
     {
         _context = context;
         _userContext = userContext;
+        _options = options;
     }
 
     /// <summary>
@@ -68,6 +90,13 @@ public sealed class TourGuideAccessSupport
         Guid? tripId,
         CancellationToken cancellationToken)
     {
+        // Cửa tắt: mọi thứ chạy y như trước khi có tính năng này — kể cả khách chưa đăng nhập,
+        // vì bản client cũ vốn không hề biết tới khái niệm quyền dùng.
+        if (!_options.Enabled)
+        {
+            return new TourGuideAccess(true, TourGuideAccessReasons.Allowed, tripId, null, null);
+        }
+
         if (!_userContext.IsAuthenticated || _userContext.UserId is not Guid userId)
         {
             return Denied(TourGuideAccessReasons.Unauthenticated, tripId);
