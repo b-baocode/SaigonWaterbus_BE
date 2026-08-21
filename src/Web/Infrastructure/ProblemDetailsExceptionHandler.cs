@@ -49,6 +49,15 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                 Title = "Unauthorized",
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.5.2"
             }),
+            // PHẢI đứng trước nhánh ForbiddenAccessException bên dưới — nó là lớp con, và switch
+            // kiểu xét theo thứ tự. Đảo hai nhánh này là mất sạch phần lý do.
+            TourGuideAccessDeniedException tade => (StatusCodes.Status403Forbidden, new ProblemDetails
+            {
+                Status = StatusCodes.Status403Forbidden,
+                Title = "Forbidden",
+                Detail = tade.ReasonCode,
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.5.4"
+            }),
             ForbiddenAccessException => (StatusCodes.Status403Forbidden, new ProblemDetails
             {
                 Status = StatusCodes.Status403Forbidden,

@@ -1,4 +1,5 @@
 using NetTopologySuite.Geometries;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -36,6 +37,20 @@ public sealed record TripLandmarkDto(
     double AlongMeters,
     double DistanceToPathMeters);
 
+/// <summary>
+/// Khách này có được hỏi hướng dẫn viên AI của chuyến không, và phiên còn bao lâu.
+///
+/// ĐI GHÉP VÀO ĐÂY thay vì làm endpoint riêng: app đã gọi màn này đúng một lần lúc mở, nên biết
+/// được ngay có hiện nút mic hay không mà không tốn thêm vòng gọi nào. Cửa thật vẫn nằm ở
+/// /api/tour-guide/ask — khối này chỉ để vẽ giao diện cho đúng.
+/// </summary>
+public sealed record TripLandmarkAccessDto(
+    bool Allowed,
+    string ReasonCode,
+    DateTimeOffset? StartedAt,
+    DateTimeOffset? ExpiresAt,
+    int? RemainingSeconds);
+
 public sealed record TripLandmarksDto(
     Guid TripId,
     string TripCode,
@@ -48,7 +63,8 @@ public sealed record TripLandmarksDto(
     IReadOnlyList<RoutePathPointDto> RoutePath,
     IReadOnlyList<TripLandmarkStationDto> Stations,
     IReadOnlyList<TripLandmarkDto> Landmarks,
-    int MissingAudioCount);
+    int MissingAudioCount,
+    TripLandmarkAccessDto? TourGuideAccess = null);
 
 /// <summary>
 /// Trọn bộ dữ liệu màn hướng dẫn viên của một chuyến: lộ trình, bến, và landmark mà tuyến
@@ -65,8 +81,18 @@ public sealed class GetTripLandmarksQueryHandler
     private const double EarthRadiusMeters = 6371000d;
 
     private readonly IApplicationDbContext _context;
+    private readonly TourGuideAccessSupport _access;
+    private readonly TimeProvider _timeProvider;
 
-    public GetTripLandmarksQueryHandler(IApplicationDbContext context) => _context = context;
+    public GetTripLandmarksQueryHandler(
+        IApplicationDbContext context,
+        TourGuideAccessSupport access,
+        TimeProvider timeProvider)
+    {
+        _context = context;
+        _access = access;
+        _timeProvider = timeProvider;
+    }
 
     public async Task<TripLandmarksDto> Handle(
         GetTripLandmarksQuery request, CancellationToken cancellationToken)
@@ -81,6 +107,7 @@ public sealed class GetTripLandmarksQueryHandler
             .SingleOrDefaultAsync(t => t.Id == request.TripId, cancellationToken)
             ?? throw new NotFoundException("Trip not found.");
 
+        var access = await _access.EvaluateAsync(request.TripId, cancellationToken);
         var voice = await ResolveVoiceAsync(request.VoiceId, cancellationToken);
         var voiceId = voice?.Id;
 
@@ -131,7 +158,23 @@ public sealed class GetTripLandmarksQueryHandler
             path,
             stations,
             onRoute,
-            onRoute.Count(x => string.IsNullOrWhiteSpace(x.AudioUrl)));
+            onRoute.Count(x => string.IsNullOrWhiteSpace(x.AudioUrl)),
+            ToAccessDto(access, _timeProvider.GetUtcNow()));
+    }
+
+    /// <summary>Quy đổi sẵn số giây còn lại để client khỏi phải tự trừ giờ máy chủ với giờ máy mình.</summary>
+    private static TripLandmarkAccessDto ToAccessDto(TourGuideAccess access, DateTimeOffset now)
+    {
+        int? remainingSeconds = access.ExpiresAt is DateTimeOffset expiresAt
+            ? (int)Math.Max(0, Math.Round((expiresAt - now).TotalSeconds))
+            : null;
+
+        return new TripLandmarkAccessDto(
+            access.Allowed,
+            access.ReasonCode,
+            access.StartedAt,
+            access.ExpiresAt,
+            remainingSeconds);
     }
 
     private async Task<Voice?> ResolveVoiceAsync(Guid? voiceId, CancellationToken cancellationToken)

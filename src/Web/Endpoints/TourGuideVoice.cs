@@ -112,8 +112,14 @@ public sealed class TourGuideVoice : IEndpointGroup
                 + "truoc khi gui: dinh dang MediaRecorder mac dinh (webm tren Chrome, mp4 tren iOS "
                 + "Safari) khong provider STT nao nhan duoc ca hai.",
                 $"Gioi han {MaxAudioBytes / 1024}KB moi lan goi.",
-                "tripId cho tro ly biet tuyen, cac ben con lai, ben ke tiep va gio den — thieu no thi "
-                + "khong tra loi duoc \"bao lau nua toi noi\", \"con ghe ben nao\".",
+                "tripId BAT BUOC. Ngoai viec cho tro ly biet tuyen/ben/gio den, no la can cu de kiem "
+                + "quyen dung: khach phai co ve cua chinh tai khoan minh tren dung chuyen do va ve dang "
+                + "CheckedIn. Chua check-in, da check-out hoac ve het han deu tra 403.",
+                "Ve tu het hieu luc sau gio tau den ben khach xuong 15 phut (job don ve chay moi phut), "
+                + "nen khach quen check-out cung khong dung mai duoc.",
+                "Admin/Manager duoc bo qua kiem tra nay de demo va do loi.",
+                "expiresAt trong response la han cua phien — dung de hien dong ho dem nguoc. "
+                + "Muon biet TRUOC khi hoi thi doc khoi tourGuideAccess trong GET /api/trips/{id}/landmarks.",
                 "latitude/longitude/heading la vi tri tau luc khach hoi — thieu thi khong tra loi "
                 + "duoc cau hoi ve canh vat xung quanh, chi con tra duoc tuyen/ga/quy dinh. "
                 + "Bo trong ma co tripId thi he thong tu lay ban tin GPS moi nhat cua chuyen.",
@@ -281,7 +287,8 @@ public sealed class TourGuideVoice : IEndpointGroup
                 statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        return Results.Ok(new AskResponse(answer.Transcript, answer.ReplyText, answer.HeardSpeech));
+        return Results.Ok(new AskResponse(
+            answer.Transcript, answer.ReplyText, answer.HeardSpeech, answer.ExpiresAt));
     }
 
     /// <summary>
@@ -363,7 +370,7 @@ public sealed class TourGuideVoice : IEndpointGroup
                 request.CurrentLandmarkId),
             ct);
 
-        return Results.Ok(new AskTextResponse(reply));
+        return Results.Ok(new AskTextResponse(reply.ReplyText, reply.ExpiresAt));
     }
 
     private static async Task<IResult> Speak(
@@ -453,7 +460,15 @@ public sealed class TourGuideVoice : IEndpointGroup
 
     public sealed record PingResponse(bool Ready);
 
-    public sealed record AskResponse(string Transcript, string ReplyText, bool HeardSpeech);
+    /// <param name="ExpiresAt">
+    /// Hạn của phiên hướng dẫn viên — client dùng để đếm ngược. Null = không xác định được
+    /// (chuyến chưa có lịch từng bến, hoặc người hỏi là admin).
+    /// </param>
+    public sealed record AskResponse(
+        string Transcript,
+        string ReplyText,
+        bool HeardSpeech,
+        DateTimeOffset? ExpiresAt);
 
     public sealed record HistoryTurnRequest(string? Role, string? Text);
 
@@ -472,7 +487,7 @@ public sealed class TourGuideVoice : IEndpointGroup
         Guid? TripId = null,
         Guid? CurrentLandmarkId = null);
 
-    public sealed record AskTextResponse(string ReplyText);
+    public sealed record AskTextResponse(string ReplyText, DateTimeOffset? ExpiresAt);
 
     public sealed record SpeakRequest(string Text, string? Voice = null, string? Language = null);
 }

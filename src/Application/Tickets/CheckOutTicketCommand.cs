@@ -161,6 +161,22 @@ public sealed class CheckOutTicketCommandHandler : IRequestHandler<CheckOutTicke
             throw new ValidationException([new ValidationFailure("ticket", "Ve nay da duoc check-out.")]);
         }
 
+        // Vé hết hạn tới đây bằng HAI đường khác nhau, và quầy phải phân biệt được để giải thích
+        // với khách: hoặc khách đã lên tàu rồi để quá giờ quét ở bến xuống (job dọn vé tự huỷ),
+        // hoặc vé chưa từng được check-in. Trước đây cả hai đều nhận câu "chưa check-in" — sai
+        // hẳn với ca thứ nhất, vì vé đó đã check-in rồi.
+        if (ticket.TicketStatus == TicketStatus.Expired)
+        {
+            throw new ValidationException([new ValidationFailure("ticket", ticket.CheckedInAt.HasValue
+                ? "Ve da qua han check-out (het gio quet tai ben khach xuong) nen bi huy tu dong."
+                : "Ve da het han vi khong check-in dung gio, khong the check-out.")]);
+        }
+
+        if (ticket.TicketStatus == TicketStatus.Cancelled)
+        {
+            throw new ValidationException([new ValidationFailure("ticket", "Ve da bi huy, khong the check-out.")]);
+        }
+
         if (ticket.TicketStatus != TicketStatus.CheckedIn || !ticket.CheckedInAt.HasValue)
         {
             throw new ValidationException([new ValidationFailure("ticket", "Ve chua check-in nen chua the check-out.")]);

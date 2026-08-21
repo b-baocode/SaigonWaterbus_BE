@@ -316,6 +316,62 @@ public class CheckInTicketCommandTests
             handler.Handle(new CheckInTicketCommand(ticket.TicketCode), CancellationToken.None));
     }
 
+    /// <summary>
+    /// Vé đã lên tàu nhưng quá giờ quét ở bến xuống thì job dọn vé chuyển sang Expired. Quầy quét
+    /// lại phải được nghe đúng lý do — trước đây nhận câu "chưa check-in", nói ngược hẳn sự thật.
+    /// </summary>
+    [Test]
+    public async Task CheckingOutExpiredTicketSaysItRanOutOfTimeNotThatItWasNeverCheckedIn()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var now = new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(
+            context,
+            TicketStatus.Expired,
+            checkedInAt);
+        var handler = new CheckOutTicketCommandHandler(context, staffContext, new FixedTimeProvider(now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        exception.Errors["ticket"].Single().ShouldBe(
+            "Ve da qua han check-out (het gio quet tai ben khach xuong) nen bi huy tu dong.");
+    }
+
+    /// <summary>Vé hết hạn mà chưa từng check-in là câu chuyện khác — không được nói lẫn.</summary>
+    [Test]
+    public async Task CheckingOutTicketThatExpiredBeforeBoardingSaysCheckInWasMissed()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context, TicketStatus.Expired);
+        var handler = new CheckOutTicketCommandHandler(context, staffContext, new FixedTimeProvider(now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        exception.Errors["ticket"].Single().ShouldBe(
+            "Ve da het han vi khong check-in dung gio, khong the check-out.");
+    }
+
+    [Test]
+    public async Task CheckingOutCancelledTicketSaysItWasCancelled()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 11, 0, 0, TimeSpan.Zero);
+        var ticket = await SeedRegularBookingTicketAsync(context, TicketStatus.Cancelled);
+        var handler = new CheckOutTicketCommandHandler(context, staffContext, new FixedTimeProvider(now));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None));
+
+        exception.Errors["ticket"].Single().ShouldBe("Ve da bi huy, khong the check-out.");
+    }
+
     [Test]
     public async Task StaffCanCheckOutCheckedInTicket()
     {

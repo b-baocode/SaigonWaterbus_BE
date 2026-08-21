@@ -1,6 +1,6 @@
 using System.Buffers.Binary;
 
-namespace SaigonWaterbus.Application.TourGuide;
+namespace SaigonWaterbus.Application.Common;
 
 /// <summary>
 /// Phát hiện audio im lặng TRƯỚC khi gọi STT.

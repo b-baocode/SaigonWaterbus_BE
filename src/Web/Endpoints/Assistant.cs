@@ -1,6 +1,9 @@
 using System.Text.Json;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.Assistant;
+using SaigonWaterbus.Application.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Infrastructure.Data;
@@ -100,6 +103,13 @@ public sealed class Assistant : IEndpointGroup
         Khong co step 3: buoc thanh toan doi ghe DA GIU, ma tro ly co y khong giu cho.
         """;
 
+    private const string TranscribeExample =
+        """
+        multipart/form-data:
+          audio    = <file WAV 16kHz mono, <= 15s>
+          language = VN
+        """;
+
     public static void Map(RouteGroupBuilder group)
     {
         group.MapPost(Chat, "chat")
@@ -146,6 +156,30 @@ public sealed class Assistant : IEndpointGroup
                 "404 khi khong tim thay hoac hoi thoai khong thuoc ve nguoi goi."))
             .Produces<object>();
 
+        group.MapPost(Transcribe, "transcribe")
+            .AllowAnonymous()
+            .DisableAntiforgery()
+            .RequireRateLimiting(RateLimitPolicy)
+            .WithSummary("Chep loi khach noi thanh chu (chi STT, khong goi AI)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous (giong /chat)",
+                TranscribeExample,
+                "Duong THU AM cua chatbox. Nhan audio, tra ve chu; muon co cau tra loi thi lay "
+                + "transcript do goi tiep POST /api/assistant/chat nhu mot tin nhan go tay.",
+                "VI SAO TACH LAM HAI BUOC: chatbox va huong dan vien la hai tro ly khac nhau "
+                + "(chatbox co 8 tool va nhap dat ve, huong dan vien chi co 4 tool bam theo chuyen). "
+                + "Di qua /chat thi giong noi va ban phim ra cung mot tro ly, cung conversationId, "
+                + "cung bookingDraft. Truoc day chatbox muon /api/tour-guide/ask nen noi va go "
+                + "lai ra hai cau tra loi khac nhau.",
+                "Con mot cai loi nua: FE hien phu de ngay khi buoc nay tra ve, trong luc LLM con "
+                + "dang nghi — giau bot do tre.",
+                $"Gioi han {MaxAudioBytes / 1024}KB moi lan goi. Encode WAV 16kHz mono truoc khi gui.",
+                "heardSpeech = false nghia la khong nghe ra tieng noi nao — nhac khach noi lai va "
+                + "DUNG goi /chat voi chuoi rong.",
+                "KHONG kiem tra ve/check-in: day la chatbox chung, khach chua mua ve van dung duoc. "
+                + "Cua theo check-in chi ap cho /api/tour-guide/ask."))
+            .Produces<TranscribeResponse>();
+
         group.MapPost(CloseConversation, "conversations/{id:guid}/close")
             .AllowAnonymous()
             .WithSummary("Dong hoi thoai")
@@ -164,6 +198,91 @@ public sealed class Assistant : IEndpointGroup
     /// megabyte vào prompt.
     /// </summary>
     private const int MaxBookingDraftBytes = 64 * 1024;
+
+    /// <summary>
+    /// Trần kích thước audio, chặn ngay ở tầng Web: tiền STT tính theo độ dài, không có trần thì
+    /// một file 10 phút là đủ đốt quota. Giữ bằng đúng trần của /api/tour-guide/ask.
+    /// </summary>
+    private const long MaxAudioBytes = 1024 * 1024;
+
+    private static async Task<IResult> Transcribe(
+        ISpeechToTextService speechToText,
+        ILogger<Assistant> logger,
+        IFormFile audio,
+        [FromForm] string? language,
+        CancellationToken ct)
+    {
+        if (audio.Length == 0)
+        {
+            return Results.BadRequest(new { error = "File audio rong." });
+        }
+
+        if (audio.Length > MaxAudioBytes)
+        {
+            return Results.BadRequest(new
+            {
+                error = $"Audio qua lon ({audio.Length / 1024}KB). Toi da {MaxAudioBytes / 1024}KB — "
+                      + "hay ghi am ngan hon hoac ha sample rate xuong 16kHz.",
+            });
+        }
+
+        using var buffer = new MemoryStream();
+        await audio.CopyToAsync(buffer, ct);
+        var bytes = buffer.ToArray();
+        var contentType = NormalizeAudioContentType(audio.ContentType);
+
+        // Chặn im lặng TRƯỚC khi gọi STT: tiết kiệm hẳn một lượt gọi, và quan trọng hơn là model
+        // sẽ bịa ra câu hỏi nếu không nghe thấy gì (xem SilentAudioDetector).
+        if (SilentAudioDetector.IsSilent(bytes, contentType))
+        {
+            return Results.Ok(new TranscribeResponse(string.Empty, false));
+        }
+
+        string transcript;
+        try
+        {
+            transcript = await speechToText.TranscribeAsync(
+                new SpeechRecognitionRequest(bytes, contentType, language, []),
+                ct);
+        }
+        catch (Exception ex) when (ex is NotSupportedException or SpeechRequestException)
+        {
+            // Lỗi do REQUEST sai (định dạng audio không đọc được, tham số bị nhà cung cấp từ chối)
+            // — nói thẳng lý do để người gọi sửa được.
+            return Results.BadRequest(new { error = ex.Message });
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw; // client tự huỷ — không phải lỗi.
+        }
+        // STT chết KHÔNG được thành 500 trần: chatbox cần thông điệp để nói lại với khách thay vì
+        // treo ở trạng thái "đang nghe". Phải bắt cả OperationCanceledException vì HttpClient hết
+        // giờ cũng ném TaskCanceledException — phân biệt bằng ct.IsCancellationRequested ở trên.
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or OperationCanceledException)
+        {
+            logger.LogError(ex, "Assistant speech-to-text failed");
+            return Results.Json(
+                new { error = "Khong nhan dang duoc giong noi luc nay. Ban thu lai sau it phut nhe." },
+                statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        return string.IsNullOrWhiteSpace(transcript)
+            ? Results.Ok(new TranscribeResponse(string.Empty, false))
+            : Results.Ok(new TranscribeResponse(transcript.Trim(), true));
+    }
+
+    /// <summary>
+    /// Vài trình duyệt gửi WAV dưới tên cũ; đổi về audio/wav cho provider hiểu. Giống hệt cách
+    /// <see cref="TourGuideVoice"/> làm — hai đường vào audio phải chuẩn hoá như nhau.
+    /// </summary>
+    private static string NormalizeAudioContentType(string? contentType)
+    {
+        var bare = (contentType ?? string.Empty).Split(';')[0].Trim();
+        return bare.Equals("audio/vnd.wave", StringComparison.OrdinalIgnoreCase)
+            || bare.Equals("audio/vnd.wav", StringComparison.OrdinalIgnoreCase)
+            ? "audio/wav"
+            : bare;
+    }
 
     private static async Task<IResult> Chat(
         ISender sender,
@@ -362,6 +481,11 @@ public sealed class Assistant : IEndpointGroup
         JsonElement? BookingDraft = null);
 
     public sealed record ChatTurnRequest(string? Text);
+
+    /// <param name="HeardSpeech">
+    /// false = không nghe ra tiếng nói nào. Client nên nhắc khách nói lại và ĐỪNG gọi /chat.
+    /// </param>
+    public sealed record TranscribeResponse(string Transcript, bool HeardSpeech);
 
     /// <summary>
     /// Chuẩn hoá draft từ client thành chuỗi JSON để chuyển xuống tầng Application. Trả null khi

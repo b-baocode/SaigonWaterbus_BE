@@ -1,4 +1,10 @@
+using SaigonWaterbus.Application.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
+
 namespace SaigonWaterbus.Application.TourGuide;
+
+/// <summary>Câu trả lời dạng chữ, kèm hạn phiên để client đếm ngược (xem TourGuideAnswer).</summary>
+public sealed record TourGuideTextAnswer(string ReplyText, DateTimeOffset? ExpiresAt = null);
 
 /// <summary>
 /// Hỏi hướng dẫn viên bằng CHỮ thay vì giọng nói. Bỏ qua chặn im lặng và STT, phần còn lại
@@ -22,7 +28,7 @@ public sealed record AskTourGuideTextCommand(
     IReadOnlyList<TourGuideTurn>? History = null,
     string? Language = null,
     Guid? TripId = null,
-    Guid? CurrentLandmarkId = null) : IRequest<string>;
+    Guid? CurrentLandmarkId = null) : IRequest<TourGuideTextAnswer>;
 
 public sealed class AskTourGuideTextCommandValidator : AbstractValidator<AskTourGuideTextCommand>
 {
@@ -40,6 +46,10 @@ public sealed class AskTourGuideTextCommandValidator : AbstractValidator<AskTour
             .MaximumLength(MaxTextLength)
             .WithMessage($"Câu hỏi quá dài, tối đa {MaxTextLength} ký tự.");
 
+        // Xem ghi chú ở AskTourGuideCommandValidator: bỏ trống tripId là đi vòng qua cửa.
+        RuleFor(x => x.TripId)
+            .NotEmpty().WithMessage("Thiếu tripId — chưa biết bạn đang đi chuyến nào.");
+
         RuleFor(x => x.Latitude)
             .InclusiveBetween(-90, 90).When(x => x.Latitude.HasValue)
             .WithMessage("Vĩ độ phải nằm trong khoảng -90 đến 90.");
@@ -50,14 +60,30 @@ public sealed class AskTourGuideTextCommandValidator : AbstractValidator<AskTour
     }
 }
 
-public sealed class AskTourGuideTextCommandHandler : IRequestHandler<AskTourGuideTextCommand, string>
+public sealed class AskTourGuideTextCommandHandler
+    : IRequestHandler<AskTourGuideTextCommand, TourGuideTextAnswer>
 {
     private readonly TourGuideResponder _responder;
+    private readonly TourGuideAccessSupport _access;
 
-    public AskTourGuideTextCommandHandler(TourGuideResponder responder) => _responder = responder;
+    public AskTourGuideTextCommandHandler(TourGuideResponder responder, TourGuideAccessSupport access)
+    {
+        _responder = responder;
+        _access = access;
+    }
 
-    public Task<string> Handle(AskTourGuideTextCommand request, CancellationToken cancellationToken) =>
-        _responder.AnswerAsync(
+    public async Task<TourGuideTextAnswer> Handle(
+        AskTourGuideTextCommand request,
+        CancellationToken cancellationToken)
+    {
+        // Cùng một cửa với đường giọng nói — nếu không thì gõ chữ là lối đi vòng.
+        var access = await _access.EvaluateAsync(request.TripId, cancellationToken);
+        if (!access.Allowed)
+        {
+            throw new TourGuideAccessDeniedException(access.ReasonCode);
+        }
+
+        var reply = await _responder.AnswerAsync(
             new TourGuideAsk(
                 request.Text,
                 request.Latitude,
@@ -69,4 +95,7 @@ public sealed class AskTourGuideTextCommandHandler : IRequestHandler<AskTourGuid
                 request.TripId,
                 request.CurrentLandmarkId),
             cancellationToken);
+
+        return new TourGuideTextAnswer(reply, access.ExpiresAt);
+    }
 }

@@ -12,6 +12,18 @@ public static class TicketAttendanceWindowSupport
     public const int CheckOutOpenOffsetMinutes = 5;
     public const int CheckOutGraceMinutes = 5;
 
+    /// <summary>
+    /// Thời gian dừng GIẢ ĐỊNH cho bến khách xuống không khai thời gian dừng, chỉ dùng để tính
+    /// hạn check-out tự động.
+    ///
+    /// Bến cuối LUÔN có StayDurationMinutes = 0 (xem TripStopScheduleSupport.ResolveStayDurationMinutes)
+    /// và tàu thì không "rời" bến cuối, nên nếu không có mốc giả định này thì vé của khách quên
+    /// check-out ở bến cuối treo CheckedIn vĩnh viễn — job dọn vé không bao giờ tính ra được hạn.
+    /// Với sightseeing thì đó là MỌI tấm vé: hành khách sightseeing không lưu stop order nên bến
+    /// xuống luôn rơi về bến cuối.
+    /// </summary>
+    public const int UnscheduledDwellFallbackMinutes = 10;
+
     public static void EnsureCanCheckInAt(Ticket ticket, DateTimeOffset now)
     {
         EnsureCanCheckInAt(ticket, ticket.Booking, now);
@@ -280,7 +292,7 @@ public static class TicketAttendanceWindowSupport
         if (trip.TripStops.Count > 0)
         {
             var alightingStop = ResolveAlightingStop(trip, passenger);
-            return alightingStop is not null && IsStopPastScanWindow(alightingStop, now);
+            return alightingStop is not null && IsStopPastCheckOutWindow(alightingStop, now);
         }
 
         var segmentTimes = TripStopScheduleSupport.ResolveSegmentTimes(
@@ -332,6 +344,79 @@ public static class TicketAttendanceWindowSupport
 
         var effectiveEnd = ResolveStopScanEndsAt(stop)?.AddMinutes(CheckOutGraceMinutes);
         return effectiveEnd.HasValue && now > effectiveEnd.Value;
+    }
+
+    /// <summary>
+    /// Bến khách XUỐNG đã hết hạn check-out chưa.
+    ///
+    /// CỐ Ý TÁCH KHỎI <see cref="IsStopPastScanWindow"/> dù hai hàm nhìn gần giống nhau: hàm kia
+    /// còn phục vụ đường check-IN, mà bến ĐẦU cũng luôn có StayDurationMinutes = 0. Gắn mốc giả
+    /// định vào đó thì tàu đỗ bến đầu lâu hơn nửa tiếng (khởi hành trễ) là giết sạch vé của khách
+    /// còn chưa kịp lên — đúng loại tai nạn mà ghi chú ở <see cref="IsPastCheckInWindow"/> cảnh báo.
+    /// Ở đây chỉ đụng vé ĐÃ check-in, tức khách đã đi xong: lỡ tay thì mất quyền check-out chứ
+    /// không mất vé.
+    /// </summary>
+    private static bool IsStopPastCheckOutWindow(TripStop stop, DateTimeOffset now)
+    {
+        if (stop.ActualDepartureTime.HasValue
+            || string.Equals(stop.StopStatus, TripStopStatuses.Departed, StringComparison.OrdinalIgnoreCase)
+            || string.Equals(stop.StopStatus, TripStopStatuses.Skipped, StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        var deadline = ResolveCheckOutDeadline(stop);
+        return deadline.HasValue && now > deadline.Value;
+    }
+
+    /// <summary>
+    /// Hạn chót check-out của một chặng, tra theo bến khách xuống của chuyến. Hành khách không
+    /// ghi chặng (sightseeing chiếm ghế cả vòng) thì lấy bến cuối.
+    ///
+    /// CỐ Ý NHẬN THẲNG trip + stop order thay vì nhận Ticket: người gọi ngoài luồng quét vé
+    /// (hướng dẫn viên AI) đã biết chính xác chuyến khách đang đi, không cần và không nên đi qua
+    /// <c>ResolveTicketTrip</c> — hàm đó đoán chuyến từ booking và trả null cho vé thuê tàu.
+    ///
+    /// Trả null khi chuyến chưa có lịch từng bến: không đoán được thì đừng bịa ra một cái mốc.
+    /// </summary>
+    public static DateTimeOffset? ResolveCheckOutDeadline(Trip trip, int? toStopOrder)
+    {
+        if (trip.TripStops.Count == 0)
+        {
+            return null;
+        }
+
+        var orderedStops = trip.TripStops.OrderBy(x => x.StopOrder).ToArray();
+        var alightingStop = toStopOrder.HasValue
+            ? orderedStops.FirstOrDefault(x => x.StopOrder == toStopOrder.Value)
+            : orderedStops.LastOrDefault();
+
+        return alightingStop is null ? null : ResolveCheckOutDeadline(alightingStop);
+    }
+
+    /// <summary>
+    /// Hạn chót check-out tại một bến = giờ tàu đến + thời gian dừng + ân hạn.
+    ///
+    /// Giờ đến ưu tiên THỰC TẾ → ĐIỀU CHỈNH → DỰ KIẾN: chuyến trễ có ghi nhận thì
+    /// <see cref="TripStop.AdjustedArrivalTime"/> đã cộng sẵn phút trễ, lấy giờ dự kiến trần trụi
+    /// sẽ huỷ quyền check-out của khách còn đang ngồi trên tàu. Chấp nhận rơi về giờ dự kiến khi
+    /// bến chưa hề được bấm cập: thà đóng muộn hơn 15 phút còn hơn treo vĩnh viễn.
+    ///
+    /// Trả null khi bến không có bất kỳ mốc giờ nào — không đoán được thì để vé sống.
+    /// </summary>
+    private static DateTimeOffset? ResolveCheckOutDeadline(TripStop stop)
+    {
+        var arrival = stop.ActualArrivalTime ?? stop.AdjustedArrivalTime ?? stop.PlannedArrivalTime;
+        if (!arrival.HasValue)
+        {
+            return null;
+        }
+
+        var dwellMinutes = stop.StayDurationMinutes > 0
+            ? stop.StayDurationMinutes
+            : UnscheduledDwellFallbackMinutes;
+
+        return arrival.Value.AddMinutes(dwellMinutes + CheckOutGraceMinutes);
     }
 
     private static bool TryResolveSegmentTimes(

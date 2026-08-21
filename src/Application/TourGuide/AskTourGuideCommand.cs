@@ -1,3 +1,5 @@
+using SaigonWaterbus.Application.Common;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Landmarks;
 using SaigonWaterbus.Application.Stations;
@@ -12,7 +14,15 @@ public sealed record TourGuideTurn(string Role, string Text);
 /// false nghĩa là không nghe ra tiếng nói nào. FE nên nhắc khách nói lại chứ đừng ghi lượt này
 /// vào lịch sử hội thoại.
 /// </param>
-public sealed record TourGuideAnswer(string Transcript, string ReplyText, bool HeardSpeech);
+/// <param name="ExpiresAt">
+/// Hạn của phiên, để client đếm ngược. Null nghĩa là không xác định được (chuyến chưa có lịch
+/// từng bến, hoặc người hỏi là admin đang thử) — client cứ ẩn đồng hồ đi.
+/// </param>
+public sealed record TourGuideAnswer(
+    string Transcript,
+    string ReplyText,
+    bool HeardSpeech,
+    DateTimeOffset? ExpiresAt = null);
 
 /// <summary>
 /// Một lượt hỏi đáp bằng giọng nói với hướng dẫn viên: audio khách nói → chép lời → hỏi LLM
@@ -59,6 +69,11 @@ public sealed class AskTourGuideCommandValidator : AbstractValidator<AskTourGuid
         RuleFor(x => x.Audio)
             .NotEmpty().WithMessage("Chưa có dữ liệu âm thanh.");
 
+        // BẮT BUỘC từ khi có chặn cửa theo vé: bỏ trống tripId là bỏ trống luôn câu hỏi "khách
+        // này đang đi chuyến nào", tức là đi vòng qua cửa.
+        RuleFor(x => x.TripId)
+            .NotEmpty().WithMessage("Thiếu tripId — chưa biết bạn đang đi chuyến nào.");
+
         RuleFor(x => x.ContentType)
             .NotEmpty().WithMessage("Thiếu định dạng âm thanh (contentType).");
 
@@ -76,25 +91,36 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
 {
     private readonly ISpeechToTextService _speechToText;
     private readonly TourGuideResponder _responder;
+    private readonly TourGuideAccessSupport _access;
     private readonly ISender _sender;
 
     public AskTourGuideCommandHandler(
         ISpeechToTextService speechToText,
         TourGuideResponder responder,
+        TourGuideAccessSupport access,
         ISender sender)
     {
         _speechToText = speechToText;
         _responder = responder;
+        _access = access;
         _sender = sender;
     }
 
     public async Task<TourGuideAnswer> Handle(AskTourGuideCommand request, CancellationToken cancellationToken)
     {
+        // Gác cửa TRƯỚC mọi thứ khác: STT và LLM đều tốn tiền, không có lý do gì tiêu trước
+        // rồi mới hỏi người này có được dùng không.
+        var access = await _access.EvaluateAsync(request.TripId, cancellationToken);
+        if (!access.Allowed)
+        {
+            throw new TourGuideAccessDeniedException(access.ReasonCode);
+        }
+
         // Chặn im lặng TRƯỚC khi gọi STT: model sẽ bịa ra câu hỏi nếu không nghe thấy gì
         // (xem SilentAudioDetector). Chặn ở đây cũng tiết kiệm 1 lần STT + 1 lần LLM.
         if (SilentAudioDetector.IsSilent(request.Audio, request.ContentType))
         {
-            return NotHeard();
+            return NotHeard(access.ExpiresAt);
         }
 
         var transcript = await _speechToText.TranscribeAsync(
@@ -109,7 +135,7 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
         {
             // Không nghe ra gì thì ĐỪNG gọi LLM — tốn tiền, tốn thời gian, và model sẽ bịa ra
             // một câu hỏi không ai hỏi.
-            return NotHeard();
+            return NotHeard(access.ExpiresAt);
         }
 
         var reply = await _responder.AnswerAsync(
@@ -125,7 +151,7 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
                 request.CurrentLandmarkId),
             cancellationToken);
 
-        return new TourGuideAnswer(transcript, reply, HeardSpeech: true);
+        return new TourGuideAnswer(transcript, reply, HeardSpeech: true, access.ExpiresAt);
     }
 
     /// <summary>
@@ -160,6 +186,6 @@ public sealed class AskTourGuideCommandHandler : IRequestHandler<AskTourGuideCom
         }
     }
 
-    private static TourGuideAnswer NotHeard() =>
-        new(string.Empty, "Mình chưa nghe rõ, bạn nói lại giúp mình nhé.", HeardSpeech: false);
+    private static TourGuideAnswer NotHeard(DateTimeOffset? expiresAt) =>
+        new(string.Empty, "Mình chưa nghe rõ, bạn nói lại giúp mình nhé.", HeardSpeech: false, expiresAt);
 }
