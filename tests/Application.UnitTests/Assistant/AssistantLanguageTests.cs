@@ -69,8 +69,10 @@ public class AssistantLanguageTests
         en.ShouldContain("TIẾNG ANH");
         // Ep tieng Anh thi cau tu choi va cau "chua co thong tin" cung phai tieng Anh.
         en.ShouldContain("từ chối");
-        // Khong biet ngon ngu thi bam theo tin nhan khach, khong ep buoc.
-        auto.ShouldContain("ĐÚNG NGÔN NGỮ khách đang dùng");
+        // Khong biet ngon ngu thi bam theo CHINH TIN NHAN dang tra loi, khong ep buoc.
+        auto.ShouldContain("CHÍNH TIN NHẮN");
+        // Du lieu tool viet tieng Viet -> KHONG duoc keo cau tra loi ve tieng Viet.
+        auto.ShouldContain("dữ liệu tool trả về luôn viết bằng tiếng Việt");
 
         // Ten ga la ten rieng -> ca ba che do deu phai giu nguyen tieng Viet.
         en.ShouldContain("giữ nguyên tiếng Việt");

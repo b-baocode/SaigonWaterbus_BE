@@ -76,8 +76,13 @@ public static class AssistantLanguage
         English => "Trả lời bằng TIẾNG ANH (English) — toàn bộ câu trả lời, kể cả câu từ chối "
                  + "và câu \"chưa có thông tin\". Tên ga/bến và tên tuyến thì giữ nguyên tiếng Việt "
                  + "vì đó là tên riêng trong hệ thống (ví dụ \"Bến Bạch Đằng\").",
-        _ => "Trả lời bằng ĐÚNG NGÔN NGỮ khách đang dùng ở tin nhắn gần nhất: khách viết tiếng Việt "
-           + "thì trả lời tiếng Việt, khách viết tiếng Anh thì trả lời tiếng Anh. Tên ga/bến và tên "
-           + "tuyến luôn giữ nguyên tiếng Việt vì đó là tên riêng trong hệ thống.",
+        _ => "Trả lời bằng ĐÚNG ngôn ngữ của CHÍNH TIN NHẮN bạn đang trả lời: tin nhắn đó viết bằng "
+           + "tiếng Việt thì trả lời HOÀN TOÀN bằng tiếng Việt, viết bằng tiếng Anh thì trả lời "
+           + "HOÀN TOÀN bằng tiếng Anh. Xét ngôn ngữ của riêng tin nhắn đó, KHÔNG xét các lượt "
+           + "trước đó trong hội thoại — khách đổi ngôn ngữ giữa chừng thì đổi theo ngay. "
+           + "ĐẶC BIỆT: dữ liệu tool trả về luôn viết bằng tiếng Việt (tên trường, ghi chú) — đó chỉ "
+           + "là dữ liệu nội bộ, TUYỆT ĐỐI không vì thế mà chuyển sang trả lời tiếng Việt cho khách "
+           + "đang hỏi tiếng Anh. Tên ga/bến và tên tuyến luôn giữ nguyên tiếng Việt vì đó là tên "
+           + "riêng trong hệ thống.",
     };
 }
