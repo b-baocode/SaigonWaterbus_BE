@@ -180,25 +180,7 @@ internal static class CharterBookingInsuranceSupport
             throw CreateInsuranceValidation(CreateInvalidQuantityMessage(bookingType));
         }
 
-        return new BookingInsuranceSnapshot
-        {
-            InsurancePackageId = package.Id,
-            Code = package.Code,
-            Name = package.Name,
-            BookingType = package.BookingType,
-            IsRequired = package.IsRequired,
-            ProviderName = package.ProviderName,
-            ProviderLogoUrl = package.ProviderLogoUrl,
-            ImageUrl = package.ImageUrl,
-            UnitPremiumAmount = package.UnitPremiumAmount,
-            CoverageAmount = package.CoverageAmount,
-            Currency = package.Currency,
-            Conditions = package.Conditions,
-            TermsUrl = package.TermsUrl,
-            Quantity = insuredPassengerQuantity,
-            TotalAmount = package.UnitPremiumAmount * insuredPassengerQuantity,
-            QuotedAt = quotedAt
-        };
+        return CreateSnapshot(package, insuredPassengerQuantity, quotedAt);
     }
 
     public static async Task<BookingInsuranceSnapshot?> ResolveQuoteInsuranceSnapshotAsync(
