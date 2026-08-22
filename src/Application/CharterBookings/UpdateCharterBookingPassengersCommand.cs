@@ -110,7 +110,7 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
                 x,
                 today,
                 ResolveInferredPassengerType(booking, requestedPassengers, x),
-                $"passengers[{index}].dateOfBirth",
+                $"passengers[{index}].birthYear",
                 $"passengers[{index}].fullName"))
             .ToList();
         CharterBookingTicketSupport.CancelTicketsBeforeReplacingPassengers(booking);
@@ -234,18 +234,18 @@ public sealed class UpdateCharterBookingPassengersCommandHandler
         IReadOnlyCollection<CharterBookingPassengerRequest> passengers,
         CharterBookingPassengerRequest passenger)
     {
-        if (!string.IsNullOrWhiteSpace(passenger.DateOfBirth)
-            || passengers.Count != 1
-            || booking.PassengerCount.GetValueOrDefault() != 1)
+        if (!string.IsNullOrWhiteSpace(passenger.FullName)
+            && passengers.Count == 1
+            && booking.PassengerCount.GetValueOrDefault() == 1)
         {
-            return null;
+            return (booking.AdultCount.GetValueOrDefault(), booking.ChildCount.GetValueOrDefault()) switch
+            {
+                (1, 0) => CharterBookingPassengerType.Adult.ToString(),
+                (0, 1) => CharterBookingPassengerType.Child.ToString(),
+                _ => null
+            };
         }
 
-        return (booking.AdultCount.GetValueOrDefault(), booking.ChildCount.GetValueOrDefault()) switch
-        {
-            (1, 0) => CharterBookingPassengerType.Adult.ToString(),
-            (0, 1) => CharterBookingPassengerType.Child.ToString(),
-            _ => null
-        };
+        return null;
     }
 }

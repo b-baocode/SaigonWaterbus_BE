@@ -130,7 +130,6 @@ internal static class CharterBookingTicketSupport
             ticket.CheckedInAt,
             passenger?.Id ?? ticket.BookingPassengerId,
             passenger?.FullName,
-            passenger?.DateOfBirth,
             passenger?.BirthYear,
             passenger?.PassengerType);
     }

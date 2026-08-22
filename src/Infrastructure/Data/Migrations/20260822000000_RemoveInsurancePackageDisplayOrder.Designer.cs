@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using NetTopologySuite.Geometries;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
@@ -12,9 +13,11 @@ using SaigonWaterbus.Infrastructure.Data;
 namespace SaigonWaterbus.Infrastructure.Data.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260822000000_RemoveInsurancePackageDisplayOrder")]
+    partial class RemoveInsurancePackageDisplayOrder
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -1875,9 +1878,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.Property<bool>("IsWaterbusDefault")
                         .HasColumnType("boolean");
 
-                    b.Property<int>("ProviderSource")
-                        .HasColumnType("integer");
-
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(150)
@@ -1916,8 +1916,6 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .IsUnique();
 
                     b.HasIndex("BookingType", "IsActive");
-
-                    b.HasIndex(new[] { "BookingType", "ProviderSource", "IsActive" }, "IX_insurance_packages_BookingType_ProviderSource_IsActive");
 
                     b.ToTable("insurance_packages", (string)null);
                 });

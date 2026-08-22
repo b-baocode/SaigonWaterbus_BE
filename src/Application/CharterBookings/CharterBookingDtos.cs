@@ -177,7 +177,8 @@ public sealed record CharterBookingInsuranceDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? TermsUrl,
     DateTimeOffset QuotedAt,
-    bool Selected = true);
+    bool Selected = true,
+    InsuranceProviderSource ProviderSource = InsuranceProviderSource.ThirdParty);
 
 public sealed record AdminCharterBookingListItemDto(
     Guid BookingId,
@@ -373,8 +374,6 @@ public sealed record CharterBookingTicketDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerName,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateOnly? PassengerDateOfBirth,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? PassengerBirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PassengerType);
@@ -435,14 +434,11 @@ public sealed record CharterBookingPaymentWebhookResult(
 
 public sealed record CharterBookingPassengerRequest(
     string FullName,
-    string? DateOfBirth,
     int? BirthYear = null);
 
 public sealed record CharterBookingPassengerDto(
     Guid PassengerId,
     string FullName,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateOnly? DateOfBirth,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? BirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -517,7 +513,7 @@ public sealed record CharterBookingTicketExportItemDto(
     Guid TicketId,
     Guid? PassengerId,
     string? PassengerName,
-    DateOnly? PassengerDateOfBirth,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? PassengerBirthYear,
     string? PassengerType,
     string TicketCode,
@@ -565,8 +561,6 @@ public sealed record CharterBookingTicketSummaryDto(
 public sealed record CharterBookingManifestPassengerDto(
     Guid PassengerId,
     string FullName,
-    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    DateOnly? DateOfBirth,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? BirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]

@@ -1,3 +1,5 @@
+using SaigonWaterbus.Domain.Enums;
+
 namespace SaigonWaterbus.Domain.Entities;
 
 public class BookingInsuranceSnapshot
@@ -19,4 +21,7 @@ public class BookingInsuranceSnapshot
     public decimal TotalAmount { get; set; }
     public DateTimeOffset QuotedAt { get; set; }
     public bool IsWaterbusDefault { get; set; }
+
+    /// <summary>Nguồn gốc gói bảo hiểm tại thời điểm snapshot — <c>Waterbus</c> hoặc <c>ThirdParty</c>.</summary>
+    public InsuranceProviderSource ProviderSource { get; set; } = InsuranceProviderSource.ThirdParty;
 }

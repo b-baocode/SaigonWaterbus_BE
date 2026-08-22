@@ -235,9 +235,9 @@ internal static class PassengerManifestParser
         {
             var row = rows[rowIndex];
             var fullName = GetCell(row, header.FullNameIndex)?.Trim();
-            var birthInfoText = GetCell(row, header.BirthInfoIndex)?.Trim();
+            var birthYearText = GetCell(row, header.BirthInfoIndex)?.Trim();
 
-            if (string.IsNullOrWhiteSpace(fullName) && string.IsNullOrWhiteSpace(birthInfoText))
+            if (string.IsNullOrWhiteSpace(fullName) && string.IsNullOrWhiteSpace(birthYearText))
             {
                 continue;
             }
@@ -249,36 +249,28 @@ internal static class PassengerManifestParser
                 continue;
             }
 
-            if (CharterBookingPassengerSupport.TryParseBirthYear(birthInfoText, out var birthYear))
+            if (string.IsNullOrWhiteSpace(birthYearText))
             {
-                if (!CharterBookingPassengerSupport.IsValidBirthYear(birthYear, today))
-                {
-                    errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].BirthYear",
-                        birthYear > today.Year ? "Năm sinh không được ở tương lai." : "Năm sinh không hợp lệ."));
-                    continue;
-                }
-
-                passengers.Add(new CharterBookingPassengerRequest(fullName, null, birthYear));
+                errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].BirthYear",
+                    "Năm sinh là bắt buộc."));
                 continue;
             }
 
-            if (!TryParseDateOfBirth(birthInfoText, out var dateOfBirth))
+            if (!CharterBookingPassengerSupport.TryParseBirthYear(birthYearText, out var birthYear))
             {
-                errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].BirthInfo",
-                    "Năm sinh/ngày sinh không hợp lệ. Dùng năm yyyy hoặc ngày yyyy-MM-dd/dd/MM/yyyy."));
+                errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].BirthYear",
+                    "Năm sinh không hợp lệ. Dùng năm yyyy."));
                 continue;
             }
 
-            if (dateOfBirth > today)
+            if (!CharterBookingPassengerSupport.IsValidBirthYear(birthYear, today))
             {
-                errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].DateOfBirth",
-                    "Ngày sinh không được ở tương lai."));
+                errors.Add(new ValidationFailure($"Rows[{rowIndex + 1}].BirthYear",
+                    birthYear > today.Year ? "Năm sinh không được ở tương lai." : "Năm sinh không hợp lệ."));
                 continue;
             }
 
-            passengers.Add(new CharterBookingPassengerRequest(
-                fullName,
-                dateOfBirth.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+            passengers.Add(new CharterBookingPassengerRequest(fullName, birthYear));
         }
 
         if (errors.Count > 0)
@@ -495,17 +487,6 @@ internal static class PassengerManifestParser
         return null;
     }
 
-    private static bool TryParseDateOfBirth(string? value, out DateOnly dateOfBirth)
-    {
-        if (CharterBookingPassengerSupport.TryParseDateOfBirth(value, out dateOfBirth))
-        {
-            return true;
-        }
-
-        dateOfBirth = default;
-        return false;
-    }
-
     private static char DetectDelimiter(string text)
     {
         var firstLine = text.Split('\n').FirstOrDefault() ?? string.Empty;
@@ -578,8 +559,7 @@ internal static class PassengerManifestParser
             or "tenhanhkhach" or "hanhkhach" or "khachhang";
 
     private static bool IsBirthInfoHeader(string value) =>
-        value is "ngaysinh" or "ngaythangnamsinh" or "ngaythangnam" or "dateofbirth"
-            or "dob" or "birthdate" or "birthday" or "namsinh" or "birthyear" or "year";
+        value is "namsinh" or "birthyear" or "year";
 
     private sealed record HeaderIndexes(
         int RowIndex,

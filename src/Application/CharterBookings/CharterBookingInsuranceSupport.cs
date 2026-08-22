@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.InsurancePackages;
 using SaigonWaterbus.Application.Payments;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.CharterBookings;
@@ -54,6 +55,40 @@ internal static class CharterBookingInsuranceSupport
         return currentSnapshot is null
             ? null
             : UpdateQuantity(currentSnapshot, insuredPassengerQuantity, quotedAt);
+    }
+
+    /// <summary>
+    /// Tự động gắn gói bảo hiểm mặc định Waterbus vào booking.
+    /// Chỉ gắn khi: (1) chưa có ThirdParty snapshot, VÀ (2) booking có hành khách.
+    /// Gói Waterbus luôn cộng vào giá — khách không cần chọn.
+    /// </summary>
+    /// <returns>Snapshot gói Waterbus default, hoặc null nếu không có gói nào active.</returns>
+    public static async Task<BookingInsuranceSnapshot?> ResolveWaterbusDefaultInsuranceSnapshotAsync(
+        IApplicationDbContext context,
+        int insuredPassengerQuantity,
+        DateTimeOffset quotedAt,
+        CancellationToken cancellationToken,
+        string bookingType = Booking.CharterBookingType)
+    {
+        if (insuredPassengerQuantity < 1)
+        {
+            return null;
+        }
+
+        var waterbusDefault = await context.Set<InsurancePackage>()
+            .AsNoTracking()
+            .Where(x => x.IsActive
+                && (x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType
+                    || x.BookingType == bookingType)
+                && x.ProviderSource == InsuranceProviderSource.Waterbus)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (waterbusDefault is null)
+        {
+            return null;
+        }
+
+        return CreateSnapshot(waterbusDefault, insuredPassengerQuantity, quotedAt);
     }
 
     public static async Task<BookingInsuranceSnapshot?> ResolveSeatBookingInsuranceSnapshotAsync(
@@ -239,7 +274,8 @@ internal static class CharterBookingInsuranceSupport
                 snapshot.Conditions,
                 snapshot.TermsUrl,
                 snapshot.QuotedAt,
-                Selected: true);
+                Selected: true,
+                ProviderSource: snapshot.ProviderSource);
 
     private static BookingInsuranceSnapshot UpdateQuantity(
         BookingInsuranceSnapshot snapshot,
@@ -288,7 +324,7 @@ internal static class CharterBookingInsuranceSupport
                     || x.BookingType == Booking.CharterBookingType))
             .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
             .ThenByDescending(x => x.IsRequired)
-            .ThenBy(x => x.DisplayOrder)
+            .ThenBy(x => x.Created)
             .ThenBy(x => x.Code)
             .FirstOrDefaultAsync(cancellationToken);
     }
@@ -315,7 +351,8 @@ internal static class CharterBookingInsuranceSupport
             Quantity = insuredPassengerQuantity,
             TotalAmount = package.UnitPremiumAmount * insuredPassengerQuantity,
             QuotedAt = quotedAt,
-            IsWaterbusDefault = package.IsWaterbusDefault
+            IsWaterbusDefault = package.IsWaterbusDefault,
+            ProviderSource = package.ProviderSource
         };
 
     private static async Task<BookingInsuranceSnapshot?> ResolveDefaultInsuranceSnapshotAsync(
@@ -348,7 +385,7 @@ internal static class CharterBookingInsuranceSupport
         {
             package = await query
                 .Where(x => x.IsWaterbusDefault)
-                .OrderBy(x => x.DisplayOrder)
+                .OrderBy(x => x.Created)
                 .ThenBy(x => x.Code)
                 .FirstOrDefaultAsync(cancellationToken);
 
@@ -358,7 +395,7 @@ internal static class CharterBookingInsuranceSupport
                 package = await query
                     .Where(x => x.IsRequired)
                     .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
-                    .ThenBy(x => x.DisplayOrder)
+                    .ThenBy(x => x.Created)
                     .ThenBy(x => x.Code)
                     .FirstOrDefaultAsync(cancellationToken);
             }
@@ -368,7 +405,7 @@ internal static class CharterBookingInsuranceSupport
             package = await query
                 .OrderBy(x => x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType ? 0 : 1)
                 .ThenByDescending(x => x.IsRequired)
-                .ThenBy(x => x.DisplayOrder)
+                .ThenBy(x => x.Created)
                 .ThenBy(x => x.Code)
                 .FirstOrDefaultAsync(cancellationToken);
         }

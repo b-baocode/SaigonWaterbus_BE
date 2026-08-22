@@ -1102,8 +1102,7 @@ public class CreateCharterBookingCommandTests
             CoverageAmount = 50_000_000m,
             Currency = "VND",
             Conditions = ["Chi ap dung cho hanh khach co ten trong danh sach chuyen di."],
-            IsActive = true,
-            DisplayOrder = 1
+            IsActive = true
         };
 
     private static BookingInsuranceSnapshot InsuranceSnapshot(

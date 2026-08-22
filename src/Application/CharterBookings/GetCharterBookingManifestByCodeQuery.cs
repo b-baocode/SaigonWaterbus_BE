@@ -215,7 +215,6 @@ internal static class CharterBookingManifestSupport
         new(
             passenger.Id,
             passenger.FullName,
-            passenger.DateOfBirth,
             passenger.BirthYear,
             passenger.PassengerType,
             ticket?.Id,

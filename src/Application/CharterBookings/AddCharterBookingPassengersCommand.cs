@@ -123,7 +123,7 @@ public sealed class AddCharterBookingPassengersCommandHandler
                 x,
                 today,
                 null,
-                $"passengers[{index}].dateOfBirth",
+                $"passengers[{index}].birthYear",
                 $"passengers[{index}].fullName"))
             .ToList();
 

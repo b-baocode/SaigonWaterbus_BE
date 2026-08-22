@@ -297,8 +297,7 @@ public class CreateRoundTripBookingTests
             UnitPremiumAmount = 3_000m,
             CoverageAmount = 50_000_000m,
             Currency = "VND",
-            IsActive = true,
-            DisplayOrder = 1
+            IsActive = true
         };
         context.Add(insurancePackage);
         await context.SaveChangesAsync();

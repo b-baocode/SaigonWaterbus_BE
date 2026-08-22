@@ -32,7 +32,7 @@ public sealed class QuestPdfCharterBookingTicketPdfRenderer : ICharterBookingTic
                 var vesselName = ResolvePdfText(export.BoatName, "Waterbus");
                 var passengerName = ResolvePdfText(ticket.PassengerName, "Khach hang");
                 var passengerType = ResolvePdfText(ticket.PassengerType, "Passenger");
-                var birthDate = FormatPdfDate(ticket.PassengerDateOfBirth);
+                var birthYearText = ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture) ?? "-";
 
                 document.Page(page =>
                 {
@@ -149,7 +149,7 @@ public sealed class QuestPdfCharterBookingTicketPdfRenderer : ICharterBookingTic
                                                 AddPdfInfoCell(table.Cell(), "Time", startTime, teal);
                                                 AddPdfInfoCell(table.Cell(), "Vessel", vesselName, ink);
                                                 AddPdfInfoCell(table.Cell(), "Passenger type", passengerType, ink);
-                                                AddPdfInfoCell(table.Cell(), "Date of birth", birthDate, ink);
+                                                AddPdfInfoCell(table.Cell(), "Birth year", birthYearText, ink);
                                                 AddPdfInfoCell(table.Cell(), "Ticket status", ticket.TicketStatus, ink);
                                             });
                                         });

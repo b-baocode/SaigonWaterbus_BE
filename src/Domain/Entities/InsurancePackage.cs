@@ -1,4 +1,5 @@
 using SaigonWaterbus.Domain.Common;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Domain.Entities;
 
@@ -17,7 +18,13 @@ public class InsurancePackage : BaseGuidAuditableEntity
     public string[] Conditions { get; set; } = [];
     public string? TermsUrl { get; set; }
     public bool IsActive { get; set; } = true;
-    public int DisplayOrder { get; set; }
     public int? RewardOption { get; set; }
     public bool IsWaterbusDefault { get; set; } = false;
+
+    /// <summary>
+    /// Nguồn gốc gói bảo hiểm: <c>Waterbus</c> (mặc định, hệ thống tự gắn vào giá)
+    /// hoặc <c>ThirdParty</c> (tuỳ chọn, khách tự chọn). Backfill an toàn từ
+    /// <see cref="IsWaterbusDefault"/> cho dữ liệu cũ.
+    /// </summary>
+    public InsuranceProviderSource ProviderSource { get; set; } = InsuranceProviderSource.ThirdParty;
 }

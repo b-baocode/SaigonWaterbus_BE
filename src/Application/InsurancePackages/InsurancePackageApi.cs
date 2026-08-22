@@ -22,9 +22,9 @@ public sealed record InsurancePackageDto(
     IReadOnlyList<string> Conditions,
     string? TermsUrl,
     InsurancePackageStatus Status,
-    int DisplayOrder,
     int? RewardOption,
-    bool IsWaterbusDefault = false);
+    bool IsWaterbusDefault = false,
+    InsuranceProviderSource ProviderSource = InsuranceProviderSource.ThirdParty);
 
 public sealed record GetInsurancePackageListQuery(
     string? BookingType = null,
@@ -57,7 +57,7 @@ public sealed class GetInsurancePackageListQueryHandler
         }
 
         return await query
-            .OrderBy(x => x.DisplayOrder)
+            .OrderBy(x => x.Created)
             .ThenBy(x => x.Code)
             .Select(x => InsurancePackageSupport.ToDto(x))
             .ToListAsync(cancellationToken);
@@ -78,13 +78,12 @@ public sealed record CreateInsurancePackageCommand(
     IReadOnlyList<string>? Conditions = null,
     string? TermsUrl = null,
     InsurancePackageStatus Status = InsurancePackageStatus.Active,
-    int? DisplayOrder = null,
     int? RewardOption = null,
     bool IsWaterbusDefault = false) : IRequest<InsurancePackageDto>;
 
 public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<CreateInsurancePackageCommand>
 {
-    public CreateInsurancePackageCommandValidator(IApplicationDbContext context)
+    public CreateInsurancePackageCommandValidator()
     {
         RuleFor(x => x.Code)
             .NotEmpty()
@@ -125,19 +124,6 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
             .Must(InsurancePackageSupport.HaveValidConditions)
             .WithMessage("conditions tối đa 20 dòng, mỗi dòng tối đa 500 ký tự.");
         RuleFor(x => x.Status).IsInEnum();
-        RuleFor(x => x.DisplayOrder)
-            .GreaterThanOrEqualTo(1)
-            .When(x => x.DisplayOrder.HasValue);
-        RuleFor(x => x.DisplayOrder)
-            .Must((request, order) =>
-            {
-                var normalizedBookingType = InsurancePackageSupport.NormalizeBookingType(request.BookingType);
-                var existingCount = context.Set<InsurancePackage>()
-                    .Count(x => x.BookingType == normalizedBookingType);
-                return order!.Value <= existingCount + 1;
-            })
-            .WithMessage(x => $"Thứ tự hiển thị không được lớn hơn số gói bảo hiểm hiện có + 1.")
-            .When(x => x.DisplayOrder.HasValue);
         RuleFor(x => x.RewardOption)
             .Must(x => x == 1 || x == 2 || x == null)
             .WithMessage("rewardOption: 1=dùng hết điểm thưởng, 2=không dùng, null=không chọn.");
@@ -165,9 +151,6 @@ public sealed class CreateInsurancePackageCommandHandler
                 $"Gói bảo hiểm '{code}' cho {bookingType} đã tồn tại.")]);
         }
 
-        var displayOrder = InsurancePackageSupport.ResolveDisplayOrder(
-            _context, bookingType, request.DisplayOrder, cancellationToken);
-
         var package = new InsurancePackage
         {
             Code = code,
@@ -183,7 +166,6 @@ public sealed class CreateInsurancePackageCommandHandler
             Conditions = InsurancePackageSupport.NormalizeConditions(request.Conditions),
             TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl),
             IsActive = InsurancePackageSupport.ToIsActive(request.Status),
-            DisplayOrder = displayOrder,
             RewardOption = request.RewardOption,
             IsWaterbusDefault = request.IsWaterbusDefault
         };
@@ -209,7 +191,6 @@ public sealed record UpdateInsurancePackageCommand(
     IReadOnlyList<string>? Conditions,
     string? TermsUrl,
     InsurancePackageStatus Status,
-    int DisplayOrder,
     int? RewardOption) : IRequest<InsurancePackageDto>;
 
 public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<UpdateInsurancePackageCommand>
@@ -251,9 +232,6 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
             .Must(InsurancePackageSupport.HaveValidConditions)
             .WithMessage("conditions tối đa 20 dòng, mỗi dòng tối đa 500 ký tự.");
         RuleFor(x => x.Status).IsInEnum();
-        RuleFor(x => x.DisplayOrder)
-            .Must(x => x == 1 || x == 2)
-            .WithMessage("displayOrder: 1=dùng hết, 2=không dùng.");
         RuleFor(x => x.RewardOption)
             .Must(x => x == 1 || x == 2 || x == null)
             .WithMessage("rewardOption: 1=dùng hết điểm thưởng, 2=không dùng, null=không chọn.");
@@ -298,10 +276,6 @@ public sealed class UpdateInsurancePackageCommandHandler
         package.TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl);
         package.IsActive = InsurancePackageSupport.ToIsActive(request.Status);
         package.RewardOption = request.RewardOption;
-
-        InsurancePackageSupport.ShiftDisplayOrdersOnUpdate(
-            _context, package.BookingType, package.Id, package.DisplayOrder, request.DisplayOrder, cancellationToken);
-        package.DisplayOrder = request.DisplayOrder;
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -545,93 +519,6 @@ internal static class InsurancePackageSupport
     public static InsurancePackageStatus ToStatus(bool isActive) =>
         isActive ? InsurancePackageStatus.Active : InsurancePackageStatus.Inactive;
 
-    public static int ResolveDisplayOrder(
-        IApplicationDbContext context,
-        string bookingType,
-        int? requestedOrder,
-        CancellationToken cancellationToken = default)
-    {
-        if (requestedOrder.HasValue && requestedOrder.Value >= 1)
-        {
-            var maxOrder = context.Set<InsurancePackage>()
-                .Where(x => x.BookingType == bookingType)
-                .AsNoTracking()
-                .Select(x => (int?)x.DisplayOrder)
-                .Max();
-
-            if (requestedOrder.Value <= (maxOrder ?? 0))
-            {
-                ShiftDisplayOrdersUp(context, bookingType, requestedOrder.Value, cancellationToken);
-            }
-
-            return requestedOrder.Value;
-        }
-
-        var nextMaxOrder = context.Set<InsurancePackage>()
-            .Where(x => x.BookingType == bookingType)
-            .AsNoTracking()
-            .Select(x => (int?)x.DisplayOrder)
-            .Max();
-
-        return (nextMaxOrder ?? 0) + 1;
-    }
-
-    private static void ShiftDisplayOrdersUp(
-        IApplicationDbContext context,
-        string bookingType,
-        int fromOrder,
-        CancellationToken cancellationToken)
-    {
-        var packages = context.Set<InsurancePackage>()
-            .Where(x => x.BookingType == bookingType && x.DisplayOrder >= fromOrder)
-            .ToList();
-
-        foreach (var pkg in packages)
-        {
-            pkg.DisplayOrder++;
-        }
-    }
-
-    public static void ShiftDisplayOrdersOnUpdate(
-        IApplicationDbContext context,
-        string bookingType,
-        Guid packageId,
-        int oldOrder,
-        int newOrder,
-        CancellationToken cancellationToken)
-    {
-        if (oldOrder == newOrder) return;
-
-        if (newOrder > oldOrder)
-        {
-            var packagesToShiftDown = context.Set<InsurancePackage>()
-                .Where(x => x.BookingType == bookingType
-                    && x.Id != packageId
-                    && x.DisplayOrder > oldOrder
-                    && x.DisplayOrder <= newOrder)
-                .ToList();
-
-            foreach (var pkg in packagesToShiftDown)
-            {
-                pkg.DisplayOrder--;
-            }
-        }
-        else
-        {
-            var packagesToShiftUp = context.Set<InsurancePackage>()
-                .Where(x => x.BookingType == bookingType
-                    && x.Id != packageId
-                    && x.DisplayOrder >= newOrder
-                    && x.DisplayOrder < oldOrder)
-                .ToList();
-
-            foreach (var pkg in packagesToShiftUp)
-            {
-                pkg.DisplayOrder++;
-            }
-        }
-    }
-
     public static InsurancePackageDto ToDto(InsurancePackage package) =>
         new(
             package.Id,
@@ -648,7 +535,7 @@ internal static class InsurancePackageSupport
             package.Conditions,
             package.TermsUrl,
             ToStatus(package.IsActive),
-            package.DisplayOrder,
             package.RewardOption,
-            package.IsWaterbusDefault);
+            package.IsWaterbusDefault,
+            package.ProviderSource);
 }

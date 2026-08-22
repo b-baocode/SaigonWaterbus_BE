@@ -1142,7 +1142,7 @@ public sealed class CharterBookings : IEndpointGroup
             AppendInfo(builder, "Booking", export.BookingCode);
             AppendInfo(builder, "So ve", ticket.TicketCode);
             AppendInfo(builder, "Hanh khach", ticket.PassengerName ?? "Khach hang");
-            AppendInfo(builder, "Nam sinh", FormatPassengerBirthInfo(ticket.PassengerDateOfBirth, ticket.PassengerBirthYear));
+            AppendInfo(builder, "Nam sinh", ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
             AppendInfo(builder, "Loai khach", ticket.PassengerType ?? string.Empty);
             AppendInfo(builder, "Tau", export.BoatName ?? string.Empty);
             AppendInfo(builder, "Ngay di", export.DepartureDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
@@ -1188,7 +1188,7 @@ public sealed class CharterBookings : IEndpointGroup
                 var vesselName = ResolvePdfText(export.BoatName, "Waterbus");
                 var passengerName = ResolvePdfText(ticket.PassengerName, "Khach hang");
                 var passengerType = ResolvePdfText(ticket.PassengerType, "Passenger");
-                var birthInfo = FormatPassengerBirthInfo(ticket.PassengerDateOfBirth, ticket.PassengerBirthYear);
+                var birthInfo = ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture) ?? string.Empty;
 
                 document.Page(page =>
                 {
@@ -1463,11 +1463,6 @@ public sealed class CharterBookings : IEndpointGroup
     private static string FormatPdfDate(DateOnly? date) =>
         date?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "-";
 
-    private static string FormatPassengerBirthInfo(DateOnly? dateOfBirth, int? birthYear) =>
-        dateOfBirth?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture)
-        ?? birthYear?.ToString(CultureInfo.InvariantCulture)
-        ?? string.Empty;
-
     private static string FormatPdfTime(TimeOnly? time) =>
         time?.ToString("HH:mm", CultureInfo.InvariantCulture) ?? "-";
 
@@ -1487,7 +1482,6 @@ public sealed class CharterBookings : IEndpointGroup
             builder.Append(Csv(ticket.QrToken)).Append(',');
             builder.Append(Csv(ticket.TicketStatus)).Append(',');
             builder.Append(Csv(ticket.PassengerName)).Append(',');
-            builder.Append(Csv(ticket.PassengerDateOfBirth?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture))).Append(',');
             builder.Append(Csv(ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture))).Append(',');
             builder.Append(Csv(ticket.PassengerType)).Append(',');
             builder.Append(Csv(qrFileNames[ticket.TicketId])).AppendLine();

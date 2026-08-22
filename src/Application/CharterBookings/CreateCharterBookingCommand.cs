@@ -427,6 +427,17 @@ public sealed class CreateCharterBookingCommandHandler
                 insuredPassengerQuantity: passengerCount,
                 now,
                 cancellationToken);
+
+            // Waterbus default: tự động gắn vào giá khi không có gói ThirdParty nào được chọn.
+            if (insuranceSnapshot is null)
+            {
+                insuranceSnapshot = await CharterBookingInsuranceSupport
+                    .ResolveWaterbusDefaultInsuranceSnapshotAsync(
+                        _context,
+                        passengerCount,
+                        now,
+                        cancellationToken);
+            }
         }
 
         var booking = new Booking
@@ -614,19 +625,7 @@ public sealed class CreateCharterBookingCommandHandler
 
             foreach (var p in request.Passengers)
             {
-                // Ưu tiên BirthYear từ request, nếu không có thì parse từ DateOfBirth
                 int? birthYear = p.BirthYear;
-                if (!birthYear.HasValue && !string.IsNullOrWhiteSpace(p.DateOfBirth))
-                {
-                    if (CharterBookingPassengerSupport.TryParseDateOfBirth(p.DateOfBirth, out var dob))
-                    {
-                        birthYear = dob.Year;
-                    }
-                    else if (CharterBookingPassengerSupport.TryParseBirthYear(p.DateOfBirth, out var parsedYear))
-                    {
-                        birthYear = parsedYear;
-                    }
-                }
 
                 var passengerType = birthYear.HasValue
                     ? CharterBookingPassengerSupport.ResolvePassengerType(birthYear.Value, today)
@@ -666,23 +665,11 @@ public sealed class CharterBookingPassengerRequestValidator : AbstractValidator<
             .NotEmpty()
             .WithMessage("fullName is required.")
             .MaximumLength(150);
-        RuleFor(x => x.DateOfBirth)
-            .Must(x => string.IsNullOrWhiteSpace(x)
-                || CharterBookingPassengerSupport.TryParseBirthYear(x, out _)
-                || CharterBookingPassengerSupport.TryParseDateOfBirth(x, out _))
-            .WithMessage("Năm sinh/ngày sinh không hợp lệ. Dùng năm yyyy hoặc ngày yyyy-MM-dd/dd/MM/yyyy.");
-        RuleFor(x => x.DateOfBirth)
-            .Must(x => !CharterBookingPassengerSupport.TryParseBirthYear(x, out var birthYear)
-                || birthYear <= DateTime.UtcNow.Year)
-            .WithMessage("Năm sinh không được ở tương lai.");
-        RuleFor(x => x.DateOfBirth)
-            .Must(x => CharterBookingPassengerSupport.TryParseBirthYear(x, out _)
-                || !CharterBookingPassengerSupport.TryParseDateOfBirth(x, out var dateOfBirth)
-                || dateOfBirth <= DateOnly.FromDateTime(DateTime.UtcNow))
-            .WithMessage("Ngày sinh không được ở tương lai.");
         RuleFor(x => x.BirthYear)
-            .Must(x => !x.HasValue
-                || CharterBookingPassengerSupport.IsValidBirthYear(x.Value, DateOnly.FromDateTime(DateTime.UtcNow)))
+            .NotNull()
+            .WithMessage("birthYear is required.")
+            .Must(x => x.HasValue
+                && CharterBookingPassengerSupport.IsValidBirthYear(x.Value, DateOnly.FromDateTime(DateTime.UtcNow)))
             .WithMessage("Năm sinh không hợp lệ hoặc ở tương lai.");
     }
 }

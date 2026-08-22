@@ -23,8 +23,7 @@ public sealed class InsurancePackages : IEndpointGroup
             "Chi co hieu luc trong thoi gian dien ra chuyen di."
           ],
           "termsUrl": "https://cdn.example.com/insurance/terms.pdf",
-          "status": "Active",
-          "displayOrder": 1
+          "status": "Active"
         }
         """;
 
@@ -43,8 +42,7 @@ public sealed class InsurancePackages : IEndpointGroup
             "Chi co hieu luc trong thoi gian dien ra chuyen thue tau."
           ],
           "termsUrl": "https://cdn.example.com/insurance/terms.pdf",
-          "status": "Active",
-          "displayOrder": 1
+          "status": "Active"
         }
         """;
 
@@ -142,7 +140,6 @@ public sealed class InsurancePackages : IEndpointGroup
             request.Conditions,
             request.TermsUrl,
             request.Status,
-            request.DisplayOrder,
             request.RewardOption), ct));
 
     private static async Task<IResult> UpdateInsurancePackageImage(
@@ -200,7 +197,6 @@ public sealed class InsurancePackages : IEndpointGroup
         IReadOnlyList<string>? Conditions,
         string? TermsUrl,
         InsurancePackageStatus Status,
-        int DisplayOrder,
         int? RewardOption);
 
     public sealed record UpdateInsurancePackageStatusRequest(InsurancePackageStatus Status);

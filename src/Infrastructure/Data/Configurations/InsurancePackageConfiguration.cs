@@ -33,7 +33,12 @@ public sealed class InsurancePackageConfiguration : IEntityTypeConfiguration<Ins
             .HasDefaultValueSql("ARRAY[]::text[]");
         builder.Property(x => x.TermsUrl).HasColumnName("terms_url").HasMaxLength(1000);
         builder.Property(x => x.IsActive).HasColumnName("is_active").IsRequired();
-        builder.Property(x => x.DisplayOrder).HasColumnName("display_order").IsRequired();
+
+        builder.Property(x => x.ProviderSource)
+            .HasColumnName("provider_source")
+            .HasMaxLength(30)
+            .HasConversion<string>()
+            .IsRequired();
 
         builder.Property(x => x.Created).HasColumnName("created_at");
         builder.Property<DateTimeOffset?>("UpdatedAt").HasColumnName("updated_at");
@@ -43,5 +48,6 @@ public sealed class InsurancePackageConfiguration : IEntityTypeConfiguration<Ins
 
         builder.HasIndex(x => new { x.BookingType, x.Code }).IsUnique();
         builder.HasIndex(x => new { x.BookingType, x.IsActive });
+        builder.HasIndex(x => new { x.BookingType, x.ProviderSource, x.IsActive });
     }
 }

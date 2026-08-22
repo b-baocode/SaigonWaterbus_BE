@@ -201,8 +201,7 @@ public class ApplicationDbContextInitialiser
                 "Chỉ có hiệu lực trong thời gian diễn ra chuyến thuê tàu.",
                 "Không áp dụng nếu thông tin hành khách sai hoặc không đầy đủ."
             ],
-            null,
-            1)
+            null)
     ];
 
     /// <summary>
@@ -291,8 +290,7 @@ public class ApplicationDbContextInitialiser
                 Currency = definition.Currency,
                 Conditions = definition.Conditions,
                 TermsUrl = definition.TermsUrl,
-                IsActive = true,
-                DisplayOrder = definition.DisplayOrder
+                IsActive = true
             });
             added = true;
         }
@@ -694,6 +692,5 @@ public class ApplicationDbContextInitialiser
         decimal CoverageAmount,
         string Currency,
         string[] Conditions,
-        string? TermsUrl,
-        int DisplayOrder);
+        string? TermsUrl);
 }

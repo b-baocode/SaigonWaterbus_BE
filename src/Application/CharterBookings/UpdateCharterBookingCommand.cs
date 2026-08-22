@@ -255,6 +255,17 @@ public sealed class UpdateCharterBookingCommandHandler
                 insuredPassengerQuantity: adultCount + childCount,
                 _timeProvider.GetUtcNow(),
                 cancellationToken);
+
+            // Waterbus default: tự động gắn khi không có ThirdParty snapshot nào.
+            if (insuranceSnapshot is null)
+            {
+                insuranceSnapshot = await CharterBookingInsuranceSupport
+                    .ResolveWaterbusDefaultInsuranceSnapshotAsync(
+                        _context,
+                        adultCount + childCount,
+                        _timeProvider.GetUtcNow(),
+                        cancellationToken);
+            }
         }
 
         booking.FromStationId = fromStationId;
