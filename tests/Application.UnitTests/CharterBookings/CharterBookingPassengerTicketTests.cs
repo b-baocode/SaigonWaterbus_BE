@@ -39,8 +39,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
@@ -79,9 +79,9 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02"),
-                    new CharterBookingPassengerRequest("Le Van C", "1988-03-03")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992),
+                    new CharterBookingPassengerRequest("Le Van C", 1988)
                 ]),
             CancellationToken.None);
 
@@ -109,11 +109,11 @@ public class CharterBookingPassengerTicketTests
                 new UpdateCharterBookingPassengersCommand(
                     booking.Id,
                     [
-                        new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                        new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02"),
-                        new CharterBookingPassengerRequest("Le Van C", "1988-03-03"),
-                        new CharterBookingPassengerRequest("Pham Thi D", "1989-04-04"),
-                        new CharterBookingPassengerRequest("Hoang Van E", "1991-05-05")
+new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992),
+                    new CharterBookingPassengerRequest("Le Van C", 1988),
+                        new CharterBookingPassengerRequest("Pham Thi D", 1989),
+                        new CharterBookingPassengerRequest("Hoang Van E", 1991)
                     ]),
                 CancellationToken.None));
 
@@ -218,8 +218,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
         var originalTickets = context.Tickets
@@ -230,7 +230,7 @@ public class CharterBookingPassengerTicketTests
         var result = await addHandler.Handle(
             new AddCharterBookingPassengersCommand(
                 booking.Id,
-                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+                [new CharterBookingPassengerRequest("Le Van C", 1988)]),
             CancellationToken.None);
 
         result.PassengerCount.ShouldBe(2);
@@ -292,8 +292,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
@@ -301,7 +301,7 @@ public class CharterBookingPassengerTicketTests
         await addHandler.Handle(
             new AddCharterBookingPassengersCommand(
                 booking.Id,
-                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+                [new CharterBookingPassengerRequest("Le Van C", 1988)]),
             CancellationToken.None);
 
         var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
@@ -352,7 +352,7 @@ public class CharterBookingPassengerTicketTests
             handler.Handle(
                 new AddCharterBookingPassengersCommand(
                     booking.Id,
-                    [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+                    [new CharterBookingPassengerRequest("Le Van C", 1988)]),
                 CancellationToken.None));
 
         exception.Errors["passengers"].Single()
@@ -374,14 +374,14 @@ public class CharterBookingPassengerTicketTests
         await handler.Handle(
             new AddCharterBookingPassengersCommand(
                 booking.Id,
-                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+                [new CharterBookingPassengerRequest("Le Van C", 1988)]),
             CancellationToken.None);
 
         var exception = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(
                 new AddCharterBookingPassengersCommand(
                     booking.Id,
-                    [new CharterBookingPassengerRequest("Pham Thi D", "1989-04-04")]),
+                    [new CharterBookingPassengerRequest("Pham Thi D", 1989)]),
                 CancellationToken.None));
 
         exception.Errors["passengers"].Single()
@@ -405,7 +405,7 @@ public class CharterBookingPassengerTicketTests
         await addHandler.Handle(
             new AddCharterBookingPassengersCommand(
                 booking.Id,
-                [new CharterBookingPassengerRequest("Le Van C", "1988-03-03")]),
+                [new CharterBookingPassengerRequest("Le Van C", 1988)]),
             CancellationToken.None);
         var requestBatchId = context.Set<BookingPassenger>()
             .Single(x => x.FullName == "Le Van C")
@@ -445,8 +445,8 @@ public class CharterBookingPassengerTicketTests
                 new UpdateCharterBookingPassengersCommand(
                     booking.Id,
                     [
-                        new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                        new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                        new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                        new CharterBookingPassengerRequest("Tran Thi B", 1992)
                     ]),
                 CancellationToken.None));
 
@@ -468,8 +468,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
@@ -479,8 +479,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Le Van C", "1988-03-03"),
-                    new CharterBookingPassengerRequest("Pham Thi D", "1989-04-04")
+                    new CharterBookingPassengerRequest("Le Van C", 1988),
+                    new CharterBookingPassengerRequest("Pham Thi D", 1989)
                 ]),
             CancellationToken.None);
 
@@ -519,7 +519,6 @@ public class CharterBookingPassengerTicketTests
         result.RegisteredPassengerCount.ShouldBe(1);
         result.TicketCount.ShouldBe(1);
         result.Passengers.Single().FullName.ShouldBe("TRUMP");
-        result.Passengers.Single().DateOfBirth.ShouldBeNull();
         result.Passengers.Single().PassengerType.ShouldBe(CharterBookingPassengerType.Adult.ToString());
     }
 
@@ -541,8 +540,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", null, adultBirthYear),
-                    new CharterBookingPassengerRequest("Tran Thi B", childBirthYear.ToString())
+                    new CharterBookingPassengerRequest("Nguyen Van A", adultBirthYear),
+                    new CharterBookingPassengerRequest("Tran Thi B", childBirthYear)
                 ]),
             CancellationToken.None);
 
@@ -550,11 +549,9 @@ public class CharterBookingPassengerTicketTests
         result.AdultCount.ShouldBe(1);
         result.ChildCount.ShouldBe(1);
         result.Passengers.Select(x => x.BirthYear).Order().ShouldBe([adultBirthYear, childBirthYear]);
-        result.Passengers.ShouldAllBe(x => x.DateOfBirth == null);
 
         var savedPassengers = context.Set<BookingPassenger>().ToArray();
         savedPassengers.Select(x => x.BirthYear).Order().ShouldBe([adultBirthYear, childBirthYear]);
-        savedPassengers.ShouldAllBe(x => x.DateOfBirth == null);
     }
 
     [Test]
@@ -569,7 +566,6 @@ public class CharterBookingPassengerTicketTests
 
         passengers.Count.ShouldBe(2);
         passengers.Select(x => x.BirthYear).ShouldBe([1990, 2021]);
-        passengers.ShouldAllBe(x => x.DateOfBirth == null);
     }
 
     [Test]
@@ -611,7 +607,7 @@ public class CharterBookingPassengerTicketTests
                     [new CharterBookingPassengerRequest("TRUMP", null)]),
                 CancellationToken.None));
 
-        exception.Errors["passengers[0].dateOfBirth"].Single()
+        exception.Errors["passengers[0].birthYear"].Single()
             .ShouldBe("birthYear is required.");
     }
 
@@ -629,8 +625,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
@@ -662,8 +658,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
@@ -697,8 +693,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
@@ -730,7 +726,7 @@ public class CharterBookingPassengerTicketTests
         await updateHandler.Handle(
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
-                [new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01")]),
+                [new CharterBookingPassengerRequest("Nguyen Van A", 1990)]),
             CancellationToken.None);
 
         var exportHandler = new ExportCharterBookingTicketsQueryHandler(
@@ -774,8 +770,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
@@ -815,8 +811,8 @@ public class CharterBookingPassengerTicketTests
             new UpdateCharterBookingPassengersCommand(
                 booking.Id,
                 [
-                    new CharterBookingPassengerRequest("Nguyen Van A", "1990-01-01"),
-                    new CharterBookingPassengerRequest("Tran Thi B", "1992-02-02")
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
                 ]),
             CancellationToken.None);
 
