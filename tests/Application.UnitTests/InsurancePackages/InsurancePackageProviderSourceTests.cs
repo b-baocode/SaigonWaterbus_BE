@@ -1,4 +1,5 @@
 using NUnit.Framework;
+using FluentValidation;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.InsurancePackages;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
@@ -6,6 +7,7 @@ using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
 using Shouldly;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.UnitTests.InsurancePackages;
 
@@ -13,14 +15,45 @@ public class InsurancePackageProviderSourceTests
 {
     private const string BookingType = "PassengerInsurance";
 
+    // Handlers are invoked directly in unit tests (project convention — see
+    // CreateCharterBookingCommandTests). FluentValidation runs in the MediatR pipeline at
+    // runtime via ValidationBehaviour<,>, so we replicate it here by invoking validators
+    // manually before the handler. Same exception type, same camelCase key convention.
     private static CreateInsurancePackageCommandHandler CreateHandler(ApplicationDbContext context) =>
-        new(context, new CreateInsurancePackageCommandValidator());
+        new(context);
 
     private static UpdateInsurancePackageCommandHandler CreateUpdateHandler(ApplicationDbContext context) =>
-        new(context, new UpdateInsurancePackageCommandValidator());
-
-    private static UpdateInsurancePackageStatusCommandHandler CreateStatusHandler(ApplicationDbContext context) =>
         new(context);
+
+    private static async Task ValidateAsync<T>(
+        IValidator<T> validator,
+        T request,
+        CancellationToken cancellationToken)
+    {
+        var result = await validator.ValidateAsync(request, cancellationToken);
+        if (!result.IsValid)
+        {
+            throw new ValidationException(result.Errors);
+        }
+    }
+
+    private static async Task<InsurancePackageDto> CreateAsync(
+        CreateInsurancePackageCommandHandler handler,
+        CreateInsurancePackageCommand request,
+        CancellationToken cancellationToken)
+    {
+        await ValidateAsync(new CreateInsurancePackageCommandValidator(), request, cancellationToken);
+        return await handler.Handle(request, cancellationToken);
+    }
+
+    private static async Task<InsurancePackageDto> UpdateAsync(
+        UpdateInsurancePackageCommandHandler handler,
+        UpdateInsurancePackageCommand request,
+        CancellationToken cancellationToken)
+    {
+        await ValidateAsync(new UpdateInsurancePackageCommandValidator(), request, cancellationToken);
+        return await handler.Handle(request, cancellationToken);
+    }
 
     private static InsurancePackage SeedWaterbusActive(
         ApplicationDbContext context,
@@ -53,19 +86,19 @@ public class InsurancePackageProviderSourceTests
         await using var context = SeatFlowTestData.CreateContext();
         var handler = CreateHandler(context);
 
+        var command = new CreateInsurancePackageCommand(
+            Code: "WB001",
+            Name: "Gói Waterbus thiếu flag",
+            BookingType: BookingType,
+            UnitPremiumAmount: 5000m,
+            CoverageAmount: 100_000_000m,
+            IsRequired: false,
+            Status: InsurancePackageStatus.Active,
+            IsWaterbusDefault: false,
+            ProviderSource: InsuranceProviderSource.Waterbus);
+
         var exception = await Should.ThrowAsync<ValidationException>(() =>
-            handler.Handle(
-                new CreateInsurancePackageCommand(
-                    Code: "WB001",
-                    Name: "Gói Waterbus thiếu flag",
-                    BookingType: BookingType,
-                    UnitPremiumAmount: 5000m,
-                    CoverageAmount: 100_000_000m,
-                    IsRequired: false,
-                    Status: InsurancePackageStatus.Active,
-                    IsWaterbusDefault: false,
-                    ProviderSource: InsuranceProviderSource.Waterbus),
-                CancellationToken.None));
+            CreateAsync(handler, command, CancellationToken.None));
 
         var hasIsWaterbusDefaultError = exception.Errors
             .Any(kv => kv.Key.Equals("isWaterbusDefault", StringComparison.Ordinal)
@@ -79,7 +112,8 @@ public class InsurancePackageProviderSourceTests
         await using var context = SeatFlowTestData.CreateContext();
         var handler = CreateHandler(context);
 
-        var result = await handler.Handle(
+        var result = await CreateAsync(
+            handler,
             new CreateInsurancePackageCommand(
                 Code: "WB002",
                 Name: "Gói Waterbus default",
@@ -106,7 +140,8 @@ public class InsurancePackageProviderSourceTests
         await using var context = SeatFlowTestData.CreateContext();
         var handler = CreateHandler(context);
 
-        var result = await handler.Handle(
+        var result = await CreateAsync(
+            handler,
             new CreateInsurancePackageCommand(
                 Code: "TP001",
                 Name: "Gói bên thứ 3",
@@ -134,19 +169,19 @@ public class InsurancePackageProviderSourceTests
 
         var handler = CreateHandler(context);
 
+        var command = new CreateInsurancePackageCommand(
+            Code: "WB_NEW",
+            Name: "Gói Waterbus thứ 2",
+            BookingType: BookingType,
+            UnitPremiumAmount: 5000m,
+            CoverageAmount: 100_000_000m,
+            IsRequired: false,
+            Status: InsurancePackageStatus.Active,
+            IsWaterbusDefault: true,
+            ProviderSource: InsuranceProviderSource.Waterbus);
+
         var exception = await Should.ThrowAsync<ValidationException>(() =>
-            handler.Handle(
-                new CreateInsurancePackageCommand(
-                    Code: "WB_NEW",
-                    Name: "Gói Waterbus thứ 2",
-                    BookingType: BookingType,
-                    UnitPremiumAmount: 5000m,
-                    CoverageAmount: 100_000_000m,
-                    IsRequired: false,
-                    Status: InsurancePackageStatus.Active,
-                    IsWaterbusDefault: true,
-                    ProviderSource: InsuranceProviderSource.Waterbus),
-                CancellationToken.None));
+            CreateAsync(handler, command, CancellationToken.None));
 
         // Either rule may fire first depending on enumeration order — both indicate the same
         // business invariant ("only one active Waterbus package per booking type").
@@ -183,7 +218,8 @@ public class InsurancePackageProviderSourceTests
 
         var handler = CreateUpdateHandler(context);
 
-        var result = await handler.Handle(
+        var result = await UpdateAsync(
+            handler,
             new UpdateInsurancePackageCommand(
                 InsurancePackageId: package.Id,
                 Name: package.Name,
@@ -219,7 +255,8 @@ public class InsurancePackageProviderSourceTests
 
         var handler = CreateUpdateHandler(context);
 
-        var result = await handler.Handle(
+        var result = await UpdateAsync(
+            handler,
             new UpdateInsurancePackageCommand(
                 InsurancePackageId: package.Id,
                 Name: package.Name,
@@ -267,24 +304,24 @@ public class InsurancePackageProviderSourceTests
 
         var handler = CreateUpdateHandler(context);
 
+        var command = new UpdateInsurancePackageCommand(
+            InsurancePackageId: toBeSwitched.Id,
+            Name: toBeSwitched.Name,
+            BookingType: BookingType,
+            UnitPremiumAmount: toBeSwitched.UnitPremiumAmount,
+            CoverageAmount: toBeSwitched.CoverageAmount,
+            IsRequired: false,
+            ProviderName: null,
+            ProviderLogoUrl: null,
+            ImageUrl: null,
+            Conditions: null,
+            TermsUrl: null,
+            Status: InsurancePackageStatus.Active,
+            RewardOption: null,
+            ProviderSource: InsuranceProviderSource.Waterbus);
+
         var exception = await Should.ThrowAsync<ValidationException>(() =>
-            handler.Handle(
-                new UpdateInsurancePackageCommand(
-                    InsurancePackageId: toBeSwitched.Id,
-                    Name: toBeSwitched.Name,
-                    BookingType: BookingType,
-                    UnitPremiumAmount: toBeSwitched.UnitPremiumAmount,
-                    CoverageAmount: toBeSwitched.CoverageAmount,
-                    IsRequired: false,
-                    ProviderName: null,
-                    ProviderLogoUrl: null,
-                    ImageUrl: null,
-                    Conditions: null,
-                    TermsUrl: null,
-                    Status: InsurancePackageStatus.Active,
-                    RewardOption: null,
-                    ProviderSource: InsuranceProviderSource.Waterbus),
-                CancellationToken.None));
+            UpdateAsync(handler, command, CancellationToken.None));
 
         // Either rule may fire first — both indicate the same invariant.
         var hasWaterbusDefaultError = exception.Errors

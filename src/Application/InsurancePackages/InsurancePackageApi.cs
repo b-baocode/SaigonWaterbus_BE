@@ -140,26 +140,15 @@ public sealed class CreateInsurancePackageCommandHandler
     : IRequestHandler<CreateInsurancePackageCommand, InsurancePackageDto>
 {
     private readonly IApplicationDbContext _context;
-    private readonly CreateInsurancePackageCommandValidator _validator;
 
-    public CreateInsurancePackageCommandHandler(
-        IApplicationDbContext context,
-        CreateInsurancePackageCommandValidator validator)
-    {
-        _context = context;
-        _validator = validator;
-    }
+    public CreateInsurancePackageCommandHandler(IApplicationDbContext context) => _context = context;
 
     public async Task<InsurancePackageDto> Handle(
         CreateInsurancePackageCommand request,
         CancellationToken cancellationToken)
     {
-        var validation = await _validator.ValidateAsync(request, cancellationToken);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation.Errors);
-        }
-
+        // FluentValidation runs in ValidationBehaviour<,> MediatR pipeline BEFORE this handler.
+        // See Application/Common/Behaviours/ValidationBehaviour.cs + DependencyInjection.cs.
         var code = InsurancePackageSupport.NormalizeCode(request.Code);
         var bookingType = InsurancePackageSupport.NormalizeBookingType(request.BookingType);
 
@@ -293,26 +282,15 @@ public sealed class UpdateInsurancePackageCommandHandler
     : IRequestHandler<UpdateInsurancePackageCommand, InsurancePackageDto>
 {
     private readonly IApplicationDbContext _context;
-    private readonly UpdateInsurancePackageCommandValidator _validator;
 
-    public UpdateInsurancePackageCommandHandler(
-        IApplicationDbContext context,
-        UpdateInsurancePackageCommandValidator validator)
-    {
-        _context = context;
-        _validator = validator;
-    }
+    public UpdateInsurancePackageCommandHandler(IApplicationDbContext context) => _context = context;
 
     public async Task<InsurancePackageDto> Handle(
         UpdateInsurancePackageCommand request,
         CancellationToken cancellationToken)
     {
-        var validation = await _validator.ValidateAsync(request, cancellationToken);
-        if (!validation.IsValid)
-        {
-            throw new ValidationException(validation.Errors);
-        }
-
+        // FluentValidation runs in ValidationBehaviour<,> MediatR pipeline BEFORE this handler.
+        // See Application/Common/Behaviours/ValidationBehaviour.cs + DependencyInjection.cs.
         var package = await _context.Set<InsurancePackage>()
             .SingleOrDefaultAsync(x => x.Id == request.InsurancePackageId, cancellationToken)
             ?? throw new NotFoundException("Insurance package not found.");

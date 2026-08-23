@@ -140,7 +140,8 @@ public sealed class InsurancePackages : IEndpointGroup
             request.Conditions,
             request.TermsUrl,
             request.Status,
-            request.RewardOption), ct));
+            request.RewardOption,
+            request.ProviderSource), ct));
 
     private static async Task<IResult> UpdateInsurancePackageImage(
         ISender sender,
@@ -197,7 +198,8 @@ public sealed class InsurancePackages : IEndpointGroup
         IReadOnlyList<string>? Conditions,
         string? TermsUrl,
         InsurancePackageStatus Status,
-        int? RewardOption);
+        int? RewardOption,
+        InsuranceProviderSource ProviderSource = InsuranceProviderSource.ThirdParty);
 
     public sealed record UpdateInsurancePackageStatusRequest(InsurancePackageStatus Status);
 }
