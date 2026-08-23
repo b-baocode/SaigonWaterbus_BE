@@ -151,6 +151,16 @@ public sealed class CreateInsurancePackageCommandHandler
                 $"Gói bảo hiểm '{code}' cho {bookingType} đã tồn tại.")]);
         }
 
+        if (request.IsWaterbusDefault
+            && await _context.Set<InsurancePackage>()
+                .AnyAsync(x => x.BookingType == bookingType
+                    && x.IsActive
+                    && x.IsWaterbusDefault, cancellationToken))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.IsWaterbusDefault),
+                $"Đã có gói Waterbus default đang hoạt động cho {bookingType}. Chỉ được phép 1 gói Waterbus default cho mỗi booking type.")]);
+        }
+
         var package = new InsurancePackage
         {
             Code = code,
@@ -264,6 +274,22 @@ public sealed class UpdateInsurancePackageCommandHandler
                 $"Gói bảo hiểm '{package.Code}' cho {bookingType} đã tồn tại.")]);
         }
 
+        // Rule: at most ONE active package per booking type may have IsWaterbusDefault = true.
+        // Trigger only when this update would (a) activate the package, AND (b) the package is
+        // (still) marked as Waterbus default. We must check against OTHER packages, not self.
+        var willBeActive = InsurancePackageSupport.ToIsActive(request.Status);
+        if (willBeActive
+            && package.IsWaterbusDefault
+            && await _context.Set<InsurancePackage>()
+                .AnyAsync(x => x.Id != package.Id
+                    && x.BookingType == package.BookingType
+                    && x.IsActive
+                    && x.IsWaterbusDefault, cancellationToken))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.Status),
+                $"Đã có gói Waterbus default đang hoạt động cho {package.BookingType}. Chỉ được phép 1 gói Waterbus default cho mỗi booking type.")]);
+        }
+
         package.Name = request.Name.Trim();
         package.BookingType = bookingType;
         package.IsRequired = request.IsRequired;
@@ -313,7 +339,23 @@ public sealed class UpdateInsurancePackageStatusCommandHandler
             .SingleOrDefaultAsync(x => x.Id == request.InsurancePackageId, cancellationToken)
             ?? throw new NotFoundException("Insurance package not found.");
 
-        package.IsActive = InsurancePackageSupport.ToIsActive(request.Status);
+        // Rule: at most ONE active package per booking type may have IsWaterbusDefault = true.
+        // Only triggers when (a) the new status would activate this package, AND
+        // (b) this package is marked as Waterbus default. Skip if no change of state.
+        var willBeActive = InsurancePackageSupport.ToIsActive(request.Status);
+        if (willBeActive
+            && package.IsWaterbusDefault
+            && await _context.Set<InsurancePackage>()
+                .AnyAsync(x => x.Id != package.Id
+                    && x.BookingType == package.BookingType
+                    && x.IsActive
+                    && x.IsWaterbusDefault, cancellationToken))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.Status),
+                $"Đã có gói Waterbus default đang hoạt động cho {package.BookingType}. Chỉ được phép 1 gói Waterbus default cho mỗi booking type.")]);
+        }
+
+        package.IsActive = willBeActive;
         await _context.SaveChangesAsync(cancellationToken);
 
         return InsurancePackageSupport.ToDto(package);
