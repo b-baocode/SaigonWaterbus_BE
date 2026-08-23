@@ -79,7 +79,8 @@ public sealed record CreateInsurancePackageCommand(
     string? TermsUrl = null,
     InsurancePackageStatus Status = InsurancePackageStatus.Active,
     int? RewardOption = null,
-    bool IsWaterbusDefault = false) : IRequest<InsurancePackageDto>;
+    bool IsWaterbusDefault = false,
+    InsuranceProviderSource ProviderSource = InsuranceProviderSource.ThirdParty) : IRequest<InsurancePackageDto>;
 
 public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<CreateInsurancePackageCommand>
 {
@@ -127,6 +128,11 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
         RuleFor(x => x.RewardOption)
             .Must(x => x == 1 || x == 2 || x == null)
             .WithMessage("rewardOption: 1=dùng hết điểm thưởng, 2=không dùng, null=không chọn.");
+        RuleFor(x => x.ProviderSource).IsInEnum();
+        RuleFor(x => x.IsWaterbusDefault)
+            .Equal(true)
+            .When(x => x.ProviderSource == InsuranceProviderSource.Waterbus)
+            .WithMessage("Khi ProviderSource = Waterbus, IsWaterbusDefault phải là true.");
     }
 }
 
@@ -134,13 +140,26 @@ public sealed class CreateInsurancePackageCommandHandler
     : IRequestHandler<CreateInsurancePackageCommand, InsurancePackageDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly CreateInsurancePackageCommandValidator _validator;
 
-    public CreateInsurancePackageCommandHandler(IApplicationDbContext context) => _context = context;
+    public CreateInsurancePackageCommandHandler(
+        IApplicationDbContext context,
+        CreateInsurancePackageCommandValidator validator)
+    {
+        _context = context;
+        _validator = validator;
+    }
 
     public async Task<InsurancePackageDto> Handle(
         CreateInsurancePackageCommand request,
         CancellationToken cancellationToken)
     {
+        var validation = await _validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            throw new ValidationException(validation.Errors);
+        }
+
         var code = InsurancePackageSupport.NormalizeCode(request.Code);
         var bookingType = InsurancePackageSupport.NormalizeBookingType(request.BookingType);
 
@@ -161,6 +180,21 @@ public sealed class CreateInsurancePackageCommandHandler
                 $"Đã có gói Waterbus default đang hoạt động cho {bookingType}. Chỉ được phép 1 gói Waterbus default cho mỗi booking type.")]);
         }
 
+        // Rule: at most ONE active package per booking type may have ProviderSource = Waterbus.
+        // ProviderSource = Waterbus is the source of truth for auto-attach — IsWaterbusDefault is
+        // already enforced above, but two packages with ProviderSource=Waterbus would both be
+        // auto-attached into booking price (see CharterBookingInsuranceSupport), so guard here too.
+        if (request.ProviderSource == InsuranceProviderSource.Waterbus
+            && InsurancePackageSupport.ToIsActive(request.Status)
+            && await _context.Set<InsurancePackage>()
+                .AnyAsync(x => x.BookingType == bookingType
+                    && x.IsActive
+                    && x.ProviderSource == InsuranceProviderSource.Waterbus, cancellationToken))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.ProviderSource),
+                $"Đã có gói bảo hiểm Waterbus đang hoạt động cho {bookingType}. Chỉ được phép 1 gói Waterbus cho mỗi booking type.")]);
+        }
+
         var package = new InsurancePackage
         {
             Code = code,
@@ -177,7 +211,8 @@ public sealed class CreateInsurancePackageCommandHandler
             TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl),
             IsActive = InsurancePackageSupport.ToIsActive(request.Status),
             RewardOption = request.RewardOption,
-            IsWaterbusDefault = request.IsWaterbusDefault
+            IsWaterbusDefault = request.IsWaterbusDefault,
+            ProviderSource = request.ProviderSource
         };
 
         _context.Set<InsurancePackage>().Add(package);
@@ -201,7 +236,8 @@ public sealed record UpdateInsurancePackageCommand(
     IReadOnlyList<string>? Conditions,
     string? TermsUrl,
     InsurancePackageStatus Status,
-    int? RewardOption) : IRequest<InsurancePackageDto>;
+    int? RewardOption,
+    InsuranceProviderSource ProviderSource) : IRequest<InsurancePackageDto>;
 
 public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<UpdateInsurancePackageCommand>
 {
@@ -245,6 +281,11 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
         RuleFor(x => x.RewardOption)
             .Must(x => x == 1 || x == 2 || x == null)
             .WithMessage("rewardOption: 1=dùng hết điểm thưởng, 2=không dùng, null=không chọn.");
+        RuleFor(x => x.ProviderSource).IsInEnum();
+        RuleFor(x => x.Status)
+            .Equal(InsurancePackageStatus.Active)
+            .When(x => x.ProviderSource == InsuranceProviderSource.Waterbus)
+            .WithMessage("Khi ProviderSource = Waterbus, Status phải là Active.");
     }
 }
 
@@ -252,13 +293,26 @@ public sealed class UpdateInsurancePackageCommandHandler
     : IRequestHandler<UpdateInsurancePackageCommand, InsurancePackageDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly UpdateInsurancePackageCommandValidator _validator;
 
-    public UpdateInsurancePackageCommandHandler(IApplicationDbContext context) => _context = context;
+    public UpdateInsurancePackageCommandHandler(
+        IApplicationDbContext context,
+        UpdateInsurancePackageCommandValidator validator)
+    {
+        _context = context;
+        _validator = validator;
+    }
 
     public async Task<InsurancePackageDto> Handle(
         UpdateInsurancePackageCommand request,
         CancellationToken cancellationToken)
     {
+        var validation = await _validator.ValidateAsync(request, cancellationToken);
+        if (!validation.IsValid)
+        {
+            throw new ValidationException(validation.Errors);
+        }
+
         var package = await _context.Set<InsurancePackage>()
             .SingleOrDefaultAsync(x => x.Id == request.InsurancePackageId, cancellationToken)
             ?? throw new NotFoundException("Insurance package not found.");
@@ -290,6 +344,26 @@ public sealed class UpdateInsurancePackageCommandHandler
                 $"Đã có gói Waterbus default đang hoạt động cho {package.BookingType}. Chỉ được phép 1 gói Waterbus default cho mỗi booking type.")]);
         }
 
+        // Rule: at most ONE active package per booking type may have ProviderSource = Waterbus.
+        // Triggers only when this update would result in an active Waterbus package AND there is
+        // already another active Waterbus package for the same bookingType.
+        var willBeWaterbus = request.ProviderSource == InsuranceProviderSource.Waterbus;
+        if (willBeActive
+            && willBeWaterbus
+            && await _context.Set<InsurancePackage>()
+                .AnyAsync(x => x.Id != package.Id
+                    && x.BookingType == package.BookingType
+                    && x.IsActive
+                    && x.ProviderSource == InsuranceProviderSource.Waterbus, cancellationToken))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.ProviderSource),
+                $"Đã có gói bảo hiểm Waterbus đang hoạt động cho {package.BookingType}. Chỉ được phép 1 gói Waterbus cho mỗi booking type.")]);
+        }
+
+        // Switching Waterbus → ThirdParty: also clear IsWaterbusDefault so the package no longer
+        // participates in the "1 Waterbus default" rule either. Admin must explicitly opt back in.
+        var targetIsWaterbusDefault = willBeWaterbus ? true : false;
+
         package.Name = request.Name.Trim();
         package.BookingType = bookingType;
         package.IsRequired = request.IsRequired;
@@ -300,8 +374,10 @@ public sealed class UpdateInsurancePackageCommandHandler
         package.CoverageAmount = request.CoverageAmount;
         package.Conditions = InsurancePackageSupport.NormalizeConditions(request.Conditions);
         package.TermsUrl = InsurancePackageSupport.TrimToNull(request.TermsUrl);
-        package.IsActive = InsurancePackageSupport.ToIsActive(request.Status);
+        package.IsActive = willBeActive;
         package.RewardOption = request.RewardOption;
+        package.IsWaterbusDefault = targetIsWaterbusDefault;
+        package.ProviderSource = request.ProviderSource;
 
         await _context.SaveChangesAsync(cancellationToken);
 
@@ -353,6 +429,21 @@ public sealed class UpdateInsurancePackageStatusCommandHandler
         {
             throw new ValidationException([new ValidationFailure(nameof(request.Status),
                 $"Đã có gói Waterbus default đang hoạt động cho {package.BookingType}. Chỉ được phép 1 gói Waterbus default cho mỗi booking type.")]);
+        }
+
+        // Rule: at most ONE active package per booking type may have ProviderSource = Waterbus.
+        // Only triggers when (a) the new status would activate this package, AND
+        // (b) this package already has ProviderSource = Waterbus.
+        if (willBeActive
+            && package.ProviderSource == InsuranceProviderSource.Waterbus
+            && await _context.Set<InsurancePackage>()
+                .AnyAsync(x => x.Id != package.Id
+                    && x.BookingType == package.BookingType
+                    && x.IsActive
+                    && x.ProviderSource == InsuranceProviderSource.Waterbus, cancellationToken))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.Status),
+                $"Đã có gói bảo hiểm Waterbus đang hoạt động cho {package.BookingType}. Chỉ được phép 1 gói Waterbus cho mỗi booking type.")]);
         }
 
         package.IsActive = willBeActive;
