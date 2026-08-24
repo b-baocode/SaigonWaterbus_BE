@@ -229,11 +229,16 @@ internal sealed class BookingLegResolver
 
         EnsureChildAndLapInfantAdultRules(itemSegments);
 
-        // Hạn đóng bán theo bến khách LÊN (không phải bến đầu tuyến) — chỉ áp cho khách tự đặt;
-        // staff bán tại quầy vẫn bán được cả khi tàu đã rời bến.
+        // Hạn đóng bán theo bến khách LÊN (không phải bến đầu tuyến) — chỉ áp cho khách tự đặt.
+        // Staff bán tại quầy không bị chặn bởi mốc này (khách lên ở bến giữa tuyến khi tàu đã rời
+        // bến đầu), nhưng vẫn không bán được sau khi tàu đã rời chính bến khách lên.
         if (!allowDepartedTrip)
         {
             EnsureSegmentsWithinCutoff(trip, itemSegments, now, tripCodePropertyName);
+        }
+        else
+        {
+            EnsureSegmentsBeforeBoarding(trip, itemSegments, now, tripCodePropertyName);
         }
 
         // Trùng ghế trong cùng chiều: trip Regular cho phép hai vé cùng ghế nếu chặng không
@@ -452,15 +457,19 @@ internal sealed class BookingLegResolver
     }
 
     /// <summary>
-    /// Booking chỉ được giữ tối đa 15 phút và không được vượt hạn đóng bán của bất kỳ chặng nào
-    /// trong đơn. Ví dụ tàu rời bến lên 20:47, đóng bán trước 10 phút, thì hold muộn nhất là 20:37.
+    /// Booking chỉ được giữ tối đa 15 phút và không được vượt GIỜ TÀU RỜI BẾN KHÁCH LÊN của bất kỳ
+    /// chặng nào trong đơn. Ví dụ tàu rời bến lên 20:47 thì hold muộn nhất là 20:47.
+    ///
+    /// Trần là giờ tàu chạy chứ KHÔNG phải mốc ngừng bán: mốc ngừng bán chỉ chặn đơn mới, còn đơn
+    /// đã tạo phải được giữ ghế đủ lâu để thanh toán. Nếu cắt về mốc ngừng bán thì khách đặt sát mốc
+    /// chỉ còn vài giây trả tiền, ghế bị nhả trong lúc tiền đang về và đơn bị đánh Expired oan.
     /// </summary>
     public static DateTimeOffset ResolveHoldExpiresAt(IEnumerable<ResolvedLeg> legs, DateTimeOffset now)
     {
         var standardHoldExpiresAt = now.Add(BookingSeatOccupancySupport.BookingHoldDuration);
         var segmentDeadline = legs
             .SelectMany(leg => leg.ItemPrices.Select(x =>
-                Trips.BookingCutoffSupport.ResolveBookingDeadline(
+                Trips.BookingCutoffSupport.ResolveBoardingTime(
                     leg.Trip,
                     x.Resolved.FromStop.StopOrder,
                     x.Resolved.ToStop.StopOrder)))
@@ -636,10 +645,6 @@ internal sealed class BookingLegResolver
     }
 
     /// <summary>
-    /// Khách tự đặt: cho các trạng thái còn vận hành và còn trước hạn đóng bán theo bến lên.
-    /// Bán tại quầy: staff bán được tới lúc chuyến kết thúc, chỉ chặn chuyến đã Completed/Cancelled.
-    /// </summary>
-    /// <summary>
     /// Mỗi vé phải còn trước hạn đóng bán tính theo giờ tàu rời BẾN KHÁCH LÊN. Một booking có
     /// nhiều chặng khác nhau thì xét từng vé — chặng lên sớm có thể đã đóng bán trong khi chặng
     /// lên muộn vẫn mở.
@@ -655,6 +660,24 @@ internal sealed class BookingLegResolver
         if (closedSegment.Item is not null)
             throw new ValidationException([new ValidationFailure(tripCodePropertyName,
                 Trips.BookingCutoffSupport.CutoffMessage())]);
+    }
+
+    /// <summary>
+    /// Bán tại quầy: bỏ qua mốc ngừng bán nhưng vẫn phải trước giờ tàu rời BẾN KHÁCH LÊN. Không có
+    /// chặn này thì staff bán được vé lên tại một bến mà tàu đã đi qua từ lâu — khách ra bến không
+    /// còn tàu nào để lên.
+    /// </summary>
+    private static void EnsureSegmentsBeforeBoarding(
+        Trip trip,
+        IReadOnlyList<(BookingItemRequest Item, RouteStop FromStop, RouteStop ToStop)> itemSegments,
+        DateTimeOffset now,
+        string tripCodePropertyName)
+    {
+        var departedSegment = itemSegments.FirstOrDefault(x =>
+            Trips.BookingCutoffSupport.IsPastBoarding(trip, x.FromStop.StopOrder, x.ToStop.StopOrder, now));
+        if (departedSegment.Item is not null)
+            throw new ValidationException([new ValidationFailure(tripCodePropertyName,
+                Trips.BookingCutoffSupport.BoardingPassedMessage())]);
     }
 
     private static void EnsureChildAndLapInfantAdultRules(

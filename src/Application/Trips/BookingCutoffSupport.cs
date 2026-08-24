@@ -25,6 +25,13 @@ public static class BookingCutoffSupport
     public static bool IsPastCutoff(Trip trip, int? fromStopOrder, int? toStopOrder, DateTimeOffset now) =>
         ResolveBookingDeadline(trip, fromStopOrder, toStopOrder) <= now;
 
+    /// <summary>Tàu đã rời bến khách lên hay chưa — mốc cuối cùng cho vé bán tại quầy.</summary>
+    public static bool IsPastBoarding(Trip trip, int? fromStopOrder, int? toStopOrder, DateTimeOffset now) =>
+        ResolveBoardingTime(trip, fromStopOrder, toStopOrder) <= now;
+
+    public static string BoardingPassedMessage() =>
+        "Tàu đã rời bến khách lên nên không bán được vé cho chặng này nữa.";
+
     public static string CutoffMessage() =>
         $"Đã ngừng bán vé cho chặng này (đóng bán trước "
         + $"{BookingExpirationPolicy.BookingCutoffBeforeDeparture.TotalMinutes:0} phút so với giờ tàu rời bến lên).";
