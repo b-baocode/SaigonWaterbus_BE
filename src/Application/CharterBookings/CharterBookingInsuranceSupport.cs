@@ -11,18 +11,18 @@ namespace SaigonWaterbus.Application.CharterBookings;
 internal static class CharterBookingInsuranceSupport
 {
     /// <summary>
-    /// Resolve toàn bộ danh sách snapshot bảo hiểm cho charter booking:
+    /// Resolve toàn bộ danh sách snapshot bảo hiểm cho charter booking.
     ///
-    ///   - Nếu <paramref name="insuranceSelected"/> = false: không có gói nào (kể cả default).
-    ///   - Nếu <paramref name="insuranceSelected"/> = true và <paramref name="insurancePackageId"/> có giá trị:
-    ///       + Tự động gắn thêm gói Waterbus default (nếu có active).
-    ///       + Cộng thêm gói ThirdParty mà khách chọn.
-    ///   - Nếu <paramref name="insuranceSelected"/> = null (không gửi):
-    ///       + Mặc định auto-attach Waterbus default (giữ hành vi cũ).
-    ///       + Nếu có <paramref name="insurancePackageId"/> thì cộng thêm gói ThirdParty đó.
+    ///   Charter BẮT BUỘC phải chọn 1 gói bảo hiểm (FE chịu trách nhiệm lookup và gửi
+    ///   <paramref name="insurancePackageId"/>). FE có thể chọn gói Waterbus default HOẶC
+    ///   gói ThirdParty — chỉ lưu 1 snapshot duy nhất, không stacking.
+    ///
+    ///   - <paramref name="insurancePackageId"/> null trong khi có hành khách → throw validation.
+    ///   - <paramref name="insuranceSelected"/> được bỏ qua với charter vì bắt buộc phải có bảo hiểm.
+    ///     Trường này chỉ còn ý nghĩa cho seat booking.
     /// </summary>
     /// <returns>
-    /// List snapshot (rỗng = không có bảo hiểm). Phần tử đầu tiên là gói default nếu có.
+    /// List snapshot gồm đúng 1 phần tử (gói đã chọn). Rỗng khi không có hành khách.
     /// </returns>
     public static async Task<List<BookingInsuranceSnapshot>> ResolveRequestedInsuranceSnapshotsAsync(
         IApplicationDbContext context,
@@ -34,69 +34,33 @@ internal static class CharterBookingInsuranceSupport
         CancellationToken cancellationToken,
         string bookingType = Booking.CharterBookingType)
     {
-        // Case 1: customer explicitly disables insurance — clear all.
-        if (insuranceSelected == false)
+        // Charter: nếu không có hành khách thì không phát sinh bảo hiểm.
+        if (insuredPassengerQuantity < 1)
         {
             return new List<BookingInsuranceSnapshot>();
         }
 
-        var requestedThirdParty = (insuranceSelected == true || insurancePackageId.HasValue)
-            ? insurancePackageId
-            : null;
-
-        if (insuranceSelected == true && !insurancePackageId.HasValue)
+        // Charter BẮT BUỘC phải chọn 1 gói — FE lookup và gửi ID.
+        if (!insurancePackageId.HasValue)
         {
-            throw CreateInsuranceValidation("Vui lòng chọn gói bảo hiểm.");
+            throw CreateInsuranceValidation("Vui lòng chọn gói bảo hiểm cho charter.");
         }
 
-        var result = new List<BookingInsuranceSnapshot>();
+        var selected = await CreateSelectedInsuranceSnapshotAsync(
+            context,
+            insurancePackageId,
+            insuredPassengerQuantity,
+            quotedAt,
+            cancellationToken,
+            bookingType);
 
-        // Resolve ThirdParty snapshot if requested.
-        BookingInsuranceSnapshot? thirdPartySnapshot = null;
-        if (requestedThirdParty.HasValue)
+        if (selected is null)
         {
-            thirdPartySnapshot = await CreateSelectedInsuranceSnapshotAsync(
-                context,
-                requestedThirdParty,
-                insuredPassengerQuantity,
-                quotedAt,
-                cancellationToken,
-                bookingType);
+            // Không tìm thấy gói hoặc gói không còn khả dụng → đã throw bên trong helper.
+            return new List<BookingInsuranceSnapshot>();
         }
 
-        // Resolve Waterbus default snapshot — auto-attach unless explicitly opted-out.
-        var shouldAttachDefault = insuredPassengerQuantity > 0
-            && (insuranceSelected != false);
-        if (shouldAttachDefault)
-        {
-            var defaultSnapshot = await CreateWaterbusDefaultSnapshotAsync(
-                context,
-                insuredPassengerQuantity,
-                quotedAt,
-                cancellationToken,
-                bookingType);
-
-            if (defaultSnapshot is not null)
-            {
-                result.Add(defaultSnapshot);
-            }
-        }
-
-        // Add ThirdParty last so it stacks on top of default.
-        if (thirdPartySnapshot is not null)
-        {
-            result.Add(thirdPartySnapshot);
-        }
-        else if (currentSnapshots is { Count: > 0 } && insuranceSelected is null or false)
-        {
-            // Preserve existing snapshots if customer didn't explicitly change selection.
-            foreach (var existing in currentSnapshots)
-            {
-                result.Add(existing);
-            }
-        }
-
-        return result;
+        return new List<BookingInsuranceSnapshot> { selected };
     }
 
     public static async Task<BookingInsuranceSnapshot?> CreateSelectedInsuranceSnapshotAsync(
@@ -247,42 +211,29 @@ internal static class CharterBookingInsuranceSupport
             return new List<BookingInsuranceSnapshot>();
         }
 
-        var result = new List<BookingInsuranceSnapshot>();
-
-        if (existingSnapshots is { Count: > 0 })
+        // Charter quote (Replace model): giữ nguyên snapshot đã chọn từ trước,
+        // refresh lại quantity + totalAmount theo số hành khách hiện tại.
+        // KHÔNG tự động attach Waterbus default — khách đã chọn 1 gói duy nhất.
+        if (existingSnapshots is not { Count: > 0 })
         {
-            foreach (var snapshot in existingSnapshots)
-            {
-                // Re-resolve package to ensure it's still valid, then refresh quantity + total.
-                var package = await context.Set<InsurancePackage>()
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(x => x.Id == snapshot.InsurancePackageId, cancellationToken);
-
-                if (package is null || !package.IsActive)
-                {
-                    // Skip packages no longer available.
-                    continue;
-                }
-
-                result.Add(CreateSnapshot(package, insuredPassengerQuantity, quotedAt));
-            }
+            return new List<BookingInsuranceSnapshot>();
         }
 
-        // Auto-attach Waterbus default if no default already in result (stacking model).
-        var hasDefault = result.Any(s => s.IsWaterbusDefault);
-        if (!hasDefault)
+        var result = new List<BookingInsuranceSnapshot>();
+        foreach (var snapshot in existingSnapshots)
         {
-            var defaultSnapshot = await CreateWaterbusDefaultSnapshotAsync(
-                context,
-                insuredPassengerQuantity,
-                quotedAt,
-                cancellationToken,
-                Booking.CharterBookingType);
-            if (defaultSnapshot is not null)
+            // Re-resolve package to ensure it's still valid, then refresh quantity + total.
+            var package = await context.Set<InsurancePackage>()
+                .AsNoTracking()
+                .FirstOrDefaultAsync(x => x.Id == snapshot.InsurancePackageId, cancellationToken);
+
+            if (package is null || !package.IsActive)
             {
-                // Insert default first so it sits at index 0, before any ThirdParty snapshots.
-                result.Insert(0, defaultSnapshot);
+                // Skip packages no longer available.
+                continue;
             }
+
+            result.Add(CreateSnapshot(package, insuredPassengerQuantity, quotedAt));
         }
 
         return result;

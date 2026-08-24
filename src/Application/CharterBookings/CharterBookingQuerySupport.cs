@@ -148,9 +148,9 @@ internal static class CharterBookingQuerySupport
             SuggestedDepositAmount: depositPlan.SuggestedDepositAmount,
             HasDepositPaid: depositPlan.HasDepositPaid,
             AssignedManager: CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
-            Insurance: CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            Insurance: CharterBookingInsuranceSupport.ToDto(booking.GetSelectedInsurance()),
             InsuranceSelected: (booking.InsuranceSnapshots ?? new List<SaigonWaterbus.Domain.Entities.BookingInsuranceSnapshot>()).Count > 0,
-            InsurancePackageId: booking.GetDefaultInsurance()?.InsurancePackageId,
+            InsurancePackageId: booking.GetSelectedInsurance()?.InsurancePackageId,
             OptionalInsurances: booking.HasOptionalInsurance()
                 ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
                 : null,

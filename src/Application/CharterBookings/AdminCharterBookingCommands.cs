@@ -869,7 +869,9 @@ public sealed class QuoteCharterBookingCommandHandler
 
         var quotedTicketSubtotal = selectedBoatRows.Sum(x => x.SubtotalAmount);
         var quotedInsuranceAmount = booking.GetTotalInsuranceAmount();
-        var quotedDefaultSnapshot = booking.GetDefaultInsurance();
+        // Charter flow mới: khách chọn 1 gói duy nhất (default hoặc ThirdParty) → trả về
+        // gói đã chọn trong field "Insurance", để trống "OptionalInsurances".
+        var quotedSelectedSnapshot = booking.GetSelectedInsurance();
         var quotedOptionalSnapshots = booking.HasOptionalInsurance()
             ? booking.GetOptionalInsurances()
             : null;
@@ -896,7 +898,7 @@ public sealed class QuoteCharterBookingCommandHandler
             booking.PaymentStatus,
             promotion?.PromotionCode,
             booking.HoldExpiresAt,
-            CharterBookingInsuranceSupport.ToDto(quotedDefaultSnapshot),
+            CharterBookingInsuranceSupport.ToDto(quotedSelectedSnapshot),
             quotedOptionalSnapshots is null
                 ? null
                 : CharterBookingInsuranceSupport.ToDtos(quotedOptionalSnapshots),

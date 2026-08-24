@@ -185,6 +185,8 @@ public class QuoteCharterBookingCommandTests
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = CharterBooking(1, 2);
+        // Charter đã bắt buộc phải chọn 1 gói trước khi quote — giả lập booking có sẵn snapshot.
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot(waterbusDefault, quantity: 101, isWaterbusDefault: true));
         context.AddRange(
             fullStandardBoat,
             standardAndVipBoat,
@@ -234,6 +236,7 @@ public class QuoteCharterBookingCommandTests
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = CharterBooking(1, 2);
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot(waterbusDefault, quantity: 101, isWaterbusDefault: true));
         context.AddRange(
             fullStandardBoat,
             standardAndVipBoat,
@@ -283,6 +286,7 @@ public class QuoteCharterBookingCommandTests
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = CharterBooking(1, 2);
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot(waterbusDefault, quantity: 101, isWaterbusDefault: true));
         context.AddRange(
             fullStandardBoat,
             standardAndVipBoat,
@@ -521,7 +525,8 @@ public class QuoteCharterBookingCommandTests
 
     private static BookingInsuranceSnapshot InsuranceSnapshot(
         InsurancePackage package,
-        int quantity) =>
+        int quantity,
+        bool isWaterbusDefault = false) =>
         new()
         {
             InsurancePackageId = package.Id,
@@ -539,8 +544,10 @@ public class QuoteCharterBookingCommandTests
             Quantity = quantity,
             TotalAmount = package.UnitPremiumAmount * quantity,
             QuotedAt = new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero),
-            IsWaterbusDefault = false,
-            ProviderSource = InsuranceProviderSource.ThirdParty
+            IsWaterbusDefault = isWaterbusDefault,
+            ProviderSource = isWaterbusDefault
+                ? InsuranceProviderSource.Waterbus
+                : InsuranceProviderSource.ThirdParty
         };
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

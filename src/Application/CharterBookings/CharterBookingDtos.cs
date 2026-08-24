@@ -50,11 +50,16 @@ public sealed record CreateCharterBookingRequest(
     string? ContactPhone = null,
     string? ContactEmail = null,
     bool? InsuranceSelected = null,
+    /// <summary>
+    /// ID gói bảo hiểm khách đã chọn. BẮT BUỘC đối với charter (validator sẽ chặn nếu null).
+    /// FE chịu trách nhiệm lookup danh sách gói (Waterbus default hoặc ThirdParty)
+    /// và gửi ID gói user đã chọn. Chỉ lưu 1 snapshot duy nhất.
+    /// Trường <see cref="InsuranceSelected"/> bị bỏ qua với charter.
+    /// </summary>
     Guid? InsurancePackageId = null,
     /// <summary>
-    /// Optional: ID gói bảo hiểm bên thứ 3 cộng dồn trên gói mặc định Waterbus.
-    /// Khi truyền, hệ thống giữ cả default + cộng thêm gói này (stacking).
-    /// Khi truyền null và <paramref name="InsurancePackageId"/> cũng null → chỉ lấy default.
+    /// DEPRECATED với charter: không còn dùng cho stacking nữa. Hiện tại chỉ lưu gói trong
+    /// <see cref="InsurancePackageId"/>. Giữ lại để tương thích FE cũ, BE sẽ bỏ qua.
     /// </summary>
     Guid? OptionalInsurancePackageId = null);
 
@@ -74,7 +79,15 @@ public sealed record UpdateCharterBookingRequest(
     string? ContactPhone = null,
     string? ContactEmail = null,
     bool? InsuranceSelected = null,
+    /// <summary>
+    /// ID gói bảo hiểm khách đã chọn. BẮT BUỘC đối với charter khi update (validator sẽ chặn nếu null).
+    /// Chỉ lưu 1 snapshot duy nhất, không stacking.
+    /// Trường <see cref="InsuranceSelected"/> bị bỏ qua với charter.
+    /// </summary>
     Guid? InsurancePackageId = null,
+    /// <summary>
+    /// DEPRECATED: giữ lại để tương thích FE cũ, BE bỏ qua với charter (đã không còn stacking).
+    /// </summary>
     Guid? OptionalInsurancePackageId = null);
 
 public sealed record CreateCharterBookingItineraryStopRequest(

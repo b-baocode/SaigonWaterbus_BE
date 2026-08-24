@@ -29,7 +29,7 @@ internal static class CharterBookingPassengerResultSupport
             booking.RemainingAmount,
             booking.RemainingAmount > 0,
             additionalInsuranceAmount,
-            CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            CharterBookingInsuranceSupport.ToDto(booking.GetSelectedInsurance()),
             booking.HasOptionalInsurance()
                 ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
                 : null);
@@ -60,7 +60,7 @@ internal static class CharterBookingPassengerResultSupport
             booking.RemainingAmount,
             booking.RemainingAmount > 0,
             additionalInsuranceAmount,
-            CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            CharterBookingInsuranceSupport.ToDto(booking.GetSelectedInsurance()),
             booking.HasOptionalInsurance()
                 ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
                 : null);

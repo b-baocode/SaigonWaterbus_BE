@@ -4,45 +4,55 @@ namespace SaigonWaterbus.Application.CharterBookings;
 
 /// <summary>
 /// Extension truy cập nhanh các nhóm bảo hiểm trong <see cref="Booking.InsuranceSnapshots"/>.
-/// Booking có thể mang:
 ///
-///   - 1 snapshot Waterbus default (auto-attach khi có hành khách) — <c>IsWaterbusDefault == true</c>.
-///   - N snapshot ThirdParty do khách chọn thêm — <c>IsWaterbusDefault == false</c>.
+/// Booking charter (luôn chọn 1 gói):
+///   - 1 snapshot duy nhất: có thể là Waterbus default HOẶC ThirdParty do khách chọn.
+///   - Field <c>IsWaterbusDefault</c> chỉ là metadata phân biệt nguồn gói (BE nhận biết
+///     được đó có phải default hay không), KHÔNG còn ý nghĩa stacking.
 ///
-/// Tổng tiền bảo hiểm = tổng <c>TotalAmount</c> của tất cả snapshot trong list.
+/// Tổng tiền bảo hiểm = <c>TotalAmount</c> của snapshot duy nhất.
 /// </summary>
 public static class BookingInsuranceExtensions
 {
-    /// <summary>Snapshot gói mặc định Waterbus (auto-attach). Null nếu khách tắt.</summary>
+    /// <summary>
+    /// Snapshot duy nhất khách đã chọn cho charter (Waterbus default hoặc ThirdParty).
+    /// Null nếu không có hành khách hoặc booking không yêu cầu bảo hiểm.
+    /// </summary>
+    public static BookingInsuranceSnapshot? GetSelectedInsurance(this Booking booking) =>
+        (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>())
+            .FirstOrDefault();
+
+    /// <summary>
+    /// Snapshot gói Waterbus default nếu booking có chọn gói đó. Null nếu chọn ThirdParty
+    /// hoặc không có. Dùng cho logic tính tổng tiền riêng phần default (legacy).
+    /// </summary>
     public static BookingInsuranceSnapshot? GetDefaultInsurance(this Booking booking) =>
         (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>())
             .FirstOrDefault(s => s.IsWaterbusDefault);
 
-    /// <summary>Danh sách gói ThirdParty khách chọn thêm (không bao gồm default).</summary>
-    public static IReadOnlyList<BookingInsuranceSnapshot> GetOptionalInsurances(this Booking booking) =>
+    /// <summary>Tổng tiền bảo hiểm của booking (= tổng tất cả snapshot, thường là 1).</summary>
+    public static decimal GetTotalInsuranceAmount(this Booking booking) =>
         (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>())
-            .Where(s => !s.IsWaterbusDefault)
-            .ToList();
+            .Sum(s => s.TotalAmount);
 
-    /// <summary>Tổng tiền gói mặc định Waterbus (0 nếu không có).</summary>
+    /// <summary>Tổng tiền gói Waterbus default (0 nếu khách chọn ThirdParty).</summary>
     public static decimal GetDefaultInsuranceAmount(this Booking booking) =>
         (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>())
             .Where(s => s.IsWaterbusDefault)
             .Sum(s => s.TotalAmount);
 
-    /// <summary>Tổng tiền các gói ThirdParty khách chọn thêm (0 nếu không có).</summary>
-    public static decimal GetOptionalInsuranceAmount(this Booking booking) =>
+    /// <summary>
+    /// Backward-compat shim: trả về danh sách các snapshot KHÔNG phải default.
+    /// Với charter flow mới, danh sách này sẽ rỗng vì chỉ có 1 snapshot duy nhất.
+    /// </summary>
+    public static IReadOnlyList<BookingInsuranceSnapshot> GetOptionalInsurances(this Booking booking) =>
         (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>())
             .Where(s => !s.IsWaterbusDefault)
-            .Sum(s => s.TotalAmount);
+            .ToList();
 
-    /// <summary>Tổng tiền bảo hiểm (default + optional).</summary>
-    public static decimal GetTotalInsuranceAmount(this Booking booking) =>
-        (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>())
-            .Sum(s => s.TotalAmount);
-
-    /// <summary>Khách có chọn gói ThirdParty nào không.</summary>
-    public static bool HasOptionalInsurance(this Booking booking) =>
-        (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>())
-            .Any(s => !s.IsWaterbusDefault);
+    /// <summary>
+    /// Backward-compat: luôn trả <c>false</c> với charter flow mới (chỉ có 1 snapshot duy nhất,
+    /// không có stacking). Giữ method để code cũ vẫn compile.
+    /// </summary>
+    public static bool HasOptionalInsurance(this Booking booking) => false;
 }
