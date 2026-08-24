@@ -554,14 +554,15 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
         var now = _timeProvider.GetUtcNow();
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotAsync(
+        var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotsAsync(
             _context,
-            booking.InsuranceSnapshot,
+            booking.InsuranceSnapshots,
             booking.PassengerCount.GetValueOrDefault(),
             now,
             cancellationToken);
-        var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
-            + (insuranceSnapshot?.TotalAmount ?? 0);
+        var ticketSubtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
+        var insuranceAmount = insuranceSnapshots.Sum(s => s.TotalAmount);
+        var subtotal = ticketSubtotal + insuranceAmount;
         var promotion = await CharterBookingQuoteSupport.ResolvePromotionForQuoteAsync(
             _context,
             booking,
@@ -586,6 +587,8 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
             booking.BookingCode,
             CharterBookingQuoteSupport.ToSelectedBoatDtos(selectedBoatPricings),
             subtotal,
+            ticketSubtotal,
+            insuranceAmount,
             discount,
             total,
             "Automatic",
@@ -594,7 +597,10 @@ public sealed class PreviewCharterBookingQuoteCommandHandler
                 rentalUnit,
                 requestedDurationValue),
             promotion?.PromotionCode,
-            CharterBookingInsuranceSupport.ToDto(insuranceSnapshot),
+            CharterBookingInsuranceSupport.ToDto(insuranceSnapshots.FirstOrDefault(s => s.IsWaterbusDefault)),
+            insuranceSnapshots.Any(s => !s.IsWaterbusDefault)
+                ? CharterBookingInsuranceSupport.ToDtos(insuranceSnapshots.Where(s => !s.IsWaterbusDefault).ToList())
+                : null,
             CharterBookingRoutePlanSupport.ToSelectedRouteDto(previewRoute));
     }
 }
@@ -697,14 +703,15 @@ public sealed class QuoteCharterBookingCommandHandler
         var primarySelection = selectedBoatPricings[0];
         CharterBookingRoutePricingSupport.EnsureCanAutoPrice(rentalUnit, primarySelection.Pricing.RouteEstimate);
 
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotAsync(
+        var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveQuoteInsuranceSnapshotsAsync(
             _context,
-            booking.InsuranceSnapshot,
+            booking.InsuranceSnapshots,
             booking.PassengerCount.GetValueOrDefault(),
             now,
             cancellationToken);
-        var subtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount)
-            + (insuranceSnapshot?.TotalAmount ?? 0);
+        var ticketSubtotal = selectedBoatPricings.Sum(x => x.Pricing.SubtotalAmount);
+        var insuranceAmount = insuranceSnapshots.Sum(s => s.TotalAmount);
+        var subtotal = ticketSubtotal + insuranceAmount;
         var chargeableDurationValue = primarySelection.Pricing.ChargeableDurationValue;
         var holdDurationValue = CharterBookingRoutePricingSupport.ResolveHoldDurationValue(
             rentalUnit,
@@ -794,7 +801,7 @@ public sealed class QuoteCharterBookingCommandHandler
         booking.SubtotalAmount = subtotal;
         booking.DiscountAmount = discount;
         booking.TotalAmount = total;
-        booking.InsuranceSnapshot = insuranceSnapshot;
+        booking.InsuranceSnapshots = insuranceSnapshots;
         booking.DepositAmount = 0;
         booking.RemainingAmount = total;
         booking.PaymentStatus = UnpaidBookingPaymentStatus;
@@ -860,6 +867,13 @@ public sealed class QuoteCharterBookingCommandHandler
                 cancellationToken);
         }
 
+        var quotedTicketSubtotal = selectedBoatRows.Sum(x => x.SubtotalAmount);
+        var quotedInsuranceAmount = booking.GetTotalInsuranceAmount();
+        var quotedDefaultSnapshot = booking.GetDefaultInsurance();
+        var quotedOptionalSnapshots = booking.HasOptionalInsurance()
+            ? booking.GetOptionalInsurances()
+            : null;
+
         return new QuoteCharterBookingResult(
             booking.Id,
             booking.BookingCode,
@@ -867,6 +881,8 @@ public sealed class QuoteCharterBookingCommandHandler
             primaryBoat.Name,
             CharterBookingBoatSelectionSupport.ToSelectedBoatDtos(selectedBoatRows),
             booking.SubtotalAmount,
+            quotedTicketSubtotal,
+            quotedInsuranceAmount,
             booking.DiscountAmount,
             booking.TotalAmount,
             primarySelection.Pricing.UnitPrice,
@@ -880,7 +896,10 @@ public sealed class QuoteCharterBookingCommandHandler
             booking.PaymentStatus,
             promotion?.PromotionCode,
             booking.HoldExpiresAt,
-            CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot),
+            CharterBookingInsuranceSupport.ToDto(quotedDefaultSnapshot),
+            quotedOptionalSnapshots is null
+                ? null
+                : CharterBookingInsuranceSupport.ToDtos(quotedOptionalSnapshots),
             CharterBookingRoutePlanSupport.ToSelectedRouteDto(selectedRoute));
     }
 

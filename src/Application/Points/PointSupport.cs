@@ -28,11 +28,50 @@ public static class PointSupport
     /// <summary>Point chỉ được trả tối đa 50% bill — phần dư (nếu có) vẫn nằm trong tài khoản khách.</summary>
     public const decimal MaxRedeemShareOfBill = 0.5m;
 
+    /// <summary>
+    /// Khách cũng chỉ được trả tối đa 50% số dư điểm đang có — giữ 50% còn lại làm "buffer".
+    /// Áp dụng khi user có ≥ 2 điểm. Khi user chỉ có đúng 1 điểm thì 50% × 1 = 0.5 không đủ 1 điểm,
+    /// nên cho dùng luôn 100% (1 điểm đó) để tránh điểm "chết" trong ví.
+    /// </summary>
+    public const decimal MaxRedeemShareOfBalance = 0.5m;
+
     public static int CalculateEarnedPoints(decimal paidAmount) =>
         paidAmount <= 0 ? 0 : (int)Math.Floor(paidAmount * EarnRate);
 
-    public static int CalculateMaxRedeemablePoints(decimal billAmount) =>
-        billAmount <= 0 ? 0 : (int)Math.Floor(billAmount * MaxRedeemShareOfBill);
+    /// <summary>
+    /// Tính số điểm tối đa có thể redeem cho booking.
+    /// </summary>
+    /// <param name="billAmount">Bill sau khi đã trừ discount (SubtotalAmount - DiscountAmount).</param>
+    /// <param name="userPointBalance">Số dư điểm hiện tại của khách. Mặc định 0 để tương thích ngược.</param>
+    /// <remarks>
+    /// Quy tắc:
+    /// - User có 0 điểm → 0.
+    /// - User có đúng 1 điểm → cho dùng 1 điểm (100%), cap bởi bill nếu bill &lt; 1đ.
+    /// - User có ≥ 2 điểm → giới hạn bởi min(50% bill, 50% balance), luôn floor để không ra số lẻ.
+    /// </remarks>
+    public static int CalculateMaxRedeemablePoints(decimal billAmount, int userPointBalance = 0)
+    {
+        if (billAmount <= 0)
+        {
+            return 0;
+        }
+
+        var maxByBill = (int)Math.Floor(billAmount * MaxRedeemShareOfBill);
+
+        if (userPointBalance <= 0)
+        {
+            return maxByBill;
+        }
+
+        // User chỉ có 1 điểm → cho dùng luôn 1 điểm (vì 50% × 1 = 0.5 không đủ 1).
+        if (userPointBalance == 1)
+        {
+            return Math.Min(1, maxByBill);
+        }
+
+        var maxByBalance = (int)Math.Floor(userPointBalance * MaxRedeemShareOfBalance);
+        return Math.Max(0, Math.Min(maxByBill, maxByBalance));
+    }
 
     /// <summary>
     /// Cộng/trừ balance và ghi sổ. <paramref name="points"/> dương là cộng, âm là trừ.

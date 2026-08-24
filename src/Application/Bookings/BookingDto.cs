@@ -76,26 +76,38 @@ public sealed record BookingInsuranceDto(
 
 internal static class BookingInsuranceDtoMapper
 {
+    /// <summary>
+    /// Backward-compat shim: giữ signature cũ cho caller chỉ quan tâm 1 snapshot đầu tiên.
+    /// Sau refactor, Booking mang nhiều snapshot; trả về cái đầu tiên (thường là default).
+    /// </summary>
     public static BookingInsuranceDto? ToDto(BookingInsuranceSnapshot? snapshot) =>
-        snapshot is null
+        ToDto((IReadOnlyList<BookingInsuranceSnapshot>?)(
+            snapshot is null ? null : new[] { snapshot }))?.FirstOrDefault();
+
+    /// <summary>Trả về danh sách DTO cho mọi snapshot (rỗng = null).</summary>
+    public static IReadOnlyList<BookingInsuranceDto>? ToDto(IReadOnlyList<BookingInsuranceSnapshot>? snapshots) =>
+        snapshots is null || snapshots.Count == 0
             ? null
-            : new BookingInsuranceDto(
-                snapshot.InsurancePackageId,
-                snapshot.Code,
-                snapshot.Name,
-                snapshot.BookingType,
-                snapshot.IsRequired,
-                snapshot.ProviderName,
-                snapshot.ProviderLogoUrl,
-                snapshot.UnitPremiumAmount,
-                snapshot.CoverageAmount,
-                snapshot.Currency,
-                snapshot.Quantity,
-                snapshot.TotalAmount,
-                snapshot.Conditions,
-                snapshot.TermsUrl,
-                snapshot.QuotedAt,
-                IsWaterbusDefault: snapshot.IsWaterbusDefault);
+            : snapshots.Select(Map).ToList();
+
+    private static BookingInsuranceDto Map(BookingInsuranceSnapshot snapshot) =>
+        new(
+            snapshot.InsurancePackageId,
+            snapshot.Code,
+            snapshot.Name,
+            snapshot.BookingType,
+            snapshot.IsRequired,
+            snapshot.ProviderName,
+            snapshot.ProviderLogoUrl,
+            snapshot.UnitPremiumAmount,
+            snapshot.CoverageAmount,
+            snapshot.Currency,
+            snapshot.Quantity,
+            snapshot.TotalAmount,
+            snapshot.Conditions,
+            snapshot.TermsUrl,
+            snapshot.QuotedAt,
+            IsWaterbusDefault: snapshot.IsWaterbusDefault);
 }
 
 public sealed record BookingPaymentDto(

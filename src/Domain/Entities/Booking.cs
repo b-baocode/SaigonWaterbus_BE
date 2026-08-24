@@ -62,7 +62,13 @@ public class Booking : BaseGuidAuditableEntity
     public SeatSetupType? PreferredSeatSetupType { get; set; }
     public string? BoatRequirements { get; set; }
     public string? SpecialRequests { get; set; }
-    public BookingInsuranceSnapshot? InsuranceSnapshot { get; set; }
+    /// <summary>
+    /// Danh sách snapshot bảo hiểm đã gắn vào booking.
+    /// Phần tử 0 (nếu có và <see cref="BookingInsuranceSnapshot.IsWaterbusDefault"/> = true) là gói mặc định Waterbus auto-attach.
+    /// Các phần tử còn lại là gói ThirdParty do khách chọn thêm (cộng dồn vào tổng tiền).
+    /// Đổi từ <c>InsuranceSnapshot</c> (singular) sang <c>InsuranceSnapshots</c> (list) để hỗ trợ stacking.
+    /// </summary>
+    public List<BookingInsuranceSnapshot> InsuranceSnapshots { get; set; } = new();
     public DateTimeOffset? HoldExpiresAt { get; set; }
 
     /// <summary>Audit: nguon nao da dua booking sang trang thai Completed (vi du "TripCompleted:7KMKQ").</summary>

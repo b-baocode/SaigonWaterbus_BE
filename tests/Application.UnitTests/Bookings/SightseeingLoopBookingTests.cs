@@ -262,7 +262,7 @@ public class SightseeingLoopBookingTests
         var loopBookingEntity = context.Set<Booking>().Single(x => x.Id == loopBooking.BookingId);
         loopBookingEntity.PointsUsed = 120;
         loopBookingEntity.PointsEarned = 75;
-        loopBookingEntity.InsuranceSnapshot = InsuranceSnapshot();
+        loopBookingEntity.InsuranceSnapshots.Add(InsuranceSnapshot());
         await context.SaveChangesAsync();
 
         var list = await new GetBookingListQueryHandler(context, userContext)
@@ -298,7 +298,7 @@ public class SightseeingLoopBookingTests
         var booking = context.Set<Booking>().Single(x => x.Id == created.BookingId);
         booking.PointsUsed = 60;
         booking.PointsEarned = 30;
-        booking.InsuranceSnapshot = InsuranceSnapshot();
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot());
         await context.SaveChangesAsync();
 
         var items = await new Application.BookingHistory.GetMyBookingHistoryQueryHandler(context, userContext)

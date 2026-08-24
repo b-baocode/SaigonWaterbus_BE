@@ -24,7 +24,8 @@ public sealed record UpdateCharterBookingCommand(
     string? ContactPhone = null,
     string? ContactEmail = null,
     bool? InsuranceSelected = null,
-    Guid? InsurancePackageId = null) : IRequest<CharterBookingDetailDto>;
+    Guid? InsurancePackageId = null,
+    Guid? OptionalInsurancePackageId = null) : IRequest<CharterBookingDetailDto>;
 
 public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<UpdateCharterBookingCommand>
 {
@@ -93,6 +94,10 @@ public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<Upd
             .NotNull()
             .When(x => x.InsuranceSelected == true)
             .WithMessage("Vui lòng chọn gói bảo hiểm.");
+        RuleFor(x => x.OptionalInsurancePackageId)
+            .NotEqual(x => x.InsurancePackageId)
+            .When(x => x.OptionalInsurancePackageId.HasValue && x.InsurancePackageId.HasValue)
+            .WithMessage("Gói bảo hiểm tuỳ chọn không được trùng với gói bảo hiểm chính.");
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
             .When(x => x.FromStationId.HasValue
                 && x.ToStationId.HasValue
@@ -240,33 +245,15 @@ public sealed class UpdateCharterBookingCommandHandler
             contactPhone,
             contactEmail,
             cancellationToken);
-        BookingInsuranceSnapshot? insuranceSnapshot;
-        if (adultCount + childCount < 1)
-        {
-            insuranceSnapshot = null;
-        }
-        else
-        {
-            insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
-                _context,
-                request.InsuranceSelected,
-                request.InsurancePackageId,
-                booking.InsuranceSnapshot,
-                insuredPassengerQuantity: adultCount + childCount,
-                _timeProvider.GetUtcNow(),
-                cancellationToken);
-
-            // Waterbus default: tự động gắn khi không có ThirdParty snapshot nào.
-            if (insuranceSnapshot is null)
-            {
-                insuranceSnapshot = await CharterBookingInsuranceSupport
-                    .ResolveWaterbusDefaultInsuranceSnapshotAsync(
-                        _context,
-                        adultCount + childCount,
-                        _timeProvider.GetUtcNow(),
-                        cancellationToken);
-            }
-        }
+        var passengerCount = adultCount + childCount;
+        var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotsAsync(
+            _context,
+            request.InsuranceSelected,
+            request.OptionalInsurancePackageId ?? request.InsurancePackageId,
+            currentSnapshots: booking.InsuranceSnapshots,
+            insuredPassengerQuantity: passengerCount,
+            _timeProvider.GetUtcNow(),
+            cancellationToken);
 
         booking.FromStationId = fromStationId;
         booking.ToStationId = toStationId;
@@ -288,7 +275,7 @@ public sealed class UpdateCharterBookingCommandHandler
         booking.ContactName = contactName;
         booking.ContactPhone = contactPhone;
         booking.ContactEmail = contactEmail;
-        booking.InsuranceSnapshot = insuranceSnapshot;
+        booking.InsuranceSnapshots = insuranceSnapshots;
 
         if (request.ItineraryStops is not null)
         {

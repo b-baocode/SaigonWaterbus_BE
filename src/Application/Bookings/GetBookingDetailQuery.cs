@@ -136,7 +136,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
                 i.TripSeat?.Seat?.SeatType?.Name);
         }).ToList();
 
-        var insuranceAmount = booking.InsuranceSnapshot?.TotalAmount ?? 0m;
+        var insuranceAmount = (booking.InsuranceSnapshots ?? new List<Domain.Entities.BookingInsuranceSnapshot>()).Sum(s => s.TotalAmount);
         var ticketSubtotalAmount = booking.SubtotalAmount - insuranceAmount;
 
         return new BookingDetailDto(
@@ -181,7 +181,7 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             booking.Trip?.Route?.RouteType,
             booking.ReturnTrip?.TripCode,
             booking.ReturnTrip?.DepartureTime,
-            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault()),
             booking.Trip?.Id,
             booking.Trip?.Boat?.Code,
             booking.Trip?.Boat?.Name,

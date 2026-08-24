@@ -183,14 +183,14 @@ public class QuoteCharterBookingCommandTests
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
         var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
-        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = CharterBooking(1, 2);
         context.AddRange(
             fullStandardBoat,
             standardAndVipBoat,
             RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
             RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
-            insurancePackage,
+            waterbusDefault,
             booking);
         await context.SaveChangesAsync();
 
@@ -210,19 +210,19 @@ public class QuoteCharterBookingCommandTests
             CancellationToken.None);
 
         result.Insurance.ShouldNotBeNull();
-        result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        result.Insurance.InsurancePackageId.ShouldBe(waterbusDefault.Id);
         result.Insurance.Quantity.ShouldBe(101);
-        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
-        result.SubtotalAmount.ShouldBe(4_010_000m);
-        result.TotalAmount.ShouldBe(4_010_000m);
+        result.Insurance.TotalAmount.ShouldBe(202_000m);
+        result.SubtotalAmount.ShouldBe(3_202_000m);
+        result.TotalAmount.ShouldBe(3_202_000m);
 
         var savedBooking = await context.Set<Booking>()
             .SingleAsync(x => x.Id == booking.Id);
 
-        savedBooking.InsuranceSnapshot.ShouldNotBeNull();
-        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(101);
-        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_010_000m);
-        savedBooking.TotalAmount.ShouldBe(4_010_000m);
+        savedBooking.InsuranceSnapshots.ShouldNotBeEmpty();
+        savedBooking.InsuranceSnapshots[0].Quantity.ShouldBe(101);
+        savedBooking.InsuranceSnapshots[0].TotalAmount.ShouldBe(202_000m);
+        savedBooking.TotalAmount.ShouldBe(3_202_000m);
     }
 
     [Test]
@@ -232,14 +232,14 @@ public class QuoteCharterBookingCommandTests
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
         var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
-        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = CharterBooking(1, 2);
         context.AddRange(
             fullStandardBoat,
             standardAndVipBoat,
             RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
             RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
-            insurancePackage,
+            waterbusDefault,
             booking);
         await context.SaveChangesAsync();
 
@@ -259,19 +259,19 @@ public class QuoteCharterBookingCommandTests
             CancellationToken.None);
 
         result.Insurance.ShouldNotBeNull();
-        result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        result.Insurance.InsurancePackageId.ShouldBe(waterbusDefault.Id);
         result.Insurance.Quantity.ShouldBe(101);
-        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
-        result.SubtotalAmount.ShouldBe(4_010_000m);
-        result.TotalAmount.ShouldBe(4_010_000m);
+        result.Insurance.TotalAmount.ShouldBe(202_000m);
+        result.SubtotalAmount.ShouldBe(3_202_000m);
+        result.TotalAmount.ShouldBe(3_202_000m);
 
         var savedBooking = await context.Set<Booking>()
             .SingleAsync(x => x.Id == booking.Id);
 
-        savedBooking.InsuranceSnapshot.ShouldNotBeNull();
-        savedBooking.InsuranceSnapshot.Quantity.ShouldBe(101);
-        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(1_010_000m);
-        savedBooking.TotalAmount.ShouldBe(4_010_000m);
+        savedBooking.InsuranceSnapshots.ShouldNotBeEmpty();
+        savedBooking.InsuranceSnapshots[0].Quantity.ShouldBe(101);
+        savedBooking.InsuranceSnapshots[0].TotalAmount.ShouldBe(202_000m);
+        savedBooking.TotalAmount.ShouldBe(3_202_000m);
     }
 
     [Test]
@@ -281,15 +281,14 @@ public class QuoteCharterBookingCommandTests
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
         var fullStandardBoat = ActiveBoat(SeatSetupType.FullStandard, 1_000_000m, "Full Standard", numberOfDecks: 1);
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
-        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
-        insurancePackage.BookingType = "PassengerInsurance";
+        var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = CharterBooking(1, 2);
         context.AddRange(
             fullStandardBoat,
             standardAndVipBoat,
             RentalPolicy(1, BoatRentalUnit.Day, 1_000_000m),
             RentalPolicy(2, BoatRentalUnit.Day, 2_000_000m),
-            insurancePackage,
+            waterbusDefault,
             booking);
         await context.SaveChangesAsync();
 
@@ -309,10 +308,10 @@ public class QuoteCharterBookingCommandTests
             CancellationToken.None);
 
         result.Insurance.ShouldNotBeNull();
-        result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        result.Insurance.InsurancePackageId.ShouldBe(waterbusDefault.Id);
         result.Insurance.Quantity.ShouldBe(101);
-        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
-        result.SubtotalAmount.ShouldBe(4_010_000m);
+        result.Insurance.TotalAmount.ShouldBe(202_000m);
+        result.SubtotalAmount.ShouldBe(3_202_000m);
     }
 
     [Test]
@@ -373,7 +372,7 @@ public class QuoteCharterBookingCommandTests
         var standardAndVipBoat = ActiveBoat(SeatSetupType.StandardAndVip, 2_000_000m, "Standard And Vip", numberOfDecks: 2);
         var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
         var booking = CharterBooking(1, 2);
-        booking.InsuranceSnapshot = InsuranceSnapshot(insurancePackage, quantity: 101);
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot(insurancePackage, quantity: 101));
         context.AddRange(
             fullStandardBoat,
             standardAndVipBoat,
@@ -398,11 +397,12 @@ public class QuoteCharterBookingCommandTests
                 ]),
             CancellationToken.None);
 
-        result.Insurance.ShouldNotBeNull();
-        result.Insurance.Selected.ShouldBeTrue();
-        result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        result.Insurance.Quantity.ShouldBe(101);
-        result.Insurance.TotalAmount.ShouldBe(1_010_000m);
+        result.Insurance.ShouldBeNull();
+        result.OptionalInsurances.ShouldNotBeNull();
+        result.OptionalInsurances.Count.ShouldBe(1);
+        result.OptionalInsurances[0].InsurancePackageId.ShouldBe(insurancePackage.Id);
+        result.OptionalInsurances[0].Quantity.ShouldBe(101);
+        result.OptionalInsurances[0].TotalAmount.ShouldBe(1_010_000m);
         result.SubtotalAmount.ShouldBe(4_010_000m);
         result.TotalAmount.ShouldBe(4_010_000m);
     }
@@ -502,6 +502,23 @@ public class QuoteCharterBookingCommandTests
             IsActive = true
         };
 
+    private static InsurancePackage CharterWaterbusDefaultPackage(decimal unitPremiumAmount) =>
+        new()
+        {
+            Code = "WATERBUS_DEFAULT",
+            Name = "Bao hiem mat dinh Waterbus",
+            BookingType = Booking.CharterBookingType,
+            IsRequired = true,
+            ProviderName = "Saigon Waterbus",
+            UnitPremiumAmount = unitPremiumAmount,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            Conditions = ["Tu dong ap dung cho hanh khach."],
+            IsActive = true,
+            ProviderSource = InsuranceProviderSource.Waterbus,
+            IsWaterbusDefault = true
+        };
+
     private static BookingInsuranceSnapshot InsuranceSnapshot(
         InsurancePackage package,
         int quantity) =>
@@ -521,7 +538,9 @@ public class QuoteCharterBookingCommandTests
             TermsUrl = package.TermsUrl,
             Quantity = quantity,
             TotalAmount = package.UnitPremiumAmount * quantity,
-            QuotedAt = new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)
+            QuotedAt = new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero),
+            IsWaterbusDefault = false,
+            ProviderSource = InsuranceProviderSource.ThirdParty
         };
 
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider

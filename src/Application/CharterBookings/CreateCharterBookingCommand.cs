@@ -29,7 +29,12 @@ public sealed record CreateCharterBookingCommand(
     string? ContactPhone = null,
     string? ContactEmail = null,
     bool? InsuranceSelected = null,
-    Guid? InsurancePackageId = null) : IRequest<CreateCharterBookingResult>;
+    Guid? InsurancePackageId = null,
+    /// <summary>
+    /// Tuỳ chọn: ID gói bảo hiểm bên thứ 3 cộng dồn lên trên gói mặc định Waterbus.
+    /// Để trống / null nếu chỉ muốn lấy gói mặc định Waterbus (auto khi có hành khách).
+    /// </summary>
+    Guid? OptionalInsurancePackageId = null) : IRequest<CreateCharterBookingResult>;
 
 public sealed class CreateCharterBookingCommandValidator : AbstractValidator<CreateCharterBookingCommand>
 {
@@ -412,33 +417,14 @@ public sealed class CreateCharterBookingCommandHandler
             contactPhone,
             contactEmail,
             cancellationToken);
-        BookingInsuranceSnapshot? insuranceSnapshot;
-        if (passengerCount < 1)
-        {
-            insuranceSnapshot = null;
-        }
-        else
-        {
-            insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotAsync(
-                _context,
-                request.InsuranceSelected,
-                request.InsurancePackageId,
-                currentSnapshot: null,
-                insuredPassengerQuantity: passengerCount,
-                now,
-                cancellationToken);
-
-            // Waterbus default: tự động gắn vào giá khi không có gói ThirdParty nào được chọn.
-            if (insuranceSnapshot is null)
-            {
-                insuranceSnapshot = await CharterBookingInsuranceSupport
-                    .ResolveWaterbusDefaultInsuranceSnapshotAsync(
-                        _context,
-                        passengerCount,
-                        now,
-                        cancellationToken);
-            }
-        }
+        var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotsAsync(
+            _context,
+            request.InsuranceSelected,
+            request.OptionalInsurancePackageId ?? request.InsurancePackageId,
+            currentSnapshots: null,
+            insuredPassengerQuantity: passengerCount,
+            now,
+            cancellationToken);
 
         var booking = new Booking
         {
@@ -467,7 +453,7 @@ public sealed class CreateCharterBookingCommandHandler
             DiscountAmount = discount,
             TotalAmount = total,
             RemainingAmount = total,
-            InsuranceSnapshot = insuranceSnapshot,
+            InsuranceSnapshots = insuranceSnapshots,
             ItineraryStops = request.ItineraryStops?
                 .OrderBy(x => x.StopOrder)
                 .Select(x => new BookingItineraryStop
@@ -520,12 +506,18 @@ public sealed class CreateCharterBookingCommandHandler
             booking.BookingCode,
             null,
             booking.SubtotalAmount,
+            booking.GetTotalInsuranceAmount(),
+            booking.SubtotalAmount,
             booking.DiscountAmount,
             booking.TotalAmount,
             booking.BookingStatus.ToString(),
             0,
             requestedBoatCount,
-            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatDecks));
+            CharterBookingBoatSelectionSupport.ToDtos(requestedBoatDecks),
+            CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            booking.HasOptionalInsurance()
+                ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
+                : null);
     }
 
     private async Task EnsureStationExistsAsync(Guid? stationId, string field, CancellationToken cancellationToken)

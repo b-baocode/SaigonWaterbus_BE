@@ -1,9 +1,12 @@
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
+using SaigonWaterbus.Application.InsurancePackages;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using FluentValidation.Results;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
 using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
@@ -18,6 +21,9 @@ public sealed record TripSeatMapSeatDto(
     string SeatTypeCode,
     string? SeatTypeName,
     decimal BasePrice,
+    // EffectivePrice = BasePrice + phần bảo hiểm Waterbus mặc định (1 người).
+    // FE show giá này — không cần tách tiền vé / tiền bảo hiểm.
+    decimal EffectivePrice,
     string Status);
 
 public sealed record TripSeatMapDto(
@@ -166,13 +172,18 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                 fareAdjustment);
         }
 
+        // Gói bảo hiểm Waterbus mặc định (auto-attach 1 người cho mỗi ghế).
+        // Resolve 1 lần per request — cached trong handler để khỏi query N lần.
+        var defaultInsurancePerSeat = await ResolveDefaultWaterbusInsurancePerSeatAsync(
+            _context, cancellationToken);
+
         var seatDtos = seats
             .OrderBy(x => x.Deck)
             .ThenBy(x => x.Row)
             .ThenBy(x => x.Column)
             .Select(seat =>
             {
-                tripSeatsBySeatId.TryGetValue(seat.Id, out var tripSeat);
+                var basePrice = ResolveBasePrice(seat, distanceFare, fareAdjustment);
                 return new TripSeatMapSeatDto(
                     seat.Code,
                     seat.Deck,
@@ -180,8 +191,9 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                     seat.Column,
                     seat.SeatTypeCode,
                     seat.SeatType?.Name,
-                    ResolveBasePrice(seat, distanceFare, fareAdjustment),
-                    ResolveStatus(tripSeat, occupiedTripSeatIds, heldSeats, currentUserId, segment));
+                    basePrice,
+                    PriceRoundingSupport.RoundFare(basePrice + defaultInsurancePerSeat),
+                    ResolveStatus(tripSeatsBySeatId, seat, occupiedTripSeatIds, heldSeats, currentUserId, segment));
             })
             .ToList();
 
@@ -232,12 +244,14 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
     }
 
     private static string ResolveStatus(
-        TripSeat? tripSeat,
+        IReadOnlyDictionary<Guid, TripSeat> tripSeatsBySeatId,
+        Seat seat,
         HashSet<Guid> occupiedTripSeatIds,
         IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>> heldSeats,
         Guid? currentUserId,
         TripSegmentSupport.Segment segment)
     {
+        tripSeatsBySeatId.TryGetValue(seat.Id, out var tripSeat);
         if (tripSeat is null || tripSeat.Status == TripSeat.StatusBlocked)
         {
             return StatusBlocked;
@@ -261,5 +275,27 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
         }
 
         return StatusAvailable;
+    }
+
+    /// <summary>
+    /// Lấy đơn giá bảo hiểm Waterbus mặc định cho 1 người. Trả 0 nếu chưa cấu hình gói.
+    /// Dùng để cộng vào <c>EffectivePrice</c> ở seat listing — FE không cần tách.
+    /// </summary>
+    private static async Task<decimal> ResolveDefaultWaterbusInsurancePerSeatAsync(
+        IApplicationDbContext context,
+        CancellationToken cancellationToken)
+    {
+        var pkg = await context.Set<InsurancePackage>()
+            .AsNoTracking()
+            .Where(x => x.IsActive
+                && (x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType
+                    || x.BookingType == Booking.SeatBookingType)
+                && x.ProviderSource == InsuranceProviderSource.Waterbus)
+            .OrderByDescending(x => x.IsWaterbusDefault)
+            .ThenBy(x => x.Created)
+            .Select(x => (decimal?)x.UnitPremiumAmount)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return pkg ?? 0m;
     }
 }

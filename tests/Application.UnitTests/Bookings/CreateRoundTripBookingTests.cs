@@ -309,15 +309,20 @@ public class CreateRoundTripBookingTests
                 null,
                 "TR-INS-RET",
                 [Adult("A1", "TADA", "BD")],
-                InsuranceSelected: true),
+                InsuranceSelected: true,
+                InsurancePackageId: insurancePackage.Id),
             CancellationToken.None);
 
+        var dbBooking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
         result.Insurance.ShouldNotBeNull();
         result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
         result.Insurance.Quantity.ShouldBe(2);
         result.Insurance.TotalAmount.ShouldBe(6_000m);
+        result.InsuranceAmount.ShouldBe(6_000m);
         result.SubtotalAmount.ShouldBe(26_000m);
         result.TotalAmount.ShouldBe(26_000m);
+        dbBooking.InsuranceSnapshots.Count.ShouldBe(1);
+        dbBooking.InsuranceSnapshots[0].InsurancePackageId.ShouldBe(insurancePackage.Id);
     }
 
     private static CreateBookingCommandHandler CreateHandler(

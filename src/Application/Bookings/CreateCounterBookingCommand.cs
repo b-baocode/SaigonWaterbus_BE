@@ -180,7 +180,7 @@ public sealed class CreateCounterBookingCommandHandler
 
         var ticketSubtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
             + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveSeatBookingInsuranceSnapshotAsync(
+        var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveSeatBookingInsuranceSnapshotsAsync(
             _context,
             request.InsuranceSelected,
             request.InsurancePackageId,
@@ -188,7 +188,7 @@ public sealed class CreateCounterBookingCommandHandler
             now,
             cancellationToken);
         var subtotal = PriceRoundingSupport.RoundFare(
-            ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m));
+            ticketSubtotal + insuranceSnapshots.Sum(s => s.TotalAmount));
         EnsureCounterPointsRequestIsValid(request, loyaltyCustomer, subtotal);
 
         // Nếu quầy đã lookup và khách xác nhận tài khoản, gắn UserId để tích điểm sau khi hoàn tất dịch vụ.
@@ -208,7 +208,7 @@ public sealed class CreateCounterBookingCommandHandler
             DiscountAmount = 0,
             TotalAmount = subtotal,
             RemainingAmount = subtotal,
-            InsuranceSnapshot = insuranceSnapshot,
+            InsuranceSnapshots = insuranceSnapshots,
             HoldExpiresAt = holdExpiresAt
         };
 
@@ -229,7 +229,7 @@ public sealed class CreateCounterBookingCommandHandler
 
                     if (request.UseAllPoints && loyaltyCustomer != null)
                     {
-                        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(subtotal);
+                        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(subtotal, loyaltyCustomer.PointBalance);
                         var pointsToUse = Math.Min(loyaltyCustomer.PointBalance, maxRedeemable);
                         if (pointsToUse > 0)
                         {
@@ -329,7 +329,7 @@ public sealed class CreateCounterBookingCommandHandler
                 "Chỉ dùng điểm khi đã chọn và xác nhận tài khoản khách hàng.")]);
         }
 
-        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(subtotal);
+        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(subtotal, loyaltyCustomer.PointBalance);
         if (loyaltyCustomer.PointBalance <= 0 && maxRedeemable <= 0)
         {
             throw new ValidationException([new ValidationFailure(nameof(CreateCounterBookingCommand.UseAllPoints),
@@ -406,7 +406,7 @@ public sealed class CreateCounterBookingCommandHandler
             payment.CheckoutUrl, payment.QrCode, payment.PaidAt,
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
-            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<Domain.Entities.BookingInsuranceSnapshot>()).FirstOrDefault()),
             manifest);
 
     private static CounterBookingResult ToResult(
@@ -423,5 +423,5 @@ public sealed class CreateCounterBookingCommandHandler
             payment.CheckoutUrl, payment.QrCode, payment.PaidAt,
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
-            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
+            BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<Domain.Entities.BookingInsuranceSnapshot>()).FirstOrDefault()));
 }

@@ -53,6 +53,10 @@ public sealed class CreatePromotionCommandValidator : AbstractValidator<CreatePr
         RuleFor(x => x.MaxUsesPerAccount).GreaterThanOrEqualTo(1).When(x => x.MaxUsesPerAccount.HasValue)
             .WithMessage("Lượt dùng phải từ 1 trở lên.");
         RuleFor(x => x.ValidTo).GreaterThan(x => x.ValidFrom);
+        RuleFor(x => x.ValidFrom)
+            .Must(validFrom => validFrom >= DateTimeOffset.UtcNow.AddSeconds(-5))
+            .WithMessage("ValidFrom không được ở quá khứ.")
+            .OverridePropertyName(nameof(CreatePromotionCommand.ValidFrom));
     }
 }
 

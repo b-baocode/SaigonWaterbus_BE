@@ -126,7 +126,7 @@ public sealed class GetMyBookingHistoryQueryHandler
             $"/api/bookings/{booking.Id}",
             booking.PointsUsed,
             booking.PointsEarned,
-            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            Bookings.BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault()),
             earliestBoarding?.FromStationId ?? firstStop?.StationId,
             latestAlighting?.ToStationId ?? lastStop?.StationId);
     }
@@ -149,7 +149,7 @@ public sealed class GetMyBookingHistoryQueryHandler
             $"/api/charter-bookings/{booking.Id}",
             booking.PointsUsed,
             booking.PointsEarned,
-            Bookings.BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot),
+            Bookings.BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault()),
             booking.FromStationId,
             booking.ToStationId);
 }

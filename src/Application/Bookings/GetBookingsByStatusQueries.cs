@@ -40,7 +40,7 @@ public sealed class GetBookingsByStatusQueryHandler
                 b.TotalAmount,
                 b.PointsUsed,
                 b.PointsEarned,
-                b.InsuranceSnapshot,
+                b.InsuranceSnapshots,
                 ItemCount = b.Passengers.Count,
                 RouteType = b.Trip != null ? b.Trip.Route.RouteType : null
             })
@@ -58,7 +58,7 @@ public sealed class GetBookingsByStatusQueryHandler
                 b.RouteType,
                 b.PointsUsed,
                 b.PointsEarned,
-                BookingInsuranceDtoMapper.ToDto(b.InsuranceSnapshot)))
+                BookingInsuranceDtoMapper.ToDto((b.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault())))
             .ToList();
     }
 }
@@ -98,7 +98,7 @@ public sealed class GetBookingsByPaymentStatusQueryHandler
                 b.TotalAmount,
                 b.PointsUsed,
                 b.PointsEarned,
-                b.InsuranceSnapshot,
+                b.InsuranceSnapshots,
                 ItemCount = b.Passengers.Count,
                 RouteType = b.Trip != null ? b.Trip.Route.RouteType : null
             })
@@ -116,7 +116,7 @@ public sealed class GetBookingsByPaymentStatusQueryHandler
                 b.RouteType,
                 b.PointsUsed,
                 b.PointsEarned,
-                BookingInsuranceDtoMapper.ToDto(b.InsuranceSnapshot)))
+                BookingInsuranceDtoMapper.ToDto((b.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault())))
             .ToList();
     }
 }
@@ -156,7 +156,7 @@ public sealed class GetBookingsByTicketStatusQueryHandler
                 b.TotalAmount,
                 b.PointsUsed,
                 b.PointsEarned,
-                b.InsuranceSnapshot,
+                b.InsuranceSnapshots,
                 ItemCount = b.Passengers.Count,
                 RouteType = b.Trip != null ? b.Trip.Route.RouteType : null
             })
@@ -174,7 +174,7 @@ public sealed class GetBookingsByTicketStatusQueryHandler
                 b.RouteType,
                 b.PointsUsed,
                 b.PointsEarned,
-                BookingInsuranceDtoMapper.ToDto(b.InsuranceSnapshot)))
+                BookingInsuranceDtoMapper.ToDto((b.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault())))
             .ToList();
     }
 }

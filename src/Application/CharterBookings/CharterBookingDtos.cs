@@ -8,13 +8,30 @@ public sealed record CreateCharterBookingResult(
     string BookingCode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? BoatName,
+    /// <summary>
+    /// Tiền tàu (chưa gồm bảo hiểm) — 0 khi booking ở PendingQuote (chờ admin quote).
+    /// </summary>
+    decimal TicketSubtotalAmount,
+    /// <summary>
+    /// Phần bảo hiểm đã cộng vào subtotal (tổng default + optional).
+    /// Khi booking ở PendingQuote, đây là phần bảo hiểm auto-attach (Waterbus default)
+    /// mà admin quote sẽ cộng thêm vào giá.
+    /// </summary>
+    decimal InsuranceAmount,
+    /// <summary>
+    /// Subtotal = TicketSubtotalAmount + InsuranceAmount. 0 khi PendingQuote.
+    /// </summary>
     decimal SubtotalAmount,
     decimal DiscountAmount,
     decimal TotalAmount,
     string BookingStatus,
     int RegisteredPassengerCount,
     int RequestedBoatCount,
-    IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats);
+    IReadOnlyList<CharterBookingRequestedBoatDto> RequestedBoats,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    CharterBookingInsuranceDto? DefaultInsurance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<CharterBookingInsuranceDto>? OptionalInsurances = null);
 
 public sealed record CreateCharterBookingRequest(
     DateOnly DepartureDate,
@@ -33,7 +50,13 @@ public sealed record CreateCharterBookingRequest(
     string? ContactPhone = null,
     string? ContactEmail = null,
     bool? InsuranceSelected = null,
-    Guid? InsurancePackageId = null);
+    Guid? InsurancePackageId = null,
+    /// <summary>
+    /// Optional: ID gói bảo hiểm bên thứ 3 cộng dồn trên gói mặc định Waterbus.
+    /// Khi truyền, hệ thống giữ cả default + cộng thêm gói này (stacking).
+    /// Khi truyền null và <paramref name="InsurancePackageId"/> cũng null → chỉ lấy default.
+    /// </summary>
+    Guid? OptionalInsurancePackageId = null);
 
 public sealed record UpdateCharterBookingRequest(
     DateOnly? DepartureDate = null,
@@ -51,7 +74,8 @@ public sealed record UpdateCharterBookingRequest(
     string? ContactPhone = null,
     string? ContactEmail = null,
     bool? InsuranceSelected = null,
-    Guid? InsurancePackageId = null);
+    Guid? InsurancePackageId = null,
+    Guid? OptionalInsurancePackageId = null);
 
 public sealed record CreateCharterBookingItineraryStopRequest(
     Guid StationId,
@@ -274,6 +298,10 @@ public sealed record CharterBookingDetailDto(
     IReadOnlyList<CharterBookingItineraryStopDto> ItineraryStops,
     string? SpecialRequests,
     decimal SubtotalAmount,
+    /// <summary>Phần tiền tàu thuần (không gồm bảo hiểm) — tương ứng vé trong booking thường.</summary>
+    decimal TicketSubtotalAmount,
+    /// <summary>Phần bảo hiểm đã cộng vào subtotal (mặc định 0 nếu khách không chọn).</summary>
+    decimal InsuranceAmount,
     decimal DiscountAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? PromotionCode,
@@ -294,9 +322,19 @@ public sealed record CharterBookingDetailDto(
     CharterBookingUserAssignmentDto? AssignedManager = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingInsuranceDto? Insurance = null,
+    /// <summary>
+    /// Cờ cũ: true nếu booking có gắn bảo hiểm (default HOẶC optional).
+    /// Giữ để tương thích FE không phải đổi logic cũ.
+    /// </summary>
     bool InsuranceSelected = false,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     Guid? InsurancePackageId = null,
+    /// <summary>
+    /// Danh sách gói bảo hiểm bên thứ 3 cộng dồn trên gói mặc định Waterbus.
+    /// Field này là array vì sau refactor có thể có nhiều gói ThirdParty.
+    /// </summary>
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<CharterBookingInsuranceDto>? OptionalInsurances = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingSelectedRouteDto? SelectedRoute = null,
     Guid? BoatId = null,
@@ -475,7 +513,9 @@ public sealed record UpdateCharterBookingPassengersResult(
     bool RequiresAdditionalPayment,
     decimal AdditionalInsuranceAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CharterBookingInsuranceDto? Insurance = null);
+    CharterBookingInsuranceDto? Insurance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<CharterBookingInsuranceDto>? OptionalInsurances = null);
 
 public sealed record ImportCharterBookingPassengersResult(
     Guid BookingId,
@@ -496,7 +536,9 @@ public sealed record ImportCharterBookingPassengersResult(
     bool RequiresAdditionalPayment,
     decimal AdditionalInsuranceAmount,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    CharterBookingInsuranceDto? Insurance = null);
+    CharterBookingInsuranceDto? Insurance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<CharterBookingInsuranceDto>? OptionalInsurances = null);
 
 public sealed record CharterBookingTicketExportDto(
     Guid BookingId,
@@ -657,6 +699,10 @@ public sealed record PreviewCharterBookingQuoteResult(
     string BookingCode,
     IReadOnlyList<CharterBookingSelectedBoatDto> Boats,
     decimal SubtotalAmount,
+    /// <summary>Phần tiền tàu thuần (không gồm bảo hiểm) — tương ứng vé trong booking thường.</summary>
+    decimal TicketSubtotalAmount,
+    /// <summary>Phần bảo hiểm đã cộng vào subtotal (mặc định 0 nếu khách không chọn).</summary>
+    decimal InsuranceAmount,
     decimal DiscountAmount,
     decimal TotalAmount,
     string PricingSource,
@@ -665,6 +711,8 @@ public sealed record PreviewCharterBookingQuoteResult(
     string? PromotionCode,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingInsuranceDto? Insurance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<CharterBookingInsuranceDto>? OptionalInsurances = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingSelectedRouteDto? SelectedRoute = null);
 
@@ -675,6 +723,10 @@ public sealed record QuoteCharterBookingResult(
     string BoatName,
     IReadOnlyList<CharterBookingSelectedBoatDto> Boats,
     decimal SubtotalAmount,
+    /// <summary>Phần tiền tàu thuần (không gồm bảo hiểm) — tương ứng vé trong booking thường.</summary>
+    decimal TicketSubtotalAmount,
+    /// <summary>Phần bảo hiểm đã cộng vào subtotal (mặc định 0 nếu khách không chọn).</summary>
+    decimal InsuranceAmount,
     decimal DiscountAmount,
     decimal TotalAmount,
     decimal UnitPrice,
@@ -689,6 +741,8 @@ public sealed record QuoteCharterBookingResult(
     DateTimeOffset? HoldExpiresAt,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingInsuranceDto? Insurance = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    IReadOnlyList<CharterBookingInsuranceDto>? OptionalInsurances = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     CharterBookingSelectedRouteDto? SelectedRoute = null);
 

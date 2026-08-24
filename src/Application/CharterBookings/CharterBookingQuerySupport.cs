@@ -99,6 +99,9 @@ internal static class CharterBookingQuerySupport
                 .ToList(),
             booking.SpecialRequests,
             booking.SubtotalAmount,
+            // Tiền tàu thuần (không gồm bảo hiểm) = tổng SubtotalAmount của các CharterBookingBoat đã chọn.
+            booking.CharterBoats?.Where(x => x.BoatOrder > 0).Sum(x => x.SubtotalAmount) ?? 0m,
+            booking.GetTotalInsuranceAmount(),
             booking.DiscountAmount,
             booking.Promotion?.PromotionCode,
             booking.TotalAmount,
@@ -145,9 +148,12 @@ internal static class CharterBookingQuerySupport
             SuggestedDepositAmount: depositPlan.SuggestedDepositAmount,
             HasDepositPaid: depositPlan.HasDepositPaid,
             AssignedManager: CharterBookingAssignmentSupport.ToUserAssignmentDto(booking.AssignedManager),
-            Insurance: CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot),
-            InsuranceSelected: booking.InsuranceSnapshot is not null,
-            InsurancePackageId: booking.InsuranceSnapshot?.InsurancePackageId,
+            Insurance: CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            InsuranceSelected: (booking.InsuranceSnapshots ?? new List<SaigonWaterbus.Domain.Entities.BookingInsuranceSnapshot>()).Count > 0,
+            InsurancePackageId: booking.GetDefaultInsurance()?.InsurancePackageId,
+            OptionalInsurances: booking.HasOptionalInsurance()
+                ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
+                : null,
             SelectedRoute: booking.CharterRoute is null
                 ? null
                 : new CharterBookingSelectedRouteDto(

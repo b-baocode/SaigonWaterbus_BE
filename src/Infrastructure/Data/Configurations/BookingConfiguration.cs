@@ -11,10 +11,11 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
 {
     private static readonly JsonSerializerOptions InsuranceSnapshotJsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static readonly ValueComparer<BookingInsuranceSnapshot?> InsuranceSnapshotComparer = new(
-        (left, right) => SerializeInsuranceSnapshot(left) == SerializeInsuranceSnapshot(right),
-        snapshot => GetInsuranceSnapshotHashCode(snapshot),
-        snapshot => DeserializeInsuranceSnapshot(SerializeInsuranceSnapshot(snapshot)));
+    private static readonly ValueComparer<List<BookingInsuranceSnapshot>> InsuranceSnapshotComparer = new(
+        (left, right) => SerializeInsuranceSnapshots(left ?? new List<BookingInsuranceSnapshot>())
+            == SerializeInsuranceSnapshots(right ?? new List<BookingInsuranceSnapshot>()),
+        snapshots => GetInsuranceSnapshotsHashCode(snapshots ?? new List<BookingInsuranceSnapshot>()),
+        snapshots => DeserializeInsuranceSnapshots(SerializeInsuranceSnapshots(snapshots ?? new List<BookingInsuranceSnapshot>())));
 
     public void Configure(EntityTypeBuilder<Booking> builder)
     {
@@ -81,12 +82,13 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             .HasMaxLength(30);
         builder.Property(x => x.BoatRequirements).HasColumnName("boat_requirements").HasMaxLength(1000);
         builder.Property(x => x.SpecialRequests).HasColumnName("special_requests").HasMaxLength(1000);
-        builder.Property(x => x.InsuranceSnapshot)
+        builder.Property(x => x.InsuranceSnapshots)
             .HasColumnName("insurance_snapshot")
             .HasColumnType("jsonb")
+            .IsRequired(false)
             .HasConversion(
-                snapshot => SerializeInsuranceSnapshot(snapshot),
-                json => DeserializeInsuranceSnapshot(json))
+                snapshots => SerializeInsuranceSnapshots(snapshots),
+                json => DeserializeInsuranceSnapshots(json))
             .Metadata.SetValueComparer(InsuranceSnapshotComparer);
         builder.Property(x => x.HoldExpiresAt).HasColumnName("hold_expires_at");
         builder.Property(x => x.Created).HasColumnName("created_at");
@@ -141,19 +143,53 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
             _ => Enum.Parse<BookingStatus>(status, true)
         };
 
-    private static string? SerializeInsuranceSnapshot(BookingInsuranceSnapshot? snapshot) =>
-        snapshot is null
+    private static string? SerializeInsuranceSnapshots(List<BookingInsuranceSnapshot>? snapshots) =>
+        snapshots is null || snapshots.Count == 0
             ? null
-            : JsonSerializer.Serialize(snapshot, InsuranceSnapshotJsonOptions);
+            : JsonSerializer.Serialize(snapshots, InsuranceSnapshotJsonOptions);
 
-    private static BookingInsuranceSnapshot? DeserializeInsuranceSnapshot(string? json) =>
-        string.IsNullOrWhiteSpace(json)
-            ? null
-            : JsonSerializer.Deserialize<BookingInsuranceSnapshot>(json, InsuranceSnapshotJsonOptions);
-
-    private static int GetInsuranceSnapshotHashCode(BookingInsuranceSnapshot? snapshot)
+    /// <summary>
+    /// Backward compatible: data cũ trong DB có thể là một object đơn (legacy singular format)
+    /// hoặc array. Convert cả hai về dạng <see cref="List{BookingInsuranceSnapshot}"/>.
+    /// </summary>
+    private static List<BookingInsuranceSnapshot> DeserializeInsuranceSnapshots(string? json)
     {
-        var json = SerializeInsuranceSnapshot(snapshot);
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return new List<BookingInsuranceSnapshot>();
+        }
+
+        try
+        {
+            // Try parse as array first (new format)
+            var list = JsonSerializer.Deserialize<List<BookingInsuranceSnapshot>>(json, InsuranceSnapshotJsonOptions);
+            if (list is not null)
+            {
+                return list;
+            }
+        }
+        catch (JsonException)
+        {
+            // Fall through to legacy single-object parse
+        }
+
+        // Legacy: single object format
+        try
+        {
+            var single = JsonSerializer.Deserialize<BookingInsuranceSnapshot>(json, InsuranceSnapshotJsonOptions);
+            return single is null
+                ? new List<BookingInsuranceSnapshot>()
+                : new List<BookingInsuranceSnapshot> { single };
+        }
+        catch (JsonException)
+        {
+            return new List<BookingInsuranceSnapshot>();
+        }
+    }
+
+    private static int GetInsuranceSnapshotsHashCode(List<BookingInsuranceSnapshot>? snapshots)
+    {
+        var json = SerializeInsuranceSnapshots(snapshots);
         return json is null ? 0 : json.GetHashCode();
     }
 

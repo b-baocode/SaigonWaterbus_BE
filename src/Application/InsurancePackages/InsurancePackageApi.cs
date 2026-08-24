@@ -271,10 +271,6 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
             .Must(x => x == 1 || x == 2 || x == null)
             .WithMessage("rewardOption: 1=dùng hết điểm thưởng, 2=không dùng, null=không chọn.");
         RuleFor(x => x.ProviderSource).IsInEnum();
-        RuleFor(x => x.Status)
-            .Equal(InsurancePackageStatus.Active)
-            .When(x => x.ProviderSource == InsuranceProviderSource.Waterbus)
-            .WithMessage("Khi ProviderSource = Waterbus, Status phải là Active.");
     }
 }
 

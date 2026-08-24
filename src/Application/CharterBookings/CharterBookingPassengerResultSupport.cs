@@ -29,7 +29,10 @@ internal static class CharterBookingPassengerResultSupport
             booking.RemainingAmount,
             booking.RemainingAmount > 0,
             additionalInsuranceAmount,
-            CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot));
+            CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            booking.HasOptionalInsurance()
+                ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
+                : null);
     }
 
     public static ImportCharterBookingPassengersResult ToImportResult(
@@ -57,6 +60,9 @@ internal static class CharterBookingPassengerResultSupport
             booking.RemainingAmount,
             booking.RemainingAmount > 0,
             additionalInsuranceAmount,
-            CharterBookingInsuranceSupport.ToDto(booking.InsuranceSnapshot));
+            CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            booking.HasOptionalInsurance()
+                ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
+                : null);
     }
 }

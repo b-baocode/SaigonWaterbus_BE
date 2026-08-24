@@ -272,10 +272,11 @@ public class CreateCharterBookingCommandTests
             CancellationToken.None);
 
         var booking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
-        booking.InsuranceSnapshot.ShouldNotBeNull();
-        booking.InsuranceSnapshot.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        booking.InsuranceSnapshot.Quantity.ShouldBe(12);
-        booking.InsuranceSnapshot.TotalAmount.ShouldBe(120_000m);
+        booking.InsuranceSnapshots.ShouldNotBeNull();
+        booking.InsuranceSnapshots.Count.ShouldBe(1);
+        booking.InsuranceSnapshots[0].InsurancePackageId.ShouldBe(insurancePackage.Id);
+        booking.InsuranceSnapshots[0].Quantity.ShouldBe(12);
+        booking.InsuranceSnapshots[0].TotalAmount.ShouldBe(120_000m);
 
         var detail = await new GetCharterBookingDetailQueryHandler(
                 context,
@@ -283,11 +284,13 @@ public class CreateCharterBookingCommandTests
             .Handle(new GetCharterBookingDetailQuery(result.BookingId), CancellationToken.None);
 
         detail.InsuranceSelected.ShouldBeTrue();
-        detail.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        detail.Insurance.ShouldNotBeNull();
-        detail.Insurance.Selected.ShouldBeTrue();
-        detail.Insurance.Quantity.ShouldBe(12);
-        detail.Insurance.TotalAmount.ShouldBe(120_000m);
+        detail.InsurancePackageId.ShouldBeNull();
+        detail.Insurance.ShouldBeNull();
+        detail.OptionalInsurances.ShouldNotBeNull();
+        detail.OptionalInsurances.Count.ShouldBe(1);
+        detail.OptionalInsurances[0].InsurancePackageId.ShouldBe(insurancePackage.Id);
+        detail.OptionalInsurances[0].Quantity.ShouldBe(12);
+        detail.OptionalInsurances[0].TotalAmount.ShouldBe(120_000m);
     }
 
     [Test]
@@ -989,7 +992,7 @@ public class CreateCharterBookingCommandTests
             PassengerCount = 12,
             BookingStatus = BookingStatus.PendingQuote,
             PaymentStatus = "Unpaid",
-            InsuranceSnapshot = InsuranceSnapshot(insurancePackage, quantity: 12)
+            InsuranceSnapshots = { InsuranceSnapshot(insurancePackage, quantity: 12) }
         };
         context.AddRange(role, user, fromStation, insurancePackage, booking);
         await context.SaveChangesAsync();
@@ -1008,7 +1011,7 @@ public class CreateCharterBookingCommandTests
         detail.InsuranceSelected.ShouldBeFalse();
         detail.InsurancePackageId.ShouldBeNull();
         detail.Insurance.ShouldBeNull();
-        context.Set<Booking>().Single(x => x.Id == booking.Id).InsuranceSnapshot.ShouldBeNull();
+        context.Set<Booking>().Single(x => x.Id == booking.Id).InsuranceSnapshots.ShouldBeEmpty();
     }
 
     private sealed class FixedBookingCodeGenerator(string bookingCode) : IBookingCodeGenerator

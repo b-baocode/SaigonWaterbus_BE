@@ -156,9 +156,9 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
         var booking = PaidCharterBooking(userId, adultCount: 2);
         booking.ContactEmail = "customer@example.test";
-        booking.InsuranceSnapshot = InsuranceSnapshot(unitPremiumAmount: 10_000m, quantity: 2);
-        booking.SubtotalAmount += booking.InsuranceSnapshot.TotalAmount;
-        booking.TotalAmount += booking.InsuranceSnapshot.TotalAmount;
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot(unitPremiumAmount: 10_000m, quantity: 2));
+        booking.SubtotalAmount += booking.InsuranceSnapshots[0].TotalAmount;
+        booking.TotalAmount += booking.InsuranceSnapshots[0].TotalAmount;
         booking.DepositAmount = booking.TotalAmount;
         booking.RemainingAmount = 0m;
         booking.Payments.Add(PaidPayment(booking.TotalAmount));
@@ -184,10 +184,14 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         result.TotalAmount.ShouldBe(1_030_000m);
         result.DepositAmount.ShouldBe(1_020_000m);
         result.RemainingAmount.ShouldBe(10_000m);
-        result.Insurance.ShouldNotBeNull().Quantity.ShouldBe(3);
+        result.Insurance.ShouldBeNull();
+        result.OptionalInsurances.ShouldNotBeNull();
+        result.OptionalInsurances!.Count.ShouldBe(1);
+        result.OptionalInsurances![0].Quantity.ShouldBe(3);
 
         var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
-        savedBooking.InsuranceSnapshot.ShouldNotBeNull().TotalAmount.ShouldBe(30_000m);
+        savedBooking.InsuranceSnapshots.ShouldNotBeEmpty();
+        savedBooking.InsuranceSnapshots[0].TotalAmount.ShouldBe(30_000m);
         savedBooking.RemainingAmount.ShouldBe(10_000m);
     }
 
@@ -277,9 +281,9 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
         var booking = PaidCharterBooking(userId, adultCount: 2);
         booking.ContactEmail = "customer@example.test";
-        booking.InsuranceSnapshot = InsuranceSnapshot(unitPremiumAmount: 10_000m, quantity: 2);
-        booking.SubtotalAmount += booking.InsuranceSnapshot.TotalAmount;
-        booking.TotalAmount += booking.InsuranceSnapshot.TotalAmount;
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot(unitPremiumAmount: 10_000m, quantity: 2));
+        booking.SubtotalAmount += booking.InsuranceSnapshots[0].TotalAmount;
+        booking.TotalAmount += booking.InsuranceSnapshots[0].TotalAmount;
         booking.DepositAmount = booking.TotalAmount;
         booking.RemainingAmount = 0m;
         booking.Payments.Add(PaidPayment(booking.TotalAmount));
@@ -323,14 +327,18 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         result.TotalAmount.ShouldBe(1_030_000m);
         result.DepositAmount.ShouldBe(1_020_000m);
         result.RemainingAmount.ShouldBe(10_000m);
-        result.Insurance.ShouldNotBeNull().Quantity.ShouldBe(3);
+        result.Insurance.ShouldBeNull();
+        result.OptionalInsurances.ShouldNotBeNull();
+        result.OptionalInsurances!.Count.ShouldBe(1);
+        result.OptionalInsurances![0].Quantity.ShouldBe(3);
 
         var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
         savedBooking.PaymentStatus.ShouldBe("DepositPaid");
         savedBooking.DepositAmount.ShouldBe(1_020_000m);
         savedBooking.RemainingAmount.ShouldBe(10_000m);
-        savedBooking.InsuranceSnapshot.ShouldNotBeNull().Quantity.ShouldBe(3);
-        savedBooking.InsuranceSnapshot.TotalAmount.ShouldBe(30_000m);
+        savedBooking.InsuranceSnapshots.ShouldNotBeEmpty();
+        savedBooking.InsuranceSnapshots[0].Quantity.ShouldBe(3);
+        savedBooking.InsuranceSnapshots[0].TotalAmount.ShouldBe(30_000m);
         notificationSender.BoardingPasses.Count.ShouldBe(0);
     }
 

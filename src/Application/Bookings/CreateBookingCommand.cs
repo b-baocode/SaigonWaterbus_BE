@@ -309,7 +309,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
 
         var ticketSubtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
             + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
-        var insuranceSnapshot = await CharterBookingInsuranceSupport.ResolveSeatBookingInsuranceSnapshotAsync(
+        var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveSeatBookingInsuranceSnapshotsAsync(
             _context,
             request.InsuranceSelected,
             request.InsurancePackageId,
@@ -318,7 +318,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             cancellationToken,
             request.WaterbusInsuranceEnabled);
         var subtotal = PriceRoundingSupport.RoundFare(
-            ticketSubtotal + (insuranceSnapshot?.TotalAmount ?? 0m));
+            ticketSubtotal + insuranceSnapshots.Sum(s => s.TotalAmount));
 
         var booking = new Booking
         {
@@ -333,7 +333,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             SubtotalAmount = subtotal,
             DiscountAmount = 0,
             TotalAmount = subtotal,
-            InsuranceSnapshot = insuranceSnapshot,
+            InsuranceSnapshots = insuranceSnapshots,
             HoldExpiresAt = holdExpiresAt
         };
 
@@ -399,13 +399,13 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             booking.Id, booking.BookingCode,
             booking.SubtotalAmount,
             ticketSubtotal,
-            insuranceSnapshot?.TotalAmount ?? 0m,
+            insuranceSnapshots.Sum(s => s.TotalAmount),
             booking.DiscountAmount, booking.TotalAmount,
             booking.BookingStatus.ToString(), booking.Passengers.Count,
             booking.HoldExpiresAt,
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
-            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshot));
+            BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault()));
     }
 
     private async Task CompleteFreeRegularBookingAsync(

@@ -1813,10 +1813,21 @@ internal static class PaymentSupport
         CancellationToken cancellationToken)
     {
         var billAmount = booking.SubtotalAmount - booking.DiscountAmount;
-        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(billAmount);
-        var targetPoints = pointsToUse ?? Math.Min(booking.PointsUsed, maxRedeemable);
         var hasLockedPayment = booking.Payments.Any(x =>
             IsSettlementPayment(x) && (IsPending(x.PaymentStatus) || IsPaid(x.PaymentStatus)));
+
+        // Load user sớm để dùng cho cả validation và tính maxRedeemable theo balance thực.
+        var user = await context.Set<User>()
+            .Include(u => u.Role)
+            .SingleOrDefaultAsync(u => booking.UserId.HasValue && u.Id == booking.UserId.Value, cancellationToken);
+
+        var currentBalance = user?.PointBalance ?? 0;
+        // Khi đổi mức sử dụng tại checkout, user đang nắm booking.PointsUsed "tạm giữ" cho đơn này
+        // (chưa commit trừ balance); tính balance khả dụng = balance + booking.PointsUsed để cap đúng.
+        var availableBalance = currentBalance + booking.PointsUsed;
+
+        var maxRedeemable = PointSupport.CalculateMaxRedeemablePoints(billAmount, availableBalance);
+        var targetPoints = pointsToUse ?? Math.Min(booking.PointsUsed, maxRedeemable);
 
         if (targetPoints == booking.PointsUsed)
         {
@@ -1843,11 +1854,11 @@ internal static class PaymentSupport
                 "Chỉ tài khoản đăng nhập mới dùng được điểm tích lũy.")]);
         }
 
-        var user = await context.Set<User>()
-            .Include(u => u.Role)
-            .SingleOrDefaultAsync(u => u.Id == booking.UserId.Value, cancellationToken)
-            ?? throw new ValidationException([new ValidationFailure("pointsToUse",
+        if (user is null)
+        {
+            throw new ValidationException([new ValidationFailure("pointsToUse",
                 "Không tìm thấy tài khoản để trừ điểm.")]);
+        }
 
         if (targetPoints > 0 && !AuthSupport.IsCustomer(user))
         {
@@ -1858,7 +1869,7 @@ internal static class PaymentSupport
         if (targetPoints > maxRedeemable)
         {
             throw new ValidationException([new ValidationFailure("pointsToUse",
-                $"Điểm chỉ được trả tối đa 50% giá trị đơn ({maxRedeemable} điểm cho đơn này).")]);
+                $"Điểm chỉ được trả tối đa 50% giá trị đơn hoặc 50% số dư hiện có ({maxRedeemable} điểm cho đơn này).")]);
         }
 
         // Điểm đang giữ trên booking này sẽ được hoàn trước khi trừ theo số mới.
@@ -2413,7 +2424,7 @@ internal static class PaymentSupport
         var vessels = isCharterBooking
             ? ResolveNotificationVessels(booking)
             : [];
-        var insurance = booking.InsuranceSnapshot is { } insuranceSnapshot
+        var insurance = (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault() is { } insuranceSnapshot
             ? new PaymentNotificationInsurance(
                 insuranceSnapshot.Name,
                 insuranceSnapshot.Quantity,

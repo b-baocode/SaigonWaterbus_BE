@@ -184,7 +184,7 @@ public class CounterBookingTests
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
         var customer = context.Set<User>().Single(u => u.Id == customerContext.UserId);
-        customer.PointBalance = 6_000;
+        customer.PointBalance = 12_000;
         await SeedTripAsync(context, "TR-CTR-REDEEM", TripStatus.Scheduled);
         await context.SaveChangesAsync();
         var handler = CreateHandler(context, staffContext);
@@ -198,19 +198,24 @@ public class CounterBookingTests
             },
             CancellationToken.None);
 
+        if (result.TotalAmount != 5_000m)
+        {
+            var bookingDb = context.Set<Booking>().Single(b => b.Id == result.BookingId);
+            throw new Exception($"insuranceSnapshots=[{string.Join(",", bookingDb.InsuranceSnapshots.Select(s => $"id={s.InsurancePackageId},total={s.TotalAmount},qty={s.Quantity}"))}], subtotal={bookingDb.SubtotalAmount}, discount={bookingDb.DiscountAmount}, pointsUsed={bookingDb.PointsUsed}, total={bookingDb.TotalAmount}");
+        }
         result.TotalAmount.ShouldBe(5_000m);
         var booking = context.Set<Booking>().Single(b => b.Id == result.BookingId);
         booking.UserId.ShouldBe(customerContext.UserId);
         booking.PointsUsed.ShouldBe(5_000);
         booking.TotalAmount.ShouldBe(5_000m);
-        context.Set<User>().Single(u => u.Id == customerContext.UserId).PointBalance.ShouldBe(1_000);
+        context.Set<User>().Single(u => u.Id == customerContext.UserId).PointBalance.ShouldBe(7_000);
 
         var payment = context.Set<Payment>().Single(p => p.BookingId == booking.Id);
         payment.Amount.ShouldBe(5_000m);
         var transaction = context.Set<PointTransaction>()
             .Single(t => t.BookingId == booking.Id && t.TransactionType == PointTransactionTypes.Redeem);
         transaction.Points.ShouldBe(-5_000);
-        transaction.BalanceAfter.ShouldBe(1_000);
+        transaction.BalanceAfter.ShouldBe(7_000);
     }
 
     [Test]
