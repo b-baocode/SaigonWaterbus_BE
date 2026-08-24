@@ -645,4 +645,26 @@ internal static class InsurancePackageSupport
             package.RewardOption,
             package.IsWaterbusDefault,
             package.ProviderSource);
+
+    /// <summary>
+    /// Lấy đơn giá bảo hiểm Waterbus mặc định cho 1 người. Trả 0 nếu chưa cấu hình gói.
+    /// Dùng để cộng vào <c>EffectivePrice</c> ở seat listing — FE không cần tách.
+    /// </summary>
+    public static async Task<decimal> ResolveDefaultWaterbusInsurancePerSeatAsync(
+        IApplicationDbContext context,
+        CancellationToken cancellationToken)
+    {
+        var pkg = await context.Set<InsurancePackage>()
+            .AsNoTracking()
+            .Where(x => x.IsActive
+                && (x.BookingType == PassengerInsuranceBookingType
+                    || x.BookingType == Booking.SeatBookingType)
+                && x.ProviderSource == InsuranceProviderSource.Waterbus)
+            .OrderByDescending(x => x.IsWaterbusDefault)
+            .ThenBy(x => x.Created)
+            .Select(x => (decimal?)x.UnitPremiumAmount)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return pkg ?? 0m;
+    }
 }

@@ -1,6 +1,7 @@
 using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
+using SaigonWaterbus.Application.InsurancePackages;
 using SaigonWaterbus.Application.Seats;
 using SaigonWaterbus.Application.TicketTypes;
 using SaigonWaterbus.Domain.Constants;
@@ -166,6 +167,8 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
             _context,
             trips.Select(x => x.OperatingDate).ToArray(),
             cancellationToken);
+        var defaultInsurancePerSeat = await InsurancePackageSupport.ResolveDefaultWaterbusInsurancePerSeatAsync(
+            _context, cancellationToken);
 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
@@ -213,8 +216,9 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
                     ?? (stats?.MinSeatPrice is > 0
                         ? FareAdjustmentSupport.ApplySurcharge(stats.MinSeatPrice.Value, fareAdjustment)
                         : null);
+            // minPrice = giá Adult đã bao gồm bảo hiểm (để hiển thị "từ X VND")
             var minPrice = minBasePrice is > 0
-                ? (decimal?)PriceRoundingSupport.RoundFare(minBasePrice.Value * minModifier)
+                ? (decimal?)PriceRoundingSupport.RoundFare(minBasePrice.Value * minModifier + defaultInsurancePerSeat)
                 : null;
             var isBookable = available > 0 && !missingDistanceFare;
 
