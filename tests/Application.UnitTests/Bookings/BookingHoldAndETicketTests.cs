@@ -1,5 +1,7 @@
+using System.Globalization;
 using NUnit.Framework;
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
@@ -9,6 +11,7 @@ using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
+using SaigonWaterbus.Infrastructure.Data;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Bookings;
@@ -573,6 +576,170 @@ public class BookingHoldAndETicketTests
 
         booking.BookingStatus.ShouldBe(BookingStatus.Expired);
         context.Set<Payment>().Count().ShouldBe(0);
+    }
+
+    /// <summary>
+    /// Tiền về sau khi booking đã Expired nhưng ghế vẫn trống và tàu chưa chạy: hồi sinh bình thường.
+    /// </summary>
+    [Test]
+    public async Task WebhookRevivesExpiredBookingWhenSeatStillFree()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var seeded = await SeedLatePaidScenarioAsync(context, "TR-LATE-FREE", "BK-LATE-FREE", 2100001);
+        var sender = new RecordingPaymentNotificationSender();
+
+        await new HandlePaymentWebhookCommandHandler(
+                context,
+                new PaidPaymentGateway(),
+                sender,
+                new FixedTimeProvider(BeforeDeparture))
+            .Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(2100001, 10000)), CancellationToken.None);
+
+        seeded.Booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
+        seeded.Payment.PaymentStatus.ShouldBe("Paid");
+        seeded.Payment.RefundStatus.ShouldBeNull();
+        sender.ETickets.ShouldNotBeEmpty();
+    }
+
+    /// <summary>
+    /// Ghế đã bị bán cho khách khác trong lúc tiền đang về: KHÔNG hồi sinh, không phát vé,
+    /// ghi nhận tiền và mở yêu cầu hoàn.
+    /// </summary>
+    [Test]
+    public async Task WebhookDoesNotReviveExpiredBookingWhenSeatTakenByAnother()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var seeded = await SeedLatePaidScenarioAsync(context, "TR-LATE-TAKEN", "BK-LATE-TAKEN", 2100002);
+
+        var otherBooking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            TripId = seeded.Trip.Id,
+            BookingCode = "BK-LATE-WINNER",
+            ContactName = "Khach Mua Sau",
+            ContactPhone = "0900000002",
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 0
+        };
+        context.AddRange(otherBooking, new BookingPassenger
+        {
+            Booking = otherBooking,
+            TripId = seeded.Trip.Id,
+            TripSeatId = seeded.TripSeat.Id,
+            FullName = "Khach Mua Sau",
+            PassengerType = "ADULT",
+            FromStopOrder = 1,
+            ToStopOrder = 2,
+            UnitPrice = 10000
+        });
+        await context.SaveChangesAsync();
+
+        var sender = new RecordingPaymentNotificationSender();
+        await new HandlePaymentWebhookCommandHandler(
+                context,
+                new PaidPaymentGateway(),
+                sender,
+                new FixedTimeProvider(BeforeDeparture))
+            .Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(2100002, 10000)), CancellationToken.None);
+
+        seeded.Booking.BookingStatus.ShouldBe(BookingStatus.Expired);
+        seeded.Payment.PaymentStatus.ShouldBe("Paid");
+        seeded.Payment.RefundStatus.ShouldBe(PaymentSupport.RefundPendingStatus);
+        seeded.Payment.RefundRequestedAmount.ShouldBe(seeded.Payment.Amount);
+        sender.ETickets.ShouldBeEmpty();
+        context.Set<Notification>()
+            .Count(x => x.Type == NotificationTypes.BookingPaymentRefundPending)
+            .ShouldBe(1);
+    }
+
+    /// <summary>Tàu đã rời bến khách lên khi tiền về: vé vô nghĩa nên cũng chuyển sang hoàn tiền.</summary>
+    [Test]
+    public async Task WebhookDoesNotReviveExpiredBookingAfterBoardingDeparted()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var seeded = await SeedLatePaidScenarioAsync(context, "TR-LATE-GONE", "BK-LATE-GONE", 2100003);
+        var sender = new RecordingPaymentNotificationSender();
+
+        await new HandlePaymentWebhookCommandHandler(
+                context,
+                new PaidPaymentGateway(),
+                sender,
+                new FixedTimeProvider(AfterDeparture))
+            .Handle(new HandlePaymentWebhookCommand(CreatePaidWebhook(2100003, 10000)), CancellationToken.None);
+
+        seeded.Booking.BookingStatus.ShouldBe(BookingStatus.Expired);
+        seeded.Payment.PaymentStatus.ShouldBe("Paid");
+        seeded.Payment.RefundStatus.ShouldBe(PaymentSupport.RefundPendingStatus);
+        sender.ETickets.ShouldBeEmpty();
+    }
+
+    private static readonly DateTimeOffset BeforeDeparture =
+        new(2026, 7, 20, 7, 50, 0, TimeSpan.Zero);
+
+    private static readonly DateTimeOffset AfterDeparture =
+        new(2026, 7, 20, 8, 10, 0, TimeSpan.Zero);
+
+    private sealed record LatePaidScenario(Trip Trip, TripSeat TripSeat, Booking Booking, Payment Payment);
+
+    /// <summary>
+    /// Booking vé thường đã bị đánh Expired vì hết hạn giữ chỗ, payment PayOS còn Pending — đúng
+    /// trạng thái ngay trước lúc webhook báo tiền về trễ.
+    /// </summary>
+    private static async Task<LatePaidScenario> SeedLatePaidScenarioAsync(
+        ApplicationDbContext context,
+        string tripCode,
+        string bookingCode,
+        long orderCode)
+    {
+        var trip = CreateTrip(tripCode);
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, BoatStatus.Active);
+        var seat = new Seat { Boat = boat, BoatId = boat.Id, Code = "A1", Deck = 1, Row = "A", Column = 1 };
+        var tripSeat = new TripSeat { Trip = trip, TripId = trip.Id, Seat = seat, SeatId = seat.Id, Price = 10000m };
+
+        var booking = new Booking
+        {
+            UserId = Guid.NewGuid(),
+            Trip = trip,
+            BookingCode = bookingCode,
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "booker@gmail.com",
+            BookingStatus = BookingStatus.Expired,
+            PaymentStatus = "Unpaid",
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000,
+            HoldExpiresAt = BeforeDeparture.AddMinutes(-1)
+        };
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            Trip = trip,
+            TripSeat = tripSeat,
+            FullName = "Nguyen Van A",
+            PassengerType = "ADULT",
+            FromStopOrder = 1,
+            ToStopOrder = 2,
+            UnitPrice = 10000
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = orderCode.ToString(CultureInfo.InvariantCulture),
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+
+        context.AddRange(boat, seat, trip, tripSeat, booking, passenger, payment);
+        await context.SaveChangesAsync();
+        return new LatePaidScenario(trip, tripSeat, booking, payment);
     }
 
     private static CharterBookingDepositPaymentWebhook CreatePaidWebhook(long orderCode, long amount) =>

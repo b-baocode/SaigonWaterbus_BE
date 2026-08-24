@@ -1276,7 +1276,13 @@ public class CreateTripCommandTests
             .Handle(new GetTripSeatMapQuery(created.TripId, "B", "C"), CancellationToken.None);
         openNextStopSeatMap.IsBookingClosed.ShouldBeFalse();
 
-        var withinNextStopCutoff = departureTime.ToUniversalTime().AddMinutes(6);
+        // Đã qua hạn bán cho bến B: lấy giờ tàu rời B trừ đúng cutoff rồi cộng 1 phút, để test không
+        // bám vào con số cụ thể của BookingCutoffBeforeDeparture.
+        var boardingAtB = departureTime.ToUniversalTime()
+            .AddMinutes((double)TripStopScheduleSupport.DefaultTravelMinutes);
+        var withinNextStopCutoff = boardingAtB
+            .Subtract(Application.Common.BookingExpirationPolicy.BookingCutoffBeforeDeparture)
+            .AddMinutes(1);
         var cutoffSearchFromNextStop = await new SearchTripsQueryHandler(context, new FixedTimeProvider(withinNextStopCutoff))
             .Handle(new SearchTripsQuery(stationB.Id, stationC.Id, operatingDate), CancellationToken.None);
         cutoffSearchFromNextStop.Any(x => x.TripId == created.TripId).ShouldBeFalse();

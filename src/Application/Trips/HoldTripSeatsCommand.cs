@@ -214,7 +214,16 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
                 $"Seat '{bookedSeat.Seat.Code}' is already booked.")]);
         }
 
-        var ttl = BookingSeatOccupancySupport.SeatPreHoldDuration;
+        // Không giữ tạm quá giờ tàu rời bến khách lên: ghế bị khoá qua giờ tàu chạy thì quầy vé
+        // không bán lại được nữa. Còn ít hơn SeatPreHoldDuration thì giữ đúng phần còn lại.
+        var boardingTime = BookingCutoffSupport.ResolveBoardingTime(
+            trip,
+            segment.IsFullTrip ? null : segment.FromStopOrder,
+            segment.IsFullTrip ? null : segment.ToStopOrder);
+        var remainingUntilBoarding = boardingTime - now;
+        var ttl = remainingUntilBoarding < BookingSeatOccupancySupport.SeatPreHoldDuration
+            ? remainingUntilBoarding
+            : BookingSeatOccupancySupport.SeatPreHoldDuration;
         var failedTripSeatIds = (await _seatHoldService.TryHoldAsync(
                 trip.Id, tripSeatIds, userId, segment.FromStopOrder, segment.ToStopOrder, ttl, cancellationToken))
             .ToHashSet();

@@ -140,17 +140,22 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
-    public void BookingCutoffBeforeBoardingStationDepartureIsTenMinutes()
+    public void BookingCutoffBeforeBoardingStationDepartureIsThreeMinutes()
     {
-        BookingExpirationPolicy.BookingCutoffBeforeDeparture.ShouldBe(TimeSpan.FromMinutes(10));
+        BookingExpirationPolicy.BookingCutoffBeforeDeparture.ShouldBe(TimeSpan.FromMinutes(3));
     }
 
+    /// <summary>
+    /// Hold bị chặn trên bởi GIỜ TÀU RỜI BẾN LÊN, không phải mốc ngừng bán: khách đặt ngay trước mốc
+    /// ngừng bán vẫn được giữ ghế tới lúc tàu chạy để kịp thanh toán.
+    /// </summary>
     [Test]
-    public async Task BookingHoldExpiresAtIsCappedByBoardingCutoff()
+    public async Task BookingHoldExpiresAtIsCappedByBoardingDeparture()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
         var seeded = await SeedThreeStopTripAsync(context, "TR-HOLD-CUT", withDistances: true);
+        var boardingTime = BookingCutoffSupport.ResolveBoardingTime(seeded.Trip, 1, 2);
         var bookingDeadline = BookingCutoffSupport.ResolveBookingDeadline(seeded.Trip, 1, 2);
         var bookingNow = bookingDeadline.AddMinutes(-2);
         var handler = CreateHandler(context, userContext, bookingNow);
@@ -159,10 +164,11 @@ public class SegmentBookingAndDistanceFareTests
             new CreateBookingCommand("TR-HOLD-CUT", [Adult("A1", "BB", "HB")], null),
             CancellationToken.None);
 
-        result.HoldExpiresAt.ShouldBe(bookingDeadline);
+        result.HoldExpiresAt.ShouldBe(boardingTime);
 
         var booking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
-        booking.HoldExpiresAt.ShouldBe(bookingDeadline);
+        booking.HoldExpiresAt.ShouldBe(boardingTime);
+        booking.HoldExpiresAt!.Value.ShouldBeGreaterThan(bookingDeadline);
         booking.HoldExpiresAt!.Value.ShouldBeLessThan(
             bookingNow.Add(BookingSeatOccupancySupport.BookingHoldDuration));
     }

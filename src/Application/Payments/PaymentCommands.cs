@@ -484,13 +484,32 @@ public sealed class SyncPaymentCommandHandler :
         }
 
         var wasPaid = PaymentSupport.IsPaid(payment.PaymentStatus);
+        var now = _timeProvider.GetUtcNow();
+
+        // Cùng lý do với webhook: đây là đường thứ hai nhận tin "đã thanh toán" từ PayOS (FE gọi
+        // khi khách quay về từ trang thanh toán), nên cũng không được hồi sinh booking chết mù.
+        var decision = await LatePaidBookingSupport.EvaluateAsync(
+            _context, payment.Booking, now, cancellationToken);
+
         PaymentSupport.ApplyPaymentStatus(
             payment.Booking,
             payment,
             paymentStatus.Status,
             paymentStatus.PaymentLinkId,
             paymentStatus.CheckoutUrl,
-            _timeProvider.GetUtcNow());
+            now,
+            applyToBooking: decision.CanConfirm);
+
+        if (!decision.CanConfirm && PaymentSupport.IsPaid(payment.PaymentStatus))
+        {
+            var refundNotifications = LatePaidBookingSupport.MarkForRefund(
+                _context, payment.Booking, payment, decision.BlockReason!, now);
+            await _context.SaveChangesAsync(cancellationToken);
+            await NotificationSupport.PublishCreatedAsync(
+                _notificationRealtimeNotifier, refundNotifications, cancellationToken);
+            return;
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
         await PaymentSupport.SendPaymentNotificationIfPaidAsync(
             _context,
@@ -589,13 +608,34 @@ public sealed class HandlePaymentWebhookCommandHandler
         if (isPaid)
         {
             var wasPaid = PaymentSupport.IsPaid(payment.PaymentStatus);
+            var now = _timeProvider.GetUtcNow();
+
+            // Tiền về sau khi booking đã hết hạn giữ chỗ: chỉ hồi sinh nếu ghế còn trống và tàu
+            // chưa rời bến khách lên, không thì mở yêu cầu hoàn tiền thay vì phát vé chồng ghế.
+            var decision = await LatePaidBookingSupport.EvaluateAsync(
+                _context, payment.Booking, now, cancellationToken);
+
             PaymentSupport.ApplyPaymentStatus(
                 payment.Booking,
                 payment,
                 PaymentSupport.PaidStatus,
                 webhook.Data.PaymentLinkId,
                 payment.CheckoutUrl,
-                _timeProvider.GetUtcNow());
+                now,
+                applyToBooking: decision.CanConfirm);
+
+            if (!decision.CanConfirm)
+            {
+                var blockReason = decision.BlockReason ?? "Booking đã hết hạn giữ chỗ.";
+                var refundNotifications = LatePaidBookingSupport.MarkForRefund(
+                    _context, payment.Booking, payment, blockReason, now);
+                await _context.SaveChangesAsync(cancellationToken);
+                await NotificationSupport.PublishCreatedAsync(
+                    _notificationRealtimeNotifier, refundNotifications, cancellationToken);
+                return new PaymentWebhookResult(
+                    true, webhook.Data.OrderCode, payment.PaymentStatus, blockReason);
+            }
+
             await _context.SaveChangesAsync(cancellationToken);
             await PaymentSupport.SendPaymentNotificationIfPaidAsync(
                 _context,
@@ -2194,7 +2234,8 @@ internal static class PaymentSupport
         string providerStatus,
         string? paymentLinkId,
         string? checkoutUrl,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        bool applyToBooking = true)
     {
         payment.PaymentStatus = ResolvePaymentStatus(providerStatus);
         payment.ProviderTransactionId ??= paymentLinkId;
@@ -2206,6 +2247,14 @@ internal static class PaymentSupport
         }
 
         payment.PaidAt ??= now;
+
+        // applyToBooking=false: tiền có thật nên payment vẫn ghi Paid, nhưng booking đã chết và
+        // không hồi sinh được (ghế mất hoặc tàu đã chạy) — xem LatePaidBookingSupport.
+        if (!applyToBooking)
+        {
+            return;
+        }
+
         var paidAmount = GetPaidAmount(booking);
         if (paidAmount >= booking.TotalAmount)
         {

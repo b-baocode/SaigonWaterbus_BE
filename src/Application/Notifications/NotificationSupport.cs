@@ -48,6 +48,9 @@ public static class NotificationTypes
     public const string CharterCompleted = "charter_completed";
     public const string CharterBoatMaintenanceAffectsBooking = "charter_boat_maintenance_affects_booking";
     public const string BookingCompleted = "booking_completed";
+
+    /// <summary>Tiền về sau khi booking đã hết hạn giữ chỗ — đã thu tiền nhưng không phát vé được.</summary>
+    public const string BookingPaymentRefundPending = "booking_payment_refund_pending";
 }
 
 public static class NotificationRelatedEntityTypes

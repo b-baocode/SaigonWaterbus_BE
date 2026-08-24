@@ -57,6 +57,7 @@ public static class DependencyInjection
 
         builder.Services.AddScoped<IApplicationDbContext>(provider => provider.GetRequiredService<ApplicationDbContext>());
         builder.Services.AddSingleton<IDatabaseExceptionClassifier, NpgsqlDatabaseExceptionClassifier>();
+        builder.Services.AddScoped<IDatabaseMigrationInspector, DatabaseMigrationInspector>();
         builder.Services.AddScoped<IPasswordHasher, Pbkdf2PasswordHasher>();
         builder.Services.AddScoped<IIdentityNormalizer, IdentityNormalizer>();
         builder.Services.AddScoped<ISecretHasher, Pbkdf2SecretHasher>();

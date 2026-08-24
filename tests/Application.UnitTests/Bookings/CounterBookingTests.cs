@@ -299,13 +299,37 @@ public class CounterBookingTests
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
-        // Tàu đã rời bến 10 phút trước — khách lên ở bến giữa tuyến.
-        await SeedTripAsync(context, "TR-CTR-2", tripStatus, departureTime: Now.AddMinutes(-10));
+        // Tàu rời bến ĐẦU 10 phút trước; khách lên ở bến giữa (HB) mà tàu chưa tới.
+        await SeedThreeStopTripAsync(context, "TR-CTR-2", tripStatus, departureTime: Now.AddMinutes(-10));
         var handler = CreateHandler(context, staffContext);
 
-        var result = await handler.Handle(CashCommand("TR-CTR-2", "A1"), CancellationToken.None);
+        var result = await handler.Handle(
+            CashCommand("TR-CTR-2", "A1") with { Items = [Adult("A1", "HB", "LT")] },
+            CancellationToken.None);
 
         result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
+    }
+
+    /// <summary>
+    /// Quầy bỏ qua mốc ngừng bán nhưng vẫn phải trước giờ tàu rời CHÍNH bến khách lên — bán vé lên
+    /// tại bến tàu đã đi qua thì khách ra bến không còn tàu nào.
+    /// </summary>
+    [TestCase(TripStatus.InProgress)]
+    [TestCase(TripStatus.Delayed)]
+    public async Task CounterSaleRejectsBoardingStationAlreadyDeparted(TripStatus tripStatus)
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-CTR-PASSED", tripStatus, departureTime: Now.AddMinutes(-10));
+        var handler = CreateHandler(context, staffContext);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                CashCommand("TR-CTR-PASSED", "A1") with { Items = [Adult("A1", "BB", "LT")] },
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(m => m.Contains("đã rời bến khách lên"));
     }
 
     [Test]
@@ -509,8 +533,10 @@ public class CounterBookingTests
             "0909000111",
             "khach@example.test");
 
-    private static BookingItemRequest Adult(string seat) =>
-        new(seat, "ADULT", "BB", "LT", "Khach Vang Lai", null, null, null, null, null);
+    private static BookingItemRequest Adult(string seat) => Adult(seat, "BB", "LT");
+
+    private static BookingItemRequest Adult(string seat, string fromStationCode, string toStationCode) =>
+        new(seat, "ADULT", fromStationCode, toStationCode, "Khach Vang Lai", null, null, null, null, null);
 
     private static CreateCounterBookingCommandHandler CreateHandler(
         ApplicationDbContext context,
@@ -563,6 +589,59 @@ public class CounterBookingTests
             OperatingDate = DateOnly.FromDateTime(Now.UtcDateTime),
             DepartureTime = departureTime ?? Now.AddHours(2),
             ArrivalTime = (departureTime ?? Now.AddHours(2)).AddHours(1),
+            CapacitySnapshot = 1,
+            TripStatus = tripStatus
+        };
+        var tripSeat = new TripSeat { Trip = trip, TripId = trip.Id, Seat = seat, SeatId = seat.Id, Price = 10000m };
+
+        context.AddRange(route, boat, seat, trip, tripSeat);
+        await context.SaveChangesAsync();
+    }
+
+    /// <summary>Trip Regular BB → HB → LT (mặc định 15 phút/chặng), tàu 1 ghế STANDARD (A1).</summary>
+    private static async Task SeedThreeStopTripAsync(
+        ApplicationDbContext context,
+        string tripCode,
+        TripStatus tripStatus,
+        DateTimeOffset? departureTime = null)
+    {
+        var bb = await GetOrCreateStationAsync(context, "BB");
+        var hb = await GetOrCreateStationAsync(context, "HB");
+        var lt = await GetOrCreateStationAsync(context, "LT");
+
+        var route = new Route
+        {
+            RouteCode = $"R-{tripCode}",
+            RouteName = "BB - HB - LT",
+            RouteType = RouteTypes.Regular,
+            IsBookable = true
+        };
+        route.RouteStops.Add(new RouteStop { Route = route, Station = bb, StationId = bb.Id, StopOrder = 1 });
+        route.RouteStops.Add(new RouteStop
+        {
+            Route = route, Station = hb, StationId = hb.Id, StopOrder = 2, DistanceFromPreviousKm = 3m
+        });
+        route.RouteStops.Add(new RouteStop
+        {
+            Route = route, Station = lt, StationId = lt.Id, StopOrder = 3, DistanceFromPreviousKm = 3m
+        });
+
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, BoatStatus.Active);
+        boat.SeatCount = 1;
+        var seat = new Seat { Boat = boat, BoatId = boat.Id, Code = "A1", Deck = 1, Row = "A", Column = 1 };
+
+        var departure = departureTime ?? Now.AddHours(2);
+        var trip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            TripCode = tripCode,
+            TripType = TripTypes.Regular,
+            OperatingDate = DateOnly.FromDateTime(Now.UtcDateTime),
+            DepartureTime = departure,
+            ArrivalTime = departure.AddHours(1),
             CapacitySnapshot = 1,
             TripStatus = tripStatus
         };
