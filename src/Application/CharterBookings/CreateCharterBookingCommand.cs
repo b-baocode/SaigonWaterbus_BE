@@ -255,9 +255,6 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
         return null;
     }
 
-        return null;
-    }
-
     private static string? ValidateAdultRequiredWhenChildExists(CreateCharterBookingCommand x)
     {
         if (!HasPassengers(x) || x.Passengers is not { Count: > 0 }) return null;
