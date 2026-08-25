@@ -58,10 +58,16 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .GreaterThanOrEqualTo(DateOnly.FromDateTime(DateTime.UtcNow))
             .WithMessage("Ngày khởi hành không được ở quá khứ.");
 
-        // Validate: phải có Passengers HOẶC (AdultCount + ChildCount)
+        // Validate: BẮT BUỘC phải có CẢ danh sách hành khách (passengers) VÀ số lượng (adultCount/childCount)
         RuleFor(x => x)
-            .Must(x => HasPassengers(x))
-            .WithMessage("Phải cung cấp danh sách hành khách (passengers) hoặc số người lớn/trẻ em.");
+            .Must(x => HasPassengers(x) && x.AdultCount.HasValue && x.AdultCount.Value > 0)
+            .WithMessage("Phải cung cấp đầy đủ danh sách hành khách (passengers) và số lượng người lớn (adultCount).");
+
+        // Validate: số lượng passengers phải khớp với adultCount + childCount
+        RuleFor(x => x)
+            .Must(x => ValidatePassengerCountMatchesAgeGroups(x) == null)
+            .WithMessage(x => ValidatePassengerCountMatchesAgeGroups(x) ?? string.Empty)
+            .When(x => HasPassengers(x) && x.AdultCount.HasValue);
 
         // Validate hành khách
         RuleFor(x => x)
@@ -238,11 +244,16 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
                 actualChildCount++;
         }
 
+        // Validate adultCount phải khớp
         if (x.AdultCount.HasValue && actualAdultCount != x.AdultCount.Value)
             return $"Số người lớn không khớp: khai báo {x.AdultCount.Value} nhưng theo năm sinh có {actualAdultCount} người lớn.";
 
+        // Validate childCount nếu được truyền
         if (x.ChildCount.HasValue && actualChildCount != x.ChildCount.Value)
             return $"Số trẻ em không khớp: khai báo {x.ChildCount.Value} nhưng theo năm sinh có {actualChildCount} trẻ em.";
+
+        return null;
+    }
 
         return null;
     }
