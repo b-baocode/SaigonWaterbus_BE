@@ -536,6 +536,7 @@ public sealed class HandlePaymentWebhookCommandHandler
     private readonly IPaymentProcessingLock _paymentProcessingLock;
     private readonly TimeProvider _timeProvider;
     private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
+    private readonly ICharterBookingTicketPdfRenderer? _charterBookingTicketPdfRenderer;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
 
     public HandlePaymentWebhookCommandHandler(
@@ -545,7 +546,8 @@ public sealed class HandlePaymentWebhookCommandHandler
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        ICharterBookingTicketPdfRenderer? charterBookingTicketPdfRenderer = null)
     {
         _context = context;
         _paymentGateway = paymentGateway;
@@ -554,6 +556,7 @@ public sealed class HandlePaymentWebhookCommandHandler
         _timeProvider = timeProvider;
         _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _charterBookingTicketPdfRenderer = charterBookingTicketPdfRenderer;
     }
 
     public async Task<PaymentWebhookResult> Handle(
@@ -579,6 +582,16 @@ public sealed class HandlePaymentWebhookCommandHandler
         var payment = await _context.Set<Payment>()
             .Include(x => x.Booking)
                 .ThenInclude(x => x.Payments)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Passengers)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.FromStation)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.ToStation)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.CharterRoute)
+            .Include(x => x.Booking)
+                .ThenInclude(x => x.Tickets)
             .SingleOrDefaultAsync(x =>
                 x.PaymentCode == paymentCode
                 && x.Provider == PaymentSupport.PayOsProvider,
@@ -647,6 +660,22 @@ public sealed class HandlePaymentWebhookCommandHandler
                 cancellationToken,
                 _bookingTicketPdfRenderer,
                 _notificationRealtimeNotifier);
+
+            // Charter BH top-up cho hành khách mới → gửi bundle PDF (vé cũ + vé mới) cho khách.
+            if (Booking.IsCharterBookingType(payment.Booking.BookingType)
+                && string.Equals(payment.PaymentPurpose, "PassengerAddInsurance", StringComparison.OrdinalIgnoreCase)
+                && payment.Booking.RemainingAmount <= 0
+                && !string.IsNullOrWhiteSpace(payment.Booking.ContactEmail))
+            {
+                await CharterBookingETicketSupport.SendETicketsIfFullyPaidAsync(
+                    _context,
+                    _timeProvider,
+                    _paymentNotificationSender,
+                    payment.Booking,
+                    payment,
+                    cancellationToken,
+                    _charterBookingTicketPdfRenderer);
+            }
             return new PaymentWebhookResult(true, webhook.Data.OrderCode, payment.PaymentStatus, "Đã ghi nhận thanh toán.");
         }
 

@@ -414,6 +414,17 @@ public sealed class CharterBookings : IEndpointGroup
                 "API cap nhat tung ve rieng le va tra ve manifest moi sau khi xu ly.",
                 "Ve sai trang thai duoc tra ve trong skippedTickets, khong lam fail toan bo request."));
 
+        group.MapPost(ResendCharterBookingTickets, "{id:guid}/resend-tickets")
+            .RequireAuthorization()
+            .WithSummary("Gui lai email ve dien tu charter booking")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Phat hanh ve (neu chua co) va gui email ma ve den contactEmail + tung hanh khach co email.",
+                "Admin/Manager/Staff gui lai duoc cho bat ky charter booking nao.",
+                "Customer chi gui lai duoc cho charter booking cua minh.",
+                "Idempotent: neu da co ve thi khong tao duplicate, van gui lai email de khach co ma."));
+
         group.MapGet(GetAssignedCharterBookings, "assigned")
             .RequireAuthorization()
             .WithSummary("Danh sách charter booking được phân công")
@@ -531,10 +542,22 @@ public sealed class CharterBookings : IEndpointGroup
                 "Gui yeu cau them hanh khach moi vao danh sach hien co, khong thay the danh sach cu.",
                 "Chi gui yeu cau sau khi charter booking da thanh toan du: PaymentStatus = Paid.",
                 "Moi charter booking chi duoc gui yeu cau them hanh khach 1 lan.",
-                "Chi gui duoc truoc gio khoi hanh it nhat 24 gio.",
+                "Chi gui duoc truoc gio khoi hanh it nhat 48 gio.",
                 "Tong hanh khach Approved + Pending + moi gui khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
                 "Hanh khach moi duoc luu Pending; Admin/Manager duyet moi tao ve/QR.",
                 "Phi bao hiem bo sung chi duoc tinh khi Admin/Manager approve batch, khong tinh ngay luc customer gui yeu cau."));
+
+        group.MapPost(CreateCharterPassengerAddInsurancePayment, "{id:guid}/passenger-add-insurance-payment")
+            .RequireAuthorization()
+            .WithSummary("Tao link PayOS thanh toan BH bo sung cho hanh khach moi")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Bearer token",
+                null,
+                "Dung khi booking dang o trang thai AwaitingPayment (admin da duyet add passenger, con BH top-up chua thanh toan).",
+                "Backend tao 1 payment PayOS rieng voi paymentPurpose = PassengerAddInsurance cho phan BH bo sung (booking.RemainingAmount).",
+                "Khach mo checkoutUrl de thanh toan; sau khi PayOS webhook ban ve, booking chuyen ve Confirmed va email gui bundle PDF (ve cu + ve moi).",
+                "Thoi han thanh toan: 12h ke tu khi admin approve. Neu khong thanh toan trong 12h, he thong tu reject batch va revert booking ve Confirmed.",
+                "Idempotent: goi nhieu lan voi booking da co pending BH payment se tra lai checkoutUrl cu."));
 
         group.MapPost(ApproveCharterBookingPassengerAddRequest, "assigned/{id:guid}/passenger-add-requests/{requestBatchId:guid}/approve")
             .RequireAuthorization()
@@ -744,6 +767,12 @@ public sealed class CharterBookings : IEndpointGroup
             request.Mode,
             request.TicketIds), ct));
 
+    private static async Task<IResult> ResendCharterBookingTickets(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new ResendCharterBookingTicketsCommand(id), ct));
+
     private static async Task<IResult> UpdateAdminCharterBookingStatus(
         ISender sender,
         Guid id,
@@ -891,6 +920,12 @@ public sealed class CharterBookings : IEndpointGroup
         UpdateCharterBookingPassengersRequest request,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new AddCharterBookingPassengersCommand(id, request.Passengers), ct));
+
+    private static async Task<IResult> CreateCharterPassengerAddInsurancePayment(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CreateCharterPassengerAddInsurancePaymentCommand(id), ct));
 
     private static async Task<IResult> ApproveCharterBookingPassengerAddRequest(
         ISender sender,

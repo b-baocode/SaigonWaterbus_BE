@@ -6,6 +6,8 @@ namespace SaigonWaterbus.Application.CharterBookings;
 
 internal static class CharterBookingETicketSupport
 {
+    private const string PassengerAddInsurancePurpose = "PassengerAddInsurance";
+
     /// <summary>
     /// Gửi email mã vé charter khi khách đã trả đủ 100% và có danh sách hành khách đã duyệt.
     ///
@@ -19,7 +21,8 @@ internal static class CharterBookingETicketSupport
         IPaymentNotificationSender paymentNotificationSender,
         Booking booking,
         Payment payment,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ICharterBookingTicketPdfRenderer? ticketPdfRenderer = null)
     {
         if (booking.RemainingAmount > 0)
         {
@@ -42,14 +45,56 @@ internal static class CharterBookingETicketSupport
             await context.SaveChangesAsync(cancellationToken);
         }
 
-        var notification = BuildETicketNotification(booking, payment, ticketResult.Tickets);
+        var attachments = BuildBundleAttachmentsIfNeeded(booking, payment, ticketResult.Tickets, ticketPdfRenderer);
+
+        var notification = BuildETicketNotification(
+            booking,
+            payment,
+            ticketResult.Tickets,
+            attachments);
         await paymentNotificationSender.SendCharterETicketsAsync(notification, cancellationToken);
+    }
+
+    /// <summary>
+    /// Khi payment là BH top-up cho người mới (purpose = PassengerAddInsurance) → đính kèm 1 PDF bundle
+    /// gồm vé cũ + vé mới, đúng theo yêu cầu nghiệp vụ.
+    /// </summary>
+    private static IReadOnlyList<EmailAttachment>? BuildBundleAttachmentsIfNeeded(
+        Booking booking,
+        Payment payment,
+        IReadOnlyList<Ticket> tickets,
+        ICharterBookingTicketPdfRenderer? ticketPdfRenderer)
+    {
+        if (ticketPdfRenderer is null
+            || !string.Equals(payment.PaymentPurpose, PassengerAddInsurancePurpose, StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var export = CharterBookingTicketExportSupport.ToDto(booking, ticketIds: null);
+        var pdfBytes = ticketPdfRenderer.Render(export);
+
+        return
+        [
+            new EmailAttachment(
+                $"{SanitizeFileName(booking.BookingCode)}-all-tickets.pdf",
+                "application/pdf",
+                pdfBytes)
+        ];
+    }
+
+    private static string SanitizeFileName(string value)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var safeValue = new string(value.Select(x => invalidChars.Contains(x) ? '-' : x).ToArray());
+        return string.IsNullOrWhiteSpace(safeValue) ? "all-tickets" : safeValue;
     }
 
     public static ETicketNotification BuildETicketNotification(
         Booking booking,
         Payment payment,
-        IReadOnlyList<Ticket> tickets)
+        IReadOnlyList<Ticket> tickets,
+        IReadOnlyList<EmailAttachment>? attachments = null)
     {
         var passengers = booking.Passengers
             .Where(CharterBookingPassengerSupport.IsApproved)
@@ -92,7 +137,7 @@ internal static class CharterBookingETicketSupport
             FromStationName: booking.FromStation?.StationName,
             ToStationName: booking.ToStation?.StationName,
             Tickets: eTicketPassengers,
-            Attachments: null,
+            Attachments: attachments,
             Legs: null);
     }
 }

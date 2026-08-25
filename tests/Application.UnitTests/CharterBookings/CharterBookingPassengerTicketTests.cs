@@ -366,7 +366,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
                 CancellationToken.None));
 
         exception.Errors["passengers"].Single()
-            .ShouldContain("24 giờ trước giờ khởi hành");
+            .ShouldContain("48 giờ trước giờ khởi hành");
     }
 
     [Test]
@@ -461,7 +461,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
                 CancellationToken.None));
 
         exception.Errors["passengers"].Single()
-            .ShouldContain("24 giờ trước giờ khởi hành");
+            .ShouldContain("48 giờ trước giờ khởi hành");
     }
 
     [Test]

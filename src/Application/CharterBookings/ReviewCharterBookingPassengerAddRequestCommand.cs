@@ -1,5 +1,6 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
+using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
@@ -122,6 +123,19 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
             approvedPassengers.Count,
             now);
 
+        if (additionalInsuranceAmount > 0m)
+        {
+            // Có phần bảo hiểm bổ sung phát sinh → chuyển sang trạng thái chờ khách thanh toán BH trong 12h.
+            booking.BookingStatus = BookingStatus.AwaitingPayment;
+            booking.HoldExpiresAt = now + BookingExpirationPolicy.CharterPaymentCompletionTtl;
+        }
+        else
+        {
+            // Không phát sinh thêm BH → revert về Confirmed, sẵn sàng gửi vé luôn.
+            booking.BookingStatus = BookingStatus.Confirmed;
+            booking.HoldExpiresAt = null;
+        }
+
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(
@@ -131,8 +145,13 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
                 booking.PaymentStatus,
                 now),
             cancellationToken);
-        await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
-        await SendCharterETicketsIfNeededAsync(booking, ticketResult, cancellationToken);
+
+        // Chỉ gửi vé khi không còn khoản BH bổ sung cần thanh toán.
+        if (additionalInsuranceAmount <= 0m)
+        {
+            await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
+            await SendCharterETicketsIfNeededAsync(booking, ticketResult, cancellationToken);
+        }
 
         return ToResult(booking, ticketResult?.Tickets, additionalInsuranceAmount);
     }

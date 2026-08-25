@@ -116,15 +116,15 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .When(x => !HasPassengers(x) && x.ChildCount.HasValue)
             .WithMessage("Số trẻ em phải từ 0 đến 1000.");
         RuleFor(x => x)
-            .Must(x => x.AdultCount!.Value + x.ChildCount!.Value >= 1)
+            .Must(x => (x.AdultCount ?? 0) + (x.ChildCount ?? 0) >= 1)
             .When(x => !HasPassengers(x))
             .WithMessage("Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em).");
         RuleFor(x => x)
-            .Must(x => !(x.ChildCount!.Value > 0 && x.AdultCount!.Value == 0))
+            .Must(x => !((x.ChildCount ?? 0) > 0 && (x.AdultCount ?? 0) == 0))
             .When(x => !HasPassengers(x))
             .WithMessage("Khi có trẻ em đi cùng phải có ít nhất 1 người lớn.");
         RuleFor(x => x)
-            .Must(x => x.AdultCount!.Value + x.ChildCount!.Value <= 1000)
+            .Must(x => (x.AdultCount ?? 0) + (x.ChildCount ?? 0) <= 1000)
             .When(x => !HasPassengers(x))
             .WithMessage("Tổng số khách không được vượt quá 1000.");
 

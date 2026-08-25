@@ -221,6 +221,104 @@ public class CharterBookingExpirationProcessorTests
         booking.CharterRouteId.ShouldBe(route.Id);
     }
 
+    [Test]
+    public async Task CleanupRevertsExpiredAwaitingPaymentToConfirmed()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-ADD-EXPIRE",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.AwaitingPayment,
+            PaymentStatus = "Paid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 2,
+            AdultCount = 3,
+            ChildCount = 0,
+            PassengerCount = 3,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 3000,
+            HoldExpiresAt = now.AddSeconds(-1)
+        };
+        var pendingBhPayment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000099",
+            Provider = "PayOS",
+            Amount = 3000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "PassengerAddInsurance",
+            PaymentStatus = "Pending",
+            CheckoutUrl = "https://example.test/checkout"
+        };
+        var pendingPassenger = new BookingPassenger
+        {
+            Booking = booking,
+            FullName = "New Passenger",
+            BirthYear = 2000,
+            PassengerType = "Adult",
+            ApprovalStatus = "Pending",
+            RequestBatchId = Guid.NewGuid()
+        };
+        context.AddRange(booking, pendingBhPayment, pendingPassenger);
+        await context.SaveChangesAsync();
+
+        var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
+
+        var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
+
+        result.ExpiredAwaitingPayments.ShouldBe(1);
+        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
+        booking.HoldExpiresAt.ShouldBeNull();
+        pendingBhPayment.PaymentStatus.ShouldBe("Expired");
+        pendingPassenger.ApprovalStatus.ShouldBe("Rejected");
+        pendingPassenger.ReviewNote.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task CleanupDoesNotRevertAwaitingPaymentWhenBhAlreadyPaid()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-ADD-PAID",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.AwaitingPayment,
+            PaymentStatus = "Paid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 2,
+            AdultCount = 3,
+            ChildCount = 0,
+            PassengerCount = 3,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 0,
+            HoldExpiresAt = now.AddSeconds(-1)
+        };
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
+
+        var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
+
+        result.ExpiredAwaitingPayments.ShouldBe(0);
+        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
+        booking.HoldExpiresAt.ShouldBeNull();
+    }
+
     private sealed class TestBoatHoldService : IBoatHoldService
     {
         public List<ReleaseCall> Releases { get; } = [];

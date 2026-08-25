@@ -144,13 +144,12 @@ internal static class CharterBookingInsuranceSupport
         CancellationToken cancellationToken,
         bool? waterbusInsuranceEnabled = null)
     {
-        // Seat booking: auto-attach Waterbus default, không cho stack ThirdParty.
-        // Giữ nguyên hành vi cũ.
-        if (insuranceSelected == false)
-        {
-            return new List<BookingInsuranceSnapshot>();
-        }
-
+        // Seat booking: auto-attach Waterbus default (khớp effectivePrice ở seat map).
+        // - insuranceSelected == true + insurancePackageId: dùng gói đó (ThirdParty hoặc default).
+        // - insuranceSelected == true + không truyền packageId: dùng Waterbus default.
+        // - insuranceSelected == false + waterbusInsuranceEnabled == false: opt-out hoàn toàn.
+        //   (Hiện FE không gửi flag này → default = auto-attach, đồng bộ giá hiển thị.)
+        // - các case còn lại (kể cả insuranceSelected == null): auto-attach Waterbus default.
         if (insuranceSelected == true)
         {
             if (!insurancePackageId.HasValue)
@@ -178,8 +177,9 @@ internal static class CharterBookingInsuranceSupport
                 : new List<BookingInsuranceSnapshot> { selected };
         }
 
-        if (waterbusInsuranceEnabled == false)
+        if (insuranceSelected == false && waterbusInsuranceEnabled == false)
         {
+            // Chỉ opt-out khi client chủ động tắt cả 2 cờ.
             return new List<BookingInsuranceSnapshot>();
         }
 
@@ -264,6 +264,37 @@ internal static class CharterBookingInsuranceSupport
         booking.TotalAmount += additionalAmount;
         PaymentSupport.RestorePaymentSummaryFromPaidPayments(booking);
         return additionalAmount;
+    }
+
+    /// <summary>
+    /// Roll back phần bảo hiểm bổ sung đã apply cho batch hành khách mới bị reject (do hết hạn thanh toán BH hoặc admin từ chối).
+    /// Trả về số tiền BH đã được trừ ra khỏi Subtotal/TotalAmount để caller dùng cho audit.
+    /// </summary>
+    public static decimal ReversePassengerQuantityIncrease(
+        Booking booking,
+        int previousInsuredPassengerQuantity)
+    {
+        if ((booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).Count == 0)
+        {
+            return 0m;
+        }
+
+        var previousTotal = booking.GetTotalInsuranceAmount();
+        var now = DateTimeOffset.UtcNow;
+        foreach (var snapshot in (booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).ToList())
+        {
+            UpdateQuantity(snapshot, previousInsuredPassengerQuantity, now);
+        }
+        var reducedAmount = previousTotal - booking.GetTotalInsuranceAmount();
+        if (reducedAmount <= 0)
+        {
+            return 0m;
+        }
+
+        booking.SubtotalAmount = Math.Max(0m, booking.SubtotalAmount - reducedAmount);
+        booking.TotalAmount = Math.Max(0m, booking.TotalAmount - reducedAmount);
+        PaymentSupport.RestorePaymentSummaryFromPaidPayments(booking);
+        return reducedAmount;
     }
 
     public static IReadOnlyList<CharterBookingInsuranceDto> ToDtos(IEnumerable<BookingInsuranceSnapshot> snapshots) =>
