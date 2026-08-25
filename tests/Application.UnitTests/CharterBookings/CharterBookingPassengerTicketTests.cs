@@ -184,10 +184,11 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         result.TotalAmount.ShouldBe(1_030_000m);
         result.DepositAmount.ShouldBe(1_020_000m);
         result.RemainingAmount.ShouldBe(10_000m);
-        result.Insurance.ShouldBeNull();
-        result.OptionalInsurances.ShouldNotBeNull();
-        result.OptionalInsurances!.Count.ShouldBe(1);
-        result.OptionalInsurances![0].Quantity.ShouldBe(3);
+        // Charter flow mới: gói ThirdParty được lưu trong Insurance.
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance!.Quantity.ShouldBe(3);
+        result.Insurance.TotalAmount.ShouldBe(30_000m);
+        result.OptionalInsurances.ShouldBeNull();
 
         var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
         savedBooking.InsuranceSnapshots.ShouldNotBeEmpty();
@@ -327,10 +328,11 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         result.TotalAmount.ShouldBe(1_030_000m);
         result.DepositAmount.ShouldBe(1_020_000m);
         result.RemainingAmount.ShouldBe(10_000m);
-        result.Insurance.ShouldBeNull();
-        result.OptionalInsurances.ShouldNotBeNull();
-        result.OptionalInsurances!.Count.ShouldBe(1);
-        result.OptionalInsurances![0].Quantity.ShouldBe(3);
+        // Charter flow mới: gói ThirdParty được lưu trong Insurance, không phải OptionalInsurances.
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance!.Quantity.ShouldBe(3);
+        result.Insurance.TotalAmount.ShouldBe(30_000m);
+        result.OptionalInsurances.ShouldBeNull();
 
         var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
         savedBooking.PaymentStatus.ShouldBe("DepositPaid");

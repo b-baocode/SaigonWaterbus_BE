@@ -158,14 +158,18 @@ public sealed class CreateCharterBookingCommandValidator : AbstractValidator<Cre
             .Must(BeAllowedCharterEmailDomain)
             .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail))
             .WithMessage("Email chỉ chấp nhận đuôi @gmail.com hoặc @fpt.edu.vn.");
-        RuleFor(x => x.InsurancePackageId)
-            .NotEmpty()
-            .When(x => x.InsurancePackageId.HasValue)
-            .WithMessage("Gói bảo hiểm không hợp lệ.");
+        // Charter BẮT BUỘC phải chọn 1 gói bảo hiểm (FE lookup và gửi ID).
+// FE có thể chọn gói Waterbus default hoặc gói ThirdParty — chỉ lưu 1 snapshot duy nhất.
+        // OptionalInsurancePackageId giữ lại để tương thích FE cũ nhưng bị bỏ qua với charter.
         RuleFor(x => x.InsurancePackageId)
             .NotNull()
-            .When(x => x.InsuranceSelected == true)
-            .WithMessage("Vui lòng chọn gói bảo hiểm.");
+            .WithMessage("Vui lòng chọn gói bảo hiểm cho charter booking.")
+            .DependentRules(() =>
+            {
+                RuleFor(x => x.InsurancePackageId!.Value)
+                    .NotEqual(Guid.Empty)
+                    .WithMessage("Gói bảo hiểm không hợp lệ.");
+            });
         RuleFor(x => x.FromStationId)
             .NotNull()
             .WithMessage("Bến bắt đầu là bắt buộc.");
@@ -420,7 +424,7 @@ public sealed class CreateCharterBookingCommandHandler
         var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotsAsync(
             _context,
             request.InsuranceSelected,
-            request.OptionalInsurancePackageId ?? request.InsurancePackageId,
+            request.InsurancePackageId,
             currentSnapshots: null,
             insuredPassengerQuantity: passengerCount,
             now,
@@ -514,7 +518,7 @@ public sealed class CreateCharterBookingCommandHandler
             0,
             requestedBoatCount,
             CharterBookingBoatSelectionSupport.ToDtos(requestedBoatDecks),
-            CharterBookingInsuranceSupport.ToDto(booking.GetDefaultInsurance()),
+            CharterBookingInsuranceSupport.ToDto(booking.GetSelectedInsurance()),
             booking.HasOptionalInsurance()
                 ? CharterBookingInsuranceSupport.ToDtos(booking.GetOptionalInsurances())
                 : null);

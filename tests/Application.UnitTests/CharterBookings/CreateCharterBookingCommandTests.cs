@@ -33,7 +33,8 @@ public class CreateCharterBookingCommandTests
             Status = UserStatus.Active
         };
         var fromStation = WaterbusStation("ST-CREATE", "Bến đi");
-        context.AddRange(role, user, fromStation);
+        var insurancePackage = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
+        context.AddRange(role, user, fromStation, insurancePackage);
         await context.SaveChangesAsync();
 
         var handler = new CreateCharterBookingCommandHandler(
@@ -50,6 +51,7 @@ public class CreateCharterBookingCommandTests
                 AdultCount: 10,
                 ChildCount: 2,
                 FromStationId: fromStation.Id,
+                InsurancePackageId: insurancePackage.Id,
                 RequestedBoats:
                 [
                     new CreateCharterBookingBoatRequest(1),
@@ -152,7 +154,8 @@ public class CreateCharterBookingCommandTests
         };
         var pickupStation = WaterbusStation("ST-ROUND", "Bến Ba Son");
         var stopStation = WaterbusStation("ST-ROUND-STOP", "Điểm dừng");
-        context.AddRange(role, user, pickupStation, stopStation);
+        var insurancePackage = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
+        context.AddRange(role, user, pickupStation, stopStation, insurancePackage);
         await context.SaveChangesAsync();
 
         var handler = new CreateCharterBookingCommandHandler(
@@ -173,7 +176,8 @@ public class CreateCharterBookingCommandTests
                 ItineraryStops:
                 [
                     new CreateCharterBookingItineraryStopRequest(stopStation.Id, 1, 30)
-                ]),
+                ],
+                InsurancePackageId: insurancePackage.Id),
             CancellationToken.None);
 
         var booking = context.Set<Booking>()
@@ -259,6 +263,7 @@ public class CreateCharterBookingCommandTests
             new FixedBookingCodeGenerator("CB-INS-001"),
             new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
 
+        // Khách chọn ThirdParty — chỉ lưu đúng 1 snapshot, không stacking, không auto default.
         var result = await handler.Handle(
             new CreateCharterBookingCommand(
                 new DateOnly(2026, 7, 20),
@@ -267,7 +272,6 @@ public class CreateCharterBookingCommandTests
                 AdultCount: 10,
                 ChildCount: 2,
                 FromStationId: fromStation.Id,
-                InsuranceSelected: true,
                 InsurancePackageId: insurancePackage.Id),
             CancellationToken.None);
 
@@ -284,13 +288,12 @@ public class CreateCharterBookingCommandTests
             .Handle(new GetCharterBookingDetailQuery(result.BookingId), CancellationToken.None);
 
         detail.InsuranceSelected.ShouldBeTrue();
-        detail.InsurancePackageId.ShouldBeNull();
-        detail.Insurance.ShouldBeNull();
-        detail.OptionalInsurances.ShouldNotBeNull();
-        detail.OptionalInsurances.Count.ShouldBe(1);
-        detail.OptionalInsurances[0].InsurancePackageId.ShouldBe(insurancePackage.Id);
-        detail.OptionalInsurances[0].Quantity.ShouldBe(12);
-        detail.OptionalInsurances[0].TotalAmount.ShouldBe(120_000m);
+        detail.InsurancePackageId.ShouldBe(insurancePackage.Id);
+        detail.Insurance.ShouldNotBeNull();
+        detail.Insurance.Quantity.ShouldBe(12);
+        detail.Insurance.TotalAmount.ShouldBe(120_000m);
+        // Không có optional stacking → OptionalInsurances = null.
+        detail.OptionalInsurances.ShouldBeNull();
     }
 
     [Test]
@@ -315,6 +318,7 @@ public class CreateCharterBookingCommandTests
         var fromStation = WaterbusStation("ST-DUP-FROM", "Bến đi");
         var toStation = WaterbusStation("ST-DUP-TO", "Bến đến");
         var stopStation = WaterbusStation("ST-DUP-STOP", "Bến dừng");
+        var insurancePackage = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var existingBooking = DuplicateCharterBooking(
             user,
             fromStation,
@@ -331,7 +335,7 @@ public class CreateCharterBookingCommandTests
             StayDurationMinutes = 20,
             Note = "Old note"
         });
-        context.AddRange(role, user, fromStation, toStation, stopStation, existingBooking);
+        context.AddRange(role, user, fromStation, toStation, stopStation, existingBooking, insurancePackage);
         await context.SaveChangesAsync();
 
         var handler = new CreateCharterBookingCommandHandler(
@@ -346,6 +350,7 @@ public class CreateCharterBookingCommandTests
                     fromStation.Id,
                     toStation.Id,
                     stopStation.Id,
+                    insurancePackageId: insurancePackage.Id,
                     contactPhone: "0900 000 000",
                     contactEmail: "CUSTOMER@example.test"),
                 CancellationToken.None));
@@ -377,6 +382,7 @@ public class CreateCharterBookingCommandTests
         var fromStation = WaterbusStation("ST-CANCEL-FROM", "Bến đi");
         var toStation = WaterbusStation("ST-CANCEL-TO", "Bến đến");
         var stopStation = WaterbusStation("ST-CANCEL-STOP", "Bến dừng");
+        var insurancePackage = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var existingBooking = DuplicateCharterBooking(
             user,
             fromStation,
@@ -392,7 +398,7 @@ public class CreateCharterBookingCommandTests
             StopOrder = 1,
             StayDurationMinutes = 20
         });
-        context.AddRange(role, user, fromStation, toStation, stopStation, existingBooking);
+        context.AddRange(role, user, fromStation, toStation, stopStation, existingBooking, insurancePackage);
         await context.SaveChangesAsync();
 
         var handler = new CreateCharterBookingCommandHandler(
@@ -402,7 +408,7 @@ public class CreateCharterBookingCommandTests
             new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
 
         var result = await handler.Handle(
-            DuplicateCreateCommand(fromStation.Id, toStation.Id, stopStation.Id),
+            DuplicateCreateCommand(fromStation.Id, toStation.Id, stopStation.Id, insurancePackage.Id),
             CancellationToken.None);
 
         result.BookingCode.ShouldBe("CB-ALLOWED-NEW");
@@ -440,7 +446,8 @@ public class CreateCharterBookingCommandTests
             StationName = "Bến B",
             Status = StationStatus.Active
         };
-        context.AddRange(role, user, fromStation, toStation);
+        var insurancePackage = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
+        context.AddRange(role, user, fromStation, toStation, insurancePackage);
         await context.SaveChangesAsync();
 
         var createHandler = new CreateCharterBookingCommandHandler(
@@ -462,7 +469,8 @@ public class CreateCharterBookingCommandTests
                 RequestedBoats:
                 [
                     new CreateCharterBookingBoatRequest(1)
-                ]),
+                ],
+                InsurancePackageId: insurancePackage.Id),
             CancellationToken.None);
 
         result.BookingCode.ShouldBe("CB-20260705-ABCDE");
@@ -512,6 +520,7 @@ public class CreateCharterBookingCommandTests
             Status = UserStatus.Active
         };
         var fromStation = WaterbusStation("ST-EDIT", "Bến đi");
+        var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = new Booking
         {
             BookingType = Booking.CharterBookingType,
@@ -533,9 +542,13 @@ public class CreateCharterBookingCommandTests
             RequestedBoatCount = 1,
             RequestedBoatDecks = "1",
             BookingStatus = BookingStatus.PendingQuote,
-            PaymentStatus = "Unpaid"
+            PaymentStatus = "Unpaid",
+            InsuranceSnapshots =
+            {
+                InsuranceSnapshot(waterbusDefault, quantity: 2, isWaterbusDefault: true)
+            }
         };
-        context.AddRange(role, user, fromStation, booking);
+        context.AddRange(role, user, fromStation, waterbusDefault, booking);
         await context.SaveChangesAsync();
 
         var handler = new UpdateCharterBookingCommandHandler(
@@ -555,7 +568,8 @@ public class CreateCharterBookingCommandTests
                 RequestedBoats: [new CreateCharterBookingBoatRequest(2)],
                 ContactName: "Updated customer",
                 ContactPhone: "0988888888",
-                ContactEmail: "updated@example.test"),
+                ContactEmail: "updated@example.test",
+                InsurancePackageId: waterbusDefault.Id),
             CancellationToken.None);
 
         detail.ContactName.ShouldBe("Updated customer");
@@ -719,6 +733,7 @@ public class CreateCharterBookingCommandTests
             StationName = "Bến dừng",
             Status = StationStatus.Active
         };
+        var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = new Booking
         {
             BookingType = Booking.CharterBookingType,
@@ -744,7 +759,11 @@ public class CreateCharterBookingCommandTests
             BoatRequirements = "Old boat note",
             SpecialRequests = "Old special note",
             BookingStatus = BookingStatus.PendingQuote,
-            PaymentStatus = "Unpaid"
+            PaymentStatus = "Unpaid",
+            InsuranceSnapshots =
+            {
+                InsuranceSnapshot(waterbusDefault, quantity: 1, isWaterbusDefault: true)
+            }
         };
         booking.ItineraryStops.Add(new BookingItineraryStop
         {
@@ -756,7 +775,7 @@ public class CreateCharterBookingCommandTests
             StayDurationMinutes = 15,
             Note = "Old stop note"
         });
-        context.AddRange(role, user, fromStation, toStation, stopStation, booking);
+        context.AddRange(role, user, fromStation, toStation, stopStation, waterbusDefault, booking);
         await context.SaveChangesAsync();
 
         var handler = new UpdateCharterBookingCommandHandler(
@@ -767,7 +786,8 @@ public class CreateCharterBookingCommandTests
         var detail = await handler.Handle(
             new UpdateCharterBookingCommand(
                 booking.Id,
-                SpecialRequests: "New special note"),
+                SpecialRequests: "New special note",
+                InsurancePackageId: waterbusDefault.Id),
             CancellationToken.None);
 
         detail.DepartureDate.ShouldBe(new DateOnly(2026, 7, 10));
@@ -812,6 +832,7 @@ public class CreateCharterBookingCommandTests
         var pickupStation = WaterbusStation("ST-UP-ROUND", "Bến Ba Son");
         var originalDropoffStation = WaterbusStation("ST-UP-RETURN", "Bến trả cũ");
         var stopStation = WaterbusStation("ST-UP-STOP", "Điểm dừng");
+        var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = new Booking
         {
             BookingType = Booking.CharterBookingType,
@@ -832,7 +853,11 @@ public class CreateCharterBookingCommandTests
             ChildCount = 0,
             PassengerCount = 10,
             BookingStatus = BookingStatus.PendingQuote,
-            PaymentStatus = "Unpaid"
+            PaymentStatus = "Unpaid",
+            InsuranceSnapshots =
+            {
+                InsuranceSnapshot(waterbusDefault, quantity: 10, isWaterbusDefault: true)
+            }
         };
         booking.ItineraryStops.Add(new BookingItineraryStop
         {
@@ -843,7 +868,7 @@ public class CreateCharterBookingCommandTests
             StopOrder = 1,
             StayDurationMinutes = 30
         });
-        context.AddRange(role, user, pickupStation, originalDropoffStation, stopStation, booking);
+        context.AddRange(role, user, pickupStation, originalDropoffStation, stopStation, waterbusDefault, booking);
         await context.SaveChangesAsync();
 
         var handler = new UpdateCharterBookingCommandHandler(
@@ -855,7 +880,8 @@ public class CreateCharterBookingCommandTests
             new UpdateCharterBookingCommand(
                 booking.Id,
                 FromStationId: pickupStation.Id,
-                ToStationId: pickupStation.Id),
+                ToStationId: pickupStation.Id,
+                InsurancePackageId: waterbusDefault.Id),
             CancellationToken.None);
 
         detail.FromStationId.ShouldBe(pickupStation.Id);
@@ -953,7 +979,7 @@ public class CreateCharterBookingCommandTests
     }
 
     [Test]
-    public async Task UpdateCanRemoveSelectedInsurance()
+    public async Task UpdateAlwaysKeepsMandatoryDefaultInsurance()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var role = new Role
@@ -972,7 +998,7 @@ public class CreateCharterBookingCommandTests
             Status = UserStatus.Active
         };
         var fromStation = WaterbusStation("ST-INS-REMOVE", "Bến đi");
-        var insurancePackage = CharterInsurancePackage(unitPremiumAmount: 10_000m);
+        var waterbusDefault = CharterWaterbusDefaultPackage(unitPremiumAmount: 2_000m);
         var booking = new Booking
         {
             BookingType = Booking.CharterBookingType,
@@ -992,9 +1018,12 @@ public class CreateCharterBookingCommandTests
             PassengerCount = 12,
             BookingStatus = BookingStatus.PendingQuote,
             PaymentStatus = "Unpaid",
-            InsuranceSnapshots = { InsuranceSnapshot(insurancePackage, quantity: 12) }
+            InsuranceSnapshots =
+            {
+                InsuranceSnapshot(waterbusDefault, quantity: 12, isWaterbusDefault: true)
+            }
         };
-        context.AddRange(role, user, fromStation, insurancePackage, booking);
+        context.AddRange(role, user, fromStation, waterbusDefault, booking);
         await context.SaveChangesAsync();
 
         var handler = new UpdateCharterBookingCommandHandler(
@@ -1002,16 +1031,28 @@ public class CreateCharterBookingCommandTests
             new TestUserContext(user.Id),
             new FixedTimeProvider(new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)));
 
+        // Gửi InsuranceSelected = false — charter vẫn BẮT BUỘC giữ Waterbus default,
+        // không thể clear hết. Nhưng vẫn phải gửi InsurancePackageId vì validator mới bắt buộc.
         var detail = await handler.Handle(
             new UpdateCharterBookingCommand(
                 booking.Id,
-                InsuranceSelected: false),
+                InsuranceSelected: false,
+                InsurancePackageId: waterbusDefault.Id),
             CancellationToken.None);
 
-        detail.InsuranceSelected.ShouldBeFalse();
-        detail.InsurancePackageId.ShouldBeNull();
-        detail.Insurance.ShouldBeNull();
-        context.Set<Booking>().Single(x => x.Id == booking.Id).InsuranceSnapshots.ShouldBeEmpty();
+        detail.InsuranceSelected.ShouldBeTrue();
+        detail.InsurancePackageId.ShouldBe(waterbusDefault.Id);
+        detail.Insurance.ShouldNotBeNull();
+        detail.Insurance.Quantity.ShouldBe(12);
+        // OptionalInsurances có thể null vì update không gửi OptionalInsurancePackageId,
+        // chỉ gửi InsuranceSelected = false (đã bị bỏ qua với charter).
+        detail.OptionalInsurances.ShouldBeNull();
+        var savedSnapshots = context.Set<Booking>()
+            .Single(x => x.Id == booking.Id)
+            .InsuranceSnapshots;
+        savedSnapshots.Count.ShouldBe(1);
+        savedSnapshots[0].InsurancePackageId.ShouldBe(waterbusDefault.Id);
+        savedSnapshots[0].IsWaterbusDefault.ShouldBeTrue();
     }
 
     private sealed class FixedBookingCodeGenerator(string bookingCode) : IBookingCodeGenerator
@@ -1070,6 +1111,7 @@ public class CreateCharterBookingCommandTests
         Guid fromStationId,
         Guid toStationId,
         Guid stopStationId,
+        Guid? insurancePackageId = null,
         string? contactPhone = null,
         string? contactEmail = null) =>
         new(
@@ -1091,7 +1133,8 @@ public class CreateCharterBookingCommandTests
                 new CreateCharterBookingBoatRequest(2)
             ],
             ContactPhone: contactPhone,
-            ContactEmail: contactEmail);
+            ContactEmail: contactEmail,
+            InsurancePackageId: insurancePackageId);
 
     private static InsurancePackage CharterInsurancePackage(decimal unitPremiumAmount) =>
         new()
@@ -1108,9 +1151,27 @@ public class CreateCharterBookingCommandTests
             IsActive = true
         };
 
+    private static InsurancePackage CharterWaterbusDefaultPackage(decimal unitPremiumAmount) =>
+        new()
+        {
+            Code = "CHARTER_PASSENGER_DEFAULT",
+            Name = "Bao hiem mac dinh Saigon Waterbus",
+            BookingType = Booking.CharterBookingType,
+            IsRequired = true,
+            ProviderName = "Saigon Waterbus",
+            UnitPremiumAmount = unitPremiumAmount,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            Conditions = ["Tu dong ap dung cho hanh khach thue tau."],
+            IsActive = true,
+            ProviderSource = InsuranceProviderSource.Waterbus,
+            IsWaterbusDefault = true
+        };
+
     private static BookingInsuranceSnapshot InsuranceSnapshot(
         InsurancePackage package,
-        int quantity) =>
+        int quantity,
+        bool isWaterbusDefault = false) =>
         new()
         {
             InsurancePackageId = package.Id,
@@ -1127,6 +1188,10 @@ public class CreateCharterBookingCommandTests
             TermsUrl = package.TermsUrl,
             Quantity = quantity,
             TotalAmount = package.UnitPremiumAmount * quantity,
-            QuotedAt = new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero)
+            QuotedAt = new DateTimeOffset(2026, 7, 5, 0, 0, 0, TimeSpan.Zero),
+            IsWaterbusDefault = isWaterbusDefault,
+            ProviderSource = isWaterbusDefault
+                ? InsuranceProviderSource.Waterbus
+                : InsuranceProviderSource.ThirdParty
         };
 }

@@ -2415,6 +2415,36 @@ internal static class PaymentSupport
             return;
         }
 
+        // Charter: luôn gửi email xác nhận thanh toán (cả khi cọc và khi trả đủ).
+        await SendCharterPaymentSucceededAsync(
+            context,
+            paymentNotificationSender,
+            booking,
+            payment,
+            cancellationToken);
+
+        // Charter: nếu trả đủ 100% và đã có danh sách hành khách → gửi email mã vé ngay.
+        // Nếu chưa có hành khách thì skip — sẽ được gửi sau khi khách import danh sách.
+        var isFullyPaidAfterThisPayment = booking.RemainingAmount <= 0;
+        if (isFullyPaidAfterThisPayment && !string.IsNullOrWhiteSpace(booking.ContactEmail))
+        {
+            await CharterBookingETicketSupport.SendETicketsIfFullyPaidAsync(
+                context,
+                timeProvider,
+                paymentNotificationSender,
+                booking,
+                payment,
+                cancellationToken);
+        }
+    }
+
+    private static async Task SendCharterPaymentSucceededAsync(
+        IApplicationDbContext context,
+        IPaymentNotificationSender paymentNotificationSender,
+        Booking booking,
+        Payment payment,
+        CancellationToken cancellationToken)
+    {
         if (string.IsNullOrWhiteSpace(booking.ContactEmail))
         {
             return;

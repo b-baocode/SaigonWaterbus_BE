@@ -86,18 +86,18 @@ public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<Upd
             .EmailAddress()
             .When(x => !string.IsNullOrWhiteSpace(x.ContactEmail))
             .WithMessage("Email nhận thông tin charter booking không hợp lệ.");
-        RuleFor(x => x.InsurancePackageId)
-            .NotEmpty()
-            .When(x => x.InsurancePackageId.HasValue)
-            .WithMessage("Gói bảo hiểm không hợp lệ.");
+        // Charter BẮT BUỘC phải chọn 1 gói bảo hiểm (FE lookup và gửi ID).
+        // FE có thể chọn gói Waterbus default hoặc gói ThirdParty — chỉ lưu 1 snapshot duy nhất.
+        // OptionalInsurancePackageId giữ lại để tương thích FE cũ nhưng bị bỏ qua với charter.
         RuleFor(x => x.InsurancePackageId)
             .NotNull()
-            .When(x => x.InsuranceSelected == true)
-            .WithMessage("Vui lòng chọn gói bảo hiểm.");
-        RuleFor(x => x.OptionalInsurancePackageId)
-            .NotEqual(x => x.InsurancePackageId)
-            .When(x => x.OptionalInsurancePackageId.HasValue && x.InsurancePackageId.HasValue)
-            .WithMessage("Gói bảo hiểm tuỳ chọn không được trùng với gói bảo hiểm chính.");
+            .WithMessage("Vui lòng chọn gói bảo hiểm cho charter booking.")
+            .DependentRules(() =>
+            {
+                RuleFor(x => x.InsurancePackageId!.Value)
+                    .NotEqual(Guid.Empty)
+                    .WithMessage("Gói bảo hiểm không hợp lệ.");
+            });
         RuleFor(x => x.ToStationId).NotEqual(x => x.FromStationId)
             .When(x => x.FromStationId.HasValue
                 && x.ToStationId.HasValue
@@ -249,7 +249,7 @@ public sealed class UpdateCharterBookingCommandHandler
         var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveRequestedInsuranceSnapshotsAsync(
             _context,
             request.InsuranceSelected,
-            request.OptionalInsurancePackageId ?? request.InsurancePackageId,
+            request.InsurancePackageId,
             currentSnapshots: booking.InsuranceSnapshots,
             insuredPassengerQuantity: passengerCount,
             _timeProvider.GetUtcNow(),
