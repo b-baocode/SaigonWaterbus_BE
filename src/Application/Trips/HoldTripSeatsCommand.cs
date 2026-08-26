@@ -15,8 +15,6 @@ public sealed record HoldTripSeatsResult(
     DateTimeOffset HoldExpiresAt,
     int HoldTtlSeconds);
 
-// FromStationCode/ToStationCode: chặng khách sẽ đi — bắt buộc với trip Regular (ghế bán theo chặng),
-// bỏ trống với trip sightseeing (giữ ghế cả trip).
 public sealed record HoldTripSeatsCommand(
     Guid TripId,
     IReadOnlyList<string> SeatNumbers,
@@ -72,8 +70,6 @@ internal static class TripSeatResolutionSupport
             throw new ValidationException([new ValidationFailure("tripId",
                 "Trip is not available for booking.")]);
         }
-
-        // Hạn đóng bán kiểm sau khi resolve chặng (giờ rời bến khách lên), không kiểm ở đây.
 
         if (!trip.BoatId.HasValue)
         {
@@ -163,8 +159,6 @@ public sealed class HoldTripSeatsCommandHandler : IRequestHandler<HoldTripSeatsC
         var now = _timeProvider.GetUtcNow();
         var trip = await TripSeatResolutionSupport.GetBookableTripAsync(_context, request.TripId, now, cancellationToken);
 
-        // Trip Regular bán ghế theo chặng nên bắt buộc truyền trạm lên/xuống;
-        // sightseeing giữ nguyên giữ ghế cả trip.
         var usesSegments = Fares.DistanceFareSupport.UsesDistanceFare(trip);
         if (usesSegments && (string.IsNullOrWhiteSpace(request.FromStationCode)
                              || string.IsNullOrWhiteSpace(request.ToStationCode)))
