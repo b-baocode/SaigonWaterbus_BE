@@ -591,7 +591,10 @@ internal static class CharterBookingPaymentSupport
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
-                .ThenInclude(x => x.Station);
+                .ThenInclude(x => x.Station)
+            // Payment sync can be the first path to observe a completed PayOS payment.
+            // E-ticket issuance below requires the approved passenger manifest.
+            .Include(x => x.Passengers);
         if (includePayments)
         {
             query = query.Include(x => x.Payments);

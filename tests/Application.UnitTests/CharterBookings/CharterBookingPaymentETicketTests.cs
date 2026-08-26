@@ -131,6 +131,29 @@ public class CharterBookingPaymentETicketTests
         savedTickets.ShouldBe(1, "Không được tạo thêm Ticket row trùng.");
     }
 
+    [Test]
+    public async Task OwnedBookingForPaymentFlow_LoadsPassengerManifest()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = FullyPaidCharterBooking(userId, totalAmount: 30_000_000m);
+        booking.Passengers.Add(ApprovedPassenger(booking.Id, "Nguyen Van A"));
+        context.Add(booking);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var loadedBooking = await CharterBookingPaymentSupport.GetOwnedCharterBookingAsync(
+            context,
+            new TestUserContext(userId),
+            booking.Id,
+            includePayments: true,
+            CancellationToken.None);
+
+        loadedBooking.Passengers.Count.ShouldBe(1);
+        loadedBooking.Passengers.Single().ApprovalStatus.ShouldBe(
+            CharterBookingPassengerSupport.ApprovalStatusApproved);
+    }
+
     private static Booking FullyPaidCharterBooking(Guid userId, decimal totalAmount)
     {
         var booking = new Booking
