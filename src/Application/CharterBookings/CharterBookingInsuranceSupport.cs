@@ -142,29 +142,54 @@ internal static class CharterBookingInsuranceSupport
         int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken,
-        bool? waterbusInsuranceEnabled = null)
+        bool? waterbusInsuranceEnabled = null,
+        List<BookingInsuranceSnapshot>? currentSnapshots = null)
     {
-        // Seat booking: auto-attach Waterbus default (khớp effectivePrice ở seat map).
-        // - insuranceSelected == true + insurancePackageId: dùng gói đó (ThirdParty hoặc default).
-        // - insuranceSelected == true + không truyền packageId: dùng Waterbus default.
-        // - insuranceSelected == false + waterbusInsuranceEnabled == false: opt-out hoàn toàn.
-        //   (Hiện FE không gửi flag này → default = auto-attach, đồng bộ giá hiển thị.)
-        // - các case còn lại (kể cả insuranceSelected == null): auto-attach Waterbus default.
-        if (insuranceSelected == true)
-        {
-            if (!insurancePackageId.HasValue)
-            {
-                var defaultSnapshot = await CreateWaterbusDefaultSnapshotAsync(
-                    context,
-                    insuredPassengerQuantity,
-                    quotedAt,
-                    cancellationToken,
-                    Booking.SeatBookingType);
-                return defaultSnapshot is null
-                    ? new List<BookingInsuranceSnapshot>()
-                    : new List<BookingInsuranceSnapshot> { defaultSnapshot };
-            }
+        // STACKING model cho seat booking:
+        // 1. Luôn auto-attach Waterbus default ĐẦU TIÊN (đồng bộ EffectivePrice ở seat map).
+        // 2. Nếu insuranceSelected == true + packageId khác Waterbus default → thêm gói đó LÊN TRÊN.
+        // 3. Nếu insuranceSelected == false + waterbusInsuranceEnabled == false → KHÔNG attach gì.
+        //    (Chỉ opt-out khi client chủ động tắt cả 2 cờ.)
+        // 4. Nếu insuranceSelected == null: luôn auto-attach Waterbus default.
 
+        // Case 3: opt-out hoàn toàn.
+        if (insuranceSelected == false && waterbusInsuranceEnabled == false)
+        {
+            return new List<BookingInsuranceSnapshot>();
+        }
+
+        // Case 4: insuranceSelected == null → luôn auto-attach Waterbus default.
+        if (insuranceSelected != true)
+        {
+            var defaultSnapshot = await CreateWaterbusDefaultSnapshotAsync(
+                context,
+                insuredPassengerQuantity,
+                quotedAt,
+                cancellationToken,
+                Booking.SeatBookingType);
+            return defaultSnapshot is null
+                ? new List<BookingInsuranceSnapshot>()
+                : new List<BookingInsuranceSnapshot> { defaultSnapshot };
+        }
+
+        // Case 1 & 2: insuranceSelected == true.
+        var result = new List<BookingInsuranceSnapshot>();
+
+        // Auto-attach Waterbus default ĐẦU TIÊN (base insurance).
+        var defaultInsurance = await CreateWaterbusDefaultSnapshotAsync(
+            context,
+            insuredPassengerQuantity,
+            quotedAt,
+            cancellationToken,
+            Booking.SeatBookingType);
+        if (defaultInsurance is not null)
+        {
+            result.Add(defaultInsurance);
+        }
+
+        // Nếu client chọn 1 gói cụ thể (ThirdParty hoặc default khác):
+        if (insurancePackageId.HasValue)
+        {
             var selected = await CreateSelectedInsuranceSnapshotAsync(
                 context,
                 insurancePackageId,
@@ -172,26 +197,19 @@ internal static class CharterBookingInsuranceSupport
                 quotedAt,
                 cancellationToken,
                 Booking.SeatBookingType);
-            return selected is null
-                ? new List<BookingInsuranceSnapshot>()
-                : new List<BookingInsuranceSnapshot> { selected };
-        }
 
-        if (insuranceSelected == false && waterbusInsuranceEnabled == false)
-        {
-            // Chỉ opt-out khi client chủ động tắt cả 2 cờ.
-            return new List<BookingInsuranceSnapshot>();
+            if (selected is not null)
+            {
+                // Chỉ thêm nếu KHÁC Waterbus default (tránh trùng lặp).
+                if (!selected.IsWaterbusDefault)
+                {
+                    result.Add(selected);
+                }
+            }
         }
+        // else: không truyền packageId → chỉ có Waterbus default.
 
-        var seatDefault = await CreateWaterbusDefaultSnapshotAsync(
-            context,
-            insuredPassengerQuantity,
-            quotedAt,
-            cancellationToken,
-            Booking.SeatBookingType);
-        return seatDefault is null
-            ? new List<BookingInsuranceSnapshot>()
-            : new List<BookingInsuranceSnapshot> { seatDefault };
+        return result;
     }
 
     public static async Task<List<BookingInsuranceSnapshot>> ResolveQuoteInsuranceSnapshotsAsync(

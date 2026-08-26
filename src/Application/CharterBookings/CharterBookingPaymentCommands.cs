@@ -452,6 +452,9 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station)
             .Include(x => x.Payments)
+            .Include(x => x.Passengers)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
             .SingleAsync(x => x.Id == payment.BookingId, cancellationToken);
         payment = booking.Payments.Single(x => x.Id == payment.Id);
 

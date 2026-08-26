@@ -72,7 +72,8 @@ public sealed record BookingInsuranceDto(
     string? TermsUrl,
     DateTimeOffset QuotedAt,
     bool Selected = true,
-    bool IsWaterbusDefault = false);
+    bool IsWaterbusDefault = false,
+    string? ProviderSource = null);
 
 internal static class BookingInsuranceDtoMapper
 {
@@ -107,7 +108,8 @@ internal static class BookingInsuranceDtoMapper
             snapshot.Conditions,
             snapshot.TermsUrl,
             snapshot.QuotedAt,
-            IsWaterbusDefault: snapshot.IsWaterbusDefault);
+            IsWaterbusDefault: snapshot.IsWaterbusDefault,
+            ProviderSource: snapshot.ProviderSource.ToString());
 }
 
 public sealed record BookingPaymentDto(

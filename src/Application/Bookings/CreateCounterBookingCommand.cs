@@ -41,6 +41,9 @@ public sealed record CounterBookingResult(
     DateTimeOffset? PaidAt,
     Guid? ReturnTripId = null,
     string? ReturnTripCode = null,
+    // Insurance breakdown: danh sách đầy đủ (stacking model).
+    IReadOnlyList<BookingInsuranceDto>? Insurances = null,
+    // Backward compat.
     BookingInsuranceDto? Insurance = null,
     BookingManifestDto? Manifest = null);
 
@@ -186,7 +189,9 @@ public sealed class CreateCounterBookingCommandHandler
             request.InsurancePackageId,
             legs.Sum(x => x.ItemPrices.Count),
             now,
-            cancellationToken);
+            cancellationToken,
+            waterbusInsuranceEnabled: null,
+            currentSnapshots: null);
         var subtotal = PriceRoundingSupport.RoundFare(
             ticketSubtotal + insuranceSnapshots.Sum(s => s.TotalAmount));
         EnsureCounterPointsRequestIsValid(request, loyaltyCustomer, subtotal);
@@ -406,6 +411,7 @@ public sealed class CreateCounterBookingCommandHandler
             payment.CheckoutUrl, payment.QrCode, payment.PaidAt,
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshots),
             BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<Domain.Entities.BookingInsuranceSnapshot>()).FirstOrDefault()),
             manifest);
 
@@ -423,5 +429,6 @@ public sealed class CreateCounterBookingCommandHandler
             payment.CheckoutUrl, payment.QrCode, payment.PaidAt,
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshots),
             BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<Domain.Entities.BookingInsuranceSnapshot>()).FirstOrDefault()));
 }

@@ -47,6 +47,9 @@ public sealed record CreateBookingResult(
     DateTimeOffset? HoldExpiresAt,
     Guid? ReturnTripId = null,
     string? ReturnTripCode = null,
+    // Insurance breakdown: danh sách đầy đủ (stacking model).
+    IReadOnlyList<BookingInsuranceDto>? Insurances = null,
+    // Backward compat: giữ lại insurance đầu tiên (Waterbus default) để FE cũ không break.
     BookingInsuranceDto? Insurance = null);
 
 
@@ -316,7 +319,8 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             legs.Sum(x => x.ItemPrices.Count),
             now,
             cancellationToken,
-            request.WaterbusInsuranceEnabled);
+            request.WaterbusInsuranceEnabled,
+            currentSnapshots: null);
         var subtotal = PriceRoundingSupport.RoundFare(
             ticketSubtotal + insuranceSnapshots.Sum(s => s.TotalAmount));
 
@@ -405,6 +409,7 @@ public sealed class CreateBookingCommandHandler : IRequestHandler<CreateBookingC
             booking.HoldExpiresAt,
             booking.ReturnTripId,
             returnLeg?.Trip.TripCode,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshots),
             BookingInsuranceDtoMapper.ToDto((booking.InsuranceSnapshots ?? new List<BookingInsuranceSnapshot>()).FirstOrDefault()));
     }
 

@@ -21,9 +21,15 @@ public sealed record TripSeatMapSeatDto(
     string SeatTypeCode,
     string? SeatTypeName,
     decimal BasePrice,
-    // EffectivePrice = BasePrice + phần bảo hiểm Waterbus mặc định (1 người).
-    // FE show giá này — không cần tách tiền vé / tiền bảo hiểm.
+    // EffectivePrice = BasePrice + waterbusInsurancePremium + extraInsurancePremium.
+    // FE show giá này làm "giá mỗi ghế" trên UI.
     decimal EffectivePrice,
+    // Phần bảo hiểm Waterbus mặc định đã tính trong EffectivePrice.
+    // Hiển thị khi user hover/click "xem chi tiết giá".
+    decimal WaterbusInsurancePremium,
+    // Phần bảo hiểm bổ sung (ThirdParty) — 0 khi chưa chọn gói nâng cao.
+    // EffectivePrice chưa bao gồm phần này; FE cộng thêm khi user chọn gói.
+    decimal ExtraInsurancePremium,
     string Status);
 
 public sealed record TripSeatMapDto(
@@ -44,7 +50,14 @@ public sealed record TripSeatMapDto(
     // true = đã quá hạn bán vé cho chặng đang xem (tính theo giờ tàu rời bến lên) hoặc chuyến
     // không còn nhận đặt. FE nên khoá thao tác chọn ghế — gọi giữ ghế lúc này sẽ bị từ chối.
     bool IsBookingClosed = false,
-    EffectiveFareAdjustmentDto? FareAdjustment = null);
+    EffectiveFareAdjustmentDto? FareAdjustment = null,
+    // Đơn giá bảo hiểm Waterbus default cho 1 người (dùng chung cho mọi ghế).
+    decimal WaterbusInsurancePremiumPerSeat = 0m,
+    // Đơn giá gói ThirdParty nâng cao đang active (nếu có). FE hiển thị để user chọn thêm.
+    decimal? ExtraInsurancePremiumPerSeat = null,
+    string? ExtraInsurancePackageName = null,
+    string? ExtraInsurancePackageCode = null,
+    decimal? ExtraInsuranceCoverageAmount = null);
 
 // FromStationCode/ToStationCode: chặng khách định đi — trạng thái ghế và giá (trip Regular)
 // tính theo chặng đó; bỏ trống = xem cả tuyến (ghế bận nếu có bất kỳ vé nào trên trip).
@@ -172,10 +185,10 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                 fareAdjustment);
         }
 
-        // Gói bảo hiểm Waterbus mặc định (auto-attach 1 người cho mỗi ghế).
-        // Resolve 1 lần per request — cached trong handler để khỏi query N lần.
-        var defaultInsurancePerSeat = await ResolveDefaultWaterbusInsurancePerSeatAsync(
-            _context, cancellationToken);
+        // Resolve insurance info 1 lần per request.
+        var (defaultInsurancePerSeat, extraInsurancePerSeat, extraInsurancePackageName,
+            extraInsurancePackageCode, extraInsuranceCoverageAmount) =
+            await ResolveInsuranceInfoAsync(_context, cancellationToken);
 
         var seatDtos = seats
             .OrderBy(x => x.Deck)
@@ -193,6 +206,8 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
                     seat.SeatType?.Name,
                     basePrice,
                     PriceRoundingSupport.RoundFare(basePrice + defaultInsurancePerSeat),
+                    defaultInsurancePerSeat,
+                    extraInsurancePerSeat,
                     ResolveStatus(tripSeatsBySeatId, seat, occupiedTripSeatIds, heldSeats, currentUserId, segment));
             })
             .ToList();
@@ -213,7 +228,12 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
             segment.ToStop?.Station.StationCode,
             distanceKm,
             isBookingClosed,
-            fareAdjustment);
+            fareAdjustment,
+            defaultInsurancePerSeat,
+            extraInsurancePerSeat > 0 ? extraInsurancePerSeat : null,
+            extraInsurancePackageName,
+            extraInsurancePackageCode,
+            extraInsuranceCoverageAmount);
     }
 
     private static decimal ResolveBasePrice(
@@ -278,24 +298,40 @@ public sealed class GetTripSeatMapQueryHandler : IRequestHandler<GetTripSeatMapQ
     }
 
     /// <summary>
-    /// Lấy đơn giá bảo hiểm Waterbus mặc định cho 1 người. Trả 0 nếu chưa cấu hình gói.
-    /// Dùng để cộng vào <c>EffectivePrice</c> ở seat listing — FE không cần tách.
+    /// Resolve thông tin bảo hiểm cho seat map:
+    /// - Waterbus default: đơn giá cho 1 người (luôn auto-attach).
+    /// - Extra (ThirdParty): đơn giá + thông tin gói nâng cao (nếu có).
     /// </summary>
-    private static async Task<decimal> ResolveDefaultWaterbusInsurancePerSeatAsync(
+    private static async Task<(decimal DefaultPerSeat,
+        decimal ExtraPerSeat,
+        string? ExtraPackageName,
+        string? ExtraPackageCode,
+        decimal? ExtraCoverageAmount)> ResolveInsuranceInfoAsync(
         IApplicationDbContext context,
         CancellationToken cancellationToken)
     {
-        var pkg = await context.Set<InsurancePackage>()
+        // Lấy tất cả gói đang active cho seat booking, order by Waterbus default trước.
+        var packages = await context.Set<InsurancePackage>()
             .AsNoTracking()
             .Where(x => x.IsActive
                 && (x.BookingType == InsurancePackageSupport.PassengerInsuranceBookingType
-                    || x.BookingType == Booking.SeatBookingType)
-                && x.ProviderSource == InsuranceProviderSource.Waterbus)
+                    || x.BookingType == Booking.SeatBookingType))
             .OrderByDescending(x => x.IsWaterbusDefault)
             .ThenBy(x => x.Created)
-            .Select(x => (decimal?)x.UnitPremiumAmount)
-            .FirstOrDefaultAsync(cancellationToken);
+            .ToListAsync(cancellationToken);
 
-        return pkg ?? 0m;
+        var defaultPkg = packages.FirstOrDefault(x =>
+            x.ProviderSource == InsuranceProviderSource.Waterbus);
+
+        // Extra insurance: gói ThirdParty đầu tiên (nếu có).
+        var extraPkg = packages.FirstOrDefault(x =>
+            x.ProviderSource != InsuranceProviderSource.Waterbus);
+
+        return (
+            defaultPkg?.UnitPremiumAmount ?? 0m,
+            extraPkg?.UnitPremiumAmount ?? 0m,
+            extraPkg?.Name,
+            extraPkg?.Code,
+            extraPkg?.CoverageAmount);
     }
 }
