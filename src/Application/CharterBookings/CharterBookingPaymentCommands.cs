@@ -503,6 +503,17 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
                 cancellationToken,
                 notificationRealtimeNotifier: _notificationRealtimeNotifier);
 
+            if (booking.PaymentStatus.ToBookingPaymentStatus().IsPaid())
+            {
+                await CharterBookingETicketSupport.SendETicketsIfFullyPaidAsync(
+                    _context,
+                    _timeProvider,
+                    _paymentNotificationSender,
+                    booking,
+                    payment,
+                    cancellationToken);
+            }
+
             return new CharterBookingPaymentWebhookResult(
                 true,
                 webhook.Data.OrderCode,
