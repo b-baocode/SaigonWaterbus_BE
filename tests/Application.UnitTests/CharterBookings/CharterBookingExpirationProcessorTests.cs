@@ -222,7 +222,7 @@ public class CharterBookingExpirationProcessorTests
     }
 
     [Test]
-    public async Task CleanupRevertsExpiredAwaitingPaymentToConfirmed()
+    public async Task CleanupRevertsExpiredPassengerAddPaymentToConfirmed()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
@@ -232,7 +232,7 @@ public class CharterBookingExpirationProcessorTests
             BookingCode = "CB-ADD-EXPIRE",
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",
-            BookingStatus = BookingStatus.AwaitingPayment,
+            BookingStatus = BookingStatus.PendingPayment,
             PaymentStatus = "Paid",
             DepartureDate = new DateOnly(2030, 1, 1),
             StartTime = new TimeOnly(8, 0),
@@ -258,32 +258,84 @@ public class CharterBookingExpirationProcessorTests
             PaymentStatus = "Pending",
             CheckoutUrl = "https://example.test/checkout"
         };
-        var pendingPassenger = new BookingPassenger
+        var approvedAddedPassenger = new BookingPassenger
         {
             Booking = booking,
             FullName = "New Passenger",
             BirthYear = 2000,
             PassengerType = "Adult",
-            ApprovalStatus = "Pending",
+            ApprovalStatus = "Approved",
             RequestBatchId = Guid.NewGuid()
         };
-        context.AddRange(booking, pendingBhPayment, pendingPassenger);
+        context.AddRange(booking, pendingBhPayment, approvedAddedPassenger);
         await context.SaveChangesAsync();
 
         var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
 
         var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
 
-        result.ExpiredAwaitingPayments.ShouldBe(1);
+        result.ExpiredPassengerAddPayments.ShouldBe(1);
         booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
         booking.HoldExpiresAt.ShouldBeNull();
         pendingBhPayment.PaymentStatus.ShouldBe("Expired");
-        pendingPassenger.ApprovalStatus.ShouldBe("Rejected");
-        pendingPassenger.ReviewNote.ShouldNotBeNull();
+        approvedAddedPassenger.ApprovalStatus.ShouldBe("Rejected");
+        approvedAddedPassenger.ReviewNote.ShouldNotBeNull();
     }
 
     [Test]
-    public async Task CleanupDoesNotRevertAwaitingPaymentWhenBhAlreadyPaid()
+    public async Task CleanupExpiredPassengerAddCheckoutRestoresApprovedWhenReviewDeadlineStillOpen()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-ADD-LINK-EXPIRE",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Paid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 2,
+            AdultCount = 3,
+            ChildCount = 0,
+            PassengerCount = 3,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 3000,
+            HoldExpiresAt = now.AddHours(1)
+        };
+        var expiredBhPayment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000100",
+            Provider = "PayOS",
+            Amount = 3000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "PassengerAddInsurance",
+            PaymentStatus = "Pending",
+            CheckoutUrl = "https://example.test/checkout",
+            ExpiresAt = now.AddSeconds(-1)
+        };
+        context.AddRange(booking, expiredBhPayment);
+        await context.SaveChangesAsync();
+
+        var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
+
+        var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
+
+        result.ExpiredPayments.ShouldBe(1);
+        result.ExpiredPassengerAddPayments.ShouldBe(0);
+        booking.BookingStatus.ShouldBe(BookingStatus.Approved);
+        booking.HoldExpiresAt.ShouldBe(now.AddHours(1));
+        expiredBhPayment.PaymentStatus.ShouldBe("Expired");
+    }
+
+    [Test]
+    public async Task CleanupDoesNotRevertPassengerAddPaymentWhenBhAlreadyPaid()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
@@ -293,7 +345,7 @@ public class CharterBookingExpirationProcessorTests
             BookingCode = "CB-ADD-PAID",
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",
-            BookingStatus = BookingStatus.AwaitingPayment,
+            BookingStatus = BookingStatus.PendingPayment,
             PaymentStatus = "Paid",
             DepartureDate = new DateOnly(2030, 1, 1),
             StartTime = new TimeOnly(8, 0),
@@ -307,14 +359,26 @@ public class CharterBookingExpirationProcessorTests
             RemainingAmount = 0,
             HoldExpiresAt = now.AddSeconds(-1)
         };
-        context.Add(booking);
+        var paidBhPayment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "1000101",
+            Provider = "PayOS",
+            Amount = 3000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "PassengerAddInsurance",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddMinutes(-1)
+        };
+        context.AddRange(booking, paidBhPayment);
         await context.SaveChangesAsync();
 
         var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
 
         var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
 
-        result.ExpiredAwaitingPayments.ShouldBe(0);
+        result.ExpiredPassengerAddPayments.ShouldBe(1);
         booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
         booking.HoldExpiresAt.ShouldBeNull();
     }

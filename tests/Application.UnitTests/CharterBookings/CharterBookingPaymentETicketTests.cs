@@ -32,6 +32,7 @@ public class CharterBookingPaymentETicketTests
 
         var sender = new RecordingCharterETicketSender();
         var payment = booking.Payments.First();
+        var pdfRenderer = new TestCharterTicketPdfRenderer();
 
         await CharterBookingETicketSupport.SendETicketsIfFullyPaidAsync(
             context,
@@ -39,12 +40,17 @@ public class CharterBookingPaymentETicketTests
             sender,
             booking,
             payment,
-            CancellationToken.None);
+            CancellationToken.None,
+            pdfRenderer);
 
         sender.ETickets.Count.ShouldBe(1);
         sender.ETickets[0].Tickets.Count.ShouldBe(2,
             "Mỗi hành khách đã duyệt phải có 1 mục trong email.");
         sender.ETickets[0].BookingQrToken.ShouldNotBeNullOrWhiteSpace();
+        var attachments = sender.ETickets[0].Attachments;
+        attachments.ShouldNotBeNull();
+        attachments!.Single().Name.ShouldBe($"{booking.BookingCode}-tickets.pdf");
+        attachments.Single().Content.ShouldBe([1, 2, 3]);
 
         var savedTickets = await context.Set<Ticket>().CountAsync();
         savedTickets.ShouldBe(2);
@@ -305,5 +311,10 @@ public class CharterBookingPaymentETicketTests
     private sealed class FixedTimeProvider(DateTimeOffset utcNow) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => utcNow;
+    }
+
+    private sealed class TestCharterTicketPdfRenderer : ICharterBookingTicketPdfRenderer
+    {
+        public byte[] Render(CharterBookingTicketExportDto export) => [1, 2, 3];
     }
 }

@@ -58,6 +58,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
     private readonly TimeProvider _timeProvider;
     private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly ICharterBookingTicketPdfRenderer? _charterBookingTicketPdfRenderer;
 
     public CreatePaymentCommandHandler(
         IApplicationDbContext context,
@@ -68,7 +69,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         IPaymentProcessingLock? paymentProcessingLock = null,
         ITripSeatNotifier? tripSeatNotifier = null,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        ICharterBookingTicketPdfRenderer? charterBookingTicketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
@@ -79,6 +81,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         _timeProvider = timeProvider;
         _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _charterBookingTicketPdfRenderer = charterBookingTicketPdfRenderer;
     }
 
     public async Task<PaymentDto> Handle(CreatePaymentCommand request, CancellationToken cancellationToken)
@@ -245,7 +248,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             wasPaid,
             cancellationToken,
             _bookingTicketPdfRenderer,
-            _notificationRealtimeNotifier);
+            _notificationRealtimeNotifier,
+            _charterBookingTicketPdfRenderer);
 
         return PaymentSupport.ToDto(booking, payment);
     }
@@ -299,7 +303,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             wasPaid: false,
             cancellationToken,
             _bookingTicketPdfRenderer,
-            _notificationRealtimeNotifier);
+            _notificationRealtimeNotifier,
+            _charterBookingTicketPdfRenderer);
 
         return PaymentSupport.ToDto(booking, payment);
     }
@@ -353,7 +358,8 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
                 wasPaid,
                 cancellationToken,
                 _bookingTicketPdfRenderer,
-                _notificationRealtimeNotifier);
+                _notificationRealtimeNotifier,
+                _charterBookingTicketPdfRenderer);
             return true;
         }
         catch (PaymentGatewayException)
@@ -395,6 +401,7 @@ public sealed class SyncPaymentCommandHandler :
     private readonly TimeProvider _timeProvider;
     private readonly IBookingTicketPdfRenderer? _bookingTicketPdfRenderer;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly ICharterBookingTicketPdfRenderer? _charterBookingTicketPdfRenderer;
 
     public SyncPaymentCommandHandler(
         IApplicationDbContext context,
@@ -404,7 +411,8 @@ public sealed class SyncPaymentCommandHandler :
         TimeProvider timeProvider,
         IPaymentProcessingLock? paymentProcessingLock = null,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        ICharterBookingTicketPdfRenderer? charterBookingTicketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
@@ -414,6 +422,7 @@ public sealed class SyncPaymentCommandHandler :
         _timeProvider = timeProvider;
         _bookingTicketPdfRenderer = bookingTicketPdfRenderer;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _charterBookingTicketPdfRenderer = charterBookingTicketPdfRenderer;
     }
 
     public async Task<PaymentDto> Handle(SyncPaymentCommand request, CancellationToken cancellationToken)
@@ -520,7 +529,8 @@ public sealed class SyncPaymentCommandHandler :
             wasPaid,
             cancellationToken,
             _bookingTicketPdfRenderer,
-            _notificationRealtimeNotifier);
+            _notificationRealtimeNotifier,
+            _charterBookingTicketPdfRenderer);
     }
 }
 
@@ -657,9 +667,10 @@ public sealed class HandlePaymentWebhookCommandHandler
                 payment.Booking,
                 payment,
                 wasPaid,
-                cancellationToken,
-                _bookingTicketPdfRenderer,
-                _notificationRealtimeNotifier);
+            cancellationToken,
+            _bookingTicketPdfRenderer,
+            _notificationRealtimeNotifier,
+            _charterBookingTicketPdfRenderer);
 
             // Charter BH top-up cho hành khách mới → gửi bundle PDF (vé cũ + vé mới) cho khách.
             if (Booking.IsCharterBookingType(payment.Booking.BookingType)
@@ -2391,7 +2402,8 @@ internal static class PaymentSupport
         bool wasPaid,
         CancellationToken cancellationToken,
         IBookingTicketPdfRenderer? bookingTicketPdfRenderer = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        ICharterBookingTicketPdfRenderer? charterBookingTicketPdfRenderer = null)
     {
         var isPaid = IsPaid(payment.PaymentStatus);
         IReadOnlyList<Ticket> issuedTickets = [];
@@ -2474,7 +2486,8 @@ internal static class PaymentSupport
                 paymentNotificationSender,
                 booking,
                 payment,
-                cancellationToken);
+                cancellationToken,
+                charterBookingTicketPdfRenderer);
         }
     }
 

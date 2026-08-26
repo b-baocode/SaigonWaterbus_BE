@@ -125,8 +125,8 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
 
         if (additionalInsuranceAmount > 0m)
         {
-            // Có phần bảo hiểm bổ sung phát sinh → chuyển sang trạng thái chờ khách thanh toán BH trong 12h.
-            booking.BookingStatus = BookingStatus.AwaitingPayment;
+            // Admin đã duyệt; khách chưa bấm tạo link thanh toán bảo hiểm bổ sung.
+            booking.BookingStatus = BookingStatus.Approved;
             booking.HoldExpiresAt = now + BookingExpirationPolicy.CharterPaymentCompletionTtl;
         }
         else
@@ -378,6 +378,8 @@ public sealed class RejectCharterBookingPassengerAddRequestCommandHandler
             passenger.ReviewedByUserId = actor.Id;
             passenger.ReviewNote = request.Note.Trim();
         }
+
+        booking.BookingStatus = BookingStatus.Confirmed;
 
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(

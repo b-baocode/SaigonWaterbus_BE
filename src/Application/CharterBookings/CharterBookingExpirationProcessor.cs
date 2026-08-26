@@ -11,7 +11,7 @@ public sealed record CharterBookingExpirationCleanupResult(
     int ExpiredPayments,
     int ExpiredCharterBookings,
     int CleanedCharterRoutes,
-    int ExpiredAwaitingPayments = 0);
+    int ExpiredPassengerAddPayments = 0);
 
 public interface ICharterBookingExpirationProcessor
 {
@@ -22,6 +22,8 @@ public interface ICharterBookingExpirationProcessor
 
 public sealed class CharterBookingExpirationProcessor : ICharterBookingExpirationProcessor
 {
+    private const string PassengerAddInsurancePurpose = "PassengerAddInsurance";
+
     private readonly IApplicationDbContext _context;
     private readonly IBoatHoldService _boatHoldService;
 
@@ -38,15 +40,15 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
         CancellationToken cancellationToken)
     {
         var expiredPaymentCount = await ExpirePaymentLinksAsync(now, cancellationToken);
+        var expiredPassengerAddPayments = await ExpirePassengerAddPaymentsAsync(now, cancellationToken);
         var expiredBookings = await ExpireCharterBookingsAsync(now, cancellationToken);
-        var expiredAwaitingPayments = await ExpireAwaitingPaymentsAsync(now, cancellationToken);
         var cleanedRoutes = await CleanupTerminalCharterRoutesAsync(cancellationToken);
 
         return new CharterBookingExpirationCleanupResult(
             expiredPaymentCount,
             expiredBookings,
             cleanedRoutes,
-            expiredAwaitingPayments);
+            expiredPassengerAddPayments);
     }
 
     private async Task<int> ExpirePaymentLinksAsync(
@@ -88,6 +90,7 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
                      .DistinctBy(x => x.Id))
         {
             PaymentSupport.RestorePaymentSummaryFromPaidPayments(booking);
+            RestorePassengerAddApprovalStateIfOnlyCheckoutExpired(booking, now);
         }
 
         if (expiredCount > 0)
@@ -96,6 +99,29 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
         }
 
         return expiredCount;
+    }
+
+    private static void RestorePassengerAddApprovalStateIfOnlyCheckoutExpired(Booking booking, DateTimeOffset now)
+    {
+        if (booking.BookingStatus != BookingStatus.PendingPayment
+            || booking.RemainingAmount <= 0m
+            || !booking.HoldExpiresAt.HasValue
+            || booking.HoldExpiresAt.Value <= now)
+        {
+            return;
+        }
+
+        var hasPassengerAddPayment = booking.Payments.Any(x =>
+            string.Equals(x.PaymentPurpose, PassengerAddInsurancePurpose, StringComparison.OrdinalIgnoreCase));
+        var hasActivePassengerAddPayment = booking.Payments.Any(x =>
+            string.Equals(x.PaymentPurpose, PassengerAddInsurancePurpose, StringComparison.OrdinalIgnoreCase)
+            && PaymentSupport.IsPending(x.PaymentStatus)
+            && !PaymentSupport.IsExpired(x, now));
+
+        if (hasPassengerAddPayment && !hasActivePassengerAddPayment)
+        {
+            booking.BookingStatus = BookingStatus.Approved;
+        }
     }
 
     private async Task<int> ExpireCharterBookingsAsync(
@@ -195,10 +221,10 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
     }
 
     /// <summary>
-    /// Charter booking đang ở trạng thái <c>AwaitingPayment</c> mà hết hạn thanh toán BH bổ sung
-    /// (12h kể từ khi admin duyệt) → auto-reject batch pending, roll-back BH, revert về Confirmed.
+    /// Charter booking đã được duyệt thêm khách mà hết hạn thanh toán BH bổ sung
+    /// (12h kể từ khi admin duyệt) → auto-reject batch đã duyệt, roll-back BH, revert về Confirmed.
     /// </summary>
-    private async Task<int> ExpireAwaitingPaymentsAsync(
+    private async Task<int> ExpirePassengerAddPaymentsAsync(
         DateTimeOffset now,
         CancellationToken cancellationToken)
     {
@@ -208,7 +234,8 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.BookingPassenger)
             .Where(x => x.BookingType == Booking.CharterBookingType
-                && x.BookingStatus == BookingStatus.AwaitingPayment
+                && (x.BookingStatus == BookingStatus.Approved
+                    || x.BookingStatus == BookingStatus.PendingPayment)
                 && x.HoldExpiresAt.HasValue
                 && x.HoldExpiresAt.Value <= now)
             .ToListAsync(cancellationToken);
@@ -221,23 +248,31 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
         var expiredCount = 0;
         foreach (var booking in bookings)
         {
+            if (!IsPassengerAddPaymentFlow(booking))
+            {
+                continue;
+            }
+
             // Bỏ qua nếu booking đã được thanh toán BH top-up thành công (webhook đã chạy trước).
             if (booking.RemainingAmount <= 0)
             {
                 booking.BookingStatus = BookingStatus.Confirmed;
                 booking.HoldExpiresAt = null;
+                expiredCount++;
                 continue;
             }
 
-            // Lấy batch pending chưa được reject.
-            var pendingPassengers = booking.Passengers
-                .Where(CharterBookingPassengerSupport.IsPending)
+            // Admin duyệt batch sẽ chuyển hành khách sang Approved trước khi tạo khoản BH bổ sung.
+            // Vì mỗi booking chỉ được thêm một batch, RequestBatchId xác định chính xác batch
+            // cần rollback khi hết hạn thanh toán.
+            var addedPassengers = booking.Passengers
+                .Where(x => x.RequestBatchId.HasValue && CharterBookingPassengerSupport.IsApproved(x))
                 .ToList();
 
-            // Passenger count trước khi batch pending = tổng approved - pending batch.
-            // Sau khi reject batch, BH sẽ được tính lại trên tổng approved cuối cùng (trừ pending batch).
+            // Passenger count trước khi thêm batch = tổng approved - batch thêm.
+            // Sau khi reject, BH được tính lại theo danh sách approved còn lại.
             var previousInsuredCount = booking.Passengers
-                .Count(CharterBookingPassengerSupport.IsApproved) - pendingPassengers.Count;
+                .Count(CharterBookingPassengerSupport.IsApproved) - addedPassengers.Count;
             if (previousInsuredCount < 0)
             {
                 previousInsuredCount = 0;
@@ -245,28 +280,28 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
 
             // Hủy pending payment BH top-up.
             foreach (var payment in booking.Payments.Where(x =>
-                         string.Equals(x.PaymentPurpose, "PassengerAddInsurance", StringComparison.OrdinalIgnoreCase)
+                         string.Equals(x.PaymentPurpose, PassengerAddInsurancePurpose, StringComparison.OrdinalIgnoreCase)
                          && PaymentSupport.IsPending(x.PaymentStatus)))
             {
                 payment.PaymentStatus = PaymentSupport.ExpiredStatus;
             }
 
-            // Roll-back BH bổ sung đã apply cho batch pending.
+            // Roll-back BH bổ sung đã apply cho batch được duyệt.
             CharterBookingInsuranceSupport.ReversePassengerQuantityIncrease(
                 booking,
                 previousInsuredCount);
 
-            // Cancel vé mới đã phát hành cho batch pending (chỉ cancel vé, KHÔNG đụng vé cũ).
+            // Cancel vé mới đã phát hành cho batch được duyệt (chỉ cancel vé mới).
             foreach (var ticket in booking.Tickets.Where(t =>
                          t.BookingPassengerId.HasValue
-                         && pendingPassengers.Any(p => p.Id == t.BookingPassengerId!.Value)
+                         && addedPassengers.Any(p => p.Id == t.BookingPassengerId!.Value)
                          && t.TicketStatus is TicketStatus.Active or TicketStatus.CheckedIn))
             {
                 ticket.TicketStatus = TicketStatus.Cancelled;
             }
 
-            // Đánh dấu batch pending bị reject.
-            foreach (var passenger in pendingPassengers)
+            // Đánh dấu batch đã duyệt bị reject do không thanh toán đúng hạn.
+            foreach (var passenger in addedPassengers)
             {
                 passenger.ApprovalStatus = CharterBookingPassengerSupport.ApprovalStatusRejected;
                 passenger.ReviewedAt = now;
@@ -293,6 +328,11 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
 
         return expiredCount;
     }
+
+    private static bool IsPassengerAddPaymentFlow(Booking booking) =>
+        booking.Passengers.Any(x => x.RequestBatchId.HasValue)
+        || booking.Payments.Any(x =>
+            string.Equals(x.PaymentPurpose, PassengerAddInsurancePurpose, StringComparison.OrdinalIgnoreCase));
 
     private async Task<int> CleanupTerminalCharterRoutesAsync(CancellationToken cancellationToken)
     {

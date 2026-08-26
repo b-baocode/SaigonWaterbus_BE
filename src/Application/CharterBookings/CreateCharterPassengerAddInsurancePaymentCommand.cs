@@ -59,10 +59,11 @@ public sealed class CreateCharterPassengerAddInsurancePaymentCommandHandler
             includePayments: true,
             cancellationToken);
 
-        if (booking.BookingStatus != BookingStatus.AwaitingPayment)
+        if (booking.BookingStatus is not BookingStatus.Approved
+            and not BookingStatus.PendingPayment)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
-                "Chỉ tạo thanh toán bảo hiểm bổ sung khi booking đang ở trạng thái chờ thanh toán BH cho hành khách mới.")]);
+                "Chỉ tạo thanh toán bảo hiểm bổ sung sau khi yêu cầu thêm hành khách đã được duyệt.")]);
         }
 
         var now = _timeProvider.GetUtcNow();
@@ -89,6 +90,8 @@ public sealed class CreateCharterPassengerAddInsurancePaymentCommandHandler
                 && !string.IsNullOrWhiteSpace(x.CheckoutUrl));
         if (existingPendingPayment is not null)
         {
+            booking.BookingStatus = BookingStatus.PendingPayment;
+            await _context.SaveChangesAsync(cancellationToken);
             return CharterBookingPaymentSupport.ToCreatePaymentResult(booking, existingPendingPayment);
         }
 
@@ -116,6 +119,7 @@ public sealed class CreateCharterPassengerAddInsurancePaymentCommandHandler
         };
         booking.Payments.Add(payment);
         _context.Set<Payment>().Add(payment);
+        booking.BookingStatus = BookingStatus.PendingPayment;
         await _context.SaveChangesAsync(cancellationToken);
 
         CharterBookingDepositPaymentResult paymentResult;

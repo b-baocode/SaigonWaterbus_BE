@@ -149,6 +149,10 @@ public class BrevoPaymentNotificationSenderTests
                         "TK-CHARTER-001",
                         "ticket-qr",
                         null)
+                ],
+                Attachments:
+                [
+                    new EmailAttachment("CB-FULL-tickets.pdf", "application/pdf", [1, 2, 3])
                 ]),
             CancellationToken.None);
 
@@ -156,6 +160,7 @@ public class BrevoPaymentNotificationSenderTests
         var root = payload.RootElement;
         var parameters = root.GetProperty("params");
         var ticket = parameters.GetProperty("TICKETS")[0];
+        var attachment = root.GetProperty("attachment")[0];
 
         root.GetProperty("templateId").GetInt32().ShouldBe(13);
         root.GetProperty("subject").GetString().ShouldBe("Waterbus - Ve dien tu charter booking CB-FULL");
@@ -164,6 +169,8 @@ public class BrevoPaymentNotificationSenderTests
         ticket.GetProperty("passengerName").GetString().ShouldBe("Nguyen Van Toan");
         ticket.GetProperty("ticketCode").GetString().ShouldBe("TK-CHARTER-001");
         ticket.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+        attachment.GetProperty("name").GetString().ShouldBe("CB-FULL-tickets.pdf");
+        attachment.GetProperty("content").GetString().ShouldBe("AQID");
     }
 
     [Test]

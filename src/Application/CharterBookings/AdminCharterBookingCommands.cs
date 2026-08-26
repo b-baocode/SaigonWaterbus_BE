@@ -284,11 +284,15 @@ public sealed class UpdateCharterBookingStatusCommandHandler
         var message = targetStatus switch
         {
             BookingStatus.PendingPayment =>
-                "Charter booking không dùng trạng thái PendingPayment.",
+                "PendingPayment do hệ thống gán khi khách tạo link thanh toán.",
             BookingStatus.PendingQuote =>
                 "PendingQuote do hệ thống gán khi customer tạo yêu cầu thuê tàu.",
             BookingStatus.Quoted =>
                 "Quoted do hệ thống gán khi admin chốt giá bằng API quote.",
+            BookingStatus.PendingApproval =>
+                "PendingApproval do hệ thống gán khi customer gửi yêu cầu thêm hành khách.",
+            BookingStatus.Approved =>
+                "Approved do hệ thống gán khi admin duyệt yêu cầu thêm hành khách.",
             BookingStatus.Confirmed =>
                 "Confirmed do hệ thống gán khi thanh toán đặt cọc hoặc thanh toán đủ thành công.",
             _ => "Trạng thái charter booking không hợp lệ."

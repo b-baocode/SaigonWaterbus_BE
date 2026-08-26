@@ -25,15 +25,18 @@ public sealed class CharterBookingTicketReconciliationProcessor
     private readonly IApplicationDbContext _context;
     private readonly TimeProvider _timeProvider;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
+    private readonly ICharterBookingTicketPdfRenderer? _ticketPdfRenderer;
 
     public CharterBookingTicketReconciliationProcessor(
         IApplicationDbContext context,
         TimeProvider timeProvider,
-        IPaymentNotificationSender paymentNotificationSender)
+        IPaymentNotificationSender paymentNotificationSender,
+        ICharterBookingTicketPdfRenderer? ticketPdfRenderer = null)
     {
         _context = context;
         _timeProvider = timeProvider;
         _paymentNotificationSender = paymentNotificationSender;
+        _ticketPdfRenderer = ticketPdfRenderer;
     }
 
     public async Task<CharterBookingTicketReconciliationResult> ReconcileAsync(
@@ -103,7 +106,8 @@ public sealed class CharterBookingTicketReconciliationProcessor
                 _paymentNotificationSender,
                 booking,
                 latestPaidPayment,
-                cancellationToken);
+                cancellationToken,
+                _ticketPdfRenderer);
 
             reconciledBookingCount++;
             issuedTicketCount += ticketResult.CreatedTickets.Count;

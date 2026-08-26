@@ -100,7 +100,7 @@ public sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasIndex(x => new { x.BoatId, x.DepartureDate })
             .HasDatabaseName("ux_bookings_boat_date_active")
             .IsUnique()
-            .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed')");
+            .HasFilter("booking_type = 'CharterBooking' AND status IN ('Quoted', 'Confirmed', 'PendingApproval', 'Approved', 'Pending')");
         builder.HasIndex(x => new { x.BookingType, x.UserId, x.Created })
             .HasDatabaseName("ix_bookings_type_customer_created");
         builder.HasIndex(x => new { x.BookingType, x.BookingStatus, x.DepartureDate })

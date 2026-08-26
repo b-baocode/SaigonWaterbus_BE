@@ -10,5 +10,6 @@ public enum BookingStatus
     Completed = 5,
     PendingQuote = 6,
     Overdue = 7,
-    AwaitingPayment = 8,
+    PendingApproval = 9,
+    Approved = 10,
 }

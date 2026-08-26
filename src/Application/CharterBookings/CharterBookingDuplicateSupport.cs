@@ -13,6 +13,8 @@ internal static class CharterBookingDuplicateSupport
     [
         BookingStatus.PendingQuote,
         BookingStatus.Quoted,
+        BookingStatus.PendingApproval,
+        BookingStatus.Approved,
         BookingStatus.PendingPayment,
         BookingStatus.Confirmed
     ];

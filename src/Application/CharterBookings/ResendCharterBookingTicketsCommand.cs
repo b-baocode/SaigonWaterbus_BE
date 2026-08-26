@@ -36,17 +36,20 @@ public sealed class ResendCharterBookingTicketsCommandHandler
     private readonly IUserContext _userContext;
     private readonly IPaymentNotificationSender _paymentNotificationSender;
     private readonly TimeProvider _timeProvider;
+    private readonly ICharterBookingTicketPdfRenderer? _ticketPdfRenderer;
 
     public ResendCharterBookingTicketsCommandHandler(
         IApplicationDbContext context,
         IUserContext userContext,
         IPaymentNotificationSender paymentNotificationSender,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        ICharterBookingTicketPdfRenderer? ticketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
         _paymentNotificationSender = paymentNotificationSender;
         _timeProvider = timeProvider;
+        _ticketPdfRenderer = ticketPdfRenderer;
     }
 
     public async Task<ResendCharterBookingTicketsResult> Handle(
@@ -62,6 +65,8 @@ public sealed class ResendCharterBookingTicketsCommandHandler
             .Include(x => x.Boat)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
+            .Include(x => x.ItineraryStops)
+                .ThenInclude(x => x.Station)
             .Include(x => x.CharterRoute)
             .Include(x => x.Passengers)
             .Include(x => x.Tickets)
@@ -124,7 +129,8 @@ public sealed class ResendCharterBookingTicketsCommandHandler
                 _paymentNotificationSender,
                 booking,
                 paidPayment,
-                cancellationToken);
+                cancellationToken,
+                _ticketPdfRenderer);
         }
 
         var contactEmail = booking.ContactEmail?.Trim();

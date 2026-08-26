@@ -41,6 +41,7 @@ public sealed class CreateCharterBookingPaymentCommandHandler
     private readonly TimeProvider _timeProvider;
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly ICharterBookingTicketPdfRenderer? _ticketPdfRenderer;
 
     public CreateCharterBookingPaymentCommandHandler(
         IApplicationDbContext context,
@@ -49,7 +50,8 @@ public sealed class CreateCharterBookingPaymentCommandHandler
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
         ICharterBookingRealtimeNotifier? realtimeNotifier = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        ICharterBookingTicketPdfRenderer? ticketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
@@ -58,6 +60,7 @@ public sealed class CreateCharterBookingPaymentCommandHandler
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _ticketPdfRenderer = ticketPdfRenderer;
     }
 
     public async Task<CreateCharterBookingPaymentResult> Handle(
@@ -204,7 +207,8 @@ public sealed class CreateCharterBookingPaymentCommandHandler
             payment,
             wasPaid,
             cancellationToken,
-            notificationRealtimeNotifier: _notificationRealtimeNotifier);
+            notificationRealtimeNotifier: _notificationRealtimeNotifier,
+            charterBookingTicketPdfRenderer: _ticketPdfRenderer);
 
         return CharterBookingPaymentSupport.ToCreatePaymentResult(booking, payment);
     }
@@ -284,6 +288,7 @@ public sealed class SyncCharterBookingPaymentCommandHandler
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly ICharterBookingTicketPdfRenderer? _ticketPdfRenderer;
 
     public SyncCharterBookingPaymentCommandHandler(
         IApplicationDbContext context,
@@ -292,7 +297,8 @@ public sealed class SyncCharterBookingPaymentCommandHandler
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
         ICharterBookingRealtimeNotifier? realtimeNotifier = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        ICharterBookingTicketPdfRenderer? ticketPdfRenderer = null)
     {
         _context = context;
         _userContext = userContext;
@@ -301,6 +307,7 @@ public sealed class SyncCharterBookingPaymentCommandHandler
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _ticketPdfRenderer = ticketPdfRenderer;
     }
 
     public async Task<SyncCharterBookingPaymentResult> Handle(
@@ -370,7 +377,8 @@ public sealed class SyncCharterBookingPaymentCommandHandler
             payment,
             wasPaid,
             cancellationToken,
-            notificationRealtimeNotifier: _notificationRealtimeNotifier);
+            notificationRealtimeNotifier: _notificationRealtimeNotifier,
+            charterBookingTicketPdfRenderer: _ticketPdfRenderer);
 
         return CharterBookingPaymentSupport.ToSyncPaymentResult(booking, payment);
     }
@@ -390,6 +398,7 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
     private readonly ICharterBookingRealtimeNotifier _realtimeNotifier;
 
     private readonly INotificationRealtimeNotifier _notificationRealtimeNotifier;
+    private readonly ICharterBookingTicketPdfRenderer? _ticketPdfRenderer;
 
     public HandleCharterBookingPaymentWebhookCommandHandler(
         IApplicationDbContext context,
@@ -397,7 +406,8 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
         IPaymentNotificationSender paymentNotificationSender,
         TimeProvider timeProvider,
         ICharterBookingRealtimeNotifier? realtimeNotifier = null,
-        INotificationRealtimeNotifier? notificationRealtimeNotifier = null)
+        INotificationRealtimeNotifier? notificationRealtimeNotifier = null,
+        ICharterBookingTicketPdfRenderer? ticketPdfRenderer = null)
     {
         _context = context;
         _paymentGateway = paymentGateway;
@@ -405,6 +415,7 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
         _timeProvider = timeProvider;
         _realtimeNotifier = realtimeNotifier ?? NullCharterBookingRealtimeNotifier.Instance;
         _notificationRealtimeNotifier = notificationRealtimeNotifier ?? NullNotificationRealtimeNotifier.Instance;
+        _ticketPdfRenderer = ticketPdfRenderer;
     }
 
     public async Task<CharterBookingPaymentWebhookResult> Handle(
@@ -501,18 +512,8 @@ public sealed class HandleCharterBookingPaymentWebhookCommandHandler
                 payment,
                 wasPaid,
                 cancellationToken,
-                notificationRealtimeNotifier: _notificationRealtimeNotifier);
-
-            if (booking.PaymentStatus.ToBookingPaymentStatus().IsPaid())
-            {
-                await CharterBookingETicketSupport.SendETicketsIfFullyPaidAsync(
-                    _context,
-                    _timeProvider,
-                    _paymentNotificationSender,
-                    booking,
-                    payment,
-                    cancellationToken);
-            }
+                notificationRealtimeNotifier: _notificationRealtimeNotifier,
+                charterBookingTicketPdfRenderer: _ticketPdfRenderer);
 
             return new CharterBookingPaymentWebhookResult(
                 true,

@@ -541,6 +541,7 @@ public sealed class CharterBookings : IEndpointGroup
                 UpdatePassengersExample,
                 "Gui yeu cau them hanh khach moi vao danh sach hien co, khong thay the danh sach cu.",
                 "Chi gui yeu cau sau khi charter booking da thanh toan du: PaymentStatus = Paid.",
+                "Sau khi gui thanh cong, bookingStatus = PendingApproval.",
                 "Moi charter booking chi duoc gui yeu cau them hanh khach 1 lan.",
                 "Chi gui duoc truoc gio khoi hanh it nhat 48 gio.",
                 "Tong hanh khach Approved + Pending + moi gui khong duoc vuot qua tong suc chua cua cac tau da duoc chon/quote.",
@@ -553,7 +554,7 @@ public sealed class CharterBookings : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Dung khi booking dang o trang thai AwaitingPayment (admin da duyet add passenger, con BH top-up chua thanh toan).",
+                "Dung khi booking dang o trang thai Approved; khi tao link thanh toan, bookingStatus = PendingPayment.",
                 "Backend tao 1 payment PayOS rieng voi paymentPurpose = PassengerAddInsurance cho phan BH bo sung (booking.RemainingAmount).",
                 "Khach mo checkoutUrl de thanh toan; sau khi PayOS webhook ban ve, booking chuyen ve Confirmed va email gui bundle PDF (ve cu + ve moi).",
                 "Thoi han thanh toan: 12h ke tu khi admin approve. Neu khong thanh toan trong 12h, he thong tu reject batch va revert booking ve Confirmed.",

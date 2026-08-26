@@ -79,10 +79,10 @@ public sealed class AddCharterBookingPassengersCommandHandler
             throw new NotFoundException("Charter booking not found.");
         }
 
-        if (booking.BookingStatus is BookingStatus.Cancelled or BookingStatus.Completed)
+        if (booking.BookingStatus != BookingStatus.Confirmed)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.BookingStatus),
-                "Không thể thêm hành khách cho booking đã hủy hoặc đã hoàn tất.")]);
+                "Chỉ thêm hành khách khi charter booking đã được xác nhận.")]);
         }
 
         if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase))
@@ -112,8 +112,8 @@ public sealed class AddCharterBookingPassengersCommandHandler
             countedPassengerCount + request.Passengers.Count,
             nameof(request.Passengers));
 
-        // Cập nhật booking status về Quoted để chờ manager duyệt.
-        booking.BookingStatus = BookingStatus.Quoted;
+        // Đây là luồng bổ sung hành khách, không phải luồng báo giá charter ban đầu.
+        booking.BookingStatus = BookingStatus.PendingApproval;
 
         var requestBatchId = Guid.NewGuid();
         var today = DateOnly.FromDateTime(now.UtcDateTime);

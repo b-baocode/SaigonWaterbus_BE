@@ -56,8 +56,8 @@ internal static class CharterBookingETicketSupport
     }
 
     /// <summary>
-    /// Khi payment là BH top-up cho người mới (purpose = PassengerAddInsurance) → đính kèm 1 PDF bundle
-    /// gồm vé cũ + vé mới, đúng theo yêu cầu nghiệp vụ.
+    /// Every charter e-ticket includes a PDF bundle so the recipient can keep the
+    /// boarding pass offline. For passenger-add insurance it includes old and new tickets.
     /// </summary>
     private static IReadOnlyList<EmailAttachment>? BuildBundleAttachmentsIfNeeded(
         Booking booking,
@@ -65,8 +65,7 @@ internal static class CharterBookingETicketSupport
         IReadOnlyList<Ticket> tickets,
         ICharterBookingTicketPdfRenderer? ticketPdfRenderer)
     {
-        if (ticketPdfRenderer is null
-            || !string.Equals(payment.PaymentPurpose, PassengerAddInsurancePurpose, StringComparison.OrdinalIgnoreCase))
+        if (ticketPdfRenderer is null)
         {
             return null;
         }
@@ -77,7 +76,7 @@ internal static class CharterBookingETicketSupport
         return
         [
             new EmailAttachment(
-                $"{SanitizeFileName(booking.BookingCode)}-all-tickets.pdf",
+                $"{SanitizeFileName(booking.BookingCode)}-tickets.pdf",
                 "application/pdf",
                 pdfBytes)
         ];

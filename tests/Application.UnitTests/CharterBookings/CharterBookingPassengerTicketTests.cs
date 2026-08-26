@@ -243,6 +243,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         result.TicketCount.ShouldBe(2);
         context.Set<BookingPassenger>().Single(x => x.FullName == "Le Van C")
             .ApprovalStatus.ShouldBe(CharterBookingPassengerSupport.ApprovalStatusPending);
+        booking.BookingStatus.ShouldBe(BookingStatus.PendingApproval);
 
         var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var notificationSender = new TestPaymentNotificationSender();
@@ -336,6 +337,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
 
         var savedBooking = context.Set<Booking>().Single(x => x.Id == booking.Id);
         savedBooking.PaymentStatus.ShouldBe("DepositPaid");
+        savedBooking.BookingStatus.ShouldBe(BookingStatus.Approved);
         savedBooking.DepositAmount.ShouldBe(1_020_000m);
         savedBooking.RemainingAmount.ShouldBe(10_000m);
         savedBooking.InsuranceSnapshots.ShouldNotBeEmpty();
@@ -394,8 +396,32 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
                     [new CharterBookingPassengerRequest("Pham Thi D", 1989)]),
                 CancellationToken.None));
 
-        exception.Errors["passengers"].Single()
-            .ShouldContain("tối đa 1 lần");
+        exception.Errors.Values.SelectMany(x => x).Single()
+            .ShouldContain("đã được xác nhận");
+    }
+
+    [Test]
+    public async Task AddingPassengersRequiresConfirmedBookingStatus()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        booking.BookingStatus = BookingStatus.Approved;
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = CreateAddHandler(context, userId);
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new AddCharterBookingPassengersCommand(
+                    booking.Id,
+                    [new CharterBookingPassengerRequest("Le Van C", 1988)]),
+                CancellationToken.None));
+
+        exception.Errors.Values.SelectMany(x => x).Single()
+            .ShouldContain("đã được xác nhận");
     }
 
     [Test]
@@ -434,6 +460,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         passenger.ApprovalStatus.ShouldBe(CharterBookingPassengerSupport.ApprovalStatusRejected);
         passenger.ReviewNote.ShouldBe("Thong tin hanh khach khong hop le");
         passenger.ReviewedByUserId.ShouldBe(managerContext.UserId);
+        booking.BookingStatus.ShouldBe(BookingStatus.Confirmed);
     }
 
     [Test]
