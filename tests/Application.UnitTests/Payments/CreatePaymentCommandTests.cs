@@ -807,6 +807,66 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task SyncPaymentForFullyPaidCharterBooking_IssuesTicketsAndSendsETicketImmediately()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = userId,
+            BookingCode = "CB-SYNC-ETICKET",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@example.test",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10000,
+            TotalAmount = 10000,
+            RemainingAmount = 10000
+        };
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            FullName = "Nguyen Van A",
+            BirthYear = 1990,
+            PassengerType = "Adult",
+            ApprovalStatus = "Approved"
+        };
+        var payment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "123457",
+            Provider = "PayOS",
+            Amount = 10000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Pending"
+        };
+        context.AddRange(booking, passenger, payment);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var sender = new TestPaymentNotificationSender();
+        var handler = new SyncPaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            new TestPaymentGateway(paymentStatus: "PAID"),
+            sender,
+            TimeProvider.System);
+
+        await handler.Handle(new SyncPaymentByOrderCodeCommand(123457), CancellationToken.None);
+
+        (await context.Set<Ticket>().CountAsync()).ShouldBe(1);
+        sender.ETickets.Count.ShouldBe(1);
+        sender.ETickets.Single().Tickets.Single().PassengerName.ShouldBe("Nguyen Van A");
+    }
+
+    [Test]
     public async Task RefundPaymentFailureStoresSystemCalculatedAmount()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -1609,7 +1669,8 @@ public class CreatePaymentCommandTests
     private sealed class TestPaymentGateway(
         PaymentGatewayException? createPaymentException = null,
         PaymentGatewayException? getPaymentException = null,
-        PaymentGatewayException? refundException = null)
+        PaymentGatewayException? refundException = null,
+        string paymentStatus = "PENDING")
         : ICharterBookingPaymentGateway
     {
         public List<CharterBookingDepositPaymentRequest> CreateRequests { get; } = [];
@@ -1645,7 +1706,7 @@ public class CreatePaymentCommandTests
             return Task.FromResult(new CharterBookingPaymentStatusResult(
                 orderCode,
                 null,
-                "PENDING",
+                paymentStatus,
                 "payment-link-id",
                 "https://example.test/checkout"));
         }

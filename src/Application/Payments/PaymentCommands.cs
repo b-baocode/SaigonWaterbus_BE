@@ -1641,6 +1641,11 @@ internal static class PaymentSupport
             .Include(x => x.Booking.Boat)
             .Include(x => x.Booking.FromStation)
             .Include(x => x.Booking.ToStation)
+            // Payment sync is also used by charter bookings after the PayOS redirect.
+            // The e-ticket flow needs the approved passenger manifest immediately.
+            .Include(x => x.Booking.Passengers)
+            .Include(x => x.Booking.Tickets)
+            .Include(x => x.Booking.CharterRoute)
             .Include(x => x.Booking.ItineraryStops)
                 .ThenInclude(x => x.Station);
 
@@ -1670,6 +1675,9 @@ internal static class PaymentSupport
             .Include(x => x.Booking.Boat)
             .Include(x => x.Booking.FromStation)
             .Include(x => x.Booking.ToStation)
+            .Include(x => x.Booking.Passengers)
+            .Include(x => x.Booking.Tickets)
+            .Include(x => x.Booking.CharterRoute)
             .Include(x => x.Booking.ItineraryStops)
                 .ThenInclude(x => x.Station);
 
@@ -1698,6 +1706,9 @@ internal static class PaymentSupport
             .Include(x => x.Booking.Boat)
             .Include(x => x.Booking.FromStation)
             .Include(x => x.Booking.ToStation)
+            .Include(x => x.Booking.Passengers)
+            .Include(x => x.Booking.Tickets)
+            .Include(x => x.Booking.CharterRoute)
             .Include(x => x.Booking.ItineraryStops)
                 .ThenInclude(x => x.Station);
 

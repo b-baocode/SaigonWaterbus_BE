@@ -48,6 +48,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<SaigonWaterbus.Application.Common.TourGuideAccessSupport>();
         builder.Services.AddScoped<IOperationScheduleSynchronizer, OperationScheduleSynchronizer>();
         builder.Services.AddScoped<ICharterBookingExpirationProcessor, CharterBookingExpirationProcessor>();
+        builder.Services.AddScoped<ICharterBookingTicketReconciliationProcessor, CharterBookingTicketReconciliationProcessor>();
 
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<RegisterRequestUseCase>();

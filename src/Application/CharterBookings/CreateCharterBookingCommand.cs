@@ -523,7 +523,7 @@ public sealed class CreateCharterBookingCommandHandler
             booking.DiscountAmount,
             booking.TotalAmount,
             booking.BookingStatus.ToString(),
-            0,
+            booking.Passengers.Count,
             requestedBoatCount,
             CharterBookingBoatSelectionSupport.ToDtos(requestedBoatDecks),
             CharterBookingInsuranceSupport.ToDto(booking.GetSelectedInsurance()),

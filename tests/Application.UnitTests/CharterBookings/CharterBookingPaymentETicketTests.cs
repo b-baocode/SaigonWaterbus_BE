@@ -154,6 +154,32 @@ public class CharterBookingPaymentETicketTests
             CharterBookingPassengerSupport.ApprovalStatusApproved);
     }
 
+    [Test]
+    public async Task TicketReconciliation_AutoIssuesMissingTicketsForFullyPaidCharterBooking()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = FullyPaidCharterBooking(userId, totalAmount: 30_000_000m);
+        booking.Passengers.Add(ApprovedPassenger(booking.Id, "Nguyen Van A"));
+        booking.Passengers.Add(ApprovedPassenger(booking.Id, "Tran Thi B"));
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var sender = new RecordingCharterETicketSender();
+        var processor = new CharterBookingTicketReconciliationProcessor(
+            context,
+            new FixedTimeProvider(DateTimeOffset.UtcNow),
+            sender);
+
+        var result = await processor.ReconcileAsync(CancellationToken.None);
+
+        result.ReconciledBookingCount.ShouldBe(1);
+        result.IssuedTicketCount.ShouldBe(2);
+        sender.ETickets.Count.ShouldBe(1);
+        sender.ETickets[0].Tickets.Count.ShouldBe(2);
+        (await context.Set<Ticket>().CountAsync()).ShouldBe(2);
+    }
+
     private static Booking FullyPaidCharterBooking(Guid userId, decimal totalAmount)
     {
         var booking = new Booking

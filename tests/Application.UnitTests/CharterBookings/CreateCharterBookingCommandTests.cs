@@ -48,8 +48,13 @@ public class CreateCharterBookingCommandTests
                 new DateOnly(2026, 7, 20),
                 BoatRentalUnit.Day,
                 1,
-                AdultCount: 10,
-                ChildCount: 2,
+                AdultCount: 2,
+                ChildCount: 0,
+                Passengers:
+                [
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
+                ],
                 FromStationId: fromStation.Id,
                 InsurancePackageId: insurancePackage.Id,
                 RequestedBoats:
@@ -63,6 +68,7 @@ public class CreateCharterBookingCommandTests
             CancellationToken.None);
 
         result.RequestedBoatCount.ShouldBe(2);
+        result.RegisteredPassengerCount.ShouldBe(2);
         result.RequestedBoats.Select(x => x.NumberOfDecks)
             .ShouldBe([1, 2]);
 
@@ -75,6 +81,7 @@ public class CreateCharterBookingCommandTests
         booking.ContactName.ShouldBe("Nguyen Van B");
         booking.ContactPhone.ShouldBe("0911111111");
         booking.ContactEmail.ShouldBe("booking-contact@example.test");
+        booking.Passengers.Count.ShouldBe(2);
 
         var detail = await new GetCharterBookingDetailQueryHandler(
                 context,

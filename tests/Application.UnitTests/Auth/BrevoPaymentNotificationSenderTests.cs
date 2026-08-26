@@ -121,6 +121,52 @@ public class BrevoPaymentNotificationSenderTests
     }
 
     [Test]
+    public async Task CharterETicketUsesConfiguredTemplateAndIncludesPassengerTicket()
+    {
+        var httpHandler = new CapturingHttpMessageHandler();
+        var sender = CreateSender(httpHandler);
+        var booking = CreateNotification(isFullyPaid: true) with
+        {
+            Email = "charter-customer@example.test"
+        };
+
+        await sender.SendCharterETicketsAsync(
+            new ETicketNotification(
+                booking,
+                BookingQrToken: "CB-20260826-U7MJQ",
+                TripCode: null,
+                RouteName: "Charter Bach Dang - Thu Thiem",
+                DepartureTime: new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)),
+                ArrivalTime: null,
+                FromStationName: "Bach Dang",
+                ToStationName: "Thu Thiem",
+                Tickets:
+                [
+                    new ETicketPassenger(
+                        "Nguyen Van Toan",
+                        null,
+                        "Nguoi lon",
+                        "TK-CHARTER-001",
+                        "ticket-qr",
+                        null)
+                ]),
+            CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
+        var root = payload.RootElement;
+        var parameters = root.GetProperty("params");
+        var ticket = parameters.GetProperty("TICKETS")[0];
+
+        root.GetProperty("templateId").GetInt32().ShouldBe(13);
+        root.GetProperty("subject").GetString().ShouldBe("Waterbus - Ve dien tu charter booking CB-FULL");
+        root.GetProperty("to")[0].GetProperty("email").GetString().ShouldBe("charter-customer@example.test");
+        parameters.GetProperty("bookingQrPayload").GetString().ShouldBe("CB-20260826-U7MJQ");
+        ticket.GetProperty("passengerName").GetString().ShouldBe("Nguyen Van Toan");
+        ticket.GetProperty("ticketCode").GetString().ShouldBe("TK-CHARTER-001");
+        ticket.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+    }
+
+    [Test]
     public async Task PassengerETicketUsesTemplate16AndFlattensSingleTicketParams()
     {
         var httpHandler = new CapturingHttpMessageHandler();
@@ -271,6 +317,7 @@ public class BrevoPaymentNotificationSenderTests
                 CharterBookingConfirmationTemplateId = 13,
                 PaymentDepositTemplateId = 14,
                 PaymentFullTemplateId = 14,
+                CharterETicketTemplateId = 13,
                 ETicketTemplateId = 15,
                 PassengerETicketTemplateId = 16
             }),

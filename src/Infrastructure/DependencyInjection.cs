@@ -107,6 +107,7 @@ public static class DependencyInjection
         builder.Services.AddHostedService<CharterTripExpirationHostedService>();
         builder.Services.AddHostedService<PaymentPendingExpirationHostedService>();
         builder.Services.AddHostedService<ChatConversationLifecycleService>();
+        builder.Services.AddHostedService<CharterBookingTicketReconciliationHostedService>();
         builder.Services.AddScoped<EsmsSmsSender>();
         builder.Services.AddScoped<ISmsOtpSender>(provider =>
         {
@@ -192,6 +193,8 @@ public static class DependencyInjection
         builder.Services.Configure<OperationScheduleSyncOptions>(builder.Configuration.GetSection(OperationScheduleSyncOptions.SectionName));
         builder.Services.Configure<TripStatusAutoSyncOptions>(builder.Configuration.GetSection(TripStatusAutoSyncOptions.SectionName));
         builder.Services.Configure<CharterBookingExpirationOptions>(builder.Configuration.GetSection(CharterBookingExpirationOptions.SectionName));
+        builder.Services.Configure<CharterBookingTicketReconciliationOptions>(
+            builder.Configuration.GetSection(CharterBookingTicketReconciliationOptions.SectionName));
         builder.Services.Configure<IncidentGpsHookOptions>(options =>
         {
             builder.Configuration.GetSection(IncidentGpsHookOptions.SectionName).Bind(options);

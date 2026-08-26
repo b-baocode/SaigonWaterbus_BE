@@ -5,11 +5,10 @@ using Npgsql;
 using SaigonWaterbus.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
-if (builder.Environment.IsDevelopment())
-{
-    builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
-    builder.Configuration.AddEnvironmentVariables();
-}
+// Local secrets are deliberately excluded from source control, but must work
+// when the API is launched with --no-launch-profile (Production by default).
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+builder.Configuration.AddEnvironmentVariables();
 
 builder.AddKeyVaultIfConfigured();
 builder.AddApplicationServices();
