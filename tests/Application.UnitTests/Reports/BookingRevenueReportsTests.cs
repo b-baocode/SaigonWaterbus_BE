@@ -81,6 +81,27 @@ public class BookingRevenueReportsTests
         result.ShouldContain(x => x.BookingCode == "BK-RPT-ONLINE" && x.Label.Contains("Sightseeing"));
     }
 
+    [Test]
+    public async Task WaterbusStationRevenueUsesPassengerStationsInsteadOfCharterStations()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedReportBookingsAsync(context, staffContext.UserId!.Value, customerContext.UserId!.Value);
+
+        var result = await new GetWaterbusStationRevenueQueryHandler(context, adminContext)
+            .Handle(new GetWaterbusStationRevenueQuery(Now.AddDays(-1), Now.AddDays(1)), CancellationToken.None);
+
+        result.TotalGross.ShouldBe(100m);
+        result.BookingCount.ShouldBe(1);
+        result.PaymentCount.ShouldBe(1);
+        result.TotalTicketCount.ShouldBe(1);
+        result.Stations.Count.ShouldBe(2);
+        result.Stations.Single(x => x.StationCode == "RPA").DepartureGross.ShouldBe(100m);
+        result.Stations.Single(x => x.StationCode == "RPB").ArrivalGross.ShouldBe(100m);
+    }
+
     private static async Task SeedReportBookingsAsync(
         ApplicationDbContext context,
         Guid staffId,

@@ -1178,10 +1178,16 @@ public sealed class GetWaterbusStationRevenueQueryHandler
         var fromUtc = request.From.ToUniversalTime();
         var toUtc = request.To.ToUniversalTime();
 
-        // Filter Waterbus: booking.BookingType == Booking.SeatBookingType (SeatBooking) + route is Waterbus
-        // RouteType is on Trip → Route, accessed via b.Trip?.Route?.RouteType
-        var rows = await _context.Set<Payment>()
+        // Waterbus lưu bến đi/bến đến tại BookingPassenger. Booking.FromStationId/ToStationId
+        // map tới custom_* và chỉ dùng cho charter, nên không được dùng để thống kê Waterbus.
+        var payments = await _context.Set<Payment>()
             .AsNoTracking()
+            .Include(p => p.Booking)
+                .ThenInclude(b => b.Passengers)
+                    .ThenInclude(passenger => passenger.FromStation)
+            .Include(p => p.Booking)
+                .ThenInclude(b => b.Passengers)
+                    .ThenInclude(passenger => passenger.ToStation)
             .Where(p => p.PaidAt >= fromUtc
                 && p.PaidAt < toUtc
                 && (p.Provider == PaymentSupport.PayOsProvider
@@ -1191,21 +1197,10 @@ public sealed class GetWaterbusStationRevenueQueryHandler
                 && p.Booking.BookingType == Booking.SeatBookingType
                 && p.Booking.Trip != null
                 && p.Booking.Trip.Route != null
-                && p.Booking.Trip.Route.RouteType == RouteTypes.Regular
-                && p.Booking.FromStationId.HasValue)
-            .Select(p => new WaterbusPaymentRow(
-                p.BookingId,
-                p.Booking!.FromStationId!.Value,
-                p.Booking!.ToStationId,
-                p.Booking!.FromStation!.StationName,
-                p.Booking!.FromStation!.StationCode,
-                p.Booking!.ToStation != null ? p.Booking!.ToStation!.StationName : null,
-                p.Booking!.ToStation != null ? p.Booking!.ToStation!.StationCode : null,
-                p.Booking!.TotalAmount,
-                p.Amount,
-                p.RefundAmount,
-                p.Booking!.Tickets.Count(t => t.TicketStatus != TicketStatus.Cancelled)))
+                && p.Booking.Trip.Route.RouteType == RouteTypes.Regular)
             .ToListAsync(cancellationToken);
+
+        var rows = payments.SelectMany(BuildWaterbusPaymentRows).ToList();
 
         var totalGross = rows.Sum(r => r.PaymentAmount);
         var totalRefund = rows.Sum(r => r.RefundAmount);
@@ -1220,8 +1215,8 @@ public sealed class GetWaterbusStationRevenueQueryHandler
                     g.First().FromStationName,
                     g.First().FromStationCode,
                     g.Select(r => r.BookingId).Distinct().Count(),
-                    g.Sum(r => r.TicketCount),
-                    g.Sum(r => r.BookingTotalAmount),
+                    g.Count(),
+                    g.Sum(r => r.PaymentAmount),
                     g.Sum(r => r.PaymentAmount),
                     g.Sum(r => r.RefundAmount)));
 
@@ -1234,8 +1229,8 @@ public sealed class GetWaterbusStationRevenueQueryHandler
                     g.First().ToStationName!,
                     g.First().ToStationCode!,
                     g.Select(r => r.BookingId).Distinct().Count(),
-                    g.Sum(r => r.TicketCount),
-                    g.Sum(r => r.BookingTotalAmount),
+                    g.Count(),
+                    g.Sum(r => r.PaymentAmount),
                     g.Sum(r => r.PaymentAmount),
                     g.Sum(r => r.RefundAmount)));
 
@@ -1279,9 +1274,59 @@ public sealed class GetWaterbusStationRevenueQueryHandler
             totalRefund,
             totalNet,
             bookingIds.Count,
+            payments.Count,
             rows.Count,
-            rows.Sum(r => r.TicketCount),
             stations);
+    }
+
+    private static IReadOnlyList<WaterbusPaymentRow> BuildWaterbusPaymentRows(Payment payment)
+    {
+        var passengers = payment.Booking.Passengers
+            .Where(x => x.FromStationId.HasValue
+                && x.ToStationId.HasValue
+                && x.FromStation is not null
+                && x.ToStation is not null)
+            .ToList();
+
+        if (passengers.Count == 0)
+        {
+            return [];
+        }
+
+        // Payment là tổng của booking. Phân bổ theo UnitPrice để mỗi payment/refund
+        // được tính đúng một lần; dữ liệu cũ thiếu UnitPrice thì chia đều.
+        var weights = passengers.Select(x => x.UnitPrice is > 0m ? x.UnitPrice.Value : 1m).ToList();
+        var totalWeight = weights.Sum();
+        var remainingAmount = payment.Amount;
+        var remainingRefund = payment.RefundAmount;
+        var rows = new List<WaterbusPaymentRow>(passengers.Count);
+
+        for (var index = 0; index < passengers.Count; index++)
+        {
+            var passenger = passengers[index];
+            var isLast = index == passengers.Count - 1;
+            var amount = isLast
+                ? remainingAmount
+                : decimal.Round(payment.Amount * weights[index] / totalWeight, 2, MidpointRounding.AwayFromZero);
+            var refund = isLast
+                ? remainingRefund
+                : decimal.Round(payment.RefundAmount * weights[index] / totalWeight, 2, MidpointRounding.AwayFromZero);
+            remainingAmount -= amount;
+            remainingRefund -= refund;
+
+            rows.Add(new WaterbusPaymentRow(
+                payment.BookingId,
+                passenger.FromStationId!.Value,
+                passenger.ToStationId,
+                passenger.FromStation!.StationName,
+                passenger.FromStation.StationCode,
+                passenger.ToStation!.StationName,
+                passenger.ToStation.StationCode,
+                amount,
+                refund));
+        }
+
+        return rows;
     }
 }
 
@@ -1293,10 +1338,8 @@ internal sealed record WaterbusPaymentRow(
     string FromStationCode,
     string? ToStationName,
     string? ToStationCode,
-    decimal BookingTotalAmount,
     decimal PaymentAmount,
-    decimal RefundAmount,
-    int TicketCount);
+    decimal RefundAmount);
 
 internal sealed record WaterbusStationAccumulator(
     string StationName,
