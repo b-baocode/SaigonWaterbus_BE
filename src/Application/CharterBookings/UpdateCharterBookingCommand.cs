@@ -295,8 +295,11 @@ public sealed class UpdateCharterBookingCommandHandler
 
         if (updatedPassengers is not null)
         {
+            // Xóa các entity đang được EF theo dõi và thêm batch mới trực tiếp vào DbSet.
+            // Nhờ đó EF sinh DELETE/INSERT trong cùng SaveChanges; thêm qua navigation
+            // collection có thể bị nhận nhầm là UPDATE khi entity dùng Guid tạo sẵn.
             _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);
-            booking.Passengers = updatedPassengers;
+            _context.Set<BookingPassenger>().AddRange(updatedPassengers);
         }
 
         if (request.ItineraryStops is not null)

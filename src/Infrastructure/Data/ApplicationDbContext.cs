@@ -139,5 +139,22 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     {
         base.OnModelCreating(builder);
         builder.ApplyConfigurationsFromAssembly(Assembly.GetExecutingAssembly());
+
+        // Tắt implicit xmin concurrency token mà Npgsql provider tự thêm cho mọi entity
+        // có khóa chính. Hệ thống có nhiều trigger và background service cập nhật row
+        // bookings/trips (trg_auto_delete_overdue_charter_booking, trg_sync_trip_status,
+        // CharterBookingExpirationProcessor) làm DbUpdateConcurrencyException xảy ra
+        // ngay cả khi application không có race thực sự. Nếu cần optimistic concurrency
+        // cụ thể, cấu hình thủ công bằng [ConcurrencyCheck] hoặc .IsRowVersion().
+        foreach (var entityType in builder.Model.GetEntityTypes())
+        {
+            var xminProperty = entityType.GetProperties()
+                .FirstOrDefault(p => string.Equals(p.GetColumnName(), "xmin", StringComparison.OrdinalIgnoreCase));
+            if (xminProperty is not null)
+            {
+                xminProperty.IsConcurrencyToken = false;
+                xminProperty.ValueGenerated = Microsoft.EntityFrameworkCore.Metadata.ValueGenerated.Never;
+            }
+        }
     }
 }
