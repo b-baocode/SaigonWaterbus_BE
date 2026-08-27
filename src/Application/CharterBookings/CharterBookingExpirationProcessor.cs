@@ -342,7 +342,9 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
                 && x.CharterRouteId.HasValue
                 && x.CharterRoute != null
                 && x.CharterRoute.Status == "Active"
-                && (x.BookingStatus == BookingStatus.Cancelled || x.BookingStatus == BookingStatus.Expired))
+                && (x.BookingStatus == BookingStatus.Cancelled
+                    || x.BookingStatus == BookingStatus.Expired
+                    || x.BookingStatus == BookingStatus.Completed))
             .ToListAsync(cancellationToken);
 
         if (bookings.Count == 0)

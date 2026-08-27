@@ -14,6 +14,7 @@ public sealed record UpdateCharterBookingCommand(
     int? DurationValue = null,
     int? AdultCount = null,
     int? ChildCount = null,
+    IReadOnlyList<CharterBookingPassengerRequest>? Passengers = null,
     TimeOnly? StartTime = null,
     Guid? FromStationId = null,
     Guid? ToStationId = null,
@@ -53,6 +54,11 @@ public sealed class UpdateCharterBookingCommandValidator : AbstractValidator<Upd
         RuleFor(x => x.ChildCount!.Value).GreaterThanOrEqualTo(0).LessThanOrEqualTo(1000)
             .When(x => x.ChildCount.HasValue)
             .WithMessage("Số trẻ em phải từ 0 đến 1000.");
+        RuleFor(x => x.Passengers)
+            .Must(x => x is null || x.Count is > 0 and <= 1000)
+            .WithMessage("Danh sách hành khách phải có từ 1 đến 1000 người nếu được gửi.");
+        RuleForEach(x => x.Passengers)
+            .SetValidator(new CharterBookingPassengerRequestValidator());
         RuleFor(x => x)
             .Must(x => !x.AdultCount.HasValue || !x.ChildCount.HasValue || x.AdultCount + x.ChildCount >= 1)
             .WithMessage("Booking phải có ít nhất 1 hành khách (người lớn hoặc trẻ em).");
@@ -154,6 +160,7 @@ public sealed class UpdateCharterBookingCommandHandler
 
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.ItineraryStops)
+            .Include(x => x.Passengers)
             .Include(x => x.Payments)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
@@ -175,8 +182,17 @@ public sealed class UpdateCharterBookingCommandHandler
             "Ngày khởi hành là bắt buộc.");
         var rentalUnit = request.RentalUnit ?? booking.RentalUnit;
         var durationValue = request.DurationValue ?? booking.DurationValue;
-        var adultCount = request.AdultCount ?? booking.AdultCount.GetValueOrDefault();
-        var childCount = request.ChildCount ?? booking.ChildCount.GetValueOrDefault();
+        var now = _timeProvider.GetUtcNow();
+        var updatedPassengers = request.Passengers is null
+            ? null
+            : CreatePassengers(booking.Id, request.Passengers, now, userId);
+        var adultCount = updatedPassengers is null
+            ? request.AdultCount ?? booking.AdultCount.GetValueOrDefault()
+            : CharterBookingPassengerSupport.CountAdults(updatedPassengers);
+        var childCount = updatedPassengers is null
+            ? request.ChildCount ?? booking.ChildCount.GetValueOrDefault()
+            : CharterBookingPassengerSupport.CountChildren(updatedPassengers);
+        EnsurePassengerCountsMatchDetailList(request, booking, adultCount, childCount);
         var startTime = request.StartTime ?? booking.StartTime;
         var fromStationId = request.FromStationId ?? booking.FromStationId;
         var toStationId = request.ToStationId ?? booking.ToStationId;
@@ -252,7 +268,7 @@ public sealed class UpdateCharterBookingCommandHandler
             request.InsurancePackageId,
             currentSnapshots: booking.InsuranceSnapshots,
             insuredPassengerQuantity: passengerCount,
-            _timeProvider.GetUtcNow(),
+            now,
             cancellationToken);
 
         booking.FromStationId = fromStationId;
@@ -277,6 +293,12 @@ public sealed class UpdateCharterBookingCommandHandler
         booking.ContactEmail = contactEmail;
         booking.InsuranceSnapshots = insuranceSnapshots;
 
+        if (updatedPassengers is not null)
+        {
+            _context.Set<BookingPassenger>().RemoveRange(booking.Passengers);
+            booking.Passengers = updatedPassengers;
+        }
+
         if (request.ItineraryStops is not null)
         {
             ApplyItineraryStops(booking, request.ItineraryStops);
@@ -289,7 +311,7 @@ public sealed class UpdateCharterBookingCommandHandler
                 "Updated",
                 booking.BookingStatus.ToString(),
                 booking.PaymentStatus,
-                _timeProvider.GetUtcNow()),
+                now),
             cancellationToken);
 
         var updatedBooking = await CharterBookingQuerySupport.BuildDetailQuery(_context)
@@ -317,6 +339,68 @@ public sealed class UpdateCharterBookingCommandHandler
         {
             throw new ValidationException([new ValidationFailure(nameof(requestedDepartureDate),
                 $"Charter booking phải được đặt trước ít nhất 7 ngày. Ngày khởi hành sớm nhất là {minimumDepartureDate:dd/MM/yyyy}.")]);
+        }
+    }
+
+    private static List<BookingPassenger> CreatePassengers(
+        Guid bookingId,
+        IReadOnlyList<CharterBookingPassengerRequest> passengers,
+        DateTimeOffset now,
+        Guid userId)
+    {
+        var today = DateOnly.FromDateTime(now.UtcDateTime);
+        return passengers
+            .Select((passenger, index) =>
+            {
+                var entity = CharterBookingPassengerSupport.ToEntity(
+                    bookingId,
+                    passenger,
+                    today,
+                    birthYearPropertyName: $"passengers[{index}].birthYear",
+                    fullNamePropertyName: $"passengers[{index}].fullName");
+                entity.RequestedAt = now;
+                entity.RequestedByUserId = userId;
+                return entity;
+            })
+            .ToList();
+    }
+
+    private static void EnsurePassengerCountsMatchDetailList(
+        UpdateCharterBookingCommand request,
+        Booking booking,
+        int resolvedAdultCount,
+        int resolvedChildCount)
+    {
+        if (request.Passengers is not null)
+        {
+            if (request.AdultCount.HasValue && request.AdultCount.Value != resolvedAdultCount)
+            {
+                throw new ValidationException([new ValidationFailure(nameof(request.AdultCount),
+                    $"Số người lớn ({request.AdultCount.Value}) không khớp danh sách hành khách ({resolvedAdultCount}).")]);
+            }
+
+            if (request.ChildCount.HasValue && request.ChildCount.Value != resolvedChildCount)
+            {
+                throw new ValidationException([new ValidationFailure(nameof(request.ChildCount),
+                    $"Số trẻ em ({request.ChildCount.Value}) không khớp danh sách hành khách ({resolvedChildCount}).")]);
+            }
+
+            return;
+        }
+
+        if (!request.AdultCount.HasValue && !request.ChildCount.HasValue)
+        {
+            return;
+        }
+
+        var savedAdultCount = CharterBookingPassengerSupport.CountAdults(booking.Passengers);
+        var savedChildCount = CharterBookingPassengerSupport.CountChildren(booking.Passengers);
+        var requestedAdultCount = request.AdultCount ?? savedAdultCount;
+        var requestedChildCount = request.ChildCount ?? savedChildCount;
+        if (requestedAdultCount != savedAdultCount || requestedChildCount != savedChildCount)
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.Passengers),
+                "Khi thay đổi số lượng hành khách, phải gửi đầy đủ mảng passengers để BE cập nhật danh sách.")]);
         }
     }
 

@@ -223,6 +223,17 @@ public sealed class CharterBookings : IEndpointGroup
                 "Refunded do he thong gan sau luong hoan tien thanh cong.",
                 "Completed yeu cau paymentStatus = Paid."));
 
+        group.MapPatch(RescheduleCharterBooking, "admin/{id:guid}/departure")
+            .RequireAuthorization()
+            .Accepts<RescheduleCharterBookingRequest>("application/json")
+            .WithSummary("Admin đổi ngày giờ khởi hành charter")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                """{ "departureDate": "2026-09-15", "startTime": "14:00:00" }""",
+                "Admin override dùng cho booking charter chưa kết thúc.",
+                "Ngày giờ mới bắt buộc phải ở tương lai. Trip charter đã sinh sẽ được dời lịch cùng số phút để khớp booking.",
+                "Không áp dụng cho booking/trip đã hủy, đã hết hạn, đã hoàn tất hoặc trip đang chạy."));
+
         group.MapPut(QuoteCharterBooking, "admin/{id:guid}/quote")
             .RequireAuthorization()
             .Accepts<QuoteCharterBookingRequest>("application/json")
@@ -511,6 +522,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Bearer token",
                 CreateCharterBookingExample,
                 "Customer chinh sua yeu cau thue tau khi bookingStatus = PendingQuote.",
+                "Neu thay doi so hanh khach, FE gui passengers day du. BE thay the danh sach va tu tinh passengerCount/adultCount/childCount; neu gui adultCount/childCount thi phai khop danh sach.",
                 "contactName/contactPhone/contactEmail: neu gui thi backend luu gia tri moi; neu khong gui hoac gui rong thi backend giu gia tri cu hoac fallback tu tai khoan. Sau fallback van bat buoc du 3 thong tin.",
                 "departureDate: neu khong doi ngay thi khong bi validate lai rule dat truoc 7 ngay; neu doi ngay moi thi ngay moi phai cach hien tai it nhat 7 ngay.",
                 "fromStationId: neu gui hoac da co san thi phai la ben Waterbus dang hoat dong.",
@@ -780,6 +792,16 @@ public sealed class CharterBookings : IEndpointGroup
         UpdateCharterBookingStatusRequest request,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateCharterBookingStatusCommand(id, request.BookingStatus, request.Note), ct));
+
+    private static async Task<IResult> RescheduleCharterBooking(
+        ISender sender,
+        Guid id,
+        RescheduleCharterBookingRequest request,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new RescheduleCharterBookingCommand(
+            id,
+            request.DepartureDate,
+            request.StartTime), ct));
 
     private static async Task<IResult> QuoteCharterBooking(
         ISender sender,
@@ -1084,6 +1106,7 @@ public sealed class CharterBookings : IEndpointGroup
             request.DurationValue,
             request.AdultCount,
             request.ChildCount,
+            request.Passengers,
             request.StartTime,
             request.FromStationId,
             request.ToStationId,

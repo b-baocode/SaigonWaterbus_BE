@@ -105,7 +105,10 @@ public sealed class CreateInsurancePackageCommandValidator : AbstractValidator<C
             .LessThanOrEqualTo(10_000_000_000)
             .Must(x => decimal.Truncate(x) == x)
             .WithMessage("coverageAmount phải là số nguyên VND từ 1.000 đến 10.000.000.000.");
-        RuleFor(x => x.ProviderName).MaximumLength(150).When(x => x.ProviderName is not null);
+        RuleFor(x => x.ProviderName)
+            .NotEmpty()
+            .MaximumLength(150)
+            .WithMessage("Tên nhà cung cấp bảo hiểm là bắt buộc và tối đa 150 ký tự.");
         RuleFor(x => x.ProviderLogoUrl)
             .MaximumLength(1000)
             .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)
@@ -247,7 +250,10 @@ public sealed class UpdateInsurancePackageCommandValidator : AbstractValidator<U
             .LessThanOrEqualTo(10_000_000_000)
             .Must(x => decimal.Truncate(x) == x)
             .WithMessage("coverageAmount phải là số nguyên VND từ 1.000 đến 10.000.000.000.");
-        RuleFor(x => x.ProviderName).MaximumLength(150).When(x => x.ProviderName is not null);
+        RuleFor(x => x.ProviderName)
+            .NotEmpty()
+            .MaximumLength(150)
+            .WithMessage("Tên nhà cung cấp bảo hiểm là bắt buộc và tối đa 150 ký tự.");
         RuleFor(x => x.ProviderLogoUrl)
             .MaximumLength(1000)
             .Must(InsurancePackageSupport.IsNullOrAbsoluteUrl)

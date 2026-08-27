@@ -27,6 +27,19 @@ public sealed class Trips : IEndpointGroup
         }
         """;
 
+    private const string CreateDemoTripsExample =
+        """
+        {
+          "routeCode": "R01-BD-TD",
+          "boatCode": "BOAT-01",
+          "operatingDate": "2026-08-27",
+          "departureTimes": ["14:00:00"],
+          "stops": [
+            { "stopOrder": 2, "stayDurationMinutes": 5 }
+          ]
+        }
+        """;
+
     private const string UpdateStatusExample =
         """
         {
@@ -214,6 +227,18 @@ public sealed class Trips : IEndpointGroup
             .RequireAuthorization()
             .WithName("CreateTripLegacy")
             .ExcludeFromDescription();
+
+        group.MapPost(CreateDemoTrips, "demo")
+            .RequireAuthorization()
+            .WithSummary("Tạo trip demo theo ngày và giờ chỉ định")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                CreateDemoTripsExample,
+                "Endpoint riêng phục vụ demo: tạo một hoặc nhiều trip cho đúng một ngày.",
+                "Không xóa hoặc sửa bất kỳ trip cũ nào.",
+                "departureTimes là giờ Việt Nam (+07:00). Ví dụ demo lúc 14:30 thì gửi 14:00:00.",
+                "Route thường có bến giữa phải gửi stops gồm stayDurationMinutes cho từng bến giữa.",
+                "Vẫn áp dụng các kiểm tra an toàn khi tạo trip: tàu active/có ghế, không trùng lịch tàu hoặc bến, và phải có đủ nhân sự on-board."));
 
         group.MapPost(PreviewTripsSchedule, "schedule/preview")
             .RequireAuthorization()
@@ -404,6 +429,42 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> CreateTrip(ISender sender, CreateTripCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));
+
+    private static async Task<IResult> CreateDemoTrips(
+        ISender sender,
+        CreateDemoTripsRequest request,
+        CancellationToken ct)
+    {
+        if (request.DepartureTimes is null || request.DepartureTimes.Count == 0)
+        {
+            return Results.BadRequest(new { message = "departureTimes phải có ít nhất một giờ khởi hành." });
+        }
+
+        var vietnamOffset = TimeSpan.FromHours(7);
+        var trips = new List<TripDetailDto>();
+        foreach (var departureTime in request.DepartureTimes.Distinct().OrderBy(x => x))
+        {
+            var localDeparture = request.OperatingDate.ToDateTime(departureTime);
+            var departureAt = new DateTimeOffset(localDeparture, vietnamOffset);
+            trips.Add(await sender.Send(new CreateTripCommand(
+                request.RouteCode,
+                request.BoatCode,
+                request.OperatingDate,
+                departureAt,
+                Stops: request.Stops), ct));
+        }
+
+        return Results.Ok(new CreateDemoTripsResult(trips.Count, trips));
+    }
+
+    public sealed record CreateDemoTripsRequest(
+        string RouteCode,
+        string BoatCode,
+        DateOnly OperatingDate,
+        IReadOnlyList<TimeOnly> DepartureTimes,
+        IReadOnlyList<CreateTripStopScheduleInput>? Stops = null);
+
+    public sealed record CreateDemoTripsResult(int Created, IReadOnlyList<TripDetailDto> Trips);
 
     private static async Task<IResult> ScheduleTrips(ISender sender, GenerateTripsCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

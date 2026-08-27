@@ -69,6 +69,7 @@ public sealed record UpdateCharterBookingRequest(
     int? DurationValue = null,
     int? AdultCount = null,
     int? ChildCount = null,
+    IReadOnlyList<CharterBookingPassengerRequest>? Passengers = null,
     TimeOnly? StartTime = null,
     Guid? FromStationId = null,
     Guid? ToStationId = null,
@@ -703,6 +704,10 @@ public sealed record RespondCharterBookingQuoteRequest(
 public sealed record UpdateCharterBookingStatusRequest(
     BookingStatus BookingStatus,
     string? Note = null);
+
+public sealed record RescheduleCharterBookingRequest(
+    DateOnly DepartureDate,
+    TimeOnly StartTime);
 
 public sealed record ReviewCharterBookingPassengerAddRequest(
     string? Note = null);
