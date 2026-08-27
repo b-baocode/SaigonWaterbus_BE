@@ -93,6 +93,7 @@ public class InsurancePackageProviderSourceTests
             UnitPremiumAmount: 5000m,
             CoverageAmount: 100_000_000m,
             IsRequired: false,
+            ProviderName: "Waterbus",
             Status: InsurancePackageStatus.Active,
             IsWaterbusDefault: false,
             ProviderSource: InsuranceProviderSource.Waterbus);
@@ -121,6 +122,7 @@ public class InsurancePackageProviderSourceTests
                 UnitPremiumAmount: 5000m,
                 CoverageAmount: 100_000_000m,
                 IsRequired: false,
+                ProviderName: "Waterbus",
                 Status: InsurancePackageStatus.Active,
                 IsWaterbusDefault: true,
                 ProviderSource: InsuranceProviderSource.Waterbus),
@@ -149,6 +151,7 @@ public class InsurancePackageProviderSourceTests
                 UnitPremiumAmount: 3000m,
                 CoverageAmount: 50_000_000m,
                 IsRequired: false,
+                ProviderName: "Bảo hiểm đối tác",
                 Status: InsurancePackageStatus.Active),
             CancellationToken.None);
 
@@ -176,6 +179,7 @@ public class InsurancePackageProviderSourceTests
             UnitPremiumAmount: 5000m,
             CoverageAmount: 100_000_000m,
             IsRequired: false,
+            ProviderName: "Waterbus",
             Status: InsurancePackageStatus.Active,
             IsWaterbusDefault: true,
             ProviderSource: InsuranceProviderSource.Waterbus);
@@ -227,7 +231,7 @@ public class InsurancePackageProviderSourceTests
                 UnitPremiumAmount: package.UnitPremiumAmount,
                 CoverageAmount: package.CoverageAmount,
                 IsRequired: false,
-                ProviderName: null,
+                ProviderName: "Waterbus",
                 ProviderLogoUrl: null,
                 ImageUrl: null,
                 Conditions: null,
@@ -264,7 +268,7 @@ public class InsurancePackageProviderSourceTests
                 UnitPremiumAmount: package.UnitPremiumAmount,
                 CoverageAmount: package.CoverageAmount,
                 IsRequired: false,
-                ProviderName: null,
+                ProviderName: "Bảo hiểm đối tác",
                 ProviderLogoUrl: null,
                 ImageUrl: null,
                 Conditions: null,
@@ -311,7 +315,7 @@ public class InsurancePackageProviderSourceTests
             UnitPremiumAmount: toBeSwitched.UnitPremiumAmount,
             CoverageAmount: toBeSwitched.CoverageAmount,
             IsRequired: false,
-            ProviderName: null,
+            ProviderName: "Waterbus",
             ProviderLogoUrl: null,
             ImageUrl: null,
             Conditions: null,

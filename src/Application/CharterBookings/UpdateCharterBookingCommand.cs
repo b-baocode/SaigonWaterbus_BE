@@ -393,6 +393,14 @@ public sealed class UpdateCharterBookingCommandHandler
             return;
         }
 
+        // Dữ liệu charter cũ có thể chỉ lưu các số đếm, chưa có manifest chi tiết.
+        // Giữ tương thích cho các booking đó; booking đã có hành khách chi tiết thì
+        // bắt buộc gửi passengers khi đổi số lượng để tránh lệch dữ liệu.
+        if (booking.Passengers.Count == 0)
+        {
+            return;
+        }
+
         var savedAdultCount = CharterBookingPassengerSupport.CountAdults(booking.Passengers);
         var savedChildCount = CharterBookingPassengerSupport.CountChildren(booking.Passengers);
         var requestedAdultCount = request.AdultCount ?? savedAdultCount;
