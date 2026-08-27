@@ -346,9 +346,15 @@ public sealed class GetRevenueReportQueryHandler
 
     private static IReadOnlyList<StationRevenueDto> BuildStationBreakdown(IReadOnlyList<RevenuePaymentRow> rows)
     {
+        // Deduplicate by (BookingId, FromStationId) to avoid double-counting when a booking has
+        // multiple payments (e.g., deposit + final payment). Each booking should contribute
+        // its TotalAmount once per departure/arrival station.
         // Build departure station breakdown
         var departureGroups = rows
             .Where(r => r.FromStationId.HasValue)
+            .GroupBy(r => (r.FromStationId!.Value, r.BookingId))
+            .Select(g => g.First())
+            .ToList()
             .GroupBy(r => r.FromStationId!.Value)
             .ToDictionary(
                 g => g.Key,
@@ -362,9 +368,12 @@ public sealed class GetRevenueReportQueryHandler
                     RefundAmount = g.Sum(r => r.RefundAmount)
                 });
 
-        // Build arrival station breakdown
+        // Build arrival station breakdown (same deduplication logic)
         var arrivalGroups = rows
             .Where(r => r.ToStationId.HasValue)
+            .GroupBy(r => (r.ToStationId!.Value, r.BookingId))
+            .Select(g => g.First())
+            .ToList()
             .GroupBy(r => r.ToStationId!.Value)
             .ToDictionary(
                 g => g.Key,
@@ -887,6 +896,416 @@ internal static class BookingReportQuerySupport
         return new DateTimeOffset(row.CharterDepartureDate.Value.ToDateTime(startTime), TimeSpan.Zero);
     }
 }
+
+public sealed record GetTopCustomersQuery(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    string? ServiceType = null,
+    string? PaymentMethod = null,
+    int Limit = 10) : IRequest<IReadOnlyList<TopCustomerDto>>;
+
+public sealed record TopCustomerDto(
+    string CustomerKey,
+    string Source,
+    string CustomerName,
+    string? CustomerEmail,
+    string? CustomerPhone,
+    int BookingCount,
+    int TicketCount,
+    decimal TotalAmount,
+    decimal PaidAmount,
+    DateTimeOffset? FirstBookingAt,
+    DateTimeOffset? LastBookingAt,
+    int OnlineBookingCount,
+    int CounterBookingCount);
+
+public sealed class GetTopCustomersQueryValidator : AbstractValidator<GetTopCustomersQuery>
+{
+    public GetTopCustomersQueryValidator()
+    {
+        RuleFor(x => x.From).LessThan(x => x.To)
+            .WithMessage("fromDate phải nhỏ hơn toDate.");
+        RuleFor(x => x.Limit).InclusiveBetween(1, 50)
+            .WithMessage("limit phải trong khoảng 1-50.");
+        RuleFor(x => x)
+            .Must(x => x.To - x.From <= TimeSpan.FromDays(366))
+            .WithMessage("Khoảng thống kê không được vượt quá 366 ngày.");
+    }
+}
+
+public sealed class GetTopCustomersQueryHandler
+    : IRequestHandler<GetTopCustomersQuery, IReadOnlyList<TopCustomerDto>>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+
+    public GetTopCustomersQueryHandler(IApplicationDbContext context, IUserContext userContext)
+    {
+        _context = context;
+        _userContext = userContext;
+    }
+
+    public async Task<IReadOnlyList<TopCustomerDto>> Handle(
+        GetTopCustomersQuery request,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        BookingReportQuerySupport.EnsureCanViewRevenue(actor);
+
+        var serviceType = BookingReportQuerySupport.NormalizeServiceType(request.ServiceType, nameof(request.ServiceType));
+        var paymentMethod = BookingReportQuerySupport.NormalizePaymentMethod(request.PaymentMethod);
+
+        var fromUtc = request.From.ToUniversalTime();
+        var toUtc = request.To.ToUniversalTime();
+
+        var bookingQuery = _context.Set<Booking>()
+            .AsNoTracking()
+            .Where(b => b.Created >= fromUtc
+                && b.Created < toUtc);
+
+        bookingQuery = BookingReportQuerySupport.ApplyServiceTypeFilter(bookingQuery, serviceType);
+
+        if (!string.IsNullOrWhiteSpace(paymentMethod))
+        {
+            bookingQuery = bookingQuery.Where(b => b.Payments.Any(p => p.PaymentMethod == paymentMethod));
+        }
+
+        // Pull minimal projection rows for in-memory aggregation.
+        var rawRows = await bookingQuery
+            .Select(b => new TopCustomerBookingRow(
+                b.Id,
+                b.UserId,
+                b.SoldByStaffId,
+                b.ContactName,
+                b.ContactPhone,
+                b.ContactEmail,
+                b.User != null ? b.User.NormalizedEmail : null,
+                b.User != null ? b.User.NormalizedPhoneNumber : null,
+                b.TotalAmount,
+                b.Created,
+                b.Payments
+                    .Where(p => p.PaymentStatus == PaymentSupport.PaidStatus
+                        && (p.Provider == PaymentSupport.PayOsProvider
+                            || p.Provider == PaymentSupport.CounterProvider
+                            || p.Provider == PaymentSupport.FreeProvider))
+                    .Sum(p => (decimal?)(p.Amount - p.RefundAmount)) ?? 0m,
+                b.Tickets.Count(t => t.TicketStatus != TicketStatus.Cancelled)))
+            .ToListAsync(cancellationToken);
+
+        var grouped = rawRows
+            .Where(r => TopCustomerAggregator.HasIdentity(r))
+            .GroupBy(r => TopCustomerAggregator.BuildKey(r))
+            .Select(g => TopCustomerAggregator.Aggregate(g.Key, g))
+            .ToList();
+
+        return grouped
+            .OrderByDescending(x => x.PaidAmount)
+            .ThenByDescending(x => x.BookingCount)
+            .Take(request.Limit)
+            .ToArray();
+    }
+}
+
+internal sealed record TopCustomerBookingRow(
+    Guid BookingId,
+    Guid? UserId,
+    Guid? SoldByStaffId,
+    string ContactName,
+    string ContactPhone,
+    string? ContactEmail,
+    string? NormalizedEmail,
+    string? NormalizedPhone,
+    decimal TotalAmount,
+    DateTimeOffset CreatedAt,
+    decimal PaidAmount,
+    int TicketCount);
+
+internal static class TopCustomerAggregator
+{
+    /// <summary>Build dedupe key prioritizing email > phone > normalized name.</summary>
+    public static string BuildKey(TopCustomerBookingRow row)
+    {
+        if (!string.IsNullOrWhiteSpace(row.NormalizedEmail))
+        {
+            return "email:" + row.NormalizedEmail!.Trim().ToLowerInvariant();
+        }
+        if (!string.IsNullOrWhiteSpace(row.NormalizedPhone))
+        {
+            return "phone:" + NormalizePhone(row.NormalizedPhone!);
+        }
+        if (!string.IsNullOrWhiteSpace(row.ContactPhone))
+        {
+            return "phone:" + NormalizePhone(row.ContactPhone);
+        }
+        if (!string.IsNullOrWhiteSpace(row.ContactEmail))
+        {
+            return "email:" + row.ContactEmail!.Trim().ToLowerInvariant();
+        }
+        return "name:" + NormalizeName(row.ContactName);
+    }
+
+    public static bool HasIdentity(TopCustomerBookingRow row) =>
+        !string.IsNullOrWhiteSpace(row.NormalizedEmail)
+        || !string.IsNullOrWhiteSpace(row.NormalizedPhone)
+        || !string.IsNullOrWhiteSpace(row.ContactPhone)
+        || !string.IsNullOrWhiteSpace(row.ContactEmail)
+        || !string.IsNullOrWhiteSpace(row.ContactName);
+
+    public static TopCustomerDto Aggregate(string key, IGrouping<string, TopCustomerBookingRow> group)
+    {
+        var first = group.First();
+        // Prefer user-supplied rich contact over staff-entered fallback.
+        var name = group
+            .Select(r => r.UserId.HasValue
+                ? (group.First(x => x.UserId == r.UserId) is var u ? u.ContactName : r.ContactName)
+                : r.ContactName)
+            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))
+            ?? first.ContactName;
+
+        var email = group
+            .Select(r => r.NormalizedEmail ?? r.ContactEmail)
+            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+        var phone = group
+            .Select(r => r.NormalizedPhone ?? r.ContactPhone)
+            .FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
+        var hasOnline = group.Any(r => r.UserId.HasValue);
+        var hasCounter = group.Any(r => r.SoldByStaffId.HasValue);
+        var source = (hasOnline, hasCounter) switch
+        {
+            (true, true) => "Both",
+            (true, false) => "Online",
+            (false, true) => "Counter",
+            _ => "Unknown"
+        };
+
+        return new TopCustomerDto(
+            key,
+            source,
+            name ?? string.Empty,
+            email,
+            phone,
+            group.Count(),
+            group.Sum(r => r.TicketCount),
+            group.Sum(r => r.TotalAmount),
+            group.Sum(r => r.PaidAmount),
+            group.Min(r => r.CreatedAt),
+            group.Max(r => r.CreatedAt),
+            group.Count(r => r.UserId.HasValue),
+            group.Count(r => r.SoldByStaffId.HasValue));
+    }
+
+    private static string NormalizePhone(string phone)
+    {
+        var trimmed = phone.Trim();
+        var digits = new string(trimmed.Where(char.IsDigit).ToArray());
+        return digits.Length > 9 ? digits[^9..] : digits;
+    }
+
+    private static string NormalizeName(string? name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+        return new string(name.Trim().ToLowerInvariant()
+            .Where(c => char.IsLetterOrDigit(c) || char.IsWhiteSpace(c))
+            .ToArray()).Replace(" ", "");
+    }
+}
+
+public sealed record GetWaterbusStationRevenueQuery(
+    DateTimeOffset From,
+    DateTimeOffset To) : IRequest<WaterbusStationRevenueDto>;
+
+public sealed record WaterbusStationRevenueDto(
+    DateTimeOffset From,
+    DateTimeOffset To,
+    decimal TotalGross,
+    decimal TotalRefund,
+    decimal TotalNet,
+    int BookingCount,
+    int PaymentCount,
+    int TotalTicketCount,
+    IReadOnlyList<WaterbusStationDto> Stations);
+
+public sealed record WaterbusStationDto(
+    Guid StationId,
+    string StationName,
+    string StationCode,
+    int DepartureCount,
+    int ArrivalCount,
+    int DepartureTicketCount,
+    int ArrivalTicketCount,
+    decimal DepartureGross,
+    decimal ArrivalGross,
+    decimal DepartureRefund,
+    decimal ArrivalRefund,
+    decimal DepartureNet,
+    decimal ArrivalNet,
+    decimal TotalGross,
+    decimal TotalRefund,
+    decimal TotalNet);
+
+public sealed class GetWaterbusStationRevenueQueryValidator : AbstractValidator<GetWaterbusStationRevenueQuery>
+{
+    public GetWaterbusStationRevenueQueryValidator()
+    {
+        RuleFor(x => x.From).LessThan(x => x.To)
+            .WithMessage("fromDate phải nhỏ hơn toDate.");
+        RuleFor(x => x)
+            .Must(x => x.To - x.From <= TimeSpan.FromDays(366))
+            .WithMessage("Khoảng thống kê không được vượt quá 366 ngày.");
+    }
+}
+
+public sealed class GetWaterbusStationRevenueQueryHandler
+    : IRequestHandler<GetWaterbusStationRevenueQuery, WaterbusStationRevenueDto>
+{
+    private readonly IApplicationDbContext _context;
+    private readonly IUserContext _userContext;
+
+    public GetWaterbusStationRevenueQueryHandler(IApplicationDbContext context, IUserContext userContext)
+    {
+        _context = context;
+        _userContext = userContext;
+    }
+
+    public async Task<WaterbusStationRevenueDto> Handle(
+        GetWaterbusStationRevenueQuery request,
+        CancellationToken cancellationToken)
+    {
+        var actor = await AuthSupport.GetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
+        BookingReportQuerySupport.EnsureCanViewRevenue(actor);
+
+        var fromUtc = request.From.ToUniversalTime();
+        var toUtc = request.To.ToUniversalTime();
+
+        // Filter Waterbus: booking.BookingType == Booking.SeatBookingType (SeatBooking) + route is Waterbus
+        // RouteType is on Trip → Route, accessed via b.Trip?.Route?.RouteType
+        var rows = await _context.Set<Payment>()
+            .AsNoTracking()
+            .Where(p => p.PaidAt >= fromUtc
+                && p.PaidAt < toUtc
+                && (p.Provider == PaymentSupport.PayOsProvider
+                    || p.Provider == PaymentSupport.CounterProvider
+                    || p.Provider == PaymentSupport.FreeProvider)
+                && p.Booking != null
+                && p.Booking.BookingType == Booking.SeatBookingType
+                && p.Booking.Trip != null
+                && p.Booking.Trip.Route != null
+                && p.Booking.Trip.Route.RouteType == RouteTypes.Regular
+                && p.Booking.FromStationId.HasValue)
+            .Select(p => new WaterbusPaymentRow(
+                p.BookingId,
+                p.Booking!.FromStationId!.Value,
+                p.Booking!.ToStationId,
+                p.Booking!.FromStation!.StationName,
+                p.Booking!.FromStation!.StationCode,
+                p.Booking!.ToStation != null ? p.Booking!.ToStation!.StationName : null,
+                p.Booking!.ToStation != null ? p.Booking!.ToStation!.StationCode : null,
+                p.Booking!.TotalAmount,
+                p.Amount,
+                p.RefundAmount,
+                p.Booking!.Tickets.Count(t => t.TicketStatus != TicketStatus.Cancelled)))
+            .ToListAsync(cancellationToken);
+
+        var totalGross = rows.Sum(r => r.PaymentAmount);
+        var totalRefund = rows.Sum(r => r.RefundAmount);
+        var totalNet = totalGross - totalRefund;
+        var bookingIds = rows.Select(r => r.BookingId).Distinct().ToList();
+
+        var depStations = rows
+            .GroupBy(r => r.FromStationId)
+            .ToDictionary(
+                g => g.Key,
+                g => new WaterbusStationAccumulator(
+                    g.First().FromStationName,
+                    g.First().FromStationCode,
+                    g.Select(r => r.BookingId).Distinct().Count(),
+                    g.Sum(r => r.TicketCount),
+                    g.Sum(r => r.BookingTotalAmount),
+                    g.Sum(r => r.PaymentAmount),
+                    g.Sum(r => r.RefundAmount)));
+
+        var arrStations = rows
+            .Where(r => r.ToStationId.HasValue)
+            .GroupBy(r => r.ToStationId!.Value)
+            .ToDictionary(
+                g => g.Key,
+                g => new WaterbusStationAccumulator(
+                    g.First().ToStationName!,
+                    g.First().ToStationCode!,
+                    g.Select(r => r.BookingId).Distinct().Count(),
+                    g.Sum(r => r.TicketCount),
+                    g.Sum(r => r.BookingTotalAmount),
+                    g.Sum(r => r.PaymentAmount),
+                    g.Sum(r => r.RefundAmount)));
+
+        var allStationIds = depStations.Keys
+            .Union(arrStations.Keys)
+            .OrderBy(id => depStations.GetValueOrDefault(id)?.StationName
+                ?? arrStations.GetValueOrDefault(id)?.StationName ?? "")
+            .ToList();
+
+        var stations = allStationIds.Select(stationId =>
+        {
+            var dep = depStations.GetValueOrDefault(stationId);
+            var arr = arrStations.GetValueOrDefault(stationId);
+            var depGross = dep?.PaymentGross ?? 0m;
+            var arrGross = arr?.PaymentGross ?? 0m;
+            var depRefund = dep?.RefundAmount ?? 0m;
+            var arrRefund = arr?.RefundAmount ?? 0m;
+            return new WaterbusStationDto(
+                stationId,
+                dep?.StationName ?? arr?.StationName ?? "Unknown",
+                dep?.StationCode ?? arr?.StationCode ?? "N/A",
+                dep?.BookingCount ?? 0,
+                arr?.BookingCount ?? 0,
+                dep?.TicketCount ?? 0,
+                arr?.TicketCount ?? 0,
+                depGross,
+                arrGross,
+                depRefund,
+                arrRefund,
+                depGross - depRefund,
+                arrGross - arrRefund,
+                depGross + arrGross,
+                depRefund + arrRefund,
+                (depGross + arrGross) - (depRefund + arrRefund));
+        }).ToArray();
+
+        return new WaterbusStationRevenueDto(
+            request.From,
+            request.To,
+            totalGross,
+            totalRefund,
+            totalNet,
+            bookingIds.Count,
+            rows.Count,
+            rows.Sum(r => r.TicketCount),
+            stations);
+    }
+}
+
+internal sealed record WaterbusPaymentRow(
+    Guid BookingId,
+    Guid FromStationId,
+    Guid? ToStationId,
+    string FromStationName,
+    string FromStationCode,
+    string? ToStationName,
+    string? ToStationCode,
+    decimal BookingTotalAmount,
+    decimal PaymentAmount,
+    decimal RefundAmount,
+    int TicketCount);
+
+internal sealed record WaterbusStationAccumulator(
+    string StationName,
+    string StationCode,
+    int BookingCount,
+    int TicketCount,
+    decimal BookingTotalAmount,
+    decimal PaymentGross,
+    decimal RefundAmount);
 
 public sealed record ExportBookingReportExcelQuery(
     string? Keyword = null,

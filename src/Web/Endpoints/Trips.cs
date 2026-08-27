@@ -40,6 +40,37 @@ public sealed class Trips : IEndpointGroup
         }
         """;
 
+    private const string ResetDemoTripsExample =
+        """
+        {
+          "operatingDate": "2026-08-27",
+          "confirmReset": true,
+          "plans": [
+            {
+              "routeCode": "WB-BD-LB",
+              "boatCodes": ["WB_001", "WB_002", "WB_003", "WB_004", "WB_005", "WB_006", "WB_007", "WB_008"],
+              "startTime": "14:00:00",
+              "endTime": "16:00:00",
+              "intervalMinutes": 5,
+              "stops": []
+            }
+          ]
+        }
+        """;
+
+    private const string ResetSingleDemoTripsExample =
+        """
+        {
+          "routeCode": "R01-BD-TD",
+          "boatCode": "BOAT-01",
+          "operatingDate": "2026-08-27",
+          "departureTimes": ["14:00:00", "16:00:00"],
+          "stops": [
+            { "stopOrder": 2, "stayDurationMinutes": 5 }
+          ]
+        }
+        """;
+
     private const string UpdateStatusExample =
         """
         {
@@ -240,6 +271,48 @@ public sealed class Trips : IEndpointGroup
                 "Route thường có bến giữa phải gửi stops gồm stayDurationMinutes cho từng bến giữa.",
                 "Vẫn áp dụng các kiểm tra an toàn khi tạo trip: tàu active/có ghế, không trùng lịch tàu hoặc bến, và phải có đủ nhân sự on-board."));
 
+        group.MapPost(ResetDemoTrips, "demo/reset")
+            .RequireAuthorization()
+            .Accepts<ResetDemoTripScheduleCommand>("application/json")
+            .WithSummary("Reset trip demo theo ngày rồi tạo nhiều tàu theo script")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                ResetDemoTripsExample,
+                "Dùng trước lúc demo: xóa toàn bộ trip Regular/Sightseeing không phải charter của operatingDate, rồi tạo lại theo trips[].",
+                "Trip Charter luôn được giữ nguyên. confirmReset bắt buộc true.",
+                "Có 2 cách gửi: trips[] để tự nhập giờ từng tàu, hoặc plans[] để BE tự tạo từ startTime đến endTime theo intervalMinutes và chia vòng các boatCodes.",
+                "Các tàu có thể chạy cùng route nhưng giờ cùng bến phải cách nhau tối thiểu 5 phút.",
+                "Toàn bộ reset và tạo lại chạy trong một transaction; nếu script không hợp lệ thì rollback, không để dữ liệu bị xóa dở."));
+
+        group.MapPost(ResetSingleDemoTrips, "demo/reset-single")
+            .RequireAuthorization()
+            .WithSummary("Reset trip demo: xoá trip Scheduled cũ rồi tạo lại")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                ResetSingleDemoTripsExample,
+                "Dùng khi muốn clean trip trong ngày rồi tạo lại với bộ departureTimes mới.",
+                "B1: xoá các trip Scheduled của (routeCode, boatCode, operatingDate) cùng trip_seats và trip_stops của chúng. Trip đã có booking (Completed/Boarding/InProgress/Delayed/Cancelled) KHÔNG bị xoá.",
+                "B2: tạo trip mới qua CreateTripCommand với từng departureTime — áp dụng đầy đủ các validate như POST /api/trips/demo.",
+                "departureTimes là giờ Việt Nam (+07:00).",
+                "Response: { deleted, created, skipped, trips } — skipped là số giờ bị bỏ qua vì lỗi validate (vd đè lịch tàu)."));
+
+        group.MapPost(CleanTrips, "clean")
+            .RequireAuthorization()
+            .WithSummary("Xoá toàn bộ trip trong ngày")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Xoá TẤT CẢ trip của ngày operatingDate, bất kể route hay tàu nào."));
+
+        group.MapPost(BatchCreateTrips, "batch-create")
+            .RequireAuthorization()
+            .WithSummary("Tạo batch trip cho nhiều tàu cùng lúc")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin",
+                null,
+                "Tạo trip cho tất cả tàu waterbus và sightseeing trong ngày. Mỗi item gồm routeCode, boatCode và danh sách giờ departureTimes (giờ Việt Nam +07:00).",
+                "Ví dụ tạo cho WB_001→WB_005 (WB-BD-LB) và WS_001→WS_004 (LOOP-BD) từ 16:00–23:00."));
+
         group.MapPost(PreviewTripsSchedule, "schedule/preview")
             .RequireAuthorization()
             .WithSummary("Preview tao mot hoac nhieu chuyen tau")
@@ -273,7 +346,7 @@ public sealed class Trips : IEndpointGroup
                 "tripCode sinh hang loat: BB-{yyyyMMdd}-{routeCode}-{HHmm} cho bus, BS-{yyyyMMdd}-{routeCode}-{HHmm} cho sightseeing.",
                 "Khong nhap gia theo tung dot generate. Gia chuyen tu dong lay theo chinh sach gia hien hanh luc FE xem/dat ve.",
                 "Neu chuyen da ton tai (cung tuyen + cung gio), tu dong bo qua (skip).",
-                "Gio khoi hanh da troi qua HOAC cach hien tai chua du 20 phut cung bi bo qua, dem vao skippedPast.",
+                "Gio khoi hanh da troi qua HOAC cach hien tai chua du 10 phut cung bi bo qua, dem vao skippedPast.",
                 "CHAN TRUNG LICH TAU: chuyen nao lam tau chong gio voi chuyen khac (ke ca chuyen vua sinh trong cung lo) se bi bo qua va dem vao skippedBoatBusy. Giua 2 chuyen cua cung tau phai cach it nhat 15 phut quay dau va co them thoi gian dua tau ve ben xuat phat neu chuyen truoc ket thuc o ben khac.",
                 "CHAN TRUNG BEN: cac chuyen xuat phat cung mot ben phai cach nhau toi thieu 10 phut de staff check ve/len tau, neu khong se dem vao skippedStationBusy.",
                 "Moi chuyen bi bo qua nam trong skippedItems[] kem reason, conflictTripCode va earliestAllowedDepartureTime de FE hien gio som nhat co the chay lai.",
@@ -457,6 +530,12 @@ public sealed class Trips : IEndpointGroup
         return Results.Ok(new CreateDemoTripsResult(trips.Count, trips));
     }
 
+    private static async Task<IResult> ResetDemoTrips(
+        ISender sender,
+        ResetDemoTripScheduleCommand command,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(command, ct));
+
     public sealed record CreateDemoTripsRequest(
         string RouteCode,
         string BoatCode,
@@ -465,6 +544,49 @@ public sealed class Trips : IEndpointGroup
         IReadOnlyList<CreateTripStopScheduleInput>? Stops = null);
 
     public sealed record CreateDemoTripsResult(int Created, IReadOnlyList<TripDetailDto> Trips);
+
+    public sealed record ResetSingleDemoTripsRequest(
+        string RouteCode,
+        string BoatCode,
+        DateOnly OperatingDate,
+        IReadOnlyList<TimeOnly> DepartureTimes,
+        IReadOnlyList<CreateTripStopScheduleInput>? Stops = null);
+
+    public sealed record CleanTripsRequest(DateOnly OperatingDate);
+
+    public sealed record BatchCreateTripsRequest(DateOnly OperatingDate, List<BatchTripItemInput> Items);
+
+    public sealed record BatchTripItemInput(string RouteCode, string BoatCode, List<TimeOnly> DepartureTimes, List<CreateTripStopScheduleInput>? Stops = null);
+
+    private static async Task<IResult> ResetSingleDemoTrips(
+        ISender sender,
+        ResetSingleDemoTripsRequest request,
+        CancellationToken ct)
+    {
+        return Results.Ok(await sender.Send(new ResetDemoTripsCommand(
+            request.RouteCode,
+            request.BoatCode,
+            request.OperatingDate,
+            request.DepartureTimes,
+            request.Stops), ct));
+    }
+
+    private static async Task<IResult> CleanTrips(
+        ISender sender,
+        CleanTripsRequest request,
+        CancellationToken ct)
+    {
+        return Results.Ok(await sender.Send(new CleanTripsCommand(request.OperatingDate), ct));
+    }
+
+    private static async Task<IResult> BatchCreateTrips(
+        ISender sender,
+        BatchCreateTripsRequest request,
+        CancellationToken ct)
+    {
+        var items = request.Items.Select(i => new BatchTripItem(i.RouteCode, i.BoatCode, i.DepartureTimes, i.Stops)).ToList();
+        return Results.Ok(await sender.Send(new BatchCreateTripsCommand(request.OperatingDate, items), ct));
+    }
 
     private static async Task<IResult> ScheduleTrips(ISender sender, GenerateTripsCommand command, CancellationToken ct) =>
         Results.Ok(await sender.Send(command, ct));

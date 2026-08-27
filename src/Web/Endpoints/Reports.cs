@@ -30,6 +30,31 @@ public sealed class Reports : IEndpointGroup
                 "Response có byStation để xem doanh thu theo từng bến (departure/arrival).",
                 "Doanh thu ròng = tổng payment đã thu - refundAmount."));
 
+        group.MapGet(GetWaterbusStationRevenue, "revenue/waterbus/stations")
+            .RequireAuthorization()
+            .WithSummary("Doanh thu waterbus theo ben (di va den)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc Manager",
+                null,
+                "Thong ke doanh thu chi danh cho Waterbus (BookingType=SeatBooking + RouteType=Waterbus).",
+                "fromDate/toDate dang yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy; toDate là ngày cuối được tính.",
+                "Mặc định: đầu tháng hiện tại → hôm nay theo giờ Việt Nam.",
+                "Mỗi bến tách departure (đi) và arrival (đến): số chuyến, vé, gross, refund, net.",
+                "Chỉ tính Payments đã Paid qua PayOs / Counter / Free."));
+
+        group.MapGet(GetTopCustomers, "revenue/top-customers")
+            .RequireAuthorization()
+            .WithSummary("Top khach dat nhieu nhat (gop ca online va quay)")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoặc Manager",
+                null,
+                "Thong ke top khach hang theo tong tien da thanh toan trong khoang fromDate/toDate.",
+                "Gop ca booking online (co UserId) lan booking mua tai quay (co SoldByStaffId), tu khoa nhan dang theo email > phone > name.",
+                "fromDate/toDate dang yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy; toDate là ngày cuối được tính.",
+                "serviceType optional: Waterbus | Sightseeing | Charter.",
+                "paymentMethod optional: Cash | PayOs | Free.",
+                "limit mac dinh 10, toi da 50."));
+
         group.MapGet(GetReportBookings, "bookings")
             .RequireAuthorization()
             .WithSummary("Tong hop / quan ly booking")
@@ -105,6 +130,73 @@ public sealed class Reports : IEndpointGroup
                 soldByStaffId,
                 fromStationId,
                 toStationId),
+            cancellationToken));
+    }
+
+    private static async Task<IResult> GetWaterbusStationRevenue(
+        ISender sender,
+        [FromQuery] string? fromDate,
+        [FromQuery] string? toDate,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseOptionalDateOnly(fromDate, out var from))
+        {
+            return Results.BadRequest(new { message = "fromDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+        if (!TryParseOptionalDateOnly(toDate, out var to))
+        {
+            return Results.BadRequest(new { message = "toDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(VietnamOffset).DateTime);
+        var startDate = from ?? new DateOnly(today.Year, today.Month, 1);
+        var endDate = to ?? today;
+        if (endDate < startDate)
+        {
+            return Results.BadRequest(new { message = "toDate phải lớn hơn hoặc bằng fromDate." });
+        }
+
+        return Results.Ok(await sender.Send(
+            new GetWaterbusStationRevenueQuery(
+                ToVietnamStartOfDay(startDate),
+                ToVietnamStartOfDay(endDate.AddDays(1))),
+            cancellationToken));
+    }
+
+    private static async Task<IResult> GetTopCustomers(
+        ISender sender,
+        [FromQuery] string? fromDate,
+        [FromQuery] string? toDate,
+        [FromQuery] string? serviceType,
+        [FromQuery] string? paymentMethod,
+        [FromQuery] int? limit,
+        CancellationToken cancellationToken)
+    {
+        if (!TryParseOptionalDateOnly(fromDate, out var from))
+        {
+            return Results.BadRequest(new { message = "fromDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        if (!TryParseOptionalDateOnly(toDate, out var to))
+        {
+            return Results.BadRequest(new { message = "toDate phải là ngày, định dạng yyyy-MM-dd, dd/MM/yyyy hoặc dd-MM-yyyy." });
+        }
+
+        var today = DateOnly.FromDateTime(DateTimeOffset.UtcNow.ToOffset(VietnamOffset).DateTime);
+        var startDate = from ?? new DateOnly(today.Year, today.Month, 1);
+        var endDate = to ?? today;
+        if (endDate < startDate)
+        {
+            return Results.BadRequest(new { message = "toDate phải lớn hơn hoặc bằng fromDate." });
+        }
+
+        return Results.Ok(await sender.Send(
+            new GetTopCustomersQuery(
+                ToVietnamStartOfDay(startDate),
+                ToVietnamStartOfDay(endDate.AddDays(1)),
+                serviceType,
+                paymentMethod,
+                limit is null or <= 0 ? 10 : limit.Value),
             cancellationToken));
     }
 

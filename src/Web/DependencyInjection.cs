@@ -80,6 +80,7 @@ public static class DependencyInjection
         builder.Services.AddSingleton<ICharterBookingRealtimeNotifier, SignalRCharterBookingRealtimeNotifier>();
         builder.Services.AddSingleton<IIncidentRealtimeNotifier, SignalRIncidentRealtimeNotifier>();
         builder.Services.AddSingleton<ITripDelayRealtimeNotifier, SignalRTripDelayRealtimeNotifier>();
+        builder.Services.AddSingleton<ITripsResetRealtimeNotifier, SignalRTripsResetRealtimeNotifier>();
         builder.Services.AddSingleton<INotificationRealtimeNotifier, SignalRNotificationRealtimeNotifier>();
 
         builder.Services.AddExceptionHandler<ProblemDetailsExceptionHandler>();
