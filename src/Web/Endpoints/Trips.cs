@@ -361,8 +361,9 @@ public sealed class Trips : IEndpointGroup
                 "Admin",
                 RoundTripPreviewExample,
                 "API chi goi y lich, KHONG tao trip.",
-                "FE gui boatCode, route luot di, route luot ve, khoang ngay va gio bat dau/ket thuc.",
+                "Waterbus khứ hồi: FE gui boatCode, route luot di, route luot ve, khoang ngay va gio bat dau/ket thuc.",
                 "Route luot ve phai bat dau tai ben cuoi cua route luot di va ket thuc tai ben dau cua route luot di.",
+                "SightseeingLoop: chi gui outboundRouteCode; inboundRouteCode de null/bo trong. BE tu preview lap lai cung tuyen sightseeing, khong can route ve gia.",
                 "BE tu xen luot di/luot ve theo cong thuc: departure chuyen sau = arrival chuyen truoc + 15 phut quay dau, vi tau dang o dung ben.",
                 "Cac chuyen xuat phat cung mot ben van phai cach nhau toi thieu 10 phut; neu khong item canCreate=false va dem vao skippedStationBusy.",
                 "Neu tau bi ban voi lich co san, item canCreate=false va reason/suggestedNextDepartureTime cho FE hien thi.",
@@ -407,6 +408,17 @@ public sealed class Trips : IEndpointGroup
                 "Cac ve Active cua chuyen se chuyen TicketStatus=Cancelled de khong check-in duoc sau do.",
                 "Booking/payment da thanh toan GIU NGUYEN; khong tu dong refund trong flow no-show.",
                 "Neu da co ve CheckedIn/CheckedOut thi tra 400, vi khong con dung nghia khach khong den."));
+
+        group.MapPost(AdminCompleteTripAttendance, "{id:guid}/admin/complete-attendance")
+            .RequireAuthorization()
+            .WithSummary("[Admin] Check-in va check-out toan bo ve cua chuyen")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin only",
+                null,
+                "Nhap tripId tren URL; khong can body.",
+                "Day la thao tac nhanh cho van hanh/demo: moi ve Active se duoc check-in roi check-out ngay; ve dang CheckedIn se duoc check-out.",
+                "BO QUA khung gio check-in/check-out thong thuong. Ve Cancelled, Expired va CheckedOut bi bo qua.",
+                "BE ghi audit OverrideCheckIn/OverrideCheckOut, cap nhat booking Completed neu toan bo ve cua booking da check-out, va chi Admin duoc goi."));
 
         group.MapPost(StartTripDelay, "{id:guid}/delay/start")
             .RequireAuthorization()
@@ -478,6 +490,12 @@ public sealed class Trips : IEndpointGroup
 
     private static async Task<IResult> GetTripPassengers(ISender sender, Guid id, CancellationToken ct) =>
         Results.Ok(await sender.Send(new GetTripPassengerManifestQuery(id), ct));
+
+    private static async Task<IResult> AdminCompleteTripAttendance(
+        ISender sender,
+        Guid id,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new AdminCompleteTripAttendanceCommand(id), ct));
 
     private static async Task<IResult> GetTripSeatMap(
         ISender sender, Guid id, string? fromStationCode, string? toStationCode, CancellationToken ct) =>

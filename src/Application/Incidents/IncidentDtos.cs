@@ -16,8 +16,6 @@ public sealed record IncidentDto(
     string ResolutionStatus,
     Guid? ReportedByUserId,
     string? ReportedByName,
-    Guid? AssignedManagerId,
-    string? AssignedManagerName,
     DateTimeOffset? AssignedAt,
     Guid? AssignedByUserId,
     string? AssignedByName,
@@ -42,9 +40,7 @@ public sealed record IncidentDto(
     int OnboardPassengerCount,
     int FuturePassengerCount,
     string? ResolutionNote,
-    DateTimeOffset? ResolvedAt,
-    Guid? ResolvedByUserId,
-    string? ResolvedByName);
+    DateTimeOffset? ResolvedAt);
 
 public sealed record IncidentPassengerImpactPlan(
     int ActiveTicketCount,

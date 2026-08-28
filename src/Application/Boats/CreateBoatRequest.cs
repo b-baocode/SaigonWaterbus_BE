@@ -59,6 +59,27 @@ public sealed class CreateBoatRequestValidator : AbstractValidator<CreateBoatReq
             .GreaterThanOrEqualTo(0)
             .WithMessage("Số ghế không được âm.");
 
+        // Các trường này được đánh dấu bắt buộc trên form đăng ký tàu.
+        // Giữ cùng giới hạn với nghiệp vụ vận hành để API không bị bypass từ FE.
+        RuleFor(x => x.MaxSpeedKmh)
+            .NotNull()
+            .WithMessage("Vận tốc tối đa là bắt buộc.")
+            .InclusiveBetween(1, 100)
+            .WithMessage("Vận tốc tối đa phải từ 1 đến 100 km/h.");
+
+        RuleFor(x => x.YearBuilt)
+            .NotNull()
+            .WithMessage("Năm đóng tàu là bắt buộc.")
+            .InclusiveBetween(1900, DateTime.UtcNow.Year)
+            .WithMessage("Năm đóng tàu phải từ 1900 đến năm hiện tại.");
+
+        RuleFor(x => x)
+            .Must(x => x.ServiceType != BoatServiceType.Passenger
+                || !x.YearBuilt.HasValue
+                || x.YearBuilt.Value >= DateTime.UtcNow.Year - BoatSupport.MaxPassengerBoatAgeYears)
+            .WithMessage($"Tàu chở khách không được quá {BoatSupport.MaxPassengerBoatAgeYears} năm sử dụng.")
+            .OverridePropertyName(nameof(CreateBoatRequest.YearBuilt));
+
         RuleFor(x => x.NumberOfDecks)
             .GreaterThan(0)
             .WithMessage("Số tầng phải lớn hơn 0.");

@@ -10,6 +10,7 @@ namespace SaigonWaterbus.Application.Boats;
 internal static class BoatSupport
 {
     public const int MaxBoatImages = 3;
+    public const int MaxPassengerBoatAgeYears = 20;
 
     public static async Task<User> EnsureCurrentUserCanViewBoatsAsync(
         IApplicationDbContext context,
@@ -62,6 +63,29 @@ internal static class BoatSupport
         string.IsNullOrWhiteSpace(registrationNumber)
             ? null
             : registrationNumber.Trim().ToUpperInvariant();
+
+    /// <summary>
+    /// Quy tắc nghiệp vụ: tàu chở khách chỉ được khai thác tối đa 20 năm,
+    /// tính theo năm đóng tàu. Tàu cứu hộ không chịu giới hạn này.
+    /// </summary>
+    public static void EnsurePassengerBoatAge(
+        BoatServiceType serviceType,
+        int? yearBuilt,
+        string propertyName)
+    {
+        if (serviceType != BoatServiceType.Passenger || !yearBuilt.HasValue)
+        {
+            return;
+        }
+
+        var minimumYearBuilt = DateTime.UtcNow.Year - MaxPassengerBoatAgeYears;
+        if (yearBuilt.Value < minimumYearBuilt)
+        {
+            throw AuthSupport.CreateValidationException(
+                propertyName,
+                $"Tàu chở khách không được quá {MaxPassengerBoatAgeYears} năm sử dụng.");
+        }
+    }
 
     public static BoatDto CreateDto(Boat boat, Trip? activeTrip = null, Incident? activeIncident = null)
     {

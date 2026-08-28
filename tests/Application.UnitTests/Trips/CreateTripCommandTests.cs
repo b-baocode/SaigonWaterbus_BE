@@ -664,6 +664,34 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task PreviewRoundTripScheduleAllowsSightseeingLoopWithoutInboundRoute()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("SIGHT-PREVIEW", Station("A", "Ben A"), Station("B", "Ben B"));
+        route.RouteType = RouteTypes.SightseeingLoop;
+        route.IsBookable = true;
+        var boat = BoatWithSeats("BOAT-SIGHT", seatCount: 3, seatSetupType: SeatSetupType.StandardAndVip);
+        var date = new DateOnly(2030, 1, 1);
+        context.AddRange(route, boat);
+        await context.SaveChangesAsync();
+
+        var result = await new PreviewRoundTripScheduleCommandHandler(context)
+            .Handle(
+                new PreviewRoundTripScheduleCommand(
+                    BoatCode: "BOAT-SIGHT",
+                    OutboundRouteCode: "SIGHT-PREVIEW",
+                    InboundRouteCode: null,
+                    FromDate: date,
+                    ToDate: date,
+                    StartTime: new TimeOnly(8, 0),
+                    EndTime: new TimeOnly(8, 30)),
+                CancellationToken.None);
+
+        result.Items.ShouldNotBeEmpty();
+        result.Items.ShouldAllBe(x => x.Direction == "Outbound");
+    }
+
+    [Test]
     public async Task PreviewRoundTripScheduleRejectsRegularRouteMissingDistance()
     {
         await using var context = SeatFlowTestData.CreateContext();

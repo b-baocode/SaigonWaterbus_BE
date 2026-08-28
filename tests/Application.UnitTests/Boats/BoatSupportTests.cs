@@ -10,7 +10,7 @@ namespace SaigonWaterbus.Application.UnitTests.Boats;
 public class BoatSupportTests
 {
     [Test]
-    public void CreateBoatRequestValidatorAcceptsBoatWithoutService()
+    public void CreateBoatRequestValidatorAcceptsValidBoat()
     {
         var validator = new CreateBoatRequestValidator();
 
@@ -19,7 +19,60 @@ public class BoatSupportTests
             "Waterbus 01",
             BoatStatus.Inactive,
             80,
-            1));
+            1,
+            MaxSpeedKmh: 50,
+            YearBuilt: DateTime.UtcNow.Year));
+
+        result.IsValid.ShouldBeTrue();
+    }
+
+    [TestCase(null, 2026)]
+    [TestCase(0, 2026)]
+    [TestCase(101, 2026)]
+    public void CreateBoatRequestValidatorRejectsMissingOrInvalidMaxSpeed(int? maxSpeedKmh, int? yearBuilt)
+    {
+        var result = new CreateBoatRequestValidator().Validate(ValidCreateBoatRequest(
+            maxSpeedKmh: maxSpeedKmh,
+            yearBuilt: yearBuilt));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(error => error.PropertyName == "MaxSpeedKmh");
+    }
+
+    [TestCase(null)]
+    [TestCase(1899)]
+    [TestCase(2100)]
+    public void CreateBoatRequestValidatorRejectsMissingOrInvalidYearBuilt(int? yearBuilt)
+    {
+        var result = new CreateBoatRequestValidator().Validate(new CreateBoatRequest(
+            "WB01",
+            "Waterbus 01",
+            BoatStatus.Inactive,
+            80,
+            1,
+            MaxSpeedKmh: 50,
+            YearBuilt: yearBuilt));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(error => error.PropertyName == "YearBuilt");
+    }
+
+    [Test]
+    public void CreateBoatRequestValidatorRejectsPassengerBoatOlderThanTwentyYears()
+    {
+        var result = new CreateBoatRequestValidator().Validate(ValidCreateBoatRequest(
+            yearBuilt: DateTime.UtcNow.Year - BoatSupport.MaxPassengerBoatAgeYears - 1));
+
+        result.IsValid.ShouldBeFalse();
+        result.Errors.ShouldContain(error => error.PropertyName == "YearBuilt"
+            && error.ErrorMessage.Contains("20 năm"));
+    }
+
+    [Test]
+    public void CreateBoatRequestValidatorAcceptsPassengerBoatAtTwentyYearLimit()
+    {
+        var result = new CreateBoatRequestValidator().Validate(ValidCreateBoatRequest(
+            yearBuilt: DateTime.UtcNow.Year - BoatSupport.MaxPassengerBoatAgeYears));
 
         result.IsValid.ShouldBeTrue();
     }
@@ -79,5 +132,17 @@ public class BoatSupportTests
             SeatCount = 1,
             SeatsConfigured = seatsConfigured
         };
+
+    private static CreateBoatRequest ValidCreateBoatRequest(
+        int? maxSpeedKmh = 50,
+        int? yearBuilt = null) =>
+        new(
+            "WB01",
+            "Waterbus 01",
+            BoatStatus.Inactive,
+            80,
+            1,
+            MaxSpeedKmh: maxSpeedKmh,
+            YearBuilt: yearBuilt ?? DateTime.UtcNow.Year);
 
 }

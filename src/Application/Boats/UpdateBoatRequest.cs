@@ -54,6 +54,16 @@ public sealed class UpdateBoatRequestValidator : AbstractValidator<UpdateBoatReq
             .WithMessage("Số tầng phải lớn hơn 0.")
             .When(x => x.NumberOfDecks.HasValue);
 
+        RuleFor(x => x.MaxSpeedKmh)
+            .InclusiveBetween(1, 100)
+            .WithMessage("Vận tốc tối đa phải từ 1 đến 100 km/h.")
+            .When(x => x.MaxSpeedKmh.HasValue);
+
+        RuleFor(x => x.YearBuilt)
+            .InclusiveBetween(1900, DateTime.UtcNow.Year)
+            .WithMessage("Năm đóng tàu phải từ 1900 đến năm hiện tại.")
+            .When(x => x.YearBuilt.HasValue);
+
         RuleFor(x => x.SeatSetupType)
             .IsInEnum()
             .WithMessage("Kiểu ghế của tàu không hợp lệ.")
@@ -213,6 +223,8 @@ public sealed class UpdateBoatRequestUseCase
         {
             boat.YearBuilt = request.YearBuilt;
         }
+
+        BoatSupport.EnsurePassengerBoatAge(boat.ServiceType, boat.YearBuilt, nameof(request.YearBuilt));
 
         var imageUrls = BoatSupport.NormalizeImageUrls(request.ImageUrl, request.ImageUrls).ToList();
         var imageFiles = BoatSupport.CreateImageFiles(

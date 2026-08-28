@@ -354,8 +354,6 @@ public class CreateIncidentCommandTests
             new AssignIncidentManagerCommand(incident.Id, managerContext.UserId!.Value),
             CancellationToken.None);
 
-        result.AssignedManagerId.ShouldBe(managerContext.UserId!.Value);
-        result.AssignedManagerName.ShouldNotBeNull();
         result.AssignedAt.ShouldBe(assignedAt);
         result.AssignedByUserId.ShouldBe(adminContext.UserId!.Value);
 

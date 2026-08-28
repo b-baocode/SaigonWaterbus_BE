@@ -1,6 +1,7 @@
 using FluentValidation.Results;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.StaffWorkAssignments;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -12,7 +13,7 @@ namespace SaigonWaterbus.Application.Trips;
 public sealed record PreviewRoundTripScheduleCommand(
     string BoatCode,
     string OutboundRouteCode,
-    string InboundRouteCode,
+    string? InboundRouteCode,
     DateOnly FromDate,
     DateOnly ToDate,
     TimeOnly StartTime,
@@ -51,9 +52,10 @@ public sealed class PreviewRoundTripScheduleCommandValidator : AbstractValidator
     {
         RuleFor(x => x.BoatCode).NotEmpty().MaximumLength(50);
         RuleFor(x => x.OutboundRouteCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.InboundRouteCode).NotEmpty().MaximumLength(50);
+        RuleFor(x => x.InboundRouteCode).MaximumLength(50);
         RuleFor(x => x)
-            .Must(x => !string.Equals(x.OutboundRouteCode, x.InboundRouteCode, StringComparison.OrdinalIgnoreCase))
+            .Must(x => string.IsNullOrWhiteSpace(x.InboundRouteCode)
+                || !string.Equals(x.OutboundRouteCode, x.InboundRouteCode, StringComparison.OrdinalIgnoreCase))
             .WithMessage("Route lượt đi và route lượt về phải khác nhau.")
             .OverridePropertyName(nameof(PreviewRoundTripScheduleCommand.InboundRouteCode));
         RuleFor(x => x.FromDate).NotEmpty();
@@ -113,8 +115,6 @@ public sealed class PreviewRoundTripScheduleCommandHandler
     {
         var boatCode = request.BoatCode.Trim().ToUpperInvariant();
         var outboundRouteCode = request.OutboundRouteCode.Trim().ToUpperInvariant();
-        var inboundRouteCode = request.InboundRouteCode.Trim().ToUpperInvariant();
-
         var boat = await _context.Set<Boat>()
             .SingleOrDefaultAsync(x => x.Code == boatCode, cancellationToken)
             ?? throw new NotFoundException($"Boat '{boatCode}' not found.");
@@ -126,9 +126,24 @@ public sealed class PreviewRoundTripScheduleCommandHandler
         }
 
         var outboundRoute = await LoadRouteAsync(outboundRouteCode, nameof(request.OutboundRouteCode), cancellationToken);
-        var inboundRoute = await LoadRouteAsync(inboundRouteCode, nameof(request.InboundRouteCode), cancellationToken);
-        EnsureRoutePairIsRoundTrip(outboundRoute, inboundRoute);
-        EnsureRouteDistances(outboundRoute, inboundRoute);
+        var isSightseeingLoop = string.Equals(outboundRoute.RouteType, RouteTypes.SightseeingLoop, StringComparison.OrdinalIgnoreCase);
+        if (!isSightseeingLoop && string.IsNullOrWhiteSpace(request.InboundRouteCode))
+        {
+            throw new ValidationException([new ValidationFailure(nameof(request.InboundRouteCode),
+                "Tuyến lượt về là bắt buộc với Waterbus khứ hồi.")]);
+        }
+
+        var inboundRoute = isSightseeingLoop
+            ? outboundRoute
+            : await LoadRouteAsync(
+                request.InboundRouteCode!.Trim().ToUpperInvariant(),
+                nameof(request.InboundRouteCode),
+                cancellationToken);
+        if (!isSightseeingLoop)
+        {
+            EnsureRoutePairIsRoundTrip(outboundRoute, inboundRoute);
+            EnsureRouteDistances(outboundRoute, inboundRoute);
+        }
 
         EnsureBoatCompatible(boat, outboundRoute, nameof(request.OutboundRouteCode));
         EnsureBoatCompatible(boat, inboundRoute, nameof(request.InboundRouteCode));
@@ -184,7 +199,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
 
             while (departureTime <= endTime && attempts++ < MaxAttemptsPerDate)
             {
-                var plan = direction == RoundTripDirection.Outbound
+                var plan = isSightseeingLoop || direction == RoundTripDirection.Outbound
                     ? new RoutePreviewPlan("Outbound", outboundRoute, outboundStops, outboundStayDurationMinutesByStopOrder)
                     : new RoutePreviewPlan("Inbound", inboundRoute, inboundStops, inboundStayDurationMinutesByStopOrder);
 
@@ -205,9 +220,12 @@ public sealed class PreviewRoundTripScheduleCommandHandler
                     stationDepartureSchedule.Add(ToStationDepartureWindow(plan, item.DepartureTime, "(preview)"));
                     existingDepartureKeys.Add((plan.Route.Id, item.DepartureTime));
                     departureTime = item.ArrivalTime.Add(TripScheduleSupport.BoatTurnaroundBuffer);
-                    direction = direction == RoundTripDirection.Outbound
-                        ? RoundTripDirection.Inbound
-                        : RoundTripDirection.Outbound;
+                    if (!isSightseeingLoop)
+                    {
+                        direction = direction == RoundTripDirection.Outbound
+                            ? RoundTripDirection.Inbound
+                            : RoundTripDirection.Outbound;
+                    }
                     continue;
                 }
 

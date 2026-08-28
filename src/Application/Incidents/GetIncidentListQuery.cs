@@ -37,14 +37,12 @@ public sealed class GetIncidentListQueryHandler : IRequestHandler<GetIncidentLis
             .Include(x => x.Boat)
             .Include(x => x.Trip)
             .Include(x => x.Reporter)
-            .Include(x => x.AssignedManager)
             .Include(x => x.AssignedByUser)
             .Include(x => x.RescueBoat)
             .Include(x => x.RescueDispatchedByUser)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementAssignedByUser)
             .Include(x => x.ReplacementTargetStation)
-            .Include(x => x.Resolver)
             .AsNoTracking();
 
         if (AuthSupport.IsManager(actor))

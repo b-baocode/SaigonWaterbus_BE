@@ -78,8 +78,6 @@ internal static class IncidentSupport
             incident.ResolutionStatus,
             incident.ReportedBy,
             incident.Reporter?.FullName,
-            incident.AssignedManagerId,
-            incident.AssignedManager?.FullName,
             incident.AssignedAt,
             incident.AssignedByUserId,
             incident.AssignedByUser?.FullName,
@@ -104,9 +102,7 @@ internal static class IncidentSupport
             incident.OnboardPassengerCountSnapshot,
             incident.FuturePassengerCountSnapshot,
             incident.ResolutionNote,
-            incident.ResolvedAt,
-            incident.ResolvedByUserId,
-            incident.Resolver?.FullName);
+            incident.ResolvedAt);
 
     public static IncidentRealtimeEvent ToRealtimeEvent(
         Incident incident,

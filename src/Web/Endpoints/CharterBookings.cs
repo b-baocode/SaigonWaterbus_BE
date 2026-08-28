@@ -409,8 +409,7 @@ public sealed class CharterBookings : IEndpointGroup
 
         group.MapGet(CharterBookingQrImage, "qr-image/{qrToken}")
             .AllowAnonymous()
-            .WithSummary("Tao anh QR tong charter booking")
-            .WithDescription("Tra ve anh PNG QR cho charterBookingQrToken de hien thi tren UI/email.");
+            .WithSummary("Tao anh QR tong charter booking");
 
         group.MapPost(UpdateCharterBookingAttendance, "manifest/qr/{qrToken}/attendance")
             .RequireAuthorization()

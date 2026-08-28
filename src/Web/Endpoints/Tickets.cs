@@ -169,8 +169,7 @@ public sealed class Tickets : IEndpointGroup
 
         group.MapGet(QrImage, "qr-image/{codeOrToken}")
             .AllowAnonymous()
-            .WithSummary("Tao anh QR ve")
-            .WithDescription("Tra ve anh PNG QR cho ticketCode hoac qrToken de chen vao email boarding pass.");
+            .WithSummary("Tao anh QR ve");
     }
 
     private static async Task<IResult> ScanTicket(
