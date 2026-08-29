@@ -41,6 +41,7 @@ public sealed class Operations : IEndpointGroup
                 "serviceType optional: booking | bus | sightseeing | charter | all.",
                 "Anonymous/Customer xem tối đa 7 ngày và chỉ thấy Bus + Sightseeing.",
                 "Staff tàu dùng API này để theo dõi status, movementStatus, actualStartAt, actualEndAt, nextStation, nextPlannedArrivalAt, totalPassengerCount, onboardPassengerCount và alightedPassengerCount.",
+                "Live GPS Moving không bị Scheduled/Boarding/Delayed ghi đè. Response có latestGpsRecordedAt/latestGpsReceivedAt và dwellCountdown khi tàu AtStation.",
                 "Response chính: operatingDate, fromLocation, toLocation, scheduledDepartureAt, endAt, stops[]."));
 
         groupBuilder.MapPost(RefreshSchedule, "schedule/sync")

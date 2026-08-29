@@ -30,13 +30,7 @@ public sealed class Tracking : IEndpointGroup
     private const int MaxRemainingMinutesToNextStation = 24 * 60;
     private const decimal MaxRemainingDistanceKmToNextStation = 10_000m;
     private const string OpenIncidentStatus = "Open";
-    private const string MovementStatusMoving = "Moving";
     private const string MovementStatusAtStation = "AtStation";
-    private const string MovementStatusBoarding = "Boarding";
-    private const string MovementStatusScheduled = "Scheduled";
-    private const string MovementStatusDelayed = "Delayed";
-    private const string MovementStatusCompleted = "Completed";
-    private const string MovementStatusCancelled = "Cancelled";
     private const string MovementStatusIncident = "Incident";
     private const string IncidentLocationStatus = "incident";
     private const string BoatStatusRejectedReason = "boat-status";
@@ -1375,54 +1369,6 @@ public sealed class Tracking : IEndpointGroup
         return stop.Created == default ? null : stop.Created;
     }
 
-    private static string ResolveTrackingMovementStatus(
-        Trip? trip,
-        IReadOnlyList<TripStop> tripStops,
-        string gpsStatus,
-        decimal? speedKmh,
-        DateTimeOffset now)
-    {
-        if (trip?.TripStatus == TripStatus.Cancelled)
-        {
-            return MovementStatusCancelled;
-        }
-
-        if (trip?.TripStatus == TripStatus.Completed)
-        {
-            return MovementStatusCompleted;
-        }
-
-        if (tripStops.Any(x => string.Equals(x.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
-            && x.ActualDepartureTime is null))
-        {
-            return MovementStatusAtStation;
-        }
-
-        if (tripStops.Any(x => string.Equals(x.StopStatus, TripStopStatuses.Arriving, StringComparison.OrdinalIgnoreCase)))
-        {
-            return TripStopStatuses.Arriving;
-        }
-
-        if (trip?.TripStatus == TripStatus.Boarding)
-        {
-            return MovementStatusBoarding;
-        }
-
-        if (trip?.TripStatus == TripStatus.Delayed)
-        {
-            return MovementStatusDelayed;
-        }
-
-        if (IsMovingGpsStatus(gpsStatus) || speedKmh is > MovingSpeedThresholdKmh || trip?.TripStatus == TripStatus.InProgress)
-        {
-            return MovementStatusMoving;
-        }
-
-        return trip is not null && now < trip.DepartureTime
-            ? MovementStatusScheduled
-            : gpsStatus;
-    }
-
     private static int? ResolveMinutesUntilDeparture(Trip? trip, TripStop? currentStop, DateTimeOffset now)
     {
         if (trip is null || trip.TripStatus is TripStatus.Cancelled or TripStatus.Completed)
@@ -1674,10 +1620,7 @@ public sealed class Tracking : IEndpointGroup
     }
 
     private static bool IsMovingGpsStatus(string status) =>
-        string.Equals(status, "moving", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(status, "departed", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(status, "in_progress", StringComparison.OrdinalIgnoreCase)
-        || string.Equals(status, "inprogress", StringComparison.OrdinalIgnoreCase);
+        LiveTrackingMovementStatusSupport.IsMovingGpsStatus(status);
 
     private static bool SetTripStatus(
         Trip trip,
@@ -1808,9 +1751,17 @@ public sealed class Tracking : IEndpointGroup
         var currentStationCode = location.CurrentStation?.StationCode ?? currentStop?.Station?.StationCode;
         var currentStationName = location.CurrentStation?.StationName ?? currentStop?.Station?.StationName;
         var lastStopEvent = ResolveLastStopEvent(tripStops);
+        var isOnline = now - location.ReceivedAt <= TimeSpan.FromSeconds(OnlineThresholdSeconds);
         var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
             location.Trip,
             currentStop,
+            now);
+        var movementStatus = LiveTrackingMovementStatusSupport.Resolve(
+            location.Trip,
+            tripStops,
+            location.Status,
+            location.SpeedKmh,
+            isOnline,
             now);
 
         return new(
@@ -1823,12 +1774,7 @@ public sealed class Tracking : IEndpointGroup
             location.TripId,
             location.Trip?.TripCode,
             onboardPassengerCount,
-            ResolveTrackingMovementStatus(
-                location.Trip,
-                tripStops,
-                location.Status,
-                location.SpeedKmh,
-                now),
+            movementStatus,
             currentStationId,
             currentStationCode,
             currentStationName,
@@ -1855,7 +1801,7 @@ public sealed class Tracking : IEndpointGroup
             location.SignalStrength,
             location.GpsFixQuality,
             activeIncident,
-            now - location.ReceivedAt <= TimeSpan.FromSeconds(OnlineThresholdSeconds),
+            isOnline,
             dwellCountdown,
             CreateBoatImageUrls(location.Boat).FirstOrDefault(),
             CreateBoatImageUrls(location.Boat));

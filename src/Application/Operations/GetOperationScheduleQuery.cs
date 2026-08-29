@@ -5,6 +5,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Fares;
 using SaigonWaterbus.Application.Trips;
+using SaigonWaterbus.Application.Tracking;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
@@ -77,7 +78,9 @@ public sealed record OperationScheduleItemDto(
     IReadOnlyList<OperationScheduleStopDto>? Stops = null,
     Guid? DestinationStationId = null,
     string? DestinationStationCode = null,
-    string? DestinationStationName = null);
+    string? DestinationStationName = null,
+    DateTimeOffset? LatestGpsRecordedAt = null,
+    DateTimeOffset? LatestGpsReceivedAt = null);
 
 public sealed record OperationScheduleStopDto(
     Guid? TripStopId,
@@ -342,7 +345,9 @@ public sealed class GetOperationScheduleQueryHandler
             BuildStopDtos(tripStops, routeStops),
             toStation.StationId,
             toStation.StationCode,
-            toStation.LocationName);
+            toStation.LocationName,
+            latestLocation?.RecordedAt,
+            latestLocation?.ReceivedAt);
     }
 
     private static IReadOnlyList<OperationScheduleStopDto> BuildStopDtos(
@@ -717,52 +722,13 @@ public sealed class GetOperationScheduleQueryHandler
         BoatLatestLocation? latestLocation,
         bool isGpsOnline,
         DateTimeOffset now)
-    {
-        if (trip.TripStatus == TripStatus.Cancelled)
-        {
-            return OperationStatuses.Cancelled;
-        }
-
-        if (trip.TripStatus == TripStatus.Completed)
-        {
-            return OperationStatuses.Completed;
-        }
-
-        if (tripStops.Any(x => string.Equals(x.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase)
-            && x.ActualDepartureTime is null))
-        {
-            return OperationMovementStatuses.AtStation;
-        }
-
-        if (tripStops.Any(x => string.Equals(x.StopStatus, TripStopStatuses.Arriving, StringComparison.OrdinalIgnoreCase)))
-        {
-            return TripStopStatuses.Arriving;
-        }
-
-        if (trip.TripStatus == TripStatus.Delayed)
-        {
-            return OperationStatuses.Delayed;
-        }
-
-        if (trip.TripStatus == TripStatus.Boarding)
-        {
-            return OperationStatuses.Boarding;
-        }
-
-        if (trip.TripStatus == TripStatus.InProgress)
-        {
-            return OperationMovementStatuses.Moving;
-        }
-
-        if (isGpsOnline && latestLocation?.TripId == trip.Id)
-        {
-            return OperationMovementStatuses.Moving;
-        }
-
-        return now < trip.DepartureTime
-            ? OperationStatuses.Scheduled
-            : trip.TripStatus.ToString();
-    }
+    => LiveTrackingMovementStatusSupport.Resolve(
+        trip,
+        tripStops,
+        latestLocation?.Status,
+        latestLocation?.SpeedKmh,
+        isGpsOnline && latestLocation?.TripId == trip.Id,
+        now);
 
     private static string ToOperationStatus(TripStatus tripStatus) =>
         tripStatus switch

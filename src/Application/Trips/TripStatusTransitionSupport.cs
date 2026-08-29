@@ -1,5 +1,6 @@
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Constants;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Application.Trips;
 
@@ -46,7 +47,8 @@ public static class TripStatusTransitionSupport
         TripStop? currentStop,
         DateTimeOffset now)
     {
-        if (currentStop is null
+        if (trip?.TripStatus is TripStatus.Completed or TripStatus.Cancelled
+            || currentStop is null
             || currentStop.ActualDepartureTime.HasValue
             || !string.Equals(currentStop.StopStatus, TripStopStatuses.Arrived, StringComparison.OrdinalIgnoreCase))
         {

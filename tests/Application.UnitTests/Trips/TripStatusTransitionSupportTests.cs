@@ -2,6 +2,7 @@ using NUnit.Framework;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Trips;
@@ -106,5 +107,28 @@ public class TripStatusTransitionSupportTests
         countdown.RemainingSeconds.ShouldBe(7 * 60);
         countdown.RemainingMinutes.ShouldBe(7);
         countdown.IsOverdue.ShouldBeFalse();
+    }
+
+    [TestCase(TripStatus.Completed)]
+    [TestCase(TripStatus.Cancelled)]
+    public void TerminalTripDoesNotReturnDwellCountdown(TripStatus status)
+    {
+        var now = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var trip = new Trip
+        {
+            DepartureTime = now.AddHours(-1),
+            TripStatus = status
+        };
+        var stop = new TripStop
+        {
+            StationId = Guid.NewGuid(),
+            StopOrder = 2,
+            StopStatus = TripStopStatuses.Arrived,
+            ActualArrivalTime = now,
+            PlannedDepartureTime = now.AddMinutes(5),
+            StayDurationMinutes = 5
+        };
+
+        TripStatusTransitionSupport.ResolveDwellCountdown(trip, stop, now).ShouldBeNull();
     }
 }

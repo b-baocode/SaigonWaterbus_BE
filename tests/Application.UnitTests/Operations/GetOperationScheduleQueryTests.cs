@@ -14,6 +14,54 @@ namespace SaigonWaterbus.Application.UnitTests.Operations;
 public class GetOperationScheduleQueryTests
 {
     [Test]
+    public async Task LiveGpsMovingWinsOverScheduledAndReturnsGpsTimestamps()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var now = new DateTimeOffset(2030, 1, 1, 7, 45, 0, TimeSpan.FromHours(7)).ToUniversalTime();
+        var trip = SeedTrip(
+            context,
+            "BB-20300101-B01-0800",
+            RouteTypes.Regular,
+            TripTypes.Regular,
+            now.AddMinutes(15),
+            capacity: 79);
+        var recordedAt = now.AddSeconds(-2);
+        var receivedAt = now.AddSeconds(-1);
+        context.BoatLatestLocations.Add(new BoatLatestLocation
+        {
+            BoatId = trip.BoatId!.Value,
+            GpsDeviceId = Guid.NewGuid(),
+            TripId = trip.Id,
+            Latitude = 10.77m,
+            Longitude = 106.70m,
+            SpeedKmh = 12m,
+            Status = "moving",
+            RemainingDistanceKmToNextStation = 1.2m,
+            RemainingMinutesToNextStation = 4,
+            RecordedAt = recordedAt,
+            ReceivedAt = receivedAt,
+            UpdatedAt = receivedAt
+        });
+        await context.SaveChangesAsync();
+
+        var item = (await new GetOperationScheduleQueryHandler(
+                context,
+                admin,
+                new FixedTimeProvider(now))
+            .Handle(
+                new GetOperationScheduleQuery(now.AddHours(-1), now.AddHours(2)),
+                CancellationToken.None))
+            .Single();
+
+        item.MovementStatus.ShouldBe("Moving");
+        item.RemainingMinutesToNextStation.ShouldBe(4);
+        item.RemainingDistanceKmToNextStation.ShouldBe(1.2m);
+        item.LatestGpsRecordedAt.ShouldBe(recordedAt);
+        item.LatestGpsReceivedAt.ShouldBe(receivedAt);
+    }
+
+    [Test]
     public async Task BookingServiceTypeReturnsBusAndSightseeingTripsOnly()
     {
         await using var context = SeatFlowTestData.CreateContext();
