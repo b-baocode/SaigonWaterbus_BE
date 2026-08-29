@@ -27,10 +27,13 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
     public CreateUserRequestValidator()
     {
         RuleFor(x => x.FullName)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .WithMessage("Họ và tên không được để trống.")
             .MaximumLength(150)
-            .WithMessage("Họ và tên không được vượt quá 150 ký tự.");
+            .WithMessage("Họ và tên không được vượt quá 150 ký tự.")
+            .Must(UserInputValidationSupport.IsValidFullName)
+            .WithMessage(UserInputValidationSupport.InvalidFullNameMessage);
 
         RuleFor(x => x.DateOfBirth)
             .Must(x => !x.HasValue || x.Value <= DateOnly.FromDateTime(DateTime.UtcNow.Date))
@@ -45,9 +48,11 @@ public sealed class CreateUserRequestValidator : AbstractValidator<CreateUserReq
             .WithMessage("Quốc tịch không được vượt quá 100 ký tự.");
 
         RuleFor(x => x.PhoneNumber)
-            .Must(phoneNumber => phoneNumber is null || PhoneRules.IsValid(phoneNumber))
-            .WithMessage(PhoneRules.InvalidInternationalPhoneMessage)
-            .When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber));
+            .Cascade(CascadeMode.Stop)
+            .NotEmpty()
+            .WithMessage("Số điện thoại là bắt buộc.")
+            .Must(PhoneRules.IsValid)
+            .WithMessage(PhoneRules.InvalidInternationalPhoneMessage);
 
         RuleFor(x => x.Email)
             .Cascade(CascadeMode.Stop)

@@ -167,3 +167,36 @@ public sealed class UpdateReviewStatusCommandHandler : IRequestHandler<UpdateRev
             review.Trip?.DepartureTime);
     }
 }
+
+[Authorize(Roles = "Admin,Manager")]
+public sealed record DeleteReviewCommand(Guid ReviewId) : IRequest;
+
+public sealed class DeleteReviewCommandValidator : AbstractValidator<DeleteReviewCommand>
+{
+    public DeleteReviewCommandValidator()
+    {
+        RuleFor(x => x.ReviewId).NotEmpty();
+    }
+}
+
+public sealed class DeleteReviewCommandHandler : IRequestHandler<DeleteReviewCommand>
+{
+    private readonly IApplicationDbContext _context;
+
+    public DeleteReviewCommandHandler(IApplicationDbContext context)
+    {
+        _context = context;
+    }
+
+    public async Task Handle(
+        DeleteReviewCommand request,
+        CancellationToken cancellationToken)
+    {
+        var review = await _context.Set<Review>()
+            .SingleOrDefaultAsync(r => r.Id == request.ReviewId, cancellationToken)
+            ?? throw new NotFoundException("Review not found.");
+
+        _context.Set<Review>().Remove(review);
+        await _context.SaveChangesAsync(cancellationToken);
+    }
+}

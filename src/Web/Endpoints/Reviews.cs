@@ -65,6 +65,16 @@ public sealed class Reviews : IEndpointGroup
                 """{ "status": "Published" }""",
                 "status: Published (duyet, cho hien public) | Hidden (an khoi danh sach public - cung la trang thai mac dinh khi vua tao). Khong xoa cung du lieu.",
                 "Idempotent: gui lai status hien tai thi giu nguyen."));
+
+        group.MapDelete(DeleteReview, "admin/{id:guid}")
+            .RequireAuthorization()
+            .WithSummary("Quan tri: xoa vinh vien mot danh gia")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin hoac Manager",
+                null,
+                "Xoa cung review theo id. Thao tac nay khong the hoan tac.",
+                "Khong xoa customer, booking hoac trip lien quan.",
+                "Tra ve 204 khi xoa thanh cong; 404 khi review khong ton tai."));
     }
 
     private static async Task<IResult> CreateBookingReview(
@@ -107,6 +117,15 @@ public sealed class Reviews : IEndpointGroup
         UpdateReviewStatusRequest request,
         CancellationToken ct) =>
         Results.Ok(await sender.Send(new UpdateReviewStatusCommand(id, request.Status), ct));
+
+    private static async Task<IResult> DeleteReview(
+        ISender sender,
+        Guid id,
+        CancellationToken ct)
+    {
+        await sender.Send(new DeleteReviewCommand(id), ct);
+        return Results.NoContent();
+    }
 
     public sealed record CreateBookingReviewRequest(int Rating, string? Comment);
 

@@ -43,7 +43,7 @@ public class RoundTripCheckInAndScanTests
         outboundManifestPassenger.TicketTypeName.ShouldBe("Vé người lớn");
         outboundManifestPassenger.UnitPrice.ShouldBe(10000);
         outboundManifestPassenger.CanCheckIn.ShouldBeFalse();
-        outboundManifestPassenger.CanCheckOut.ShouldBeTrue();
+        outboundManifestPassenger.CanCheckOut.ShouldBeFalse();
         outboundManifestPassenger.CheckedOutAt.ShouldBeNull();
         var returnManifestPassenger = manifest.Passengers.Single(p => p.TripCode == "TR-RET");
         returnManifestPassenger.TicketStatus

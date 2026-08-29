@@ -140,7 +140,7 @@ dotnet run --project src/Web --launch-profile http
 ```
 
 In Development, the application automatically applies database migrations and
-seeds the required roles, reference data, and internal Admin account.
+seeds the required roles and reference data.
 
 Open Swagger after the application starts:
 
@@ -148,15 +148,10 @@ Open Swagger after the application starts:
 http://localhost:5212/swagger
 ```
 
-Development Admin account:
-
-```text
-Phone:    0900000001
-Password: Admin@123
-```
-
-Use `POST /api/auth/login` to obtain an access token, then select **Authorize**
-in Swagger and enter the token.
+Administrative credentials are managed privately by the project team and must
+not be committed to the repository. Authorized team members can use
+`POST /api/auth/login` to obtain an access token, then select **Authorize** in
+Swagger and enter the token.
 
 ### 5. Stop Local Services
 

@@ -26,10 +26,13 @@ public sealed class UpdateUserRequestValidator : AbstractValidator<UpdateUserReq
             .WithMessage("UserId không hợp lệ.");
 
         RuleFor(x => x.FullName)
+            .Cascade(CascadeMode.Stop)
             .NotEmpty()
             .WithMessage("Họ và tên không được để trống.")
             .MaximumLength(150)
             .WithMessage("Họ và tên không được vượt quá 150 ký tự.")
+            .Must(UserInputValidationSupport.IsValidFullName)
+            .WithMessage(UserInputValidationSupport.InvalidFullNameMessage)
             .When(x => x.FullName is not null);
 
         RuleFor(x => x.DateOfBirth)

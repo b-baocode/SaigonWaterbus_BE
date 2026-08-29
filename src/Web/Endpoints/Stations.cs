@@ -81,7 +81,8 @@ public sealed class Stations : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Admin",
                 CreateExample,
-                "StationCode phai unique (tu dong uppercase).",
+                "StationCode phai unique, chi gom chu cai, chu so va dau - (tu dong uppercase).",
+                "StationName phai unique, chi gom chu cai (ho tro tieng Viet), chu so va khoang trang.",
                 "openingTime va closingTime la gio mo/dong cua ben, dinh dang HH:mm.",
                 "isWaterbusStation mac dinh true; gui false cho ben ngoai dung charter booking.",
                 "Co the gui application/json neu khong upload anh.",
@@ -100,6 +101,7 @@ public sealed class Stations : IEndpointGroup
                 "Admin",
                 UpdateExample,
                 "Status hop le: Active | Inactive.",
+                "StationName phai unique, chi gom chu cai (ho tro tieng Viet), chu so va khoang trang.",
                 "openingTime va closingTime la gio mo/dong cua ben, dinh dang HH:mm.",
                 "isWaterbusStation=true la ben thuoc he thong/tuyen waterbus; false la ben ngoai dung cho charter booking.",
                 "Co the gui application/json neu khong doi anh.",

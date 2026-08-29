@@ -1,8 +1,10 @@
+using FluentValidation.Results;
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.Stations;
 
@@ -30,7 +32,11 @@ public sealed class UpdateStationCommandValidator : AbstractValidator<UpdateStat
     public UpdateStationCommandValidator()
     {
         RuleFor(x => x.StationId).NotEmpty();
-        RuleFor(x => x.StationName).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.StationName)
+            .NotEmpty()
+            .MaximumLength(150)
+            .Must(StationInputValidationSupport.IsValidName)
+            .WithMessage(StationInputValidationSupport.InvalidNameMessage);
         RuleFor(x => x.Address).MaximumLength(300).When(x => x.Address is not null);
         RuleFor(x => x.Description).MaximumLength(500).When(x => x.Description is not null);
         RuleFor(x => x.ImageUrl)
@@ -71,7 +77,19 @@ public sealed class UpdateStationCommandHandler : IRequestHandler<UpdateStationC
             .SingleOrDefaultAsync(s => s.Id == request.StationId, cancellationToken)
             ?? throw new NotFoundException("Station not found.");
 
-        station.StationName = request.StationName.Trim();
+        var name = StationInputValidationSupport.NormalizeName(request.StationName);
+        var normalizedName = name.ToUpperInvariant();
+        if (await _context.Set<Station>().AnyAsync(
+                s => s.Id != request.StationId
+                    && s.StationName.Trim().ToUpper() == normalizedName,
+                cancellationToken))
+        {
+            throw new ValidationException([
+                new ValidationFailure(nameof(request.StationName), "Tên nhà ga đã tồn tại.")
+            ]);
+        }
+
+        station.StationName = name;
         station.Address = request.Address?.Trim() ?? station.Address;
         station.Description = request.Description?.Trim() ?? station.Description;
         station.Latitude = request.Latitude ?? station.Latitude;

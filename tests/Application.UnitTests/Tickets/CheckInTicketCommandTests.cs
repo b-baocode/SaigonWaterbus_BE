@@ -33,7 +33,7 @@ public class CheckInTicketCommandTests
 
         result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedIn));
         result.CanCheckIn.ShouldBeFalse();
-        result.CanCheckOut.ShouldBeTrue();
+        result.CanCheckOut.ShouldBeFalse();
         result.CheckedInAt.ShouldBe(now);
         result.CheckedInByUserId.ShouldBe(staffContext.UserId!.Value);
         result.TicketPassenger.ShouldNotBeNull();
@@ -98,7 +98,7 @@ public class CheckInTicketCommandTests
         var checkoutLookup = await new ScanTicketQueryHandler(
                 context,
                 staffContext,
-                new FixedTimeProvider(now.AddMinutes(3)))
+                new FixedTimeProvider(now.AddMinutes(28)))
             .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
 
         checkoutLookup.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedIn));
@@ -108,7 +108,7 @@ public class CheckInTicketCommandTests
         var checkout = await new CheckOutTicketCommandHandler(
                 context,
                 staffContext,
-                new FixedTimeProvider(now.AddMinutes(4)))
+                new FixedTimeProvider(now.AddMinutes(29)))
             .Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None);
 
         checkout.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedOut));
@@ -118,7 +118,7 @@ public class CheckInTicketCommandTests
         var finalLookup = await new ScanTicketQueryHandler(
                 context,
                 staffContext,
-                new FixedTimeProvider(now.AddMinutes(5)))
+                new FixedTimeProvider(now.AddMinutes(30)))
             .Handle(new ScanTicketQuery(ticket.QrToken), CancellationToken.None);
 
         finalLookup.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedOut));
@@ -493,12 +493,12 @@ public class CheckInTicketCommandTests
     }
 
     [Test]
-    public async Task CheckOutBeforeAlightingStopArrivesIsRejected()
+    public async Task CheckOutBeforeTwoMinuteOpeningWindowIsRejected()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
-        var now = new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 57, 0, TimeSpan.Zero);
         var ticket = await SeedRegularBookingTicketAsync(
             context,
             TicketStatus.CheckedIn,
@@ -528,7 +528,7 @@ public class CheckInTicketCommandTests
         var ex = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None));
 
-        ex.Errors["ticket"].Single().ShouldContain("chưa cập bến khách xuống");
+        ex.Errors["ticket"].Single().ShouldContain("trong vòng 2 phút trước giờ tàu đến");
         context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.CheckedIn);
     }
 

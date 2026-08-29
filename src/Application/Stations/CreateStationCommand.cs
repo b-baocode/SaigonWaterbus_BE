@@ -25,8 +25,16 @@ public sealed class CreateStationCommandValidator : AbstractValidator<CreateStat
 {
     public CreateStationCommandValidator()
     {
-        RuleFor(x => x.StationCode).NotEmpty().MaximumLength(50);
-        RuleFor(x => x.StationName).NotEmpty().MaximumLength(150);
+        RuleFor(x => x.StationCode)
+            .NotEmpty()
+            .MaximumLength(50)
+            .Must(StationInputValidationSupport.IsValidCode)
+            .WithMessage(StationInputValidationSupport.InvalidCodeMessage);
+        RuleFor(x => x.StationName)
+            .NotEmpty()
+            .MaximumLength(150)
+            .Must(StationInputValidationSupport.IsValidName)
+            .WithMessage(StationInputValidationSupport.InvalidNameMessage);
         RuleFor(x => x.Address).MaximumLength(500).When(x => x.Address is not null);
         RuleFor(x => x.ImageUrl)
             .MaximumLength(2048)
@@ -61,14 +69,25 @@ public sealed class CreateStationCommandHandler : IRequestHandler<CreateStationC
     public async Task<StationDto> Handle(CreateStationCommand request, CancellationToken cancellationToken)
     {
         var code = request.StationCode.Trim().ToUpperInvariant();
+        var name = StationInputValidationSupport.NormalizeName(request.StationName);
+        var normalizedName = name.ToUpperInvariant();
 
         if (await _context.Set<Station>().AnyAsync(s => s.StationCode == code, cancellationToken))
             throw new ValidationException([new ValidationFailure(nameof(request.StationCode), "Station code already exists.")]);
 
+        if (await _context.Set<Station>().AnyAsync(
+                s => s.StationName.Trim().ToUpper() == normalizedName,
+                cancellationToken))
+        {
+            throw new ValidationException([
+                new ValidationFailure(nameof(request.StationName), "Tên nhà ga đã tồn tại.")
+            ]);
+        }
+
         var station = new Station
         {
             StationCode = code,
-            StationName = request.StationName.Trim(),
+            StationName = name,
             Address = request.Address?.Trim(),
             Latitude = request.Latitude,
             Longitude = request.Longitude,
