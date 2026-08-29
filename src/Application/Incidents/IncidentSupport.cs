@@ -432,15 +432,20 @@ internal static class IncidentSupport
         int firstStopOrder,
         CancellationToken cancellationToken)
     {
-        var stationStopOrders = stops.ToDictionary(x => x.StationId, x => x.StopOrder);
         var latestLocation = await context.BoatLatestLocations
             .AsNoTracking()
             .SingleOrDefaultAsync(x => x.BoatId == incident.BoatId, cancellationToken);
         if (latestLocation?.TripId == trip.Id
-            && latestLocation.NextStationId.HasValue
-            && stationStopOrders.TryGetValue(latestLocation.NextStationId.Value, out var nextStopOrder))
+            && latestLocation.NextStationId.HasValue)
         {
-            return Math.Max(firstStopOrder - 1, nextStopOrder - 1);
+            var nextStopOrder = ResolveNextStopOrder(
+                stops,
+                latestLocation.NextStationId.Value,
+                trip.TripStatus);
+            if (nextStopOrder.HasValue)
+            {
+                return Math.Max(firstStopOrder - 1, nextStopOrder.Value - 1);
+            }
         }
 
         var currentAtStation = stops
@@ -479,6 +484,37 @@ internal static class IncidentSupport
         }
 
         return null;
+    }
+
+    private static int? ResolveNextStopOrder(
+        IReadOnlyList<IncidentStopPlanItem> stops,
+        Guid nextStationId,
+        TripStatus tripStatus)
+    {
+        var matchingStops = stops
+            .Where(x => x.StationId == nextStationId)
+            .OrderBy(x => x.StopOrder)
+            .ToList();
+        if (matchingStops.Count == 0)
+        {
+            return null;
+        }
+
+        var lastDepartedStopOrder = stops
+            .Where(x => x.ActualDepartureTime.HasValue)
+            .Select(x => (int?)x.StopOrder)
+            .Max();
+        if (lastDepartedStopOrder.HasValue)
+        {
+            return matchingStops
+                .FirstOrDefault(x => x.StopOrder > lastDepartedStopOrder.Value)
+                ?.StopOrder
+                ?? matchingStops[^1].StopOrder;
+        }
+
+        return tripStatus is TripStatus.Scheduled or TripStatus.Boarding or TripStatus.Delayed
+            ? matchingStops[0].StopOrder
+            : matchingStops[^1].StopOrder;
     }
 
     private static async Task<IReadOnlyList<TicketTripSegment>> LoadActiveTicketSegmentsAsync(

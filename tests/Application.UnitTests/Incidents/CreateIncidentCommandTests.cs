@@ -5,6 +5,7 @@ using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
@@ -1481,6 +1482,60 @@ public class CreateIncidentCommandTests
             CancellationToken.None);
 
         result.ShouldHaveSingleItem().Id.ShouldBe(eligibleBoat.Id);
+    }
+
+    [Test]
+    public async Task SightseeingLoopWithRepeatedStationLoadsDispatchPlanAndReplacementBoats()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var loopStation = Station("BD", "Bến Bạch Đằng");
+        var route = Route("LOOP-BD");
+        route.RouteType = RouteTypes.SightseeingLoop;
+        route.RouteStops.Add(RouteStop(route, loopStation, 1));
+        route.RouteStops.Add(RouteStop(route, loopStation, 2));
+        var incidentBoat = Boat("WS-001");
+        var replacementBoat = Boat("WB-REPLACEMENT");
+        var currentTrip = Trip(
+            route,
+            incidentBoat,
+            "BS-LOOP-BD-0800",
+            new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7)));
+        currentTrip.TripStatus = TripStatus.InProgress;
+        var incident = Incident(incidentBoat, currentTrip);
+        var gpsTime = currentTrip.DepartureTime.AddMinutes(10);
+        var latestLocation = new BoatLatestLocation
+        {
+            BoatId = incidentBoat.Id,
+            GpsDeviceId = Guid.NewGuid(),
+            TripId = currentTrip.Id,
+            NextStationId = loopStation.Id,
+            Latitude = 10.7000000m,
+            Longitude = 106.7000000m,
+            RecordedAt = gpsTime,
+            ReceivedAt = gpsTime,
+            UpdatedAt = gpsTime
+        };
+        context.AddRange(
+            loopStation,
+            route,
+            incidentBoat,
+            replacementBoat,
+            currentTrip,
+            incident,
+            latestLocation);
+        await context.SaveChangesAsync();
+
+        var dispatchPlan = await new GetIncidentDispatchPlanQueryHandler(context, adminContext).Handle(
+            new GetIncidentDispatchPlanQuery(incident.Id),
+            CancellationToken.None);
+        var replacementBoats = await new GetAvailableReplacementBoatsQueryHandler(context, adminContext).Handle(
+            new GetAvailableReplacementBoatsQuery(incident.Id),
+            CancellationToken.None);
+
+        dispatchPlan.IncidentId.ShouldBe(incident.Id);
+        dispatchPlan.ActiveTicketCount.ShouldBe(0);
+        replacementBoats.Select(x => x.Id).ShouldContain(replacementBoat.Id);
     }
 
     [Test]

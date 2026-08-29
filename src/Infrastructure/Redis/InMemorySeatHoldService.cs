@@ -118,6 +118,19 @@ public sealed class InMemorySeatHoldService : ISeatHoldService
         return Task.FromResult<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>>(result);
     }
 
+    public Task ClearTripAsync(Guid tripId, CancellationToken cancellationToken)
+    {
+        lock (_lock)
+        {
+            foreach (var key in _holds.Keys.Where(x => x.TripId == tripId).ToList())
+            {
+                _holds.Remove(key);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
     private void PruneExpired(DateTimeOffset now)
     {
         foreach (var entry in _holds.ToList())

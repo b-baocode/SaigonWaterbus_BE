@@ -165,6 +165,27 @@ public sealed class RedisSeatHoldService : ISeatHoldService
         return result;
     }
 
+    public async Task ClearTripAsync(Guid tripId, CancellationToken cancellationToken)
+    {
+        var db = _connectionMultiplexer.GetDatabase();
+        var pattern = $"{_options.InstanceName}seat-hold:{tripId:N}:*";
+
+        foreach (var endpoint in _connectionMultiplexer.GetEndPoints())
+        {
+            var server = _connectionMultiplexer.GetServer(endpoint);
+            if (!server.IsConnected || server.IsReplica)
+            {
+                continue;
+            }
+
+            await foreach (var key in server.KeysAsync(pattern: pattern, pageSize: 250)
+                .WithCancellation(cancellationToken))
+            {
+                await db.KeyDeleteAsync(key).WaitAsync(cancellationToken);
+            }
+        }
+    }
+
     private static bool TryParseSegmentField(RedisValue field, out int fromOrder, out int toOrder)
     {
         fromOrder = 0;

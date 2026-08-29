@@ -33,6 +33,9 @@ public interface ISeatHoldService
     Task<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>> GetHeldSeatsAsync(
         Guid tripId,
         CancellationToken cancellationToken);
+
+    /// <summary>Xóa toàn bộ lượt giữ ghế của một trip khi Admin reset dữ liệu demo.</summary>
+    Task ClearTripAsync(Guid tripId, CancellationToken cancellationToken);
 }
 
 public sealed class NullSeatHoldService : ISeatHoldService
@@ -63,4 +66,7 @@ public sealed class NullSeatHoldService : ISeatHoldService
         CancellationToken cancellationToken) =>
         Task.FromResult<IReadOnlyDictionary<Guid, IReadOnlyList<SeatHoldInfo>>>(
             new Dictionary<Guid, IReadOnlyList<SeatHoldInfo>>());
+
+    public Task ClearTripAsync(Guid tripId, CancellationToken cancellationToken) =>
+        Task.CompletedTask;
 }
