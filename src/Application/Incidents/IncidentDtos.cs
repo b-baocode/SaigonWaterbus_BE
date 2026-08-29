@@ -82,6 +82,34 @@ public sealed record IncidentStopPlanItem(
     DateTimeOffset? ActualArrivalTime,
     DateTimeOffset? ActualDepartureTime);
 
+public sealed record IncidentDispatchPlanDto(
+    Guid IncidentId,
+    Guid BoatId,
+    string BoatCode,
+    Guid? CurrentTripId,
+    string? CurrentTripCode,
+    int ActiveTicketCount,
+    int OnboardPassengerCount,
+    int FuturePassengerCount,
+    bool RequiresPassengerReplacement,
+    bool HasNextTrips,
+    int NextTripCount,
+    int RequiredReplacementSeatCount,
+    bool RequiresReplacementOrDelay,
+    IReadOnlyList<IncidentNextTripDto> NextTrips);
+
+public sealed record IncidentNextTripDto(
+    Guid TripId,
+    string TripCode,
+    DateOnly OperatingDate,
+    DateTimeOffset DepartureTime,
+    DateTimeOffset ArrivalTime,
+    DateTimeOffset EffectiveDepartureTime,
+    DateTimeOffset EffectiveArrivalTime,
+    TripStatus TripStatus,
+    int CapacitySnapshot,
+    int ActiveTicketCount);
+
 public sealed record TicketTripSegment(
     int? FromStopOrder,
     int? ToStopOrder,

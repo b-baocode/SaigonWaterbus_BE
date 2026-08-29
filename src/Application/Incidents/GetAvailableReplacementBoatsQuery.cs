@@ -43,6 +43,7 @@ public sealed class GetAvailableReplacementBoatsQueryHandler
 
         var incident = await _context.Incidents
             .AsNoTracking()
+            .Include(x => x.Trip)
             .SingleOrDefaultAsync(x => x.Id == request.IncidentId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy sự cố.");
 
@@ -63,7 +64,6 @@ public sealed class GetAvailableReplacementBoatsQueryHandler
         var candidates = await _context.Boats
             .AsNoTracking()
             .Include(x => x.Seats)
-            .Include(x => x.Documents)
             .Where(x => x.ServiceType == BoatServiceType.Passenger
                 && x.Status == BoatStatus.Active
                 && !excludedBoatIds.Contains(x.Id))
@@ -73,7 +73,42 @@ public sealed class GetAvailableReplacementBoatsQueryHandler
             .Where(BoatSupport.IsReadyForOperation)
             .ToList();
 
-        var candidateIds = readyBoats.Select(x => x.Id).ToArray();
+        var passengerImpact = await IncidentSupport.BuildPassengerImpactPlanAsync(
+            _context,
+            incident,
+            cancellationToken);
+        var nextTrips = await IncidentDispatchPlanSupport.LoadNextTripsAsync(
+            _context,
+            incident,
+            asNoTracking: true,
+            cancellationToken);
+        var eligibleBoats = new List<Boat>(readyBoats.Count);
+        foreach (var boat in readyBoats)
+        {
+            var availableSeatCount = boat.Seats.Any()
+                ? boat.Seats.Count(x => x.IsActive)
+                : boat.SeatCount;
+            if (availableSeatCount < passengerImpact.AffectedPassengerCount)
+            {
+                continue;
+            }
+
+            try
+            {
+                await IncidentDispatchPlanSupport.EnsureReplacementBoatEligibleAsync(
+                    _context,
+                    boat,
+                    nextTrips,
+                    cancellationToken);
+                eligibleBoats.Add(boat);
+            }
+            catch (ValidationException)
+            {
+                // The selection endpoint returns only boats that can satisfy the full plan.
+            }
+        }
+
+        var candidateIds = eligibleBoats.Select(x => x.Id).ToArray();
         if (candidateIds.Length == 0)
         {
             return [];
@@ -94,7 +129,7 @@ public sealed class GetAvailableReplacementBoatsQueryHandler
             })
             .ToDictionaryAsync(g => g.BoatId, cancellationToken);
 
-        return readyBoats
+        return eligibleBoats
             .OrderBy(x => activeTripsByBoatId.GetValueOrDefault(x.Id)?.Count ?? 0)
             .ThenBy(x => activeTripsByBoatId.GetValueOrDefault(x.Id)?.NextDeparture
                 ?? DateTimeOffset.MaxValue)

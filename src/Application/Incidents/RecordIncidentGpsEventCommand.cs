@@ -210,7 +210,8 @@ public sealed class RecordIncidentGpsEventCommandHandler
                 EnsureReplacementArrivalTargetMatches(incident, request);
                 incident.ReplacementArrivedAt = gpsEvent.OccurredAt;
                 incident.MissionStatus = IncidentMissionStatuses.ReplacementArrived;
-                if (incident.OnboardPassengerCountSnapshot == 0)
+                if (incident.OnboardPassengerCountSnapshot == 0
+                    && incident.ReplacementMissionType != IncidentReplacementMissionTypes.ScheduledTrips)
                 {
                     SwitchTripToReplacementBoat(incident);
                 }

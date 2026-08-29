@@ -6,7 +6,8 @@ namespace SaigonWaterbus.Application.Trips;
 
 public static class TripDelaySupport
 {
-    public const int TurnaroundBufferMinutes = 15;
+    public static int TurnaroundBufferMinutes =>
+        (int)TripScheduleSupport.BoatTurnaroundBuffer.TotalMinutes;
 
     public static TripDelayInfoDto? ToDelayInfoDto(Trip trip)
     {

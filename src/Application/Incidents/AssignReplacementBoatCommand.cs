@@ -85,22 +85,35 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             _context,
             incident,
             cancellationToken);
+        var nextTrips = await IncidentDispatchPlanSupport.LoadNextTripsAsync(
+            _context,
+            incident,
+            asNoTracking: false,
+            cancellationToken);
 
         Boat? replacementBoat = null;
-        var replacementRequired = passengerImpact.AffectedPassengerCount > 0;
+        var passengerReplacementRequired = passengerImpact.AffectedPassengerCount > 0;
+        var hasNextTrips = nextTrips.Count > 0;
         var replacementRequested = request.ReplacementBoatId.HasValue;
-        if (replacementRequired && !replacementRequested)
+        if (passengerReplacementRequired && !replacementRequested)
         {
             throw new ValidationException([new ValidationFailure(
                 nameof(request.ReplacementBoatId),
                 BuildReplacementRequiredMessage(passengerImpact))]);
         }
 
-        if (!replacementRequired && replacementRequested && incident.Trip is null)
+        if (hasNextTrips && !replacementRequested && request.DelayMinutes.GetValueOrDefault() <= 0)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(request.DelayMinutes),
+                $"Tàu gặp sự cố còn {nextTrips.Count} chuyến kế tiếp. Phải chọn tàu thay thế hoặc nhập delayMinutes lớn hơn 0.")]);
+        }
+
+        if (!passengerReplacementRequired && !hasNextTrips && replacementRequested && incident.Trip is null)
         {
             throw new ValidationException([new ValidationFailure(
                 nameof(request.ReplacementBoatId),
-                "Sự cố không có khách bị ảnh hưởng hoặc trip cần chạy tiếp nên chỉ chọn tàu cứu hộ.")]);
+                "Sự cố không có khách bị ảnh hưởng hoặc chuyến kế tiếp nên chỉ chọn tàu cứu hộ.")]);
         }
 
         if (replacementRequested)
@@ -126,16 +139,30 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                 ?? throw new NotFoundException("Không tìm thấy tàu thay thế.");
             EnsurePassengerReplacementBoatReady(replacementBoat);
 
-            if (replacementRequired && replacementBoat.SeatCount < passengerImpact.AffectedPassengerCount)
+            var availableSeatCount = replacementBoat.Seats.Any()
+                ? replacementBoat.Seats.Count(x => x.IsActive)
+                : replacementBoat.SeatCount;
+            if (passengerReplacementRequired
+                && availableSeatCount < passengerImpact.AffectedPassengerCount)
             {
                 throw new ValidationException([new ValidationFailure(
                     nameof(request.ReplacementBoatId),
                     $"Tàu thay thế không đủ ghế. Cần tối thiểu {passengerImpact.AffectedPassengerCount} ghế cho khách bị ảnh hưởng.")]);
             }
+
+            await IncidentDispatchPlanSupport.EnsureReplacementBoatEligibleAsync(
+                _context,
+                replacementBoat,
+                nextTrips,
+                cancellationToken);
         }
         var assignedAt = _timeProvider.GetUtcNow();
-        var delayMinutes = request.DelayMinutes.GetValueOrDefault();
-        var estimatedResumeAt = ResolveEstimatedResumeAt(passengerImpact, assignedAt, delayMinutes);
+        var delayMinutes = hasNextTrips ? request.DelayMinutes.GetValueOrDefault() : 0;
+        var estimatedResumeAt = ResolveEstimatedResumeAt(
+            passengerImpact,
+            nextTrips,
+            assignedAt,
+            delayMinutes);
         incident.RescueBoatId = rescueBoat.Id;
         incident.RescueBoat = rescueBoat;
         incident.RescueDispatchedAt = assignedAt;
@@ -146,7 +173,11 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         incident.ReplacementAssignedAt = replacementBoat is null ? null : assignedAt;
         incident.ReplacementAssignedByUserId = replacementBoat is null ? null : actor.Id;
         incident.ReplacementAssignedByUser = replacementBoat is null ? null : actor;
-        incident.ReplacementMissionType = passengerImpact.ReplacementMissionType;
+        incident.ReplacementMissionType = passengerImpact.ReplacementMissionType == IncidentReplacementMissionTypes.None
+            && hasNextTrips
+            && replacementBoat is not null
+                ? IncidentReplacementMissionTypes.ScheduledTrips
+                : passengerImpact.ReplacementMissionType;
         incident.ReplacementTargetStationId = passengerImpact.TargetStationId;
         incident.ReplacementTargetStopOrder = passengerImpact.TargetStopOrder;
         incident.ReplacementDelayMinutes = delayMinutes;
@@ -155,76 +186,44 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
         incident.OnboardPassengerCountSnapshot = passengerImpact.OnboardPassengerCount;
         incident.FuturePassengerCountSnapshot = passengerImpact.FuturePassengerCount;
         incident.ReplacementNote = NormalizeNote(request.Note)
-            ?? BuildDefaultReplacementNote(passengerImpact, replacementBoat);
+            ?? BuildDefaultReplacementNote(passengerImpact, nextTrips, replacementBoat, delayMinutes);
         incident.MissionStatus = replacementBoat is null
             ? IncidentMissionStatuses.RescueDispatched
             : IncidentMissionStatuses.ReplacementDispatched;
 
         var createdNotifications = new List<Notification>();
-        var oldTripStatus = incident.Trip?.TripStatus;
         if (incident.Trip is not null)
         {
-            if (incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
-            {
-                if (delayMinutes > 0)
-                {
-                    incident.Trip.TripStatus = TripStatus.Delayed;
-                }
-            }
-
-            ApplyTripDelay(incident.Trip, delayMinutes, incident.ReplacementNote);
-            await ApplyTripStopDelayAsync(
-                _context,
-                incident.Trip,
-                passengerImpact,
-                delayMinutes,
-                cancellationToken);
-            var affectedFutureTrips = await ApplyFutureTripDelayIfNeededAsync(
-                _context,
-                incident,
-                incident.Trip,
-                delayMinutes,
-                incident.ReplacementNote,
-                cancellationToken);
-
             incident.Trip.StatusNote = incident.ReplacementNote
-                ?? (replacementBoat is null
-                    ? "Đã điều tàu cứu hộ cho sự cố."
-                    : $"Đã điều tàu {replacementBoat.Name} thay thế.");
-
-            if (delayMinutes > 0)
-            {
-                createdNotifications.AddRange(await AddIncidentDelayNotificationsAsync(
-                    incident.Trip,
-                    delayMinutes,
-                    $"Chuyến {incident.Trip.TripCode} bị trễ {delayMinutes} phút do sự cố tàu.",
-                    assignedAt,
-                    cancellationToken));
-            }
-
-            foreach (var affectedTrip in affectedFutureTrips)
-            {
-                createdNotifications.AddRange(await AddIncidentDelayNotificationsAsync(
-                    affectedTrip.Trip,
-                    affectedTrip.AddedDelayMinutes,
-                    $"Chuyến {affectedTrip.Trip.TripCode} dự kiến khởi hành trễ thêm {affectedTrip.AddedDelayMinutes} phút do tàu trước gặp sự cố.",
-                    assignedAt,
-                    cancellationToken));
-            }
+                ?? "Đã điều tàu cứu hộ cho sự cố.";
         }
 
-        if (incident.Trip is not null && oldTripStatus.HasValue)
+        if (replacementBoat is not null && nextTrips.Count > 0)
         {
-            createdNotifications.AddRange(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+            await IncidentDispatchPlanSupport.AssignNextTripsAsync(
                 _context,
-                incident.Trip,
-                oldTripStatus.Value,
-                assignedAt,
-                cancellationToken));
-            createdNotifications.AddRange(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
-                _context,
-                incident.Trip,
-                oldTripStatus.Value,
+                nextTrips,
+                replacementBoat,
+                $"Đã chuyển sang tàu thay thế {replacementBoat.Name} do tàu {incident.Boat.Code} gặp sự cố.",
+                cancellationToken);
+        }
+
+        foreach (var nextTrip in nextTrips)
+        {
+            var oldDelayMinutes = nextTrip.DelayMinutes;
+            if (delayMinutes > oldDelayMinutes)
+            {
+                TripDelaySupport.ApplyTotalDelayToFutureTrip(
+                    nextTrip,
+                    delayMinutes,
+                    incident.ReplacementNote ?? $"Tàu {incident.Boat.Code} gặp sự cố.");
+            }
+
+            var addedDelayMinutes = nextTrip.DelayMinutes - oldDelayMinutes;
+            createdNotifications.AddRange(await AddIncidentDelayNotificationsAsync(
+                nextTrip,
+                addedDelayMinutes,
+                $"Chuyến {nextTrip.TripCode} dự kiến khởi hành trễ thêm {addedDelayMinutes} phút do tàu gặp sự cố.",
                 assignedAt,
                 cancellationToken));
         }
@@ -300,11 +299,15 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
 
     private static string? BuildDefaultReplacementNote(
         IncidentPassengerImpactPlan passengerImpact,
-        Boat? replacementBoat)
+        IReadOnlyList<Trip> nextTrips,
+        Boat? replacementBoat,
+        int delayMinutes)
     {
         if (replacementBoat is null)
         {
-            return null;
+            return nextTrips.Count > 0 && delayMinutes > 0
+                ? $"Chưa có tàu thay thế; đã delay {nextTrips.Count} chuyến kế tiếp {delayMinutes} phút."
+                : null;
         }
 
         if (passengerImpact.ReplacementMissionType == IncidentReplacementMissionTypes.TransferAtIncidentLocation)
@@ -322,17 +325,22 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
 
         return passengerImpact.AffectedPassengerCount > 0
             ? $"Đã điều tàu {replacementBoat.Name} thay thế cho {passengerImpact.AffectedPassengerCount} khách bị ảnh hưởng."
-            : $"Đã điều tàu {replacementBoat.Name} thay thế để tiếp tục hành trình.";
+            : nextTrips.Count > 0
+                ? $"Đã chuyển {nextTrips.Count} chuyến kế tiếp sang tàu thay thế {replacementBoat.Name}."
+                : $"Đã điều tàu {replacementBoat.Name} thay thế để tiếp tục hành trình.";
     }
 
     private static DateTimeOffset? ResolveEstimatedResumeAt(
         IncidentPassengerImpactPlan passengerImpact,
+        IReadOnlyList<Trip> nextTrips,
         DateTimeOffset assignedAt,
         int delayMinutes)
     {
         if (passengerImpact.ReplacementMissionType == IncidentReplacementMissionTypes.None)
         {
-            return null;
+            return nextTrips.Count == 0
+                ? null
+                : IncidentDispatchPlanSupport.ResolveDeparture(nextTrips[0]).AddMinutes(delayMinutes);
         }
 
         var baseTime = passengerImpact.ReplacementMissionType == IncidentReplacementMissionTypes.ContinueFromStation
@@ -342,122 +350,6 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             : assignedAt;
 
         return baseTime.AddMinutes(delayMinutes);
-    }
-
-    private static void ApplyTripDelay(
-        Trip trip,
-        int delayMinutes,
-        string? delayReason)
-    {
-        trip.DelayMinutes = delayMinutes;
-        trip.DelayReason = delayMinutes > 0 ? delayReason : null;
-        trip.AdjustedDepartureTime = delayMinutes > 0
-            ? trip.DepartureTime.AddMinutes(delayMinutes)
-            : null;
-        trip.AdjustedArrivalTime = delayMinutes > 0
-            ? trip.ArrivalTime.AddMinutes(delayMinutes)
-            : null;
-    }
-
-    private static async Task ApplyTripStopDelayAsync(
-        IApplicationDbContext context,
-        Trip trip,
-        IncidentPassengerImpactPlan passengerImpact,
-        int delayMinutes,
-        CancellationToken cancellationToken)
-    {
-        var tripStops = await context.Set<TripStop>()
-            .Where(x => x.TripId == trip.Id)
-            .OrderBy(x => x.StopOrder)
-            .ToListAsync(cancellationToken);
-        if (tripStops.Count == 0)
-        {
-            return;
-        }
-
-        var startStopOrder = ResolveDelayStartStopOrder(tripStops, passengerImpact);
-        foreach (var stop in tripStops.Where(x => x.StopOrder >= startStopOrder))
-        {
-            if (stop.ActualDepartureTime.HasValue)
-            {
-                continue;
-            }
-
-            stop.AdjustedArrivalTime = delayMinutes > 0
-                ? stop.PlannedArrivalTime?.AddMinutes(delayMinutes)
-                : null;
-            stop.AdjustedDepartureTime = delayMinutes > 0
-                ? stop.PlannedDepartureTime?.AddMinutes(delayMinutes)
-                : null;
-        }
-    }
-
-    private static int ResolveDelayStartStopOrder(
-        IReadOnlyList<TripStop> tripStops,
-        IncidentPassengerImpactPlan passengerImpact)
-    {
-        if (passengerImpact.TargetStopOrder.HasValue)
-        {
-            return passengerImpact.TargetStopOrder.Value;
-        }
-
-        return tripStops
-            .Where(x => !x.ActualDepartureTime.HasValue)
-            .Select(x => x.StopOrder)
-            .DefaultIfEmpty(tripStops.Max(x => x.StopOrder))
-            .Min();
-    }
-
-    private static async Task<IReadOnlyList<AffectedFutureTripDelay>> ApplyFutureTripDelayIfNeededAsync(
-        IApplicationDbContext context,
-        Incident incident,
-        Trip sourceTrip,
-        int delayMinutes,
-        string? delayReason,
-        CancellationToken cancellationToken)
-    {
-        if (!sourceTrip.BoatId.HasValue)
-        {
-            return [];
-        }
-
-        var futureTrips = await context.Set<Trip>()
-            .Include(x => x.TripStops)
-            .Where(x => x.Id != sourceTrip.Id
-                && x.BoatId == incident.BoatId
-                && x.OperatingDate == sourceTrip.OperatingDate
-                && x.DepartureTime > sourceTrip.DepartureTime
-                && x.TripStatus != TripStatus.Completed
-                && x.TripStatus != TripStatus.Cancelled)
-            .OrderBy(x => x.DepartureTime)
-            .ToListAsync(cancellationToken);
-
-        var affectedTrips = new List<AffectedFutureTripDelay>();
-        var previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(sourceTrip);
-        foreach (var futureTrip in futureTrips)
-        {
-            var oldDelayMinutes = futureTrip.DelayMinutes;
-            var appliedDelayMinutes = TripDelaySupport.CalculateCascadedTotalDelayMinutes(
-                futureTrip,
-                previousAvailableAt);
-            if (appliedDelayMinutes <= oldDelayMinutes)
-            {
-                previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(futureTrip);
-                continue;
-            }
-
-            TripDelaySupport.ApplyTotalDelayToFutureTrip(
-                futureTrip,
-                appliedDelayMinutes,
-                delayReason ?? $"Bị ảnh hưởng bởi chuyến {sourceTrip.TripCode} trễ {delayMinutes} phút.");
-
-            affectedTrips.Add(new AffectedFutureTripDelay(
-                futureTrip,
-                appliedDelayMinutes - oldDelayMinutes));
-            previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(futureTrip);
-        }
-
-        return affectedTrips;
     }
 
     private async Task<IReadOnlyList<Notification>> AddIncidentDelayNotificationsAsync(
@@ -590,8 +482,6 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
             .Include(x => x.ReplacementAssignedByUser)
             .Include(x => x.ReplacementTargetStation)
             .Include(x => x.Resolver);
-
-    private sealed record AffectedFutureTripDelay(Trip Trip, int AddedDelayMinutes);
 
     private sealed record IncidentDelayNotificationCandidate(
         Guid BookingId,

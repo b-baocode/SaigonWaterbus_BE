@@ -6,4 +6,5 @@ public static class IncidentReplacementMissionTypes
     public const string TransferAtIncidentLocation = "TransferAtIncidentLocation";
     public const string ContinueFromStation = "ContinueFromStation";
     public const string PassengerRecoveryRequired = "PassengerRecoveryRequired";
+    public const string ScheduledTrips = "ScheduledTrips";
 }

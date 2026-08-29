@@ -20,7 +20,8 @@ public sealed class Points : IEndpointGroup
                 "So tien thuc tra = payment Paid - refundAmount; diem da tich luu trong booking.pointsEarned va khong cong lap.",
                 "Query: page (mac dinh 1), pageSize (mac dinh 20, toi da 100).",
                 "transactionType: Earn (tich diem), Redeem (dung diem), RedeemCancelled (doi muc dung tai checkout), RedeemReturned (hoan diem do booking het han/huy/hoan tien), EarnRevoked (thu hoi diem do hoan tien).",
-                "Diem duoc dung toi da 50% gia tri don tai buoc tao thanh toan (pointsToUse), hoac tai quay khi staff da lookup va OK dung customer."));
+                "Diem duoc dung toi da 100% gia tri don tai buoc tao thanh toan (pointsToUse), hoac tai quay khi staff da lookup va OK dung customer.",
+                "Neu diem nhieu hon gia tri don, chi tru du gia tri don va giu lai phan diem du trong tai khoan."));
 
         group.MapPost(BackfillCompletedBookingPoints, "admin/backfill-completed-bookings")
             .RequireAuthorization()

@@ -103,6 +103,16 @@ public sealed class Incidents : IEndpointGroup
                 "Tra IncidentDto day du cho mot su co.",
                 "Manager chi xem duoc su co duoc gan assignedManagerId la chinh minh."));
 
+        group.MapGet(GetIncidentDispatchPlan, "{incidentId:guid}/dispatch-plan")
+            .RequireAuthorization()
+            .WithSummary("Ke hoach dieu tau cho su co")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Admin, Staff hoặc Manager được gán",
+                null,
+                "Trả thông tin khách của chuyến hiện tại và toàn bộ chuyến chưa hoàn thành có giờ khởi hành sau chuyến sự cố.",
+                "FE dùng nextTrips, hasNextTrips và requiresReplacementOrDelay để hiển thị modal điều tàu.",
+                "Nếu hasNextTrips=true: phải chọn tàu thay thế hợp lệ hoặc nhập delayMinutes > 0."));
+
         group.MapGet(GetAvailableReplacementBoats, "{incidentId:guid}/available-replacement-boats")
             .RequireAuthorization()
             .WithSummary("Danh sach tau thay the kha dung")
@@ -111,6 +121,7 @@ public sealed class Incidents : IEndpointGroup
                 null,
                 "Tra ve danh sach BoatDto thoa man: serviceType=Passenger, status=Active, IsReadyForOperation=true.",
                 "Tu dong loai tru tau gap su co va tau cuu ho da dieu.",
+                "Chỉ trả tàu đủ sức chứa, tương thích tất cả tuyến và không xung đột lịch với toàn bộ chuyến kế tiếp.",
                 "Sap xep uu tien tau it trip dang chay nhat truoc de admin de chon.",
                 "Dung cho GET truoc khi goi assign-replacement-boat de chon tau thay the phu hop."));
 
@@ -134,13 +145,11 @@ public sealed class Incidents : IEndpointGroup
                 "BE tinh khach bi anh huong theo vi tri tau: onboardPassengerCount va futurePassengerCount.",
                 "Neu co khach dang tren tau: replacementBoatId bat buoc, mission TransferAtIncidentLocation.",
                 "Neu chua co khach tren tau nhung co khach cho o ben sau: replacementBoatId bat buoc, mission ContinueFromStation va co replacementTargetStation.",
-                "Neu khong co khach bi anh huong: co the chi gui rescueBoatId, replacementBoatId de null, mission None.",
-                "Neu khong co khach bi anh huong nhung Admin van muon tiep tuc chuyen: co the gui them replacementBoatId de doi tau cua trip.",
-                "Neu su co khong co tripId: chi gui rescueBoatId; replacementBoatId phai de null.",
-                "Tau thay the phai serviceType Passenger, Active, setup du ghe va khong trung tau cuu ho/tau gap su co.",
-                "delayMinutes la so phut Admin nhap luc dieu tau; vi du 5 thi trip cong 5 phut, TripStatus Delayed va adjusted time cho cac stop con lai.",
-                "BE tinh day chuyen cho cac trip sau cua cung tau gap su co, cung ngay van hanh theo cong thuc: gio tau san sang = adjustedArrival chuyen truoc + 15 phut quay dau.",
-                "Neu gio tau san sang lon hon gio khoi hanh du kien cua chuyen sau thi chuyen sau bi delay dung phan bi lan gio; route khac van co the bi anh huong neu cung tau."));
+                "BE kiểm tra toàn bộ trip chưa hoàn thành khởi hành sau trip sự cố, không phụ thuộc có khách hay không.",
+                "Nếu có chuyến kế tiếp: gửi replacementBoatId hợp lệ hoặc để null và bắt buộc delayMinutes > 0.",
+                "Nếu chọn tàu thay thế, BE chuyển toàn bộ chuyến kế tiếp sang tàu đó; tàu phải đủ ghế, tương thích tuyến và không trùng lịch.",
+                "delayMinutes chỉ áp dụng lên các chuyến kế tiếp; không thay đổi delay/adjusted time của chuyến đang gặp sự cố.",
+                "Nếu không có chuyến kế tiếp, delayMinutes được bỏ qua để tương thích client cũ."));
 
         group.MapPatch(AssignManager, "{incidentId:guid}/assign-manager")
             .RequireAuthorization()
@@ -240,14 +249,32 @@ public sealed class Incidents : IEndpointGroup
         ISender sender,
         Guid incidentId,
         AssignReplacementBoatRequest request,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return Results.Ok(await sender.Send(
+                new AssignReplacementBoatCommand(
+                    incidentId,
+                    request.RescueBoatId,
+                    request.ReplacementBoatId,
+                    request.DelayMinutes,
+                    request.Note),
+                cancellationToken));
+        }
+        catch (SaigonWaterbus.Application.Common.Exceptions.ValidationException exception)
+        {
+            // Keep this operation actionable for dispatch UI even if global exception handling changes.
+            return Results.ValidationProblem(exception.Errors);
+        }
+    }
+
+    private static async Task<IResult> GetIncidentDispatchPlan(
+        ISender sender,
+        Guid incidentId,
         CancellationToken cancellationToken) =>
         Results.Ok(await sender.Send(
-            new AssignReplacementBoatCommand(
-                incidentId,
-                request.RescueBoatId,
-                request.ReplacementBoatId,
-                request.DelayMinutes,
-                request.Note),
+            new GetIncidentDispatchPlanQuery(incidentId),
             cancellationToken));
 
     private static async Task<IResult> ResolveIncident(

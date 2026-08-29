@@ -1960,7 +1960,7 @@ internal static class PaymentSupport
         if (targetPoints > maxRedeemable)
         {
             throw new ValidationException([new ValidationFailure("pointsToUse",
-                $"Điểm chỉ được trả tối đa 50% giá trị đơn hoặc 50% số dư hiện có ({maxRedeemable} điểm cho đơn này).")]);
+                $"Điểm được dùng tối đa bằng giá trị còn phải trả của đơn và số dư hiện có ({maxRedeemable} điểm cho đơn này).")]);
         }
 
         // Điểm đang giữ trên booking này sẽ được hoàn trước khi trừ theo số mới.

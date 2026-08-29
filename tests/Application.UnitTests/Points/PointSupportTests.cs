@@ -14,6 +14,26 @@ public class PointSupportTests
 {
     private static readonly DateTimeOffset Now = new(2030, 1, 1, 10, 0, 0, TimeSpan.Zero);
 
+    [TestCase(25_249, 252)]
+    [TestCase(25_250, 253)]
+    [TestCase(25_286, 253)]
+    public void CalculateEarnedPointsRoundsToNearestWholePoint(decimal paidAmount, int expectedPoints)
+    {
+        PointSupport.CalculateEarnedPoints(paidAmount).ShouldBe(expectedPoints);
+    }
+
+    [TestCase(100_000, 120_000, 100_000)]
+    [TestCase(100_000, 60_000, 60_000)]
+    [TestCase(100_000, 0, 0)]
+    [TestCase(100_000.75, 120_000, 100_000)]
+    public void CalculateMaxRedeemablePointsUsesUpToFullBillAndPreservesExcessBalance(
+        decimal billAmount,
+        int pointBalance,
+        int expectedPoints)
+    {
+        PointSupport.CalculateMaxRedeemablePoints(billAmount, pointBalance).ShouldBe(expectedPoints);
+    }
+
     [Test]
     public async Task CompletingTripAwardsOnePercentOfNetPaidAmountOnce()
     {
@@ -147,6 +167,37 @@ public class PointSupportTests
             .ShouldContain(m => m.Contains("Chỉ tài khoản khách hàng mới được dùng điểm"));
         staff.PointBalance.ShouldBe(10_000);
         booking.PointsUsed.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task CustomerCanPayFullBillWithPointsAndKeepsExcessBalance()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var customer = await context.Set<User>().SingleAsync(u => u.Id == customerContext.UserId);
+        customer.PointBalance = 120_000;
+        var trip = Trip("TR-POINT-FULL-BILL", TripStatus.Scheduled);
+        var booking = Booking(customer.Id, trip, "BK-POINT-FULL-BILL");
+        booking.BookingStatus = BookingStatus.PendingPayment;
+        booking.PaymentStatus = "Unpaid";
+        context.AddRange(trip, booking);
+        await context.SaveChangesAsync();
+
+        await PaymentSupport.ApplyPointsForCheckoutAsync(
+            context,
+            booking,
+            pointsToUse: 100_000,
+            Now,
+            CancellationToken.None);
+
+        booking.PointsUsed.ShouldBe(100_000);
+        booking.TotalAmount.ShouldBe(0m);
+        booking.RemainingAmount.ShouldBe(0m);
+        customer.PointBalance.ShouldBe(20_000);
+        var transaction = await context.Set<PointTransaction>().SingleAsync();
+        transaction.TransactionType.ShouldBe(PointTransactionTypes.Redeem);
+        transaction.Points.ShouldBe(-100_000);
+        transaction.BalanceAfter.ShouldBe(20_000);
     }
 
     private static Trip Trip(string code, TripStatus status) => new()

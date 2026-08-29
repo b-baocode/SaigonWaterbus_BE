@@ -231,7 +231,7 @@ public sealed class Bookings : IEndpointGroup
                 CreateCounterBookingExample,
                 "Staff/Manager dat ve ho khach mua truc tiep tai quay; khach KHONG bat buoc co tai khoan.",
                 "Neu khach muon tich diem: FE goi GET /api/bookings/counter/customers/lookup?keyword=<phone|email>, hien khach tim thay, staff bam OK thi gui customerUserId + customerConfirmedForPoints=true.",
-                "Neu khach muon dung diem tai quay: gui pointsToUse > 0 cung customerUserId + customerConfirmedForPoints=true; BE tru diem ngay de giu so du, toi da 50% gia tri don.",
+                "Neu khach muon dung diem tai quay: gui pointsToUse > 0 cung customerUserId + customerConfirmedForPoints=true; BE tru diem ngay de giu so du, toi da 100% gia tri don.",
                 "items / returnItems / ticketTypeCode / fromStationCode / toStationCode: giong het POST /api/bookings.",
                 "contactName + contactPhone bat buoc (staff nhap); contactEmail optional.",
                 "Neu co contactEmail thi BE gui email tong QR booking + toan bo ve; neu khong co email thi response manifest co QR/tickets de FE in ve.",

@@ -437,8 +437,8 @@ public sealed class Trips : IEndpointGroup
                 "Admin hoac Staff OnBoard dang duoc phan ca tren tau",
                 ResumeDelayExample,
                 "Dung khi nhan vien bam tiep tuc. BE tinh so phut tu delayStartedAt den hien tai, cap nhat adjusted time cho cac ben con lai.",
-                "BE tinh day chuyen cho cac trip sau cua cung boatId, cung operatingDate theo cong thuc: gio tau san sang = adjustedArrival chuyen truoc + 15 phut quay dau.",
-                "Neu gio tau san sang lon hon gio khoi hanh du kien cua chuyen sau thi chuyen sau bi delay dung phan bi lan gio; route khac van co the bi anh huong neu cung tau.",
+                "BE tinh day chuyen cho cac trip sau cua cung boatId, ke ca trip sau 0h: gio tau san sang = adjustedArrival chuyen truoc + 5 phut quay dau.",
+                "Khoang nghi du se hap thu mot phan/toan bo delay; cascade dung ngay khi delay da duoc hap thu. Route khac van co the bi anh huong neu cung tau.",
                 "Response tra trip moi nhat + affectedTrips. Realtime SignalR /hubs/tracking event tripDelayUpdated gui theo boat group."));
     }
 

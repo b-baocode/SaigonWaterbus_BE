@@ -198,24 +198,24 @@ public class CounterBookingTests
             },
             CancellationToken.None);
 
-        if (result.TotalAmount != 5_000m)
+        if (result.TotalAmount != 0m)
         {
             var bookingDb = context.Set<Booking>().Single(b => b.Id == result.BookingId);
             throw new Exception($"insuranceSnapshots=[{string.Join(",", bookingDb.InsuranceSnapshots.Select(s => $"id={s.InsurancePackageId},total={s.TotalAmount},qty={s.Quantity}"))}], subtotal={bookingDb.SubtotalAmount}, discount={bookingDb.DiscountAmount}, pointsUsed={bookingDb.PointsUsed}, total={bookingDb.TotalAmount}");
         }
-        result.TotalAmount.ShouldBe(5_000m);
+        result.TotalAmount.ShouldBe(0m);
         var booking = context.Set<Booking>().Single(b => b.Id == result.BookingId);
         booking.UserId.ShouldBe(customerContext.UserId);
-        booking.PointsUsed.ShouldBe(5_000);
-        booking.TotalAmount.ShouldBe(5_000m);
-        context.Set<User>().Single(u => u.Id == customerContext.UserId).PointBalance.ShouldBe(7_000);
+        booking.PointsUsed.ShouldBe(10_000);
+        booking.TotalAmount.ShouldBe(0m);
+        context.Set<User>().Single(u => u.Id == customerContext.UserId).PointBalance.ShouldBe(2_000);
 
         var payment = context.Set<Payment>().Single(p => p.BookingId == booking.Id);
-        payment.Amount.ShouldBe(5_000m);
+        payment.Amount.ShouldBe(0m);
         var transaction = context.Set<PointTransaction>()
             .Single(t => t.BookingId == booking.Id && t.TransactionType == PointTransactionTypes.Redeem);
-        transaction.Points.ShouldBe(-5_000);
-        transaction.BalanceAfter.ShouldBe(7_000);
+        transaction.Points.ShouldBe(-10_000);
+        transaction.BalanceAfter.ShouldBe(2_000);
     }
 
     [Test]

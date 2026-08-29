@@ -41,6 +41,8 @@ public sealed class StartTripDelayCommandValidator : AbstractValidator<StartTrip
 {
     public StartTripDelayCommandValidator()
     {
+        RuleFor(x => x.TripId).NotEmpty();
+
         RuleFor(x => x.StartStopOrder)
             .GreaterThan(0)
             .When(x => x.StartStopOrder.HasValue)
@@ -56,6 +58,8 @@ public sealed class ResumeTripDelayCommandValidator : AbstractValidator<ResumeTr
 {
     public ResumeTripDelayCommandValidator()
     {
+        RuleFor(x => x.TripId).NotEmpty();
+
         RuleFor(x => x.Note)
             .MaximumLength(500)
             .When(x => !string.IsNullOrWhiteSpace(x.Note));
@@ -108,6 +112,7 @@ public sealed class StartTripDelayCommandHandler
             ?? trip.DelayStartStopOrder
             ?? TripDelaySupport.ResolveDelayStartStopOrder(trip);
         TripDelayCommandSupport.EnsureStopOrderExists(trip, startStopOrder);
+        TripDelayCommandSupport.EnsureStopHasNotDeparted(trip, startStopOrder);
         var reason = TripDelayCommandSupport.NormalizeOptionalText(request.Reason)
             ?? trip.DelayReason
             ?? "Nhân viên tàu báo chuyến đang bị trễ.";
@@ -221,6 +226,12 @@ public sealed class ResumeTripDelayCommandHandler
         }
 
         var delayStartedAt = trip.DelayStartedAt.Value;
+        if (delayStartedAt > now)
+        {
+            throw new ValidationException([new ValidationFailure("delayStartedAt",
+                "Thời điểm bắt đầu delay không được nằm trong tương lai.")]);
+        }
+
         var oldStatus = trip.TripStatus;
         var activeDelayMinutes = Math.Max(
             1,
@@ -311,7 +322,7 @@ public sealed class ResumeTripDelayCommandHandler
         }
 
         var reason = $"Bị ảnh hưởng bởi chuyến {sourceTrip.TripCode} trễ {sourceTotalDelayMinutes} phút.";
-        var futureTrips = await _context.Set<Trip>()
+        var futureTrips = _context.Set<Trip>()
             .Include(x => x.Boat)
             .Include(x => x.Route)
                 .ThenInclude(x => x.RouteStops)
@@ -320,17 +331,16 @@ public sealed class ResumeTripDelayCommandHandler
                 .ThenInclude(x => x.Station)
             .Where(x => x.Id != sourceTrip.Id
                 && x.BoatId == sourceTrip.BoatId
-                && x.OperatingDate == sourceTrip.OperatingDate
                 && x.DepartureTime > sourceTrip.DepartureTime
                 && x.TripStatus != TripStatus.Completed
                 && x.TripStatus != TripStatus.Cancelled)
             .OrderBy(x => x.DepartureTime)
             .ThenBy(x => x.TripCode)
-            .ToListAsync(cancellationToken);
+            .AsAsyncEnumerable();
 
         var affectedTrips = new List<AffectedTripWithEntity>();
         var previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(sourceTrip);
-        foreach (var futureTrip in futureTrips)
+        await foreach (var futureTrip in futureTrips.WithCancellation(cancellationToken))
         {
             var previousDelayMinutes = futureTrip.DelayMinutes;
             var totalDelayMinutes = TripDelaySupport.CalculateCascadedTotalDelayMinutes(
@@ -338,8 +348,9 @@ public sealed class ResumeTripDelayCommandHandler
                 previousAvailableAt);
             if (totalDelayMinutes <= previousDelayMinutes)
             {
-                previousAvailableAt = TripDelaySupport.ResolveAdjustedArrival(futureTrip);
-                continue;
+                // Khoang nghi truoc trip nay da hap thu het phan delay moi tu source.
+                // Cac trip xa hon khong con bi source trip nay anh huong.
+                break;
             }
 
             TripDelaySupport.ApplyTotalDelayToFutureTrip(futureTrip, totalDelayMinutes, reason);
@@ -607,6 +618,16 @@ internal static class TripDelayCommandSupport
         {
             throw new ValidationException([new ValidationFailure("startStopOrder",
                 "startStopOrder không thuộc lịch dừng của trip.")]);
+        }
+    }
+
+    public static void EnsureStopHasNotDeparted(Trip trip, int stopOrder)
+    {
+        var stop = trip.TripStops.FirstOrDefault(x => x.StopOrder == stopOrder);
+        if (stop?.ActualDepartureTime.HasValue == true)
+        {
+            throw new ValidationException([new ValidationFailure("startStopOrder",
+                "Không thể bắt đầu delay tại bến mà tàu đã rời đi.")]);
         }
     }
 

@@ -20,7 +20,7 @@ public class TripDelayCommandTests
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
         var sourceDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero);
         var sourceTrip = SeedTrip(context, "TR-SOURCE", sourceDeparture, "BOAT-1");
-        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddMinutes(90), "BOAT-1", sourceTrip.Boat!);
+        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddMinutes(75), "BOAT-1", sourceTrip.Boat!);
         var otherBoat = SeedTrip(context, "TR-OTHER", sourceDeparture.AddMinutes(100), "BOAT-2");
         await AddOnBoardAssignmentAsync(
             context,
@@ -61,12 +61,12 @@ public class TripDelayCommandTests
         resumed.DelayInfo.ShouldNotBeNull();
         resumed.DelayInfo.DelayMinutes.ShouldBe(20);
         resumed.DelayInfo.IsDelayActive.ShouldBeFalse();
-        resumed.DelayInfo.DelayPropagationMinutes.ShouldBe(10);
+        resumed.DelayInfo.DelayPropagationMinutes.ShouldBe(15);
         resumed.AffectedTrips.Select(x => x.TripCode).ShouldBe(["TR-FUTURE"]);
-        resumed.AffectedTrips.Single().AddedDelayMinutes.ShouldBe(10);
+        resumed.AffectedTrips.Single().AddedDelayMinutes.ShouldBe(15);
 
         sourceTrip.DelayMinutes.ShouldBe(20);
-        sourceTrip.DelayPropagationMinutes.ShouldBe(10);
+        sourceTrip.DelayPropagationMinutes.ShouldBe(15);
         sourceTrip.AdjustedDepartureTime.ShouldBeNull();
         sourceTrip.AdjustedArrivalTime.ShouldBe(sourceTrip.ArrivalTime.AddMinutes(20));
         sourceTrip.TripStops.Single(x => x.StopOrder == 1).AdjustedDepartureTime.ShouldBeNull();
@@ -82,25 +82,25 @@ public class TripDelayCommandTests
         resumed.Trip.Stops.Single(x => x.StopOrder == 3)
             .AdjustedArrival.ShouldBe(sourceStopC.PlannedArrivalTime!.Value.AddMinutes(20));
 
-        futureSameBoat.DelayMinutes.ShouldBe(10);
+        futureSameBoat.DelayMinutes.ShouldBe(15);
         futureSameBoat.DelayReason!.ShouldContain("TR-SOURCE");
-        futureSameBoat.AdjustedDepartureTime.ShouldBe(futureSameBoat.DepartureTime.AddMinutes(10));
+        futureSameBoat.AdjustedDepartureTime.ShouldBe(futureSameBoat.DepartureTime.AddMinutes(15));
         futureSameBoat.TripStops.Single(x => x.StopOrder == 1)
             .AdjustedDepartureTime.ShouldBe(futureSameBoat.TripStops.Single(x => x.StopOrder == 1)
-                .PlannedDepartureTime!.Value.AddMinutes(10));
+                .PlannedDepartureTime!.Value.AddMinutes(15));
 
         otherBoat.DelayMinutes.ShouldBe(0);
         otherBoat.AdjustedDepartureTime.ShouldBeNull();
     }
 
     [Test]
-    public async Task ResumeDelayWithinFifteenMinutesStillCascadesWhenNextTripIsTooClose()
+    public async Task ResumeDelayWithMinimumTurnaroundGapPropagatesSameDelay()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
         var sourceDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero);
         var sourceTrip = SeedTrip(context, "TR-SOURCE", sourceDeparture, "BOAT-1");
-        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddMinutes(80), "BOAT-1", sourceTrip.Boat!);
+        var futureSameBoat = SeedTrip(context, "TR-FUTURE", sourceDeparture.AddMinutes(70), "BOAT-1", sourceTrip.Boat!);
         await AddOnBoardAssignmentAsync(
             context,
             staffContext.UserId!.Value,
@@ -132,6 +132,139 @@ public class TripDelayCommandTests
             .AdjustedDepartureTime.ShouldBe(sourceDeparture.AddMinutes(35 + 10));
         futureSameBoat.DelayMinutes.ShouldBe(10);
         futureSameBoat.AdjustedDepartureTime.ShouldBe(futureSameBoat.DepartureTime.AddMinutes(10));
+    }
+
+    [Test]
+    public async Task ResumeFiveMinuteDelayIsAbsorbedByTenMinuteTurnaroundGap()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var sourceDeparture = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero);
+        var sourceTrip = SeedTrip(context, "TR-SOURCE", sourceDeparture, "BOAT-1");
+        var futureSameBoat = SeedTrip(
+            context,
+            "TR-FUTURE",
+            sourceDeparture.AddMinutes(75),
+            "BOAT-1",
+            sourceTrip.Boat!);
+        await AddOnBoardAssignmentAsync(
+            context,
+            staffContext.UserId!.Value,
+            sourceTrip.BoatId!.Value,
+            sourceDeparture.AddHours(-1),
+            sourceDeparture.AddHours(5));
+        await context.SaveChangesAsync();
+
+        var delayStartedAt = sourceDeparture.AddMinutes(30);
+        await new StartTripDelayCommandHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(delayStartedAt))
+            .Handle(new StartTripDelayCommand(sourceTrip.Id, "Dừng tại bến B", StartStopOrder: 2), CancellationToken.None);
+
+        var resumed = await new ResumeTripDelayCommandHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(delayStartedAt.AddMinutes(5)))
+            .Handle(new ResumeTripDelayCommand(sourceTrip.Id, "Tàu tiếp tục hành trình"), CancellationToken.None);
+
+        resumed.DelayInfo.ShouldNotBeNull();
+        resumed.DelayInfo.DelayMinutes.ShouldBe(5);
+        resumed.DelayInfo.DelayPropagationMinutes.ShouldBe(0);
+        resumed.AffectedTrips.ShouldBeEmpty();
+        futureSameBoat.DelayMinutes.ShouldBe(0);
+        futureSameBoat.AdjustedDepartureTime.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task ResumeDelayCascadesToNextOperatingDateWhenTripCrossesMidnight()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var sourceDeparture = new DateTimeOffset(2030, 1, 1, 22, 50, 0, TimeSpan.Zero);
+        var sourceTrip = SeedTrip(context, "TR-SOURCE", sourceDeparture, "BOAT-1");
+        var nextDayTrip = SeedTrip(
+            context,
+            "TR-NEXT-DAY",
+            sourceDeparture.AddMinutes(70),
+            "BOAT-1",
+            sourceTrip.Boat!);
+        await AddOnBoardAssignmentAsync(
+            context,
+            staffContext.UserId!.Value,
+            sourceTrip.BoatId!.Value,
+            sourceDeparture.AddHours(-1),
+            sourceDeparture.AddHours(5));
+        await context.SaveChangesAsync();
+
+        var delayStartedAt = sourceDeparture.AddMinutes(30);
+        await new StartTripDelayCommandHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(delayStartedAt))
+            .Handle(new StartTripDelayCommand(sourceTrip.Id, "Dừng tại bến B", StartStopOrder: 2), CancellationToken.None);
+
+        var resumed = await new ResumeTripDelayCommandHandler(
+                context,
+                staffContext,
+                new FixedTimeProvider(delayStartedAt.AddMinutes(5)))
+            .Handle(new ResumeTripDelayCommand(sourceTrip.Id, "Tàu tiếp tục hành trình"), CancellationToken.None);
+
+        nextDayTrip.OperatingDate.ShouldNotBe(sourceTrip.OperatingDate);
+        resumed.AffectedTrips.Select(x => x.TripCode).ShouldBe(["TR-NEXT-DAY"]);
+        nextDayTrip.DelayMinutes.ShouldBe(5);
+        nextDayTrip.AdjustedDepartureTime.ShouldBe(nextDayTrip.DepartureTime.AddMinutes(5));
+    }
+
+    [Test]
+    public async Task ResumeRejectsDelayStartedInTheFuture()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var departure = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero);
+        var trip = SeedTrip(context, "TR-SOURCE", departure, "BOAT-1");
+        var now = departure.AddMinutes(30);
+        trip.DelayStartedAt = now.AddMinutes(1);
+        trip.TripStatus = TripStatus.Delayed;
+        await AddOnBoardAssignmentAsync(
+            context,
+            staffContext.UserId!.Value,
+            trip.BoatId!.Value,
+            departure.AddHours(-1),
+            departure.AddHours(5));
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new ResumeTripDelayCommandHandler(context, staffContext, new FixedTimeProvider(now))
+                .Handle(new ResumeTripDelayCommand(trip.Id), CancellationToken.None));
+
+        exception.Errors["delayStartedAt"].Single().ShouldContain("tương lai");
+    }
+
+    [Test]
+    public async Task StartDelayRejectsStopThatBoatAlreadyDeparted()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context, StaffType.OnBoard);
+        var departure = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.Zero);
+        var trip = SeedTrip(context, "TR-SOURCE", departure, "BOAT-1");
+        trip.TripStops.Single(x => x.StopOrder == 1).ActualDepartureTime = departure;
+        await AddOnBoardAssignmentAsync(
+            context,
+            staffContext.UserId!.Value,
+            trip.BoatId!.Value,
+            departure.AddHours(-1),
+            departure.AddHours(5));
+        await context.SaveChangesAsync();
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            new StartTripDelayCommandHandler(
+                    context,
+                    staffContext,
+                    new FixedTimeProvider(departure.AddMinutes(30)))
+                .Handle(new StartTripDelayCommand(trip.Id, StartStopOrder: 1), CancellationToken.None));
+
+        exception.Errors["startStopOrder"].Single().ShouldContain("đã rời đi");
     }
 
     [Test]
