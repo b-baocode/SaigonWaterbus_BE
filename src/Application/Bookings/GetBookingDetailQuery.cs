@@ -190,7 +190,8 @@ public sealed class GetBookingDetailQueryHandler : IRequestHandler<GetBookingDet
             booking.ReturnTrip?.Boat?.Name,
             booking.ContactName,
             booking.ContactPhone,
-            booking.ContactEmail);
+            booking.ContactEmail,
+            BookingInsuranceDtoMapper.ToDto(booking.InsuranceSnapshots) ?? []);
     }
 
     private static string? ResolveDisplayTicketStatus(

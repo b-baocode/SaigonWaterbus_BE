@@ -50,7 +50,8 @@ public sealed record BookingDetailDto(
     string? ReturnBoatName = null,
     string? ContactName = null,
     string? ContactPhone = null,
-    string? ContactEmail = null);
+    string? ContactEmail = null,
+    IReadOnlyList<BookingInsuranceDto> Insurances = null!);
 
 public sealed record BookingInsuranceDto(
     Guid InsurancePackageId,

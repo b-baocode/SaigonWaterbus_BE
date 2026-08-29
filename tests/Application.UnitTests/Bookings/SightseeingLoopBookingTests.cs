@@ -262,7 +262,16 @@ public class SightseeingLoopBookingTests
         var loopBookingEntity = context.Set<Booking>().Single(x => x.Id == loopBooking.BookingId);
         loopBookingEntity.PointsUsed = 120;
         loopBookingEntity.PointsEarned = 75;
-        loopBookingEntity.InsuranceSnapshots.Add(InsuranceSnapshot());
+        loopBookingEntity.InsuranceSnapshots.Add(InsuranceSnapshot(
+            "INS-DEFAULT",
+            "Waterbus default insurance",
+            isWaterbusDefault: true,
+            providerSource: InsuranceProviderSource.Waterbus));
+        loopBookingEntity.InsuranceSnapshots.Add(InsuranceSnapshot(
+            "INS-THIRD-PARTY",
+            "Third-party insurance",
+            isWaterbusDefault: false,
+            providerSource: InsuranceProviderSource.ThirdParty));
         await context.SaveChangesAsync();
 
         var list = await new GetBookingListQueryHandler(context, userContext)
@@ -272,7 +281,7 @@ public class SightseeingLoopBookingTests
         loopListItem.PointsUsed.ShouldBe(120);
         loopListItem.PointsEarned.ShouldBe(75);
         loopListItem.Insurance.ShouldNotBeNull();
-        loopListItem.Insurance.Code.ShouldBe("INS-SEAT");
+        loopListItem.Insurance.Code.ShouldBe("INS-DEFAULT");
         list.Single(x => x.BookingId != loopBooking.BookingId).ServiceType
             .ShouldBe(BookingServiceTypes.Waterbus);
 
@@ -283,7 +292,14 @@ public class SightseeingLoopBookingTests
         detail.PointsUsed.ShouldBe(120);
         detail.PointsEarned.ShouldBe(75);
         detail.Insurance.ShouldNotBeNull();
-        detail.Insurance.Code.ShouldBe("INS-SEAT");
+        detail.Insurance.Code.ShouldBe("INS-DEFAULT");
+        detail.Insurances.ShouldNotBeNull();
+        detail.Insurances.Count.ShouldBe(2);
+        detail.Insurances.Select(x => x.Code).ShouldBe(["INS-DEFAULT", "INS-THIRD-PARTY"]);
+        detail.Insurances[0].IsWaterbusDefault.ShouldBeTrue();
+        detail.Insurances[0].ProviderSource.ShouldBe(nameof(InsuranceProviderSource.Waterbus));
+        detail.Insurances[1].IsWaterbusDefault.ShouldBeFalse();
+        detail.Insurances[1].ProviderSource.ShouldBe(nameof(InsuranceProviderSource.ThirdParty));
     }
 
     [Test]
@@ -395,12 +411,16 @@ public class SightseeingLoopBookingTests
     private static BookingItemRequest Adult(string seat) =>
         new(seat, "ADULT", null, null, "Nguyen Van A", null, null, null, null, null);
 
-    private static BookingInsuranceSnapshot InsuranceSnapshot() =>
+    private static BookingInsuranceSnapshot InsuranceSnapshot(
+        string code = "INS-SEAT",
+        string name = "Seat insurance",
+        bool isWaterbusDefault = false,
+        InsuranceProviderSource providerSource = InsuranceProviderSource.ThirdParty) =>
         new()
         {
-            InsurancePackageId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
-            Code = "INS-SEAT",
-            Name = "Seat insurance",
+            InsurancePackageId = Guid.NewGuid(),
+            Code = code,
+            Name = name,
             BookingType = Booking.SeatBookingType,
             IsRequired = false,
             UnitPremiumAmount = 10000m,
@@ -409,7 +429,9 @@ public class SightseeingLoopBookingTests
             Quantity = 1,
             TotalAmount = 10000m,
             Conditions = ["Valid for one passenger"],
-            QuotedAt = Now
+            QuotedAt = Now,
+            IsWaterbusDefault = isWaterbusDefault,
+            ProviderSource = providerSource
         };
 
     private sealed record SeededLoopTrip(Trip Trip, Guid TerminalStationId);

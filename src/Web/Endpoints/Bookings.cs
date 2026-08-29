@@ -125,6 +125,7 @@ public sealed class Bookings : IEndpointGroup
                 "INFANT khong ghe co usesCompanionTicket=true, companionPassengerId/name va dung chung ticketCode/qrToken cua ADULT.",
                 "serviceType = Waterbus | Sightseeing, routeType = routeType goc cua tuyen (Regular | SightseeingLoop); "
                 + "tour ngam canh di nguyen chuyen nen ga len = ga xuong.",
+                "insurances tra day du moi snapshot bao hiem trong booking; insurance van giu snapshot dau tien de tuong thich FE cu.",
                 "Tra ve 404 neu booking khong thuoc ve user dang dang nhap."));
 
         group.MapGet(GetBookingManifestByCode, "manifest/{bookingCode}")

@@ -782,6 +782,7 @@ public class SegmentBookingAndDistanceFareTests
         item.ToStationName.ShouldBe("Station LT");
         item.ScheduledDeparture.ShouldBe(dep.AddMinutes(20));
         item.ScheduledArrival.ShouldBe(dep.AddMinutes(45));
+        detail.Insurances.ShouldBeEmpty();
     }
 
     [Test]
