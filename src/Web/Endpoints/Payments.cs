@@ -102,8 +102,8 @@ public sealed class Payments : IEndpointGroup
                 "Bearer token",
                 RequestRefundOtpExample,
                 "Gui OTP cho chu payment truoc khi tao lenh hoan tien.",
-                "Customer chi yeu cau duoc OTP sau khi admin da mo lai quyen hoan tien cho payment.",
-                "Neu chua duoc mo quyen, API tra 400 truoc khi gui OTP.",
+                "Charter booking da Cancelled tu mo quyen refund lan dau; khong can API tao refund request rieng.",
+                "Sau mot lan refund that bai, customer chi yeu cau lai OTP khi admin da mo lai quyen hoan tien cho payment.",
                 "otpChannel optional: phone hoac email. Mac dinh uu tien so dien thoai Viet Nam da xac thuc, neu khong co thi dung email.",
                 "Response tra ve challengeId, maskedDestination, expiresAt, resendAvailableAt; dung challengeId + otpCode cho API refund."));
 
@@ -113,7 +113,7 @@ public sealed class Payments : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Luon tra refundAmount theo policy, ke ca khi customer chua duoc admin mo quyen hoan tien.",
+                "Dung cung dieu kien voi POST refund/otp; canRequestOtp=false va blockedReason neu refund chua mo.",
                 "requiresOtp=false khi refundAmount=0; FE goi thang API refund ma khong can OTP/thong tin ngan hang.",
                 "canRequestOtp/canSubmitRefund va blockedReason cho FE biet co duoc tiep tuc hay can lien he admin.",
                 "Dung defaultChannel va channels de hien thi email/so dien thoai dang bi mask truoc khi goi API gui OTP."));

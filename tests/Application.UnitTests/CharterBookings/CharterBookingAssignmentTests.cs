@@ -66,7 +66,7 @@ public class CharterBookingAssignmentTests
         });
         await context.SaveChangesAsync();
 
-        var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var checkedInAt = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var attendanceHandler = new UpdateCharterBookingAttendanceCommandHandler(
             context,
             staff,

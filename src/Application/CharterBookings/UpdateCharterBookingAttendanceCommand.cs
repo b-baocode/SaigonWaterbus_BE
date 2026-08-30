@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Points;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -101,6 +102,15 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
 
             if (request.Action == CharterBookingAttendanceAction.CheckIn)
             {
+                TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, booking, now);
+            }
+            else
+            {
+                TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, booking, now);
+            }
+
+            if (request.Action == CharterBookingAttendanceAction.CheckIn)
+            {
                 ticket.TicketStatus = TicketStatus.CheckedIn;
                 ticket.CheckedInAt = now;
                 ticket.CheckedInByUserId = currentUser.Id;
@@ -139,7 +149,7 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
             updatedCount,
             skippedTickets.Count,
             skippedTickets,
-            CharterBookingManifestSupport.ToDto(booking));
+            CharterBookingManifestSupport.ToDto(booking, now));
     }
 
     private IQueryable<Booking> BuildBookingQuery() =>
@@ -149,6 +159,8 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
             .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station)
             .Include(x => x.Passengers)

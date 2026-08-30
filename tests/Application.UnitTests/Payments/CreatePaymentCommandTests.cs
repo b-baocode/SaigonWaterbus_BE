@@ -1047,6 +1047,106 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task CancelledCharterBookingCanRequestFirstRefundOtpWithoutAdminRelease()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 8, 30, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(
+            context,
+            userId,
+            email: "nguyenvana@example.com",
+            phoneNumber: "0901234567",
+            phoneVerifiedAt: now.AddDays(-1));
+        var (booking, payment) = PaidCharterBooking(user.Id, "CB-REFUND-AFTER-CANCEL", now);
+        booking.BookingStatus = BookingStatus.Cancelled;
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+
+        var optionsHandler = new GetRefundOtpOptionsQueryHandler(
+            context,
+            new TestUserContext(user.Id),
+            new TestOtpCodeService(),
+            new FixedTimeProvider(now));
+        var options = await optionsHandler.Handle(
+            new GetRefundOtpOptionsQuery(payment.Id),
+            CancellationToken.None);
+
+        options.RefundAmount.ShouldBe(10000);
+        options.CanRequestOtp.ShouldBeTrue();
+        options.CanSubmitRefund.ShouldBeTrue();
+        options.BlockedReason.ShouldBeNull();
+
+        var emailSender = new TestOtpSender();
+        var smsSender = new TestSmsOtpSender();
+        var otpHandler = CreateRequestRefundOtpHandler(
+            context,
+            user.Id,
+            now,
+            emailSender,
+            smsSender);
+
+        var challenge = await otpHandler.Handle(
+            new RequestRefundOtpCommand(payment.Id, "phone"),
+            CancellationToken.None);
+
+        challenge.Channel.ShouldBe(OtpChannel.Phone);
+        smsSender.SentPhoneNumbers.ShouldBe(["+84901234567"]);
+    }
+
+    [Test]
+    public async Task CancelledCharterBookingStillBlocksSecondCustomerRefundAttempt()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 8, 30, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(context, userId, "nguyenvana@example.com");
+        var (booking, payment) = PaidCharterBooking(user.Id, "CB-REFUND-SECOND-ATTEMPT", now);
+        booking.BookingStatus = BookingStatus.Cancelled;
+        payment.CustomerRefundAttempts = 1;
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var handler = CreateRequestRefundOtpHandler(
+            context,
+            user.Id,
+            now,
+            new TestOtpSender(),
+            new TestSmsOtpSender());
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new RequestRefundOtpCommand(payment.Id), CancellationToken.None));
+
+        exception.Errors["refund"].Single().ShouldContain("đã sử dụng 1 lần hoàn tiền");
+    }
+
+    [Test]
+    public async Task CancelledCharterBookingWithFailedRefundStillRequiresAdminRelease()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 8, 30, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(context, userId, "nguyenvana@example.com");
+        var (booking, payment) = PaidCharterBooking(user.Id, "CB-REFUND-FAILED", now);
+        booking.BookingStatus = BookingStatus.Cancelled;
+        payment.RefundStatus = PaymentSupport.RefundFailedStatus;
+        payment.RefundRequestedAmount = 10000;
+        payment.RefundFailureReason = "PayOS payout failed";
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var handler = CreateRequestRefundOtpHandler(
+            context,
+            user.Id,
+            now,
+            new TestOtpSender(),
+            new TestSmsOtpSender());
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new RequestRefundOtpCommand(payment.Id), CancellationToken.None));
+
+        exception.Errors["refund"].Single().ShouldContain("không có yêu cầu hoàn tiền đang mở");
+    }
+
+    [Test]
     public async Task RequestRefundOtpIsRejectedBeforeSendingWhenCustomerHasNoOpenRefund()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -1259,6 +1359,7 @@ public class CreatePaymentCommandTests
         await using var context = SeatFlowTestData.CreateContext();
         var userId = Guid.NewGuid();
         var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(context, userId, "nguyenvana@example.com");
         var booking = new Booking
         {
             UserId = userId,
@@ -1266,7 +1367,7 @@ public class CreatePaymentCommandTests
             BookingCode = "BK-REFUND-CHARTER",
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",
-            BookingStatus = BookingStatus.Confirmed,
+            BookingStatus = BookingStatus.Cancelled,
             PaymentStatus = "Paid",
             DepartureDate = DateOnly.FromDateTime(now.AddDays(5).UtcDateTime),
             StartTime = new TimeOnly(8, 0),
@@ -1292,7 +1393,7 @@ public class CreatePaymentCommandTests
 
         var (handler, otpChallenge) = await CreateRefundHandlerAsync(
             context,
-            userId,
+            user.Id,
             payment,
             now);
 

@@ -1040,7 +1040,7 @@ internal static class RefundOtpSupport
             return null;
         }
 
-        if (payment.RefundReleasedAt is null)
+        if (!HasOpenCustomerRefund(payment))
         {
             return "Bạn không có yêu cầu hoàn tiền đang mở. Vui lòng liên hệ admin.";
         }
@@ -1049,6 +1049,11 @@ internal static class RefundOtpSupport
             ? "Bạn đã sử dụng 1 lần hoàn tiền. Vui lòng liên hệ admin để được hỗ trợ thêm."
             : null;
     }
+
+    private static bool HasOpenCustomerRefund(Payment payment) =>
+        string.IsNullOrWhiteSpace(payment.RefundStatus)
+        && (payment.Booking.BookingStatus == BookingStatus.Cancelled
+            || payment.RefundReleasedAt.HasValue);
 
     public static async Task EnsureCanRequestAsync(
         IApplicationDbContext context,
@@ -1242,27 +1247,18 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
         }
 
         // Quy tắc "1 lần duy nhất cho customer":
+        // - Charter đã Cancelled tự mở lần refund đầu tiên.
+        // - Sau một attempt thất bại, admin phải mở lại qua RefundReleasedAt và reset counter.
         // - Admin/Manager/Staff luôn refund được (không giới hạn).
-        // - Customer chỉ được refund khi admin đã "mở lại" (RefundReleasedAt != null) AND
-        //   CustomerRefundAttempts < 1. Sau khi attempt (kể cả fail) thì tăng counter,
-        //   và phải admin mở lại lại mới refund tiếp được.
         // - Lưu ý: chỉ áp dụng khi refundAmount > 0; refund 0đ (đóng sổ) không cần admin release.
         var currentUser = await AuthSupport.TryGetCurrentUserWithRoleAsync(_context, _userContext, cancellationToken);
         var isCustomer = currentUser is not null && AuthSupport.IsCustomer(currentUser);
-        if (isCustomer)
-        {
-            if (payment.RefundReleasedAt is null)
-            {
-                throw new ValidationException([new ValidationFailure("refund",
-                    "Bạn không có yêu cầu hoàn tiền đang mở. Vui lòng liên hệ admin.")]);
-            }
-
-            if (payment.CustomerRefundAttempts >= 1)
-            {
-                throw new ValidationException([new ValidationFailure("refund",
-                    "Bạn đã sử dụng 1 lần hoàn tiền. Vui lòng liên hệ admin để được hỗ trợ thêm.")]);
-            }
-        }
+        await RefundOtpSupport.EnsureCanRequestAsync(
+            _context,
+            _userContext,
+            payment,
+            refundAmount,
+            cancellationToken);
 
         await VerifyRefundOtpAsync(payment, request.OtpChallengeId, request.OtpCode, now, cancellationToken);
 

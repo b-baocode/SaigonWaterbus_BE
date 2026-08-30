@@ -814,7 +814,8 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
 
         var manifestHandler = new GetCharterBookingManifestByCodeQueryHandler(
             context,
-            new TestUserContext(user.Id));
+            new TestUserContext(user.Id),
+            new FixedTimeProvider(new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero)));
 
         var manifest = await manifestHandler.Handle(
             new GetCharterBookingManifestByCodeQuery(booking.BookingCode.ToLowerInvariant()),
@@ -872,7 +873,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
             AssignedAt = DateTimeOffset.UtcNow
         });
         await context.SaveChangesAsync();
-        var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
+        var checkedInAt = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var checkInHandler = new UpdateCharterBookingAttendanceCommandHandler(
             context,
             staffContext,
@@ -893,7 +894,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         context.Tickets.ShouldAllBe(x => x.CheckedInAt == checkedInAt);
         context.Tickets.ShouldAllBe(x => x.CheckedInByUserId == staffContext.UserId);
 
-        var checkedOutAt = checkedInAt.AddHours(1);
+        var checkedOutAt = new DateTimeOffset(2030, 1, 1, 16, 0, 0, TimeSpan.Zero);
         var checkOutHandler = new UpdateCharterBookingAttendanceCommandHandler(
             context,
             staffContext,

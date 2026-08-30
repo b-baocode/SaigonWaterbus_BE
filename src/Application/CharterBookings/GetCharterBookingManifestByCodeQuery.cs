@@ -1,5 +1,6 @@
 using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -35,13 +36,16 @@ public sealed class GetCharterBookingManifestByCodeQueryHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
 
     public GetCharterBookingManifestByCodeQueryHandler(
         IApplicationDbContext context,
-        IUserContext userContext)
+        IUserContext userContext,
+        TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
+        _timeProvider = timeProvider;
     }
 
     public async Task<CharterBookingManifestDto> Handle(
@@ -60,6 +64,8 @@ public sealed class GetCharterBookingManifestByCodeQueryHandler
             .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station)
             .Include(x => x.Passengers)
@@ -81,7 +87,7 @@ public sealed class GetCharterBookingManifestByCodeQueryHandler
             includeCustomerOwner: true,
             notFoundWhenDenied: true,
             cancellationToken);
-        return CharterBookingManifestSupport.ToDto(booking);
+        return CharterBookingManifestSupport.ToDto(booking, _timeProvider.GetUtcNow());
     }
 }
 
@@ -90,13 +96,16 @@ public sealed class GetCharterBookingManifestByQrTokenQueryHandler
 {
     private readonly IApplicationDbContext _context;
     private readonly IUserContext _userContext;
+    private readonly TimeProvider _timeProvider;
 
     public GetCharterBookingManifestByQrTokenQueryHandler(
         IApplicationDbContext context,
-        IUserContext userContext)
+        IUserContext userContext,
+        TimeProvider timeProvider)
     {
         _context = context;
         _userContext = userContext;
+        _timeProvider = timeProvider;
     }
 
     public async Task<CharterBookingManifestDto> Handle(
@@ -122,7 +131,7 @@ public sealed class GetCharterBookingManifestByQrTokenQueryHandler
             includeCustomerOwner: true,
             notFoundWhenDenied: true,
             cancellationToken);
-        return CharterBookingManifestSupport.ToDto(booking);
+        return CharterBookingManifestSupport.ToDto(booking, _timeProvider.GetUtcNow());
     }
 }
 
@@ -137,6 +146,8 @@ internal static class CharterBookingManifestSupport
             .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station)
             .Include(x => x.Passengers)
@@ -147,7 +158,7 @@ internal static class CharterBookingManifestSupport
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.CheckedOutByUser);
 
-    public static CharterBookingManifestDto ToDto(Booking booking)
+    public static CharterBookingManifestDto ToDto(Booking booking, DateTimeOffset? now = null)
     {
         var currentTickets = CharterBookingTicketSupport.GetDisplayTickets(booking.Tickets);
         var ticketsByPassengerId = currentTickets
@@ -191,7 +202,7 @@ internal static class CharterBookingManifestSupport
                 .Select(passenger =>
                 {
                     ticketsByPassengerId.TryGetValue(passenger.Id, out var ticket);
-                    return ToPassengerDto(passenger, ticket, canCheckInBooking);
+                    return ToPassengerDto(passenger, ticket, booking, canCheckInBooking, now);
                 })
                 .ToList(),
             booking.BoatId);
@@ -211,7 +222,9 @@ internal static class CharterBookingManifestSupport
     private static CharterBookingManifestPassengerDto ToPassengerDto(
         BookingPassenger passenger,
         Ticket? ticket,
-        bool canCheckInBooking) =>
+        Booking booking,
+        bool canCheckInBooking,
+        DateTimeOffset? now) =>
         new(
             passenger.Id,
             passenger.FullName,
@@ -226,6 +239,11 @@ internal static class CharterBookingManifestSupport
             ticket?.CheckedOutAt,
             ticket?.CheckedOutByUserId,
             ticket?.CheckedOutByUser?.FullName,
-            canCheckInBooking && ticket?.TicketStatus == TicketStatus.Active,
-            ticket?.TicketStatus == TicketStatus.CheckedIn && ticket.CheckedInAt.HasValue);
+            canCheckInBooking
+                && ticket?.TicketStatus == TicketStatus.Active
+                && TicketAttendanceWindowSupport.IsWithinCheckInWindow(ticket, booking, now),
+            booking.BookingStatus == BookingStatus.Confirmed
+                && ticket?.TicketStatus == TicketStatus.CheckedIn
+                && ticket.CheckedInAt.HasValue
+                && TicketAttendanceWindowSupport.IsWithinCheckOutWindow(ticket, booking, now));
 }

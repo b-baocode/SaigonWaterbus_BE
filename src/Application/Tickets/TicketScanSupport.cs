@@ -32,10 +32,7 @@ internal static class TicketScanSupport
             .SingleOrDefaultAsync(x => x.Id == ticketId, cancellationToken)
             ?? throw new NotFoundException("Ticket not found.");
 
-        if (!Booking.IsCharterBookingType(ticket.Booking.BookingType))
-        {
-            await LoadRegularTicketGraphAsync(context, ticket, cancellationToken);
-        }
+        await LoadTicketGraphAsync(context, ticket, cancellationToken);
 
         return ticket;
     }
@@ -64,7 +61,7 @@ internal static class TicketScanSupport
             ?? throw new NotFoundException("Ticket not found.");
     }
 
-    private static async Task LoadRegularTicketGraphAsync(
+    private static async Task LoadTicketGraphAsync(
         IApplicationDbContext context,
         Ticket ticket,
         CancellationToken cancellationToken)
@@ -146,6 +143,8 @@ internal static class TicketScanSupport
                 .Include(x => x.FromStation)
                 .Include(x => x.ToStation)
                 .Include(x => x.Passengers)
+                .Include(x => x.Trip)
+                    .ThenInclude(x => x!.TripStops)
                 .SingleAsync(
                     x => x.Id == ticket.BookingId && x.BookingType == Booking.CharterBookingType,
                     cancellationToken);
@@ -323,13 +322,13 @@ internal static class TicketScanSupport
         && booking.BookingStatus == BookingStatus.Confirmed
         && (string.Equals(booking.PaymentStatus, "Paid", StringComparison.OrdinalIgnoreCase)
             || booking.RemainingAmount <= 0)
-        && TicketAttendanceWindowSupport.IsWithinCheckInWindow(ticket, now);
+        && TicketAttendanceWindowSupport.IsWithinCheckInWindow(ticket, booking, now);
 
     private static bool CanCheckOut(Ticket ticket, Booking booking, DateTimeOffset? now) =>
         ticket.TicketStatus == TicketStatus.CheckedIn
         && ticket.CheckedInAt.HasValue
         && booking.BookingStatus == BookingStatus.Confirmed
-        && TicketAttendanceWindowSupport.IsWithinCheckOutWindow(ticket, now);
+        && TicketAttendanceWindowSupport.IsWithinCheckOutWindow(ticket, booking, now);
 
     private static BookingPassenger? ResolveCompanion(
         BookingPassenger passenger,

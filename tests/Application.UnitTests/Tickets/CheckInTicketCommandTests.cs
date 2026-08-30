@@ -246,7 +246,7 @@ public class CheckInTicketCommandTests
     }
 
     [Test]
-    public async Task CheckInAfterBoardingStopDwellWindowIsRejected()
+    public async Task CheckInUsesScheduledDepartureWhenBoatArrivedEarly()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
@@ -265,11 +265,12 @@ public class CheckInTicketCommandTests
             staffContext,
             new FixedTimeProvider(now));
 
-        var ex = await Should.ThrowAsync<ValidationException>(() =>
-            handler.Handle(new CheckInTicketCommand(ticket.QrToken), CancellationToken.None));
+        var result = await handler.Handle(
+            new CheckInTicketCommand(ticket.QrToken),
+            CancellationToken.None);
 
-        ex.Errors["ticket"].Single().ShouldContain("quá thời gian dừng tại bến khách lên");
-        context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.Active);
+        result.TicketStatus.ShouldBe(nameof(TicketStatus.CheckedIn));
+        context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.CheckedIn);
     }
 
     [Test]
@@ -493,12 +494,12 @@ public class CheckInTicketCommandTests
     }
 
     [Test]
-    public async Task CheckOutBeforeTwoMinuteOpeningWindowIsRejected()
+    public async Task CheckOutBeforeThreeMinuteOpeningWindowIsRejected()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var checkedInAt = new DateTimeOffset(2030, 1, 1, 9, 0, 0, TimeSpan.Zero);
-        var now = new DateTimeOffset(2030, 1, 1, 9, 57, 0, TimeSpan.Zero);
+        var now = new DateTimeOffset(2030, 1, 1, 9, 56, 59, TimeSpan.Zero);
         var ticket = await SeedRegularBookingTicketAsync(
             context,
             TicketStatus.CheckedIn,
@@ -528,7 +529,7 @@ public class CheckInTicketCommandTests
         var ex = await Should.ThrowAsync<ValidationException>(() =>
             handler.Handle(new CheckOutTicketCommand(ticket.QrToken), CancellationToken.None));
 
-        ex.Errors["ticket"].Single().ShouldContain("trong vòng 2 phút trước giờ tàu đến");
+        ex.Errors["ticket"].Single().ShouldContain("trong vòng 3 phút trước giờ tàu đến");
         context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.CheckedIn);
     }
 

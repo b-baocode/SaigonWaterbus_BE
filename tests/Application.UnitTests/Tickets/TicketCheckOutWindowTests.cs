@@ -14,20 +14,20 @@ public class TicketCheckOutWindowTests
         new(2030, 1, 1, 12, 0, 0, TimeSpan.FromHours(7));
 
     [Test]
-    public void CheckOutOpensExactlyTwoMinutesBeforePlannedArrival()
+    public void CheckOutOpensExactlyThreeMinutesBeforePlannedArrival()
     {
         var (ticket, booking, passenger, _) = BuildTicket();
 
         Should.Throw<ValidationException>(() =>
             TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
-                ticket, booking, PlannedArrival.AddMinutes(-2).AddSeconds(-1)));
+                ticket, booking, PlannedArrival.AddMinutes(-3).AddSeconds(-1)));
 
         Should.NotThrow(() =>
             TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
-                ticket, booking, PlannedArrival.AddMinutes(-2)));
+                ticket, booking, PlannedArrival.AddMinutes(-3)));
 
         TicketAttendanceWindowSupport.IsWithinCheckOutWindow(
-            booking, passenger, PlannedArrival.AddMinutes(-2)).ShouldBeTrue();
+            booking, passenger, PlannedArrival.AddMinutes(-3)).ShouldBeTrue();
     }
 
     [Test]
@@ -37,13 +37,35 @@ public class TicketCheckOutWindowTests
         destination.AdjustedArrivalTime = PlannedArrival.AddMinutes(10);
 
         TicketAttendanceWindowSupport.IsWithinCheckOutWindow(
-            booking, passenger, PlannedArrival.AddMinutes(-2)).ShouldBeFalse();
+            booking, passenger, PlannedArrival.AddMinutes(-3)).ShouldBeFalse();
         TicketAttendanceWindowSupport.IsWithinCheckOutWindow(
-            booking, passenger, PlannedArrival.AddMinutes(8)).ShouldBeTrue();
+            booking, passenger, PlannedArrival.AddMinutes(7)).ShouldBeTrue();
 
         Should.NotThrow(() =>
             TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
-                ticket, booking, PlannedArrival.AddMinutes(8)));
+                ticket, booking, PlannedArrival.AddMinutes(7)));
+    }
+
+    [Test]
+    public void CharterWithoutLinkedTripOpensCheckOutThreeMinutesBeforeArrival()
+    {
+        var arrival = new DateTimeOffset(2030, 1, 1, 8, 23, 0, TimeSpan.FromHours(7));
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            DepartureDate = new DateOnly(2030, 1, 1),
+            StartTime = new TimeOnly(7, 23),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 1
+        };
+        var ticket = new Ticket { Booking = booking };
+
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
+                ticket, booking, arrival.AddMinutes(-3).AddSeconds(-1)));
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
+                ticket, booking, arrival.AddMinutes(-3)));
     }
 
     private static (Ticket Ticket, Booking Booking, BookingPassenger Passenger, TripStop Destination) BuildTicket()

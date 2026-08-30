@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
+using SaigonWaterbus.Domain.Enums;
 using Shouldly;
 
 namespace SaigonWaterbus.Application.UnitTests.Tickets;
@@ -44,6 +45,47 @@ public class TicketCheckInWindowTests
         Should.NotThrow(() =>
             TicketAttendanceWindowSupport.EnsureCanCheckInAt(
                 ticket, booking, PlannedDeparture));
+    }
+
+    [Test]
+    public void CheckInClosesExactlyTwoMinutesAfterActualDeparture()
+    {
+        var (ticket, booking, passenger, origin) = BuildTicket();
+        origin.ActualDepartureTime = PlannedDeparture;
+        origin.StopStatus = TripStopStatuses.Departed;
+
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, PlannedDeparture.AddMinutes(2)));
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, PlannedDeparture.AddMinutes(2).AddSeconds(1)));
+
+        TicketAttendanceWindowSupport.IsWithinCheckInWindow(
+            booking, passenger, PlannedDeparture.AddMinutes(2)).ShouldBeTrue();
+        TicketAttendanceWindowSupport.IsWithinCheckInWindow(
+            booking, passenger, PlannedDeparture.AddMinutes(2).AddSeconds(1)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void CharterWithoutLinkedTripUsesTenMinutesBeforeAndTwoMinutesAfterDeparture()
+    {
+        var departure = new DateTimeOffset(2030, 1, 1, 7, 23, 0, TimeSpan.FromHours(7));
+        var booking = BuildCharterBooking();
+        var ticket = new Ticket { Booking = booking };
+
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, departure.AddMinutes(-10).AddSeconds(-1)));
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, departure.AddMinutes(-10)));
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, departure.AddMinutes(2)));
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, departure.AddMinutes(2).AddSeconds(1)));
     }
 
     private static (Ticket Ticket, Booking Booking, BookingPassenger Passenger, TripStop Origin) BuildTicket()
@@ -99,4 +141,13 @@ public class TicketCheckInWindowTests
 
         return (ticket, booking, passenger, origin);
     }
+
+    private static Booking BuildCharterBooking() => new()
+    {
+        BookingType = Booking.CharterBookingType,
+        DepartureDate = new DateOnly(2030, 1, 1),
+        StartTime = new TimeOnly(7, 23),
+        RentalUnit = BoatRentalUnit.Hour,
+        DurationValue = 1
+    };
 }

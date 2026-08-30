@@ -31,7 +31,7 @@ public class TicketExpirationWindowTests
     }
 
     [Test]
-    public void OneWayTicketIsPastCheckInOnceBoatLeavesBoardingStop()
+    public void OneWayTicketIsPastCheckInTwoMinutesAfterBoatLeavesBoardingStop()
     {
         var (ticket, booking) = BuildOneWay();
         var boarding = FirstStop(booking.Trip!);
@@ -39,7 +39,10 @@ public class TicketExpirationWindowTests
         MarkDeparted(boarding, Departure);
 
         TicketAttendanceWindowSupport
-            .IsPastCheckInWindow(ticket, booking, Departure.AddMinutes(1))
+            .IsPastCheckInWindow(ticket, booking, Departure.AddMinutes(2))
+            .ShouldBeFalse();
+        TicketAttendanceWindowSupport
+            .IsPastCheckInWindow(ticket, booking, Departure.AddMinutes(2).AddSeconds(1))
             .ShouldBeTrue();
     }
 

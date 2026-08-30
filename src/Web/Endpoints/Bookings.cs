@@ -158,7 +158,7 @@ public sealed class Bookings : IEndpointGroup
                 "Booking khu hoi: truyen query ?tripCode=<chuyen dang boarding> de chi check-in ve chieu do; bo trong se check-in tat ca.",
                 "Neu nguoi goi la Staff thi phai la nhan vien OnBoard co ca assignmentType=Boat dang active tren dung tau cua tung chieu check-in.",
                 "Yeu cau booking da Confirmed va thanh toan du.",
-                "Check-in mo toi da 10 phut truoc gio tau roi ben khach len cua tung ve (uu tien gio da dieu chinh khi delay) va chi khi tau da cap ben.",
+                "Check-in mo 10 phut truoc va dong 2 phut sau gio tau roi ben khach len cua tung ve (uu tien gio thuc te, dieu chinh, ke hoach); tau phai da cap ben.",
                 "Tra ve manifest moi sau khi check-in."));
 
         group.MapPost(CheckOutAllBookingTickets, "manifest/qr/{qrToken}/check-out-all")
@@ -170,7 +170,7 @@ public sealed class Bookings : IEndpointGroup
                 "Check-out mot luot toan bo ve CheckedIn cua booking thuong.",
                 "Booking khu hoi: truyen query ?tripCode=<chuyen dang tra khach> de chi check-out ve chieu do; bo trong se check-out tat ca ve dang CheckedIn.",
                 "Neu nguoi goi la Staff thi phai la nhan vien OnBoard co ca assignmentType=Boat dang active tren dung tau cua tung chieu check-out.",
-                "Check-out duoc phep mo som 2 phut truoc gio tau den ben khach xuong (uu tien gio da dieu chinh khi delay) va dong khi tau roi ben hoac het thoi gian dung cong 5 phut an han.",
+                "Check-out duoc phep mo som 3 phut truoc gio tau den ben khach xuong (uu tien gio thuc te, dieu chinh, ke hoach) va dong khi tau roi ben hoac het thoi gian dung cong 5 phut an han.",
                 "Khi tat ca ve hop le da CheckedOut, booking chuyen Completed va tich diem neu co.",
                 "Tra ve manifest moi sau khi check-out."));
 

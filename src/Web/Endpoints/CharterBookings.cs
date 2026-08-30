@@ -421,6 +421,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Dung sau khi quet QR tong charter booking.",
                 "action: CheckIn hoac CheckOut.",
                 "mode: All de BE tu chon tat ca ve hanh khach; Selected de chi xu ly ticketIds gui len.",
+                "Ap dung cung khung gio voi ve le: check-in tu 10 phut truoc den 2 phut sau gio khoi hanh; check-out mo 3 phut truoc gio cap ben.",
                 "API cap nhat tung ve rieng le va tra ve manifest moi sau khi xu ly.",
                 "Ve sai trang thai duoc tra ve trong skippedTickets, khong lam fail toan bo request."));
 
