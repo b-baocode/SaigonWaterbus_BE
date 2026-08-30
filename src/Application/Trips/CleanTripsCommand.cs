@@ -31,13 +31,16 @@ public sealed class CleanTripsCommandHandler : IRequestHandler<CleanTripsCommand
 {
     private readonly IApplicationDbContext _context;
     private readonly ISeatHoldService _seatHoldService;
+    private readonly ITripsResetRealtimeNotifier _tripsResetRealtimeNotifier;
 
     public CleanTripsCommandHandler(
         IApplicationDbContext context,
-        ISeatHoldService? seatHoldService = null)
+        ISeatHoldService? seatHoldService = null,
+        ITripsResetRealtimeNotifier? tripsResetRealtimeNotifier = null)
     {
         _context = context;
         _seatHoldService = seatHoldService ?? NullSeatHoldService.Instance;
+        _tripsResetRealtimeNotifier = tripsResetRealtimeNotifier ?? NullTripsResetRealtimeNotifier.Instance;
     }
 
     public async Task<CleanTripsResult> Handle(CleanTripsCommand request, CancellationToken cancellationToken)
@@ -48,6 +51,21 @@ public sealed class CleanTripsCommandHandler : IRequestHandler<CleanTripsCommand
 
         if (trips.Count == 0)
             return new CleanTripsResult(0);
+
+        var routeIds = trips.Select(trip => trip.RouteId).Distinct().ToList();
+        var routes = await _context.Set<Route>()
+            .Include(route => route.RouteStops)
+                .ThenInclude(routeStop => routeStop.Station)
+            .Where(route => routeIds.Contains(route.Id))
+            .ToDictionaryAsync(route => route.Id, cancellationToken);
+        var boatIds = trips
+            .Where(trip => trip.BoatId.HasValue)
+            .Select(trip => trip.BoatId!.Value)
+            .Distinct()
+            .ToList();
+        var boats = await _context.Set<Boat>()
+            .Where(boat => boatIds.Contains(boat.Id))
+            .ToDictionaryAsync(boat => boat.Id, cancellationToken);
 
         var tripIds = trips.Select(t => t.Id).ToList();
         foreach (var tripId in tripIds)
@@ -133,6 +151,43 @@ public sealed class CleanTripsCommandHandler : IRequestHandler<CleanTripsCommand
         _context.Set<Booking>().RemoveRange(bookings);
         _context.Set<Trip>().RemoveRange(trips);
         await _context.SaveChangesAsync(cancellationToken);
+
+        // GPS chỉ đưa tàu về bến khi nhận được trip cụ thể trong danh sách bị xóa.
+        // Không phát tín hiệu cho trip không có tàu vì không có thiết bị nào cần điều khiển.
+        var removedByBoat = trips
+            .Where(trip => trip.BoatId.HasValue && boats.ContainsKey(trip.BoatId.Value))
+            .GroupBy(trip => new { BoatId = trip.BoatId!.Value, BoatCode = boats[trip.BoatId.Value].Code })
+            .ToList();
+        foreach (var boatTrips in removedByBoat)
+        {
+            var removedEvents = boatTrips
+                .Select(trip =>
+                {
+                    var endStation = routes.TryGetValue(trip.RouteId, out var route)
+                        ? route.RouteStops
+                            .OrderBy(stop => stop.StopOrder)
+                            .LastOrDefault()?.Station
+                        : null;
+                    return new TripResetRemovedRealtimeEvent(
+                        trip.Id,
+                        trip.TripCode,
+                        trip.DepartureTime,
+                        trip.ArrivalTime,
+                        endStation?.StationCode,
+                        endStation?.StationName);
+                })
+                .ToList();
+
+            await _tripsResetRealtimeNotifier.PublishResetAsync(
+                new TripsResetRealtimeEvent(
+                    boatTrips.Key.BoatId,
+                    boatTrips.Key.BoatCode,
+                    request.OperatingDate,
+                    removedEvents,
+                    [],
+                    []),
+                cancellationToken);
+        }
 
         return new CleanTripsResult(
             trips.Count,
