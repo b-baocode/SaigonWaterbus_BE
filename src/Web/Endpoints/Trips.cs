@@ -134,6 +134,7 @@ public sealed class Trips : IEndpointGroup
                 "Anonymous",
                 null,
                 "Query params: fromStationId (guid), toStationId (guid), operatingDate (dd/MM/yyyy hoac dd-MM-yyyy).",
+                "Tìm chiều về của vé khứ hồi: truyền earliestDepartureTime (ISO 8601) bằng giờ khách xuống ở chiều đi; BE chỉ trả chuyến rời bến lên sau mốc này.",
                 "Chi tra ve chuyen waterbus thuong (routeType=Regular, tripType=Regular); chuyen charter khong xuat hien.",
                 "Chuyen ngam canh tim bang GET /api/trips/search/sightseeing (khong can chon ben).",
                 "Chi tra ve chuyen co tripStatus=Scheduled/Boarding/InProgress/Delayed va chặng còn trước giờ rời bến lên tối thiểu 10 phút.",
@@ -413,6 +414,7 @@ public sealed class Trips : IEndpointGroup
     private static async Task<IResult> SearchTrips(
         ISender sender,
         Guid fromStationId, Guid toStationId, string operatingDate,
+        DateTimeOffset? earliestDepartureTime,
         CancellationToken ct)
     {
         if (!TryParseRequiredDateOnly(operatingDate, out var parsedOperatingDate))
@@ -421,7 +423,11 @@ public sealed class Trips : IEndpointGroup
         }
 
         return Results.Ok(await sender.Send(
-            new SearchTripsQuery(fromStationId, toStationId, parsedOperatingDate), ct));
+            new SearchTripsQuery(
+                fromStationId,
+                toStationId,
+                parsedOperatingDate,
+                earliestDepartureTime), ct));
     }
 
     private static async Task<IResult> SearchSightseeingTrips(

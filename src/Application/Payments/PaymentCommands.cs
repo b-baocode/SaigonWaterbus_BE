@@ -137,9 +137,9 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             now,
             cancellationToken);
 
-        if (PaymentSupport.IsFreeRegularBooking(booking))
+        if (booking.TotalAmount == 0)
         {
-            return await CompleteFreeRegularBookingAsync(booking, now, cancellationToken);
+            return await CompleteZeroAmountBookingAsync(booking, now, cancellationToken);
         }
 
         var existingPendingPayment = booking.Payments
@@ -254,7 +254,7 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
         return PaymentSupport.ToDto(booking, payment);
     }
 
-    private async Task<PaymentDto> CompleteFreeRegularBookingAsync(
+    private async Task<PaymentDto> CompleteZeroAmountBookingAsync(
         Booking booking,
         DateTimeOffset now,
         CancellationToken cancellationToken)
@@ -273,13 +273,15 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             BookingId = booking.Id,
             PaymentCode = await PaymentSupport.GenerateInternalPaymentCodeAsync(
                 _context,
-                "FREE",
+                booking.PointsUsed > 0 ? "POINTS" : "FREE",
                 now,
                 cancellationToken),
             Provider = PaymentSupport.FreeProvider,
             Amount = 0,
             Currency = booking.Currency,
-            PaymentMethod = PaymentSupport.FreePaymentMethod,
+            PaymentMethod = booking.PointsUsed > 0
+                ? PaymentSupport.PointsPaymentMethod
+                : PaymentSupport.FreePaymentMethod,
             PaymentPurpose = PaymentSupport.FullPurpose,
             PaymentStatus = PaymentSupport.PendingStatus
         };
@@ -761,6 +763,13 @@ public sealed class GetRefundOtpOptionsQueryHandler
             _timeProvider.GetUtcNow(),
             cancellationToken);
 
+        await RefundOtpSupport.EnsureCanRequestAsync(
+            _context,
+            _userContext,
+            payment,
+            refundAmount,
+            cancellationToken);
+
         var userId = _userContext.UserId
             ?? throw new UnauthorizedAccessException();
         var user = await _context.Set<User>()
@@ -829,10 +838,17 @@ public sealed class GetPaidPaymentByBookingIdQueryHandler
             }
         }
 
-        // Tìm payment settlement (PayOS/Counter/Free) đã thanh toán gần nhất của booking.
-        var paidPayment = booking.Payments
-            .Where(x => PaymentSupport.IsSettlementPayment(x) && PaymentSupport.IsPaid(x.PaymentStatus))
-            .OrderByDescending(x => x.Created)
+        var paidPayments = booking.Payments
+            .Where(x => PaymentSupport.IsSettlementPayment(x) && PaymentSupport.IsPaid(x.PaymentStatus));
+
+        // Booking đặt cọc có thể có nhiều payment. Với customer, ưu tiên đúng payment đã được
+        // admin mở lại thay vì payment mới nhất để OTP và lệnh refund không lệch payment.
+        var paidPayment = (isCustomer
+                ? paidPayments
+                    .OrderByDescending(x => x.RefundReleasedAt.HasValue && x.CustomerRefundAttempts < 1)
+                    .ThenByDescending(x => x.RefundReleasedAt)
+                    .ThenByDescending(x => x.Created)
+                : paidPayments.OrderByDescending(x => x.Created))
             .FirstOrDefault()
             ?? throw new ValidationException([new ValidationFailure("bookingId",
                 "Booking chưa có payment đã thanh toán. Không thể hoàn tiền.")]);
@@ -903,7 +919,18 @@ public sealed class RequestRefundOtpCommandHandler
         }
 
         var now = _timeProvider.GetUtcNow();
-        await PaymentSupport.ResolvePolicyRefundAmountAsync(_context, payment, now, cancellationToken);
+        var refundAmount = await PaymentSupport.ResolvePolicyRefundAmountAsync(
+            _context,
+            payment,
+            now,
+            cancellationToken);
+
+        await RefundOtpSupport.EnsureCanRequestAsync(
+            _context,
+            _userContext,
+            payment,
+            refundAmount,
+            cancellationToken);
 
         var userId = _userContext.UserId
             ?? throw new UnauthorizedAccessException();
@@ -988,6 +1015,40 @@ public sealed class RequestRefundOtpCommandHandler
 
 internal static class RefundOtpSupport
 {
+    public static async Task EnsureCanRequestAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        Payment payment,
+        decimal refundAmount,
+        CancellationToken cancellationToken)
+    {
+        if (refundAmount <= 0)
+        {
+            return;
+        }
+
+        var currentUser = await AuthSupport.TryGetCurrentUserWithRoleAsync(
+            context,
+            userContext,
+            cancellationToken);
+        if (currentUser is null || !AuthSupport.IsCustomer(currentUser))
+        {
+            return;
+        }
+
+        if (payment.RefundReleasedAt is null)
+        {
+            throw new ValidationException([new ValidationFailure("refund",
+                "Bạn không có yêu cầu hoàn tiền đang mở. Vui lòng liên hệ admin.")]);
+        }
+
+        if (payment.CustomerRefundAttempts >= 1)
+        {
+            throw new ValidationException([new ValidationFailure("refund",
+                "Bạn đã sử dụng 1 lần hoàn tiền. Vui lòng liên hệ admin để được hỗ trợ thêm.")]);
+        }
+    }
+
     public static OtpChannel ResolveChannel(User user, string? requestedChannel)
     {
         var defaultChannel = !string.IsNullOrWhiteSpace(user.PhoneNumber)
@@ -1424,10 +1485,11 @@ internal static class PaymentSupport
 
     /// <summary>Payment thu tiền mặt tại quầy — không đi qua cổng thanh toán.</summary>
     public const string CounterProvider = "Counter";
-    /// <summary>Payment 0đ của booking thường — hoàn tất nội bộ, không đi qua PayOS.</summary>
+    /// <summary>Payment 0đ — hoàn tất nội bộ, không đi qua PayOS.</summary>
     public const string FreeProvider = "System";
     public const string CashPaymentMethod = "Cash";
     public const string FreePaymentMethod = "Free";
+    public const string PointsPaymentMethod = "Points";
     public const string PendingStatus = "Pending";
     public const string PaidStatus = "Paid";
     public const string CancelledStatus = "Cancelled";

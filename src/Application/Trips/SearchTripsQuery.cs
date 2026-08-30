@@ -17,7 +17,8 @@ namespace SaigonWaterbus.Application.Trips;
 public sealed record SearchTripsQuery(
     Guid FromStationId,
     Guid ToStationId,
-    DateOnly OperatingDate) : IRequest<IReadOnlyList<TripSummaryDto>>;
+    DateOnly OperatingDate,
+    DateTimeOffset? EarliestDepartureTime = null) : IRequest<IReadOnlyList<TripSummaryDto>>;
 
 public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, IReadOnlyList<TripSummaryDto>>
 {
@@ -173,7 +174,11 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         return trips.OrderBy(t => t.DepartureTime).Select(t =>
         {
             var selectedSegment = ResolveOpenSearchSegment(
-                t, searchSegmentsByRouteId[t.RouteId], tripStopsByTripId, bookingCutoff);
+                t,
+                searchSegmentsByRouteId[t.RouteId],
+                tripStopsByTripId,
+                bookingCutoff,
+                request.EarliestDepartureTime);
             if (selectedSegment is null)
             {
                 return null;
@@ -255,11 +260,19 @@ public sealed class SearchTripsQueryHandler : IRequestHandler<SearchTripsQuery, 
         Trip trip,
         IReadOnlyList<SearchSegment> segments,
         IReadOnlyDictionary<Guid, Dictionary<int, (DateTimeOffset? Arrival, DateTimeOffset? Departure)>> tripStopsByTripId,
-        DateTimeOffset bookingCutoff)
+        DateTimeOffset bookingCutoff,
+        DateTimeOffset? earliestDepartureTime)
     {
         foreach (var segment in segments)
         {
             var (fromStopDeparture, toStopArrival) = ResolveSegmentTimes(trip, segment, tripStopsByTripId);
+            if (earliestDepartureTime.HasValue
+                && fromStopDeparture.HasValue
+                && fromStopDeparture.Value <= earliestDepartureTime.Value)
+            {
+                continue;
+            }
+
             if (fromStopDeparture is null || fromStopDeparture > bookingCutoff)
             {
                 return new ResolvedSearchSegment(segment, fromStopDeparture, toStopArrival);

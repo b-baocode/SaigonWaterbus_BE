@@ -1,0 +1,112 @@
+{
+  "operatingDate": "2026-08-30",
+  "confirmCreate": true,
+  "items": [
+    {
+      "routeCode": "LOOP-BD",
+      "boatCode": "WS_002",
+      "departureTimes": [
+        "14:35:00",
+        "15:35:00",
+        "16:46:00"
+      ],
+      "stops": null,
+      "stayDurationMinutes": null
+    },
+    {
+      "routeCode": "LOOP-BD",
+      "boatCode": "WS_003",
+      "departureTimes": [
+        "15:05:00",
+        "16:05:00"
+      ],
+      "stops": null,
+      "stayDurationMinutes": null
+    },
+    {
+      "routeCode": "WB-LD-BD",
+      "boatCode": "WB_001",
+      "departureTimes": ["14:35:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-LD-BD",
+      "boatCode": "WB_002",
+      "departureTimes": ["14:40:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-LD-BD",
+      "boatCode": "WB_003",
+      "departureTimes": ["14:45:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-LD-BD",
+      "boatCode": "WB_004",
+      "departureTimes": ["14:50:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-LD-BD",
+      "boatCode": "WB_005",
+      "departureTimes": ["14:55:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-LD-BD",
+      "boatCode": "WB_006",
+      "departureTimes": ["15:00:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-BD-LB",
+      "boatCode": "WB_001",
+      "departureTimes": ["16:16:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-BD-LB",
+      "boatCode": "WB_002",
+      "departureTimes": ["16:21:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-BD-LB",
+      "boatCode": "WB_003",
+      "departureTimes": ["16:26:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-BD-LB",
+      "boatCode": "WB_004",
+      "departureTimes": ["16:31:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-BD-LB",
+      "boatCode": "WB_005",
+      "departureTimes": ["16:36:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    },
+    {
+      "routeCode": "WB-BD-LB",
+      "boatCode": "WB_006",
+      "departureTimes": ["16:41:00"],
+      "stops": null,
+      "stayDurationMinutes": 5
+    }
+  ],
+  "plans": null
+}

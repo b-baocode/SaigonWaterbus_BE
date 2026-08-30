@@ -1239,6 +1239,38 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public async Task SearchTripsFiltersReturnOptionsByOutboundSegmentArrival()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var stationA = Station("A", "Ben A");
+        var stationB = Station("B", "Ben B");
+        var route = Route("R-RETURN", stationA, stationB);
+        var earlyBoat = BoatWithSeats("BOAT-EARLY", seatCount: 3);
+        var lateBoat = BoatWithSeats("BOAT-LATE", seatCount: 3);
+        var earlyDeparture = new DateTimeOffset(2030, 1, 1, 11, 40, 0, TimeSpan.FromHours(7));
+        var lateDeparture = new DateTimeOffset(2030, 1, 1, 14, 0, 0, TimeSpan.FromHours(7));
+        var earlyTrip = TripWithSeats(route, earlyBoat, "TR-RETURN-EARLY", earlyDeparture);
+        var lateTrip = TripWithSeats(route, lateBoat, "TR-RETURN-LATE", lateDeparture);
+
+        context.AddRange(route, earlyBoat, lateBoat, earlyTrip, lateTrip);
+        await context.SaveChangesAsync();
+
+        var outboundArrival = new DateTimeOffset(2030, 1, 1, 13, 55, 0, TimeSpan.FromHours(7));
+        var result = await new SearchTripsQueryHandler(
+                context,
+                new FixedTimeProvider(earlyDeparture.ToUniversalTime().AddDays(-1)))
+            .Handle(
+                new SearchTripsQuery(
+                    stationA.Id,
+                    stationB.Id,
+                    new DateOnly(2030, 1, 1),
+                    outboundArrival),
+                CancellationToken.None);
+
+        result.Select(x => x.TripCode).ShouldBe(["TR-RETURN-LATE"]);
+    }
+
+    [Test]
     public async Task RunningTripVisibilityDependsOnBoardingStopAndStatus()
     {
         await using var context = SeatFlowTestData.CreateContext();

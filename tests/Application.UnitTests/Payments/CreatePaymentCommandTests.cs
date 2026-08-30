@@ -3,6 +3,7 @@ using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Payments;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -260,6 +261,81 @@ public class CreatePaymentCommandTests
             .ShouldContain("Booking chưa có số tiền cần thanh toán.");
         gateway.CreateRequests.ShouldBeEmpty();
         context.Set<Payment>().Count().ShouldBe(0);
+    }
+
+    [Test]
+    public async Task CharterBookingPaidFullyByPointsCompletesWithoutPayOs()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var userId = userContext.UserId!.Value;
+        var customer = await context.Set<User>().SingleAsync(x => x.Id == userId);
+        customer.PointBalance = 15_000;
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = userId,
+            BookingCode = "CB-POINTS-FULL",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@example.test",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10_000,
+            TotalAmount = 10_000,
+            RemainingAmount = 10_000,
+            HoldExpiresAt = now.AddHours(1)
+        };
+        context.Add(booking);
+        await context.SaveChangesAsync();
+        var gateway = new TestPaymentGateway();
+        var notificationSender = new TestPaymentNotificationSender();
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            new TestUserContext(userId),
+            gateway,
+            notificationSender,
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new CreatePaymentCommand(
+                booking.Id,
+                BookingPaymentOption.Full,
+                PointsToUse: 10_000),
+            CancellationToken.None);
+
+        result.Amount.ShouldBe(0);
+        result.Provider.ShouldBe("System");
+        result.PaymentMethod.ShouldBe("Points");
+        result.PaymentStatus.ShouldBe("Paid");
+        result.BookingStatus.ShouldBe(BookingStatus.Confirmed.ToString());
+        result.BookingPaymentStatus.ShouldBe("Paid");
+        result.BookingRemainingAmount.ShouldBe(0);
+        result.CheckoutUrl.ShouldBeNull();
+        booking.PointsUsed.ShouldBe(10_000);
+        customer.PointBalance.ShouldBe(5_000);
+        gateway.CreateRequests.ShouldBeEmpty();
+        var email = notificationSender.Notifications.ShouldHaveSingleItem();
+        email.Email.ShouldBe("customer@example.test");
+        email.BookingCode.ShouldBe("CB-POINTS-FULL");
+        email.PaymentAmount.ShouldBe(0);
+        email.IsFullyPaid.ShouldBeTrue();
+
+        var payment = context.Set<Payment>().Single();
+        payment.Amount.ShouldBe(0);
+        payment.Provider.ShouldBe("System");
+        payment.PaymentMethod.ShouldBe("Points");
+        payment.PaymentStatus.ShouldBe("Paid");
+        context.Set<PointTransaction>()
+            .Single(x => x.BookingId == booking.Id && x.TransactionType == PointTransactionTypes.Redeem)
+            .Points.ShouldBe(-10_000);
     }
 
     [Test]
@@ -911,6 +987,7 @@ public class CreatePaymentCommandTests
             phoneNumber: "0901234567",
             phoneVerifiedAt: now.AddDays(-1));
         var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-PHONE", now);
+        payment.RefundReleasedAt = now.AddMinutes(-1);
         context.AddRange(booking, payment);
         await context.SaveChangesAsync();
         var emailSender = new TestOtpSender();
@@ -946,6 +1023,7 @@ public class CreatePaymentCommandTests
             phoneNumber: "0901234567",
             phoneVerifiedAt: now.AddDays(-1));
         var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-EMAIL", now);
+        payment.RefundReleasedAt = now.AddMinutes(-1);
         context.AddRange(booking, payment);
         await context.SaveChangesAsync();
         var emailSender = new TestOtpSender();
@@ -966,6 +1044,34 @@ public class CreatePaymentCommandTests
         challenge.Channel.ShouldBe(OtpChannel.Email);
         challenge.Email.ShouldBe("nguyenvana@example.com");
         challenge.PendingPhoneNumber.ShouldBe(payment.Id.ToString("N"));
+    }
+
+    [Test]
+    public async Task RequestRefundOtpIsRejectedBeforeSendingWhenCustomerHasNoOpenRefund()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(
+            context,
+            userId,
+            email: "nguyenvana@example.com",
+            phoneNumber: "0901234567",
+            phoneVerifiedAt: now.AddDays(-1));
+        var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-NOT-OPEN", now);
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var emailSender = new TestOtpSender();
+        var smsSender = new TestSmsOtpSender();
+        var handler = CreateRequestRefundOtpHandler(context, user.Id, now, emailSender, smsSender);
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(new RequestRefundOtpCommand(payment.Id), CancellationToken.None));
+
+        exception.Errors["refund"].Single().ShouldContain("không có yêu cầu hoàn tiền đang mở");
+        emailSender.SentEmails.ShouldBeEmpty();
+        smsSender.SentPhoneNumbers.ShouldBeEmpty();
+        context.Set<OtpChallenge>().ShouldBeEmpty();
     }
 
     [Test]
@@ -1112,6 +1218,42 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task RefundByBookingForCustomerSelectsPaymentReleasedByAdmin()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(context, userId, "nguyenvana@example.com");
+        var (booking, releasedPayment) = PaidCharterBooking(user.Id, "BK-REFUND-RELEASED-PAYMENT", now);
+        releasedPayment.Created = now.AddDays(-2);
+        releasedPayment.RefundReleasedAt = now.AddMinutes(-10);
+        var latestPayment = new Payment
+        {
+            Booking = booking,
+            PaymentCode = "3999999",
+            Provider = "PayOS",
+            Amount = 5000,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "Remaining",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddDays(-1),
+            Created = now.AddDays(-1)
+        };
+        context.AddRange(booking, releasedPayment, latestPayment);
+        await context.SaveChangesAsync();
+        var handler = new GetPaidPaymentByBookingIdQueryHandler(
+            context,
+            new TestUserContext(user.Id));
+
+        var paymentId = await handler.Handle(
+            new GetPaidPaymentByBookingIdQuery(booking.Id, IsCharterBooking: true),
+            CancellationToken.None);
+
+        paymentId.ShouldBe(releasedPayment.Id);
+    }
+
+    [Test]
     public async Task RefundCharterBookingStillFollowsExistingPolicy()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -1175,6 +1317,7 @@ public class CreatePaymentCommandTests
             phoneNumber: "0901234567",
             phoneVerifiedAt: now.AddDays(-1));
         var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-OPTIONS", now);
+        payment.RefundReleasedAt = now.AddMinutes(-1);
         context.AddRange(booking, payment);
         await context.SaveChangesAsync();
         var handler = new GetRefundOtpOptionsQueryHandler(

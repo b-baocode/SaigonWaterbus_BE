@@ -72,7 +72,7 @@ public sealed class Payments : IEndpointGroup
                 "Neu so du diem lon hon gia tri don, BE chi tru du gia tri don va giu lai phan diem du trong tai khoan.",
                 "pointsToUse=null giu nguyen muc diem dang dung, pointsToUse=0 bo dung diem. Khong doi duoc khi da co payment Pending/Paid.",
                 "Diem bi tru ngay khi ap; booking het han/huy/hoan tien se tu hoan diem lai.",
-                "Booking thuong co tong tien 0đ (vd ve dac biet mien phi) se tu hoan tat thanh toan noi bo: response paymentStatus=Paid va khong co checkoutUrl, FE khong dieu huong PayOS.",
+                "Booking thuong hoac charter co tong tien con lai 0đ sau khi dung diem se tu hoan tat thanh toan noi bo: response paymentStatus=Paid, paymentMethod=Points va khong co checkoutUrl; FE khong dieu huong PayOS.",
                 "Sau khi da dat coc, gui paymentOption=Remaining de tao payment phan con lai.",
                 "De tuong thich nguoc, Full sau khi da dat coc cung se thanh toan phan con lai."));
 
@@ -102,6 +102,8 @@ public sealed class Payments : IEndpointGroup
                 "Bearer token",
                 RequestRefundOtpExample,
                 "Gui OTP cho chu payment truoc khi tao lenh hoan tien.",
+                "Customer chi yeu cau duoc OTP sau khi admin da mo lai quyen hoan tien cho payment.",
+                "Neu chua duoc mo quyen, API tra 400 truoc khi gui OTP.",
                 "otpChannel optional: phone hoac email. Mac dinh uu tien so dien thoai Viet Nam da xac thuc, neu khong co thi dung email.",
                 "Response tra ve challengeId, maskedDestination, expiresAt, resendAvailableAt; dung challengeId + otpCode cho API refund."));
 
