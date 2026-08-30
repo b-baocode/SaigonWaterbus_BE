@@ -371,6 +371,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
                     x.TripCode,
                     firstStop.StationId,
                     firstStop.Station?.StationName,
+                    x.Route.RouteType,
                     x.DepartureTime);
             })
             .ToList();
@@ -485,6 +486,7 @@ public sealed class PreviewRoundTripScheduleCommandHandler
             tripCode,
             firstStop.StationId,
             firstStop.Station?.StationName,
+            plan.Route.RouteType,
             departureTime);
     }
 

@@ -4,11 +4,22 @@
   "items": [
     {
       "routeCode": "LOOP-BD",
+      "boatCode": "WS_001",
+      "departureTimes": [
+        "19:45:00",
+        "20:40:00",
+        "21:35:00"
+      ],
+      "stops": null,
+      "stayDurationMinutes": null
+    },
+    {
+      "routeCode": "LOOP-BD",
       "boatCode": "WS_002",
       "departureTimes": [
-        "14:35:00",
-        "15:35:00",
-        "16:46:00"
+        "19:50:00",
+        "20:45:00",
+        "21:40:00"
       ],
       "stops": null,
       "stayDurationMinutes": null
@@ -17,95 +28,103 @@
       "routeCode": "LOOP-BD",
       "boatCode": "WS_003",
       "departureTimes": [
-        "15:05:00",
-        "16:05:00"
+        "19:55:00",
+        "20:50:00",
+        "21:45:00"
       ],
       "stops": null,
       "stayDurationMinutes": null
     },
     {
-      "routeCode": "WB-LD-BD",
+      "routeCode": "WB-BS-LD-02",
       "boatCode": "WB_001",
-      "departureTimes": ["14:35:00"],
+      "departureTimes": ["19:45:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-LD-BD",
+      "routeCode": "WB-BS-LD-02",
       "boatCode": "WB_002",
-      "departureTimes": ["14:40:00"],
+      "departureTimes": ["19:50:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-LD-BD",
+      "routeCode": "WB-BS-LD-02",
       "boatCode": "WB_003",
-      "departureTimes": ["14:45:00"],
+      "departureTimes": ["19:55:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-LD-BD",
+      "routeCode": "WB-BS-LD-02",
       "boatCode": "WB_004",
-      "departureTimes": ["14:50:00"],
+      "departureTimes": ["20:00:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-LD-BD",
+      "routeCode": "WB-BS-LD-02",
       "boatCode": "WB_005",
-      "departureTimes": ["14:55:00"],
+      "departureTimes": ["20:05:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-LD-BD",
+      "routeCode": "WB-BS-LD-02",
       "boatCode": "WB_006",
-      "departureTimes": ["15:00:00"],
+      "departureTimes": ["20:10:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-BD-LB",
+      "routeCode": "WB-LD-BS-02",
       "boatCode": "WB_001",
-      "departureTimes": ["16:16:00"],
+      "departureTimes": ["20:51:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-BD-LB",
+      "routeCode": "WB-LD-BS-02",
       "boatCode": "WB_002",
-      "departureTimes": ["16:21:00"],
+      "departureTimes": ["20:56:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-BD-LB",
+      "routeCode": "WB-LD-BS-02",
       "boatCode": "WB_003",
-      "departureTimes": ["16:26:00"],
+      "departureTimes": ["21:01:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-BD-LB",
+      "routeCode": "WB-LD-BS-02",
       "boatCode": "WB_004",
-      "departureTimes": ["16:31:00"],
+      "departureTimes": ["21:06:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-BD-LB",
+      "routeCode": "WB-LD-BS-02",
       "boatCode": "WB_005",
-      "departureTimes": ["16:36:00"],
+      "departureTimes": ["21:11:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
     },
     {
-      "routeCode": "WB-BD-LB",
+      "routeCode": "WB-LD-BS-02",
       "boatCode": "WB_006",
-      "departureTimes": ["16:41:00"],
+      "departureTimes": ["21:16:00"],
       "stops": null,
-      "stayDurationMinutes": 5
+      "stayDurationMinutes": 2
+    },
+    {
+      "routeCode": "WB-BS-LD-02",
+      "boatCode": "WB_001",
+      "departureTimes": ["21:57:00"],
+      "stops": null,
+      "stayDurationMinutes": 2
     }
   ],
   "plans": null

@@ -25,6 +25,7 @@ internal static class TripScheduleSupport
         string TripCode,
         Guid StationId,
         string? StationName,
+        string RouteType,
         DateTimeOffset DepartureTime);
 
     public sealed record StationDepartureConflict(
@@ -88,7 +89,7 @@ internal static class TripScheduleSupport
             // 2) New trip is blocked by the existing trip (MISSING before this fix).
             //    The new trip cannot start if it overlaps with an already-running existing trip.
             if (requested.DepartureTime < existing.DepartureTime
-                && requested.ArrivalTime.Add(BoatTurnaroundBuffer) >= existing.DepartureTime)
+                && requested.ArrivalTime.Add(BoatTurnaroundBuffer) > existing.DepartureTime)
             {
                 // New trip overlaps with existing trip's departure moment.
                 return new BoatScheduleConflict(
@@ -144,7 +145,8 @@ internal static class TripScheduleSupport
         IEnumerable<StationDepartureWindow> existingWindows)
     {
         foreach (var existing in existingWindows
-            .Where(x => x.StationId == requested.StationId)
+            .Where(x => x.StationId == requested.StationId
+                && string.Equals(x.RouteType, requested.RouteType, StringComparison.OrdinalIgnoreCase))
             .OrderBy(x => x.DepartureTime))
         {
             var gap = (requested.DepartureTime - existing.DepartureTime).Duration();
@@ -233,7 +235,7 @@ internal static class TripScheduleSupport
         var stationLabel = string.IsNullOrWhiteSpace(stationName) ? "bến này" : stationName;
 
         return $"Bến {stationLabel} đã có chuyến {tripCode} xuất phát lúc {localConflictDeparture:HH:mm dd/MM/yyyy}. "
-            + $"Các chuyến cùng bến phải cách nhau tối thiểu {StationDepartureBuffer.TotalMinutes:0} phút để check vé/lên tàu. "
+            + $"Các chuyến cùng bến và cùng loại tuyến phải cách nhau tối thiểu {StationDepartureBuffer.TotalMinutes:0} phút để check vé/lên tàu. "
             + $"Chuyến mới chỉ được khởi hành sớm nhất lúc {localEarliest:HH:mm dd/MM/yyyy}.";
     }
 }

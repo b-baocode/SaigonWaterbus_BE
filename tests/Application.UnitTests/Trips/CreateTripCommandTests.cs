@@ -319,6 +319,32 @@ public class CreateTripCommandTests
     }
 
     [Test]
+    public void BoatScheduleAllowsExactTurnaroundWhenEarlierTripIsCheckedAfterFutureTrip()
+    {
+        var stationA = Guid.NewGuid();
+        var stationB = Guid.NewGuid();
+        var earlierDeparture = new DateTimeOffset(2030, 1, 1, 20, 51, 0, TimeSpan.FromHours(7));
+        var earlierArrival = earlierDeparture.AddMinutes(61);
+        var futureDeparture = earlierArrival.Add(TripScheduleSupport.BoatTurnaroundBuffer);
+        var requestedEarlierTrip = new TripScheduleSupport.BoatScheduleWindow(
+            "(new)",
+            earlierDeparture,
+            earlierArrival,
+            stationB,
+            stationA,
+            []);
+        var existingFutureTrip = new TripScheduleSupport.BoatScheduleWindow(
+            "BB-FUTURE",
+            futureDeparture,
+            futureDeparture.AddMinutes(61),
+            stationA,
+            stationB,
+            []);
+
+        TripScheduleSupport.FindConflict(requestedEarlierTrip, [existingFutureTrip]).ShouldBeNull();
+    }
+
+    [Test]
     public async Task CreateTripRejectsDepartureFromSameStationWithinFiveMinutes()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -358,7 +384,28 @@ public class CreateTripCommandTests
                     CancellationToken.None));
 
         exception.Errors.Values.SelectMany(x => x).Single()
-            .ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 5 phút");
+            .ShouldContain("Các chuyến cùng bến và cùng loại tuyến phải cách nhau tối thiểu 5 phút");
+    }
+
+    [Test]
+    public void StationDepartureGapAllowsRegularAndSightseeingToOperateIndependently()
+    {
+        var stationId = Guid.NewGuid();
+        var departure = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var existing = new TripScheduleSupport.StationDepartureWindow(
+            "WB-REGULAR",
+            stationId,
+            "Ben A",
+            RouteTypes.Regular,
+            departure);
+        var requested = new TripScheduleSupport.StationDepartureWindow(
+            "WS-SIGHTSEEING",
+            stationId,
+            "Ben A",
+            RouteTypes.SightseeingLoop,
+            departure.AddMinutes(1));
+
+        TripScheduleSupport.FindStationDepartureConflict(requested, [existing]).ShouldBeNull();
     }
 
     [Test]
@@ -1009,7 +1056,7 @@ public class CreateTripCommandTests
         skippedItem.ConflictTripCode.ShouldBe("TR-STATION");
         skippedItem.EarliestAllowedDepartureTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
             .ShouldBe(new TimeSpan(8, 5, 0));
-        skippedItem.Reason.ShouldContain("Các chuyến cùng bến phải cách nhau tối thiểu 5 phút");
+        skippedItem.Reason.ShouldContain("Các chuyến cùng bến và cùng loại tuyến phải cách nhau tối thiểu 5 phút");
     }
 
     [Test]

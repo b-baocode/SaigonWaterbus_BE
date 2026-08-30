@@ -360,6 +360,7 @@ internal sealed class GenerateTripsSchedulePlanner
                     t.TripCode,
                     firstStop.StationId,
                     firstStop.Station?.StationName,
+                    t.Route.RouteType,
                     t.DepartureTime);
             })
             .ToList();
@@ -446,6 +447,7 @@ internal sealed class GenerateTripsSchedulePlanner
                 "(new)",
                 routeStartStationId,
                 routeStops[0].Station?.StationName,
+                route.RouteType,
                 departureTime);
 
             var stationConflict = TripScheduleSupport.FindStationDepartureConflict(

@@ -298,6 +298,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
             "(new)",
             firstStop.StationId,
             firstStop.Station?.StationName,
+            route.RouteType,
             departureTime);
 
         var windowStart = departureTime.Subtract(TripScheduleSupport.StationDepartureBuffer);
@@ -317,6 +318,7 @@ public sealed class CreateTripCommandHandler : IRequestHandler<CreateTripCommand
                     x.TripCode,
                     existingFirstStop.StationId,
                     existingFirstStop.Station?.StationName,
+                    x.Route.RouteType,
                     x.DepartureTime);
             })
             .ToList();
