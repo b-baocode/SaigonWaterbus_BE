@@ -84,7 +84,8 @@ public sealed class Promotions : IEndpointGroup
                 "Admin",
                 null,
                 "Query param status (optional): Draft | Active | Paused | Archived. Bo trong de lay tat ca.",
-                "Moi item co effectiveState (Draft/Scheduled/Running/Paused/Exhausted/Ended/Archived), totalUsed, budgetSpent.",
+                "Moi item co effectiveState (Draft/Scheduled/Running/Paused/Exhausted/Ended/Archived), totalUsed, budgetSpent, remainingBudget.",
+                "remainingBudget = budgetCap - budgetSpent; null khi promotion khong gioi han ngan sach.",
                 "Sap xep moi nhat truoc."));
 
         group.MapGet(ValidatePromotion, "validate")

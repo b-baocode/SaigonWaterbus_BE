@@ -31,9 +31,10 @@ public sealed class GetPromotionListQueryHandler : IRequestHandler<GetPromotionL
             .OrderByDescending(p => p.ValidFrom)
             .Select(p => new PromotionUsageRow(
                 p,
-                // Đếm tất cả booking (bao gồm cả Cancelled/Expired - không hoàn lại mã sau khi hủy).
-                p.Bookings.Count(),
-                p.Bookings.Sum(b => (decimal?)b.DiscountAmount) ?? 0m))
+                p.Bookings.Count(b => !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus)),
+                p.Bookings
+                    .Where(b => !PromotionSupport.ReleasedStatuses.Contains(b.BookingStatus))
+                    .Sum(b => (decimal?)b.DiscountAmount) ?? 0m))
             .ToListAsync(cancellationToken);
 
         var now = _timeProvider.GetUtcNow();

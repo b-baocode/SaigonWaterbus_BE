@@ -113,8 +113,10 @@ public sealed class Payments : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "Bearer token",
                 null,
-                "Tra ve refundAmount, defaultChannel va danh sach kenh OTP co the dung.",
-                "Dung de FE hien thi email/so dien thoai dang bi mask truoc khi goi API gui OTP."));
+                "Luon tra refundAmount theo policy, ke ca khi customer chua duoc admin mo quyen hoan tien.",
+                "requiresOtp=false khi refundAmount=0; FE goi thang API refund ma khong can OTP/thong tin ngan hang.",
+                "canRequestOtp/canSubmitRefund va blockedReason cho FE biet co duoc tiep tuc hay can lien he admin.",
+                "Dung defaultChannel va channels de hien thi email/so dien thoai dang bi mask truoc khi goi API gui OTP."));
 
         group.MapPost(RefundPayment, "{paymentId:guid}/refund")
             .RequireAuthorization()

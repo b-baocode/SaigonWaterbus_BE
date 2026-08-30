@@ -77,7 +77,11 @@ public sealed record RefundOtpOptionsDto(
     Guid PaymentId,
     decimal RefundAmount,
     OtpChannel DefaultChannel,
-    IReadOnlyList<RefundOtpChannelOptionDto> Channels);
+    IReadOnlyList<RefundOtpChannelOptionDto> Channels,
+    bool RequiresOtp = true,
+    bool CanRequestOtp = true,
+    bool CanSubmitRefund = true,
+    string? BlockedReason = null);
 
 public sealed record RefundOtpChannelOptionDto(
     OtpChannel Channel,

@@ -763,7 +763,7 @@ public sealed class GetRefundOtpOptionsQueryHandler
             _timeProvider.GetUtcNow(),
             cancellationToken);
 
-        await RefundOtpSupport.EnsureCanRequestAsync(
+        var blockedReason = await RefundOtpSupport.ResolveRequestBlockReasonAsync(
             _context,
             _userContext,
             payment,
@@ -786,7 +786,11 @@ public sealed class GetRefundOtpOptionsQueryHandler
             payment.Id,
             refundAmount,
             defaultChannel,
-            channels);
+            channels,
+            RequiresOtp: refundAmount > 0,
+            CanRequestOtp: refundAmount > 0 && blockedReason is null,
+            CanSubmitRefund: refundAmount <= 0 || blockedReason is null,
+            BlockedReason: blockedReason);
     }
 }
 
@@ -1015,7 +1019,7 @@ public sealed class RequestRefundOtpCommandHandler
 
 internal static class RefundOtpSupport
 {
-    public static async Task EnsureCanRequestAsync(
+    public static async Task<string?> ResolveRequestBlockReasonAsync(
         IApplicationDbContext context,
         IUserContext userContext,
         Payment payment,
@@ -1024,7 +1028,7 @@ internal static class RefundOtpSupport
     {
         if (refundAmount <= 0)
         {
-            return;
+            return null;
         }
 
         var currentUser = await AuthSupport.TryGetCurrentUserWithRoleAsync(
@@ -1033,19 +1037,35 @@ internal static class RefundOtpSupport
             cancellationToken);
         if (currentUser is null || !AuthSupport.IsCustomer(currentUser))
         {
-            return;
+            return null;
         }
 
         if (payment.RefundReleasedAt is null)
         {
-            throw new ValidationException([new ValidationFailure("refund",
-                "Bạn không có yêu cầu hoàn tiền đang mở. Vui lòng liên hệ admin.")]);
+            return "Bạn không có yêu cầu hoàn tiền đang mở. Vui lòng liên hệ admin.";
         }
 
-        if (payment.CustomerRefundAttempts >= 1)
+        return payment.CustomerRefundAttempts >= 1
+            ? "Bạn đã sử dụng 1 lần hoàn tiền. Vui lòng liên hệ admin để được hỗ trợ thêm."
+            : null;
+    }
+
+    public static async Task EnsureCanRequestAsync(
+        IApplicationDbContext context,
+        IUserContext userContext,
+        Payment payment,
+        decimal refundAmount,
+        CancellationToken cancellationToken)
+    {
+        var blockedReason = await ResolveRequestBlockReasonAsync(
+            context,
+            userContext,
+            payment,
+            refundAmount,
+            cancellationToken);
+        if (blockedReason is not null)
         {
-            throw new ValidationException([new ValidationFailure("refund",
-                "Bạn đã sử dụng 1 lần hoàn tiền. Vui lòng liên hệ admin để được hỗ trợ thêm.")]);
+            throw new ValidationException([new ValidationFailure("refund", blockedReason)]);
         }
     }
 

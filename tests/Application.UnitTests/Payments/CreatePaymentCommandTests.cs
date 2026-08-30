@@ -1337,6 +1337,65 @@ public class CreatePaymentCommandTests
         result.Channels.Single(x => x.Channel == OtpChannel.Phone).MaskedDestination
             .ShouldBe("masked-phone:+84901234567");
         result.Channels.Single(x => x.Channel == OtpChannel.Phone).IsDefault.ShouldBeTrue();
+        result.RequiresOtp.ShouldBeTrue();
+        result.CanRequestOtp.ShouldBeTrue();
+        result.CanSubmitRefund.ShouldBeTrue();
+        result.BlockedReason.ShouldBeNull();
+    }
+
+    [Test]
+    public async Task GetRefundOtpOptionsReturnsAmountAndBlockReasonWhenRefundIsNotOpen()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(context, userId, "nguyenvana@example.com");
+        var (booking, payment) = PaidCharterBooking(user.Id, "BK-REFUND-OTP-BLOCKED", now);
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var handler = new GetRefundOtpOptionsQueryHandler(
+            context,
+            new TestUserContext(user.Id),
+            new TestOtpCodeService(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(new GetRefundOtpOptionsQuery(payment.Id), CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(10000);
+        result.RequiresOtp.ShouldBeTrue();
+        result.CanRequestOtp.ShouldBeFalse();
+        result.CanSubmitRefund.ShouldBeFalse();
+        result.BlockedReason.ShouldNotBeNull()
+            .ShouldContain("không có yêu cầu hoàn tiền đang mở");
+    }
+
+    [Test]
+    public async Task GetRefundOtpOptionsAllowsZeroRefundWithoutOtpOrAdminRelease()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var now = new DateTimeOffset(2026, 7, 7, 10, 0, 0, TimeSpan.Zero);
+        var user = SeedCustomer(context, userId, "nguyenvana@example.com");
+        var (booking, payment) = PaidCharterBooking(
+            user.Id,
+            "BK-REFUND-OTP-ZERO",
+            now,
+            now.AddHours(5));
+        context.AddRange(booking, payment);
+        await context.SaveChangesAsync();
+        var handler = new GetRefundOtpOptionsQueryHandler(
+            context,
+            new TestUserContext(user.Id),
+            new TestOtpCodeService(),
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(new GetRefundOtpOptionsQuery(payment.Id), CancellationToken.None);
+
+        result.RefundAmount.ShouldBe(0);
+        result.RequiresOtp.ShouldBeFalse();
+        result.CanRequestOtp.ShouldBeFalse();
+        result.CanSubmitRefund.ShouldBeTrue();
+        result.BlockedReason.ShouldBeNull();
     }
 
     private const string RefundOtpCode = "123456";

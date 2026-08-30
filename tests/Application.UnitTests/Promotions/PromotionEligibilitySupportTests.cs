@@ -170,6 +170,46 @@ public class PromotionEligibilitySupportTests
         result.Single().PromotionCode.ShouldBe("WELCOME10");
     }
 
+    [Test]
+    public async Task AdminPromotionListReturnsRemainingBudgetAndIgnoresReleasedBookings()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var promotion = Promotion(p => p.BudgetCap = 50_000m);
+        context.Set<Promotion>().Add(promotion);
+
+        var activeBooking = Booking(userContext.UserId!.Value, promotion.Id, BookingStatus.Confirmed);
+        activeBooking.DiscountAmount = 10_000m;
+        var cancelledBooking = Booking(userContext.UserId.Value, promotion.Id, BookingStatus.Cancelled);
+        cancelledBooking.DiscountAmount = 20_000m;
+        var expiredBooking = Booking(userContext.UserId.Value, promotion.Id, BookingStatus.Expired);
+        expiredBooking.DiscountAmount = 30_000m;
+        context.Set<Booking>().AddRange(activeBooking, cancelledBooking, expiredBooking);
+        await context.SaveChangesAsync();
+
+        var result = await new GetPromotionListQueryHandler(context, new FixedTimeProvider(Now))
+            .Handle(new GetPromotionListQuery(), CancellationToken.None);
+
+        var item = result.Single(x => x.PromotionId == promotion.Id);
+        item.TotalUsed.ShouldBe(1);
+        item.BudgetSpent.ShouldBe(10_000m);
+        item.RemainingBudget.ShouldBe(40_000m);
+    }
+
+    [Test]
+    public async Task AdminPromotionListReturnsNullRemainingBudgetWhenBudgetIsUnlimited()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var promotion = Promotion();
+        context.Set<Promotion>().Add(promotion);
+        await context.SaveChangesAsync();
+
+        var result = await new GetPromotionListQueryHandler(context, new FixedTimeProvider(Now))
+            .Handle(new GetPromotionListQuery(), CancellationToken.None);
+
+        result.Single(x => x.PromotionId == promotion.Id).RemainingBudget.ShouldBeNull();
+    }
+
     private static Promotion Promotion(Action<Promotion>? configure = null)
     {
         var promotion = new Promotion

@@ -47,7 +47,12 @@ public sealed record PromotionDto(
     string EffectiveState,
     int TotalUsed,
     decimal BudgetSpent,
-    string? ImageUrl);
+    string? ImageUrl)
+{
+    public decimal? RemainingBudget => BudgetCap.HasValue
+        ? Math.Max(0m, BudgetCap.Value - BudgetSpent)
+        : null;
+}
 
 /// <summary>DTO gọn cho khách: không lộ lượt đã dùng, ngân sách, mã Private.</summary>
 public sealed record PublicPromotionDto(
