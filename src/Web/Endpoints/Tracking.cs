@@ -1,6 +1,9 @@
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Tracking;
 using SaigonWaterbus.Application.Trips;
@@ -8,6 +11,7 @@ using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
+using SaigonWaterbus.Infrastructure.Options;
 using SaigonWaterbus.Web.Hubs;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
 
@@ -34,6 +38,7 @@ public sealed class Tracking : IEndpointGroup
     private const string MovementStatusIncident = "Incident";
     private const string IncidentLocationStatus = "incident";
     private const string BoatStatusRejectedReason = "boat-status";
+    private const string LiveHookSecretHeaderName = "X-Live-Hook-Secret";
 
     private const string LocationExample =
         """
@@ -81,12 +86,32 @@ public sealed class Tracking : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "GPS device key",
                 LocationExample,
-                "Header bắt buộc: X-Device-Id, đây là mã định danh/key do phần mềm GPS sinh ra.",
+                "Header bắt buộc: X-Device-Id, đây là mã định danh/key do BE cấp hoặc admin đã đăng ký trước.",
                 "deviceId trong body nếu gửi phải trùng với X-Device-Id.",
                 "Header tùy chọn: X-Tracking-Source=live/railway/wb-gps để ưu tiên packet từ live GPS trusted.",
                 "Backend dùng gps_devices để map thiết bị sang tàu, không tin boatId từ client.",
-                "GPS có thể gửi nextStationId, remainingDistanceKmToNextStation, remainingMinutesToNextStation để FE hiển thị ETA tới bến kế tiếp.",
+                "GPS có thể gửi nextStationId và ETA; nếu thiếu ETA, backend tự tính từ tọa độ bến kế tiếp + vận tốc GPS (hoặc giờ đến kế hoạch) để FE dùng thống nhất.",
+                "Payload live trả onboardPassengerCount (đang ở trên tàu), boardedPassengerCount (tổng đã check-in) và alightedPassengerCount (tổng đã check-out).",
                 "recordedAt quyết định latest; sequence chỉ dùng để phá hòa khi recordedAt trùng."));
+
+        group.MapPost(RegisterDevice, "devices/register")
+            .AllowAnonymous()
+            .WithSummary("Đăng ký thiết bị GPS cho tàu")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS device",
+                null,
+                $"Header bắt buộc: {LiveHookSecretHeaderName}.",
+                "Body bắt buộc: boatCode. Backend cấp deviceId mới và map cố định vào tàu.",
+                "Không dùng random UUID ở client làm X-Device-Id. Lưu deviceId BE trả về để dùng cho các lần gửi GPS tiếp theo."));
+
+        group.MapGet(GetDeviceStatus, "devices/{deviceId}/status")
+            .AllowAnonymous()
+            .WithSummary("Kiểm tra trạng thái thiết bị GPS")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS device",
+                null,
+                $"Header bắt buộc: {LiveHookSecretHeaderName}.",
+                "GPS gọi trước khi gửi vị trí để kiểm tra deviceId đã lưu còn active hay không."));
 
         group.MapGet(GetLatestBoatLocations, "boats/latest")
             .AllowAnonymous()
@@ -120,6 +145,105 @@ public sealed class Tracking : IEndpointGroup
     {
         httpContext.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new TrackingServerTimeResponse(timeProvider.GetUtcNow()));
+    }
+
+    private static async Task<IResult> RegisterDevice(
+        ApplicationDbContext dbContext,
+        TimeProvider timeProvider,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        RegisterTrackingDeviceRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        var boatCode = NormalizeOptionalText(request.BoatCode);
+        if (string.IsNullOrWhiteSpace(boatCode))
+        {
+            return Results.ValidationProblem(new Dictionary<string, string[]>
+            {
+                ["boatCode"] = ["boatCode là bắt buộc khi đăng ký GPS device."]
+            });
+        }
+
+        var boat = await dbContext.Boats
+            .SingleOrDefaultAsync(x => x.Code == boatCode, cancellationToken);
+        if (boat is null)
+        {
+            return Results.NotFound(new { message = "boatCode không tồn tại." });
+        }
+
+        var requestedDeviceId = NormalizeOptionalText(request.DeviceId);
+        if (!string.IsNullOrWhiteSpace(requestedDeviceId))
+        {
+            var existing = await dbContext.GpsDevices
+                .SingleOrDefaultAsync(x => x.DeviceId == requestedDeviceId, cancellationToken);
+
+            if (existing is not null)
+            {
+                if (!existing.IsActive)
+                {
+                    return Results.Conflict(new { message = "GPS device đã bị khóa. Hãy đăng ký device mới." });
+                }
+
+                if (existing.BoatId != boat.Id)
+                {
+                    return Results.Conflict(new { message = "GPS device đã được gán cho tàu khác." });
+                }
+
+                return Results.Ok(ToDeviceRegistrationResponse(existing, boat.Code));
+            }
+        }
+
+        var device = new GpsDevice
+        {
+            // Device ID do BE cấp; GPS client chỉ lưu và gửi lại giá trị này.
+            DeviceId = $"gps-{Guid.NewGuid():N}",
+            BoatId = boat.Id,
+            IsActive = true
+        };
+        dbContext.GpsDevices.Add(device);
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return Results.Created(
+            $"/api/tracking/devices/{Uri.EscapeDataString(device.DeviceId)}/status",
+            ToDeviceRegistrationResponse(device, boat.Code));
+    }
+
+    private static async Task<IResult> GetDeviceStatus(
+        ApplicationDbContext dbContext,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        string deviceId,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        var normalizedDeviceId = NormalizeOptionalText(deviceId);
+        if (string.IsNullOrWhiteSpace(normalizedDeviceId))
+        {
+            return Results.NotFound();
+        }
+
+        var device = await dbContext.GpsDevices
+            .AsNoTracking()
+            .Include(x => x.Boat)
+            .SingleOrDefaultAsync(x => x.DeviceId == normalizedDeviceId, cancellationToken);
+
+        return device is null
+            ? Results.NotFound(new { message = "GPS device không tồn tại." })
+            : Results.Ok(new TrackingDeviceStatusResponse(
+                device.DeviceId,
+                device.Boat.Code,
+                device.IsActive,
+                device.Created,
+                device.LastSeenAt));
     }
 
     private static async Task<IResult> ReceiveLocation(
@@ -219,7 +343,12 @@ public sealed class Tracking : IEndpointGroup
             return Results.NotFound(new { message = "routeId/routeCode không tồn tại." });
         }
 
-        var trip = await ResolveTripAsync(dbContext, request.TripId, cancellationToken);
+        var trip = await ResolveTripAsync(
+            dbContext,
+            request.TripId,
+            gpsDevice.BoatId,
+            now,
+            cancellationToken);
         if (trip.NotFound)
         {
             return Results.NotFound(new { message = "tripId không tồn tại." });
@@ -356,6 +485,34 @@ public sealed class Tracking : IEndpointGroup
                 previousLocation.Longitude);
         }
 
+        DateTimeOffset? plannedNextStationArrival = null;
+        if (trip.Value is not null && resolvedNextStation is not null)
+        {
+            plannedNextStationArrival = await dbContext.Set<TripStop>()
+                .AsNoTracking()
+                .Where(x => x.TripId == trip.Value.Id && x.StationId == resolvedNextStation.Id)
+                .Select(x => x.AdjustedArrivalTime ?? x.PlannedArrivalTime)
+                .FirstOrDefaultAsync(cancellationToken);
+        }
+
+        decimal? nextStationLatitude = resolvedNextStation?.Latitude;
+        decimal? nextStationLongitude = resolvedNextStation?.Longitude;
+        if (resolvedNextStation?.Location is { } nextStationLocation)
+        {
+            nextStationLatitude ??= (decimal)nextStationLocation.Y;
+            nextStationLongitude ??= (decimal)nextStationLocation.X;
+        }
+        var calculatedEta = TrackingEtaSupport.Resolve(
+            writeLat,
+            writeLng,
+            nextStationLatitude,
+            nextStationLongitude,
+            speedKmh,
+            plannedNextStationArrival,
+            now,
+            request.RemainingDistanceKmToNextStation,
+            request.RemainingMinutesToNextStation);
+
         await TouchGpsDeviceSequenceAsync(
             dbContext,
             gpsDevice.Id,
@@ -409,8 +566,8 @@ public sealed class Tracking : IEndpointGroup
                  {resolvedNextStation?.Id},
                  {writeLat},
                  {writeLng},
-                 {request.RemainingDistanceKmToNextStation},
-                 {request.RemainingMinutesToNextStation},
+                 {calculatedEta.RemainingDistanceKm},
+                 {calculatedEta.RemainingMinutes},
                  {speedKmh},
                  {request.Heading},
                  {request.AccuracyMeters},
@@ -931,6 +1088,10 @@ public sealed class Tracking : IEndpointGroup
             dbContext,
             locations.Where(x => x.TripId.HasValue).Select(x => x.TripId!.Value),
             cancellationToken);
+        var alightedPassengerCounts = await TripPassengerCountSupport.LoadAlightedPassengerCountsByTripIdAsync(
+            dbContext,
+            locations.Where(x => x.TripId.HasValue).Select(x => x.TripId!.Value),
+            cancellationToken);
 
         return locations.Select(x =>
         {
@@ -939,7 +1100,8 @@ public sealed class Tracking : IEndpointGroup
                 x,
                 now,
                 activeIncident,
-                x.TripId.HasValue ? onboardPassengerCounts.GetValueOrDefault(x.TripId.Value) : 0);
+                x.TripId.HasValue ? onboardPassengerCounts.GetValueOrDefault(x.TripId.Value) : 0,
+                x.TripId.HasValue ? alightedPassengerCounts.GetValueOrDefault(x.TripId.Value) : 0);
         }).ToArray();
     }
 
@@ -1022,8 +1184,14 @@ public sealed class Tracking : IEndpointGroup
             dbContext,
             location.TripId,
             cancellationToken);
+        var alightedPassengerCount = location.TripId.HasValue
+            ? (await TripPassengerCountSupport.LoadAlightedPassengerCountsByTripIdAsync(
+                dbContext,
+                [location.TripId.Value],
+                cancellationToken)).GetValueOrDefault(location.TripId.Value)
+            : 0;
 
-        return ToLatestLocationDto(location, now, activeIncident, onboardPassengerCount);
+        return ToLatestLocationDto(location, now, activeIncident, onboardPassengerCount, alightedPassengerCount);
     }
 
     private static async Task<TripLatestTrackingDto?> LoadLatestBoatLocationDtoByTripIdAsync(
@@ -1046,6 +1214,10 @@ public sealed class Tracking : IEndpointGroup
             dbContext,
             trip.Id,
             cancellationToken);
+        var alightedPassengerCount = (await TripPassengerCountSupport.LoadAlightedPassengerCountsByTripIdAsync(
+            dbContext,
+            [trip.Id],
+            cancellationToken)).GetValueOrDefault(trip.Id);
         BoatLatestLocationDto? latestLocation = null;
         if (trip.BoatId.HasValue)
         {
@@ -1070,7 +1242,8 @@ public sealed class Tracking : IEndpointGroup
                     location,
                     now,
                     activeIncident,
-                    location.TripId == trip.Id ? onboardPassengerCount : 0);
+                    location.TripId == trip.Id ? onboardPassengerCount : 0,
+                    location.TripId == trip.Id ? alightedPassengerCount : 0);
             }
         }
 
@@ -1079,6 +1252,8 @@ public sealed class Tracking : IEndpointGroup
             trip.TripCode,
             trip.TripStatus.ToString(),
             onboardPassengerCount,
+            checked(onboardPassengerCount + alightedPassengerCount),
+            alightedPassengerCount,
             trip.BoatId,
             ToTripBoatDto(trip.Boat, trip.CapacitySnapshot),
             latestLocation,
@@ -1198,17 +1373,38 @@ public sealed class Tracking : IEndpointGroup
     private static async Task<LookupResult<Trip>> ResolveTripAsync(
         IApplicationDbContext dbContext,
         Guid? tripId,
+        Guid boatId,
+        DateTimeOffset now,
         CancellationToken cancellationToken)
     {
-        if (!tripId.HasValue)
+        if (tripId.HasValue)
         {
-            return LookupResult<Trip>.Empty();
+            var requestedTrip = await dbContext.Set<Trip>()
+                .Include(x => x.Route)
+                .FirstOrDefaultAsync(x => x.Id == tripId.Value, cancellationToken);
+            return requestedTrip is null
+                ? LookupResult<Trip>.Missing()
+                : LookupResult<Trip>.Found(requestedTrip);
         }
 
         var trip = await dbContext.Set<Trip>()
             .Include(x => x.Route)
-            .FirstOrDefaultAsync(x => x.Id == tripId.Value, cancellationToken);
-        return trip is null ? LookupResult<Trip>.Missing() : LookupResult<Trip>.Found(trip);
+            .Where(x => x.BoatId == boatId
+                && x.TripStatus != TripStatus.Cancelled
+                && x.TripStatus != TripStatus.Completed)
+            .OrderByDescending(x => x.AdjustedDepartureTime ?? x.DepartureTime)
+            .ToListAsync(cancellationToken);
+
+        var activeTrip = trip.FirstOrDefault(x =>
+        {
+            var departure = x.AdjustedDepartureTime ?? x.DepartureTime;
+            var arrival = x.AdjustedArrivalTime ?? x.ArrivalTime;
+            return now >= departure.AddMinutes(-30) && now <= arrival.AddMinutes(30);
+        });
+
+        return activeTrip is null
+            ? LookupResult<Trip>.Empty()
+            : LookupResult<Trip>.Found(activeTrip);
     }
 
     private static async Task<NextStationLookup> ResolveNextStationAsync(
@@ -1688,6 +1884,29 @@ public sealed class Tracking : IEndpointGroup
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
+    private static TrackingDeviceRegistrationResponse ToDeviceRegistrationResponse(
+        GpsDevice device,
+        string boatCode) =>
+        new(
+            device.DeviceId,
+            boatCode,
+            device.IsActive,
+            device.Created,
+            device.LastSeenAt);
+
+    private static bool IsValidLiveHookSecret(string? expectedSecret, string? actualSecret)
+    {
+        if (string.IsNullOrWhiteSpace(expectedSecret) || string.IsNullOrWhiteSpace(actualSecret))
+        {
+            return false;
+        }
+
+        var expected = Encoding.UTF8.GetBytes(expectedSecret.Trim());
+        var actual = Encoding.UTF8.GetBytes(actualSecret.Trim());
+        return expected.Length == actual.Length
+            && CryptographicOperations.FixedTimeEquals(expected, actual);
+    }
+
     private static string? ResolveTrackingSource(string? headerValue, string? bodyValue)
     {
         var headerSource = NormalizeOptionalText(headerValue);
@@ -1755,7 +1974,8 @@ public sealed class Tracking : IEndpointGroup
         BoatLatestLocation location,
         DateTimeOffset now,
         ActiveIncidentTrackingDto? activeIncident,
-        int onboardPassengerCount)
+        int onboardPassengerCount,
+        int alightedPassengerCount)
     {
         var tripStops = location.Trip?.TripStops
             .OrderBy(x => x.StopOrder)
@@ -1788,6 +2008,8 @@ public sealed class Tracking : IEndpointGroup
             location.TripId,
             location.Trip?.TripCode,
             onboardPassengerCount,
+            checked(onboardPassengerCount + alightedPassengerCount),
+            alightedPassengerCount,
             movementStatus,
             currentStationId,
             currentStationCode,
@@ -1973,6 +2195,24 @@ public sealed class Tracking : IEndpointGroup
         string? Source,
         TrackingCapturedRouteRequest? CapturedRoute);
 
+    public sealed record RegisterTrackingDeviceRequest(
+        string? BoatCode,
+        string? DeviceId = null);
+
+    public sealed record TrackingDeviceRegistrationResponse(
+        string DeviceId,
+        string BoatCode,
+        bool Active,
+        DateTimeOffset RegisteredAt,
+        DateTimeOffset? LastSeenAt);
+
+    public sealed record TrackingDeviceStatusResponse(
+        string DeviceId,
+        string BoatCode,
+        bool Active,
+        DateTimeOffset RegisteredAt,
+        DateTimeOffset? LastSeenAt);
+
     public sealed record TrackingServerTimeResponse(DateTimeOffset ServerTime);
 
     public sealed record TrackingCapturedRouteRequest(
@@ -2032,6 +2272,8 @@ public sealed class Tracking : IEndpointGroup
         Guid? TripId,
         string? TripCode,
         int OnboardPassengerCount,
+        int BoardedPassengerCount,
+        int AlightedPassengerCount,
         string MovementStatus,
         Guid? CurrentStationId,
         string? CurrentStationCode,
@@ -2069,6 +2311,8 @@ public sealed class Tracking : IEndpointGroup
         string TripCode,
         string TripStatus,
         int OnboardPassengerCount,
+        int BoardedPassengerCount,
+        int AlightedPassengerCount,
         Guid? BoatId,
         TripBoatDto? Boat,
         BoatLatestLocationDto? LatestLocation,

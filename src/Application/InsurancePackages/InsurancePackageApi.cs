@@ -481,7 +481,8 @@ public sealed class UpdateInsurancePackageImageCommandValidator
         "image/jpeg",
         "image/png",
         "image/gif",
-        "image/webp"
+        "image/webp",
+        "image/svg+xml"
     ];
 
     public UpdateInsurancePackageImageCommandValidator()
@@ -503,8 +504,15 @@ public sealed class UpdateInsurancePackageImageCommandHandler
     : IRequestHandler<UpdateInsurancePackageImageCommand, InsurancePackageDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly IInsurancePackageImageStorageService? _imageStorage;
 
-    public UpdateInsurancePackageImageCommandHandler(IApplicationDbContext context) => _context = context;
+    public UpdateInsurancePackageImageCommandHandler(
+        IApplicationDbContext context,
+        IInsurancePackageImageStorageService? imageStorage = null)
+    {
+        _context = context;
+        _imageStorage = imageStorage;
+    }
 
     public async Task<InsurancePackageDto> Handle(
         UpdateInsurancePackageImageCommand request,
@@ -516,31 +524,27 @@ public sealed class UpdateInsurancePackageImageCommandHandler
 
         if (request.ImageFile is not null)
         {
-            package.ImageUrl = await UploadImageAsync(request.ImageFile, cancellationToken);
+            if (_imageStorage is null)
+            {
+                throw new InvalidOperationException("Insurance package image storage is not configured.");
+            }
+
+            var stored = await _imageStorage.UploadImageAsync(
+                new InsurancePackageImageUpload(
+                    package.Id,
+                    request.ImageFile.Content,
+                    request.ImageFile.FileName,
+                    request.ImageFile.ContentType),
+                cancellationToken);
+            package.ImageUrl = stored.Url;
+            // Giữ cả hai trường để các client cũ đọc providerLogoUrl và client mới đọc imageUrl.
+            package.ProviderLogoUrl = stored.Url;
         }
 
         await _context.SaveChangesAsync(cancellationToken);
         return InsurancePackageSupport.ToDto(package);
     }
 
-    private async Task<string> UploadImageAsync(
-        InsurancePackageImageFileRequest file,
-        CancellationToken cancellationToken)
-    {
-        // TODO: Implement Azure Blob Storage upload or similar
-        // For now, return a placeholder URL
-        // In production, integrate with Azure Blob Storage / S3 / Cloudflare R2
-        await using var memoryStream = new MemoryStream();
-        await file.Content.CopyToAsync(memoryStream, cancellationToken);
-        var content = memoryStream.ToArray();
-
-        // Placeholder - replace with actual upload logic
-        var fileName = $"{Guid.NewGuid()}{Path.GetExtension(file.FileName)}";
-        var blobUrl = $"https://storage.example.com/insurance-packages/{fileName}";
-
-        // TODO: Upload to blob storage and return the URL
-        return blobUrl;
-    }
 }
 
 internal static class InsurancePackageSupport

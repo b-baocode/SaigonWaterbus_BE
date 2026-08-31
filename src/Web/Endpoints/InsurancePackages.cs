@@ -104,7 +104,7 @@ public sealed class InsurancePackages : IEndpointGroup
                 "Admin hoac Manager",
                 null,
                 "Gui multipart/form-data voi field 'image' chua file anh.",
-                "Ho tro: jpeg, png, gif, webp. Dung luong toi da 5MB."));
+                "Ho tro: jpeg, png, gif, webp, svg. Dung luong toi da 5MB."));
     }
 
     private static async Task<IResult> GetInsurancePackages(

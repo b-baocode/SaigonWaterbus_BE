@@ -9,6 +9,7 @@ using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
+using SaigonWaterbus.Application.Routes;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -1668,11 +1669,7 @@ public sealed class Gps : IEndpointGroup
             TripDelaySupport.ToDelayInfoDto(trip));
 
     private static IReadOnlyList<double[]>? ToRouteGeometryResponse(LineString? routeGeometry) =>
-        routeGeometry is null
-            ? null
-            : routeGeometry.Coordinates
-                .Select(coordinate => new[] { coordinate.X, coordinate.Y })
-                .ToArray();
+        RouteGeometryResponseSupport.ToCoordinates(routeGeometry);
 
     private static IReadOnlyList<GpsTripScheduleStopResponse> ToGpsTripStopResponses(Trip trip)
     {

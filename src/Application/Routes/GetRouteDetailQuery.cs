@@ -28,11 +28,7 @@ public sealed class GetRouteDetailQueryHandler : IRequestHandler<GetRouteDetailQ
                 rs.IsPickupAllowed, rs.IsDropoffAllowed))
             .ToList();
 
-        var geometry = route.RouteGeometry is null
-            ? null
-            : route.RouteGeometry.Coordinates
-                .Select(c => new double[] { c.X, c.Y })
-                .ToList();
+        var geometry = RouteGeometryResponseSupport.ToCoordinates(route.RouteGeometry);
 
         return new RouteDetailDto(route.Id, route.RouteCode, route.RouteName, route.RouteType,
             route.Description, route.BaseDistanceKm, route.EstimatedDurationMin, route.Status,
