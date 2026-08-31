@@ -504,6 +504,8 @@ public class CreateCharterBookingCommandTests
         item.BoatName.ShouldBeNull();
         item.SubtotalAmount.ShouldBeNull();
         item.FinalAmount.ShouldBeNull();
+        item.RemainingAmount.ShouldBe(0m);
+        item.RequiresAdditionalPayment.ShouldBeFalse();
         item.RequestedBoats.Select(x => x.NumberOfDecks).ShouldBe([1]);
     }
 

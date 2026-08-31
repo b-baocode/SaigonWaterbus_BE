@@ -106,7 +106,7 @@ internal static class CharterBookingETicketSupport
                 var ticket = tickets.FirstOrDefault(t => t.BookingPassengerId == passenger.Id);
                 return new ETicketPassenger(
                     PassengerName: passenger.FullName,
-                    SeatCode: null,
+                    SeatCode: passenger.TripSeat?.Seat?.Code,
                     TicketTypeName: CharterBookingPassengerSupport.GetPassengerTypeName(passenger.PassengerType),
                     TicketCode: ticket?.TicketCode ?? string.Empty,
                     QrToken: ticket?.QrToken ?? string.Empty,

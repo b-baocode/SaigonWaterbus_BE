@@ -24,6 +24,10 @@ internal static class CharterBookingTicketSupport
         }
 
         await EnsureCharterBookingQrTokenAsync(context, booking, cancellationToken);
+        await CharterBookingSeatAssignmentSupport.AssignApprovedPassengersAsync(
+            context,
+            booking,
+            cancellationToken);
 
         var passengers = booking.Passengers
             .Where(CharterBookingPassengerSupport.IsApproved)
@@ -131,7 +135,10 @@ internal static class CharterBookingTicketSupport
             passenger?.Id ?? ticket.BookingPassengerId,
             passenger?.FullName,
             passenger?.BirthYear,
-            passenger?.PassengerType);
+            passenger?.PassengerType,
+            passenger?.TripId,
+            passenger?.TripSeatId,
+            passenger?.TripSeat?.Seat?.Code);
     }
 
     public static async Task EnsureCharterBookingQrTokenAsync(

@@ -51,6 +51,7 @@ public sealed class GetCharterBookingListQueryHandler
                 b.SubtotalAmount,
                 b.TotalAmount,
                 b.DepositAmount,
+                b.RemainingAmount,
                 b.RequestedBoatDecks,
                 b.RequestedBoatTypes,
                 b.PreferredSeatSetupType,
@@ -82,6 +83,7 @@ internal sealed record CharterBookingListItemRow(
     decimal SubtotalAmount,
     decimal TotalAmount,
     decimal DepositAmount,
+    decimal RemainingAmount,
     string? RequestedBoatDecks,
     string? RequestedBoatTypes,
     SeatSetupType? PreferredSeatSetupType,
@@ -111,6 +113,7 @@ internal static class CharterBookingListItemMapper
             booking.SubtotalAmount,
             booking.TotalAmount,
             booking.DepositAmount,
+            booking.RemainingAmount,
             booking.RequestedBoatDecks,
             booking.RequestedBoatTypes,
             booking.PreferredSeatSetupType,
@@ -143,7 +146,9 @@ internal static class CharterBookingListItemMapper
             SuggestedDepositAmount: booking.DepositAmount > 0
                 ? 0m
                 : decimal.Round(booking.TotalAmount * CharterBookingPaymentSupport.DefaultDepositPercent / 100m, 0, MidpointRounding.AwayFromZero),
-            HasDepositPaid: booking.DepositAmount > 0);
+            HasDepositPaid: booking.DepositAmount > 0,
+            RemainingAmount: booking.RemainingAmount,
+            RequiresAdditionalPayment: booking.RemainingAmount > 0);
 
     private static IReadOnlyList<CharterBookingListRequestedBoatDto> ToRequestedBoatDtos(
         string? requestedBoatDecks,

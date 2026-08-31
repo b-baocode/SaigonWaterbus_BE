@@ -54,6 +54,7 @@ public sealed class CreateCharterBookingTripCommandHandler
                 .ThenInclude(x => x!.RouteStops)
             .Include(x => x.ItineraryStops)
                 .ThenInclude(x => x.Station)
+            .Include(x => x.Passengers)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
@@ -115,6 +116,11 @@ public sealed class CreateCharterBookingTripCommandHandler
         }
 
         booking.TripId = trips[0].Trip.Id;
+
+        await CharterBookingSeatAssignmentSupport.AssignApprovedPassengersAsync(
+            _context,
+            booking,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(

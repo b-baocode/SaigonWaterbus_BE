@@ -85,6 +85,60 @@ public class CreateCharterBookingTripCommandTests
     }
 
     [Test]
+    public async Task CreatesCharterSeatsAndFillsFirstBoatBeforeAssigningSecondBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var (stationA, stationB, stationC) = Stations();
+        var boat1 = CharterBoat("Boat 1");
+        var boat2 = CharterBoat("Boat 2");
+        var route = RouteWithStops("CH-SEATS", RouteTypes.CharterReference, stationA, stationB, stationC);
+        var booking = ConfirmedCharterBooking(stationA, stationC, boat1, boat2);
+        booking.PassengerCount = 4;
+        booking.AdultCount = 4;
+        booking.Passengers =
+        [
+            Passenger(booking, "Nguyen Van A", 1990),
+            Passenger(booking, "Nguyen Van B", 1991),
+            Passenger(booking, "Nguyen Van C", 1992),
+            Passenger(booking, "Nguyen Van D", 1993)
+        ];
+        AddItineraryStop(booking, stationB, stopOrder: 1);
+        context.AddRange(
+            stationA,
+            stationB,
+            stationC,
+            boat1,
+            boat2,
+            route,
+            booking,
+            Seat(boat1, "A01"),
+            Seat(boat1, "A02"),
+            Seat(boat2, "B01"),
+            Seat(boat2, "B02"),
+            Seat(boat2, "B03"));
+        await context.SaveChangesAsync();
+
+        var handler = new CreateCharterBookingTripCommandHandler(context, admin);
+        await handler.Handle(new CreateCharterBookingTripCommand(booking.Id), CancellationToken.None);
+
+        var charterBoats = context.Set<CharterBookingBoat>()
+            .OrderBy(x => x.BoatOrder)
+            .ToList();
+        var assignedPassengers = context.Set<BookingPassenger>()
+            .Where(x => x.BookingId == booking.Id)
+            .OrderBy(x => x.FullName)
+            .ToList();
+
+        assignedPassengers.ShouldAllBe(x => x.TripId.HasValue && x.TripSeatId.HasValue);
+        assignedPassengers.Select(x => x.TripSeatId).Distinct().Count().ShouldBe(4);
+        assignedPassengers.Count(x => x.TripId == charterBoats[0].TripId).ShouldBe(2);
+        assignedPassengers.Count(x => x.TripId == charterBoats[1].TripId).ShouldBe(2);
+        context.Set<TripSeat>().Count().ShouldBe(5);
+        context.Set<TripSeat>().Count(x => x.Status == TripSeat.StatusBooked).ShouldBe(4);
+    }
+
+    [Test]
     public async Task FailsWhenNoRouteMatchesItinerary()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -485,4 +539,27 @@ public class CreateCharterBookingTripCommandTests
             StopOrder = stopOrder,
             StayDurationMinutes = 20
         });
+
+    private static BookingPassenger Passenger(Booking booking, string fullName, int birthYear) =>
+        new()
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            FullName = fullName,
+            BirthYear = birthYear,
+            PassengerType = CharterBookingPassengerType.Adult.ToString(),
+            ApprovalStatus = CharterBookingPassengerSupport.ApprovalStatusApproved
+        };
+
+    private static Seat Seat(Boat boat, string code) =>
+        new()
+        {
+            Boat = boat,
+            BoatId = boat.Id,
+            Code = code,
+            Deck = 1,
+            Row = code[..1],
+            Column = int.Parse(code[1..]),
+            IsActive = true
+        };
 }

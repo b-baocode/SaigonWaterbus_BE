@@ -269,7 +269,11 @@ public sealed record CharterBookingListItemDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingDefault)]
     decimal SuggestedDepositAmount = 0,
     /// <summary>true nếu booking đã có phần cọc thanh toán thành công.</summary>
-    bool HasDepositPaid = false);
+    bool HasDepositPaid = false,
+    /// <summary>Số tiền còn phải thanh toán để hoàn tất booking charter.</summary>
+    decimal RemainingAmount = 0,
+    /// <summary>true khi booking còn số dư cần thanh toán.</summary>
+    bool RequiresAdditionalPayment = false);
 
 public sealed record CharterBookingListRequestedBoatDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
@@ -428,7 +432,13 @@ public sealed record CharterBookingTicketDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     int? PassengerBirthYear,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? PassengerType);
+    string? PassengerType,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TripId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TripSeatId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatCode = null);
 
 public enum CharterBookingPaymentOption
 {
@@ -503,7 +513,13 @@ public sealed record CharterBookingPassengerDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     DateTimeOffset? ReviewedAt = null,
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
-    string? ReviewNote = null);
+    string? ReviewNote = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TripId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TripSeatId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatCode = null);
 
 public sealed record UpdateCharterBookingPassengersRequest(
     IReadOnlyList<CharterBookingPassengerRequest> Passengers);
@@ -574,7 +590,9 @@ public sealed record CharterBookingTicketExportItemDto(
     string? PassengerType,
     string TicketCode,
     string QrToken,
-    string TicketStatus);
+    string TicketStatus,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatCode = null);
 
 public sealed record CharterBookingTicketSelectionRequest(
     IReadOnlyList<Guid>? TicketIds = null);
@@ -640,7 +658,13 @@ public sealed record CharterBookingManifestPassengerDto(
     [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
     string? CheckedOutByName,
     bool CanCheckIn,
-    bool CanCheckOut);
+    bool CanCheckOut,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TripId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    Guid? TripSeatId = null,
+    [property: JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    string? SeatCode = null);
 
 public enum CharterBookingAttendanceAction
 {

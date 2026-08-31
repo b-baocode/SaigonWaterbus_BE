@@ -370,7 +370,7 @@ public sealed class CharterBookings : IEndpointGroup
                 "Backend tim route Active co RouteStops trung khop chinh xac chuoi ben cua booking (ben di -> diem dung -> ben den, dung thu tu).",
                 "Khong co route nao khop -> tra loi validation; tao route dung lo trinh (vi du POST /api/routes/from-gps voi stops day du) roi goi lai.",
                 "Neu booking chua co route da chot, BE fallback tim route nguon Active khop chinh xac lo trinh; uu tien RouteType = CharterReference, sau do route tao gan nhat.",
-                "Moi tau trong quote sinh mot trip rieng (tripType = Charter, khong tao trip seats).",
+                "Moi tau trong quote sinh mot trip rieng (tripType = Charter); BE tao trip seats tu ghe active va phan ghe ngau nhien, lap day tau theo boatOrder.",
                 "Moi trip duoc luu kem lich trinh tung ben vao bang trip_stops: thu tu ben, thoi gian dung (stayDurationMinutes tu itinerary), gio den/di du kien tinh tu gio khoi hanh + thoi gian chay tung chang; response tra stops[] dung chung cho cac trip.",
                 "Tau bi trung gio voi trip khac (ke ca chuyen tuyen thuong) -> tra loi validation.",
                 "Trip charter khong xuat hien trong tim kiem chuyen cua khach; khi booking bi huy/hoan tien, trip tu dong bi huy theo."));
@@ -1209,6 +1209,7 @@ public sealed class CharterBookings : IEndpointGroup
             AppendInfo(builder, "So ve", ticket.TicketCode);
             AppendInfo(builder, "Hanh khach", ticket.PassengerName ?? "Khach hang");
             AppendInfo(builder, "Nam sinh", ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture) ?? string.Empty);
+            AppendInfo(builder, "Ghe", ticket.SeatCode ?? string.Empty);
             AppendInfo(builder, "Loai khach", ticket.PassengerType ?? string.Empty);
             AppendInfo(builder, "Tau", export.BoatName ?? string.Empty);
             AppendInfo(builder, "Ngay di", export.DepartureDate?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? string.Empty);
@@ -1373,6 +1374,7 @@ public sealed class CharterBookings : IEndpointGroup
                                                 AddPdfInfoCell(table.Cell(), "Date", departureDate, teal);
                                                 AddPdfInfoCell(table.Cell(), "Time", startTime, teal);
                                                 AddPdfInfoCell(table.Cell(), "Vessel", vesselName, ink);
+                                                AddPdfInfoCell(table.Cell(), "Seat", ticket.SeatCode ?? "-", ink);
                                                 AddPdfInfoCell(table.Cell(), "Passenger type", passengerType, ink);
                                                 AddPdfInfoCell(table.Cell(), "Birth year", birthInfo, ink);
                                                 AddPdfInfoCell(table.Cell(), "Ticket status", ticket.TicketStatus, ink);
@@ -1540,7 +1542,7 @@ public sealed class CharterBookings : IEndpointGroup
         IReadOnlyDictionary<Guid, string> qrFileNames)
     {
         var builder = new StringBuilder();
-        builder.AppendLine("bookingCode,ticketCode,qrToken,ticketStatus,passengerName,dateOfBirth,birthYear,passengerType,qrImageFile");
+        builder.AppendLine("bookingCode,ticketCode,qrToken,ticketStatus,passengerName,dateOfBirth,birthYear,passengerType,seatCode,qrImageFile");
         foreach (var ticket in export.Tickets)
         {
             builder.Append(Csv(export.BookingCode)).Append(',');
@@ -1550,6 +1552,7 @@ public sealed class CharterBookings : IEndpointGroup
             builder.Append(Csv(ticket.PassengerName)).Append(',');
             builder.Append(Csv(ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture))).Append(',');
             builder.Append(Csv(ticket.PassengerType)).Append(',');
+            builder.Append(Csv(ticket.SeatCode)).Append(',');
             builder.Append(Csv(qrFileNames[ticket.TicketId])).AppendLine();
         }
 

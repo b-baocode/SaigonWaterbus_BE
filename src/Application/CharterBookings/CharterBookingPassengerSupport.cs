@@ -74,7 +74,10 @@ internal static class CharterBookingPassengerSupport
             passenger.RequestBatchId,
             passenger.RequestedAt,
             passenger.ReviewedAt,
-            passenger.ReviewNote);
+            passenger.ReviewNote,
+            passenger.TripId,
+            passenger.TripSeatId,
+            passenger.TripSeat?.Seat?.Code);
 
     public static int CountAdults(IEnumerable<BookingPassenger> passengers) =>
         passengers.Count(x => string.Equals(
