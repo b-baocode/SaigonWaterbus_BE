@@ -614,6 +614,7 @@ public class CreateIncidentCommandTests
         await using var context = SeatFlowTestData.CreateContext();
         var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
         var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         var incidentBoat = Boat("WB-01");
         var rescueBoat = RescueBoat("RS-01");
         var replacementBoat = Boat("WB-02");
@@ -662,7 +663,20 @@ public class CreateIncidentCommandTests
             TicketStatus = TicketStatus.Active,
             IssuedAt = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero)
         };
-        context.AddRange(incidentBoat, rescueBoat, replacementBoat, route, trip, incident, booking, ticket);
+        var crewAssignment = new StaffWorkAssignment
+        {
+            StaffUserId = staffContext.UserId!.Value,
+            AssignmentType = StaffWorkAssignmentType.Boat,
+            BoatId = incidentBoat.Id,
+            WorkingDate = trip.OperatingDate,
+            StartAt = trip.DepartureTime.AddHours(-1),
+            EndAt = trip.ArrivalTime,
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = adminContext.UserId!.Value,
+            AssignedAt = trip.DepartureTime.AddDays(-1)
+        };
+        context.AddRange(
+            incidentBoat, rescueBoat, replacementBoat, route, trip, incident, booking, ticket, crewAssignment);
         await context.SaveChangesAsync();
 
         var assignedAt = new DateTimeOffset(2030, 1, 1, 2, 0, 0, TimeSpan.Zero);
@@ -695,6 +709,9 @@ public class CreateIncidentCommandTests
         savedTrip.BoatId.ShouldBe(replacementBoat.Id);
         savedTrip.DelayMinutes.ShouldBe(20);
         savedTrip.TripStatus.ShouldBe(TripStatus.Delayed);
+        crewAssignment.BoatId.ShouldBe(replacementBoat.Id);
+        crewAssignment.EndAt.ShouldBeGreaterThan(savedTrip.AdjustedArrivalTime!.Value);
+        crewAssignment.Note.ShouldNotBeNull().ShouldContain(replacementBoat.Code);
 
         var tripDetail = await new GetTripDetailQueryHandler(context)
             .Handle(new GetTripDetailQuery(trip.Id), CancellationToken.None);
@@ -718,14 +735,18 @@ public class CreateIncidentCommandTests
         var incidentNotifications = context.Set<Notification>()
             .Where(x => x.Type == NotificationTypes.IncidentDispatched)
             .ToList();
-        incidentNotifications.Count.ShouldBe(2);
+        incidentNotifications.Count.ShouldBe(3);
         var operationalNotification = incidentNotifications.Single(
-            x => x.RelatedEntityType == NotificationRelatedEntityTypes.Incident);
+            x => x.RelatedEntityType == NotificationRelatedEntityTypes.Incident
+                && x.UserId == adminContext.UserId);
         operationalNotification.UserId.ShouldBe(adminContext.UserId!.Value);
         operationalNotification.RelatedEntityId.ShouldBe(incident.Id);
         operationalNotification.Body.ShouldNotBeNull();
         operationalNotification.Body.ShouldContain(rescueBoat.Name);
         operationalNotification.Body.ShouldContain(replacementBoat.Name);
+        incidentNotifications.ShouldContain(x =>
+            x.RelatedEntityType == NotificationRelatedEntityTypes.Incident
+            && x.UserId == staffContext.UserId);
 
         var customerNotification = incidentNotifications.Single(
             x => x.RelatedEntityType == NotificationRelatedEntityTypes.Booking);
@@ -733,7 +754,7 @@ public class CreateIncidentCommandTests
         customerNotification.RelatedEntityId.ShouldBe(booking.Id);
         customerNotification.Body.ShouldNotBeNull();
         customerNotification.Body.ShouldContain("BK-INCIDENT");
-        realtimeNotifier.Published.Count.ShouldBe(3);
+        realtimeNotifier.Published.Count.ShouldBe(4);
         realtimeNotifier.Published.Select(x => x.NotificationId)
             .ShouldBe(context.Set<Notification>().Select(x => x.Id), ignoreOrder: true);
     }

@@ -82,6 +82,11 @@ public class CharterBookingAssignmentTests
 
         result.UpdatedCount.ShouldBe(1);
         context.Tickets.Single().CheckedInByUserId.ShouldBe(staff.UserId);
+        var scanEvent = context.TicketScanEvents.Single();
+        scanEvent.Action.ShouldBe(TicketScanAction.CheckIn);
+        scanEvent.Result.ShouldBe(TicketScanResult.Success);
+        scanEvent.BookingId.ShouldBe(booking.Id);
+        scanEvent.PerformedByUserId.ShouldBe(staff.UserId!.Value);
     }
 
     [Test]
@@ -102,7 +107,7 @@ public class CharterBookingAssignmentTests
             staff,
             TimeProvider.System);
 
-        await Should.ThrowAsync<ForbiddenAccessException>(() =>
+        await Should.ThrowAsync<ValidationException>(() =>
             attendanceHandler.Handle(
                 new UpdateCharterBookingAttendanceCommand(
                     booking.CharterBookingQrToken,
@@ -110,6 +115,90 @@ public class CharterBookingAssignmentTests
                     CharterBookingAttendanceMode.All,
                     null),
                 CancellationToken.None));
+    }
+
+    [Test]
+    public async Task SameDayButInactiveCrewCannotOpenCharterManifest()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var manager = await SeatFlowTestData.SeedManagerAsync(context);
+        var staff = await SeatFlowTestData.SeedStaffAsync(context);
+        var customer = Customer();
+        var boat = ActiveBoat();
+        var booking = CharterBooking(boat, customer.Id);
+        booking.CharterBookingQrToken = $"CB{Guid.NewGuid():N}"[..30];
+        AddPassengerTicket(booking);
+        context.AddRange(customer.Role, customer, boat, booking);
+        await context.SaveChangesAsync();
+
+        var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.FromHours(7));
+        context.StaffWorkAssignments.Add(new StaffWorkAssignment
+        {
+            StaffUserId = staff.UserId!.Value,
+            AssignmentType = StaffWorkAssignmentType.Boat,
+            BoatId = boat.Id,
+            WorkingDate = booking.DepartureDate!.Value,
+            StartAt = now.AddHours(-4),
+            EndAt = now.AddHours(-2),
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = manager.UserId!.Value,
+            AssignedAt = now.AddDays(-1)
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new GetCharterBookingManifestByQrTokenQueryHandler(
+            context,
+            staff,
+            new FixedTimeProvider(now));
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new GetCharterBookingManifestByQrTokenQuery(booking.CharterBookingQrToken),
+            CancellationToken.None));
+    }
+
+    [Test]
+    public async Task GroundStaffWithActiveBoatAssignmentCannotCheckInCharterBooking()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var manager = await SeatFlowTestData.SeedManagerAsync(context);
+        var groundStaff = await SeatFlowTestData.SeedStaffAsync(context, StaffType.Ground);
+        var customer = Customer();
+        var boat = ActiveBoat();
+        var booking = CharterBooking(boat, customer.Id);
+        booking.CharterBookingQrToken = $"CB{Guid.NewGuid():N}"[..30];
+        AddPassengerTicket(booking);
+        context.AddRange(customer.Role, customer, boat, booking);
+        await context.SaveChangesAsync();
+
+        var now = new DateTimeOffset(2030, 1, 1, 12, 0, 0, TimeSpan.FromHours(7));
+        context.StaffWorkAssignments.Add(new StaffWorkAssignment
+        {
+            StaffUserId = groundStaff.UserId!.Value,
+            AssignmentType = StaffWorkAssignmentType.Boat,
+            BoatId = boat.Id,
+            WorkingDate = booking.DepartureDate!.Value,
+            StartAt = now.AddHours(-1),
+            EndAt = now.AddHours(1),
+            Status = StaffWorkAssignmentStatus.Scheduled,
+            AssignedByUserId = manager.UserId!.Value,
+            AssignedAt = now.AddDays(-1)
+        });
+        await context.SaveChangesAsync();
+
+        var handler = new UpdateCharterBookingAttendanceCommandHandler(
+            context,
+            groundStaff,
+            new FixedTimeProvider(now));
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new UpdateCharterBookingAttendanceCommand(
+                booking.CharterBookingQrToken,
+                CharterBookingAttendanceAction.CheckIn,
+                CharterBookingAttendanceMode.All,
+                null),
+            CancellationToken.None));
+        context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.Active);
+        context.TicketScanEvents.ShouldBeEmpty();
     }
 
     private static Boat ActiveBoat()

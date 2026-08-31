@@ -68,6 +68,72 @@ public class TicketCheckOutWindowTests
                 ticket, booking, arrival.AddMinutes(-3)));
     }
 
+    [Test]
+    public void CheckOutClosesImmediatelyWhenBoatLeavesAlightingStop()
+    {
+        var (ticket, booking, _, destination) = BuildTicket();
+        destination.StopStatus = TripStopStatuses.Departed;
+        destination.ActualDepartureTime = PlannedArrival.AddMinutes(1);
+
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
+                ticket, booking, destination.ActualDepartureTime.Value));
+    }
+
+    [Test]
+    public void ActualArrivalOpensCheckOutEvenWhenThePlannedArrivalIsLater()
+    {
+        var (ticket, booking, passenger, destination) = BuildTicket();
+        var earlyArrival = PlannedArrival.AddMinutes(-8);
+        destination.StopStatus = TripStopStatuses.Arrived;
+        destination.ActualArrivalTime = earlyArrival;
+
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, booking, earlyArrival));
+        TicketAttendanceWindowSupport.IsWithinCheckOutWindow(
+            booking, passenger, earlyArrival).ShouldBeTrue();
+    }
+
+    [Test]
+    public void CheckOutUsesDwellAndGraceWhenBoatIsStillAtAnIntermediateStop()
+    {
+        var (ticket, booking, passenger, destination) = BuildTicket();
+        destination.StopStatus = TripStopStatuses.Arrived;
+        destination.ActualArrivalTime = PlannedArrival;
+        destination.StayDurationMinutes = 5;
+        var deadline = PlannedArrival.AddMinutes(5 + TicketAttendanceWindowSupport.CheckOutGraceMinutes);
+
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, booking, deadline));
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
+                ticket, booking, deadline.AddSeconds(1)));
+        TicketAttendanceWindowSupport.IsWithinCheckOutWindow(
+            booking, passenger, deadline).ShouldBeTrue();
+        TicketAttendanceWindowSupport.IsWithinCheckOutWindow(
+            booking, passenger, deadline.AddSeconds(1)).ShouldBeFalse();
+    }
+
+    [Test]
+    public void FinalStopWithoutDwellUsesFallbackAndGraceInsteadOfKeepingCheckoutOpenForever()
+    {
+        var (ticket, booking, passenger, destination) = BuildTicket();
+        destination.StopStatus = TripStopStatuses.Arrived;
+        destination.ActualArrivalTime = PlannedArrival;
+        destination.StayDurationMinutes = 0;
+        var deadline = PlannedArrival.AddMinutes(
+            TicketAttendanceWindowSupport.UnscheduledDwellFallbackMinutes
+            + TicketAttendanceWindowSupport.CheckOutGraceMinutes);
+
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, booking, deadline));
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(
+                ticket, booking, deadline.AddSeconds(1)));
+        TicketAttendanceWindowSupport.IsWithinCheckOutWindow(
+            booking, passenger, deadline.AddSeconds(1)).ShouldBeFalse();
+    }
+
     private static (Ticket Ticket, Booking Booking, BookingPassenger Passenger, TripStop Destination) BuildTicket()
     {
         var trip = new Trip

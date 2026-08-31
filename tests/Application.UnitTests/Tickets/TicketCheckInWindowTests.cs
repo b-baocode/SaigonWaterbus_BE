@@ -68,6 +68,27 @@ public class TicketCheckInWindowTests
     }
 
     [Test]
+    public void CheckInUsesAdjustedDepartureWhenDepartureIsRecordedWithoutActualTime()
+    {
+        var (ticket, booking, passenger, origin) = BuildTicket();
+        origin.StopStatus = TripStopStatuses.Departed;
+        origin.ActualDepartureTime = null;
+        origin.AdjustedDepartureTime = PlannedDeparture.AddMinutes(5);
+
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, PlannedDeparture.AddMinutes(7)));
+        Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(
+                ticket, booking, PlannedDeparture.AddMinutes(7).AddSeconds(1)));
+
+        TicketAttendanceWindowSupport.IsWithinCheckInWindow(
+            booking, passenger, PlannedDeparture.AddMinutes(7)).ShouldBeTrue();
+        TicketAttendanceWindowSupport.IsWithinCheckInWindow(
+            booking, passenger, PlannedDeparture.AddMinutes(7).AddSeconds(1)).ShouldBeFalse();
+    }
+
+    [Test]
     public void CharterWithoutLinkedTripUsesTenMinutesBeforeAndTwoMinutesAfterDeparture()
     {
         var departure = new DateTimeOffset(2030, 1, 1, 7, 23, 0, TimeSpan.FromHours(7));

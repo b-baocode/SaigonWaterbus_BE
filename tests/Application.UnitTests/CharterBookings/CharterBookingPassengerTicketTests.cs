@@ -914,6 +914,10 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         context.Tickets.ShouldAllBe(x => x.TicketStatus == TicketStatus.CheckedOut);
         context.Tickets.ShouldAllBe(x => x.CheckedOutAt == checkedOutAt);
         context.Tickets.ShouldAllBe(x => x.CheckedOutByUserId == staffContext.UserId);
+        context.TicketScanEvents.Count(x => x.Action == TicketScanAction.CheckIn).ShouldBe(2);
+        context.TicketScanEvents.Count(x => x.Action == TicketScanAction.CheckOut).ShouldBe(2);
+        context.TicketScanEvents.ShouldAllBe(x => x.Result == TicketScanResult.Success);
+        context.TicketScanEvents.Select(x => x.TicketId).Distinct().Count().ShouldBe(2);
         booking.BookingStatus.ShouldBe(BookingStatus.Completed);
     }
 

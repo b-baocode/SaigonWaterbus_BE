@@ -34,6 +34,10 @@ public class RoundTripCheckInAndScanTests
             .TicketStatus.ShouldBe(TicketStatus.CheckedIn);
         context.Tickets.Single(x => x.Id == seeded.ReturnTicket.Id)
             .TicketStatus.ShouldBe(TicketStatus.Active);
+        var checkInEvent = context.TicketScanEvents.Single();
+        checkInEvent.TicketId.ShouldBe(seeded.OutboundTicket.Id);
+        checkInEvent.Action.ShouldBe(TicketScanAction.CheckIn);
+        checkInEvent.Result.ShouldBe(TicketScanResult.Success);
         manifest.ReturnTripCode.ShouldBe("TR-RET");
         var outboundManifestPassenger = manifest.Passengers.Single(p => p.TripCode == "TR-OUT");
         outboundManifestPassenger.TicketStatus
@@ -70,6 +74,35 @@ public class RoundTripCheckInAndScanTests
     }
 
     [Test]
+    public async Task CheckInAllAllowsExactlyTwoMinutesAfterDepartureButRejectsOneSecondLater()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var accepted = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, accepted.Booking.Trip!.BoatId!.Value);
+
+        var acceptedHandler = new CheckInAllBookingTicketsCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(accepted.Booking.Trip.DepartureTime.AddMinutes(2)));
+        await acceptedHandler.Handle(
+            new CheckInAllBookingTicketsCommand(accepted.Booking.CharterBookingQrToken!, "TR-OUT"),
+            CancellationToken.None);
+        accepted.OutboundTicket.TicketStatus.ShouldBe(TicketStatus.CheckedIn);
+
+        var rejected = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, rejected.Booking.Trip!.BoatId!.Value);
+        var rejectedHandler = new CheckInAllBookingTicketsCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(rejected.Booking.Trip!.DepartureTime.AddMinutes(2).AddSeconds(1)));
+        await Should.ThrowAsync<ValidationException>(() => rejectedHandler.Handle(
+            new CheckInAllBookingTicketsCommand(rejected.Booking.CharterBookingQrToken!, "TR-OUT"),
+            CancellationToken.None));
+        rejected.OutboundTicket.TicketStatus.ShouldBe(TicketStatus.Active);
+    }
+
+    [Test]
     public async Task CheckOutAllWithTripCodeChecksOutOnlyThatLegAndCompletesAfterBothLegs()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -97,6 +130,8 @@ public class RoundTripCheckInAndScanTests
         context.Tickets.Single(x => x.Id == seeded.ReturnTicket.Id)
             .TicketStatus.ShouldBe(TicketStatus.CheckedIn);
         context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Confirmed);
+        context.TicketScanEvents.Single().TicketId.ShouldBe(seeded.OutboundTicket.Id);
+        context.TicketScanEvents.Single().Action.ShouldBe(TicketScanAction.CheckOut);
         outboundManifest.Passengers.Single(p => p.TripCode == "TR-OUT")
             .CanCheckOut.ShouldBeFalse();
         outboundManifest.Passengers.Single(p => p.TripCode == "TR-RET")
@@ -111,9 +146,48 @@ public class RoundTripCheckInAndScanTests
                 CancellationToken.None);
 
         context.Tickets.Count(x => x.TicketStatus == TicketStatus.CheckedOut).ShouldBe(2);
+        context.TicketScanEvents.Count(x => x.Action == TicketScanAction.CheckOut).ShouldBe(2);
+        context.TicketScanEvents.Select(x => x.TicketId).ShouldBe(
+            [seeded.OutboundTicket.Id, seeded.ReturnTicket.Id],
+            ignoreOrder: true);
         context.Set<Booking>().Single().BookingStatus.ShouldBe(BookingStatus.Completed);
         returnManifest.BookingStatus.ShouldBe(nameof(BookingStatus.Completed));
         returnManifest.CheckedInTicketCount.ShouldBe(0);
+    }
+
+    [Test]
+    public async Task CheckOutAllOpensExactlyThreeMinutesBeforeArrival()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var accepted = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, accepted.Booking.Trip!.BoatId!.Value);
+        accepted.OutboundTicket.TicketStatus = TicketStatus.CheckedIn;
+        accepted.OutboundTicket.CheckedInAt = accepted.Booking.Trip.DepartureTime;
+        await context.SaveChangesAsync();
+
+        var acceptedHandler = new CheckOutAllBookingTicketsCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(accepted.Booking.Trip.ArrivalTime.AddMinutes(-3)));
+        await acceptedHandler.Handle(
+            new CheckOutAllBookingTicketsCommand(accepted.Booking.CharterBookingQrToken!, "TR-OUT"),
+            CancellationToken.None);
+        accepted.OutboundTicket.TicketStatus.ShouldBe(TicketStatus.CheckedOut);
+
+        var rejected = await SeedConfirmedRoundTripBookingAsync(context);
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, rejected.Booking.Trip!.BoatId!.Value);
+        rejected.OutboundTicket.TicketStatus = TicketStatus.CheckedIn;
+        rejected.OutboundTicket.CheckedInAt = rejected.Booking.Trip!.DepartureTime;
+        await context.SaveChangesAsync();
+        var rejectedHandler = new CheckOutAllBookingTicketsCommandHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(rejected.Booking.Trip.ArrivalTime.AddMinutes(-3).AddSeconds(-1)));
+        await Should.ThrowAsync<ValidationException>(() => rejectedHandler.Handle(
+            new CheckOutAllBookingTicketsCommand(rejected.Booking.CharterBookingQrToken!, "TR-OUT"),
+            CancellationToken.None));
+        rejected.OutboundTicket.TicketStatus.ShouldBe(TicketStatus.CheckedIn);
     }
 
     [Test]
@@ -127,6 +201,35 @@ public class RoundTripCheckInAndScanTests
 
         await Should.ThrowAsync<ValidationException>(() => handler.Handle(
             new CheckInAllBookingTicketsCommand(seeded.Booking.CharterBookingQrToken!, "TR-KHAC"),
+            CancellationToken.None));
+    }
+
+    [Test]
+    public async Task StaffAssignedToAnotherBoatCannotOpenRegularBookingManifest()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var seeded = await SeedConfirmedRoundTripBookingAsync(context);
+        var otherBoat = new Boat
+        {
+            Code = "BOAT-OTHER",
+            Name = "Other boat",
+            Status = BoatStatus.Active,
+            SeatCount = 2,
+            NumberOfDecks = 1,
+            SeatsConfigured = true
+        };
+        context.Boats.Add(otherBoat);
+        await context.SaveChangesAsync();
+        await AddOnBoardAssignmentAsync(context, staffContext.UserId!.Value, otherBoat.Id);
+
+        var handler = new GetBookingManifestQueryHandler(
+            context,
+            staffContext,
+            new FixedTimeProvider(Now));
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new GetBookingManifestByQrTokenQuery(seeded.Booking.CharterBookingQrToken!),
             CancellationToken.None));
     }
 

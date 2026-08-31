@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Entities;
@@ -27,7 +28,7 @@ public class TripDelayCommandTests
             staffContext.UserId!.Value,
             sourceTrip.BoatId!.Value,
             sourceDeparture.AddHours(-1),
-            sourceDeparture.AddHours(5));
+            sourceTrip.ArrivalTime);
         await context.SaveChangesAsync();
 
         var delayStartedAt = sourceDeparture.AddMinutes(30);
@@ -91,6 +92,11 @@ public class TripDelayCommandTests
 
         otherBoat.DelayMinutes.ShouldBe(0);
         otherBoat.AdjustedDepartureTime.ShouldBeNull();
+        context.StaffWorkAssignments.Single().EndAt.ShouldBe(
+            sourceTrip.ArrivalTime
+                .AddMinutes(20)
+                .AddMinutes(TicketAttendanceWindowSupport.UnscheduledDwellFallbackMinutes)
+                .AddMinutes(TicketAttendanceWindowSupport.CheckOutGraceMinutes));
     }
 
     [Test]
