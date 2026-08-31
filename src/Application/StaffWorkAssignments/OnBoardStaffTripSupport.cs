@@ -40,6 +40,61 @@ public static class OnBoardStaffTripSupport
         return count >= RequiredOnBoardStaffCount;
     }
 
+    public static async Task EnsureAssignmentCanBeCancelledAsync(
+        IApplicationDbContext context,
+        StaffWorkAssignment assignment,
+        string propertyName,
+        CancellationToken cancellationToken)
+    {
+        if (assignment.AssignmentType != StaffWorkAssignmentType.Boat
+            || !assignment.BoatId.HasValue
+            || assignment.Status is StaffWorkAssignmentStatus.Cancelled or StaffWorkAssignmentStatus.Replaced)
+        {
+            return;
+        }
+
+        var affectedTrips = await context.Set<Trip>()
+            .AsNoTracking()
+            .Where(x => x.BoatId == assignment.BoatId.Value
+                && x.TripStatus != TripStatus.Completed
+                && x.TripStatus != TripStatus.Cancelled
+                && assignment.StartAt <= x.DepartureTime
+                && assignment.EndAt >= x.ArrivalTime)
+            .OrderBy(x => x.DepartureTime)
+            .ToListAsync(cancellationToken);
+        if (affectedTrips.Count == 0)
+        {
+            return;
+        }
+
+        var windowStart = affectedTrips.Min(x => x.DepartureTime);
+        var windowEnd = affectedTrips.Max(x => x.ArrivalTime);
+        var remainingAssignments = await context.StaffWorkAssignments
+            .AsNoTracking()
+            .Where(x => x.Id != assignment.Id
+                && x.AssignmentType == StaffWorkAssignmentType.Boat
+                && x.BoatId == assignment.BoatId.Value
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
+                && x.StaffUser.StaffType == StaffType.OnBoard
+                && x.StartAt < windowEnd
+                && windowStart < x.EndAt)
+            .Select(x => new { x.StaffUserId, x.StartAt, x.EndAt })
+            .ToListAsync(cancellationToken);
+
+        var uncoveredTrip = affectedTrips.FirstOrDefault(trip => remainingAssignments
+            .Where(x => x.StartAt <= trip.DepartureTime && x.EndAt >= trip.ArrivalTime)
+            .Select(x => x.StaffUserId)
+            .Distinct()
+            .Count() < RequiredOnBoardStaffCount);
+        if (uncoveredTrip is not null)
+        {
+            throw new ValidationException([new ValidationFailure(propertyName,
+                $"Không thể hủy ca vì chuyến {uncoveredTrip.TripCode} sẽ còn dưới "
+                + $"{RequiredOnBoardStaffCount} nhân viên OnBoard. Hãy phân công người thay thế phủ toàn bộ chuyến trước.")]);
+        }
+    }
+
     public static async Task<IReadOnlyList<TripStaffAssignmentDto>> LoadTripOnBoardStaffAsync(
         IApplicationDbContext context,
         Trip trip,

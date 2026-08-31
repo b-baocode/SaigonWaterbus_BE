@@ -436,6 +436,10 @@ public sealed class RecordIncidentGpsEventCommandHandler
         incident.Trip.DelayPropagationMinutes = Math.Max(
             incident.Trip.DelayPropagationMinutes,
             maxPropagatedDelayMinutes);
+        await TripDelaySupport.ExtendCoveringBoatAssignmentsAsync(
+            _context,
+            futureTrips.Prepend(incident.Trip),
+            cancellationToken);
         return notifications;
     }
 

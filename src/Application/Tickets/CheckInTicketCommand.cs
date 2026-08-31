@@ -58,6 +58,19 @@ public sealed class CheckInTicketCommandHandler : IRequestHandler<CheckInTicketC
         {
             ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
             ticketStatusBefore = ticket.TicketStatus;
+            await TicketScanHistorySupport.EnsureTripStopBelongsToTicketAsync(
+                _context, metadata, ticket, cancellationToken);
+            if (await TicketScanHistorySupport.IsSuccessfulReplayAsync(
+                    _context,
+                    currentUser,
+                    TicketScanAction.CheckIn,
+                    metadata,
+                    ticket.Id,
+                    ticket.BookingId,
+                    cancellationToken))
+            {
+                return await TicketScanSupport.ToDtoAsync(_context, ticket, cancellationToken, now);
+            }
             EnsureTicketCanBeCheckedIn(ticket);
             TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, now);
             await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTicketAsync(

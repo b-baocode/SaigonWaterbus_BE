@@ -8,6 +8,7 @@ using QuestPDF.Fluent;
 using QuestPDF.Helpers;
 using QuestPDF.Infrastructure;
 using SaigonWaterbus.Application.CharterBookings;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
@@ -778,7 +779,13 @@ public sealed class CharterBookings : IEndpointGroup
             qrToken,
             request.Action,
             request.Mode,
-            request.TicketIds), ct));
+            request.TicketIds,
+            new TicketScanRequestMetadata(
+                request.Source,
+                request.TripStopId,
+                request.ClientOperationId,
+                request.DeviceTime,
+                request.Note)), ct));
 
     private static async Task<IResult> ResendCharterBookingTickets(
         ISender sender,

@@ -15,7 +15,8 @@ public sealed record UpdateCharterBookingAttendanceCommand(
     string QrToken,
     CharterBookingAttendanceAction Action,
     CharterBookingAttendanceMode Mode,
-    IReadOnlyList<Guid>? TicketIds)
+    IReadOnlyList<Guid>? TicketIds,
+    TicketScanRequestMetadata? Metadata = null)
     : IRequest<CharterBookingAttendanceResult>;
 
 public sealed class UpdateCharterBookingAttendanceCommandValidator
@@ -70,13 +71,23 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
                 cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
-            _context,
-            currentUser,
-            booking,
-            includeCustomerOwner: false,
-            notFoundWhenDenied: false,
-            cancellationToken);
+        var now = _timeProvider.GetUtcNow();
+        var metadata = request.Metadata ?? new TicketScanRequestMetadata();
+        if (AuthSupport.IsStaff(currentUser))
+        {
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateCharterBookingAsync(
+                _context, currentUser, booking, now, cancellationToken);
+        }
+        else
+        {
+            await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+                _context,
+                currentUser,
+                booking,
+                includeCustomerOwner: false,
+                notFoundWhenDenied: false,
+                cancellationToken);
+        }
 
         EnsureBookingCanUpdateAttendance(booking, request.Action);
 
@@ -87,8 +98,8 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
                 "Charter booking chua co ve hanh khach de cap nhat.")]);
         }
 
-        var now = _timeProvider.GetUtcNow();
         var skippedTickets = new List<CharterBookingAttendanceSkippedTicketDto>();
+        var updatedTickets = new List<Ticket>();
         var updatedCount = 0;
 
         foreach (var ticket in tickets)
@@ -100,6 +111,8 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
                 continue;
             }
 
+            await TicketScanHistorySupport.EnsureTripStopBelongsToTicketAsync(
+                _context, metadata, ticket, cancellationToken);
             if (request.Action == CharterBookingAttendanceAction.CheckIn)
             {
                 TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, booking, now);
@@ -124,12 +137,29 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
                 ticket.CheckedOutByUser = currentUser;
             }
 
+            updatedTickets.Add(ticket);
             updatedCount++;
         }
 
         if (request.Action == CharterBookingAttendanceAction.CheckOut)
         {
             await CompleteBookingIfAllTicketsCheckedOutAsync(booking, now, cancellationToken);
+        }
+
+        if (updatedTickets.Count > 0)
+        {
+            var isCheckIn = request.Action == CharterBookingAttendanceAction.CheckIn;
+            await TicketScanHistorySupport.AddSuccessfulBatchEventsAsync(
+                _context,
+                currentUser,
+                isCheckIn ? TicketScanAction.CheckIn : TicketScanAction.CheckOut,
+                metadata,
+                now,
+                qrToken,
+                updatedTickets,
+                isCheckIn ? TicketStatus.Active : TicketStatus.CheckedIn,
+                isCheckIn ? TicketStatus.CheckedIn : TicketStatus.CheckedOut,
+                cancellationToken);
         }
 
         await _context.SaveChangesAsync(cancellationToken);

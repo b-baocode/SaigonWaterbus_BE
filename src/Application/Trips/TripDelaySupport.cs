@@ -1,4 +1,6 @@
 using SaigonWaterbus.Domain.Constants;
+using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 
@@ -154,6 +156,54 @@ public static class TripDelaySupport
         }
     }
 
+    public static async Task ExtendCoveringBoatAssignmentsAsync(
+        IApplicationDbContext context,
+        IEnumerable<Trip> trips,
+        CancellationToken cancellationToken)
+    {
+        var delayedTrips = trips
+            .Where(x => x.BoatId.HasValue)
+            .Select(x => new
+            {
+                Trip = x,
+                BoatId = x.BoatId!.Value,
+                RequiredEndAt = ResolveAssignmentOperationalEnd(x)
+            })
+            .Where(x => x.RequiredEndAt > x.Trip.ArrivalTime)
+            .ToList();
+        if (delayedTrips.Count == 0)
+        {
+            return;
+        }
+
+        var boatIds = delayedTrips.Select(x => x.BoatId).Distinct().ToArray();
+        var earliestDeparture = delayedTrips.Min(x => x.Trip.DepartureTime);
+        var latestPlannedArrival = delayedTrips.Max(x => x.Trip.ArrivalTime);
+        var assignments = await context.StaffWorkAssignments
+            .Where(x => x.AssignmentType == StaffWorkAssignmentType.Boat
+                && x.BoatId.HasValue
+                && boatIds.Contains(x.BoatId.Value)
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
+                && x.StartAt <= latestPlannedArrival
+                && x.EndAt >= earliestDeparture)
+            .ToListAsync(cancellationToken);
+
+        foreach (var assignment in assignments)
+        {
+            var requiredEndAt = delayedTrips
+                .Where(x => x.BoatId == assignment.BoatId
+                    && assignment.StartAt <= x.Trip.DepartureTime
+                    && assignment.EndAt >= x.Trip.ArrivalTime)
+                .Select(x => (DateTimeOffset?)x.RequiredEndAt)
+                .Max();
+            if (requiredEndAt.HasValue && assignment.EndAt < requiredEndAt.Value)
+            {
+                assignment.EndAt = requiredEndAt.Value;
+            }
+        }
+    }
+
     public static DateTimeOffset ResolveAdjustedDeparture(Trip trip) =>
         trip.AdjustedDepartureTime
             ?? (trip.DelayMinutes > 0
@@ -165,6 +215,37 @@ public static class TripDelaySupport
             ?? (trip.DelayMinutes > 0
                 ? trip.ArrivalTime.AddMinutes(trip.DelayMinutes)
                 : trip.ArrivalTime);
+
+    internal static DateTimeOffset ResolveAssignmentOperationalEnd(Trip trip)
+    {
+        var operationalEnd = ResolveAdjustedArrival(trip);
+        foreach (var stop in trip.TripStops)
+        {
+            var arrival = stop.ActualArrivalTime
+                ?? stop.AdjustedArrivalTime
+                ?? stop.PlannedArrivalTime;
+            if (arrival.HasValue)
+            {
+                var dwellMinutes = stop.StayDurationMinutes > 0
+                    ? stop.StayDurationMinutes
+                    : TicketAttendanceWindowSupport.UnscheduledDwellFallbackMinutes;
+                operationalEnd = Max(operationalEnd, arrival.Value.AddMinutes(dwellMinutes));
+            }
+
+            var departure = stop.ActualDepartureTime
+                ?? stop.AdjustedDepartureTime
+                ?? stop.PlannedDepartureTime;
+            if (departure.HasValue)
+            {
+                operationalEnd = Max(operationalEnd, departure.Value);
+            }
+        }
+
+        return operationalEnd.AddMinutes(TicketAttendanceWindowSupport.CheckOutGraceMinutes);
+    }
+
+    private static DateTimeOffset Max(DateTimeOffset left, DateTimeOffset right) =>
+        left >= right ? left : right;
 
     public static TripStatus ResolveResumedStatus(Trip trip, DateTimeOffset now)
     {

@@ -80,14 +80,24 @@ public sealed class GetCharterBookingManifestByCodeQueryHandler
                 cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
-            _context,
-            currentUser,
-            booking,
-            includeCustomerOwner: true,
-            notFoundWhenDenied: true,
-            cancellationToken);
-        return CharterBookingManifestSupport.ToDto(booking, _timeProvider.GetUtcNow());
+        var now = _timeProvider.GetUtcNow();
+        if (AuthSupport.IsStaff(currentUser))
+        {
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateCharterBookingAsync(
+                _context, currentUser, booking, now, cancellationToken);
+        }
+        else
+        {
+            await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+                _context,
+                currentUser,
+                booking,
+                includeCustomerOwner: true,
+                notFoundWhenDenied: true,
+                cancellationToken);
+        }
+
+        return CharterBookingManifestSupport.ToDto(booking, now);
     }
 }
 
@@ -124,14 +134,24 @@ public sealed class GetCharterBookingManifestByQrTokenQueryHandler
                 cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
-            _context,
-            currentUser,
-            booking,
-            includeCustomerOwner: true,
-            notFoundWhenDenied: true,
-            cancellationToken);
-        return CharterBookingManifestSupport.ToDto(booking, _timeProvider.GetUtcNow());
+        var now = _timeProvider.GetUtcNow();
+        if (AuthSupport.IsStaff(currentUser))
+        {
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateCharterBookingAsync(
+                _context, currentUser, booking, now, cancellationToken);
+        }
+        else
+        {
+            await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+                _context,
+                currentUser,
+                booking,
+                includeCustomerOwner: true,
+                notFoundWhenDenied: true,
+                cancellationToken);
+        }
+
+        return CharterBookingManifestSupport.ToDto(booking, now);
     }
 }
 

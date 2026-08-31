@@ -989,6 +989,12 @@ public sealed class DeleteStaffWorkAssignmentCommandHandler
             assignment,
             cancellationToken);
 
+        await OnBoardStaffTripSupport.EnsureAssignmentCanBeCancelledAsync(
+            _context,
+            assignment,
+            nameof(request.AssignmentId),
+            cancellationToken);
+
         assignment.Status = StaffWorkAssignmentStatus.Cancelled;
         await _context.SaveChangesAsync(cancellationToken);
     }

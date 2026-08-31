@@ -699,9 +699,12 @@ public static class TicketAttendanceWindowSupport
 
     private static DateTimeOffset? ResolveStopScanEndsAt(TripStop stop)
     {
-        if (stop.StayDurationMinutes > 0 && stop.ActualArrivalTime.HasValue)
+        if (stop.ActualArrivalTime.HasValue)
         {
-            return stop.ActualArrivalTime.Value.AddMinutes(stop.StayDurationMinutes);
+            var dwellMinutes = stop.StayDurationMinutes > 0
+                ? stop.StayDurationMinutes
+                : UnscheduledDwellFallbackMinutes;
+            return stop.ActualArrivalTime.Value.AddMinutes(dwellMinutes);
         }
 
         return null;

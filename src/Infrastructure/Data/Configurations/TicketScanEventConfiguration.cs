@@ -63,6 +63,9 @@ public sealed class TicketScanEventConfiguration : IEntityTypeConfiguration<Tick
         builder.HasIndex(x => x.StaffWorkAssignmentId);
         builder.HasIndex(x => x.TripStopId);
         builder.HasIndex(x => x.ClientOperationId);
+        builder.HasIndex(x => new { x.PerformedByUserId, x.Action, x.ClientOperationId })
+            .IsUnique()
+            .HasFilter("\"client_operation_id\" IS NOT NULL AND \"result\" = 'Success' AND \"action\" IN ('CheckIn', 'CheckOut')");
 
         builder.HasOne(x => x.Ticket)
             .WithMany()

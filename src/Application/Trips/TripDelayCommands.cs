@@ -260,6 +260,10 @@ public sealed class ResumeTripDelayCommandHandler
             trip,
             totalDelayMinutes,
             cancellationToken);
+        await TripDelaySupport.ExtendCoveringBoatAssignmentsAsync(
+            _context,
+            affectedTrips.Select(x => x.Trip).Prepend(trip),
+            cancellationToken);
         trip.DelayPropagationMinutes = affectedTrips
             .Select(x => x.Dto.AddedDelayMinutes)
             .DefaultIfEmpty(0)

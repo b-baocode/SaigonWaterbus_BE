@@ -167,8 +167,10 @@ public sealed class GetBookingManifestQueryHandler :
         var booking = await BookingManifestSupport.FindSeatBookingAsync(_context, predicate, cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
 
-        BookingManifestSupport.EnsureCanView(currentUser, booking);
-        return BookingManifestSupport.ToDto(booking, _timeProvider.GetUtcNow());
+        var now = _timeProvider.GetUtcNow();
+        await BookingManifestSupport.EnsureCanViewAsync(
+            _context, currentUser, booking, now, cancellationToken);
+        return BookingManifestSupport.ToDto(booking, now);
     }
 }
 
@@ -253,15 +255,32 @@ internal static class BookingManifestSupport
             .Include(x => x.TripStops)
             .SingleOrDefaultAsync(x => x.Id == tripId, cancellationToken);
 
-    public static void EnsureCanView(User currentUser, Booking booking)
+    public static async Task EnsureCanViewAsync(
+        IApplicationDbContext context,
+        User currentUser,
+        Booking booking,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
     {
-        if (booking.UserId != currentUser.Id
-            && !AuthSupport.IsAdmin(currentUser)
-            && !AuthSupport.IsManager(currentUser)
-            && !AuthSupport.IsStaff(currentUser))
+        if (booking.UserId == currentUser.Id
+            || AuthSupport.IsAdmin(currentUser)
+            || AuthSupport.IsManager(currentUser))
         {
-            throw new NotFoundException("Booking not found.");
+            return;
         }
+
+        if (AuthSupport.IsStaff(currentUser))
+        {
+            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateAnyTripAsync(
+                context,
+                currentUser,
+                [booking.Trip, booking.ReturnTrip],
+                now,
+                cancellationToken);
+            return;
+        }
+
+        throw new NotFoundException("Booking not found.");
     }
 
     public static bool CanCheckInBooking(Booking booking) =>

@@ -84,6 +84,8 @@ public sealed class RejectTicketConcessionCommandHandler
         {
             ticket = await TicketScanSupport.GetTicketAsync(_context, request.CodeOrToken, cancellationToken);
             ticketStatusBefore = ticket.TicketStatus;
+            await TicketScanHistorySupport.EnsureTripStopBelongsToTicketAsync(
+                _context, metadata, ticket, cancellationToken);
             EnsureTicketCanBeRejected(ticket);
             TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, now);
             await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTicketAsync(

@@ -278,6 +278,15 @@ public sealed class ConfirmBoatReplanCommandHandler
                     ct));
             }
 
+            var changedTrips = await _context.Set<Trip>()
+                .Include(x => x.TripStops)
+                .Where(x => changedTripIds.Contains(x.Id))
+                .ToListAsync(ct);
+            await TripDelaySupport.ExtendCoveringBoatAssignmentsAsync(
+                _context,
+                changedTrips,
+                ct);
+
             await _context.SaveChangesAsync(ct);
         }, cancellationToken);
 

@@ -657,7 +657,12 @@ public enum CharterBookingAttendanceMode
 public sealed record CharterBookingAttendanceRequest(
     CharterBookingAttendanceAction Action,
     CharterBookingAttendanceMode Mode = CharterBookingAttendanceMode.All,
-    IReadOnlyList<Guid>? TicketIds = null);
+    IReadOnlyList<Guid>? TicketIds = null,
+    TicketScanSource Source = TicketScanSource.Qr,
+    Guid? TripStopId = null,
+    string? ClientOperationId = null,
+    DateTimeOffset? DeviceTime = null,
+    string? Note = null);
 
 public sealed record CharterBookingAttendanceResult(
     CharterBookingAttendanceAction Action,

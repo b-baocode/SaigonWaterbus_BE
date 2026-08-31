@@ -2,6 +2,7 @@ using SaigonWaterbus.Application.Auth.Common;
 using SaigonWaterbus.Application.Bookings;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Tickets;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -104,6 +105,9 @@ public sealed class GetTripPassengerManifestQueryHandler
             ?? throw new NotFoundException("Trip not found.");
 
         var now = _timeProvider.GetUtcNow();
+        await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTripAsync(
+            _context, actor, trip, now, cancellationToken);
+
         var passengers = await _context.Set<BookingPassenger>()
             .AsNoTracking()
             .Include(x => x.Booking)

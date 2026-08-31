@@ -21,6 +21,7 @@ public sealed class TicketConfiguration : IEntityTypeConfiguration<Ticket>
             .HasColumnName("status")
             .HasConversion<string>()
             .HasMaxLength(30)
+            .IsConcurrencyToken()
             .IsRequired();
         builder.Property(x => x.IssuedAt).HasColumnName("issued_at").IsRequired();
         builder.Property(x => x.CheckedInAt).HasColumnName("checked_in_at");

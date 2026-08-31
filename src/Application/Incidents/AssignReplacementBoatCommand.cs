@@ -237,6 +237,22 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                 cancellationToken);
         }
 
+        if (replacementBoat is not null)
+        {
+            var transferredTrips = nextTrips.AsEnumerable();
+            if (incident.Trip is not null && incident.Trip.BoatId == replacementBoat.Id)
+            {
+                transferredTrips = transferredTrips.Prepend(incident.Trip);
+            }
+
+            await IncidentDispatchPlanSupport.TransferCoveringCrewAssignmentsAsync(
+                _context,
+                incident.BoatId,
+                replacementBoat,
+                transferredTrips,
+                cancellationToken);
+        }
+
         DateTimeOffset? previousBoatAvailableAt = incident.Trip is null
             ? null
             : TripDelaySupport.ResolveAdjustedArrival(incident.Trip);
@@ -266,6 +282,11 @@ public sealed class AssignReplacementBoatCommandHandler : IRequestHandler<Assign
                 cancellationToken));
             previousBoatAvailableAt = TripDelaySupport.ResolveAdjustedArrival(nextTrip);
         }
+
+        await TripDelaySupport.ExtendCoveringBoatAssignmentsAsync(
+            _context,
+            nextTrips.AsEnumerable().Concat(incident.Trip is null ? [] : [incident.Trip]),
+            cancellationToken);
 
         createdNotifications.AddRange(await NotificationSupport.AddIncidentDispatchedNotificationsAsync(
             _context,

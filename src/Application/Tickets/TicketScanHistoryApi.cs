@@ -234,6 +234,115 @@ internal static class TicketScanHistorySupport
         exception is NotFoundException
             or ValidationException;
 
+    public static async Task EnsureTripStopBelongsToTicketAsync(
+        IApplicationDbContext context,
+        TicketScanRequestMetadata metadata,
+        Ticket ticket,
+        CancellationToken cancellationToken)
+    {
+        if (!metadata.TripStopId.HasValue)
+        {
+            return;
+        }
+
+        var tripId = ticket.BookingPassenger?.TripId ?? ticket.Booking.TripId;
+        var belongsToTicketTrip = tripId.HasValue
+            && await context.Set<TripStop>()
+                .AsNoTracking()
+                .AnyAsync(
+                    x => x.Id == metadata.TripStopId.Value && x.TripId == tripId.Value,
+                    cancellationToken);
+        if (!belongsToTicketTrip)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(TicketScanRequestMetadata.TripStopId),
+                "tripStopId không thuộc chuyến của vé đang được xử lý.")]);
+        }
+    }
+
+    public static async Task<bool> IsSuccessfulReplayAsync(
+        IApplicationDbContext context,
+        User actor,
+        TicketScanAction action,
+        TicketScanRequestMetadata metadata,
+        Guid? expectedTicketId,
+        Guid? expectedBookingId,
+        CancellationToken cancellationToken)
+    {
+        var clientOperationId = NormalizeOptionalText(metadata.ClientOperationId, 100);
+        if (clientOperationId is null)
+        {
+            return false;
+        }
+
+        var existing = await context.TicketScanEvents
+            .AsNoTracking()
+            .Where(x => x.PerformedByUserId == actor.Id
+                && x.Action == action
+                && x.Result == TicketScanResult.Success
+                && x.ClientOperationId == clientOperationId)
+            .Select(x => new
+            {
+                x.TicketId,
+                x.BookingId,
+                x.Source,
+                x.TripStopId
+            })
+            .SingleOrDefaultAsync(cancellationToken);
+        if (existing is null)
+        {
+            return false;
+        }
+
+        var sameTarget = expectedTicketId.HasValue
+            ? existing.TicketId == expectedTicketId
+            : expectedBookingId.HasValue && existing.BookingId == expectedBookingId;
+        var sameMetadata = existing.Source == metadata.Source
+            && existing.TripStopId == metadata.TripStopId;
+        if (!sameTarget || !sameMetadata)
+        {
+            throw new ValidationException([new ValidationFailure(
+                nameof(TicketScanRequestMetadata.ClientOperationId),
+                "clientOperationId đã được dùng cho một thao tác khác.")]);
+        }
+
+        return true;
+    }
+
+    public static async Task AddSuccessfulBatchEventsAsync(
+        IApplicationDbContext context,
+        User actor,
+        TicketScanAction action,
+        TicketScanRequestMetadata metadata,
+        DateTimeOffset serverTime,
+        string scannedCodeOrToken,
+        IReadOnlyList<Ticket> tickets,
+        TicketStatus ticketStatusBefore,
+        TicketStatus ticketStatusAfter,
+        CancellationToken cancellationToken)
+    {
+        var orderedTickets = tickets.OrderBy(x => x.Id).ToArray();
+        for (var index = 0; index < orderedTickets.Length; index++)
+        {
+            var eventMetadata = index == 0
+                ? metadata
+                : metadata with { ClientOperationId = null };
+            await AddEventAsync(
+                context,
+                actor,
+                action,
+                TicketScanResult.Success,
+                eventMetadata,
+                serverTime,
+                scannedCodeOrToken,
+                orderedTickets[index],
+                ticketStatusBefore,
+                ticketStatusAfter,
+                null,
+                cancellationToken);
+        }
+    }
+
     public static string FailureReason(Exception exception)
     {
         if (exception is ValidationException validationException)

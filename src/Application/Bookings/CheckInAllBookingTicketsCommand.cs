@@ -17,7 +17,10 @@ namespace SaigonWaterbus.Application.Bookings;
 /// Booking khứ hồi: truyền TripCode của chuyến đang boarding để chỉ check-in vé chiều đó;
 /// bỏ trống thì check-in tất cả (hành vi cũ, phù hợp booking một chiều).
 /// </summary>
-public sealed record CheckInAllBookingTicketsCommand(string QrToken, string? TripCode = null)
+public sealed record CheckInAllBookingTicketsCommand(
+    string QrToken,
+    string? TripCode = null,
+    TicketScanRequestMetadata? Metadata = null)
     : IRequest<BookingManifestDto>;
 
 public sealed class CheckInAllBookingTicketsCommandValidator : AbstractValidator<CheckInAllBookingTicketsCommand>
@@ -61,85 +64,102 @@ public sealed class CheckInAllBookingTicketsCommandHandler
             throw new ForbiddenAccessException();
         }
 
-        var qrToken = request.QrToken.Trim();
-        var booking = await _context.Set<Booking>()
-            .Include(x => x.Tickets)
-                .ThenInclude(x => x.BookingPassenger)
-            .Include(x => x.Trip)
-                .ThenInclude(x => x!.Route)
-                    .ThenInclude(x => x.RouteStops)
-            .Include(x => x.Trip)
-                .ThenInclude(x => x!.TripStops)
-            .Include(x => x.ReturnTrip)
-                .ThenInclude(x => x!.Route)
-                    .ThenInclude(x => x.RouteStops)
-            .Include(x => x.ReturnTrip)
-                .ThenInclude(x => x!.TripStops)
-            .SingleOrDefaultAsync(
-                x => x.CharterBookingQrToken == qrToken && x.BookingType == Booking.SeatBookingType,
-                cancellationToken)
-            ?? throw new NotFoundException("Booking not found.");
-
-        if (!BookingManifestSupport.CanCheckInBooking(booking))
-        {
-            throw new ValidationException([new ValidationFailure("booking",
-                "Booking chưa sẵn sàng để check-in (chưa xác nhận hoặc chưa thanh toán đủ).")]);
-        }
-
-        // Booking khứ hồi: lọc vé theo chuyến đang boarding khi staff truyền tripCode.
-        Guid? legTripId = null;
-        if (!string.IsNullOrWhiteSpace(request.TripCode))
-        {
-            var tripCode = request.TripCode.Trim().ToUpperInvariant();
-            if (string.Equals(booking.Trip?.TripCode, tripCode, StringComparison.OrdinalIgnoreCase))
-            {
-                legTripId = booking.TripId;
-            }
-            else if (string.Equals(booking.ReturnTrip?.TripCode, tripCode, StringComparison.OrdinalIgnoreCase))
-            {
-                legTripId = booking.ReturnTripId;
-            }
-            else
-            {
-                throw new ValidationException([new ValidationFailure(nameof(request.TripCode),
-                    "Trip không thuộc booking này.")]);
-            }
-        }
-
-        var activeTickets = booking.Tickets
-            .Where(x => x.TicketStatus == TicketStatus.Active)
-            .Where(x => x.BookingPassenger is null
-                || LapInfantTicketSupport.RequiresOwnTicket(x.BookingPassenger))
-            .Where(x => legTripId is null
-                || x.BookingPassenger?.TripId is null
-                || x.BookingPassenger.TripId == legTripId)
-            .ToList();
-        if (activeTickets.Count == 0)
-        {
-            throw new ValidationException([new ValidationFailure("booking",
-                "Không còn vé nào ở trạng thái Active để check-in.")]);
-        }
-
         var now = _timeProvider.GetUtcNow();
-        foreach (var ticket in activeTickets)
+        var metadata = request.Metadata ?? new TicketScanRequestMetadata();
+        var qrToken = request.QrToken.Trim();
+        Booking? booking = null;
+        Ticket? auditTicket = null;
+        List<Ticket> activeTickets;
+        try
         {
-            TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, booking, now);
-        }
+            booking = await BuildBookingQuery(qrToken).SingleOrDefaultAsync(cancellationToken)
+                ?? throw new NotFoundException("Booking not found.");
+            auditTicket = booking.Tickets.OrderBy(x => x.Id).FirstOrDefault();
 
-        foreach (var trip in ResolveTargetTrips(booking, activeTickets))
+            if (await TicketScanHistorySupport.IsSuccessfulReplayAsync(
+                    _context,
+                    currentUser,
+                    TicketScanAction.CheckIn,
+                    metadata,
+                    expectedTicketId: null,
+                    booking.Id,
+                    cancellationToken))
+            {
+                var replayed = await BookingManifestSupport.GetByIdAsync(
+                    _context, booking.Id, cancellationToken);
+                return BookingManifestSupport.ToDto(replayed, now);
+            }
+
+            if (!BookingManifestSupport.CanCheckInBooking(booking))
+            {
+                throw new ValidationException([new ValidationFailure("booking",
+                    "Booking chưa sẵn sàng để check-in (chưa xác nhận hoặc chưa thanh toán đủ).")]);
+            }
+
+            var legTripId = ResolveLegTripId(booking, request.TripCode);
+            activeTickets = booking.Tickets
+                .Where(x => x.TicketStatus == TicketStatus.Active)
+                .Where(x => x.BookingPassenger is null
+                    || LapInfantTicketSupport.RequiresOwnTicket(x.BookingPassenger))
+                .Where(x => legTripId is null
+                    || x.BookingPassenger?.TripId is null
+                    || x.BookingPassenger.TripId == legTripId)
+                .ToList();
+            if (activeTickets.Count == 0)
+            {
+                throw new ValidationException([new ValidationFailure("booking",
+                    "Không còn vé nào ở trạng thái Active để check-in.")]);
+            }
+
+            foreach (var ticket in activeTickets)
+            {
+                auditTicket = ticket;
+                await TicketScanHistorySupport.EnsureTripStopBelongsToTicketAsync(
+                    _context, metadata, ticket, cancellationToken);
+                TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, booking, now);
+            }
+
+            foreach (var trip in ResolveTargetTrips(booking, activeTickets))
+            {
+                await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTripAsync(
+                    _context, currentUser, trip, now, cancellationToken);
+            }
+
+            foreach (var ticket in activeTickets)
+            {
+                ticket.TicketStatus = TicketStatus.CheckedIn;
+                ticket.CheckedInAt = now;
+                ticket.CheckedInByUserId = currentUser.Id;
+            }
+
+            await TicketScanHistorySupport.AddSuccessfulBatchEventsAsync(
+                _context,
+                currentUser,
+                TicketScanAction.CheckIn,
+                metadata,
+                now,
+                qrToken,
+                activeTickets,
+                TicketStatus.Active,
+                TicketStatus.CheckedIn,
+                cancellationToken);
+            await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (Exception exception) when (TicketScanHistorySupport.IsLoggableFailure(exception))
         {
-            await TicketStaffScanAuthorizationSupport.EnsureStaffCanOperateTripAsync(
-                _context, currentUser, trip, now, cancellationToken);
+            await TicketScanHistorySupport.SaveFailureEventAsync(
+                _context,
+                currentUser,
+                TicketScanAction.CheckIn,
+                metadata,
+                now,
+                qrToken,
+                auditTicket,
+                auditTicket?.TicketStatus,
+                exception,
+                cancellationToken);
+            throw;
         }
-
-        foreach (var ticket in activeTickets)
-        {
-            ticket.TicketStatus = TicketStatus.CheckedIn;
-            ticket.CheckedInAt = now;
-            ticket.CheckedInByUserId = currentUser.Id;
-        }
-
-        await _context.SaveChangesAsync(cancellationToken);
 
         var notifications = new List<Notification>();
         foreach (var trip in ResolveTargetTrips(booking, activeTickets))
@@ -159,6 +179,44 @@ public sealed class CheckInAllBookingTicketsCommandHandler
 
         var refreshed = await BookingManifestSupport.GetByIdAsync(_context, booking.Id, cancellationToken);
         return BookingManifestSupport.ToDto(refreshed, now);
+    }
+
+    private IQueryable<Booking> BuildBookingQuery(string qrToken) =>
+        _context.Set<Booking>()
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.Route)
+                    .ThenInclude(x => x.RouteStops)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
+            .Include(x => x.ReturnTrip)
+                .ThenInclude(x => x!.Route)
+                    .ThenInclude(x => x.RouteStops)
+            .Include(x => x.ReturnTrip)
+                .ThenInclude(x => x!.TripStops)
+            .Where(x => x.CharterBookingQrToken == qrToken && x.BookingType == Booking.SeatBookingType);
+
+    private static Guid? ResolveLegTripId(Booking booking, string? tripCode)
+    {
+        if (string.IsNullOrWhiteSpace(tripCode))
+        {
+            return null;
+        }
+
+        var normalizedTripCode = tripCode.Trim();
+        if (string.Equals(booking.Trip?.TripCode, normalizedTripCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return booking.TripId;
+        }
+
+        if (string.Equals(booking.ReturnTrip?.TripCode, normalizedTripCode, StringComparison.OrdinalIgnoreCase))
+        {
+            return booking.ReturnTripId;
+        }
+
+        throw new ValidationException([new ValidationFailure(nameof(CheckInAllBookingTicketsCommand.TripCode),
+            "Trip không thuộc booking này.")]);
     }
 
     private static IReadOnlyList<Trip> ResolveTargetTrips(
@@ -188,7 +246,10 @@ public sealed class CheckInAllBookingTicketsCommandHandler
 /// Booking khứ hồi: truyền TripCode của chuyến đang trả khách để chỉ check-out vé chiều đó;
 /// bỏ trống thì check-out tất cả vé đang CheckedIn.
 /// </summary>
-public sealed record CheckOutAllBookingTicketsCommand(string QrToken, string? TripCode = null)
+public sealed record CheckOutAllBookingTicketsCommand(
+    string QrToken,
+    string? TripCode = null,
+    TicketScanRequestMetadata? Metadata = null)
     : IRequest<BookingManifestDto>;
 
 public sealed class CheckOutAllBookingTicketsCommandValidator : AbstractValidator<CheckOutAllBookingTicketsCommand>
@@ -232,6 +293,8 @@ public sealed class CheckOutAllBookingTicketsCommandHandler
             throw new ForbiddenAccessException();
         }
 
+        var now = _timeProvider.GetUtcNow();
+        var metadata = request.Metadata ?? new TicketScanRequestMetadata();
         var qrToken = request.QrToken.Trim();
         var booking = await _context.Set<Booking>()
             .Include(x => x.Tickets)
@@ -250,6 +313,18 @@ public sealed class CheckOutAllBookingTicketsCommandHandler
                 x => x.CharterBookingQrToken == qrToken && x.BookingType == Booking.SeatBookingType,
                 cancellationToken)
             ?? throw new NotFoundException("Booking not found.");
+
+        if (await TicketScanHistorySupport.IsSuccessfulReplayAsync(
+                _context,
+                currentUser,
+                TicketScanAction.CheckOut,
+                metadata,
+                expectedTicketId: null,
+                booking.Id,
+                cancellationToken))
+        {
+            return BookingManifestSupport.ToDto(booking, now);
+        }
 
         if (booking.BookingStatus != BookingStatus.Confirmed)
         {
@@ -272,9 +347,10 @@ public sealed class CheckOutAllBookingTicketsCommandHandler
                 "Không còn vé nào ở trạng thái CheckedIn để check-out.")]);
         }
 
-        var now = _timeProvider.GetUtcNow();
         foreach (var ticket in checkedInTickets)
         {
+            await TicketScanHistorySupport.EnsureTripStopBelongsToTicketAsync(
+                _context, metadata, ticket, cancellationToken);
             TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, booking, now);
         }
 
@@ -296,6 +372,18 @@ public sealed class CheckOutAllBookingTicketsCommandHandler
             booking.BookingStatus = BookingStatus.Completed;
             await PointSupport.AwardCompletionPointsAsync(_context, booking, now, cancellationToken);
         }
+
+        await TicketScanHistorySupport.AddSuccessfulBatchEventsAsync(
+            _context,
+            currentUser,
+            TicketScanAction.CheckOut,
+            metadata,
+            now,
+            qrToken,
+            checkedInTickets,
+            TicketStatus.CheckedIn,
+            TicketStatus.CheckedOut,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
 

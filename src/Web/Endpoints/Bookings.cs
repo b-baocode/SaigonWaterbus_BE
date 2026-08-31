@@ -1,4 +1,6 @@
 using SaigonWaterbus.Application.Bookings;
+using SaigonWaterbus.Application.Tickets;
+using SaigonWaterbus.Domain.Enums;
 
 namespace SaigonWaterbus.Web.Endpoints;
 
@@ -275,12 +277,44 @@ public sealed class Bookings : IEndpointGroup
         Results.Ok(await sender.Send(new GetBookingManifestByQrTokenQuery(qrToken), ct));
 
     private static async Task<IResult> CheckInAllBookingTickets(
-        ISender sender, string qrToken, string? tripCode, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new CheckInAllBookingTicketsCommand(qrToken, tripCode), ct));
+        ISender sender,
+        string qrToken,
+        string? tripCode,
+        TicketScanSource? source,
+        Guid? tripStopId,
+        string? clientOperationId,
+        DateTimeOffset? deviceTime,
+        string? note,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CheckInAllBookingTicketsCommand(
+            qrToken,
+            tripCode,
+            new TicketScanRequestMetadata(
+                source ?? TicketScanSource.Qr,
+                tripStopId,
+                clientOperationId,
+                deviceTime,
+                note)), ct));
 
     private static async Task<IResult> CheckOutAllBookingTickets(
-        ISender sender, string qrToken, string? tripCode, CancellationToken ct) =>
-        Results.Ok(await sender.Send(new CheckOutAllBookingTicketsCommand(qrToken, tripCode), ct));
+        ISender sender,
+        string qrToken,
+        string? tripCode,
+        TicketScanSource? source,
+        Guid? tripStopId,
+        string? clientOperationId,
+        DateTimeOffset? deviceTime,
+        string? note,
+        CancellationToken ct) =>
+        Results.Ok(await sender.Send(new CheckOutAllBookingTicketsCommand(
+            qrToken,
+            tripCode,
+            new TicketScanRequestMetadata(
+                source ?? TicketScanSource.Qr,
+                tripStopId,
+                clientOperationId,
+                deviceTime,
+                note)), ct));
 
     private static async Task<IResult> ResendBookingTickets(
         ISender sender, Guid id, CancellationToken ct) =>

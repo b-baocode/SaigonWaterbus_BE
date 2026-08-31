@@ -10,6 +10,56 @@ namespace SaigonWaterbus.Application.Incidents;
 
 internal static class IncidentDispatchPlanSupport
 {
+    public static async Task TransferCoveringCrewAssignmentsAsync(
+        IApplicationDbContext context,
+        Guid originalBoatId,
+        Boat replacementBoat,
+        IEnumerable<Trip> transferredTrips,
+        CancellationToken cancellationToken)
+    {
+        var trips = transferredTrips.DistinctBy(x => x.Id).ToList();
+        if (trips.Count == 0 || originalBoatId == replacementBoat.Id)
+        {
+            return;
+        }
+
+        var earliestDeparture = trips.Min(x => x.DepartureTime);
+        var latestArrival = trips.Max(x => x.ArrivalTime);
+        var assignments = await context.StaffWorkAssignments
+            .Where(x => x.AssignmentType == StaffWorkAssignmentType.Boat
+                && x.BoatId == originalBoatId
+                && x.Status != StaffWorkAssignmentStatus.Cancelled
+                && x.Status != StaffWorkAssignmentStatus.Replaced
+                && x.StartAt <= latestArrival
+                && x.EndAt >= earliestDeparture)
+            .ToListAsync(cancellationToken);
+
+        foreach (var assignment in assignments)
+        {
+            var coveredTrips = trips
+                .Where(trip => assignment.StartAt <= trip.DepartureTime
+                    && assignment.EndAt >= trip.ArrivalTime)
+                .ToList();
+            if (coveredTrips.Count == 0)
+            {
+                continue;
+            }
+
+            var requiredEndAt = coveredTrips.Max(TripDelaySupport.ResolveAssignmentOperationalEnd);
+            if (assignment.EndAt < requiredEndAt)
+            {
+                assignment.EndAt = requiredEndAt;
+            }
+
+            assignment.BoatId = replacementBoat.Id;
+            assignment.Boat = replacementBoat;
+            var transferNote = $"Chuyển crew sang tàu {replacementBoat.Code} do điều tàu thay thế.";
+            assignment.Note = string.IsNullOrWhiteSpace(assignment.Note)
+                ? transferNote
+                : $"{assignment.Note.Trim()} {transferNote}";
+        }
+    }
+
     public static IQueryable<Trip> BuildNextTripsQuery(
         IApplicationDbContext context,
         Incident incident)
