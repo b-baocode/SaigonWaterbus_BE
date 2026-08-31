@@ -177,7 +177,6 @@ public sealed class MarkNotificationReadCommandHandler
         CancellationToken cancellationToken)
     {
         var userId = NotificationApiSupport.GetRequiredUserId(_userContext);
-        // Trả NotFound thay vì Forbidden khi đụng thông báo của người khác — không lộ sự tồn tại.
         var notification = await _context.Set<Notification>()
             .SingleOrDefaultAsync(n => n.Id == request.NotificationId && n.UserId == userId, cancellationToken)
             ?? throw new NotFoundException("Notification not found.");

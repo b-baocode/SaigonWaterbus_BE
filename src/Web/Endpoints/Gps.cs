@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using NetTopologySuite.Geometries;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Incidents;
 using SaigonWaterbus.Application.Notifications;
 using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.Trips;
@@ -135,6 +136,18 @@ public sealed class Gps : IEndpointGroup
                 $"Header bat buoc: {LiveHookSecretHeaderName}.",
                 "Query optional: boatCode, lookAheadMinutes, lookBehindMinutes.",
                 "Tra ve trip da gan tau, route geometry, stop schedule de GPS tu chon trip dung gio va gui location kem tripId."));
+
+        group.MapGet(GetIncidentMissions, "gps/incidents/missions")
+            .AllowAnonymous()
+            .WithSummary("GPS doi soat nhiem vu cuu ho va tau thay the")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "GPS service",
+                null,
+                $"Header bat buoc: {LiveHookSecretHeaderName}.",
+                "Query optional: incidentId, boatCode. Nen gui boatCode cua tau dang chay GPS.",
+                "Tra ve ID/code cua tau su co, tau cuu ho, tau thay the va role cua boatCode dang hoi.",
+                "rescueNextEvents/replacementNextEvents cho GPS biet event tiep theo BE dang cho.",
+                "Dung de poll doi soat khi GPS khoi dong lai hoac bo lo webhook dieu tau."));
 
         group.MapPost(CompleteGpsTrip, "gps/trips/{tripId:guid}/complete")
             .AllowAnonymous()
@@ -543,6 +556,24 @@ public sealed class Gps : IEndpointGroup
             windowStart,
             windowEnd,
             trips.Select(ToGpsTripScheduleItem).ToArray()));
+    }
+
+    private static async Task<IResult> GetIncidentMissions(
+        ISender sender,
+        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
+        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
+        [FromQuery] Guid? incidentId,
+        [FromQuery] string? boatCode,
+        CancellationToken cancellationToken)
+    {
+        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
+        {
+            return Results.Unauthorized();
+        }
+
+        return Results.Ok(await sender.Send(
+            new GetGpsIncidentMissionsQuery(incidentId, boatCode),
+            cancellationToken));
     }
 
     private static async Task<IResult> GetActiveTrips(

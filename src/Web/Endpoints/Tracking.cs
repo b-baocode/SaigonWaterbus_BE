@@ -67,6 +67,14 @@ public sealed class Tracking : IEndpointGroup
 
     public static void Map(RouteGroupBuilder group)
     {
+        group.MapGet(GetServerTime, "time")
+            .AllowAnonymous()
+            .WithSummary("Lấy thời gian chuẩn của backend")
+            .WithDescription(OpenApiDescriptionBuilder.Build(
+                "Anonymous",
+                null,
+                "FE dùng mốc UTC này để hiệu chỉnh đồng hồ máy người dùng khi tính tuổi tín hiệu GPS và thời gian dừng."));
+
         group.MapPost(ReceiveLocation, "locations")
             .AllowAnonymous()
             .WithSummary("Nhận vị trí GPS realtime từ thiết bị")
@@ -106,6 +114,12 @@ public sealed class Tracking : IEndpointGroup
                 "FE gọi khi nhấn vào một trip để biết tàu nào được gán và vị trí mới nhất của tàu đó.",
                 "hasLiveLocationForTrip=true khi bản tin GPS mới nhất của tàu đang gắn đúng tripId này.",
                 "Nếu latestLocation=null nghĩa là tàu chưa gửi GPS; vẫn trả boat để FE hiển thị tàu được phân công."));
+    }
+
+    private static IResult GetServerTime(HttpContext httpContext, TimeProvider timeProvider)
+    {
+        httpContext.Response.Headers.CacheControl = "no-store";
+        return Results.Ok(new TrackingServerTimeResponse(timeProvider.GetUtcNow()));
     }
 
     private static async Task<IResult> ReceiveLocation(
@@ -1958,6 +1972,8 @@ public sealed class Tracking : IEndpointGroup
         string? Status,
         string? Source,
         TrackingCapturedRouteRequest? CapturedRoute);
+
+    public sealed record TrackingServerTimeResponse(DateTimeOffset ServerTime);
 
     public sealed record TrackingCapturedRouteRequest(
         Guid? SessionId,

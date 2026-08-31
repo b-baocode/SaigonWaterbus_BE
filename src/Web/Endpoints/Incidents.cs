@@ -148,8 +148,9 @@ public sealed class Incidents : IEndpointGroup
                 "BE kiểm tra toàn bộ trip chưa hoàn thành khởi hành sau trip sự cố, không phụ thuộc có khách hay không.",
                 "Nếu có chuyến kế tiếp: gửi replacementBoatId hợp lệ hoặc để null và bắt buộc delayMinutes > 0.",
                 "Nếu chọn tàu thay thế, BE chuyển toàn bộ chuyến kế tiếp sang tàu đó; tàu phải đủ ghế, tương thích tuyến và không trùng lịch.",
-                "delayMinutes chỉ áp dụng lên các chuyến kế tiếp; không thay đổi delay/adjusted time của chuyến đang gặp sự cố.",
-                "Nếu không có chuyến kế tiếp, delayMinutes được bỏ qua để tương thích client cũ."));
+                "delayMinutes là thời gian chờ dự kiến: áp dụng từ bến chưa đi qua của chuyến sự cố.",
+                "BE tự tính delay dây chuyền cho từng chuyến kế tiếp theo giờ tàu rảnh và 5 phút quay đầu; khoảng nghỉ đủ dài sẽ hấp thụ delay.",
+                "Nếu có khách bị ảnh hưởng, trip hiện tại được gán tàu thay thế ngay nhưng chỉ được tiếp tục chạy sau GPS ReplacementArrived/PassengerTransferCompleted."));
 
         group.MapPatch(AssignManager, "{incidentId:guid}/assign-manager")
             .RequireAuthorization()
@@ -180,7 +181,12 @@ public sealed class Incidents : IEndpointGroup
                 "event hop le: RescueArrived | ReplacementArrived | PassengerTransferCompleted | TowingStarted | TowingCompleted.",
                 "gpsEventId bat buoc de GPS retry khong tao trung event. Cung gpsEventId + payload khac tra 409.",
                 "previousMissionStatus optional, chi dung debug; BE validate sequence theo missionStatus trong DB.",
+                "RescueArrived/TowingStarted/TowingCompleted bat buoc dung rescueBoatCode da dieu.",
+                "ReplacementArrived/PassengerTransferCompleted bat buoc dung replacementBoatCode da dieu.",
                 "ReplacementArrived voi mission ContinueFromStation phai gui stationId hoac stationCode dung replacementTargetStation.",
+                "ReplacementArrived duoc ghi nhan ngay ca khi tau toi som; canReplacementContinueTrip chi true tu replacementEstimatedResumeAt cua BE.",
+                "GPS co the retry cung gpsEventId de kiem tra lai quyen chay ma khong tao event trung.",
+                "Neu tau thay the san sang muon, BE tang delay va tu cascade cac chuyen sau theo thoi gian quay dau 5 phut.",
                 "TowingStarted bi tu choi neu con khach onboard ma chua PassengerTransferCompleted."));
 
         group.MapPost(CompleteRescueMission, "rescue-mission-completed")

@@ -3,6 +3,7 @@ using SaigonWaterbus.Application.Common;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Notifications;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using NotFoundException = SaigonWaterbus.Application.Common.Exceptions.NotFoundException;
@@ -32,7 +33,12 @@ public sealed record IncidentGpsEventResultDto(
     string OperatingStatus,
     bool CanReplacementContinueTrip,
     bool CanRescueStartTowing,
-    string? CurrentOperatingBoatCode);
+    string? CurrentOperatingBoatCode,
+    DateTimeOffset? ReplacementEstimatedResumeAt,
+    string ExpectedBoatRole,
+    string IncidentBoatCode,
+    string? RescueBoatCode,
+    string? ReplacementBoatCode);
 
 public sealed class RecordIncidentGpsEventCommandValidator : AbstractValidator<RecordIncidentGpsEventCommand>
 {
@@ -81,6 +87,7 @@ public sealed class RecordIncidentGpsEventCommandHandler
         RecordIncidentGpsEventCommand request,
         CancellationToken cancellationToken)
     {
+        var now = _timeProvider.GetUtcNow();
         var normalizedGpsEventId = request.GpsEventId.Trim();
         var existingEvent = await _context.IncidentMissionEvents
             .AsNoTracking()
@@ -92,7 +99,25 @@ public sealed class RecordIncidentGpsEventCommandHandler
         {
             EnsureSamePayload(existingEvent, request);
             var incidentForReplay = await LoadIncidentAsync(request.IncidentId, cancellationToken);
-            return ToResult(existingEvent, incidentForReplay);
+            var oldReplayTripStatus = incidentForReplay.Trip?.TripStatus;
+            if (ReleaseReplacementTripIfDue(incidentForReplay, now))
+            {
+                var replayNotifications = await AddTripStatusNotificationsAsync(
+                    incidentForReplay,
+                    oldReplayTripStatus,
+                    now,
+                    cancellationToken);
+                await _context.SaveChangesAsync(cancellationToken);
+                await NotificationSupport.PublishCreatedAsync(
+                    _notificationRealtimeNotifier,
+                    replayNotifications,
+                    cancellationToken);
+                await _realtimeNotifier.PublishChangedAsync(
+                    IncidentSupport.ToRealtimeEvent(incidentForReplay, existingEvent.Event, now),
+                    cancellationToken);
+            }
+
+            return ToResult(existingEvent, incidentForReplay, now);
         }
 
         var incident = await LoadIncidentAsync(request.IncidentId, cancellationToken);
@@ -121,14 +146,19 @@ public sealed class RecordIncidentGpsEventCommandHandler
             ReportedPreviousMissionStatus = NormalizeOptional(request.PreviousMissionStatus),
             EstimatedTowingMinutes = request.EstimatedTowingMinutes,
             PreviousMissionStatus = previousMissionStatus,
-            CreatedAt = _timeProvider.GetUtcNow()
+            CreatedAt = now
         };
 
         ApplyEvent(incident, gpsEvent, request);
+        var createdNotifications = (await ApplyLateReplacementDelayAsync(
+            incident,
+            gpsEvent,
+            cancellationToken)).ToList();
+        ReleaseReplacementTripIfDue(incident, now);
         gpsEvent.MissionStatus = incident.MissionStatus;
 
         _context.IncidentMissionEvents.Add(gpsEvent);
-        var createdNotifications = gpsEvent.Event == IncidentGpsEventTypes.TowingCompleted
+        createdNotifications.AddRange(gpsEvent.Event == IncidentGpsEventTypes.TowingCompleted
             ? await NotificationSupport.AddIncidentResolvedNotificationsAsync(
                 _context,
                 incident,
@@ -139,7 +169,7 @@ public sealed class RecordIncidentGpsEventCommandHandler
                 incident,
                 gpsEvent.Event,
                 gpsEvent.OccurredAt,
-                cancellationToken);
+                cancellationToken));
         if (incident.Trip is not null && oldTripStatus.HasValue)
         {
             createdNotifications = createdNotifications
@@ -176,7 +206,7 @@ public sealed class RecordIncidentGpsEventCommandHandler
             IncidentSupport.ToRealtimeEvent(incident, gpsEvent.Event, gpsEvent.OccurredAt),
             cancellationToken);
 
-        return ToResult(gpsEvent, incident);
+        return ToResult(gpsEvent, incident, now);
     }
 
     private async Task<Incident> LoadIncidentAsync(Guid incidentId, CancellationToken cancellationToken) =>
@@ -184,6 +214,11 @@ public sealed class RecordIncidentGpsEventCommandHandler
             .Include(x => x.Boat)
             .Include(x => x.Trip)
                 .ThenInclude(x => x!.Boat)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.Route)
+                    .ThenInclude(x => x.RouteStops)
+            .Include(x => x.Trip)
+                .ThenInclude(x => x!.TripStops)
             .Include(x => x.RescueBoat)
             .Include(x => x.ReplacementBoat)
             .Include(x => x.ReplacementTargetStation)
@@ -218,7 +253,7 @@ public sealed class RecordIncidentGpsEventCommandHandler
                 return;
 
             case IncidentGpsEventTypes.PassengerTransferCompleted:
-                EnsureAssignedMissionBoatMatches(incident, gpsEvent.BoatCode);
+                EnsureReplacementBoatMatches(incident, gpsEvent.BoatCode);
                 EnsureNotRecorded(
                     incident.PassengerTransferCompletedAt,
                     IncidentGpsEventTypes.PassengerTransferCompleted);
@@ -294,8 +329,156 @@ public sealed class RecordIncidentGpsEventCommandHandler
 
         incident.Trip.BoatId = incident.ReplacementBoat.Id;
         incident.Trip.Boat = incident.ReplacementBoat;
+    }
+
+    private async Task<IReadOnlyList<Notification>> ApplyLateReplacementDelayAsync(
+        Incident incident,
+        IncidentMissionEvent gpsEvent,
+        CancellationToken cancellationToken)
+    {
+        var replacementIsReady = (gpsEvent.Event == IncidentGpsEventTypes.ReplacementArrived
+                && incident.OnboardPassengerCountSnapshot <= 0)
+            || gpsEvent.Event == IncidentGpsEventTypes.PassengerTransferCompleted;
+        if (!replacementIsReady || incident.Trip is null)
+        {
+            return [];
+        }
+
+        var expectedResumeAt = IncidentGpsMissionSupport.ResolveAuthoritativeResumeAt(incident);
+        if (!expectedResumeAt.HasValue || gpsEvent.OccurredAt <= expectedResumeAt.Value)
+        {
+            return [];
+        }
+
+        var addedDelayMinutes = Math.Max(
+            1,
+            (int)Math.Ceiling((gpsEvent.OccurredAt - expectedResumeAt.Value).TotalMinutes));
+        var currentTotalDelayMinutes = incident.ReplacementMissionType
+                == IncidentReplacementMissionTypes.ContinueFromStation
+            ? Math.Max(incident.ReplacementDelayMinutes, incident.Trip.DelayMinutes)
+            : incident.ReplacementDelayMinutes;
+        var newTotalDelayMinutes = currentTotalDelayMinutes + addedDelayMinutes;
+
+        incident.ReplacementDelayMinutes = newTotalDelayMinutes;
+        incident.ReplacementEstimatedResumeAt = expectedResumeAt.Value.AddMinutes(addedDelayMinutes);
+
+        var oldCurrentTripDelayMinutes = incident.Trip.DelayMinutes;
+        if (newTotalDelayMinutes > oldCurrentTripDelayMinutes)
+        {
+            var delayStartStopOrder = incident.ReplacementTargetStopOrder
+                ?? TripDelaySupport.ResolveDelayStartStopOrder(incident.Trip);
+            TripDelaySupport.ApplyDelayToTrip(
+                incident.Trip,
+                newTotalDelayMinutes,
+                incident.ReplacementNote ?? "Tàu thay thế tới muộn hơn dự kiến.",
+                delayStartStopOrder);
+            if (incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled)
+            {
+                incident.Trip.TripStatus = TripStatus.Delayed;
+            }
+        }
+
+        var notifications = new List<Notification>();
+        notifications.AddRange(await IncidentDelayNotificationSupport.AddAsync(
+            _context,
+            incident.Trip,
+            incident.Trip.DelayMinutes - oldCurrentTripDelayMinutes,
+            $"Chuyến {incident.Trip.TripCode} tăng trễ lên {incident.Trip.DelayMinutes} phút do tàu thay thế tới muộn.",
+            gpsEvent.OccurredAt,
+            cancellationToken));
+
+        if (!incident.Trip.BoatId.HasValue)
+        {
+            return notifications;
+        }
+
+        var futureTrips = await _context.Set<Trip>()
+            .Include(x => x.TripStops)
+            .Where(x => x.Id != incident.Trip.Id
+                && x.BoatId == incident.Trip.BoatId
+                && x.DepartureTime > incident.Trip.DepartureTime
+                && x.TripStatus != TripStatus.Completed
+                && x.TripStatus != TripStatus.Cancelled
+                && x.TripStatus != TripStatus.InProgress)
+            .OrderBy(x => x.DepartureTime)
+            .ThenBy(x => x.TripCode)
+            .ToListAsync(cancellationToken);
+
+        var previousBoatAvailableAt = TripDelaySupport.ResolveAdjustedArrival(incident.Trip);
+        var maxPropagatedDelayMinutes = 0;
+        foreach (var futureTrip in futureTrips)
+        {
+            var oldDelayMinutes = futureTrip.DelayMinutes;
+            var cascadedDelayMinutes = TripDelaySupport.CalculateCascadedTotalDelayMinutes(
+                futureTrip,
+                previousBoatAvailableAt);
+            if (cascadedDelayMinutes <= oldDelayMinutes)
+            {
+                break;
+            }
+
+            TripDelaySupport.ApplyTotalDelayToFutureTrip(
+                futureTrip,
+                cascadedDelayMinutes,
+                $"Tàu thay thế của chuyến {incident.Trip.TripCode} tới muộn.");
+            var propagatedDelayMinutes = cascadedDelayMinutes - oldDelayMinutes;
+            maxPropagatedDelayMinutes = Math.Max(maxPropagatedDelayMinutes, propagatedDelayMinutes);
+            notifications.AddRange(await IncidentDelayNotificationSupport.AddAsync(
+                _context,
+                futureTrip,
+                propagatedDelayMinutes,
+                $"Chuyến {futureTrip.TripCode} dự kiến khởi hành trễ thêm {propagatedDelayMinutes} phút do tàu về muộn.",
+                gpsEvent.OccurredAt,
+                cancellationToken));
+            previousBoatAvailableAt = TripDelaySupport.ResolveAdjustedArrival(futureTrip);
+        }
+
+        incident.Trip.DelayPropagationMinutes = Math.Max(
+            incident.Trip.DelayPropagationMinutes,
+            maxPropagatedDelayMinutes);
+        return notifications;
+    }
+
+    private async Task<IReadOnlyList<Notification>> AddTripStatusNotificationsAsync(
+        Incident incident,
+        TripStatus? oldTripStatus,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        if (incident.Trip is null || !oldTripStatus.HasValue)
+        {
+            return [];
+        }
+
+        var notifications = new List<Notification>();
+        notifications.AddRange(await StaffTripNotificationSupport.AddTripStatusChangedNotificationsAsync(
+            _context,
+            incident.Trip,
+            oldTripStatus.Value,
+            now,
+            cancellationToken));
+        notifications.AddRange(await StaffTripNotificationSupport.AddManagementTripStatusNotificationsAsync(
+            _context,
+            incident.Trip,
+            oldTripStatus.Value,
+            now,
+            cancellationToken));
+        return notifications;
+    }
+
+    private static bool ReleaseReplacementTripIfDue(Incident incident, DateTimeOffset now)
+    {
+        if (!IncidentGpsMissionSupport.CanReplacementContinueTrip(incident, now)
+            || incident.Trip is null
+            || incident.ReplacementBoat is null
+            || incident.Trip.TripStatus == TripStatus.InProgress)
+        {
+            return false;
+        }
+
         incident.Trip.TripStatus = TripStatus.InProgress;
-        incident.Trip.StatusNote = $"Chuyến đã chuyển sang tàu thay thế {incident.ReplacementBoat.Name}.";
+        incident.Trip.StatusNote = $"Chuyến đã tiếp tục bằng tàu thay thế {incident.ReplacementBoat.Name}.";
+        return true;
     }
 
     private static void EnsureRescueBoatMatches(Incident incident, string boatCode)
@@ -322,23 +505,6 @@ public sealed class RecordIncidentGpsEventCommandHandler
         {
             throw new ConflictException("boatCode không khớp với tàu thay thế của sự cố.");
         }
-    }
-
-    private static void EnsureAssignedMissionBoatMatches(Incident incident, string boatCode)
-    {
-        if (incident.ReplacementBoat is not null
-            && string.Equals(incident.ReplacementBoat.Code, boatCode, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        if (incident.RescueBoat is not null
-            && string.Equals(incident.RescueBoat.Code, boatCode, StringComparison.OrdinalIgnoreCase))
-        {
-            return;
-        }
-
-        throw new ConflictException("boatCode không khớp với tàu cứu hộ hoặc tàu thay thế của sự cố.");
     }
 
     private static void EnsureReplacementArrivalTargetMatches(
@@ -395,28 +561,27 @@ public sealed class RecordIncidentGpsEventCommandHandler
 
     private static IncidentGpsEventResultDto ToResult(
         IncidentMissionEvent gpsEvent,
-        Incident incident) =>
-        new(
+        Incident incident,
+        DateTimeOffset now)
+    {
+        var canReplacementContinueTrip = IncidentGpsMissionSupport.CanReplacementContinueTrip(incident, now);
+        return new(
             Accepted: true,
             gpsEvent.GpsEventId,
             OperatingStatusSupport.ToPublicMissionStatus(gpsEvent.PreviousMissionStatus),
             OperatingStatusSupport.ToPublicMissionStatus(incident),
             OperatingStatusSupport.ForIncident(incident),
-            CanReplacementContinueTrip: CanReplacementContinueTrip(incident),
-            CanRescueStartTowing: CanRescueStartTowing(incident),
-            CurrentOperatingBoatCode: incident.Trip?.Boat?.Code
-                ?? (incident.Trip?.BoatId == incident.ReplacementBoatId ? incident.ReplacementBoat?.Code : null)
-                ?? incident.Boat.Code);
-
-    private static bool CanReplacementContinueTrip(Incident incident) =>
-        incident.ReplacementBoatId.HasValue
-        && incident.Trip?.BoatId == incident.ReplacementBoatId
-        && incident.Trip.TripStatus is not TripStatus.Completed and not TripStatus.Cancelled;
-
-    private static bool CanRescueStartTowing(Incident incident) =>
-        incident.RescueArrivedAt.HasValue
-        && (incident.OnboardPassengerCountSnapshot <= 0 || incident.PassengerTransferCompletedAt.HasValue)
-        && !incident.TowingStartedAt.HasValue;
+            CanReplacementContinueTrip: canReplacementContinueTrip,
+            CanRescueStartTowing: IncidentGpsMissionSupport.CanRescueStartTowing(incident),
+            CurrentOperatingBoatCode: canReplacementContinueTrip
+                ? incident.ReplacementBoat?.Code ?? incident.Trip?.Boat?.Code ?? incident.Boat.Code
+                : incident.Boat.Code,
+            ReplacementEstimatedResumeAt: IncidentGpsMissionSupport.ResolveAuthoritativeResumeAt(incident),
+            ExpectedBoatRole: IncidentGpsMissionSupport.ResolveExpectedBoatRole(gpsEvent.Event),
+            IncidentBoatCode: incident.Boat.Code,
+            RescueBoatCode: incident.RescueBoat?.Code,
+            ReplacementBoatCode: incident.ReplacementBoat?.Code);
+    }
 
     private static string ResolveMissionStatus(Incident incident) =>
         string.IsNullOrWhiteSpace(incident.MissionStatus)
