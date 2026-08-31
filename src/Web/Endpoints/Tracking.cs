@@ -1,9 +1,6 @@
-using System.Security.Cryptography;
-using System.Text;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Options;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Tracking;
 using SaigonWaterbus.Application.Trips;
@@ -11,7 +8,6 @@ using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using SaigonWaterbus.Infrastructure.Data;
-using SaigonWaterbus.Infrastructure.Options;
 using SaigonWaterbus.Web.Hubs;
 using WaterbusRoute = SaigonWaterbus.Domain.Entities.Route;
 
@@ -38,7 +34,6 @@ public sealed class Tracking : IEndpointGroup
     private const string MovementStatusIncident = "Incident";
     private const string IncidentLocationStatus = "incident";
     private const string BoatStatusRejectedReason = "boat-status";
-    private const string LiveHookSecretHeaderName = "X-Live-Hook-Secret";
 
     private const string LocationExample =
         """
@@ -86,32 +81,13 @@ public sealed class Tracking : IEndpointGroup
             .WithDescription(OpenApiDescriptionBuilder.Build(
                 "GPS device key",
                 LocationExample,
-                "Header bắt buộc: X-Device-Id, đây là mã định danh/key do BE cấp hoặc admin đã đăng ký trước.",
+                "Header bắt buộc: X-Device-Id, đây là mã định danh/key do phần mềm GPS sinh ra.",
                 "deviceId trong body nếu gửi phải trùng với X-Device-Id.",
                 "Header tùy chọn: X-Tracking-Source=live/railway/wb-gps để ưu tiên packet từ live GPS trusted.",
                 "Backend dùng gps_devices để map thiết bị sang tàu, không tin boatId từ client.",
                 "GPS có thể gửi nextStationId và ETA; nếu thiếu ETA, backend tự tính từ tọa độ bến kế tiếp + vận tốc GPS (hoặc giờ đến kế hoạch) để FE dùng thống nhất.",
                 "Payload live trả onboardPassengerCount (đang ở trên tàu), boardedPassengerCount (tổng đã check-in) và alightedPassengerCount (tổng đã check-out).",
                 "recordedAt quyết định latest; sequence chỉ dùng để phá hòa khi recordedAt trùng."));
-
-        group.MapPost(RegisterDevice, "devices/register")
-            .AllowAnonymous()
-            .WithSummary("Đăng ký thiết bị GPS cho tàu")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "GPS device",
-                null,
-                $"Header bắt buộc: {LiveHookSecretHeaderName}.",
-                "Body bắt buộc: boatCode. Backend cấp deviceId mới và map cố định vào tàu.",
-                "Không dùng random UUID ở client làm X-Device-Id. Lưu deviceId BE trả về để dùng cho các lần gửi GPS tiếp theo."));
-
-        group.MapGet(GetDeviceStatus, "devices/{deviceId}/status")
-            .AllowAnonymous()
-            .WithSummary("Kiểm tra trạng thái thiết bị GPS")
-            .WithDescription(OpenApiDescriptionBuilder.Build(
-                "GPS device",
-                null,
-                $"Header bắt buộc: {LiveHookSecretHeaderName}.",
-                "GPS gọi trước khi gửi vị trí để kiểm tra deviceId đã lưu còn active hay không."));
 
         group.MapGet(GetLatestBoatLocations, "boats/latest")
             .AllowAnonymous()
@@ -145,105 +121,6 @@ public sealed class Tracking : IEndpointGroup
     {
         httpContext.Response.Headers.CacheControl = "no-store";
         return Results.Ok(new TrackingServerTimeResponse(timeProvider.GetUtcNow()));
-    }
-
-    private static async Task<IResult> RegisterDevice(
-        ApplicationDbContext dbContext,
-        TimeProvider timeProvider,
-        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
-        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
-        RegisterTrackingDeviceRequest request,
-        CancellationToken cancellationToken)
-    {
-        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
-        {
-            return Results.Unauthorized();
-        }
-
-        var boatCode = NormalizeOptionalText(request.BoatCode);
-        if (string.IsNullOrWhiteSpace(boatCode))
-        {
-            return Results.ValidationProblem(new Dictionary<string, string[]>
-            {
-                ["boatCode"] = ["boatCode là bắt buộc khi đăng ký GPS device."]
-            });
-        }
-
-        var boat = await dbContext.Boats
-            .SingleOrDefaultAsync(x => x.Code == boatCode, cancellationToken);
-        if (boat is null)
-        {
-            return Results.NotFound(new { message = "boatCode không tồn tại." });
-        }
-
-        var requestedDeviceId = NormalizeOptionalText(request.DeviceId);
-        if (!string.IsNullOrWhiteSpace(requestedDeviceId))
-        {
-            var existing = await dbContext.GpsDevices
-                .SingleOrDefaultAsync(x => x.DeviceId == requestedDeviceId, cancellationToken);
-
-            if (existing is not null)
-            {
-                if (!existing.IsActive)
-                {
-                    return Results.Conflict(new { message = "GPS device đã bị khóa. Hãy đăng ký device mới." });
-                }
-
-                if (existing.BoatId != boat.Id)
-                {
-                    return Results.Conflict(new { message = "GPS device đã được gán cho tàu khác." });
-                }
-
-                return Results.Ok(ToDeviceRegistrationResponse(existing, boat.Code));
-            }
-        }
-
-        var device = new GpsDevice
-        {
-            // Device ID do BE cấp; GPS client chỉ lưu và gửi lại giá trị này.
-            DeviceId = $"gps-{Guid.NewGuid():N}",
-            BoatId = boat.Id,
-            IsActive = true
-        };
-        dbContext.GpsDevices.Add(device);
-        await dbContext.SaveChangesAsync(cancellationToken);
-
-        return Results.Created(
-            $"/api/tracking/devices/{Uri.EscapeDataString(device.DeviceId)}/status",
-            ToDeviceRegistrationResponse(device, boat.Code));
-    }
-
-    private static async Task<IResult> GetDeviceStatus(
-        ApplicationDbContext dbContext,
-        IOptionsMonitor<IncidentGpsHookOptions> gpsHookOptions,
-        [FromHeader(Name = LiveHookSecretHeaderName)] string? hookSecret,
-        string deviceId,
-        CancellationToken cancellationToken)
-    {
-        if (!IsValidLiveHookSecret(gpsHookOptions.CurrentValue.Secret, hookSecret))
-        {
-            return Results.Unauthorized();
-        }
-
-        var normalizedDeviceId = NormalizeOptionalText(deviceId);
-        if (string.IsNullOrWhiteSpace(normalizedDeviceId))
-        {
-            return Results.NotFound();
-        }
-
-        var device = await dbContext.GpsDevices
-            .AsNoTracking()
-            .Include(x => x.Boat)
-            .SingleOrDefaultAsync(x => x.DeviceId == normalizedDeviceId, cancellationToken);
-
-        return device is null
-            ? Results.NotFound(new { message = "GPS device không tồn tại." })
-            : Results.Ok(new TrackingDeviceStatusResponse(
-                device.DeviceId,
-                device.Boat.Code,
-                device.IsActive,
-                device.Created,
-                device.LastSeenAt));
     }
 
     private static async Task<IResult> ReceiveLocation(
@@ -1884,29 +1761,6 @@ public sealed class Tracking : IEndpointGroup
     private static string? NormalizeOptionalText(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
-    private static TrackingDeviceRegistrationResponse ToDeviceRegistrationResponse(
-        GpsDevice device,
-        string boatCode) =>
-        new(
-            device.DeviceId,
-            boatCode,
-            device.IsActive,
-            device.Created,
-            device.LastSeenAt);
-
-    private static bool IsValidLiveHookSecret(string? expectedSecret, string? actualSecret)
-    {
-        if (string.IsNullOrWhiteSpace(expectedSecret) || string.IsNullOrWhiteSpace(actualSecret))
-        {
-            return false;
-        }
-
-        var expected = Encoding.UTF8.GetBytes(expectedSecret.Trim());
-        var actual = Encoding.UTF8.GetBytes(actualSecret.Trim());
-        return expected.Length == actual.Length
-            && CryptographicOperations.FixedTimeEquals(expected, actual);
-    }
-
     private static string? ResolveTrackingSource(string? headerValue, string? bodyValue)
     {
         var headerSource = NormalizeOptionalText(headerValue);
@@ -2194,24 +2048,6 @@ public sealed class Tracking : IEndpointGroup
         string? Status,
         string? Source,
         TrackingCapturedRouteRequest? CapturedRoute);
-
-    public sealed record RegisterTrackingDeviceRequest(
-        string? BoatCode,
-        string? DeviceId = null);
-
-    public sealed record TrackingDeviceRegistrationResponse(
-        string DeviceId,
-        string BoatCode,
-        bool Active,
-        DateTimeOffset RegisteredAt,
-        DateTimeOffset? LastSeenAt);
-
-    public sealed record TrackingDeviceStatusResponse(
-        string DeviceId,
-        string BoatCode,
-        bool Active,
-        DateTimeOffset RegisteredAt,
-        DateTimeOffset? LastSeenAt);
 
     public sealed record TrackingServerTimeResponse(DateTimeOffset ServerTime);
 
