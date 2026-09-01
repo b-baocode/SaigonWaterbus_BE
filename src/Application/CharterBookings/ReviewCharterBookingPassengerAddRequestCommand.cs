@@ -118,12 +118,14 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
             booking,
             _timeProvider,
             cancellationToken);
-        var additionalInsuranceAmount = CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
+        var additionalInsuranceAmount = await CharterBookingInsuranceSupport.ApplyPassengerQuantityIncreaseAsync(
+            _context,
             booking,
             approvedPassengers.Count,
-            now);
+            now,
+            cancellationToken);
 
-        if (additionalInsuranceAmount > 0m)
+        if (booking.RemainingAmount > 0m)
         {
             // Admin đã duyệt; khách chưa bấm tạo link thanh toán bảo hiểm bổ sung.
             booking.BookingStatus = BookingStatus.Approved;
@@ -147,7 +149,7 @@ public sealed class ApproveCharterBookingPassengerAddRequestCommandHandler
             cancellationToken);
 
         // Chỉ gửi vé khi không còn khoản BH bổ sung cần thanh toán.
-        if (additionalInsuranceAmount <= 0m)
+        if (booking.RemainingAmount <= 0m)
         {
             await SendBoardingPassIfNeededAsync(booking, ticketResult, cancellationToken);
             await SendCharterETicketsIfNeededAsync(booking, ticketResult, cancellationToken);

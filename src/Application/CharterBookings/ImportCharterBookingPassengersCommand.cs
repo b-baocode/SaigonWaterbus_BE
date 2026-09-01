@@ -129,10 +129,12 @@ public sealed class ImportCharterBookingPassengersCommandHandler
             booking,
             _timeProvider,
             cancellationToken);
-        var additionalInsuranceAmount = CharterBookingInsuranceSupport.ApplyPassengerQuantityIncrease(
+        var additionalInsuranceAmount = await CharterBookingInsuranceSupport.ApplyPassengerQuantityIncreaseAsync(
+            _context,
             booking,
             passengerEntities.Count,
-            now);
+            now,
+            cancellationToken);
 
         await _context.SaveChangesAsync(cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(

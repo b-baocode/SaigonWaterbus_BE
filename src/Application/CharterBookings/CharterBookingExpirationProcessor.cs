@@ -287,9 +287,12 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
             }
 
             // Roll-back BH bổ sung đã apply cho batch được duyệt.
-            CharterBookingInsuranceSupport.ReversePassengerQuantityIncrease(
+            await CharterBookingInsuranceSupport.ReversePassengerQuantityIncreaseAsync(
+                _context,
                 booking,
-                previousInsuredCount);
+                previousInsuredCount,
+                now,
+                cancellationToken);
 
             // Cancel vé mới đã phát hành cho batch được duyệt (chỉ cancel vé mới).
             foreach (var ticket in booking.Tickets.Where(t =>

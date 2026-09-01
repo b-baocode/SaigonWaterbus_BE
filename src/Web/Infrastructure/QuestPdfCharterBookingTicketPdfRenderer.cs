@@ -33,6 +33,7 @@ public sealed class QuestPdfCharterBookingTicketPdfRenderer : ICharterBookingTic
                 var passengerName = ResolvePdfText(ticket.PassengerName, "Khach hang");
                 var passengerType = ResolvePdfText(ticket.PassengerType, "Passenger");
                 var birthYearText = ticket.PassengerBirthYear?.ToString(CultureInfo.InvariantCulture) ?? "-";
+                var seatCode = ResolvePdfText(ticket.SeatCode);
 
                 document.Page(page =>
                 {
@@ -148,6 +149,7 @@ public sealed class QuestPdfCharterBookingTicketPdfRenderer : ICharterBookingTic
                                                 AddPdfInfoCell(table.Cell(), "Date", departureDate, teal);
                                                 AddPdfInfoCell(table.Cell(), "Time", startTime, teal);
                                                 AddPdfInfoCell(table.Cell(), "Vessel", vesselName, ink);
+                                                AddPdfInfoCell(table.Cell(), "Seat / Ghe", seatCode, teal);
                                                 AddPdfInfoCell(table.Cell(), "Passenger type", passengerType, ink);
                                                 AddPdfInfoCell(table.Cell(), "Birth year", birthYearText, ink);
                                                 AddPdfInfoCell(table.Cell(), "Ticket status", ticket.TicketStatus, ink);

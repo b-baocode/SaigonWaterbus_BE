@@ -101,13 +101,13 @@ internal static class CharterBookingSeatAssignmentSupport
                 "Không đủ ghế đang hoạt động trên các tàu charter đã chọn.")]);
         }
 
-        // Fill boat 1 before boat 2. Within each boat the order is randomized.
+        // Fill boat 1 before boat 2 and keep the configured Deck/Row/Column order.
+        // Existing assignments stay fixed; newly approved passengers receive the next seat.
         foreach (var charterBoat in charterBoats)
         {
             var availableSeats = seatsByBoatId.GetValueOrDefault(charterBoat.BoatId, [])
                 .Where(x => !assignedSeatIds.Contains(x.Id))
                 .ToList();
-            Shuffle(availableSeats);
 
             foreach (var passenger in passengers.Where(x => !x.CharterSeatId.HasValue).Take(availableSeats.Count).ToList())
             {
@@ -221,15 +221,6 @@ internal static class CharterBookingSeatAssignmentSupport
             passenger.TripSeatId = tripSeat.Id;
             passenger.TripSeat = tripSeat;
             tripSeat.Status = TripSeat.StatusBooked;
-        }
-    }
-
-    private static void Shuffle<T>(IList<T> values)
-    {
-        for (var index = values.Count - 1; index > 0; index--)
-        {
-            var swapIndex = Random.Shared.Next(index + 1);
-            (values[index], values[swapIndex]) = (values[swapIndex], values[index]);
         }
     }
 }
