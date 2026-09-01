@@ -349,12 +349,12 @@ public sealed class CharterBookings : IEndpointGroup
                 "Chi huy request Pending/InProgress/Acknowledged. Request Done khong duoc huy."));
 
         group.MapPatch(AcknowledgeCharterRouteDrawRequest, "admin/route-draw-requests/{requestId:guid}/acknowledge")
-            .AllowAnonymous()
-            .WithSummary("GPS driver bao da ve xong route, loai khoi hang doi")
+            .RequireAuthorization()
+            .WithSummary("Admin xac nhan GPS da ve xong route, loai khoi hang doi")
             .WithDescription(OpenApiDescriptionBuilder.Build(
-                "Anonymous (GPS driver app)",
+                "Admin",
                 null,
-                "Khi driver ve xong route charter (nhieu chang), goi API nay de loai khoi queue.",
+                "Khi GPS da ve xong route charter (nhieu chang), Admin goi API nay de loai khoi queue.",
                 "Khac voi complete: complete can routeId, khong phu hop khi ve nhieu chung.",
                 "Status chuyen thanh Acknowledged, khong can routeId.",
                 "Acknowledge khi da ve xong roi, nhung chua gan routeId (vi du ve nhieu chung, can tong hop).",

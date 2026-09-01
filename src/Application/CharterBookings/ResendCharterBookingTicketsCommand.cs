@@ -63,6 +63,7 @@ public sealed class ResendCharterBookingTicketsCommandHandler
 
         var booking = await CharterBookingQuerySupport.BuildBaseQuery(_context)
             .Include(x => x.Boat)
+            .Include(x => x.CharterBoats)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)
@@ -75,21 +76,20 @@ public sealed class ResendCharterBookingTicketsCommandHandler
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        if (booking.UserId != currentUser.Id
-            && !AuthSupport.IsAdmin(currentUser)
-            && !AuthSupport.IsManager(currentUser)
-            && !AuthSupport.IsStaff(currentUser))
-        {
-            throw new NotFoundException("Charter booking not found.");
-        }
+        await CharterBookingAssignmentSupport.EnsureCanViewOperationalAsync(
+            _context,
+            currentUser,
+            booking,
+            includeCustomerOwner: true,
+            notFoundWhenDenied: true,
+            cancellationToken);
 
         if (booking.BookingStatus != BookingStatus.Confirmed
-            || (!string.Equals(booking.PaymentStatus, BookingPaymentStatusExtensions.PaidValue, StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(booking.PaymentStatus, BookingPaymentStatusExtensions.DepositPaidValue, StringComparison.OrdinalIgnoreCase)
-                && booking.RemainingAmount > 0))
+            || !string.Equals(booking.PaymentStatus, BookingPaymentStatusExtensions.PaidValue, StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount > 0)
         {
             throw new ValidationException([new ValidationFailure("booking",
-                "Chỉ gửi lại vé cho charter booking đã xác nhận và thanh toán đủ hoặc đã đặt cọc.")]);
+                "Chỉ gửi lại vé cho charter booking đã xác nhận và thanh toán đủ.")]);
         }
 
         var paidPayment = booking.Payments
@@ -97,7 +97,7 @@ public sealed class ResendCharterBookingTicketsCommandHandler
             .OrderByDescending(x => x.PaidAt)
             .FirstOrDefault();
 
-        if (paidPayment is null && booking.RemainingAmount > 0)
+        if (paidPayment is null)
         {
             throw new ValidationException([new ValidationFailure("payment",
                 "Charter booking chưa có thanh toán thành công nào để gửi vé.")]);
@@ -121,17 +121,14 @@ public sealed class ResendCharterBookingTicketsCommandHandler
             await _context.SaveChangesAsync(cancellationToken);
         }
 
-        if (paidPayment is not null)
-        {
-            await CharterBookingETicketSupport.SendETicketsIfFullyPaidAsync(
-                _context,
-                _timeProvider,
-                _paymentNotificationSender,
-                booking,
-                paidPayment,
-                cancellationToken,
-                _ticketPdfRenderer);
-        }
+        await CharterBookingETicketSupport.SendETicketsIfFullyPaidAsync(
+            _context,
+            _timeProvider,
+            _paymentNotificationSender,
+            booking,
+            paidPayment,
+            cancellationToken,
+            _ticketPdfRenderer);
 
         var contactEmail = booking.ContactEmail?.Trim();
         var passengerEmails = booking.Passengers

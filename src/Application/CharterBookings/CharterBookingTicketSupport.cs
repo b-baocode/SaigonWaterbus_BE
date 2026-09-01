@@ -23,11 +23,11 @@ internal static class CharterBookingTicketSupport
             return null;
         }
 
-        await EnsureCharterBookingQrTokenAsync(context, booking, cancellationToken);
         await CharterBookingSeatAssignmentSupport.AssignApprovedPassengersAsync(
             context,
             booking,
             cancellationToken);
+        await EnsureCharterBookingQrTokenAsync(context, booking, cancellationToken);
 
         var passengers = booking.Passengers
             .Where(CharterBookingPassengerSupport.IsApproved)

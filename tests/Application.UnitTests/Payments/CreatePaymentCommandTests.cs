@@ -339,6 +339,107 @@ public class CreatePaymentCommandTests
     }
 
     [Test]
+    public async Task CharterPointsPaymentPersistsSeatAndTicketBeforeSendingNotifications()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var customer = await context.Set<User>().SingleAsync(x => x.Id == userContext.UserId);
+        customer.PointBalance = 10_000;
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.FullStandard,
+            seatsConfigured: true,
+            status: BoatStatus.Active);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = customer.Id,
+            BookingCode = "CB-POINTS-TICKET",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            ContactEmail = "customer@example.test",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "Unpaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Day,
+            DurationValue = 1,
+            AdultCount = 1,
+            PassengerCount = 1,
+            SubtotalAmount = 10_000,
+            TotalAmount = 10_000,
+            RemainingAmount = 10_000,
+            HoldExpiresAt = now.AddHours(1)
+        };
+        booking.Passengers.Add(new BookingPassenger
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            FullName = "Nguyen Van A",
+            PassengerType = "Adult",
+            ApprovalStatus = "Approved"
+        });
+        booking.CharterBoats.Add(new CharterBookingBoat
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            Boat = boat,
+            BoatId = boat.Id,
+            BoatOrder = 1,
+            SeatSetupType = boat.SeatSetupType,
+            UnitPrice = 10_000,
+            ChargeableDurationValue = 1,
+            SubtotalAmount = 10_000
+        });
+        for (var column = 1; column <= boat.SeatCount; column++)
+        {
+            boat.Seats.Add(new Seat
+            {
+                Boat = boat,
+                BoatId = boat.Id,
+                Code = $"A{column:00}",
+                Deck = 1,
+                Row = "A",
+                Column = column,
+                IsActive = true
+            });
+        }
+
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+        context.ChangeTracker.Clear();
+
+        var notificationSender = new TestPaymentNotificationSender(() =>
+        {
+            var savedTicket = context.Set<Ticket>().Single();
+            savedTicket.BookingPassengerId.ShouldNotBeNull();
+            var savedPassenger = context.Set<BookingPassenger>().Single(x => x.BookingId == booking.Id);
+            savedPassenger.CharterSeatId.ShouldNotBeNull();
+            context.Set<Booking>().Single(x => x.Id == booking.Id)
+                .CharterBookingQrToken.ShouldNotBeNullOrWhiteSpace();
+        });
+        var handler = new CreatePaymentCommandHandler(
+            context,
+            userContext,
+            new TestPaymentGateway(),
+            notificationSender,
+            new FixedTimeProvider(now));
+
+        var result = await handler.Handle(
+            new CreatePaymentCommand(
+                booking.Id,
+                BookingPaymentOption.Full,
+                PointsToUse: 10_000),
+            CancellationToken.None);
+
+        result.PaymentStatus.ShouldBe("Paid");
+        context.Set<Ticket>().Count().ShouldBe(1);
+        context.Set<BookingPassenger>()
+            .Single(x => x.BookingId == booking.Id)
+            .CharterSeat!.Code.ShouldBe("A01");
+    }
+
+    [Test]
     public async Task RegularBookingAppliesPromotionWhenCreatingPayment()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -2048,7 +2149,7 @@ public class CreatePaymentCommandTests
         public bool IsValidWebhook(CharterBookingDepositPaymentWebhook webhook) => true;
     }
 
-    private sealed class TestPaymentNotificationSender : IPaymentNotificationSender
+    private sealed class TestPaymentNotificationSender(Action? onPaymentSucceeded = null) : IPaymentNotificationSender
     {
         public List<PaymentSucceededNotification> Notifications { get; } = [];
         public List<BoardingPassNotification> BoardingPasses { get; } = [];
@@ -2058,6 +2159,7 @@ public class CreatePaymentCommandTests
             PaymentSucceededNotification notification,
             CancellationToken cancellationToken)
         {
+            onPaymentSucceeded?.Invoke();
             Notifications.Add(notification);
             return Task.CompletedTask;
         }

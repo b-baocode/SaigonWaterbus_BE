@@ -32,8 +32,11 @@ public class CharterBookingAssignmentTests
         context.Set<Booking>().Single(x => x.Id == booking.Id).AssignedManagerId.ShouldBe(manager.UserId);
     }
 
-    [Test]
-    public async Task CrewStaffCanCheckInCharterBookingQr()
+    [TestCase("Paid", true)]
+    [TestCase("DepositPaid", false)]
+    public async Task CrewStaffCanCheckInOnlyFullyPaidCharterBookingQr(
+        string paymentStatus,
+        bool expectedSuccess)
     {
         await using var context = SeatFlowTestData.CreateContext();
         var manager = await SeatFlowTestData.SeedManagerAsync(context);
@@ -43,6 +46,8 @@ public class CharterBookingAssignmentTests
         var booking = CharterBooking(boat, customer.Id);
         booking.AssignedManagerId = manager.UserId;
         booking.CharterBookingQrToken = $"CB{Guid.NewGuid():N}"[..30];
+        booking.PaymentStatus = paymentStatus;
+        booking.RemainingAmount = 0m;
         AddPassengerTicket(booking);
         context.AddRange(customer.Role, customer, boat, booking);
         await context.SaveChangesAsync();
@@ -72,13 +77,22 @@ public class CharterBookingAssignmentTests
             staff,
             new FixedTimeProvider(checkedInAt));
 
-        var result = await attendanceHandler.Handle(
-            new UpdateCharterBookingAttendanceCommand(
-                booking.CharterBookingQrToken,
-                CharterBookingAttendanceAction.CheckIn,
-                CharterBookingAttendanceMode.All,
-                null),
-            CancellationToken.None);
+        var command = new UpdateCharterBookingAttendanceCommand(
+            booking.CharterBookingQrToken,
+            CharterBookingAttendanceAction.CheckIn,
+            CharterBookingAttendanceMode.All,
+            null);
+
+        if (!expectedSuccess)
+        {
+            await Should.ThrowAsync<ValidationException>(() =>
+                attendanceHandler.Handle(command, CancellationToken.None));
+            context.Tickets.Single().TicketStatus.ShouldBe(TicketStatus.Active);
+            context.TicketScanEvents.ShouldBeEmpty();
+            return;
+        }
+
+        var result = await attendanceHandler.Handle(command, CancellationToken.None);
 
         result.UpdatedCount.ShouldBe(1);
         context.Tickets.Single().CheckedInByUserId.ShouldBe(staff.UserId);

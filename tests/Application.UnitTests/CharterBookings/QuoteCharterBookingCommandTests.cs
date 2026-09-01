@@ -12,6 +12,38 @@ namespace SaigonWaterbus.Application.UnitTests.CharterBookings;
 public class QuoteCharterBookingCommandTests
 {
     [Test]
+    public async Task QuoteRejectsBoatWithoutEnoughActivePhysicalSeats()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = ActiveBoat(
+            SeatSetupType.FullStandard,
+            1_000_000m,
+            withPhysicalSeats: false);
+        var booking = CharterBooking(1);
+        booking.AdultCount = 1;
+        booking.ChildCount = 0;
+        booking.PassengerCount = 1;
+        context.AddRange(boat, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new QuoteCharterBookingCommandHandler(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2026, 7, 6, 0, 0, 0, TimeSpan.Zero)));
+
+        var exception = await Should.ThrowAsync<ValidationException>(() =>
+            handler.Handle(
+                new QuoteCharterBookingCommand(
+                    booking.Id,
+                    Boats: [new QuoteCharterBookingBoatRequest(1, boat.Id)]),
+                CancellationToken.None));
+
+        exception.Errors.SelectMany(x => x.Value)
+            .ShouldContain(x => x.Contains("số ghế vật lý đang hoạt động"));
+    }
+
+    [Test]
     public async Task QuoteRequiresSelectedBoatCountToMatchCustomerRequest()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -441,12 +473,32 @@ public class QuoteCharterBookingCommandTests
         SeatSetupType setupType,
         decimal dailyRentalPrice,
         string name = "Charter boat",
-        int numberOfDecks = 1)
+        int numberOfDecks = 1,
+        bool withPhysicalSeats = true)
     {
         var boat = SeatFlowTestData.Boat(setupType, seatsConfigured: true, status: BoatStatus.Active);
         boat.Name = name;
         boat.SeatCount = 60;
         boat.NumberOfDecks = numberOfDecks;
+        if (withPhysicalSeats)
+        {
+            for (var index = 0; index < boat.SeatCount; index++)
+            {
+                var row = ((char)('A' + index / 10)).ToString();
+                var column = index % 10 + 1;
+                boat.Seats.Add(new Seat
+                {
+                    Boat = boat,
+                    BoatId = boat.Id,
+                    Code = $"{row}{column:00}",
+                    Deck = 1,
+                    Row = row,
+                    Column = column,
+                    IsActive = true
+                });
+            }
+        }
+
         return boat;
     }
 

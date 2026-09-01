@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -280,6 +281,108 @@ public class CharterBookingExpirationProcessorTests
         pendingBhPayment.PaymentStatus.ShouldBe("Expired");
         approvedAddedPassenger.ApprovalStatus.ShouldBe("Rejected");
         approvedAddedPassenger.ReviewNote.ShouldNotBeNull();
+    }
+
+    [Test]
+    public async Task CleanupReturnsPointsUsedForExpiredPassengerInsuranceTopUp()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var customer = context.Set<User>().Single(x => x.Id == userContext.UserId);
+        customer.PointBalance = 0;
+        var now = new DateTimeOffset(2026, 7, 7, 0, 0, 0, TimeSpan.Zero);
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            UserId = customer.Id,
+            BookingCode = "CB-POINT-EXPIRE",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            BookingStatus = BookingStatus.PendingPayment,
+            PaymentStatus = "DepositPaid",
+            DepartureDate = new DateOnly(2030, 1, 1),
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 2,
+            AdultCount = 3,
+            PassengerCount = 3,
+            SubtotalAmount = 1_030_000m,
+            TotalAmount = 5_000m,
+            PointsUsed = 1_025_000,
+            RemainingAmount = 5_000m,
+            HoldExpiresAt = now.AddSeconds(-1),
+            InsuranceSnapshots =
+            [
+                new BookingInsuranceSnapshot
+                {
+                    InsurancePackageId = Guid.NewGuid(),
+                    Code = "INS-CHARTER",
+                    Name = "Charter insurance",
+                    BookingType = Booking.CharterBookingType,
+                    UnitPremiumAmount = 10_000m,
+                    Quantity = 3,
+                    TotalAmount = 30_000m,
+                    QuotedAt = now
+                }
+            ]
+        };
+        booking.Payments.Add(new Payment
+        {
+            PaymentCode = "POINTS-PAID",
+            Provider = "System",
+            Amount = 0m,
+            Currency = "VND",
+            PaymentMethod = "Points",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = now.AddMinutes(-10)
+        });
+        booking.Payments.Add(new Payment
+        {
+            PaymentCode = "POINT-TOPUP-PENDING",
+            Provider = "PayOS",
+            Amount = 5_000m,
+            Currency = "VND",
+            PaymentMethod = "PayOS",
+            PaymentPurpose = "PassengerAddInsurance",
+            PaymentStatus = "Pending",
+            CheckoutUrl = "https://example.test/checkout"
+        });
+        booking.Passengers.Add(new BookingPassenger
+        {
+            FullName = "Existing Passenger 1",
+            PassengerType = "Adult",
+            ApprovalStatus = "Approved"
+        });
+        booking.Passengers.Add(new BookingPassenger
+        {
+            FullName = "Existing Passenger 2",
+            PassengerType = "Adult",
+            ApprovalStatus = "Approved"
+        });
+        booking.Passengers.Add(new BookingPassenger
+        {
+            FullName = "Added Passenger",
+            PassengerType = "Adult",
+            ApprovalStatus = "Approved",
+            RequestBatchId = Guid.NewGuid()
+        });
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var processor = new CharterBookingExpirationProcessor(context, new TestBoatHoldService());
+        var result = await processor.CleanupExpiredAsync(now, CancellationToken.None);
+
+        result.ExpiredPassengerAddPayments.ShouldBe(1);
+        booking.SubtotalAmount.ShouldBe(1_020_000m);
+        booking.TotalAmount.ShouldBe(0m);
+        booking.RemainingAmount.ShouldBe(0m);
+        booking.PointsUsed.ShouldBe(1_020_000);
+        booking.PaymentStatus.ShouldBe("Paid");
+        customer.PointBalance.ShouldBe(5_000);
+        context.Set<PointTransaction>()
+            .Single(x => x.BookingId == booking.Id && x.TransactionType == PointTransactionTypes.RedeemCancelled)
+            .Points.ShouldBe(5_000);
     }
 
     [Test]

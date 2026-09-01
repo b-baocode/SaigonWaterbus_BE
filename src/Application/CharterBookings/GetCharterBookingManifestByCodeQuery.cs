@@ -193,8 +193,7 @@ internal static class CharterBookingManifestSupport
             .Where(x => x.BookingPassengerId.HasValue)
             .ToDictionary(x => x.BookingPassengerId!.Value);
         var canCheckInBooking = booking.BookingStatus == BookingStatus.Confirmed
-            && (string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
-                || booking.RemainingAmount <= 0);
+            && string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase);
 
         var approvedPassengers = booking.Passengers
             .Where(CharterBookingPassengerSupport.IsApproved)

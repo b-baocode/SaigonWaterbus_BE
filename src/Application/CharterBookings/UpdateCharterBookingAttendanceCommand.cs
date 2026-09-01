@@ -214,8 +214,7 @@ public sealed class UpdateCharterBookingAttendanceCommandHandler
         }
 
         if (action == CharterBookingAttendanceAction.CheckIn
-            && !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
-            && booking.RemainingAmount > 0)
+            && !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase))
         {
             throw new ValidationException([new ValidationFailure("payment",
                 "Booking chua thanh toan du de check-in.")]);

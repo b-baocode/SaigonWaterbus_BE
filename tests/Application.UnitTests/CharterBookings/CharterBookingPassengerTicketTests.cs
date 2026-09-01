@@ -2,6 +2,7 @@ using NUnit.Framework;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.CharterBookings;
+using SaigonWaterbus.Application.Points;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
 using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
@@ -155,7 +156,7 @@ public class CharterBookingPassengerTicketTests
 
         // The PDF renderer receives this export DTO, so this proves the PDF gets the reserved seat code.
         var export = CharterBookingTicketExportSupport.ToDto(booking, tickets.Tickets);
-        export.Tickets.Select(x => x.SeatCode).OrderBy(x => x).ShouldBe(["A01", "A02"]);
+        export.Tickets.OrderBy(x => x.PassengerName).Select(x => x.SeatCode).ShouldBe(["A01", "A02"]);
     }
 
     [Test]
@@ -492,6 +493,84 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         savedBooking.InsuranceSnapshots[0].Quantity.ShouldBe(3);
         savedBooking.InsuranceSnapshots[0].TotalAmount.ShouldBe(30_000m);
         notificationSender.BoardingPasses.Count.ShouldBe(0);
+    }
+
+    [TestCase(10_000, 0, false, "Paid", BookingStatus.Confirmed)]
+    [TestCase(5_000, 5_000, true, "DepositPaid", BookingStatus.Approved)]
+    public async Task ApprovingPassengerAddRequestUsesRemainingPointsForAddedInsurance(
+        int availablePoints,
+        decimal expectedRemainingAmount,
+        bool expectedAdditionalPayment,
+        string expectedPaymentStatus,
+        BookingStatus expectedBookingStatus)
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customer = Customer();
+        customer.PointBalance = availablePoints;
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(customer.Id, adultCount: 2);
+        booking.ContactEmail = "customer@example.test";
+        booking.InsuranceSnapshots.Add(InsuranceSnapshot(unitPremiumAmount: 10_000m, quantity: 2));
+        booking.SubtotalAmount += booking.InsuranceSnapshots[0].TotalAmount;
+        booking.PointsUsed = (int)booking.SubtotalAmount;
+        booking.TotalAmount = 0m;
+        booking.DepositAmount = 0m;
+        booking.RemainingAmount = 0m;
+        booking.Payments.Add(new Payment
+        {
+            PaymentCode = $"POINTS{Guid.NewGuid():N}"[..20],
+            Provider = "System",
+            Amount = 0m,
+            Currency = "VND",
+            PaymentMethod = "Points",
+            PaymentPurpose = "Full",
+            PaymentStatus = "Paid",
+            PaidAt = DateTimeOffset.UtcNow
+        });
+        AttachSelectedBoat(booking, boat);
+        context.AddRange(customer, boat, booking);
+        context.AddRange(ConfiguredCharterSeats(boat));
+        await context.SaveChangesAsync();
+
+        var updateHandler = CreateUpdateHandler(context, customer.Id);
+        await updateHandler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
+                ]),
+            CancellationToken.None);
+
+        var addHandler = CreateAddHandler(context, customer.Id);
+        await addHandler.Handle(
+            new AddCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("Be Nguyen Van C", DateTime.UtcNow.Year - 1)]),
+            CancellationToken.None);
+
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var approveHandler = CreateApproveHandler(context, adminContext.UserId!.Value);
+        var requestBatchId = context.Set<BookingPassenger>()
+            .Single(x => x.FullName == "Be Nguyen Van C")
+            .RequestBatchId
+            .ShouldNotBeNull();
+
+        var result = await approveHandler.Handle(
+            new ApproveCharterBookingPassengerAddRequestCommand(booking.Id, requestBatchId),
+            CancellationToken.None);
+
+        result.AdditionalInsuranceAmount.ShouldBe(10_000m);
+        result.TotalAmount.ShouldBe(expectedRemainingAmount);
+        result.RemainingAmount.ShouldBe(expectedRemainingAmount);
+        result.RequiresAdditionalPayment.ShouldBe(expectedAdditionalPayment);
+        result.PaymentStatus.ShouldBe(expectedPaymentStatus);
+        booking.BookingStatus.ShouldBe(expectedBookingStatus);
+        booking.PointsUsed.ShouldBe(1_020_000 + availablePoints);
+        customer.PointBalance.ShouldBe(0);
+        context.Set<PointTransaction>()
+            .Single(x => x.BookingId == booking.Id && x.TransactionType == PointTransactionTypes.Redeem)
+            .Points.ShouldBe(-availablePoints);
     }
 
     [Test]
@@ -865,7 +944,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
     }
 
     [Test]
-    public async Task ExportTicketsByQrTokenReturnsTicketsForEmailPdfLink()
+    public async Task ExportTicketsByQrTokenReturnsOnlyMatchingTicketForEmailPdfLink()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var user = Customer();
@@ -894,8 +973,79 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
             CancellationToken.None);
 
         export.BookingCode.ShouldBe(booking.BookingCode);
-        export.Tickets.Count.ShouldBe(2);
-        export.Tickets.ShouldAllBe(x => !string.IsNullOrWhiteSpace(x.QrToken));
+        export.Tickets.Count.ShouldBe(1);
+        export.Tickets.Single().QrToken.ShouldBe(qrToken);
+    }
+
+    [Test]
+    public async Task ExportTicketsByQrTokenRejectsCancelledTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var user = Customer();
+        var booking = PaidCharterBooking(user.Id, adultCount: 1);
+        context.AddRange(user.Role, user, booking);
+        await context.SaveChangesAsync();
+
+        var updateHandler = CreateUpdateHandler(context, user.Id);
+        await updateHandler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("Nguyen Van A", 1990)]),
+            CancellationToken.None);
+
+        var ticket = context.Tickets.Single();
+        ticket.TicketStatus = TicketStatus.Cancelled;
+        await context.SaveChangesAsync();
+        var exportHandler = new ExportCharterBookingTicketsByQrTokenQueryHandler(context);
+
+        await Should.ThrowAsync<NotFoundException>(() => exportHandler.Handle(
+            new ExportCharterBookingTicketsByQrTokenQuery(ticket.QrToken),
+            CancellationToken.None));
+    }
+
+    [Test]
+    public async Task ResendTicketsRejectsDepositPaidBooking()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var user = Customer();
+        var booking = PaidCharterBooking(user.Id, adultCount: 1);
+        booking.PaymentStatus = "DepositPaid";
+        booking.DepositAmount = booking.TotalAmount - 10_000m;
+        booking.RemainingAmount = 10_000m;
+        context.AddRange(user.Role, user, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new ResendCharterBookingTicketsCommandHandler(
+            context,
+            new TestUserContext(user.Id),
+            new TestPaymentNotificationSender(),
+            TimeProvider.System);
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new ResendCharterBookingTicketsCommand(booking.Id),
+            CancellationToken.None));
+        context.Tickets.ShouldBeEmpty();
+    }
+
+    [Test]
+    public async Task ResendTicketsRejectsUnassignedStaff()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var customer = Customer();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var booking = PaidCharterBooking(customer.Id, adultCount: 1);
+        context.AddRange(customer.Role, customer, booking);
+        await context.SaveChangesAsync();
+
+        var handler = new ResendCharterBookingTicketsCommandHandler(
+            context,
+            staffContext,
+            new TestPaymentNotificationSender(),
+            TimeProvider.System);
+
+        await Should.ThrowAsync<NotFoundException>(() => handler.Handle(
+            new ResendCharterBookingTicketsCommand(booking.Id),
+            CancellationToken.None));
     }
 
     [Test]

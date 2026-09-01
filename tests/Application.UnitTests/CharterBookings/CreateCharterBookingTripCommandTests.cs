@@ -134,6 +134,8 @@ public class CreateCharterBookingTripCommandTests
         assignedPassengers.Select(x => x.TripSeatId).Distinct().Count().ShouldBe(4);
         assignedPassengers.Count(x => x.TripId == charterBoats[0].TripId).ShouldBe(2);
         assignedPassengers.Count(x => x.TripId == charterBoats[1].TripId).ShouldBe(2);
+        assignedPassengers.Select(x => x.TripSeat!.Seat.Code)
+            .ShouldBe(["A01", "A02", "B01", "B02"]);
         context.Set<TripSeat>().Count().ShouldBe(5);
         context.Set<TripSeat>().Count(x => x.Status == TripSeat.StatusBooked).ShouldBe(4);
     }

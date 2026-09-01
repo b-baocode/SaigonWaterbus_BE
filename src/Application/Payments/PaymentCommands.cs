@@ -295,6 +295,11 @@ public sealed class CreatePaymentCommandHandler : IRequestHandler<CreatePaymentC
             paymentLinkId: null,
             checkoutUrl: null,
             now);
+        await PaymentSupport.PrepareFullyPaidCharterTicketsAsync(
+            _context,
+            _timeProvider,
+            booking,
+            cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
         await PaymentSupport.SendPaymentNotificationIfPaidAsync(
             _context,
@@ -2492,6 +2497,18 @@ internal static class PaymentSupport
                 booking,
                 timeProvider,
                 cancellationToken);
+
+            // Persist charter QR, seat reservations and tickets before any realtime/email call.
+            // External notification failures must never leave a paid charter without tickets.
+            var charterTicketResult = await PrepareFullyPaidCharterTicketsAsync(
+                context,
+                timeProvider,
+                booking,
+                cancellationToken);
+            if (charterTicketResult is not null)
+            {
+                await context.SaveChangesAsync(cancellationToken);
+            }
         }
 
         if (wasPaid || !isPaid || !payment.PaidAt.HasValue)
@@ -2567,6 +2584,26 @@ internal static class PaymentSupport
                 cancellationToken,
                 charterBookingTicketPdfRenderer);
         }
+    }
+
+    internal static Task<PassengerTicketEnsureResult?> PrepareFullyPaidCharterTicketsAsync(
+        IApplicationDbContext context,
+        TimeProvider timeProvider,
+        Booking booking,
+        CancellationToken cancellationToken)
+    {
+        if (!Booking.IsCharterBookingType(booking.BookingType)
+            || !string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
+            || booking.RemainingAmount > 0)
+        {
+            return Task.FromResult<PassengerTicketEnsureResult?>(null);
+        }
+
+        return CharterBookingTicketSupport.EnsurePassengerTicketsAsync(
+            context,
+            booking,
+            timeProvider,
+            cancellationToken);
     }
 
     private static async Task SendCharterPaymentSucceededAsync(
@@ -2685,6 +2722,9 @@ internal static class PaymentSupport
             .Include(x => x.Boat)
             .Include(x => x.CharterBoats)
                 .ThenInclude(x => x.Boat)
+            .Include(x => x.Passengers)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
             .Include(x => x.FromStation)
             .Include(x => x.ToStation)
             .Include(x => x.ItineraryStops)

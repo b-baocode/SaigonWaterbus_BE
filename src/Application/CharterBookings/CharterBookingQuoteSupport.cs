@@ -51,6 +51,7 @@ internal static class CharterBookingQuoteSupport
             .Distinct()
             .ToArray();
         var loadedBoats = await context.Set<Boat>()
+            .Include(x => x.Seats)
             .Where(x => selectedBoatIds.Contains(x.Id))
             .ToListAsync(cancellationToken);
         if (loadedBoats.Count != selectedBoatIds.Length)
@@ -149,11 +150,12 @@ internal static class CharterBookingQuoteSupport
         }
 
         var passengerCount = booking.PassengerCount.GetValueOrDefault();
-        var totalSeatCount = selectedBoats.Sum(x => x.Boat.SeatCount);
-        if (passengerCount > totalSeatCount)
+        var totalActiveSeatCount = selectedBoats.Sum(x => x.Boat.Seats.Count(seat => seat.IsActive));
+        if (passengerCount > totalActiveSeatCount)
         {
             throw new ValidationException([new ValidationFailure(nameof(booking.PassengerCount),
-                $"Số khách vượt quá tổng sức chứa của các tàu được chọn ({totalSeatCount}).")]);
+                $"Số khách vượt quá số ghế vật lý đang hoạt động trên các tàu được chọn ({totalActiveSeatCount}). "
+                + "Vui lòng cấu hình đủ ghế trước khi chốt giá.")]);
         }
     }
 

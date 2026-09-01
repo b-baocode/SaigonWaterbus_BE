@@ -103,10 +103,12 @@ public sealed class ExportCharterBookingTicketsByQrTokenQueryHandler
         CancellationToken cancellationToken)
     {
         var qrToken = request.QrToken.Trim();
-        var bookingId = await _context.Tickets
+        var ticketReference = await _context.Tickets
             .AsNoTracking()
-            .Where(x => x.QrToken == qrToken)
-            .Select(x => (Guid?)x.BookingId)
+            .Where(x => x.QrToken == qrToken
+                && x.TicketStatus != TicketStatus.Cancelled
+                && x.TicketStatus != TicketStatus.Expired)
+            .Select(x => new { x.BookingId, TicketId = x.Id })
             .SingleOrDefaultAsync(cancellationToken)
             ?? throw new NotFoundException("Charter booking ticket not found.");
 
@@ -124,10 +126,10 @@ public sealed class ExportCharterBookingTicketsByQrTokenQueryHandler
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.BookingPassenger)
                     .ThenInclude(x => x!.CharterSeat)
-            .SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken)
+            .SingleOrDefaultAsync(x => x.Id == ticketReference.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
-        return CharterBookingTicketExportSupport.ToDto(booking, ticketIds: null);
+        return CharterBookingTicketExportSupport.ToDto(booking, [ticketReference.TicketId]);
     }
 }
 
