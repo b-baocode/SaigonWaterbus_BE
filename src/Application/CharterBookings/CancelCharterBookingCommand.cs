@@ -100,6 +100,7 @@ public sealed class CancelCharterBookingCommandHandler : IRequestHandler<CancelC
             _context,
             booking.Id,
             $"Charter booking {booking.BookingCode} đã bị hủy.",
+            _timeProvider.GetUtcNow(),
             cancellationToken);
         await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(
             _context,

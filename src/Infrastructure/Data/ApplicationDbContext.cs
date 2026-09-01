@@ -142,7 +142,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
         // Tắt implicit xmin concurrency token mà Npgsql provider tự thêm cho mọi entity
         // có khóa chính. Hệ thống có nhiều trigger và background service cập nhật row
-        // bookings/trips (trg_auto_delete_overdue_charter_booking, trg_sync_trip_status,
+        // bookings/trips (trg_sync_trip_status,
         // CharterBookingExpirationProcessor) làm DbUpdateConcurrencyException xảy ra
         // ngay cả khi application không có race thực sự. Nếu cần optimistic concurrency
         // cụ thể, cấu hình thủ công bằng [ConcurrencyCheck] hoặc .IsRowVersion().

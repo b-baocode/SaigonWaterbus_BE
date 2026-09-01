@@ -65,6 +65,7 @@ public static class PaymentPendingExpirationSupport
                     context,
                     booking.Id,
                     $"Charter booking {booking.BookingCode} đã bị hủy do payment PayOS hết hạn.",
+                    now,
                     cancellationToken);
 
                 await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(

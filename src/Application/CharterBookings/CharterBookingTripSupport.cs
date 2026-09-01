@@ -198,6 +198,7 @@ internal static class CharterBookingTripSupport
         IApplicationDbContext context,
         Guid bookingId,
         string statusNote,
+        DateTimeOffset statusChangedAt,
         CancellationToken cancellationToken)
     {
         var trips = await context.Set<Trip>()
@@ -210,6 +211,7 @@ internal static class CharterBookingTripSupport
         {
             trip.TripStatus = TripStatus.Cancelled;
             trip.StatusNote = statusNote;
+            trip.LastStatusChangedAt = statusChangedAt;
         }
 
         return trips.Count;

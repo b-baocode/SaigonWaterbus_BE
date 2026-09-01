@@ -174,6 +174,13 @@ public sealed class CharterBookingExpirationProcessor : ICharterBookingExpiratio
                 ticket.TicketStatus = TicketStatus.Expired;
             }
 
+            await CharterBookingTripSupport.CancelLinkedTripsAsync(
+                _context,
+                booking.Id,
+                $"Charter booking {booking.BookingCode} đã hết hạn.",
+                now,
+                cancellationToken);
+
             await PointSupport.ReturnRedeemedPointsAsync(
                 _context,
                 booking,

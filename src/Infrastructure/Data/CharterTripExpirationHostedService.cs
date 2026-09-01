@@ -64,7 +64,7 @@ public sealed class CharterTripExpirationHostedService : BackgroundService
             if (completed > 0 || deleted > 0)
             {
                 _logger.LogInformation(
-                    "Auto-completed {CompletedCount} overdue charter trips and deleted {DeletedCount} completed trips.",
+                    "Auto-completed {CompletedCount} overdue charter trips and deleted {DeletedCount} terminal trips.",
                     completed,
                     deleted);
             }

@@ -18,7 +18,8 @@ public static class CharterTripExpirationSupport
         CancellationToken cancellationToken)
     {
         var completeCutoff = now.Subtract(ExpirationGracePeriod);
-        var deleteCutoff = now.Subtract(ExpirationGracePeriod + DeleteGracePeriod);
+        var terminalDeleteCutoff = now.Subtract(DeleteGracePeriod);
+        var legacyDeleteCutoff = now.Subtract(ExpirationGracePeriod + DeleteGracePeriod);
 
         var overdueTrips = await context.Set<Trip>()
             .Include(x => x.Route)
@@ -30,11 +31,6 @@ public static class CharterTripExpirationSupport
                      && (x.AdjustedDepartureTime ?? x.DepartureTime) <= completeCutoff)
             .ToListAsync(cancellationToken);
 
-        if (overdueTrips.Count == 0)
-        {
-            return (0, 0);
-        }
-
         var completedCount = 0;
         var deletedCount = 0;
         var notifications = new List<Notification>();
@@ -43,6 +39,7 @@ public static class CharterTripExpirationSupport
         {
             trip.TripStatus = TripStatus.Completed;
             trip.StatusNote = $"Tự động hoàn tất do quá ngày khởi hành ({now:dd/MM/yyyy HH:mm})";
+            trip.LastStatusChangedAt = now;
 
             await ExpireTicketsForTripAsync(context, trip, cancellationToken);
 
@@ -62,8 +59,14 @@ public static class CharterTripExpirationSupport
             await context.SaveChangesAsync(cancellationToken);
         }
 
-        var tripsToDelete = overdueTrips.Where(x =>
-            (x.AdjustedDepartureTime ?? x.DepartureTime) <= deleteCutoff).ToList();
+        var tripsToDelete = await context.Set<Trip>()
+            .Include(x => x.TripStops)
+            .Where(x => x.TripType == TripTypes.Charter
+                && (x.TripStatus == TripStatus.Completed || x.TripStatus == TripStatus.Cancelled)
+                && ((x.LastStatusChangedAt.HasValue && x.LastStatusChangedAt.Value <= terminalDeleteCutoff)
+                    || (!x.LastStatusChangedAt.HasValue
+                        && (x.AdjustedDepartureTime ?? x.DepartureTime) <= legacyDeleteCutoff)))
+            .ToListAsync(cancellationToken);
 
         if (tripsToDelete.Count == 0)
         {

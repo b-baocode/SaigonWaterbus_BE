@@ -1316,7 +1316,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
 
         PaymentSupport.ApplyRefundStatus(payment.Booking);
         await PointSupport.ApplyRefundPointAdjustmentsAsync(_context, payment.Booking, now, cancellationToken);
-        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
+        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, now, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
@@ -1344,7 +1344,7 @@ public sealed class RefundPaymentCommandHandler : IRequestHandler<RefundPaymentC
 
         PaymentSupport.ApplyRefundStatus(payment.Booking);
         await PointSupport.ApplyRefundPointAdjustmentsAsync(_context, payment.Booking, now, cancellationToken);
-        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
+        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, now, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
     }
 
@@ -1493,7 +1493,7 @@ public sealed class ManualRefundPaymentCommandHandler : IRequestHandler<ManualRe
 
         PaymentSupport.ApplyRefundStatus(payment.Booking);
         await PointSupport.ApplyRefundPointAdjustmentsAsync(_context, payment.Booking, now, cancellationToken);
-        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, cancellationToken);
+        await PaymentSupport.CancelCharterTripsIfRefundedAsync(_context, payment.Booking, now, cancellationToken);
         await _context.SaveChangesAsync(cancellationToken);
 
         return PaymentSupport.ToDto(payment.Booking, payment);
@@ -2461,6 +2461,7 @@ internal static class PaymentSupport
     public static async Task CancelCharterTripsIfRefundedAsync(
         IApplicationDbContext context,
         Booking booking,
+        DateTimeOffset statusChangedAt,
         CancellationToken cancellationToken)
     {
         if (!Booking.IsCharterBookingType(booking.BookingType)
@@ -2473,6 +2474,7 @@ internal static class PaymentSupport
             context,
             booking.Id,
             $"Charter booking {booking.BookingCode} đã hoàn tiền đủ — tự động hủy trip liên quan.",
+            statusChangedAt,
             cancellationToken);
     }
 
@@ -2886,6 +2888,7 @@ public sealed class CancelPaymentByOrderCodeCommandHandler : IRequestHandler<Can
                 _context,
                 booking.Id,
                 $"Charter booking {booking.BookingCode} đã bị hủy khi khách cancel PayOS.",
+                now,
                 cancellationToken);
 
             await CharterBookingRouteSupport.DeactivateOwnedRouteAsync(

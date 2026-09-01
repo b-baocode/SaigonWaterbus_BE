@@ -168,6 +168,7 @@ public sealed class UpdateCharterBookingStatusCommandHandler
                 _context,
                 booking.Id,
                 $"Charter booking {booking.BookingCode} đã bị hủy.",
+                _timeProvider.GetUtcNow(),
                 cancellationToken);
         }
 

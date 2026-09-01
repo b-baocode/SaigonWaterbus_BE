@@ -61,6 +61,20 @@ public class CharterBookingExpirationProcessorTests
             ChargeableDurationValue = 2,
             SubtotalAmount = 10000
         };
+        var route = OwnedRoute("CB-EXPIRE");
+        var linkedTrip = new Trip
+        {
+            Route = route,
+            RouteId = route.Id,
+            SourceBookingId = booking.Id,
+            TripCode = "TRIP-CB-EXPIRE",
+            TripType = TripTypes.Charter,
+            OperatingDate = new DateOnly(2030, 1, 1),
+            DepartureTime = now.AddDays(1),
+            ArrivalTime = now.AddDays(1).AddHours(2),
+            CapacitySnapshot = 10,
+            TripStatus = TripStatus.Scheduled
+        };
         var pendingPayment = new Payment
         {
             Booking = booking,
@@ -74,7 +88,7 @@ public class CharterBookingExpirationProcessorTests
             CheckoutUrl = "https://example.test/checkout",
             ExpiresAt = now.AddSeconds(-1)
         };
-        context.AddRange(boat, promotion, booking, selectedBoat, pendingPayment);
+        context.AddRange(boat, promotion, route, booking, selectedBoat, linkedTrip, pendingPayment);
         await context.SaveChangesAsync();
         var boatHoldService = new TestBoatHoldService();
         var processor = new CharterBookingExpirationProcessor(context, boatHoldService);
@@ -87,6 +101,8 @@ public class CharterBookingExpirationProcessorTests
         booking.HoldExpiresAt.ShouldBeNull();
         booking.PaymentStatus.ShouldBe("Unpaid");
         pendingPayment.PaymentStatus.ShouldBe("Expired");
+        linkedTrip.TripStatus.ShouldBe(TripStatus.Cancelled);
+        linkedTrip.LastStatusChangedAt.ShouldBe(now);
         // Lượt khuyến mãi suy ra từ bookings: booking chuyển Expired nên không còn tính là đã dùng.
         boatHoldService.Releases.ShouldHaveSingleItem().BoatId.ShouldBe(boat.Id);
     }
