@@ -57,6 +57,25 @@ public sealed class AssistantToolset
 
     private const int VietnamUtcOffsetHours = 7;
 
+    private static readonly TimeSpan VietnamOffset = TimeSpan.FromHours(VietnamUtcOffsetHours);
+
+    /// <summary>
+    /// Giờ Việt Nam dạng "HH:mm" để model ĐỌC.
+    ///
+    /// TUYỆT ĐỐI không đưa DateTimeOffset thô vào kết quả tool: cột giờ trong DB là timestamptz
+    /// nên Npgsql luôn trả offset +00:00, model đọc nguyên con số UTC rồi báo cho khách sớm hơn
+    /// 7 tiếng (01/09/2026: chuyến 20:00 bị nói thành 13:00, khách hỏi lại thì model tra lại vẫn
+    /// ra đúng con số sai đó nên càng khẳng định là đúng). Đổi sẵn ở đây thay vì dặn model tự
+    /// cộng 7 — bắt model cộng nhẩm thì qua nửa đêm là sai (23:30 UTC phải thành 06:30 HÔM SAU).
+    /// Hướng dẫn viên giọng nói làm y hệt, xem TourGuideContextReader.Clock.
+    /// </summary>
+    internal static string? Clock(DateTimeOffset? value) =>
+        value?.ToOffset(VietnamOffset).ToString("HH:mm", CultureInfo.InvariantCulture);
+
+    /// <summary>Ngày theo giờ Việt Nam, cho các mốc lưu dưới dạng thời điểm (hiệu lực khuyến mãi).</summary>
+    internal static string Day(DateTimeOffset value) =>
+        value.ToOffset(VietnamOffset).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+
     private readonly ISender _sender;
     private readonly IApplicationDbContext _context;
     private readonly TimeProvider _timeProvider;
@@ -244,9 +263,40 @@ public sealed class AssistantToolset
             from = from.StationName,
             to = to.StationName,
             date = dateStr,
-            trips,
+            trips = trips.Select(ToModelTrip).ToArray(),
         });
     }
+
+    /// <summary>
+    /// TripSummaryDto rút gọn cho model. KHÔNG serialize thẳng DTO, vì hai lý do:
+    ///
+    /// 1. GIỜ: mọi trường giờ trong DTO là DateTimeOffset UTC — xem <see cref="Clock"/>. Riêng
+    ///    waterbus còn kèm Stops (giờ từng bến, cũng UTC), tức là nguồn giờ sai THỨ HAI; bỏ luôn
+    ///    vì model không cần lịch dừng để chọn chuyến (cần thì đã có get_route_info).
+    /// 2. RÁC: TripId, BoatId, FareAdjustment, OperatingStatus... model không dùng tới. Model
+    ///    chọn chuyến bằng trip_code (ResolveTripAsync tra theo mã, không theo id), nên đưa GUID
+    ///    vào chỉ tốn token và cho model thêm thứ để bịa.
+    ///
+    /// Giờ khởi hành lấy theo BẾN KHÁCH LÊN (FromStopScheduledDeparture) chứ không phải giờ rời
+    /// bến đầu tuyến; giờ này đã gồm điều chỉnh của từng bến. Chuyến ngắm cảnh đi nguyên vòng nên
+    /// handler đặt sẵn giờ khởi hành (đã điều chỉnh) vào đúng trường đó.
+    /// </summary>
+    internal static object ToModelTrip(TripSummaryDto trip) => new
+    {
+        trip_code = trip.TripCode,
+        tuyen = trip.RouteName,
+        gio_khoi_hanh = Clock(trip.FromStopScheduledDeparture ?? trip.AdjustedDepartureTime ?? trip.DepartureTime),
+        gio_den = Clock(trip.ToStopScheduledArrival ?? trip.AdjustedArrivalTime ?? trip.ArrivalTime),
+        ghe_trong = trip.AvailableSeats,
+        tong_ghe = trip.TotalSeats,
+        gia_tu = trip.MinPrice,
+        con_dat_duoc = trip.IsBookable && !trip.IsBookingClosed,
+        ly_do_khong_dat_duoc = trip.BookingClosedReason,
+        // Chỉ nói tới trễ giờ khi chuyến ĐANG trễ: delay đã kết thúc mà vẫn kể ra thì model
+        // đi báo khách một chuyến đang chạy đúng giờ là bị trễ.
+        tre_phut = trip.DelayInfo is { IsDelayActive: true } delay ? delay.DelayMinutes : (int?)null,
+        ly_do_tre = trip.DelayInfo is { IsDelayActive: true } reason ? reason.DelayReason : null,
+    };
 
     private static StationDto? ResolveStation(IReadOnlyList<StationDto> stations, string query)
     {
@@ -1084,7 +1134,7 @@ public sealed class AssistantToolset
         return JsonSerializer.Serialize(new
         {
             date = dateStr,
-            chuyen_ngam_canh = trips,
+            chuyen_ngam_canh = trips.Select(ToModelTrip).ToArray(),
             message = trips.Count == 0 ? "Ngay nay khong co chuyen ngam canh nao." : null,
             dia_danh = landmarkList,
             tong_so_dia_danh = landmarks.Count,
@@ -1237,7 +1287,7 @@ public sealed class AssistantToolset
                 dieu_kien = i.Conditions,
             }).ToArray(),
             luu_y = "Day la bang gia va cong thuc. Gia CHINH XAC cua mot chuyen cu the phai lay tu "
-                  + "search_trips (minPrice da tinh ca phu thu), dung tu nhan tay roi bao khach.",
+                  + "search_trips (truong gia_tu da tinh ca phu thu), dung tu nhan tay roi bao khach.",
         });
     }
 
@@ -1268,8 +1318,11 @@ public sealed class AssistantToolset
                 gia_tri_giam = p.DiscountValue,
                 giam_toi_da = p.MaxDiscountAmount,
                 don_toi_thieu = p.MinOrderValue,
-                hieu_luc_tu = p.ValidFrom.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
-                hieu_luc_den = p.ValidTo.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                // Day() chứ không ToString() thẳng: ValidFrom/ValidTo là thời điểm UTC, mà Admin
+                // nhập theo giờ VN — mốc 00:00 ngày 01/09 nằm ở 17:00 ngày 31/08 UTC, in thô ra
+                // là lùi mất một ngày.
+                hieu_luc_tu = Day(p.ValidFrom),
+                hieu_luc_den = Day(p.ValidTo),
             }).ToArray(),
             luu_y = "Loai Percentage = giam theo phan tram, FixedAmount = giam so tien co dinh. "
                   + "Ma co the con dieu kien rieng, khach nhap ma o buoc thanh toan moi biet chac.",
@@ -1522,7 +1575,7 @@ public sealed class AssistantToolset
             {
               "type": "object",
               "properties": {
-                "trip_code":    { "type": "string", "description": "Mã chuyến lấy từ kết quả search_trips (trường tripCode)." },
+                "trip_code":    { "type": "string", "description": "Mã chuyến lấy từ kết quả search_trips (trường trip_code)." },
                 "from_station": { "type": "string", "description": "Tên ga đi. Bắt buộc với chuyến bán ghế theo chặng, vì ghế trống tính theo chặng." },
                 "to_station":   { "type": "string", "description": "Tên ga đến." }
               },
