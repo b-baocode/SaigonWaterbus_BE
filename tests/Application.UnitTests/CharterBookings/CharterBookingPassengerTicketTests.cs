@@ -112,6 +112,99 @@ public class CharterBookingPassengerTicketTests
     }
 
     [Test]
+    public async Task FullyPaidCharterReservesSeatsAndExportsThemBeforeTripCreation()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        AttachSelectedBoat(booking, boat);
+        booking.Passengers =
+        [
+            new BookingPassenger
+            {
+                BookingId = booking.Id,
+                FullName = "Nguyen Van A",
+                BirthYear = 1990,
+                PassengerType = CharterBookingPassengerType.Adult.ToString(),
+                ApprovalStatus = CharterBookingPassengerSupport.ApprovalStatusApproved
+            },
+            new BookingPassenger
+            {
+                BookingId = booking.Id,
+                FullName = "Tran Thi B",
+                BirthYear = 1992,
+                PassengerType = CharterBookingPassengerType.Adult.ToString(),
+                ApprovalStatus = CharterBookingPassengerSupport.ApprovalStatusApproved
+            }
+        ];
+        context.AddRange(boat, booking, CharterSeat(boat, "A01"), CharterSeat(boat, "A02"));
+        await context.SaveChangesAsync();
+
+        var tickets = await CharterBookingTicketSupport.EnsurePassengerTicketsAsync(
+            context,
+            booking,
+            new FixedTimeProvider(DateTimeOffset.UtcNow),
+            CancellationToken.None);
+
+        tickets.ShouldNotBeNull();
+        tickets!.Tickets.ShouldAllBe(x => x.BookingPassenger != null
+            && x.BookingPassenger.CharterSeat != null
+            && !string.IsNullOrWhiteSpace(x.BookingPassenger.CharterSeat.Code));
+        booking.Passengers.ShouldAllBe(x => x.CharterSeatId.HasValue && !x.TripId.HasValue && !x.TripSeatId.HasValue);
+
+        // The PDF renderer receives this export DTO, so this proves the PDF gets the reserved seat code.
+        var export = CharterBookingTicketExportSupport.ToDto(booking, tickets.Tickets);
+        export.Tickets.Select(x => x.SeatCode).OrderBy(x => x).ShouldBe(["A01", "A02"]);
+    }
+
+    [Test]
+    public async Task ReplacingManifestAfterTripCreationReleasesUnusedTripSeat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var boat = SeatFlowTestData.Boat(SeatSetupType.FullStandard, seatsConfigured: true, status: BoatStatus.Active);
+        var booking = PaidCharterBooking(userId, adultCount: 2);
+        AttachSelectedBoat(booking, boat);
+        var trip = new Trip
+        {
+            Boat = boat,
+            BoatId = boat.Id,
+            RouteId = Guid.NewGuid(),
+            TripCode = $"CH{Guid.NewGuid():N}"[..20],
+            TripType = TripTypes.Charter,
+            OperatingDate = booking.DepartureDate!.Value,
+            DepartureTime = new DateTimeOffset(2030, 1, 1, 1, 0, 0, TimeSpan.Zero),
+            ArrivalTime = new DateTimeOffset(2030, 1, 1, 4, 0, 0, TimeSpan.Zero),
+            CapacitySnapshot = 2,
+            TripStatus = TripStatus.Scheduled
+        };
+        booking.TripId = trip.Id;
+        booking.CharterBoats.Single().TripId = trip.Id;
+        context.AddRange(boat, trip, booking, CharterSeat(boat, "A01"), CharterSeat(boat, "A02"));
+        await context.SaveChangesAsync();
+
+        var handler = CreateUpdateHandler(context, userId);
+        await handler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [
+                    new CharterBookingPassengerRequest("Nguyen Van A", 1990),
+                    new CharterBookingPassengerRequest("Tran Thi B", 1992)
+                ]),
+            CancellationToken.None);
+
+        await handler.Handle(
+            new UpdateCharterBookingPassengersCommand(
+                booking.Id,
+                [new CharterBookingPassengerRequest("Nguyen Van A", 1990)]),
+            CancellationToken.None);
+
+        context.Set<TripSeat>().Count(x => x.TripId == trip.Id && x.Status == TripSeat.StatusBooked).ShouldBe(1);
+        context.Set<TripSeat>().Count(x => x.TripId == trip.Id && x.Status == TripSeat.StatusAvailable).ShouldBe(1);
+    }
+
+    [Test]
     public async Task UpdatingPassengersCanExceedRequestedCountUpToSelectedBoatCapacity()
     {
         await using var context = SeatFlowTestData.CreateContext();
@@ -120,6 +213,7 @@ public class CharterBookingPassengerTicketTests
         var booking = PaidCharterBooking(userId, adultCount: 2);
         AttachSelectedBoat(booking, boat);
         context.AddRange(boat, booking);
+        context.AddRange(ConfiguredCharterSeats(boat));
         await context.SaveChangesAsync();
 
         var handler = CreateUpdateHandler(context, userId);
@@ -149,6 +243,7 @@ public class CharterBookingPassengerTicketTests
         var booking = PaidCharterBooking(userId, adultCount: 2);
         AttachSelectedBoat(booking, boat);
         context.AddRange(boat, booking);
+        context.AddRange(ConfiguredCharterSeats(boat));
         await context.SaveChangesAsync();
 
         var handler = CreateUpdateHandler(context, userId);
@@ -179,6 +274,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         var booking = PaidCharterBooking(userId, adultCount: 2);
         AttachSelectedBoat(booking, boat);
         context.AddRange(boat, booking);
+        context.AddRange(ConfiguredCharterSeats(boat));
         await context.SaveChangesAsync();
 
         var handler = CreateImportHandler(context, userId);
@@ -213,6 +309,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         booking.Payments.Add(PaidPayment(booking.TotalAmount));
         AttachSelectedBoat(booking, boat);
         context.AddRange(boat, booking);
+        context.AddRange(ConfiguredCharterSeats(boat));
         await context.SaveChangesAsync();
 
         var handler = CreateImportHandler(context, userId, new TestPaymentNotificationSender());
@@ -265,6 +362,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         });
         AttachSelectedBoat(booking, boat);
         context.AddRange(boat, booking);
+        context.AddRange(ConfiguredCharterSeats(boat));
         await context.SaveChangesAsync();
 
         var updateHandler = CreateUpdateHandler(context, userId);
@@ -340,6 +438,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         booking.Payments.Add(PaidPayment(booking.TotalAmount));
         AttachSelectedBoat(booking, boat);
         context.AddRange(boat, booking);
+        context.AddRange(ConfiguredCharterSeats(boat));
         await context.SaveChangesAsync();
 
         var updateHandler = CreateUpdateHandler(context, userId);
@@ -1075,6 +1174,14 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
             Column = int.Parse(code[1..]),
             IsActive = true
         };
+
+    private static Seat[] ConfiguredCharterSeats(Boat boat) =>
+    [
+        CharterSeat(boat, "A01"),
+        CharterSeat(boat, "A02"),
+        CharterSeat(boat, "A03"),
+        CharterSeat(boat, "A04")
+    ];
 
     private static Payment PaidPayment(decimal amount) =>
         new()

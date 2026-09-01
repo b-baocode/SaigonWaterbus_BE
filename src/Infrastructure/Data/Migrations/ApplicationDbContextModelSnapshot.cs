@@ -678,6 +678,10 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .HasColumnType("integer")
                         .HasColumnName("birth_year");
 
+                    b.Property<Guid?>("CharterSeatId")
+                        .HasColumnType("uuid")
+                        .HasColumnName("charter_seat_id");
+
                     b.Property<Guid>("BookingId")
                         .HasColumnType("uuid")
                         .HasColumnName("booking_id");
@@ -778,6 +782,9 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("BookingId");
+
+                    b.HasIndex("BookingId", "CharterSeatId")
+                        .IsUnique();
 
                     b.HasIndex("FromStationId");
 
@@ -4094,6 +4101,11 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("SaigonWaterbus.Domain.Entities.Seat", "CharterSeat")
+                        .WithMany()
+                        .HasForeignKey("CharterSeatId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("SaigonWaterbus.Domain.Entities.Station", "FromStation")
                         .WithMany()
                         .HasForeignKey("FromStationId")
@@ -4125,6 +4137,8 @@ namespace SaigonWaterbus.Infrastructure.Data.Migrations
                         .OnDelete(DeleteBehavior.SetNull);
 
                     b.Navigation("Booking");
+
+                    b.Navigation("CharterSeat");
 
                     b.Navigation("FromStation");
 

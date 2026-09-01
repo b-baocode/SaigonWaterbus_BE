@@ -138,7 +138,7 @@ internal static class CharterBookingTicketSupport
             passenger?.PassengerType,
             passenger?.TripId,
             passenger?.TripSeatId,
-            passenger?.TripSeat?.Seat?.Code);
+            passenger?.TripSeat?.Seat?.Code ?? passenger?.CharterSeat?.Code);
     }
 
     public static async Task EnsureCharterBookingQrTokenAsync(

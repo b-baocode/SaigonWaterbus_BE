@@ -70,6 +70,9 @@ public sealed class ExportCharterBookingTicketsQueryHandler
                 .ThenInclude(x => x.BookingPassenger)
                     .ThenInclude(x => x!.TripSeat)
                         .ThenInclude(x => x!.Seat)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
+                    .ThenInclude(x => x!.CharterSeat)
             .SingleOrDefaultAsync(x => x.Id == request.BookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
@@ -118,6 +121,9 @@ public sealed class ExportCharterBookingTicketsByQrTokenQueryHandler
                 .ThenInclude(x => x.BookingPassenger)
                     .ThenInclude(x => x!.TripSeat)
                         .ThenInclude(x => x!.Seat)
+            .Include(x => x.Tickets)
+                .ThenInclude(x => x.BookingPassenger)
+                    .ThenInclude(x => x!.CharterSeat)
             .SingleOrDefaultAsync(x => x.Id == bookingId, cancellationToken)
             ?? throw new NotFoundException("Charter booking not found.");
 
@@ -180,7 +186,7 @@ internal static class CharterBookingTicketExportSupport
                     x.TicketCode,
                     x.QrToken,
                     x.TicketStatus.ToString(),
-                    x.BookingPassenger?.TripSeat?.Seat?.Code))
+                    x.BookingPassenger?.TripSeat?.Seat?.Code ?? x.BookingPassenger?.CharterSeat?.Code))
                 .ToList());
     }
 

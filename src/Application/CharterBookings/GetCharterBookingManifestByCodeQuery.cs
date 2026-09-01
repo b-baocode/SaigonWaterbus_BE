@@ -71,6 +71,8 @@ public sealed class GetCharterBookingManifestByCodeQueryHandler
             .Include(x => x.Passengers)
                 .ThenInclude(x => x.TripSeat)
                     .ThenInclude(x => x!.Seat)
+            .Include(x => x.Passengers)
+                .ThenInclude(x => x.CharterSeat)
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.BookingPassenger)
             .Include(x => x.Tickets)
@@ -175,6 +177,8 @@ internal static class CharterBookingManifestSupport
             .Include(x => x.Passengers)
                 .ThenInclude(x => x.TripSeat)
                     .ThenInclude(x => x!.Seat)
+            .Include(x => x.Passengers)
+                .ThenInclude(x => x.CharterSeat)
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.BookingPassenger)
             .Include(x => x.Tickets)
@@ -272,5 +276,5 @@ internal static class CharterBookingManifestSupport
                 && TicketAttendanceWindowSupport.IsWithinCheckOutWindow(ticket, booking, now),
             passenger.TripId,
             passenger.TripSeatId,
-            passenger.TripSeat?.Seat?.Code);
+            passenger.TripSeat?.Seat?.Code ?? passenger.CharterSeat?.Code);
 }

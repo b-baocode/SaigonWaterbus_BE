@@ -23,6 +23,9 @@ public class BookingPassenger : BaseGuidEntity
     public string? ReviewNote { get; set; }
     public Guid? TripId { get; set; }
     public Guid? TripSeatId { get; set; }
+    // Physical seat reserved for a fully-paid charter booking before Operations creates its trip.
+    // It is later mapped to the matching TripSeat without changing the passenger's seat code.
+    public Guid? CharterSeatId { get; set; }
     public decimal? UnitPrice { get; set; }
 
     // Chặng đi của hành khách trên trip (trạm lên/xuống). Null = chiếm ghế cả trip
@@ -36,6 +39,7 @@ public class BookingPassenger : BaseGuidEntity
     public Booking Booking { get; set; } = null!;
     public Trip? Trip { get; set; }
     public TripSeat? TripSeat { get; set; }
+    public Seat? CharterSeat { get; set; }
     public Station? FromStation { get; set; }
     public Station? ToStation { get; set; }
     public User? RequestedByUser { get; set; }

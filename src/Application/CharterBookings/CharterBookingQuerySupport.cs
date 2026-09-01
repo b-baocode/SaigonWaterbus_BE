@@ -26,6 +26,8 @@ internal static class CharterBookingQuerySupport
             .Include(b => b.Passengers)
                 .ThenInclude(p => p.TripSeat)
                     .ThenInclude(s => s!.Seat)
+            .Include(b => b.Passengers)
+                .ThenInclude(p => p.CharterSeat)
             .Include(b => b.Payments)
             .Include(b => b.Tickets)
                 .ThenInclude(t => t.BookingPassenger);
