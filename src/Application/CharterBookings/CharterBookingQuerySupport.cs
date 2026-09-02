@@ -111,6 +111,7 @@ internal static class CharterBookingQuerySupport
             booking.TotalAmount,
             booking.DepositAmount,
             booking.RemainingAmount,
+            booking.PointsUsed,
             // BE tính sẵn để FE không phải đoán — đảm bảo nút "Đặt cọc / Thanh toán đủ / Phần còn lại" enabled đúng.
             RequiresAdditionalPayment: booking.RemainingAmount > 0,
             ContactName: booking.ContactName,

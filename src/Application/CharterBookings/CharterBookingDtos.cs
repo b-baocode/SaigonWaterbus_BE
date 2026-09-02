@@ -326,6 +326,7 @@ public sealed record CharterBookingDetailDto(
     decimal TotalAmount,
     decimal DepositAmount,
     decimal RemainingAmount,
+    int PointsUsed,
     /// <summary>true khi RemainingAmount &gt; 0 — cần thanh toán thêm.</summary>
     bool RequiresAdditionalPayment,
     string ContactName,
