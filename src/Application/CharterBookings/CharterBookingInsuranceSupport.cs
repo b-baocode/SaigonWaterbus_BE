@@ -285,61 +285,22 @@ internal static class CharterBookingInsuranceSupport
         return additionalAmount;
     }
 
-    public static async Task<decimal> ApplyPassengerQuantityIncreaseAsync(
+    public static Task<decimal> ApplyPassengerQuantityIncreaseAsync(
         IApplicationDbContext context,
         Booking booking,
         int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken)
     {
-        var wasFullyPaidByPoints = booking.PointsUsed > 0
-            && booking.TotalAmount <= 0m
-            && booking.RemainingAmount <= 0m
-            && booking.Payments.Any(x =>
-                PaymentSupport.IsSettlementPayment(x)
-                && PaymentSupport.IsPaid(x.PaymentStatus)
-                && string.Equals(
-                    x.PaymentMethod,
-                    PaymentSupport.PointsPaymentMethod,
-                    StringComparison.OrdinalIgnoreCase));
+        _ = context;
+        _ = cancellationToken;
 
-        var additionalAmount = ApplyPassengerQuantityIncrease(
+        // Điểm chỉ được chọn và sử dụng ở lần checkout đầu tiên. Phí bảo hiểm
+        // phát sinh do thêm hành khách luôn là số dư mới để khách thanh toán riêng.
+        return Task.FromResult(ApplyPassengerQuantityIncrease(
             booking,
             insuredPassengerQuantity,
-            quotedAt);
-        if (!wasFullyPaidByPoints
-            || additionalAmount <= 0m
-            || !booking.UserId.HasValue
-            || additionalAmount > int.MaxValue)
-        {
-            return additionalAmount;
-        }
-
-        var user = await context.Set<User>()
-            .SingleOrDefaultAsync(x => x.Id == booking.UserId.Value, cancellationToken);
-        if (user is null || user.PointBalance <= 0)
-        {
-            return additionalAmount;
-        }
-
-        var pointsRequired = (int)decimal.Ceiling(additionalAmount);
-        var pointsToUse = Math.Min(user.PointBalance, pointsRequired);
-
-        PointSupport.AddTransaction(
-            context,
-            user,
-            booking.Id,
-            PointTransactionTypes.Redeem,
-            -pointsToUse,
-            $"Dùng điểm thanh toán bảo hiểm bổ sung booking {booking.BookingCode}",
-            quotedAt);
-        booking.PointsUsed += pointsToUse;
-        booking.TotalAmount = Math.Max(0m, booking.TotalAmount - pointsToUse);
-        PaymentSupport.RestorePaymentSummaryFromPaidPayments(booking);
-        booking.PaymentStatus = booking.RemainingAmount <= 0m
-            ? BookingPaymentStatusExtensions.PaidValue
-            : BookingPaymentStatusExtensions.DepositPaidValue;
-        return additionalAmount;
+            quotedAt));
     }
 
     public static async Task<decimal> ReversePassengerQuantityIncreaseAsync(

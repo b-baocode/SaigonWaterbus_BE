@@ -495,14 +495,10 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
         notificationSender.BoardingPasses.Count.ShouldBe(0);
     }
 
-    [TestCase(10_000, 0, false, "Paid", BookingStatus.Confirmed)]
-    [TestCase(5_000, 5_000, true, "DepositPaid", BookingStatus.Approved)]
-    public async Task ApprovingPassengerAddRequestUsesRemainingPointsForAddedInsurance(
-        int availablePoints,
-        decimal expectedRemainingAmount,
-        bool expectedAdditionalPayment,
-        string expectedPaymentStatus,
-        BookingStatus expectedBookingStatus)
+    [TestCase(10_000)]
+    [TestCase(5_000)]
+    public async Task ApprovingPassengerAddRequestDoesNotReusePointsForAddedInsurance(
+        int availablePoints)
     {
         await using var context = SeatFlowTestData.CreateContext();
         var customer = Customer();
@@ -561,16 +557,16 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
             CancellationToken.None);
 
         result.AdditionalInsuranceAmount.ShouldBe(10_000m);
-        result.TotalAmount.ShouldBe(expectedRemainingAmount);
-        result.RemainingAmount.ShouldBe(expectedRemainingAmount);
-        result.RequiresAdditionalPayment.ShouldBe(expectedAdditionalPayment);
-        result.PaymentStatus.ShouldBe(expectedPaymentStatus);
-        booking.BookingStatus.ShouldBe(expectedBookingStatus);
-        booking.PointsUsed.ShouldBe(1_020_000 + availablePoints);
-        customer.PointBalance.ShouldBe(0);
+        result.TotalAmount.ShouldBe(10_000m);
+        result.RemainingAmount.ShouldBe(10_000m);
+        result.RequiresAdditionalPayment.ShouldBeTrue();
+        result.PaymentStatus.ShouldBe("Unpaid");
+        booking.BookingStatus.ShouldBe(BookingStatus.Approved);
+        booking.PointsUsed.ShouldBe(1_020_000);
+        customer.PointBalance.ShouldBe(availablePoints);
         context.Set<PointTransaction>()
-            .Single(x => x.BookingId == booking.Id && x.TransactionType == PointTransactionTypes.Redeem)
-            .Points.ShouldBe(-availablePoints);
+            .Any(x => x.BookingId == booking.Id && x.TransactionType == PointTransactionTypes.Redeem)
+            .ShouldBeFalse();
     }
 
     [Test]
