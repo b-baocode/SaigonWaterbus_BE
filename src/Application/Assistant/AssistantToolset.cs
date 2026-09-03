@@ -609,7 +609,14 @@ public sealed class AssistantToolset
             patch = isReturnLeg
                 ? patch with { ReturnTrip = trip, IsRoundTrip = true }
                 : patch with { Trip = trip };
-            written.Add($"chuyen {LegLabel(isReturnLeg)} = {trip!.TripCode}");
+            // KÈM GIỜ VÀ GIÁ, đừng chỉ mã chuyến: đây là kết quả tool CUỐI CÙNG model đọc trước khi
+            // viết câu trả lời, và sang lượt sau thì kết quả tool không được lưu lại (lịch sử trong
+            // DB chỉ có text user/assistant, còn tóm tắt draft chỉ ghi "đã chọn chuyến: rồi"). Thiếu
+            // giờ ở đây thì model phải nói lại từ trí nhớ — 03/09/2026: chuyến 09:05 bị báo thành
+            // 09:00. Clock() đã đổi sẵn sang giờ Việt Nam, model chép nguyên là đúng.
+            written.Add(
+                $"chuyen {LegLabel(isReturnLeg)} = {trip!.TripCode} (khoi hanh {Clock(trip.FromStopScheduledDeparture)}, "
+                + $"den {Clock(trip.ToStopScheduledArrival)}, con {trip.AvailableSeats} ghe, gia tu {trip.MinPrice}d)");
         }
 
         // Chọn ghế sau cùng, để chuyến vừa chọn ở CHÍNH lượt này cũng dùng được ngay
@@ -667,6 +674,8 @@ public sealed class AssistantToolset
             ghe = seatResults.Count == 0 ? null : seatResults,
             luu_y = "Nhung gia tri tren DA duoc ghi nhan cho khach. Xac nhan ngan gon roi nhac buoc "
                   + "tiep theo con thieu; con thieu nhieu thu thi hoi TUNG THU MOT. "
+                  + "Gio va so tien phai chep DUNG con so o tren (gio da la gio Viet Nam) — khong lam "
+                  + "tron, khong cong them tieng nao, khong noi lai theo tri nho. "
                   + "KHONG nhac toi form, so do ghe hay nut bam nao trong chat — chat khong co nhung thu do. "
                   + (seatResults.Count == 0
                       ? "Thanh toan la viec khach lam o trang dat ve."
