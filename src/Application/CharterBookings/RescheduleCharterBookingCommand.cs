@@ -66,8 +66,9 @@ public sealed class RescheduleCharterBookingCommandHandler
                 "Không thể đổi lịch charter booking đã hủy, hết hạn hoặc hoàn tất.")]);
         }
 
-        var newDeparture = new DateTimeOffset(request.DepartureDate.ToDateTime(request.StartTime), VietnamOffset)
-            .ToUniversalTime();
+        var newDeparture = CharterBookingTripSupport.ResolveVietnamTimeUtc(
+            request.DepartureDate,
+            request.StartTime);
         if (newDeparture <= _timeProvider.GetUtcNow())
         {
             throw new ValidationException([new ValidationFailure(nameof(request.DepartureDate),
@@ -93,22 +94,16 @@ public sealed class RescheduleCharterBookingCommandHandler
                 "Không thể đổi lịch khi booking đã có hành khách check-in hoặc check-out.")]);
         }
 
-        var primaryTrip = booking.TripId.HasValue
-            ? trips.SingleOrDefault(x => x.Id == booking.TripId.Value)
-            : null;
-        var currentScheduleDeparture = primaryTrip?.DepartureTime
-            ?? trips.OrderBy(x => x.DepartureTime).FirstOrDefault()?.DepartureTime
-            ?? CharterBookingTripSupport.ResolveDepartureTimeUtc(booking);
-        var shift = newDeparture - currentScheduleDeparture;
-        var fallbackArrival = CharterBookingTripSupport
-            .ResolveArrivalTimeUtc(currentScheduleDeparture, booking)
-            .Add(shift);
-        var proposedSchedules = BuildProposedSchedules(
-            booking,
+        var fallbackArrival = ResolveFallbackArrivalTimeUtc(request, booking, newDeparture);
+        var proposedTripSchedules = BuildProposedTripSchedules(
             trips,
             newDeparture,
-            fallbackArrival,
-            shift);
+            fallbackArrival);
+        var proposedSchedules = BuildProposedSchedules(
+            booking,
+            proposedTripSchedules,
+            newDeparture,
+            fallbackArrival);
         EnsureWithinOperatingHours(request, booking, proposedSchedules);
         await EnsureBoatsAreAvailableAsync(
             booking,
@@ -120,21 +115,32 @@ public sealed class RescheduleCharterBookingCommandHandler
         booking.DepartureDate = request.DepartureDate;
         booking.StartTime = request.StartTime;
 
-        foreach (var trip in trips)
+        var boatOrdersByTripId = ResolveBoatOrdersByTripId(booking, proposedTripSchedules);
+        var proposedTripStopSchedules = proposedTripSchedules
+            .SelectMany(x => BuildProposedTripStopSchedules(x.Trip, x.DepartureTime))
+            .ToArray();
+        foreach (var proposedTripSchedule in proposedTripSchedules)
         {
+            var trip = proposedTripSchedule.Trip;
+            ReanchorTrip(trip, proposedTripSchedule.DepartureTime, proposedTripSchedule.ArrivalTime);
             trip.OperatingDate = request.DepartureDate;
-            trip.DepartureTime = trip.DepartureTime.Add(shift);
-            trip.ArrivalTime = trip.ArrivalTime.Add(shift);
-            foreach (var stop in trip.TripStops)
-            {
-                stop.PlannedArrivalTime = Shift(stop.PlannedArrivalTime, shift);
-                stop.PlannedDepartureTime = Shift(stop.PlannedDepartureTime, shift);
-                stop.AdjustedArrivalTime = Shift(stop.AdjustedArrivalTime, shift);
-                stop.AdjustedDepartureTime = Shift(stop.AdjustedDepartureTime, shift);
-            }
+            trip.TripCode = CharterBookingTripSupport.BuildTripCode(
+                booking,
+                boatOrdersByTripId[trip.Id]);
         }
 
-        await _context.SaveChangesAsync(cancellationToken);
+        await _context.ExecuteInTransactionAsync(async ct =>
+        {
+            // PostgreSQL có trigger cascade trip -> trip_stops. Lưu trip trước, sau đó ghi đè
+            // schedule chuẩn để cả stop đã sai từ trước cũng được neo lại đúng ngày/giờ mới.
+            await _context.SaveChangesAsync(ct);
+            if (proposedTripStopSchedules.Length > 0)
+            {
+                ApplyProposedTripStopSchedules(proposedTripStopSchedules);
+                _context.Set<TripStop>().UpdateRange(proposedTripStopSchedules.Select(x => x.Stop));
+                await _context.SaveChangesAsync(ct);
+            }
+        }, cancellationToken);
         await _realtimeNotifier.PublishChangedAsync(
             new CharterBookingRealtimeEvent(
                 booking.Id,
@@ -151,21 +157,51 @@ public sealed class RescheduleCharterBookingCommandHandler
         return CharterBookingQuerySupport.ToDetailDto(updatedBooking, relatedRoutes);
     }
 
-    private static DateTimeOffset? Shift(DateTimeOffset? value, TimeSpan shift) =>
-        value?.Add(shift);
+    private static DateTimeOffset ResolveFallbackArrivalTimeUtc(
+        RescheduleCharterBookingCommand request,
+        Booking booking,
+        DateTimeOffset newDeparture)
+    {
+        var durationValue = CharterBookingRoutePricingSupport.ResolveRequestedDurationValue(booking);
+        if (CharterBookingRoutePricingSupport.ResolveRentalUnit(booking) == BoatRentalUnit.Day)
+        {
+            return CharterBookingTripSupport.ResolveVietnamTimeUtc(
+                request.DepartureDate.AddDays(durationValue - 1),
+                CharterBookingTripSupport.OperatingDayEndTime);
+        }
+
+        return newDeparture.AddHours(durationValue);
+    }
+
+    private static IReadOnlyList<ProposedTripSchedule> BuildProposedTripSchedules(
+        IReadOnlyCollection<Trip> trips,
+        DateTimeOffset newDeparture,
+        DateTimeOffset fallbackArrival)
+    {
+        var fallbackDuration = fallbackArrival - newDeparture;
+        return trips
+            .Select(trip =>
+            {
+                // Mỗi linked trip là một tàu chạy cùng charter, nên cùng khởi hành đúng giờ booking.
+                var departure = newDeparture;
+                var currentDuration = trip.ArrivalTime - trip.DepartureTime;
+                var duration = currentDuration > TimeSpan.Zero ? currentDuration : fallbackDuration;
+                return new ProposedTripSchedule(trip, departure, departure.Add(duration));
+            })
+            .ToList();
+    }
 
     private static IReadOnlyList<ProposedSchedule> BuildProposedSchedules(
         Booking booking,
-        IReadOnlyCollection<Trip> trips,
+        IReadOnlyCollection<ProposedTripSchedule> tripSchedules,
         DateTimeOffset newDeparture,
-        DateTimeOffset fallbackArrival,
-        TimeSpan shift)
+        DateTimeOffset fallbackArrival)
     {
-        var schedules = trips
+        var schedules = tripSchedules
             .Select(x => new ProposedSchedule(
-                x.BoatId ?? Guid.Empty,
-                x.DepartureTime.Add(shift),
-                x.ArrivalTime.Add(shift)))
+                x.Trip.BoatId ?? Guid.Empty,
+                x.DepartureTime,
+                x.ArrivalTime))
             .ToList();
         var scheduledBoatIds = schedules
             .Where(x => x.BoatId != Guid.Empty)
@@ -183,6 +219,131 @@ public sealed class RescheduleCharterBookingCommandHandler
         }
 
         return schedules;
+    }
+
+    private static IReadOnlyDictionary<Guid, int> ResolveBoatOrdersByTripId(
+        Booking booking,
+        IReadOnlyCollection<ProposedTripSchedule> tripSchedules)
+    {
+        var result = booking.CharterBoats
+            .Where(x => x.TripId.HasValue)
+            .GroupBy(x => x.TripId!.Value)
+            .ToDictionary(x => x.Key, x => x.OrderBy(boat => boat.BoatOrder).First().BoatOrder);
+        var usedOrders = result.Values.ToHashSet();
+        var nextOrder = 1;
+        foreach (var schedule in tripSchedules
+                     .OrderByDescending(x => booking.TripId == x.Trip.Id)
+                     .ThenBy(x => x.Trip.Id))
+        {
+            if (result.ContainsKey(schedule.Trip.Id))
+            {
+                continue;
+            }
+
+            while (usedOrders.Contains(nextOrder))
+            {
+                nextOrder++;
+            }
+
+            result[schedule.Trip.Id] = nextOrder;
+            usedOrders.Add(nextOrder);
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<ProposedTripStopSchedule> BuildProposedTripStopSchedules(
+        Trip trip,
+        DateTimeOffset newDeparture)
+    {
+        var orderedStops = trip.TripStops.OrderBy(x => x.StopOrder).ToArray();
+        var oldStopAnchor = orderedStops
+            .Select(x => x.PlannedDepartureTime ?? x.PlannedArrivalTime)
+            .FirstOrDefault(x => x.HasValue)
+            ?? trip.DepartureTime;
+
+        return orderedStops
+            .Select(stop =>
+            {
+                var newPlannedArrival = Reanchor(stop.PlannedArrivalTime, oldStopAnchor, newDeparture);
+                var newPlannedDeparture = Reanchor(stop.PlannedDepartureTime, oldStopAnchor, newDeparture);
+                return new ProposedTripStopSchedule(
+                    stop,
+                    newPlannedArrival,
+                    newPlannedDeparture,
+                    ReanchorAdjusted(
+                        stop.AdjustedArrivalTime,
+                        stop.PlannedArrivalTime,
+                        newPlannedArrival,
+                        oldStopAnchor,
+                        newDeparture),
+                    ReanchorAdjusted(
+                        stop.AdjustedDepartureTime,
+                        stop.PlannedDepartureTime,
+                        newPlannedDeparture,
+                        oldStopAnchor,
+                        newDeparture));
+            })
+            .ToArray();
+    }
+
+    private static void ApplyProposedTripStopSchedules(
+        IReadOnlyCollection<ProposedTripStopSchedule> schedules)
+    {
+        foreach (var schedule in schedules)
+        {
+            schedule.Stop.PlannedArrivalTime = schedule.PlannedArrivalTime;
+            schedule.Stop.PlannedDepartureTime = schedule.PlannedDepartureTime;
+            schedule.Stop.AdjustedArrivalTime = schedule.AdjustedArrivalTime;
+            schedule.Stop.AdjustedDepartureTime = schedule.AdjustedDepartureTime;
+        }
+    }
+
+    private static void ReanchorTrip(
+        Trip trip,
+        DateTimeOffset newDeparture,
+        DateTimeOffset newArrival)
+    {
+        var oldDeparture = trip.DepartureTime;
+        var oldArrival = trip.ArrivalTime;
+
+        trip.AdjustedDepartureTime = ReanchorAdjusted(
+            trip.AdjustedDepartureTime,
+            oldDeparture,
+            newDeparture,
+            oldDeparture,
+            newDeparture);
+        trip.AdjustedArrivalTime = ReanchorAdjusted(
+            trip.AdjustedArrivalTime,
+            oldArrival,
+            newArrival,
+            oldArrival,
+            newArrival);
+        trip.DepartureTime = newDeparture;
+        trip.ArrivalTime = newArrival;
+    }
+
+    private static DateTimeOffset? Reanchor(
+        DateTimeOffset? value,
+        DateTimeOffset oldAnchor,
+        DateTimeOffset newAnchor) =>
+        value.HasValue ? newAnchor.Add(value.Value - oldAnchor) : null;
+
+    private static DateTimeOffset? ReanchorAdjusted(
+        DateTimeOffset? adjusted,
+        DateTimeOffset? planned,
+        DateTimeOffset? newPlanned,
+        DateTimeOffset oldAnchor,
+        DateTimeOffset newAnchor)
+    {
+        if (!adjusted.HasValue)
+        {
+            return null;
+        }
+
+        return planned.HasValue && newPlanned.HasValue
+            ? newPlanned.Value.Add(adjusted.Value - planned.Value)
+            : newAnchor.Add(adjusted.Value - oldAnchor);
     }
 
     private static void EnsureWithinOperatingHours(
@@ -306,4 +467,16 @@ public sealed class RescheduleCharterBookingCommandHandler
         Guid BoatId,
         DateTimeOffset DepartureTime,
         DateTimeOffset ArrivalTime);
+
+    private sealed record ProposedTripSchedule(
+        Trip Trip,
+        DateTimeOffset DepartureTime,
+        DateTimeOffset ArrivalTime);
+
+    private sealed record ProposedTripStopSchedule(
+        TripStop Stop,
+        DateTimeOffset? PlannedArrivalTime,
+        DateTimeOffset? PlannedDepartureTime,
+        DateTimeOffset? AdjustedArrivalTime,
+        DateTimeOffset? AdjustedDepartureTime);
 }

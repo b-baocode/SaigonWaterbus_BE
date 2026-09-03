@@ -145,7 +145,7 @@ public class RescheduleCharterBookingCommandTests
     }
 
     [Test]
-    public async Task RescheduleRepairsTripWhenBookingDateWasAlreadyChangedDirectly()
+    public async Task RescheduleTreatsInputAsVietnamTimeAndRepairsCorruptedTripStops()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
@@ -166,6 +166,7 @@ public class RescheduleCharterBookingCommandTests
         var route = Route();
         var oldDeparture = new DateTimeOffset(2030, 9, 10, 15, 0, 0, TimeSpan.FromHours(7))
             .ToUniversalTime();
+        var corruptedStopDeparture = new DateTimeOffset(2030, 8, 30, 3, 0, 0, TimeSpan.Zero);
         var trip = new Trip
         {
             Route = route,
@@ -175,18 +176,32 @@ public class RescheduleCharterBookingCommandTests
             SourceBookingId = booking.Id,
             OperatingDate = new DateOnly(2030, 9, 10),
             DepartureTime = oldDeparture,
-            ArrivalTime = oldDeparture.AddHours(1),
+            ArrivalTime = oldDeparture.AddMinutes(85),
+            AdjustedDepartureTime = oldDeparture.AddMinutes(10),
+            AdjustedArrivalTime = oldDeparture.AddMinutes(95),
             CapacitySnapshot = 10,
             TripStatus = TripStatus.Scheduled
         };
+        var orderedRouteStops = route.RouteStops.OrderBy(x => x.StopOrder).ToArray();
         trip.TripStops.Add(new TripStop
         {
             Trip = trip,
             TripId = trip.Id,
-            Station = route.RouteStops.First().Station,
-            StationId = route.RouteStops.First().StationId,
+            Station = orderedRouteStops[0].Station,
+            StationId = orderedRouteStops[0].StationId,
             StopOrder = 1,
-            PlannedDepartureTime = oldDeparture
+            PlannedDepartureTime = corruptedStopDeparture,
+            AdjustedDepartureTime = corruptedStopDeparture.AddMinutes(10)
+        });
+        trip.TripStops.Add(new TripStop
+        {
+            Trip = trip,
+            TripId = trip.Id,
+            Station = orderedRouteStops[1].Station,
+            StationId = orderedRouteStops[1].StationId,
+            StopOrder = 2,
+            PlannedArrivalTime = corruptedStopDeparture.AddMinutes(80),
+            AdjustedArrivalTime = corruptedStopDeparture.AddMinutes(90)
         });
         booking.Trip = trip;
         booking.TripId = trip.Id;
@@ -202,15 +217,25 @@ public class RescheduleCharterBookingCommandTests
             new RescheduleCharterBookingCommand(
                 booking.Id,
                 new DateOnly(2030, 9, 4),
-                new TimeOnly(15, 0)),
+                new TimeOnly(21, 0)),
             CancellationToken.None);
 
-        var expectedDeparture = new DateTimeOffset(2030, 9, 4, 15, 0, 0, TimeSpan.FromHours(7))
+        var expectedDeparture = new DateTimeOffset(2030, 9, 4, 21, 0, 0, TimeSpan.FromHours(7))
             .ToUniversalTime();
+        booking.DepartureDate.ShouldBe(new DateOnly(2030, 9, 4));
+        booking.StartTime.ShouldBe(new TimeOnly(21, 0));
         trip.OperatingDate.ShouldBe(new DateOnly(2030, 9, 4));
         trip.DepartureTime.ShouldBe(expectedDeparture);
-        trip.ArrivalTime.ShouldBe(expectedDeparture.AddHours(1));
-        trip.TripStops.Single().PlannedDepartureTime.ShouldBe(expectedDeparture);
+        trip.ArrivalTime.ShouldBe(expectedDeparture.AddMinutes(85));
+        trip.AdjustedDepartureTime.ShouldBe(expectedDeparture.AddMinutes(10));
+        trip.AdjustedArrivalTime.ShouldBe(expectedDeparture.AddMinutes(95));
+        trip.TripCode.ShouldBe("BR-20300904-CB-RESCHEDULE-SYNC-1");
+
+        var orderedTripStops = trip.TripStops.OrderBy(x => x.StopOrder).ToArray();
+        orderedTripStops[0].PlannedDepartureTime.ShouldBe(expectedDeparture);
+        orderedTripStops[0].AdjustedDepartureTime.ShouldBe(expectedDeparture.AddMinutes(10));
+        orderedTripStops[1].PlannedArrivalTime.ShouldBe(expectedDeparture.AddMinutes(80));
+        orderedTripStops[1].AdjustedArrivalTime.ShouldBe(expectedDeparture.AddMinutes(90));
     }
 
     private static RescheduleCharterBookingCommandHandler Handler(

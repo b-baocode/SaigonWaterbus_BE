@@ -58,6 +58,25 @@ public class CharterBookingPaymentETicketTests
     }
 
     [Test]
+    public void ETicketTreatsTwentyOneAsVietnamTime()
+    {
+        var booking = FullyPaidCharterBooking(Guid.NewGuid(), totalAmount: 30_000_000m);
+        booking.DepartureDate = new DateOnly(2030, 9, 4);
+        booking.StartTime = new TimeOnly(21, 0);
+
+        var notification = CharterBookingETicketSupport.BuildETicketNotification(
+            booking,
+            booking.Payments.Single(),
+            []);
+
+        var expectedUtc = new DateTimeOffset(2030, 9, 4, 21, 0, 0, TimeSpan.FromHours(7))
+            .ToUniversalTime();
+        notification.DepartureTime.ShouldBe(expectedUtc);
+        notification.DepartureTime!.Value.ToOffset(TimeSpan.FromHours(7)).TimeOfDay
+            .ShouldBe(new TimeSpan(21, 0, 0));
+    }
+
+    [Test]
     public async Task FullPaymentWithoutPassengers_DoesNotSendETickets()
     {
         await using var context = SeatFlowTestData.CreateContext();

@@ -158,9 +158,15 @@ internal static class CharterBookingTripSupport
     public static DateTimeOffset ResolveDepartureTimeUtc(Booking booking)
     {
         var startTime = booking.StartTime ?? OperatingDayStartTime;
-        return new DateTimeOffset(booking.DepartureDate!.Value.ToDateTime(startTime), VietnamOffset)
-            .ToUniversalTime();
+        return ResolveVietnamTimeUtc(booking.DepartureDate!.Value, startTime);
     }
+
+    /// <summary>
+    /// DateOnly/TimeOnly của charter là giờ người dùng nhập tại Việt Nam. Chỉ đổi sang UTC
+    /// khi cần một instant để lưu và so sánh; tuyệt đối không coi giờ nhập là UTC.
+    /// </summary>
+    public static DateTimeOffset ResolveVietnamTimeUtc(DateOnly date, TimeOnly time) =>
+        new DateTimeOffset(date.ToDateTime(time), VietnamOffset).ToUniversalTime();
 
     public static DateTimeOffset ResolveArrivalTimeUtc(DateTimeOffset departureTimeUtc, Booking booking)
     {
@@ -178,8 +184,7 @@ internal static class CharterBookingTripSupport
         if (rentalUnit == BoatRentalUnit.Day)
         {
             var arrivalDate = booking.DepartureDate!.Value.AddDays(durationValue - 1);
-            return new DateTimeOffset(arrivalDate.ToDateTime(OperatingDayEndTime), VietnamOffset)
-                .ToUniversalTime();
+            return ResolveVietnamTimeUtc(arrivalDate, OperatingDayEndTime);
         }
 
         if (routeEstimate is { HasCompleteTravelTimeEstimate: true, EstimatedDurationMinutes: > 0 })

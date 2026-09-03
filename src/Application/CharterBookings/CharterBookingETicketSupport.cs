@@ -130,7 +130,7 @@ internal static class CharterBookingETicketSupport
             TripCode: null,
             RouteName: booking.CharterRoute?.RouteName,
             DepartureTime: booking.DepartureDate.HasValue && booking.StartTime.HasValue
-                ? booking.DepartureDate.Value.ToDateTime(booking.StartTime.Value, DateTimeKind.Utc)
+                ? CharterBookingTripSupport.ResolveDepartureTimeUtc(booking)
                 : null,
             ArrivalTime: null,
             FromStationName: booking.FromStation?.StationName,
