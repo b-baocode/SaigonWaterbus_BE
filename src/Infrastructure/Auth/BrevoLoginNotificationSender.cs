@@ -48,8 +48,11 @@ public sealed class BrevoLoginNotificationSender : ILoginNotificationSender
             throw new EmailDispatchException("Brevo login notification configuration is incomplete.");
         }
 
-        var recipientEmail = EmailRecipientResolver.Resolve(brevoOptions.TestRecipientEmail, notification.Email);
-        var isRedirected = EmailRecipientResolver.IsRedirected(brevoOptions.TestRecipientEmail, notification.Email);
+        var testRecipientEmail = brevoOptions.EnableTestRecipientRedirect
+            ? brevoOptions.TestRecipientEmail
+            : null;
+        var recipientEmail = EmailRecipientResolver.Resolve(testRecipientEmail, notification.Email);
+        var isRedirected = EmailRecipientResolver.IsRedirected(testRecipientEmail, notification.Email);
         var loginTime = notification.LoggedInAt
             .ToOffset(TimeSpan.FromHours(7))
             .ToString("dd/MM/yyyy HH:mm", ViCulture);

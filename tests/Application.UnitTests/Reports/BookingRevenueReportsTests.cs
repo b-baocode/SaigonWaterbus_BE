@@ -82,6 +82,28 @@ public class BookingRevenueReportsTests
     }
 
     [Test]
+    public async Task BookingManagementListAcceptsVietnamLocalDateBoundaries()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var adminContext = await SeatFlowTestData.SeedAdminAsync(context);
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        var customerContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedReportBookingsAsync(context, staffContext.UserId!.Value, customerContext.UserId!.Value);
+
+        var result = await new GetBookingManagementListQueryHandler(context, adminContext)
+            .Handle(
+                new GetBookingManagementListQuery(
+                    CreatedFrom: new DateTimeOffset(2026, 7, 29, 0, 0, 0, TimeSpan.FromHours(7)),
+                    CreatedTo: new DateTimeOffset(2026, 7, 30, 0, 0, 0, TimeSpan.FromHours(7)),
+                    DepartureFrom: new DateTimeOffset(2026, 7, 29, 11, 0, 0, TimeSpan.FromHours(7)),
+                    DepartureTo: new DateTimeOffset(2026, 7, 30, 11, 0, 0, TimeSpan.FromHours(7))),
+                CancellationToken.None);
+
+        result.TotalCount.ShouldBe(2);
+        result.Items.Count.ShouldBe(2);
+    }
+
+    [Test]
     public async Task WaterbusStationRevenueUsesPassengerStationsInsteadOfCharterStations()
     {
         await using var context = SeatFlowTestData.CreateContext();

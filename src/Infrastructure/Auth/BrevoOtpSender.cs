@@ -60,8 +60,9 @@ public sealed class BrevoOtpSender : IOtpSender
             throw new OtpDispatchException($"Brevo template id is not configured for purpose '{purpose}'.");
         }
 
-        var recipientEmail = EmailRecipientResolver.Resolve(options.TestRecipientEmail, email);
-        var isRedirected = EmailRecipientResolver.IsRedirected(options.TestRecipientEmail, email);
+        var testRecipientEmail = options.EnableTestRecipientRedirect ? options.TestRecipientEmail : null;
+        var recipientEmail = EmailRecipientResolver.Resolve(testRecipientEmail, email);
+        var isRedirected = EmailRecipientResolver.IsRedirected(testRecipientEmail, email);
         var payload = new
         {
             sender = new

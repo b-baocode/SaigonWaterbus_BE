@@ -717,14 +717,22 @@ internal static class BookingReportQuerySupport
             query = query.Where(b => b.SoldByStaffId == request.SoldByStaffId.Value);
         }
 
-        if (request.CreatedFrom.HasValue)
+        // Npgsql maps timestamp with time zone to UTC DateTimeOffset. The endpoint accepts
+        // Vietnam-local boundaries (+07:00), so normalize timestamp comparisons before sending
+        // parameters to PostgreSQL; otherwise date-filtered reports fail with HTTP 500.
+        var createdFromUtc = request.CreatedFrom?.ToUniversalTime();
+        var createdToUtc = request.CreatedTo?.ToUniversalTime();
+        var departureFromUtc = request.DepartureFrom?.ToUniversalTime();
+        var departureToUtc = request.DepartureTo?.ToUniversalTime();
+
+        if (createdFromUtc.HasValue)
         {
-            query = query.Where(b => b.Created >= request.CreatedFrom.Value);
+            query = query.Where(b => b.Created >= createdFromUtc.Value);
         }
 
-        if (request.CreatedTo.HasValue)
+        if (createdToUtc.HasValue)
         {
-            query = query.Where(b => b.Created < request.CreatedTo.Value);
+            query = query.Where(b => b.Created < createdToUtc.Value);
         }
 
         if (request.DepartureFrom.HasValue)
@@ -732,7 +740,7 @@ internal static class BookingReportQuerySupport
             var from = request.DepartureFrom.Value;
             var fromDate = DateOnly.FromDateTime(from.Date);
             query = query.Where(b =>
-                (b.BookingType == Booking.SeatBookingType && b.Trip != null && b.Trip.DepartureTime >= from)
+                (b.BookingType == Booking.SeatBookingType && b.Trip != null && b.Trip.DepartureTime >= departureFromUtc!.Value)
                 || (b.BookingType == Booking.CharterBookingType && b.DepartureDate.HasValue && b.DepartureDate.Value >= fromDate));
         }
 
@@ -741,7 +749,7 @@ internal static class BookingReportQuerySupport
             var to = request.DepartureTo.Value;
             var toDate = DateOnly.FromDateTime(to.Date);
             query = query.Where(b =>
-                (b.BookingType == Booking.SeatBookingType && b.Trip != null && b.Trip.DepartureTime < to)
+                (b.BookingType == Booking.SeatBookingType && b.Trip != null && b.Trip.DepartureTime < departureToUtc!.Value)
                 || (b.BookingType == Booking.CharterBookingType && b.DepartureDate.HasValue && b.DepartureDate.Value < toDate));
         }
 

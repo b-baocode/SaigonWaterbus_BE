@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
@@ -12,6 +13,60 @@ namespace SaigonWaterbus.Application.UnitTests.Auth;
 
 public class BrevoEmailFailureTests
 {
+    [Test]
+    public async Task OtpSenderUsesCustomerRecipientWhenTestRedirectIsDisabled()
+    {
+        var handler = new CapturingHttpMessageHandler();
+        var options = CreateBrevoOptions();
+        options.TestRecipientEmail = "qa@example.test";
+        var sender = new BrevoOtpSender(
+            new TestHttpClientFactory(handler),
+            new TestOptionsMonitor<BrevoOptions>(options),
+            new TestOtpPolicy(),
+            NullLogger<BrevoOtpSender>.Instance);
+
+        await sender.SendAsync(
+            "customer@example.test",
+            "123456",
+            OtpPurpose.Register,
+            "Nguyen Van A",
+            CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(handler.CapturedBody.ShouldNotBeNull());
+        payload.RootElement.GetProperty("to")[0].GetProperty("email").GetString()
+            .ShouldBe("customer@example.test");
+    }
+
+    [Test]
+    public async Task LoginNotificationUsesCustomerRecipientWhenTestRedirectIsDisabled()
+    {
+        var handler = new CapturingHttpMessageHandler();
+        var options = CreateBrevoOptions();
+        options.TestRecipientEmail = "qa@example.test";
+        var sender = new BrevoLoginNotificationSender(
+            new TestHttpClientFactory(handler),
+            new TestOptionsMonitor<BrevoOptions>(options),
+            new TestOptionsMonitor<LoginNotificationOptions>(new LoginNotificationOptions
+            {
+                Enabled = true,
+                TemplateId = 2
+            }),
+            NullLogger<BrevoLoginNotificationSender>.Instance);
+
+        await sender.SendLoginSucceededAsync(
+            new LoginNotification(
+                "customer@example.test",
+                "Nguyen Van A",
+                "Google",
+                DateTimeOffset.UtcNow,
+                "Test device"),
+            CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(handler.CapturedBody.ShouldNotBeNull());
+        payload.RootElement.GetProperty("to")[0].GetProperty("email").GetString()
+            .ShouldBe("customer@example.test");
+    }
+
     [Test]
     public async Task OtpSenderThrowsWhenBrevoRejectsRequest()
     {
@@ -77,6 +132,22 @@ public class BrevoEmailFailureTests
             {
                 Content = new StringContent("{\"message\":\"source IP is not authorized\"}")
             });
+    }
+
+    private sealed class CapturingHttpMessageHandler : HttpMessageHandler
+    {
+        public string? CapturedBody { get; private set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            CapturedBody = await request.Content!.ReadAsStringAsync(cancellationToken);
+            return new HttpResponseMessage(HttpStatusCode.Created)
+            {
+                Content = new StringContent("{\"messageId\":\"test-message-id\"}")
+            };
+        }
     }
 
     private sealed class TestHttpClientFactory(HttpMessageHandler handler) : IHttpClientFactory

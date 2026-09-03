@@ -350,7 +350,10 @@ public class BrevoPaymentNotificationSenderTests
     public async Task PaymentEmailCanBeRedirectedToTestRecipientAndKeepsOriginalRecipientInParams()
     {
         var httpHandler = new CapturingHttpMessageHandler();
-        var sender = CreateSender(httpHandler, testRecipientEmail: "qa@example.test");
+        var sender = CreateSender(
+            httpHandler,
+            testRecipientEmail: "qa@example.test",
+            enableTestRecipientRedirect: true);
 
         await sender.SendPaymentSucceededAsync(CreateNotification(isFullyPaid: false), CancellationToken.None);
 
@@ -366,10 +369,28 @@ public class BrevoPaymentNotificationSenderTests
         parameters.GetProperty("isTestRecipientRedirect").GetBoolean().ShouldBeTrue();
     }
 
+    [Test]
+    public async Task PaymentEmailUsesCustomerRecipientWhenTestRecipientRedirectIsDisabled()
+    {
+        var httpHandler = new CapturingHttpMessageHandler();
+        var sender = CreateSender(httpHandler, testRecipientEmail: "qa@example.test");
+
+        await sender.SendPaymentSucceededAsync(CreateNotification(isFullyPaid: false), CancellationToken.None);
+
+        using var payload = JsonDocument.Parse(httpHandler.CapturedBody.ShouldNotBeNull());
+        var root = payload.RootElement;
+        var parameters = root.GetProperty("params");
+        root.GetProperty("to")[0].GetProperty("email").GetString().ShouldBe("customer@gmail.com");
+        parameters.GetProperty("recipientEmail").GetString().ShouldBe("customer@gmail.com");
+        parameters.GetProperty("isTestRecipientRedirect").GetBoolean().ShouldBeFalse();
+        parameters.TryGetProperty("testRecipientEmail", out _).ShouldBeFalse();
+    }
+
     private static BrevoPaymentNotificationSender CreateSender(
         CapturingHttpMessageHandler httpHandler,
         string? publicApiBaseUrl = "https://api.test",
-        string? testRecipientEmail = null) =>
+        string? testRecipientEmail = null,
+        bool enableTestRecipientRedirect = false) =>
         new(
             new TestHttpClientFactory(httpHandler),
             new TestOptionsMonitor<BrevoOptions>(new BrevoOptions
@@ -380,6 +401,7 @@ public class BrevoPaymentNotificationSenderTests
                 SenderEmail = "noreply@saigonwaterbus.test",
                 SenderName = "Saigon Waterbus",
                 PublicApiBaseUrl = publicApiBaseUrl,
+                EnableTestRecipientRedirect = enableTestRecipientRedirect,
                 TestRecipientEmail = testRecipientEmail,
                 CharterBookingQuoteTemplateId = 14,
                 CharterBookingConfirmationTemplateId = 13,

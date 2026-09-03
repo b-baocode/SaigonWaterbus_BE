@@ -17,8 +17,11 @@ public sealed class BrevoOptions
     public string? PublicApiBaseUrl { get; set; }
 
     /// <summary>
-    /// Khi cấu hình, toàn bộ email Brevo sẽ gửi về địa chỉ này để test thay vì gửi cho khách thật.
+    /// Cho phép chuyển hướng email sang TestRecipientEmail. Mặc định tắt để production luôn gửi
+    /// đúng địa chỉ của khách, kể cả khi còn sót TestRecipientEmail trong cấu hình triển khai.
     /// </summary>
+    public bool EnableTestRecipientRedirect { get; set; }
+
     public string? TestRecipientEmail { get; set; }
 
     public int TemplateId { get; set; }

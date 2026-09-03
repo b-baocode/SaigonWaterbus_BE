@@ -274,9 +274,8 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 : null,
         };
 
-        var recipient = !string.IsNullOrWhiteSpace(options.TestRecipientEmail)
-            ? options.TestRecipientEmail
-            : notification.Email;
+        var testRecipientEmail = options.EnableTestRecipientRedirect ? options.TestRecipientEmail : null;
+        var recipient = EmailRecipientResolver.Resolve(testRecipientEmail, notification.Email);
 
         var payload = new Dictionary<string, object?>
         {
@@ -627,8 +626,9 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
         string subject,
         string htmlContent)
     {
-        var recipientEmail = EmailRecipientResolver.Resolve(options.TestRecipientEmail, email);
-        EmailRecipientResolver.AddDebugParams(parameters, options.TestRecipientEmail, email);
+        var testRecipientEmail = options.EnableTestRecipientRedirect ? options.TestRecipientEmail : null;
+        var recipientEmail = EmailRecipientResolver.Resolve(testRecipientEmail, email);
+        EmailRecipientResolver.AddDebugParams(parameters, testRecipientEmail, email);
 
         var payload = new Dictionary<string, object?>
         {

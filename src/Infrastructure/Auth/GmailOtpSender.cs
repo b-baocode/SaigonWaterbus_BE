@@ -45,12 +45,13 @@ public sealed class GmailOtpSender : IOtpSender
             throw new OtpDispatchException("Gmail FromEmail is not configured.");
         }
 
-        var recipientEmail = EmailRecipientResolver.Resolve(options.TestRecipientEmail, email);
+        var testRecipientEmail = options.EnableTestRecipientRedirect ? options.TestRecipientEmail : null;
+        var recipientEmail = EmailRecipientResolver.Resolve(testRecipientEmail, email);
         var isHtml = IsHtmlTemplate(options, purpose);
         var body = EmailRecipientResolver.AddOriginalRecipientNotice(
             BuildBody(options, purpose, code, templateContent),
             isHtml,
-            options.TestRecipientEmail,
+            testRecipientEmail,
             email);
 
         using var message = new MailMessage

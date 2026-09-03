@@ -43,7 +43,10 @@ public sealed class GmailLoginNotificationSender : ILoginNotificationSender
             ? gmailOptions.Username
             : gmailOptions.FromEmail;
 
-        var recipientEmail = EmailRecipientResolver.Resolve(gmailOptions.TestRecipientEmail, notification.Email);
+        var testRecipientEmail = gmailOptions.EnableTestRecipientRedirect
+            ? gmailOptions.TestRecipientEmail
+            : null;
+        var recipientEmail = EmailRecipientResolver.Resolve(testRecipientEmail, notification.Email);
         using var message = new MailMessage
         {
             From = new MailAddress(fromEmail, gmailOptions.FromName),
@@ -51,7 +54,7 @@ public sealed class GmailLoginNotificationSender : ILoginNotificationSender
             Body = EmailRecipientResolver.AddOriginalRecipientNotice(
                 BuildBody(notificationOptions, notification),
                 isHtml: false,
-                gmailOptions.TestRecipientEmail,
+                testRecipientEmail,
                 notification.Email),
             IsBodyHtml = false
         };

@@ -13,7 +13,12 @@ public sealed class GmailOptions
     public string FromName { get; set; } = "Waterbus";
     /// <summary>Base URL public của API để dựng link ảnh QR trong email (vd https://api.example.com).</summary>
     public string? PublicApiBaseUrl { get; set; }
-    /// <summary>Khi cấu hình, toàn bộ email Gmail sẽ gửi về địa chỉ này để test thay vì gửi cho khách thật.</summary>
+    /// <summary>
+    /// Cho phép chuyển hướng email sang TestRecipientEmail. Mặc định tắt để production luôn gửi
+    /// đúng địa chỉ của khách, kể cả khi còn sót TestRecipientEmail trong cấu hình triển khai.
+    /// </summary>
+    public bool EnableTestRecipientRedirect { get; set; }
+
     public string? TestRecipientEmail { get; set; }
     public string Subject { get; set; } = string.Empty;
     public string Template { get; set; } = string.Empty;
