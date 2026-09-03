@@ -297,7 +297,8 @@ public class CreateRoundTripBookingTests
             UnitPremiumAmount = 3_000m,
             CoverageAmount = 50_000_000m,
             Currency = "VND",
-            IsActive = true
+            IsActive = true,
+            ProviderSource = InsuranceProviderSource.ThirdParty
         };
         context.Add(insurancePackage);
         await context.SaveChangesAsync();
@@ -333,10 +334,10 @@ public class CreateRoundTripBookingTests
         result.Insurance.ShouldNotBeNull();
         result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
         result.Insurance.Quantity.ShouldBe(4);
-        result.Insurance.TotalAmount.ShouldBe(6_000m);
-        result.InsuranceAmount.ShouldBe(6_000m);
-        result.SubtotalAmount.ShouldBe(26_000m);
-        result.TotalAmount.ShouldBe(26_000m);
+        result.Insurance.TotalAmount.ShouldBe(12_000m);
+        result.InsuranceAmount.ShouldBe(12_000m);
+        result.SubtotalAmount.ShouldBe(32_000m);
+        result.TotalAmount.ShouldBe(32_000m);
         dbBooking.InsuranceSnapshots.Count.ShouldBe(1);
         dbBooking.InsuranceSnapshots[0].InsurancePackageId.ShouldBe(insurancePackage.Id);
     }

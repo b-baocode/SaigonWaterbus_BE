@@ -516,7 +516,9 @@ public class CounterBookingTests
             UnitPremiumAmount = 3_000m,
             CoverageAmount = 50_000_000m,
             Currency = "VND",
-            IsActive = true
+            IsActive = true,
+            IsWaterbusDefault = true,
+            ProviderSource = InsuranceProviderSource.Waterbus
         };
         context.Add(insurancePackage);
         await context.SaveChangesAsync();
@@ -540,6 +542,44 @@ public class CounterBookingTests
         result.Insurance.Quantity.ShouldBe(1);
         result.Insurance.TotalAmount.ShouldBe(0m);
         context.Set<Ticket>().Count(t => t.BookingId == result.BookingId).ShouldBe(1);
+    }
+
+    [Test]
+    public async Task ThirdPartyInsuranceChargesFreeCounterPassengersToo()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
+        await SeedTripAsync(context, "TR-CTR-THIRD-PARTY", TripStatus.Scheduled);
+        var insurancePackage = new InsurancePackage
+        {
+            Code = "PASSENGER_COUNTER_THIRD_PARTY",
+            Name = "Bao hiem doi tac",
+            BookingType = "PassengerInsurance",
+            UnitPremiumAmount = 3_000m,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            IsActive = true,
+            ProviderSource = InsuranceProviderSource.ThirdParty
+        };
+        context.Add(insurancePackage);
+        await context.SaveChangesAsync();
+        var handler = CreateHandler(context, staffContext);
+
+        var command = CashCommand("TR-CTR-THIRD-PARTY", "A1") with
+        {
+            Items = [Adult("A1") with { TicketTypeCode = "SENIOR", BirthYear = 1940 }],
+            InsuranceSelected = true,
+            InsurancePackageId = insurancePackage.Id
+        };
+
+        var result = await handler.Handle(command, CancellationToken.None);
+
+        result.TotalAmount.ShouldBe(3_000m);
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.Quantity.ShouldBe(1);
+        result.Insurance.TotalAmount.ShouldBe(3_000m);
+        result.Insurance.ProviderSource.ShouldBe(nameof(InsuranceProviderSource.ThirdParty));
+        result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
     }
 
     private static CreateCounterBookingCommand CashCommand(string tripCode, string seat) =>

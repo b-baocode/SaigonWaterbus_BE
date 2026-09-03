@@ -443,7 +443,15 @@ internal static class CharterBookingInsuranceSupport
         DateTimeOffset quotedAt,
         int? chargeablePassengerQuantity = null)
     {
-        var premiumPassengerQuantity = chargeablePassengerQuantity ?? insuredPassengerQuantity;
+        // Vé Waterbus miễn phí được miễn luôn phí bảo hiểm mặc định. Gói bên thứ ba
+        // là lựa chọn độc lập và vẫn thu phí cho mọi hành khách được bảo hiểm, kể cả
+        // người có vé miễn phí. IsWaterbusDefault giữ vai trò tương thích với dữ liệu
+        // cũ chưa có ProviderSource chính xác.
+        var isWaterbusInsurance = package.ProviderSource == InsuranceProviderSource.Waterbus
+            || package.IsWaterbusDefault;
+        var premiumPassengerQuantity = isWaterbusInsurance
+            ? chargeablePassengerQuantity ?? insuredPassengerQuantity
+            : insuredPassengerQuantity;
         if (insuredPassengerQuantity < 0
             || premiumPassengerQuantity < 0
             || premiumPassengerQuantity > insuredPassengerQuantity)
