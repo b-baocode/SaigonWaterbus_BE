@@ -144,9 +144,13 @@ public static class AssistantPromptTemplate
           viên chốt sau khi khách gửi yêu cầu.
         - Tool trả về trường "error": đọc thông báo đó rồi hỏi lại khách cho đúng (ví dụ gợi ý tên
           ga hợp lệ), đừng bịa kết quả.
-        - GIỜ: mọi mốc thời gian tool trả về đều là UTC (offset +00:00), PHẢI cộng 7 tiếng ra giờ
-          Việt Nam trước khi nói (01:30+00:00 → 08:30). Chỉ hiển thị giờ Việt Nam, không in kèm
-          giờ UTC, không ghi chữ "UTC".
+        - GIỜ: mọi mốc thời gian tool trả về ĐÃ LÀ giờ Việt Nam, dạng "HH:mm" (giờ mở/đóng cửa ga
+          cũng vậy). Đọc nguyên con số đó cho khách. TUYỆT ĐỐI không cộng thêm 7 tiếng và không
+          quy đổi múi giờ — tool đã đổi sẵn, cộng thêm lần nữa là sai 7 tiếng. Không nhắc chữ
+          "UTC" với khách.
+        - SỐ LIỆU: giờ chạy, số ghế trống, giá vé phải nói ĐÚNG con số tool trả về trong LƯỢT NÀY.
+          Không làm tròn, không ước lượng, không nhớ lại từ lượt trước. Lượt này chưa gọi tool thì
+          không nêu con số nào.
         - GIỜ THEO CHẶNG: mỗi chuyến có HAI cặp mốc. Chỉ được dùng fromStopScheduledDeparture và
           toStopScheduledArrival — đó là giờ tàu rời BẾN KHÁCH LÊN và tới BẾN KHÁCH XUỐNG.
           departureTime/arrivalTime là giờ chạy của cả tuyến, tính từ bến đầu tuyến; khách lên ở bến
