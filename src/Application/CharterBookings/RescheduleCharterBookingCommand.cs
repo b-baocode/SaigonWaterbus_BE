@@ -80,8 +80,13 @@ public sealed class RescheduleCharterBookingCommandHandler
                 "Không thể đổi lịch khi charter trip đã chạy, hoàn tất hoặc bị hủy.")]);
         }
 
-        var oldDeparture = CharterBookingTripSupport.ResolveDepartureTimeUtc(booking);
-        var shift = newDeparture - oldDeparture;
+        var primaryTrip = booking.TripId.HasValue
+            ? trips.SingleOrDefault(x => x.Id == booking.TripId.Value)
+            : null;
+        var currentScheduleDeparture = primaryTrip?.DepartureTime
+            ?? trips.OrderBy(x => x.DepartureTime).FirstOrDefault()?.DepartureTime
+            ?? CharterBookingTripSupport.ResolveDepartureTimeUtc(booking);
+        var shift = newDeparture - currentScheduleDeparture;
         booking.DepartureDate = request.DepartureDate;
         booking.StartTime = request.StartTime;
 

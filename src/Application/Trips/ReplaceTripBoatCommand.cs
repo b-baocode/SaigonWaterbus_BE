@@ -22,8 +22,16 @@ public sealed class ReplaceTripBoatCommandValidator : AbstractValidator<ReplaceT
 public sealed class ReplaceTripBoatCommandHandler : IRequestHandler<ReplaceTripBoatCommand, TripDetailDto>
 {
     private readonly IApplicationDbContext _context;
+    private readonly ICharterBookingRealtimeNotifier _charterBookingRealtimeNotifier;
 
-    public ReplaceTripBoatCommandHandler(IApplicationDbContext context) => _context = context;
+    public ReplaceTripBoatCommandHandler(
+        IApplicationDbContext context,
+        ICharterBookingRealtimeNotifier? charterBookingRealtimeNotifier = null)
+    {
+        _context = context;
+        _charterBookingRealtimeNotifier = charterBookingRealtimeNotifier
+            ?? NullCharterBookingRealtimeNotifier.Instance;
+    }
 
     public async Task<TripDetailDto> Handle(ReplaceTripBoatCommand request, CancellationToken cancellationToken)
     {
@@ -45,12 +53,6 @@ public sealed class ReplaceTripBoatCommandHandler : IRequestHandler<ReplaceTripB
                 "Chỉ được thay tàu cho trip chưa Completed/Cancelled.")]);
         }
 
-        if (trip.BoatId == request.BoatId)
-        {
-            throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
-                "Tàu thay thế phải khác tàu hiện tại của trip.")]);
-        }
-
         var boat = await _context.Set<Boat>()
             .SingleOrDefaultAsync(x => x.Id == request.BoatId, cancellationToken)
             ?? throw new NotFoundException("Không tìm thấy tàu thay thế.");
@@ -65,6 +67,58 @@ public sealed class ReplaceTripBoatCommandHandler : IRequestHandler<ReplaceTripB
         {
             throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
                 BoatRouteCompatibilitySupport.BuildIncompatibleMessage(trip.Route.RouteType, boat.SeatSetupType))]);
+        }
+
+        var linkedCharterBoat = await _context.Set<CharterBookingBoat>()
+            .Include(x => x.Booking)
+            .SingleOrDefaultAsync(x => x.TripId == trip.Id, cancellationToken);
+        var sourceBooking = linkedCharterBoat?.Booking;
+        if (sourceBooking is null && trip.SourceBookingId.HasValue)
+        {
+            sourceBooking = await _context.Set<Booking>()
+                .SingleOrDefaultAsync(
+                    x => x.Id == trip.SourceBookingId.Value
+                        && x.BookingType == Booking.CharterBookingType,
+                    cancellationToken);
+        }
+
+        if (trip.BoatId == request.BoatId)
+        {
+            var synchronized = SynchronizeCharterReferences(
+                trip,
+                boat,
+                linkedCharterBoat,
+                sourceBooking);
+            if (sourceBooking is not null)
+            {
+                var charterPassengers = await _context.Set<BookingPassenger>()
+                    .Include(x => x.TripSeat)
+                        .ThenInclude(x => x!.Seat)
+                    .Where(x => x.BookingId == sourceBooking.Id
+                        && x.TripId == trip.Id
+                        && x.TripSeatId.HasValue)
+                    .ToListAsync(cancellationToken);
+                foreach (var passenger in charterPassengers.Where(x => x.TripSeat?.Seat is not null))
+                {
+                    var currentSeat = passenger.TripSeat!.Seat;
+                    if (currentSeat.BoatId == boat.Id && passenger.CharterSeatId != currentSeat.Id)
+                    {
+                        passenger.CharterSeatId = currentSeat.Id;
+                        passenger.CharterSeat = currentSeat;
+                        synchronized = true;
+                    }
+                }
+            }
+
+            if (!synchronized)
+            {
+                throw new ValidationException([new ValidationFailure(nameof(request.BoatId),
+                    "Tàu thay thế phải khác tàu hiện tại của trip.")]);
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+            await PublishCharterBookingChangedAsync(sourceBooking!, cancellationToken);
+            return UpdateTripStatusCommandHandler.ToDetailDto(trip);
         }
 
         var newBoatSeats = await _context.Set<Seat>()
@@ -130,9 +184,16 @@ public sealed class ReplaceTripBoatCommandHandler : IRequestHandler<ReplaceTripB
                 continue;
             }
 
-            var replacementTripSeat = newTripSeatsByOldCode[passenger.TripSeat.Seat.Code];
+            var seatCode = passenger.TripSeat.Seat.Code;
+            var replacementTripSeat = newTripSeatsByOldCode[seatCode];
             passenger.TripSeatId = replacementTripSeat.Id;
             passenger.TripSeat = replacementTripSeat;
+            if (sourceBooking is not null && passenger.BookingId == sourceBooking.Id)
+            {
+                var replacementSeat = newSeatsByCode[seatCode];
+                passenger.CharterSeatId = replacementSeat.Id;
+                passenger.CharterSeat = replacementSeat;
+            }
         }
 
         _context.Set<TripSeat>().AddRange(newTripSeats);
@@ -141,10 +202,55 @@ public sealed class ReplaceTripBoatCommandHandler : IRequestHandler<ReplaceTripB
         trip.Boat = boat;
         trip.CapacitySnapshot = newBoatSeats.Count;
 
+        SynchronizeCharterReferences(trip, boat, linkedCharterBoat, sourceBooking);
+
         await _context.SaveChangesAsync(cancellationToken);
+
+        if (sourceBooking is not null)
+        {
+            await PublishCharterBookingChangedAsync(sourceBooking, cancellationToken);
+        }
 
         return UpdateTripStatusCommandHandler.ToDetailDto(trip);
     }
+
+    private static bool SynchronizeCharterReferences(
+        Trip trip,
+        Boat boat,
+        CharterBookingBoat? linkedCharterBoat,
+        Booking? sourceBooking)
+    {
+        var changed = false;
+        if (linkedCharterBoat is not null)
+        {
+            changed = linkedCharterBoat.BoatId != boat.Id
+                || linkedCharterBoat.SeatSetupType != boat.SeatSetupType;
+            linkedCharterBoat.BoatId = boat.Id;
+            linkedCharterBoat.Boat = boat;
+            linkedCharterBoat.SeatSetupType = boat.SeatSetupType;
+        }
+
+        if (sourceBooking is not null
+            && (sourceBooking.TripId == trip.Id || linkedCharterBoat?.BoatOrder == 1))
+        {
+            changed |= sourceBooking.BoatId != boat.Id;
+            sourceBooking.BoatId = boat.Id;
+            sourceBooking.Boat = boat;
+        }
+
+        return changed;
+    }
+
+    private Task PublishCharterBookingChangedAsync(
+        Booking booking,
+        CancellationToken cancellationToken) =>
+        _charterBookingRealtimeNotifier.PublishChangedAsync(
+            new CharterBookingRealtimeEvent(
+                booking.Id,
+                "BoatReplaced",
+                booking.BookingStatus.ToString(),
+                booking.PaymentStatus),
+            cancellationToken);
 
     private async Task EnsureReplacementBoatIsFreeAsync(
         Trip trip,

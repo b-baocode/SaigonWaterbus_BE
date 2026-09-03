@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using NUnit.Framework;
+using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
@@ -636,6 +637,159 @@ public class CreateTripCommandTests
             .Select(x => x.Seat.Code)
             .ToListAsync();
         tripSeatCodes.ShouldBe(["A1", "A2", "A3"]);
+    }
+
+    [Test]
+    public async Task ReplaceCharterTripBoatSynchronizesCustomerBookingAndReservedSeat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var oldBoat = BoatWithSeats("WB_012", seatCount: 2);
+        var newBoat = BoatWithSeats("WB_011", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var trip = TripWithSeats(route, oldBoat, "BR-20300101-CB-1", departureTime);
+        var bookedTripSeat = trip.TripSeats.Single(x => x.Seat.Code == "A1");
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-REPLACE-BOAT",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            Trip = trip,
+            TripId = trip.Id,
+            Boat = oldBoat,
+            BoatId = oldBoat.Id,
+            DepartureDate = trip.OperatingDate,
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 1,
+            PassengerCount = 1,
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid"
+        };
+        trip.SourceBookingId = booking.Id;
+        booking.CharterBoats.Add(new CharterBookingBoat
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            Boat = oldBoat,
+            BoatId = oldBoat.Id,
+            Trip = trip,
+            TripId = trip.Id,
+            BoatOrder = 1,
+            SeatSetupType = oldBoat.SeatSetupType,
+            UnitPrice = 1_000_000m,
+            ChargeableDurationValue = 1,
+            SubtotalAmount = 1_000_000m
+        });
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            FullName = "Nguyen Van A",
+            Trip = trip,
+            TripId = trip.Id,
+            TripSeat = bookedTripSeat,
+            TripSeatId = bookedTripSeat.Id,
+            CharterSeat = bookedTripSeat.Seat,
+            CharterSeatId = bookedTripSeat.SeatId,
+            FromStopOrder = 1,
+            ToStopOrder = 2
+        };
+        var realtimeNotifier = new RecordingCharterBookingRealtimeNotifier();
+
+        context.AddRange(route, oldBoat, newBoat, trip, booking, passenger);
+        await context.SaveChangesAsync();
+
+        await new ReplaceTripBoatCommandHandler(context, realtimeNotifier)
+            .Handle(new ReplaceTripBoatCommand(trip.Id, newBoat.Id), CancellationToken.None);
+
+        var savedBooking = await context.Set<Booking>()
+            .Include(x => x.CharterBoats)
+                .ThenInclude(x => x.Boat)
+            .SingleAsync(x => x.Id == booking.Id);
+        savedBooking.BoatId.ShouldBe(newBoat.Id);
+        savedBooking.CharterBoats.Single().BoatId.ShouldBe(newBoat.Id);
+        savedBooking.CharterBoats.Single().Boat.Name.ShouldBe(newBoat.Name);
+
+        var savedPassenger = await context.Set<BookingPassenger>()
+            .Include(x => x.CharterSeat)
+            .SingleAsync(x => x.Id == passenger.Id);
+        savedPassenger.CharterSeat.ShouldNotBeNull();
+        savedPassenger.CharterSeat.BoatId.ShouldBe(newBoat.Id);
+        savedPassenger.CharterSeat.Code.ShouldBe("A1");
+
+        var realtimeEvent = realtimeNotifier.Published.ShouldHaveSingleItem();
+        realtimeEvent.BookingId.ShouldBe(booking.Id);
+        realtimeEvent.EventType.ShouldBe("BoatReplaced");
+    }
+
+    [Test]
+    public async Task ReplaceCharterTripBoatRepairsExistingMismatchWhenTripAlreadyUsesRequestedBoat()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var route = Route("R1", Station("A", "Ben A"), Station("B", "Ben B"));
+        var staleBookingBoat = BoatWithSeats("WB_012", seatCount: 2);
+        var currentTripBoat = BoatWithSeats("WB_011", seatCount: 3);
+        var departureTime = new DateTimeOffset(2030, 1, 1, 8, 0, 0, TimeSpan.FromHours(7));
+        var trip = TripWithSeats(route, currentTripBoat, "BR-20300101-CB-1", departureTime);
+        var currentTripSeat = trip.TripSeats.Single(x => x.Seat.Code == "A1");
+        var staleCharterSeat = staleBookingBoat.Seats.Single(x => x.Code == "A1");
+        var booking = new Booking
+        {
+            BookingType = Booking.CharterBookingType,
+            BookingCode = "CB-REPAIR-BOAT",
+            ContactName = "Nguyen Van A",
+            ContactPhone = "0900000000",
+            Trip = trip,
+            TripId = trip.Id,
+            Boat = staleBookingBoat,
+            BoatId = staleBookingBoat.Id,
+            DepartureDate = trip.OperatingDate,
+            StartTime = new TimeOnly(8, 0),
+            RentalUnit = BoatRentalUnit.Hour,
+            DurationValue = 1,
+            PassengerCount = 1,
+            BookingStatus = BookingStatus.Confirmed,
+            PaymentStatus = "Paid"
+        };
+        trip.SourceBookingId = booking.Id;
+        booking.CharterBoats.Add(new CharterBookingBoat
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            Boat = staleBookingBoat,
+            BoatId = staleBookingBoat.Id,
+            Trip = trip,
+            TripId = trip.Id,
+            BoatOrder = 1,
+            SeatSetupType = staleBookingBoat.SeatSetupType,
+            UnitPrice = 1_000_000m,
+            ChargeableDurationValue = 1,
+            SubtotalAmount = 1_000_000m
+        });
+        var passenger = new BookingPassenger
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            FullName = "Nguyen Van A",
+            Trip = trip,
+            TripId = trip.Id,
+            TripSeat = currentTripSeat,
+            TripSeatId = currentTripSeat.Id,
+            CharterSeat = staleCharterSeat,
+            CharterSeatId = staleCharterSeat.Id
+        };
+
+        context.AddRange(route, staleBookingBoat, currentTripBoat, trip, booking, passenger);
+        await context.SaveChangesAsync();
+
+        await new ReplaceTripBoatCommandHandler(context)
+            .Handle(new ReplaceTripBoatCommand(trip.Id, currentTripBoat.Id), CancellationToken.None);
+
+        booking.BoatId.ShouldBe(currentTripBoat.Id);
+        booking.CharterBoats.Single().BoatId.ShouldBe(currentTripBoat.Id);
+        passenger.CharterSeatId.ShouldBe(currentTripSeat.SeatId);
     }
 
     [Test]
@@ -1549,5 +1703,18 @@ public class CreateTripCommandTests
         }
 
         return route;
+    }
+
+    private sealed class RecordingCharterBookingRealtimeNotifier : ICharterBookingRealtimeNotifier
+    {
+        public List<CharterBookingRealtimeEvent> Published { get; } = [];
+
+        public Task PublishChangedAsync(
+            CharterBookingRealtimeEvent change,
+            CancellationToken cancellationToken)
+        {
+            Published.Add(change);
+            return Task.CompletedTask;
+        }
     }
 }

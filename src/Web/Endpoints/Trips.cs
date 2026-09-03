@@ -324,6 +324,7 @@ public sealed class Trips : IEndpointGroup
                 "Dung khi trip can doi sang tau khac.",
                 "Tau moi phai Active, da setup ghe, hop voi routeType cua trip va ranh lich trong khung gio trip.",
                 "Neu trip da co ve, tau moi phai co day du cac ma ghe dang co ve de BE remap ve sang tau moi.",
+                "Neu la trip charter, BE dong bo tau moi ve booking/charterBookingBoats va phat realtime de customer refetch.",
                 "Khong cho thay tau cho trip Completed/Cancelled."));
 
         group.MapPost(CancelSightseeingTripNoShow, "{id:guid}/cancel-no-show")
