@@ -1,3 +1,4 @@
+using FluentValidation.TestHelper;
 using NUnit.Framework;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
@@ -5,11 +6,144 @@ using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
+using ValidationException = SaigonWaterbus.Application.Common.Exceptions.ValidationException;
 
 namespace SaigonWaterbus.Application.UnitTests.CharterBookings;
 
 public class RescheduleCharterBookingCommandTests
 {
+    [TestCase(5, 20)]
+    [TestCase(23, 0)]
+    public void ValidatorRejectsStartTimeOutsideOperatingHours(int hour, int minute)
+    {
+        var result = new RescheduleCharterBookingCommandValidator().TestValidate(
+            new RescheduleCharterBookingCommand(
+                Guid.NewGuid(),
+                new DateOnly(2030, 9, 4),
+                new TimeOnly(hour, minute)));
+
+        result.ShouldHaveValidationErrorFor(x => x.StartTime);
+    }
+
+    [Test]
+    public async Task RescheduleRejectsWhenCharterWouldEndAfterTwentyThree()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var booking = Booking();
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var handler = Handler(context, admin);
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new RescheduleCharterBookingCommand(
+                booking.Id,
+                new DateOnly(2030, 9, 4),
+                new TimeOnly(22, 30)),
+            CancellationToken.None));
+    }
+
+    [Test]
+    public async Task RescheduleAllowsCharterEndingExactlyAtTwentyThree()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var booking = Booking();
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var result = await Handler(context, admin).Handle(
+            new RescheduleCharterBookingCommand(
+                booking.Id,
+                new DateOnly(2030, 9, 4),
+                new TimeOnly(22, 0)),
+            CancellationToken.None);
+
+        result.DepartureDate.ShouldBe(new DateOnly(2030, 9, 4));
+        result.StartTime.ShouldBe(new TimeOnly(22, 0));
+    }
+
+    [Test]
+    public async Task RescheduleRejectsBoatConflictAtNewTime()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.FullStandard,
+            seatsConfigured: true,
+            status: BoatStatus.Active);
+        var route = Route();
+        var booking = Booking(boat);
+        var conflictDeparture = VietnamTime(2030, 9, 4, 10, 30);
+        var conflictingTrip = Trip(route, boat, "CONFLICT", conflictDeparture, conflictDeparture.AddHours(1));
+        context.AddRange(route, boat, booking, conflictingTrip);
+        await context.SaveChangesAsync();
+
+        var handler = Handler(context, admin);
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new RescheduleCharterBookingCommand(
+                booking.Id,
+                new DateOnly(2030, 9, 4),
+                new TimeOnly(10, 0)),
+            CancellationToken.None));
+    }
+
+    [Test]
+    public async Task RescheduleRejectsBoatHeldByAnotherCharterAtNewTime()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var boat = SeatFlowTestData.Boat(
+            SeatSetupType.FullStandard,
+            seatsConfigured: true,
+            status: BoatStatus.Active);
+        var booking = Booking(boat);
+        var conflictingBooking = Booking(boat);
+        conflictingBooking.StartTime = new TimeOnly(10, 30);
+        context.AddRange(boat, booking, conflictingBooking);
+        await context.SaveChangesAsync();
+
+        var handler = Handler(context, admin);
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new RescheduleCharterBookingCommand(
+                booking.Id,
+                new DateOnly(2030, 9, 4),
+                new TimeOnly(10, 0)),
+            CancellationToken.None));
+    }
+
+    [Test]
+    public async Task RescheduleRejectsBookingWithCheckedInTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var admin = await SeatFlowTestData.SeedAdminAsync(context);
+        var booking = Booking();
+        booking.Tickets.Add(new Ticket
+        {
+            Booking = booking,
+            BookingId = booking.Id,
+            TicketCode = "TK-CHECKED-IN",
+            QrToken = "QR-CHECKED-IN",
+            TicketStatus = TicketStatus.CheckedIn,
+            IssuedAt = VietnamTime(2030, 9, 1, 8, 0),
+            CheckedInAt = VietnamTime(2030, 9, 4, 9, 55)
+        });
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var handler = Handler(context, admin);
+
+        await Should.ThrowAsync<ValidationException>(() => handler.Handle(
+            new RescheduleCharterBookingCommand(
+                booking.Id,
+                new DateOnly(2030, 9, 5),
+                new TimeOnly(10, 0)),
+            CancellationToken.None));
+    }
+
     [Test]
     public async Task RescheduleRepairsTripWhenBookingDateWasAlreadyChangedDirectly()
     {
@@ -17,7 +151,7 @@ public class RescheduleCharterBookingCommandTests
         var admin = await SeatFlowTestData.SeedAdminAsync(context);
         var booking = new Booking
         {
-            BookingType = Booking.CharterBookingType,
+            BookingType = SaigonWaterbus.Domain.Entities.Booking.CharterBookingType,
             BookingCode = "CB-RESCHEDULE-SYNC",
             ContactName = "Nguyen Van A",
             ContactPhone = "0900000000",
@@ -78,6 +212,58 @@ public class RescheduleCharterBookingCommandTests
         trip.ArrivalTime.ShouldBe(expectedDeparture.AddHours(1));
         trip.TripStops.Single().PlannedDepartureTime.ShouldBe(expectedDeparture);
     }
+
+    private static RescheduleCharterBookingCommandHandler Handler(
+        SaigonWaterbus.Infrastructure.Data.ApplicationDbContext context,
+        TestUserContext admin) =>
+        new(
+            context,
+            admin,
+            new FixedTimeProvider(new DateTimeOffset(2030, 9, 3, 0, 0, 0, TimeSpan.Zero)));
+
+    private static Booking Booking(Boat? boat = null) => new()
+    {
+        BookingType = SaigonWaterbus.Domain.Entities.Booking.CharterBookingType,
+        BookingCode = $"CB-{Guid.NewGuid():N}"[..20],
+        ContactName = "Nguyen Van A",
+        ContactPhone = "0900000000",
+        BookingStatus = BookingStatus.Confirmed,
+        PaymentStatus = "Paid",
+        DepartureDate = new DateOnly(2030, 9, 4),
+        StartTime = new TimeOnly(15, 0),
+        RentalUnit = BoatRentalUnit.Hour,
+        DurationValue = 1,
+        PassengerCount = 1,
+        BoatId = boat?.Id,
+        Boat = boat
+    };
+
+    private static Trip Trip(
+        Route route,
+        Boat boat,
+        string code,
+        DateTimeOffset departure,
+        DateTimeOffset arrival) => new()
+    {
+        Route = route,
+        RouteId = route.Id,
+        Boat = boat,
+        BoatId = boat.Id,
+        TripCode = code,
+        OperatingDate = DateOnly.FromDateTime(departure.ToOffset(TimeSpan.FromHours(7)).DateTime),
+        DepartureTime = departure,
+        ArrivalTime = arrival,
+        CapacitySnapshot = 10,
+        TripStatus = TripStatus.Scheduled
+    };
+
+    private static DateTimeOffset VietnamTime(
+        int year,
+        int month,
+        int day,
+        int hour,
+        int minute) =>
+        new DateTimeOffset(year, month, day, hour, minute, 0, TimeSpan.FromHours(7)).ToUniversalTime();
 
     private static Route Route()
     {

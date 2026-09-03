@@ -232,8 +232,10 @@ public sealed class CharterBookings : IEndpointGroup
                 "Admin",
                 """{ "departureDate": "2026-09-15", "startTime": "14:00:00" }""",
                 "Admin override dùng cho booking charter chưa kết thúc.",
-                "Ngày giờ mới bắt buộc phải ở tương lai. Trip charter đã sinh sẽ được dời lịch cùng số phút để khớp booking.",
-                "Không áp dụng cho booking/trip đã hủy, đã hết hạn, đã hoàn tất hoặc trip đang chạy."));
+                "Ngày giờ mới bắt buộc phải ở tương lai; bắt đầu từ 07:00 đến trước 23:00 và kết thúc chậm nhất lúc 23:00.",
+                "BE kiểm tra tàu không trùng trip hoặc charter đang được giữ/xác nhận, có tính 5 phút quay đầu.",
+                "Trip charter đã sinh và lịch các bến sẽ được dời cùng số phút để khớp booking.",
+                "Không áp dụng khi booking đã hủy/hết hạn/hoàn tất, trip không còn Scheduled hoặc hành khách đã check-in/check-out."));
 
         group.MapPut(QuoteCharterBooking, "admin/{id:guid}/quote")
             .RequireAuthorization()
