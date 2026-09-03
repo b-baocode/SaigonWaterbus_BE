@@ -160,6 +160,57 @@ public class SightseeingLoopBookingTests
     }
 
     [Test]
+    public async Task SightseeingConcessionWithPositiveFareStillPaysInsurancePremium()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        var seeded = await SeedLoopTripAsync(context, "TR-SIG-INSURANCE");
+        var seats = context.Set<Seat>().Where(x => x.BoatId == seeded.Trip.BoatId).ToList();
+        foreach (var seat in seats)
+        {
+            seat.SeatTypeCode = "CABIN";
+        }
+
+        var insurancePackage = new InsurancePackage
+        {
+            Code = "PASSENGER_SIGHTSEEING",
+            Name = "Bao hiem hanh khach",
+            BookingType = "PassengerInsurance",
+            UnitPremiumAmount = 3_000m,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            IsActive = true
+        };
+        context.Add(insurancePackage);
+        await context.SaveChangesAsync();
+
+        var handler = new CreateBookingCommandHandler(
+            context,
+            userContext,
+            new SequentialBookingCodeGenerator(),
+            new FareCalculator(context),
+            new FixedTimeProvider(Now));
+        var result = await handler.Handle(
+            new CreateBookingCommand(
+                "TR-SIG-INSURANCE",
+                [
+                    Adult("A1"),
+                    Adult("A2") with { TicketTypeCode = "CHILD", BirthYear = 2020 }
+                ],
+                null,
+                InsuranceSelected: true,
+                InsurancePackageId: insurancePackage.Id),
+            CancellationToken.None);
+
+        result.TicketSubtotalAmount.ShouldBe(15_000m);
+        result.InsuranceAmount.ShouldBe(6_000m);
+        result.TotalAmount.ShouldBe(21_000m);
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.Quantity.ShouldBe(2);
+        result.Insurance.TotalAmount.ShouldBe(6_000m);
+    }
+
+    [Test]
     public async Task SightseeingConcessionFareRuleAppliesSameDiscountToWholeGroup()
     {
         await using var context = SeatFlowTestData.CreateContext();

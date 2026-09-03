@@ -376,6 +376,69 @@ public class SegmentBookingAndDistanceFareTests
     }
 
     [Test]
+    public async Task RegularFreeTicketsAreAlsoFreeOfInsurancePremium()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userContext = await SeatFlowTestData.SeedCustomerAsync(context);
+        await SeedThreeStopTripAsync(context, "TR-INS-FREE", withDistances: true);
+        var insurancePackage = new InsurancePackage
+        {
+            Code = "PASSENGER_FREE_CONCESSION",
+            Name = "Bao hiem hanh khach",
+            BookingType = "PassengerInsurance",
+            UnitPremiumAmount = 3_000m,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            IsActive = true
+        };
+        context.Add(insurancePackage);
+        await context.SaveChangesAsync();
+
+        var result = await CreateHandler(context, userContext).Handle(
+            new CreateBookingCommand(
+                "TR-INS-FREE",
+                [
+                    Adult("A1", "BB", "HB"),
+                    Adult("A2", "BB", "HB") with
+                    {
+                        TicketTypeCode = "CHILD",
+                        PassengerName = "Tre Em",
+                        BirthYear = 2020
+                    },
+                    Adult("A1", "HB", "LT") with
+                    {
+                        TicketTypeCode = "SENIOR",
+                        PassengerName = "Nguoi Cao Tuoi",
+                        BirthYear = 1950
+                    },
+                    Adult("A2", "HB", "LT") with
+                    {
+                        TicketTypeCode = "DISABLED",
+                        PassengerName = "Nguoi Khuyet Tat",
+                        BirthYear = 1990
+                    }
+                ],
+                null,
+                InsuranceSelected: true,
+                InsurancePackageId: insurancePackage.Id),
+            CancellationToken.None);
+
+        result.TicketSubtotalAmount.ShouldBe(9_000m);
+        result.InsuranceAmount.ShouldBe(3_000m);
+        result.TotalAmount.ShouldBe(12_000m);
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.Quantity.ShouldBe(4);
+        result.Insurance.TotalAmount.ShouldBe(3_000m);
+
+        var passengers = context.Set<BookingPassenger>()
+            .Where(x => x.BookingId == result.BookingId)
+            .ToList();
+        passengers.Single(x => x.PassengerType == "ADULT").UnitPrice.ShouldBe(9_000m);
+        passengers.Where(x => x.PassengerType is "CHILD" or "SENIOR" or "DISABLED")
+            .ShouldAllBe(x => x.UnitPrice == 0m);
+    }
+
+    [Test]
     public async Task LapInfantUsesRequestedCompanionNameInsteadOfFirstAdultOnSegment()
     {
         await using var context = SeatFlowTestData.CreateContext();

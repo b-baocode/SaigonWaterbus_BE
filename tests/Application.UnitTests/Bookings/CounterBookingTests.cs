@@ -508,13 +508,27 @@ public class CounterBookingTests
         await using var context = SeatFlowTestData.CreateContext();
         var staffContext = await SeatFlowTestData.SeedStaffAsync(context);
         await SeedTripAsync(context, "TR-CTR-8", TripStatus.Scheduled);
+        var insurancePackage = new InsurancePackage
+        {
+            Code = "PASSENGER_COUNTER_FREE",
+            Name = "Bao hiem hanh khach",
+            BookingType = "PassengerInsurance",
+            UnitPremiumAmount = 3_000m,
+            CoverageAmount = 50_000_000m,
+            Currency = "VND",
+            IsActive = true
+        };
+        context.Add(insurancePackage);
+        await context.SaveChangesAsync();
         var handler = CreateHandler(context, staffContext);
 
         // Vé SENIOR miễn phí → đơn 0đ, không qua được cổng thanh toán.
         var command = CashCommand("TR-CTR-8", "A1") with
         {
             Items = [Adult("A1") with { TicketTypeCode = "SENIOR", BirthYear = 1940 }],
-            PaymentMethod = CounterPaymentMethod.PayOs
+            PaymentMethod = CounterPaymentMethod.PayOs,
+            InsuranceSelected = true,
+            InsurancePackageId = insurancePackage.Id
         };
 
         var result = await handler.Handle(command, CancellationToken.None);
@@ -522,6 +536,9 @@ public class CounterBookingTests
         result.TotalAmount.ShouldBe(0m);
         result.BookingStatus.ShouldBe(nameof(BookingStatus.Confirmed));
         result.PaymentMethod.ShouldBe("Cash");
+        result.Insurance.ShouldNotBeNull();
+        result.Insurance.Quantity.ShouldBe(1);
+        result.Insurance.TotalAmount.ShouldBe(0m);
         context.Set<Ticket>().Count(t => t.BookingId == result.BookingId).ShouldBe(1);
     }
 

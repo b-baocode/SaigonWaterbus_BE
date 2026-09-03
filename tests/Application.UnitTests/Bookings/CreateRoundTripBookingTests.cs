@@ -305,10 +305,26 @@ public class CreateRoundTripBookingTests
         var result = await CreateHandler(context, userContext).Handle(
             new CreateBookingCommand(
                 "TR-INS-OUT",
-                [Adult("A1", "BD", "TADA")],
+                [
+                    Adult("A1", "BD", "TADA"),
+                    Adult("A2", "BD", "TADA") with
+                    {
+                        TicketTypeCode = "SENIOR",
+                        PassengerName = "Nguoi Cao Tuoi",
+                        BirthYear = 1940
+                    }
+                ],
                 null,
                 "TR-INS-RET",
-                [Adult("A1", "TADA", "BD")],
+                [
+                    Adult("A1", "TADA", "BD"),
+                    Adult("A2", "TADA", "BD") with
+                    {
+                        TicketTypeCode = "SENIOR",
+                        PassengerName = "Nguoi Cao Tuoi",
+                        BirthYear = 1940
+                    }
+                ],
                 InsuranceSelected: true,
                 InsurancePackageId: insurancePackage.Id),
             CancellationToken.None);
@@ -316,7 +332,7 @@ public class CreateRoundTripBookingTests
         var dbBooking = context.Set<Booking>().Single(x => x.Id == result.BookingId);
         result.Insurance.ShouldNotBeNull();
         result.Insurance.InsurancePackageId.ShouldBe(insurancePackage.Id);
-        result.Insurance.Quantity.ShouldBe(2);
+        result.Insurance.Quantity.ShouldBe(4);
         result.Insurance.TotalAmount.ShouldBe(6_000m);
         result.InsuranceAmount.ShouldBe(6_000m);
         result.SubtotalAmount.ShouldBe(26_000m);

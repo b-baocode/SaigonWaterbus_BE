@@ -70,7 +70,8 @@ internal static class CharterBookingInsuranceSupport
         int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken,
-        string bookingType = Booking.CharterBookingType)
+        string bookingType = Booking.CharterBookingType,
+        int? chargeablePassengerQuantity = null)
     {
         if (!insurancePackageId.HasValue)
         {
@@ -105,7 +106,11 @@ internal static class CharterBookingInsuranceSupport
             throw CreateInsuranceValidation(CreateInvalidQuantityMessage(bookingType));
         }
 
-        return CreateSnapshot(package, insuredPassengerQuantity, quotedAt);
+        return CreateSnapshot(
+            package,
+            insuredPassengerQuantity,
+            quotedAt,
+            chargeablePassengerQuantity);
     }
 
     public static async Task<BookingInsuranceSnapshot?> CreateWaterbusDefaultSnapshotAsync(
@@ -113,7 +118,8 @@ internal static class CharterBookingInsuranceSupport
         int insuredPassengerQuantity,
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken,
-        string bookingType = Booking.CharterBookingType)
+        string bookingType = Booking.CharterBookingType,
+        int? chargeablePassengerQuantity = null)
     {
         if (insuredPassengerQuantity < 1)
         {
@@ -133,7 +139,11 @@ internal static class CharterBookingInsuranceSupport
 
         return waterbusDefault is null
             ? null
-            : CreateSnapshot(waterbusDefault, insuredPassengerQuantity, quotedAt);
+            : CreateSnapshot(
+                waterbusDefault,
+                insuredPassengerQuantity,
+                quotedAt,
+                chargeablePassengerQuantity);
     }
 
     public static async Task<List<BookingInsuranceSnapshot>> ResolveSeatBookingInsuranceSnapshotsAsync(
@@ -144,7 +154,8 @@ internal static class CharterBookingInsuranceSupport
         DateTimeOffset quotedAt,
         CancellationToken cancellationToken,
         bool? waterbusInsuranceEnabled = null,
-        List<BookingInsuranceSnapshot>? currentSnapshots = null)
+        List<BookingInsuranceSnapshot>? currentSnapshots = null,
+        int? chargeablePassengerQuantity = null)
     {
         // STACKING model cho seat booking:
         // 1. Luôn auto-attach Waterbus default ĐẦU TIÊN (đồng bộ EffectivePrice ở seat map).
@@ -167,7 +178,8 @@ internal static class CharterBookingInsuranceSupport
                 insuredPassengerQuantity,
                 quotedAt,
                 cancellationToken,
-                Booking.SeatBookingType);
+                Booking.SeatBookingType,
+                chargeablePassengerQuantity);
             return defaultSnapshot is null
                 ? new List<BookingInsuranceSnapshot>()
                 : new List<BookingInsuranceSnapshot> { defaultSnapshot };
@@ -182,7 +194,8 @@ internal static class CharterBookingInsuranceSupport
             insuredPassengerQuantity,
             quotedAt,
             cancellationToken,
-            Booking.SeatBookingType);
+            Booking.SeatBookingType,
+            chargeablePassengerQuantity);
         if (defaultInsurance is not null)
         {
             result.Add(defaultInsurance);
@@ -197,7 +210,8 @@ internal static class CharterBookingInsuranceSupport
                 insuredPassengerQuantity,
                 quotedAt,
                 cancellationToken,
-                Booking.SeatBookingType);
+                Booking.SeatBookingType,
+                chargeablePassengerQuantity);
 
             if (selected is not null)
             {
@@ -426,8 +440,18 @@ internal static class CharterBookingInsuranceSupport
     private static BookingInsuranceSnapshot CreateSnapshot(
         InsurancePackage package,
         int insuredPassengerQuantity,
-        DateTimeOffset quotedAt) =>
-        new()
+        DateTimeOffset quotedAt,
+        int? chargeablePassengerQuantity = null)
+    {
+        var premiumPassengerQuantity = chargeablePassengerQuantity ?? insuredPassengerQuantity;
+        if (insuredPassengerQuantity < 0
+            || premiumPassengerQuantity < 0
+            || premiumPassengerQuantity > insuredPassengerQuantity)
+        {
+            throw CreateInsuranceValidation(CreateInvalidQuantityMessage(package.BookingType));
+        }
+
+        return new BookingInsuranceSnapshot
         {
             InsurancePackageId = package.Id,
             Code = package.Code,
@@ -443,11 +467,12 @@ internal static class CharterBookingInsuranceSupport
             Conditions = package.Conditions,
             TermsUrl = package.TermsUrl,
             Quantity = insuredPassengerQuantity,
-            TotalAmount = package.UnitPremiumAmount * insuredPassengerQuantity,
+            TotalAmount = package.UnitPremiumAmount * premiumPassengerQuantity,
             QuotedAt = quotedAt,
             IsWaterbusDefault = package.IsWaterbusDefault,
             ProviderSource = package.ProviderSource
         };
+    }
 
     private static string CreateUnavailablePackageMessage(string bookingType) =>
         Booking.IsCharterBookingType(bookingType)

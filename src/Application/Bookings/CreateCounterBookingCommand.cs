@@ -183,15 +183,19 @@ public sealed class CreateCounterBookingCommandHandler
 
         var ticketSubtotal = outboundLeg.ItemPrices.Sum(x => x.UnitPrice)
             + (returnLeg?.ItemPrices.Sum(x => x.UnitPrice) ?? 0m);
+        var insuredPassengerQuantity = legs.Sum(x => x.ItemPrices.Count);
+        var chargeablePassengerQuantity = legs.Sum(x =>
+            x.ItemPrices.Count(item => item.UnitPrice > 0m));
         var insuranceSnapshots = await CharterBookingInsuranceSupport.ResolveSeatBookingInsuranceSnapshotsAsync(
             _context,
             request.InsuranceSelected,
             request.InsurancePackageId,
-            legs.Sum(x => x.ItemPrices.Count),
+            insuredPassengerQuantity,
             now,
             cancellationToken,
             waterbusInsuranceEnabled: null,
-            currentSnapshots: null);
+            currentSnapshots: null,
+            chargeablePassengerQuantity: chargeablePassengerQuantity);
         var subtotal = PriceRoundingSupport.RoundFare(
             ticketSubtotal + insuranceSnapshots.Sum(s => s.TotalAmount));
         EnsureCounterPointsRequestIsValid(request, loyaltyCustomer, subtotal);
