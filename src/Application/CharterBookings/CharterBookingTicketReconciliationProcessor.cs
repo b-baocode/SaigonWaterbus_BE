@@ -46,7 +46,15 @@ public sealed class CharterBookingTicketReconciliationProcessor
             .Where(x => x.BookingType == Booking.CharterBookingType
                 && x.BookingStatus == BookingStatus.Confirmed
                 && x.RemainingAmount <= 0
-                && x.PaymentStatus == BookingPaymentStatusExtensions.PaidValue)
+                && x.PaymentStatus == BookingPaymentStatusExtensions.PaidValue
+                && !(x.TripId.HasValue
+                    && x.Trip != null
+                    && (x.Trip.TripStatus == TripStatus.Completed
+                        || x.Trip.TripStatus == TripStatus.Cancelled)
+                    && (!x.ReturnTripId.HasValue
+                        || (x.ReturnTrip != null
+                            && (x.ReturnTrip.TripStatus == TripStatus.Completed
+                                || x.ReturnTrip.TripStatus == TripStatus.Cancelled)))))
             .Include(x => x.Passengers)
             .Include(x => x.Tickets)
                 .ThenInclude(x => x.BookingPassenger)
@@ -71,8 +79,7 @@ public sealed class CharterBookingTicketReconciliationProcessor
             }
 
             var ticketedPassengerIds = booking.Tickets
-                .Where(x => x.BookingPassengerId.HasValue
-                    && x.TicketStatus is not TicketStatus.Cancelled and not TicketStatus.Expired)
+                .Where(x => x.BookingPassengerId.HasValue)
                 .Select(x => x.BookingPassengerId!.Value)
                 .ToHashSet();
             if (approvedPassengerIds.All(ticketedPassengerIds.Contains))
@@ -93,7 +100,8 @@ public sealed class CharterBookingTicketReconciliationProcessor
                 _context,
                 booking,
                 _timeProvider,
-                cancellationToken);
+                cancellationToken,
+                considerInactiveTicketsIssued: true);
             if (ticketResult is null || ticketResult.CreatedTickets.Count == 0)
             {
                 continue;

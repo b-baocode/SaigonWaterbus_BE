@@ -15,7 +15,8 @@ internal static class CharterBookingTicketSupport
         IApplicationDbContext context,
         Booking booking,
         TimeProvider timeProvider,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool considerInactiveTicketsIssued = false)
     {
         if (!string.Equals(booking.PaymentStatus, PaidBookingPaymentStatus, StringComparison.OrdinalIgnoreCase)
             && !string.Equals(booking.PaymentStatus, BookingPaymentStatusExtensions.DepositPaidValue, StringComparison.OrdinalIgnoreCase))
@@ -55,6 +56,17 @@ internal static class CharterBookingTicketSupport
             .Where(x => x.BookingPassengerId.HasValue)
             .Select(x => x.BookingPassengerId!.Value)
             .ToHashSet();
+        if (considerInactiveTicketsIssued)
+        {
+            var previouslyTicketedPassengerIds = await context.Tickets
+                .Where(x => x.BookingId == booking.Id
+                    && x.BookingPassengerId.HasValue
+                    && passengerIds.Contains(x.BookingPassengerId.Value))
+                .Select(x => x.BookingPassengerId!.Value)
+                .Distinct()
+                .ToListAsync(cancellationToken);
+            ticketedPassengerIds.UnionWith(previouslyTicketedPassengerIds);
+        }
 
         var now = timeProvider.GetUtcNow();
         var createdTickets = new List<Ticket>();

@@ -13,6 +13,7 @@ using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.Common.Validation;
 using SaigonWaterbus.Application.Operations;
 using SaigonWaterbus.Application.Seats;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Application.Users;
 using SaigonWaterbus.Application.Boats;
 
@@ -49,6 +50,7 @@ public static class DependencyInjection
         builder.Services.AddScoped<IOperationScheduleSynchronizer, OperationScheduleSynchronizer>();
         builder.Services.AddScoped<ICharterBookingExpirationProcessor, CharterBookingExpirationProcessor>();
         builder.Services.AddScoped<ICharterBookingTicketReconciliationProcessor, CharterBookingTicketReconciliationProcessor>();
+        builder.Services.AddScoped<ITripStatusAutoSyncProcessor, TripStatusAutoSyncProcessor>();
 
         builder.Services.AddScoped<IAuthService, AuthService>();
         builder.Services.AddScoped<RegisterRequestUseCase>();

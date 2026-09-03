@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using SaigonWaterbus.Application.CharterBookings;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Application.UnitTests.TestInfrastructure;
+using SaigonWaterbus.Domain.Constants;
 using SaigonWaterbus.Domain.Entities;
 using SaigonWaterbus.Domain.Enums;
 using Shouldly;
@@ -184,6 +185,84 @@ public class CharterBookingPaymentETicketTests
         sender.ETickets.Count.ShouldBe(1);
         sender.ETickets[0].Tickets.Count.ShouldBe(2);
         (await context.Set<Ticket>().CountAsync()).ShouldBe(2);
+    }
+
+    [Test]
+    public async Task TicketReconciliation_DoesNotIssueTicketsForCompletedTrip()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = FullyPaidCharterBooking(userId, totalAmount: 30_000_000m);
+        booking.Passengers.Add(ApprovedPassenger(booking.Id, "Nguyen Van A"));
+        var route = new Route
+        {
+            RouteCode = $"ROUTE-{Guid.NewGuid():N}"[..20],
+            RouteName = "Completed charter route",
+            RouteType = RouteTypes.Charter,
+            Status = "Active"
+        };
+        var trip = new Trip
+        {
+            RouteId = route.Id,
+            Route = route,
+            SourceBookingId = booking.Id,
+            TripCode = $"TRIP-{Guid.NewGuid():N}"[..20],
+            TripType = TripTypes.Charter,
+            OperatingDate = booking.DepartureDate!.Value,
+            DepartureTime = DateTimeOffset.UtcNow.AddHours(-2),
+            ArrivalTime = DateTimeOffset.UtcNow.AddHours(-1),
+            CapacitySnapshot = 10,
+            TripStatus = TripStatus.Completed
+        };
+        booking.TripId = trip.Id;
+        booking.Trip = trip;
+        context.AddRange(route, booking, trip);
+        await context.SaveChangesAsync();
+
+        var processor = new CharterBookingTicketReconciliationProcessor(
+            context,
+            new FixedTimeProvider(DateTimeOffset.UtcNow),
+            new RecordingCharterETicketSender());
+
+        var result = await processor.ReconcileAsync(CancellationToken.None);
+
+        result.ReconciledBookingCount.ShouldBe(0);
+        result.IssuedTicketCount.ShouldBe(0);
+        (await context.Set<Ticket>().CountAsync()).ShouldBe(0);
+    }
+
+    [Test]
+    public async Task TicketReconciliation_DoesNotReissueExpiredPassengerTicket()
+    {
+        await using var context = SeatFlowTestData.CreateContext();
+        var userId = Guid.NewGuid();
+        var booking = FullyPaidCharterBooking(userId, totalAmount: 30_000_000m);
+        var passenger = ApprovedPassenger(booking.Id, "Nguyen Van A");
+        booking.Passengers.Add(passenger);
+        booking.Tickets.Add(new Ticket
+        {
+            BookingId = booking.Id,
+            Booking = booking,
+            BookingPassengerId = passenger.Id,
+            BookingPassenger = passenger,
+            TicketCode = $"TK{Guid.NewGuid():N}"[..20],
+            QrToken = $"QR{Guid.NewGuid():N}"[..20],
+            TicketStatus = TicketStatus.Expired,
+            IssuedAt = DateTimeOffset.UtcNow.AddHours(-2)
+        });
+        context.Add(booking);
+        await context.SaveChangesAsync();
+
+        var processor = new CharterBookingTicketReconciliationProcessor(
+            context,
+            new FixedTimeProvider(DateTimeOffset.UtcNow),
+            new RecordingCharterETicketSender());
+
+        var result = await processor.ReconcileAsync(CancellationToken.None);
+
+        result.ReconciledBookingCount.ShouldBe(0);
+        result.IssuedTicketCount.ShouldBe(0);
+        (await context.Set<Ticket>().CountAsync()).ShouldBe(1);
     }
 
     private static Booking FullyPaidCharterBooking(Guid userId, decimal totalAmount)

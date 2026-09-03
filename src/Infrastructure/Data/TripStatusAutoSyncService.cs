@@ -1,10 +1,8 @@
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using SaigonWaterbus.Domain.Enums;
-using SaigonWaterbus.Infrastructure.Data;
+using SaigonWaterbus.Application.Trips;
 using SaigonWaterbus.Infrastructure.Options;
 
 namespace SaigonWaterbus.Infrastructure.Data;
@@ -13,6 +11,7 @@ namespace SaigonWaterbus.Infrastructure.Data;
 /// Background service that periodically advances trip status theo giờ thực tế:
 ///   - Scheduled/Boarding với departure_time <= now &lt; arrival_time  → InProgress (DB: 'Departed')
 ///   - Scheduled/Boarding/InProgress với arrival_time &lt;= now        → Completed   (DB: 'Arrived')
+///   - Trip Completed có booking nguồn còn Confirmed                 → booking Completed
 ///
 /// Kết hợp với trigger trg_sync_trip_status (chỉ chạy khi UPDATE time),
 /// service này đảm bảo trip "đến giờ chạy" sẽ tự chuyển trạng thái mà
@@ -74,62 +73,20 @@ public sealed class TripStatusAutoSyncService : BackgroundService
             }
 
             using var scope = _scopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-
             var nowUtc = _timeProvider.GetUtcNow();
             var nowUtcOffset = new DateTimeOffset(DateTime.SpecifyKind(nowUtc.UtcDateTime, DateTimeKind.Utc));
+            var processor = scope.ServiceProvider.GetRequiredService<ITripStatusAutoSyncProcessor>();
+            var result = await processor.SyncAsync(nowUtcOffset, cancellationToken);
 
-            // 1) Scheduled/Boarding/InProgress với arrival_time <= now → Completed
-            //    (không đụng Cancelled)
-            var arrivedQuery = dbContext.Trips
-                .Where(t => t.TripStatus != TripStatus.Cancelled
-                    && t.TripStatus != TripStatus.Completed
-                    && t.ArrivalTime <= nowUtcOffset);
-
-            var arrivedCount = 0;
-            if (await arrivedQuery.AnyAsync(cancellationToken))
-            {
-                var arrivedList = await arrivedQuery.ToListAsync(cancellationToken);
-                foreach (var trip in arrivedList)
-                {
-                    trip.TripStatus = TripStatus.Completed;
-                    trip.LastStatusChangedAt = nowUtcOffset;
-                    arrivedCount++;
-                }
-            }
-
-            // 2) Scheduled/Boarding với departure_time <= now < arrival_time → InProgress
-            //    (chỉ những trip chưa bị đánh dấu Completed ở bước 1)
-            var departedQuery = dbContext.Trips
-                .Where(t => t.TripStatus != TripStatus.Cancelled
-                    && t.TripStatus != TripStatus.Completed
-                    && t.TripStatus != TripStatus.InProgress
-                    && t.DepartureTime <= nowUtcOffset
-                    && t.ArrivalTime > nowUtcOffset);
-
-            var departedCount = 0;
-            if (await departedQuery.AnyAsync(cancellationToken))
-            {
-                var departedList = await departedQuery.ToListAsync(cancellationToken);
-                foreach (var trip in departedList)
-                {
-                    trip.TripStatus = TripStatus.InProgress;
-                    trip.LastStatusChangedAt = nowUtcOffset;
-                    departedCount++;
-                }
-            }
-
-            if (arrivedCount > 0 || departedCount > 0)
-            {
-                await dbContext.SaveChangesAsync(cancellationToken);
-            }
-
-            if (arrivedCount > 0 || departedCount > 0)
+            if (result.ArrivedTripCount > 0
+                || result.DepartedTripCount > 0
+                || result.CompletedBookingCount > 0)
             {
                 _logger.LogInformation(
-                    "TripStatusAutoSync: {DepartedCount} trip → InProgress (Departed), {ArrivedCount} trip → Completed (Arrived) at {Now}.",
-                    departedCount,
-                    arrivedCount,
+                    "TripStatusAutoSync: {DepartedCount} trip → InProgress (Departed), {ArrivedCount} trip → Completed (Arrived), {CompletedBookingCount} source booking → Completed at {Now}.",
+                    result.DepartedTripCount,
+                    result.ArrivedTripCount,
+                    result.CompletedBookingCount,
                     nowUtcOffset);
             }
         }
