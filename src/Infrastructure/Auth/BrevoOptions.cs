@@ -49,9 +49,9 @@ public sealed class BrevoOptions
     /// <summary>Template Brevo cho email vé cá nhân gửi riêng cho từng hành khách; 0 = dùng ETicketTemplateId.</summary>
     public int PassengerETicketTemplateId { get; set; }
 
-    /// <summary>Template Brevo cho email "admin mở lại yêu cầu hoàn tiền cho khách tự nhập"; 0 = bỏ qua gửi email.</summary>
+    /// <summary>Template Brevo cho email "admin mở lại yêu cầu hoàn tiền cho khách tự nhập".</summary>
     public int RefundReleasedTemplateId { get; set; }
 
-    /// <summary>Template Brevo cho email vé điện tử charter booking (gửi lại khi có hành khách mới); 0 = bỏ qua gửi email.</summary>
+    /// <summary>Template Brevo cho email vé điện tử charter booking (gửi lại khi có hành khách mới).</summary>
     public int CharterETicketTemplateId { get; set; }
 }

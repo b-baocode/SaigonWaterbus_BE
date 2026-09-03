@@ -95,6 +95,38 @@ public class TicketCheckOutWindowTests
     }
 
     [Test]
+    public void RepeatedStationUsesPassengerAlightingStopOrder()
+    {
+        var (ticket, booking, passenger, firstAlightingOccurrence) = BuildTicket();
+        var trip = booking.Trip!;
+        var repeatedStationId = Guid.NewGuid();
+        firstAlightingOccurrence.StationId = repeatedStationId;
+        firstAlightingOccurrence.StopStatus = TripStopStatuses.Departed;
+        firstAlightingOccurrence.ActualDepartureTime = PlannedArrival.AddMinutes(-20);
+        var laterOccurrence = new TripStop
+        {
+            Trip = trip,
+            StationId = repeatedStationId,
+            StopOrder = 3,
+            PlannedArrivalTime = PlannedArrival,
+            StayDurationMinutes = 5,
+            StopStatus = TripStopStatuses.Scheduled
+        };
+        trip.TripStops.Add(laterOccurrence);
+        passenger.ToStopOrder = 3;
+
+        var exception = Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, booking, PlannedArrival.AddMinutes(-4)));
+        exception.Errors["ticket"].Single().ShouldContain("Chưa đến thời điểm mở check-out");
+
+        laterOccurrence.StopStatus = TripStopStatuses.Arrived;
+        laterOccurrence.ActualArrivalTime = PlannedArrival.AddMinutes(-5);
+
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckOutAt(ticket, booking, PlannedArrival));
+    }
+
+    [Test]
     public void CheckOutUsesDwellAndGraceWhenBoatIsStillAtAnIntermediateStop()
     {
         var (ticket, booking, passenger, destination) = BuildTicket();

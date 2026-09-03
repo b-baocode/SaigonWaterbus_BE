@@ -89,6 +89,37 @@ public class TicketCheckInWindowTests
     }
 
     [Test]
+    public void RepeatedStationUsesPassengerBoardingStopOrder()
+    {
+        var (ticket, booking, passenger, firstOccurrence) = BuildTicket();
+        var trip = booking.Trip!;
+        var repeatedStationId = Guid.NewGuid();
+        firstOccurrence.StationId = repeatedStationId;
+        firstOccurrence.StopStatus = TripStopStatuses.Departed;
+        firstOccurrence.ActualDepartureTime = PlannedDeparture.AddMinutes(-30);
+        var laterOccurrence = new TripStop
+        {
+            Trip = trip,
+            StationId = repeatedStationId,
+            StopOrder = 3,
+            PlannedDepartureTime = PlannedDeparture,
+            StopStatus = TripStopStatuses.Scheduled
+        };
+        trip.TripStops.Add(laterOccurrence);
+        passenger.FromStopOrder = 3;
+
+        var exception = Should.Throw<ValidationException>(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, booking, PlannedDeparture));
+        exception.Errors["ticket"].Single().ShouldContain("chưa cập bến khách lên");
+
+        laterOccurrence.StopStatus = TripStopStatuses.Arrived;
+        laterOccurrence.ActualArrivalTime = PlannedDeparture.AddMinutes(-5);
+
+        Should.NotThrow(() =>
+            TicketAttendanceWindowSupport.EnsureCanCheckInAt(ticket, booking, PlannedDeparture));
+    }
+
+    [Test]
     public void CharterWithoutLinkedTripUsesTenMinutesBeforeAndTwoMinutesAfterDeparture()
     {
         var departure = new DateTimeOffset(2030, 1, 1, 7, 23, 0, TimeSpan.FromHours(7));

@@ -1127,7 +1127,7 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
     }
 
     [Test]
-    public async Task StaffCanCheckInAndCheckOutAllTicketsByCharterBookingQrToken()
+    public async Task StaffCanCheckInAndCheckOutSelectedThenRemainingTicketsByCharterBookingQrToken()
     {
         await using var context = SeatFlowTestData.CreateContext();
         var user = Customer();
@@ -1167,13 +1167,24 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
             AssignedAt = DateTimeOffset.UtcNow
         });
         await context.SaveChangesAsync();
+        var ticketIds = context.Tickets
+            .OrderBy(x => x.TicketCode)
+            .Select(x => x.Id)
+            .ToArray();
         var checkedInAt = new DateTimeOffset(2030, 1, 1, 0, 0, 0, TimeSpan.Zero);
         var checkInHandler = new UpdateCharterBookingAttendanceCommandHandler(
             context,
             staffContext,
             new FixedTimeProvider(checkedInAt));
 
-        var checkInResult = await checkInHandler.Handle(
+        var selectedCheckInResult = await checkInHandler.Handle(
+            new UpdateCharterBookingAttendanceCommand(
+                qrToken,
+                CharterBookingAttendanceAction.CheckIn,
+                CharterBookingAttendanceMode.Selected,
+                TicketIds: [ticketIds[0]]),
+            CancellationToken.None);
+        var remainingCheckInResult = await checkInHandler.Handle(
             new UpdateCharterBookingAttendanceCommand(
                 qrToken,
                 CharterBookingAttendanceAction.CheckIn,
@@ -1181,9 +1192,11 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
                 TicketIds: null),
             CancellationToken.None);
 
-        checkInResult.UpdatedCount.ShouldBe(2);
-        checkInResult.SkippedCount.ShouldBe(0);
-        checkInResult.Manifest.TicketSummary.CheckedInTickets.ShouldBe(2);
+        selectedCheckInResult.UpdatedCount.ShouldBe(1);
+        selectedCheckInResult.SkippedCount.ShouldBe(0);
+        remainingCheckInResult.UpdatedCount.ShouldBe(1);
+        remainingCheckInResult.SkippedCount.ShouldBe(1);
+        remainingCheckInResult.Manifest.TicketSummary.CheckedInTickets.ShouldBe(2);
         context.Tickets.ShouldAllBe(x => x.TicketStatus == TicketStatus.CheckedIn);
         context.Tickets.ShouldAllBe(x => x.CheckedInAt == checkedInAt);
         context.Tickets.ShouldAllBe(x => x.CheckedInByUserId == staffContext.UserId);
@@ -1194,7 +1207,14 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
             staffContext,
             new FixedTimeProvider(checkedOutAt));
 
-        var checkOutResult = await checkOutHandler.Handle(
+        var selectedCheckOutResult = await checkOutHandler.Handle(
+            new UpdateCharterBookingAttendanceCommand(
+                qrToken,
+                CharterBookingAttendanceAction.CheckOut,
+                CharterBookingAttendanceMode.Selected,
+                TicketIds: [ticketIds[0]]),
+            CancellationToken.None);
+        var remainingCheckOutResult = await checkOutHandler.Handle(
             new UpdateCharterBookingAttendanceCommand(
                 qrToken,
                 CharterBookingAttendanceAction.CheckOut,
@@ -1202,9 +1222,11 @@ new CharterBookingPassengerRequest("Nguyen Van A", 1990),
                 TicketIds: null),
             CancellationToken.None);
 
-        checkOutResult.UpdatedCount.ShouldBe(2);
-        checkOutResult.SkippedCount.ShouldBe(0);
-        checkOutResult.Manifest.TicketSummary.CheckedOutTickets.ShouldBe(2);
+        selectedCheckOutResult.UpdatedCount.ShouldBe(1);
+        selectedCheckOutResult.SkippedCount.ShouldBe(0);
+        remainingCheckOutResult.UpdatedCount.ShouldBe(1);
+        remainingCheckOutResult.SkippedCount.ShouldBe(1);
+        remainingCheckOutResult.Manifest.TicketSummary.CheckedOutTickets.ShouldBe(2);
         context.Tickets.ShouldAllBe(x => x.TicketStatus == TicketStatus.CheckedOut);
         context.Tickets.ShouldAllBe(x => x.CheckedOutAt == checkedOutAt);
         context.Tickets.ShouldAllBe(x => x.CheckedOutByUserId == staffContext.UserId);

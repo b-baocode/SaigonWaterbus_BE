@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Mail;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 
 namespace SaigonWaterbus.Infrastructure.Auth;
@@ -35,7 +36,7 @@ public sealed class GmailLoginNotificationSender : ILoginNotificationSender
         if (string.IsNullOrWhiteSpace(gmailOptions.Username) || string.IsNullOrWhiteSpace(gmailOptions.Password))
         {
             _logger.LogWarning("Gmail login notification is enabled but Username/Password is missing.");
-            return;
+            throw new EmailDispatchException("Gmail Username/Password is not configured for login notification.");
         }
 
         var fromEmail = string.IsNullOrWhiteSpace(gmailOptions.FromEmail)
@@ -65,8 +66,21 @@ public sealed class GmailLoginNotificationSender : ILoginNotificationSender
             Timeout = 10000
         };
 
-        cancellationToken.ThrowIfCancellationRequested();
-        await client.SendMailAsync(message);
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            await client.SendMailAsync(message);
+            cancellationToken.ThrowIfCancellationRequested();
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is SmtpException or InvalidOperationException or FormatException)
+        {
+            _logger.LogError(ex, "Gmail login notification failed for {Email}.", notification.Email);
+            throw new EmailDispatchException($"Unable to send login notification via Gmail: {ex.Message}", ex);
+        }
     }
 
     private static string BuildBody(LoginNotificationOptions options, LoginNotification notification) =>

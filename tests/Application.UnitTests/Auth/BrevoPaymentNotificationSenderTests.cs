@@ -3,6 +3,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Infrastructure.Auth;
 using Shouldly;
@@ -160,6 +161,7 @@ public class BrevoPaymentNotificationSenderTests
         var root = payload.RootElement;
         var parameters = root.GetProperty("params");
         var ticket = parameters.GetProperty("TICKETS")[0];
+        var stop = parameters.GetProperty("STOPS")[0];
         var attachment = root.GetProperty("attachment")[0];
 
         root.GetProperty("templateId").GetInt32().ShouldBe(13);
@@ -169,8 +171,67 @@ public class BrevoPaymentNotificationSenderTests
         ticket.GetProperty("passengerName").GetString().ShouldBe("Nguyen Van Toan");
         ticket.GetProperty("ticketCode").GetString().ShouldBe("TK-CHARTER-001");
         ticket.GetProperty("qrImageUrl").GetString().ShouldBe("https://api.test/api/tickets/qr-image/ticket-qr");
+        stop.GetProperty("name").GetString().ShouldBe("Thanh Da");
+        stop.GetProperty("description").GetString().ShouldBe("Tham quan");
+        stop.GetProperty("durationMinutes").GetInt32().ShouldBe(30);
         attachment.GetProperty("name").GetString().ShouldBe("CB-FULL-tickets.pdf");
         attachment.GetProperty("content").GetString().ShouldBe("AQID");
+    }
+
+    [Test]
+    public async Task EveryEnabledMailFlowThrowsWhenBrevoRejectsRequest()
+    {
+        var httpHandler = new CapturingHttpMessageHandler(
+            HttpStatusCode.Unauthorized,
+            "{\"message\":\"source IP is not authorized\"}");
+        var sender = CreateSender(httpHandler);
+        var booking = CreateNotification(isFullyPaid: true);
+        var eTicket = new ETicketNotification(
+            booking,
+            BookingQrToken: "booking-qr",
+            TripCode: "TR-001",
+            RouteName: "Bach Dang - Thu Thiem",
+            DepartureTime: null,
+            ArrivalTime: null,
+            FromStationName: "Bach Dang",
+            ToStationName: "Thu Thiem",
+            Tickets:
+            [
+                new ETicketPassenger(
+                    "Nguyen Van A",
+                    "A1",
+                    "Nguoi lon",
+                    "TK-001",
+                    "ticket-qr",
+                    booking.Email)
+            ]);
+
+        Func<Task>[] mailFlows =
+        [
+            () => sender.SendPaymentSucceededAsync(booking, CancellationToken.None),
+            () => sender.SendBoardingPassAsync(
+                new BoardingPassNotification(booking, "TK-001", "ticket-qr"),
+                CancellationToken.None),
+            () => sender.SendETicketsAsync(eTicket, CancellationToken.None),
+            () => sender.SendRefundReleasedAsync(
+                new RefundReleasedNotification(
+                    booking.Email,
+                    booking.ContactName,
+                    booking.BookingCode,
+                    booking.PaymentCode,
+                    5_000m,
+                    null,
+                    DateTimeOffset.UtcNow,
+                    null),
+                CancellationToken.None),
+            () => sender.SendCharterETicketsAsync(eTicket, CancellationToken.None)
+        ];
+
+        foreach (var send in mailFlows)
+        {
+            var exception = await Should.ThrowAsync<EmailDispatchException>(send);
+            exception.Message.ShouldContain("401");
+        }
     }
 
     [Test]
@@ -326,7 +387,8 @@ public class BrevoPaymentNotificationSenderTests
                 PaymentFullTemplateId = 14,
                 CharterETicketTemplateId = 13,
                 ETicketTemplateId = 15,
-                PassengerETicketTemplateId = 16
+                PassengerETicketTemplateId = 16,
+                RefundReleasedTemplateId = 17
             }),
             NullLogger<BrevoPaymentNotificationSender>.Instance);
 
@@ -365,7 +427,9 @@ public class BrevoPaymentNotificationSenderTests
         public HttpClient CreateClient(string name) => new(handler, disposeHandler: false);
     }
 
-    private sealed class CapturingHttpMessageHandler : HttpMessageHandler
+    private sealed class CapturingHttpMessageHandler(
+        HttpStatusCode statusCode = HttpStatusCode.Created,
+        string? responseBody = null) : HttpMessageHandler
     {
         public string? CapturedBody { get; private set; }
 
@@ -377,7 +441,10 @@ public class BrevoPaymentNotificationSenderTests
                 ? null
                 : await request.Content.ReadAsStringAsync(cancellationToken);
 
-            return new HttpResponseMessage(HttpStatusCode.Created);
+            return new HttpResponseMessage(statusCode)
+            {
+                Content = new StringContent(responseBody ?? string.Empty)
+            };
         }
     }
 

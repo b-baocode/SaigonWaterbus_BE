@@ -765,15 +765,25 @@ public sealed class Gps : IEndpointGroup
             });
         }
 
-        var tripStop = await EnsureTripStopExistsAsync(dbContext, trip, stationId, cancellationToken);
-        if (tripStop is null)
+        await EnsureTripStopsExistAsync(dbContext, trip, cancellationToken);
+        var targetResult = TripStopEventSupport.ResolveTarget(
+            trip.TripStops,
+            stationId,
+            eventType,
+            request.TripStopId,
+            request.StopOrder);
+        if (!targetResult.IsSuccess)
         {
-            return Results.NotFound(new { message = "stationId không thuộc trip/route này." });
+            var stationExists = trip.TripStops.Any(x => x.StationId == stationId);
+            return stationExists
+                ? Results.Conflict(new { message = targetResult.Error })
+                : Results.NotFound(new { message = targetResult.Error });
         }
 
+        var tripStop = targetResult.Stop!;
         var occurredAt = request.OccurredAt?.ToUniversalTime() ?? timeProvider.GetUtcNow();
         var oldStatus = trip.TripStatus;
-        ApplyTripStopEvent(tripStop, eventType, occurredAt, request.Note);
+        TripStopEventSupport.ApplyEvent(tripStop, eventType, occurredAt, request.Note);
         ApplyTripStatusFromStopEvent(trip, tripStop, eventType, occurredAt);
         var dwellCountdown = TripStatusTransitionSupport.ResolveDwellCountdown(
             trip,
@@ -1713,16 +1723,14 @@ public sealed class Gps : IEndpointGroup
             .ToArray();
     }
 
-    private static async Task<TripStop?> EnsureTripStopExistsAsync(
+    private static async Task EnsureTripStopsExistAsync(
         ApplicationDbContext dbContext,
         Trip trip,
-        Guid stationId,
         CancellationToken cancellationToken)
     {
-        var tripStop = trip.TripStops.FirstOrDefault(x => x.StationId == stationId);
-        if (tripStop is not null)
+        if (trip.TripStops.Count > 0)
         {
-            return tripStop;
+            return;
         }
 
         if (trip.Route.RouteStops.Count == 0)
@@ -1735,14 +1743,8 @@ public sealed class Gps : IEndpointGroup
         }
 
         var routeStops = trip.Route.RouteStops.OrderBy(x => x.StopOrder).ToArray();
-        if (routeStops.All(x => x.StationId != stationId))
-        {
-            return null;
-        }
-
         CreateTripStopsFromRouteStops(trip, routeStops);
         await dbContext.SaveChangesAsync(cancellationToken);
-        return trip.TripStops.FirstOrDefault(x => x.StationId == stationId);
     }
 
     private static void CreateTripStopsFromRouteStops(
@@ -1777,29 +1779,6 @@ public sealed class Gps : IEndpointGroup
                 PlannedArrivalTime = plannedArrival,
                 PlannedDepartureTime = plannedDeparture
             });
-        }
-    }
-
-    private static void ApplyTripStopEvent(
-        TripStop tripStop,
-        string eventType,
-        DateTimeOffset occurredAt,
-        string? note)
-    {
-        tripStop.StopStatus = eventType;
-        tripStop.Note = NormalizeOptionalText(note) ?? tripStop.Note;
-        if (eventType is TripStopStatuses.Arrived)
-        {
-            tripStop.ActualArrivalTime ??= occurredAt;
-        }
-        else if (eventType is TripStopStatuses.Departed)
-        {
-            tripStop.ActualDepartureTime = occurredAt;
-            tripStop.ActualArrivalTime ??= occurredAt;
-        }
-        else if (eventType is TripStopStatuses.Skipped)
-        {
-            tripStop.ActualDepartureTime ??= occurredAt;
         }
     }
 
@@ -1973,7 +1952,9 @@ public sealed class Gps : IEndpointGroup
         DateTimeOffset? OccurredAt,
         decimal? Lat,
         decimal? Lng,
-        string? Note);
+        string? Note,
+        Guid? TripStopId = null,
+        int? StopOrder = null);
 
     public sealed record GpsRouteStopRequest(
         Guid StationId,

@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using SaigonWaterbus.Application.Common.Exceptions;
 using SaigonWaterbus.Application.Common.Interfaces;
 using SaigonWaterbus.Domain.Entities;
 
@@ -46,7 +47,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
         {
             _logger.LogWarning("Brevo payment notification is enabled but required configuration is missing.");
-            return;
+            throw new EmailDispatchException("Brevo payment notification configuration is incomplete.");
         }
 
         var payload = BuildPayload(options, notification);
@@ -77,6 +78,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 notification.BookingCode,
                 notification.PaymentCode,
                 notification.Email);
+            throw CreateProviderException("payment notification", response);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -90,6 +92,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 notification.BookingCode,
                 notification.PaymentCode,
                 notification.Email);
+            throw CreateTransportException("payment notification", ex);
         }
     }
 
@@ -108,7 +111,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
         {
             _logger.LogWarning("Brevo boarding pass notification is enabled but required configuration is missing.");
-            return;
+            throw new EmailDispatchException("Brevo boarding pass notification configuration is incomplete.");
         }
 
         var payload = BuildBoardingPassPayload(options, notification);
@@ -139,6 +142,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 notification.Booking.BookingCode,
                 notification.TicketCode,
                 notification.Booking.Email);
+            throw CreateProviderException("boarding pass notification", response);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -152,6 +156,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 notification.Booking.BookingCode,
                 notification.TicketCode,
                 notification.Booking.Email);
+            throw CreateTransportException("boarding pass notification", ex);
         }
     }
 
@@ -170,7 +175,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
         {
             _logger.LogWarning("Brevo e-ticket notification is enabled but required configuration is missing.");
-            return;
+            throw new EmailDispatchException("Brevo e-ticket notification configuration is incomplete.");
         }
 
         var isPassengerETicket = IsPassengerETicket(notification);
@@ -180,7 +185,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 "Brevo e-ticket notification is enabled but template id is not configured. BookingCode: {BookingCode}, Email: {Email}",
                 notification.Booking.BookingCode,
                 notification.Booking.Email);
-            return;
+            throw new EmailDispatchException("Brevo e-ticket template is not configured.");
         }
 
         var payload = BuildETicketPayload(options, notification);
@@ -210,6 +215,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 Truncate(body, 400),
                 notification.Booking.BookingCode,
                 notification.Booking.Email);
+            throw CreateProviderException("e-ticket notification", response);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -222,6 +228,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 "Brevo e-ticket notification failed. BookingCode: {BookingCode}, Email: {Email}",
                 notification.Booking.BookingCode,
                 notification.Booking.Email);
+            throw CreateTransportException("e-ticket notification", ex);
         }
     }
 
@@ -237,11 +244,11 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
 
         if (options.RefundReleasedTemplateId <= 0)
         {
-            _logger.LogInformation(
-                "Brevo refund-released notification skipped (template not configured). BookingCode: {BookingCode}, Email: {Email}",
+            _logger.LogWarning(
+                "Brevo refund-released notification template is not configured. BookingCode: {BookingCode}, Email: {Email}",
                 notification.BookingCode,
                 notification.Email);
-            return;
+            throw new EmailDispatchException("Brevo refund notification template is not configured.");
         }
 
         if (string.IsNullOrWhiteSpace(options.ApiKey)
@@ -249,7 +256,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
         {
             _logger.LogWarning("Brevo refund-released notification is enabled but required configuration is missing.");
-            return;
+            throw new EmailDispatchException("Brevo refund notification configuration is incomplete.");
         }
 
         var parameters = new Dictionary<string, object?>
@@ -316,6 +323,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 Truncate(body, 400),
                 notification.BookingCode,
                 notification.Email);
+            throw CreateProviderException("refund notification", response);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -328,6 +336,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 "Brevo refund-released notification failed. BookingCode: {BookingCode}, Email: {Email}",
                 notification.BookingCode,
                 notification.Email);
+            throw CreateTransportException("refund notification", ex);
         }
     }
 
@@ -343,11 +352,11 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
 
         if (options.CharterETicketTemplateId <= 0)
         {
-            _logger.LogInformation(
-                "Brevo charter e-ticket notification skipped (template not configured). BookingCode: {BookingCode}, Email: {Email}",
+            _logger.LogWarning(
+                "Brevo charter e-ticket notification template is not configured. BookingCode: {BookingCode}, Email: {Email}",
                 notification.Booking.BookingCode,
                 notification.Booking.Email);
-            return;
+            throw new EmailDispatchException("Brevo charter e-ticket template is not configured.");
         }
 
         if (string.IsNullOrWhiteSpace(options.ApiKey)
@@ -355,7 +364,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
             || string.IsNullOrWhiteSpace(options.ApiBaseUrl))
         {
             _logger.LogWarning("Brevo charter e-ticket notification is enabled but required configuration is missing.");
-            return;
+            throw new EmailDispatchException("Brevo charter e-ticket notification configuration is incomplete.");
         }
 
         var payload = BuildETicketPayload(options, notification);
@@ -390,6 +399,7 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 Truncate(body, 400),
                 notification.Booking.BookingCode,
                 notification.Booking.Email);
+            throw CreateProviderException("charter e-ticket notification", response);
         }
         catch (TaskCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -402,8 +412,19 @@ public sealed class BrevoPaymentNotificationSender : IPaymentNotificationSender
                 "Brevo charter e-ticket notification failed. BookingCode: {BookingCode}, Email: {Email}",
                 notification.Booking.BookingCode,
                 notification.Booking.Email);
+            throw CreateTransportException("charter e-ticket notification", ex);
         }
     }
+
+    private static EmailDispatchException CreateProviderException(
+        string notificationType,
+        HttpResponseMessage response) =>
+        new($"Brevo {notificationType} send failed ({(int)response.StatusCode} {response.ReasonPhrase ?? "Unknown"}).");
+
+    private static EmailDispatchException CreateTransportException(
+        string notificationType,
+        Exception exception) =>
+        new($"Unable to send Brevo {notificationType}: {exception.Message}", exception);
 
     private static Dictionary<string, object?> BuildPayload(
         BrevoOptions options,

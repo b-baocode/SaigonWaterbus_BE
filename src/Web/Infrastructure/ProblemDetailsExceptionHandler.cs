@@ -85,6 +85,13 @@ public class ProblemDetailsExceptionHandler : IExceptionHandler
                 Detail = ode.Message,
                 Type = "https://tools.ietf.org/html/rfc9110#section-15.6.4"
             }),
+            EmailDispatchException ede => (StatusCodes.Status503ServiceUnavailable, new ProblemDetails
+            {
+                Status = StatusCodes.Status503ServiceUnavailable,
+                Title = "Email delivery failed",
+                Detail = ede.Message,
+                Type = "https://tools.ietf.org/html/rfc9110#section-15.6.4"
+            }),
             ProfileImageStorageException pise => (StatusCodes.Status503ServiceUnavailable, new ProblemDetails
             {
                 Status = StatusCodes.Status503ServiceUnavailable,
